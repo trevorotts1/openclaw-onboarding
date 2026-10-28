@@ -25,12 +25,17 @@ from resolve_db import resolve_cc_db, is_db_found  # noqa: E402
 from service_env import read_env  # noqa: E402
 
 
+def app_env(app):
+    """The Command Center's effective dotenv: <app>/.env under <app>/.env.local (Next.js precedence); a missing file is skipped."""
+    return {**read_env(app / ".env"), **read_env(app / ".env.local")}
+
+
 def cc_db_path(app=None, db=None):
-    """--db, else the app's own DATABASE_PATH (its .env.local, else <app>/mission-control.db), else the shared resolver."""
+    """--db, else the app's own DATABASE_PATH (its .env / .env.local, else <app>/mission-control.db), else the shared resolver."""
     if db:
         return Path(db)
     if app:
-        p = Path(os.path.expanduser(read_env(app / ".env.local").get("DATABASE_PATH") or "mission-control.db"))
+        p = Path(os.path.expanduser(app_env(app).get("DATABASE_PATH") or "mission-control.db"))
         return p if p.is_absolute() else app / p
     return resolve_cc_db()
 

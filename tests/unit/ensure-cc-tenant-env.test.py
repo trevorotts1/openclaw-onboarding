@@ -8,9 +8,12 @@ import ensure_cc_tenant_env as E
 from service_env import read_env
 
 
-def box(td, companies=(("c1", "alpha"), ("c2", "beta")), ws=(("c1", None), ("c1", None), ("c2", None)), env="MC_API_TOKEN='x'\n"):
+def box(td, companies=(("c1", "alpha"), ("c2", "beta")), ws=(("c1", None), ("c1", None), ("c2", None)), env="MC_API_TOKEN='x'\n", dotenv=None):
     app = Path(td) / "app"; app.mkdir()
-    (app / ".env.local").write_text(env)
+    if env is not None:                                                      # env=None: a box with no .env.local at all
+        (app / ".env.local").write_text(env)
+    if dotenv is not None:                                                   # <app>/.env, which Next.js reads under .env.local
+        (app / ".env").write_text(dotenv)
     con = sqlite3.connect(app / "mission-control.db")
     con.execute("create table companies(id text primary key, slug text)")
     con.execute("create table workspaces(id integer primary key, company_id text, archived_at text)")
@@ -60,12 +63,35 @@ class Slug(unittest.TestCase):
             app = box(td, ws=(("c1", None), ("c1", "2026-01-01"), ("c1", "2026-01-01"), ("c2", None), ("c2", None)))
             self.assertEqual(E.ensure_company_slug(app)[0], 0)
             self.assertEqual(read_env(app / ".env.local")["COMPANY_SLUG"], "beta")
+    def test_values_set_only_in_dotenv_are_honoured(self):
+        for dotenv in ("COMPANY_SLUG='beta'\n", "MC_ROUTE_COMPANY_ID='c2'\n"):
+            with tempfile.TemporaryDirectory() as td:
+                app = box(td, dotenv=dotenv)
+                before = (app / ".env.local").read_text()
+                self.assertEqual(E.ensure_company_slug(app)[0], 0, dotenv)
+                self.assertEqual((app / ".env.local").read_text(), before, dotenv)   # nothing written over the .env value
+                self.assertEqual((app / ".env").read_text(), dotenv)
+    def test_unparseable_dotenv_stops_the_step_without_writing(self):
+        with tempfile.TemporaryDirectory() as td:
+            app = box(td, dotenv="export COMPANY_SLUG=beta\n")                  # cannot be proven unset, so nothing is written
+            before = (app / ".env.local").read_text()
+            with self.assertRaises(ValueError):
+                E.ensure_company_slug(app)
+            self.assertEqual((app / ".env.local").read_text(), before)
+            self.assertEqual(E.main(["--app", str(app)]), 3)                     # main() turns it into a loud rc 3, never a traceback
+    def test_only_dotenv_box_is_checked_and_written_to_env_local_only(self):
+        with tempfile.TemporaryDirectory() as td:
+            app = box(td, env=None, dotenv="MC_API_TOKEN='x'\n")
+            self.assertEqual(E.ensure_company_slug(app)[0], 0)
+            self.assertEqual(read_env(app / ".env.local")["COMPANY_SLUG"], "alpha")
+            self.assertEqual((app / ".env").read_text(), "MC_API_TOKEN='x'\n")      # .env itself is never written
     def test_not_applicable_without_env_or_database(self):
         with tempfile.TemporaryDirectory() as td:
-            app = box(td); (app / "mission-control.db").unlink()
+            app = box(td, dotenv="MC_API_TOKEN='x'\n"); (app / "mission-control.db").unlink()
             self.assertEqual(E.ensure_company_slug(app)[0], 4)
-            (app / ".env.local").unlink()
+            (app / ".env.local").unlink(); (app / ".env").unlink()               # neither env file: not applicable
             self.assertEqual(E.ensure_company_slug(app)[0], 4)
+            self.assertEqual(E.check_tenant_registry(app)[0], 4)
 
 
 class Registry(unittest.TestCase):
@@ -80,6 +106,15 @@ class Registry(unittest.TestCase):
             self.assertTrue(msg.startswith("CC_TENANT_REGISTRY_ACCESS_MISSING"))
             self.assertIn("audience, issuer, subjects", msg)
             self.assertNotIn("client.example.test", msg)                     # counts and field names only, never a host
+    def test_registry_set_only_in_dotenv_is_checked_and_env_local_wins(self):
+        ident = dict(kind="self", tenantId="t", companyId="c1", installationId="i")
+        full = dict(ident, issuer="https://x.cloudflareaccess.com", audience="a", subjects=["o@example.test"])
+        with tempfile.TemporaryDirectory() as td:                            # registry only in .env, no .env.local at all
+            rc, msg = E.check_tenant_registry(box(td, env=None, dotenv=self.registry_env({"client.example.test": ident})))
+            self.assertEqual(rc, 3); self.assertTrue(msg.startswith("CC_TENANT_REGISTRY_ACCESS_MISSING"))
+        with tempfile.TemporaryDirectory() as td:                            # .env.local overrides .env, as Next.js does
+            app = box(td, env=self.registry_env({"client.example.test": full}), dotenv=self.registry_env({"client.example.test": ident}))
+            self.assertEqual(E.check_tenant_registry(app)[0], 0)
     def test_complete_or_absent_registry_is_quiet(self):
         full = dict(kind="self", tenantId="t", companyId="c1", installationId="i", issuer="https://x.cloudflareaccess.com", audience="a", subjects=["o@example.test"])
         with tempfile.TemporaryDirectory() as td:

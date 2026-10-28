@@ -57,6 +57,16 @@ class T(unittest.TestCase):
             self.assertEqual(E.run(state, app)[0], 4)                         # no database: never created
             self.assertFalse((app / "mission-control.db").exists())
             self.assertEqual(E.run(Path(td) / "missing.json", app)[0], 4)     # no build-state
+    def test_database_path_set_only_in_dotenv_is_followed(self):
+        with tempfile.TemporaryDirectory() as td:
+            app, state = box(td)
+            (app / "mission-control.db").rename(app / "board.db")
+            (app / ".env").write_text("DATABASE_PATH=board.db\n")
+            self.assertEqual(E.run(state, app)[0], 0)
+            con = sqlite3.connect(app / "board.db"); got = dict(con.execute("select id, interview_complete from clients")); con.close()
+            self.assertEqual(got, {"remote": 0, "self": 1})
+            (app / ".env.local").write_text("DATABASE_PATH=missing.db\n")      # .env.local wins over .env
+            self.assertEqual(E.cc_db_path(app), app / "missing.db")
     def test_wired_into_the_roll_and_the_complete_path(self):
         roll = (REPO / "update-skills.sh").read_text()
         for helper in ("ensure_cc_interview_flag.py", "ensure_cc_tenant_env.py"):

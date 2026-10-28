@@ -6,36 +6,43 @@
 1. COMPANY_SLUG. Command Center task creation (taskRequestCompany) needs exactly one company, or
    COMPANY_SLUG to pick one. A box with more than one row in `companies` (repeat installs) and no
    COMPANY_SLUG rejects every task ("A unique company context is required to create this task").
-   Only when companies > 1 and neither COMPANY_SLUG nor MC_ROUTE_COMPANY_ID is set in <app>/.env.local,
-   this writes COMPANY_SLUG=<slug of the company owning the most non-archived workspaces>, and only
-   when that company is a strict winner and its slug is unique in `companies`. Otherwise it reports
-   loudly and changes nothing. An existing value is never overwritten.
+   Only when companies > 1 and neither COMPANY_SLUG nor MC_ROUTE_COMPANY_ID is set in <app>/.env or
+   <app>/.env.local (read as Next.js does: .env.local overrides .env; the process env is not visible
+   here), this writes COMPANY_SLUG=<slug of the company owning the most non-archived workspaces> to
+   <app>/.env.local, the only file it ever writes, and only when that company is a strict winner and
+   its slug is unique in `companies`. Otherwise it reports loudly and changes nothing. An existing
+   value is never overwritten, and an unparseable .env stops the step (it cannot be known to be unset).
 2. Tenant registry (read-only). A non-loopback `kind: self` entry in MC_TENANT_REGISTRY_JSON with no
    issuer / audience / subjects locks the owner out after Cloudflare sign-in (tenant_access_required).
    Boxes hold no Cloudflare credentials, so the roll cannot fill them; it reports the gap on a
    CC_TENANT_REGISTRY_ACCESS_MISSING line instead. Counts and field names only, never a host or value.
 
 Never prints env values. The file is rewritten atomically (0600) and re-read to verify.
+The registry check reads the same merged env (the registry may live in .env).
 
 Exit: 0 nothing to do / written, 3 undetermined or registry gap (the roll output says so loudly),
-4 no Command Center .env.local or database on this box (not applicable).
+4 neither .env nor .env.local (or no database) on this box (not applicable).
 """
 import argparse, json, os, sqlite3, sys, tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ensure_cc_interview_flag import cc_db_path  # noqa: E402
+from ensure_cc_interview_flag import app_env, cc_db_path  # noqa: E402
 from resolve_db import is_db_found  # noqa: E402
 from service_env import read_env, encode_assignment  # noqa: E402
 
 LOOPBACK = ("localhost", "127.0.0.1", "[::1]", "::1")
 
 
+def _has_env(app):
+    return (app / ".env.local").is_file() or (app / ".env").is_file()
+
+
 def ensure_company_slug(app, check_only=False):
-    envf = app / ".env.local"
-    if not envf.is_file():
-        return 4, "no .env.local at %s (no Command Center service env)" % app
-    env = read_env(envf)
+    envf = app / ".env.local"          # the only file ever written; <app>/.env is read, never modified
+    if not _has_env(app):
+        return 4, "no .env or .env.local at %s (no Command Center service env)" % app
+    env = app_env(app)
     db = cc_db_path(app)
     if not is_db_found(db):
         return 4, "no Command Center database found"
@@ -68,7 +75,7 @@ def ensure_company_slug(app, check_only=False):
                    "Nothing written." % len(companies))
     if check_only:
         return 3, "MISSING: %d companies and COMPANY_SLUG unset; would set it to the company owning the most workspaces" % len(companies)
-    text = envf.read_text()
+    text = envf.read_text() if envf.is_file() else ""
     fd, tmp = tempfile.mkstemp(dir=str(app), prefix=".company-slug-")
     with os.fdopen(fd, "w", encoding="utf-8") as h:
         h.write(text + ("" if text.endswith("\n") or not text else "\n") + encode_assignment("COMPANY_SLUG", owner) + "\n")
@@ -103,10 +110,9 @@ def registry_access_gaps(env):
 
 
 def check_tenant_registry(app):
-    envf = app / ".env.local"
-    if not envf.is_file():
-        return 4, "no .env.local at %s (no Command Center service env)" % app
-    bad, missing = registry_access_gaps(read_env(envf))
+    if not _has_env(app):
+        return 4, "no .env or .env.local at %s (no Command Center service env)" % app
+    bad, missing = registry_access_gaps(app_env(app))
     if bad < 0:
         return 3, "CC_TENANT_REGISTRY_ACCESS_MISSING: MC_TENANT_REGISTRY_JSON is not a JSON object keyed by hostname"
     if bad:
