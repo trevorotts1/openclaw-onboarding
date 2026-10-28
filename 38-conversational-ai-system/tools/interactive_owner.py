@@ -18,6 +18,24 @@ Schema validation reuses ``pb_contracts.validate_schema`` (T-08 contract layer).
 
 Run: python3 tools/interactive_owner.py validate --contract <path>
      python3 tools/interactive_owner.py resolve --contract <path> --event <json|path>
+     python3 tools/interactive_owner.py record-basis --ledger <db> --basis <json>
+     python3 tools/interactive_owner.py fulfill --contract <path> --event <json|path>
+         --outbox <db> --ledger <db> --journal <jsonl> --item <json> --basis <json>
+         [--worker-id <id>] [--launch-bundle <path>]
+
+FULFILLMENT.  The owner that answers a step may also deliver the ORIGINAL_GIFT
+item the person was promised, exactly once, through
+``direct_fulfillment.fulfill()``. ``fulfill`` resolves the step FIRST: a stale
+tap, an unknown control or a contract naming two responders is refused before
+any outbox row, journal line or transport call exists. The durable delivery
+basis is written by its own explicit ``record-basis`` command and is never
+minted by the send.
+
+SECOND call site, not the first. ``pb_contracts.py`` already drives
+``direct_fulfillment`` through its ``fulfill-*`` commands (T-13), and those
+commands answer no interactive step. What is new here is the step-resolving
+call site: the same module reached only after a control press, callback or free
+text has been resolved to exactly one responder.
 """
 from __future__ import annotations
 
@@ -29,6 +47,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pb_contracts as contracts  # noqa: E402
+from direct_fulfillment import (  # noqa: E402
+    DeliveryBasis,
+    FulfillmentError,
+    FulfillmentLedger,
+    F_ALREADY_SATISFIED,
+    F_SENT,
+    JournalTransport,
+    PromisedItem,
+    fulfill,
+)
+from durable_store import DurableStore, DurableStoreError  # noqa: E402
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = SKILL_ROOT / "schemas" / "interactive-owner.schema.json"
@@ -64,6 +93,16 @@ OWNER_NOT_VERIFIED = "OWNER_NOT_VERIFIED"
 DUPLICATE_STEP = "DUPLICATE_STEP"
 INVALID_STEP = "INVALID_STEP"
 INVALID_CONTRACT = "INVALID_CONTRACT"
+
+# The one outbound-action purpose whose delivery this module owns (the schema's
+# person-directed enum names it; direct_fulfillment writes the same purpose).
+PURPOSE_ORIGINAL_GIFT = "ORIGINAL_GIFT"
+_ITEM_FIELDS = ("item_id", "version", "content_sha256", "approved")
+_BASIS_FIELDS = ("tenant_id", "canonical_contact_id", "item_id", "version",
+                 "basis", "actor", "evidence", "channel", "address")
+_DEFAULT_WORKER_ID = "interactive_owner_cli"
+_FLAGS = ("--contract", "--event", "--launch-bundle", "--ledger", "--basis",
+          "--outbox", "--journal", "--item", "--worker-id")
 
 
 def _err(code, message):
@@ -378,6 +417,11 @@ def _usage(message):
         "usage: interactive_owner.py validate --contract <path> [--launch-bundle <path>]\n"
         "       interactive_owner.py resolve --contract <path> --event <json|path> "
         "[--launch-bundle <path>]\n"
+        "       interactive_owner.py record-basis --ledger <db> --basis <json>\n"
+        "       interactive_owner.py fulfill --contract <path> --event <json|path> "
+        "--outbox <db> --ledger <db>\n"
+        "           --journal <jsonl> --item <json> --basis <json> "
+        "[--worker-id <id>] [--launch-bundle <path>]\n"
     )
     return 2
 
@@ -400,28 +444,145 @@ def _parse_event(value):
     return event
 
 
+def _operator_document(path, label, fields):
+    """Load one operator document, naming every field it must carry.
+
+    A required field that is absent is a usage error, never a default: an
+    ``approved`` flag or a content hash guessed here would authorise a delivery
+    the operator never wrote down.
+    """
+    doc = contracts.load_json(path)
+    if not isinstance(doc, dict):
+        raise contracts.UsageError("%s must be a JSON object" % label)
+    missing = [field for field in fields if field not in doc]
+    if missing:
+        raise contracts.UsageError(
+            "%s is missing %s" % (label, ", ".join(sorted(missing))))
+    return doc
+
+
+def _promised_item(path):
+    """Read the immutable original promise. The purpose is pinned by name."""
+    doc = _operator_document(path, "the promised item", _ITEM_FIELDS)
+    if doc.get("purpose") != PURPOSE_ORIGINAL_GIFT:
+        raise contracts.UsageError(
+            "the promised item purpose must be %r, got %r"
+            % (PURPOSE_ORIGINAL_GIFT, doc.get("purpose")))
+    return PromisedItem(item_id=doc["item_id"], version=doc["version"],
+                        content_sha256=doc["content_sha256"],
+                        approved=doc["approved"] is True,
+                        content_uri=doc.get("content_uri"))
+
+
+def _delivery_basis(path):
+    """Read the operator's recorded reason this person may receive the item."""
+    doc = _operator_document(path, "the delivery basis", _BASIS_FIELDS)
+    return DeliveryBasis(**{field: doc[field] for field in _BASIS_FIELDS})
+
+
+def cmd_record_basis(args):
+    """Persist the durable delivery basis. This command never sends anything."""
+    basis = _delivery_basis(args["basis"])
+    ledger = FulfillmentLedger(args["ledger"])
+    try:
+        row = ledger.record_basis(basis)
+    finally:
+        ledger.close()
+    print(json.dumps({"ok": True, "command": "record-basis", "basis": row},
+                     indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_fulfill(args):
+    """Deliver the ORIGINAL_GIFT item once, only for an accepted step.
+
+    Resolution runs before the store is opened, so a refused step leaves no
+    outbox row, no journal line and no transport call behind. The durable basis
+    must already exist: ``fulfill()`` refuses rather than minting one here.
+    """
+    verdict = resolve_contract(args["contract"], _parse_event(args["event"]),
+                              args.get("launch_bundle"))
+    if verdict["status"] != "accepted":
+        print(json.dumps({"ok": False, "command": "fulfill",
+                          "status": "refused",
+                          "code": verdict.get("code"),
+                          "reason": verdict.get("reason"),
+                          "errors": verdict.get("errors") or []},
+                         indent=2, sort_keys=True))
+        return 1
+
+    item = _promised_item(args["item"])
+    basis = _delivery_basis(args["basis"])
+    if basis.item_id != item.item_id or basis.version != item.version:
+        raise contracts.UsageError(
+            "the delivery basis names a different promised item/version")
+
+    store = DurableStore(args["outbox"])
+    ledger = FulfillmentLedger(args["ledger"])
+    try:
+        out = fulfill(store, ledger, JournalTransport(args["journal"]), item,
+                      basis, worker_id=args.get("worker_id") or _DEFAULT_WORKER_ID)
+    finally:
+        ledger.close()
+        store.close()
+
+    ok = out.status in (F_SENT, F_ALREADY_SATISFIED)
+    print(json.dumps({
+        "ok": ok,
+        "command": "fulfill",
+        "status": out.status,
+        "reason": out.reason,
+        "action_id": out.action_id,
+        "state": out.state,
+        "delivery_status": out.delivery_status,
+        "item_id": out.item_id,
+        "version": out.version,
+        "destination": out.destination,
+        "step": {
+            "step_id": verdict.get("step_id"),
+            "input": verdict.get("input"),
+            "route": verdict.get("route"),
+        },
+    }, indent=2, sort_keys=True))
+    return 0 if ok else 1
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv:
         return _usage("a command is required")
 
     command = argv.pop(0)
-    if command not in ("validate", "resolve"):
+    if command not in ("validate", "resolve", "record-basis", "fulfill"):
         return _usage("unknown command %r" % (command,))
     args = {}
     while argv:
         flag = argv.pop(0)
-        if flag not in ("--contract", "--event", "--launch-bundle"):
+        if flag not in _FLAGS:
             return _usage("unknown argument %r" % (flag,))
         if not argv:
             return _usage("%s needs a value" % (flag,))
         args[flag.lstrip("-").replace("-", "_")] = argv.pop(0)
 
-    contract_path = args.get("contract")
-    if not contract_path:
-        return _usage("--contract is required")
-
     try:
+        if command == "record-basis":
+            for required in ("ledger", "basis"):
+                if not args.get(required):
+                    return _usage("--%s is required for record-basis" % required)
+            return cmd_record_basis(args)
+
+        if command == "fulfill":
+            required = ("contract", "event", "outbox", "ledger", "journal",
+                        "item", "basis")
+            for name in required:
+                if not args.get(name):
+                    return _usage("--%s is required for fulfill" % name)
+            return cmd_fulfill(args)
+
+        contract_path = args.get("contract")
+        if not contract_path:
+            return _usage("--contract is required")
+
         if command == "validate":
             result = resolve_contract(
                 contract_path, launch_bundle=args.get("launch_bundle")
@@ -441,6 +602,8 @@ def main(argv=None):
             print(json.dumps(verdict, indent=2))
             return 0 if verdict["status"] == "accepted" else 1
     except contracts.UsageError as exc:
+        return _usage(str(exc))
+    except (FulfillmentError, DurableStoreError) as exc:
         return _usage(str(exc))
     except (OSError, UnicodeError, RecursionError) as exc:
         # A caller path that is a folder or not UTF-8, or input nested past
