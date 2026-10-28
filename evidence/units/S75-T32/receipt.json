@@ -1,0 +1,9 @@
+{
+  "unit": "S75-T32",
+  "acceptance_row": "S75-A32",
+  "verdict": "FAIL",
+  "unproven_clauses": [
+    "| S75-A32 / S75-T32 | Both flavor facets exercise missing foundation/cast bypass/scene richness/Notion migration/identity setting changes/approval ordering/style18/original byte preservation/paid compatibility; each facet releases its own repository. | `evidence/units/S75-T32/attempt-<verified-generation>.json`; exact candidate/base/dependencies and independent checker; repository required gates when applicable. | UNVERIFIED |"
+  ],
+  "honesty_note": "interim: proof pending in this lane"
+}
