@@ -12,6 +12,8 @@
 
 ## [2.0.214] - 2026-10-28 - chore(conflict-lane-6): carried merge of pb/PBB-2330/carry; record-only merge, no product change
 
+## [2.0.214] - 2026-10-28 - chore(conflict-lane-6): carried merge of pb/PBB-2338-carry-t-04-renumber; record-only merge, no product change
+
 ## [2.0.213] - 2026-10-28 - chore(lane-7): version stamp for the lane 7 four-unit batch
 
 ## [2.0.212] - 2026-10-28 - chore(batch-fanout-0250-lane8): Skill 38 to v2.0.212
