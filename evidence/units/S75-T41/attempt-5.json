@@ -1,0 +1,155 @@
+{
+  "schema": "s75/acceptance-evidence-attempt-receipt.v1",
+  "unit_id": "S75-T41",
+  "acceptance_id": "S75-A41",
+  "attempt": 5,
+  "written_at": "2026-10-28",
+  "shape_note": "Attempt 5 is a SHAPING job, not a fix job. The clause-0 repair already exists at this branch tip and is not redone or weakened: this file re-states what attempt-4 measured inside this room's six-key contract (dependencies, independent_checker, repository_gate, candidate, base, head_sha). No code, fixture, guard, catalogue or recipe byte is changed by this attempt. evidence/units/S75-T41/attempt-4.json is left untouched.",
+  "status": "COMPLETE",
+  "dependencies": {
+    "carrier_of_the_clause0_repair": {
+      "artefact": "evidence/units/S75-T41/attempt-4.json",
+      "read_at": "000ed03f454842880927eaa79dbb0a6a64495c36",
+      "why": "attempt-4.json is the record that carries the real clause-0 repair and its three-mode control evidence; this attempt populates the six keys from what that record measured rather than from invention"
+    },
+    "file_under_repair": {
+      "path": "75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py",
+      "blob_at_head": "06563abd1225acb485882d5d581bd2958a038d21",
+      "previous_blob": "21cf25f26ab4eeac6a1f7c1f88c21842648ff736",
+      "why": "the single edited file; FixtureCases.test_fixture_covers_the_whole_class now derives coverage from the injected bytes"
+    },
+    "untouched_neighbours": {
+      "paths": [
+        "75-drama-song-ad-factory/scripts/core/music_styles/suno_prompt_guard.py",
+        "75-drama-song-ad-factory/scripts/core/suno_recipe/suno_recipe.py",
+        "75-drama-song-ad-factory/tests/fixtures/suno_artist_reference_guard.json",
+        "75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard_s75t41.py"
+      ],
+      "why": "byte-identical to the judged head: each of the four paths carries the SAME blob id at b184167 and at 201161535 (suno_prompt_guard.py, suno_recipe.py 4412eabf, suno_artist_reference_guard.json 02b0c1be, test_suno_prompt_guard_s75t41.py). Two entries previously named paths that do not exist at any commit; they are corrected to the real locations and the byte-identity is proved by blob id rather than asserted."
+    },
+    "lane2_branch_inspected": {
+      "branch": "s75x/receipt-S75-T41-lane2",
+      "tip": "264122aebda551e6519f6e401099b186ca36679c",
+      "inspection": "git log + per-commit git show --name-status on the lane2 tip: the only file it touches is evidence/units/S75-T41/receipt.json, and it forks from 11b7e9282 (before the clause-0 repair commit 70e9a8d11)",
+      "finding": "NO reusable fix: lane2 carries no code change at all, so nothing in it can be carried into this candidate"
+    },
+    "newest_qc_receipt_for_this_unit": {
+      "name": "evidence/units/S75-T41/qc/S75-T41.000ed03.qc-opus-chain.json",
+      "measured": "this repository carried zero files under qc/ at head 201161535; the receipt exists on the loop QC disk at loop-control/s75/qc/ and is copied verbatim into this repository at the path above by this commit",
+      "why": "the file is tracked in this repository at the path above, so the citation resolves for a repository scan as well as a disk scan; its own keys record unit S75-T41, head 000ed03f454842880927eaa79dbb0a6a64495c36, verdict PASS, measured_at 2026-10-28T11:54:23Z"
+    }
+  },
+  "independent_checker": {
+    "checker_id": "qc-opus-chain (independent of builder-rung-deepseek-chain)",
+    "checker_model": "route=opus-chain; served model NOT RECORDED - no measured value for this lane exists in the repository",
+    "source_receipt": "evidence/units/S75-T41/qc/S75-T41.000ed03.qc-opus-chain.json",
+    "source_unit": "S75-T41",
+    "source_head": "000ed03f454842880927eaa79dbb0a6a64495c36",
+    "source_verdict": "PASS",
+    "key_name_note": "the newest QC receipt for this unit carries these values under its own keys 'checker' and 'model'; it declares no literal checker_id / checker_model key anywhere in the QC directory for this unit, so both strings are copied verbatim under the room's key names rather than renamed from a guess or invented",
+    "independence_note": "the checker lane name differs from the builder lane (builder-rung-deepseek-chain); the source receipt is now tracked in this repository at the path above and states that same checker identity under its own 'checker' key.",
+    "source_receipt_status": "tracked-in-repo"
+  },
+  "repository_gate": {
+    "workflow": ".github/workflows/qc-static.yml",
+    "step": "Skill 75 empty-home test suite (manual 02 B6)",
+    "command": "bash 75-drama-song-ad-factory/scripts/qc-operator-path-leak.sh",
+    "reads": "75-drama-song-ad-factory/scripts/core/** (every non-test file) and the tree itself, failing closed when the tree is absent",
+    "why_it_applies": "the only file this candidate edits sits inside 75-drama-song-ad-factory/scripts/core/music_styles/, which is exactly the tree this static gate reads for operator and build-workspace path strings, so a path regression here is a red build and not a silent pass",
+    "same_workflow_also_runs": {
+      "step": "Skill 75 pytest collection + run (no hidden failures)",
+      "command": "HOME=<temp home> python3 -m pytest -q 75-drama-song-ad-factory/scripts",
+      "why": "it collects every test_*.py under the unit's own scripts tree, so the edited test file is on its input surface too"
+    }
+  },
+  "candidate": {
+    "branch": "s75x/receipt-S75-T41",
+    "head": "000ed03f454842880927eaa79dbb0a6a64495c36",
+    "head_is": "the branch tip this attempt measured, and the commit attempt-4 resolved head_sha to after its push was proved with git ls-remote",
+    "files_this_branch_adds": [
+      "evidence/units/S75-T41/receipt.json",
+      "evidence/units/S75-T41/attempt-4.json",
+      "evidence/units/S75-T41/attempt-5.json"
+    ],
+    "file_list_source": "per-commit git show --format= --name-status over the branch-only commits 534d2487e, 11b7e9282, f7bcc4ed7, 70e9a8d11, 000ed03f4; a per-commit name list is the trusted instrument here because this clone is shallow",
+    "files_this_branch_modifies": [
+      "75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py",
+      "evidence/units/S75-T41/receipt.json",
+      "evidence/units/S75-T41/attempt-4.json"
+    ],
+    "self_reference_note": "a commit cannot name the commit that carries it: the commit that adds this file will have a sha that does not exist at write time, so head names 000ed03f, the tip measured BEFORE this file's commit, and this file's own sha is resolved afterwards by git rev-parse and git ls-remote rather than guessed here",
+    "no_force": true,
+    "no_pull_request": true,
+    "no_merge_to_main": true
+  },
+  "base": {
+    "origin_main_sha": "42c8a8d2bb606c65f2d4ce67c04b56f17c0bf267",
+    "measured_by": "git rev-parse origin/main in this clone after fetching the receipt branch",
+    "note": "merge-tree is NOT measurable from this shallow clone: the clone carries a truncated ancestry (.git/shallow), so merge-tree, merge-base, --stat, --diff-filter and any diff against origin/main are excluded as instruments and no merge relationship to main is claimed here",
+    "receipt_base_for_context": "97ba85615f12af53ff31fc9aca99f02fdf33430d, the base the judged head was cut from, as recorded in evidence/units/S75-T41/receipt.json",
+    "branch_cut_from": "f7bcc4ed74f19b4850ef980d94565a23f73a7ab3"
+  },
+  "head_sha": "000ed03f454842880927eaa79dbb0a6a64495c36",
+  "clause0_repair": {
+    "container": "evidence/units/S75-T41/attempt-4.json, carried forward by this attempt without redoing or weakening it",
+    "was": "FixtureCases.test_fixture_covers_the_whole_class asserted that the fixture's case ids contained REQUIRED_CASES, a tuple the test file itself declared. Nothing derived coverage from the payload, the catalogue or the compiler, so the test's own declaration was the oracle. With all nine cases keeping their ids and every inject emptied to {}, the check still passed.",
+    "now": "It asserts the property on the injected BYTES. Each case's inject is deep-merged onto a real envelope, then _witnessed over _walk_text / _walk_keys / _forms_in / is_protected re-derives which of the ten clause-0 dimensions are actually present: case and punctuation variants from the raw spellings against the catalogue's display names, key-position / list-value / instruction-value / nested-position from the walker's paths, negative-key / negative-list-value / negative-instruction from the field name plus a negation cue, approved-content from the protected-path predicate. Every REQUIRED_DIMENSIONS entry must be witnessed and each id naming a dimension the bytes do not show is a failure. The id is a claim the bytes must confirm, never the oracle.",
+    "dimension_count": 10,
+    "command": "python3 -I control_clause0.py <worktree> <mode>   # scratch harness running ONLY FixtureCases.test_fixture_covers_the_whole_class against a substituted fixture; modes blank | honest | lie",
+    "results": {
+      "before_at_the_judged_head": "blank PASSED -- the control fired, which was the defect",
+      "after_blank": "FAILED (failures=1); missing=['approved-content','case-variant','instruction-value','key-position','list-value','negative-instruction','negative-key','negative-list-value','nested-position','punctuation-variant']",
+      "after_honest": "OK -- passes on the real fixture",
+      "after_lie": "FAILED (failures=1); missing=['case-variant'] -- an id that lies about the bytes is caught"
+    },
+    "two_way_statement": "one instrument answers both ways on its own target: honest passes, blank fails, lie fails. Independently re-run by the QC lane named in independent_checker, which reported the same three outcomes plus the old head passing blank.",
+    "carried_not_recomputed": "this attempt did not re-run the substituted-fixture harness; it re-ran the unit's own checks at the tip (see measurements) and relies on attempt-4 plus the independent QC receipt for the two-way control"
+  },
+  "provenance": {
+    "repair_commit": "70e9a8d11b9f0098f5ee69f88a85d9d1fc5259e7",
+    "repair_commit_subject": "S75-T41 attempt 4: clause-0 check asserts the property, not the receipt's claim",
+    "repair_commit_role": "the commit that made the clause-0 repair in 75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py",
+    "follow_up_commit": "000ed03f454842880927eaa79dbb0a6a64495c36",
+    "follow_up_role": "its follow-up: resolved head_sha and tree_digest from the proved push and touched nothing but evidence/units/S75-T41/attempt-4.json",
+    "earlier_commit": "f7bcc4ed74f19b4850ef980d94565a23f73a7ab3",
+    "earlier_role": "recorded unproven clauses 0 and 3 honestly, the state the repair answered",
+    "authority": "builder rung for this unit; a builder writes no verdict, and this file carries none"
+  },
+  "measurements": {
+    "unit_self_check": {
+      "command": "cd <worktree at 000ed03f> && python3 -I 75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard_s75t41.py",
+      "result_line": "Ran 21 tests in 0.082s",
+      "verdict_line": "OK",
+      "rc": 0,
+      "run_by": "this attempt, at the tip, not quoted from any earlier receipt"
+    },
+    "guard_suite_full_file": {
+      "command": "cd <worktree at 000ed03f> && python3 -I 75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py",
+      "result_line": "Ran 54 tests in 33.044s",
+      "verdict_line": "OK",
+      "rc": 0,
+      "run_by": "this attempt, at the tip"
+    },
+    "operator_path_scan": {
+      "target": "the six-key file itself, evidence/units/S75-T41/attempt-5.json",
+      "counts": {
+        "home_prefix": 0,
+        "volume_prefix": 0,
+        "tilde_prefix": 0
+      },
+      "control_counts": {
+        "home_prefix": 2,
+        "volume_prefix": 2,
+        "tilde_prefix": 1
+      },
+      "control_total": 5,
+      "result": "zero operator path prefixes, and the same scan fired 5 times on a synthetic control string, so the zero is a measurement and not a broken instrument"
+    }
+  },
+  "residuals": [
+    "The clause-0 two-way control lives in attempt-4.json and in the independent QC receipt; this attempt re-ran the unit's own suites at the tip but did not rebuild the substituted-fixture harness, by design of a shaping job.",
+    "The judged receipt's clause-3 unproven entry (approved content remains byte-identical) is not addressed here; the room named clause 0 only.",
+    "The newest QC receipt for this unit declares no literal checker_id / checker_model keys; its 'checker' and 'model' values are copied verbatim under those names rather than invented, and a verifier should name its own identity instead of accepting a carried one.",
+    "This clone's shared git config carries core.worktree pointing at a dead operator path, so every linked worktree without its own override resolves toplevel to that dead path. This worktree carries a per-worktree core.worktree override (extensions.worktreeConfig was already enabled) and its toplevel resolves to itself; the shared value is reported, not repaired, because it is not this unit's file."
+  ]
+}

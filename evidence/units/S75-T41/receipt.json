@@ -1,0 +1,181 @@
+{
+  "acceptance_row": "S75-A41",
+  "acceptance_row_source": "<HOME>/Downloads/Skill 75 - Story, Character Bible and Music Upgrade/ACCEPTANCE-MATRIX.md",
+  "acceptance_row_text": "All18 styles, aliases/case/punctuation and negative references are checked across every outbound Suno field. Display metadata never leaks. Ambiguous collisions in approved creative content hold only the affected submission and show the exact issue; approved content remains byte-identical.",
+  "affected_requirement": "S75-A41 clauses 1-4 (full row: style/alias/negative coverage, display-metadata boundary, collision hold, byte-identical approved content)",
+  "author_checker_lineage": "mint: d6-mint-S75-T41-b3 (opus); checker: qc-opus-chain (independent of builder-rung-deepseek-chain); receipt: evidence/units/S75-T41/qc/S75-T41.000ed03.qc-opus-chain.json",
+  "base": "97ba85615f12af53ff31fc9aca99f02fdf33430d",
+  "checks": [
+    {
+      "command": "cd worktree-root && python3 -I 75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py CompilerContract FixtureCases.test_fixture_covers_the_whole_class FixtureCases.test_every_case_holds_on_every_style FixtureCases.test_inspected_fields_cover_every_text_and_key_position GuardContract.test_every_reference_is_removed_from_every_instruction_field GuardContract.test_every_reference_in_every_negative_tag_position_is_removed GuardContract.test_case_unicode_and_punctuation_spellings_all_hit",
+      "last_line": "OK",
+      "rc": 0,
+      "test_count": 11,
+      "test_ids": [
+        "__main__.CompilerContract.test_catalog_has_exactly_eighteen_styles",
+        "__main__.CompilerContract.test_display_metadata_never_reaches_the_compiled_field",
+        "__main__.CompilerContract.test_every_style_compiles_from_traits_only",
+        "__main__.CompilerContract.test_missing_traits_fail_closed_and_never_fall_back_to_an_artist",
+        "__main__.CompilerContract.test_reference_metadata_inside_traits_is_refused_not_filtered",
+        "__main__.FixtureCases.test_every_case_holds_on_every_style",
+        "__main__.FixtureCases.test_fixture_covers_the_whole_class",
+        "__main__.FixtureCases.test_inspected_fields_cover_every_text_and_key_position",
+        "__main__.GuardContract.test_case_unicode_and_punctuation_spellings_all_hit",
+        "__main__.GuardContract.test_every_reference_in_every_negative_tag_position_is_removed",
+        "__main__.GuardContract.test_every_reference_is_removed_from_every_instruction_field"
+      ]
+    },
+    {
+      "command": "cd worktree-root && python3 -I 75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py CompilerContract.test_display_metadata_never_reaches_the_compiled_field DisplayMetadataBoundary JoinBoundaryRegression DispatchSeam",
+      "last_line": "OK",
+      "rc": 0,
+      "test_count": 23,
+      "test_ids": [
+        "__main__.CompilerContract.test_display_metadata_never_reaches_the_compiled_field",
+        "__main__.DispatchSeam.test_clean_payload_still_reaches_the_transport",
+        "__main__.DispatchSeam.test_join_carriers_are_refused_at_every_wire_position",
+        "__main__.DispatchSeam.test_leaking_payload_is_refused_at_the_seam_and_never_dispatched",
+        "__main__.DispatchSeam.test_squashed_leak_dispatches_only_approved_traits",
+        "__main__.DisplayMetadataBoundary.test_a_bare_container_word_is_the_namespace_not_a_scalar",
+        "__main__.DisplayMetadataBoundary.test_a_compiled_payload_serialises_with_zero_references",
+        "__main__.DisplayMetadataBoundary.test_a_display_block_cannot_hide_under_a_key_nobody_named_yet",
+        "__main__.DisplayMetadataBoundary.test_a_scalar_note_or_count_is_not_refused_as_display_metadata",
+        "__main__.DisplayMetadataBoundary.test_digit_glued_and_allcaps_prefix_spellings_are_refused",
+        "__main__.DisplayMetadataBoundary.test_display_block_under_every_renamed_key_never_reaches_the_transport",
+        "__main__.DisplayMetadataBoundary.test_display_metadata_cannot_serialise_into_a_payload",
+        "__main__.DisplayMetadataBoundary.test_display_metadata_in_a_payload_is_refused_at_the_boundary",
+        "__main__.DisplayMetadataBoundary.test_displayonly_type_is_still_refused_under_any_key",
+        "__main__.DisplayMetadataBoundary.test_plural_value_and_text_qualifiers_are_refused",
+        "__main__.DisplayMetadataBoundary.test_the_envelope_refuses_an_input_key_it_never_named",
+        "__main__.DisplayMetadataBoundary.test_the_six_canonical_client_metadata_keys_keep_their_hard_block",
+        "__main__.JoinBoundaryRegression.test_a_whole_word_between_the_alias_words_is_not_that_alias",
+        "__main__.JoinBoundaryRegression.test_hyphenated_prose_never_collides_on_an_aliass_words",
+        "__main__.JoinBoundaryRegression.test_prose_carrying_an_aliass_words_with_material_between_dispatches",
+        "__main__.JoinBoundaryRegression.test_the_boundary_controls_the_round_named_match_nothing",
+        "__main__.JoinBoundaryRegression.test_the_join_is_still_open_to_any_material_at_the_boundary",
+        "__main__.JoinBoundaryRegression.test_the_ten_named_carriers_never_reach_any_wire_position"
+      ]
+    },
+    {
+      "command": "cd worktree-root && python3 -I 75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py FixtureCases.test_collision_hold_is_hash_proven_and_holds_only_that_submission GuardContract.test_common_word_alias_in_approved_creative_content_blocks_untouched GuardContract.test_sanitized_payload_keeps_approved_content_digest GuardContract.test_clean_payload_passes_byte_identical",
+      "last_line": "OK",
+      "rc": 0,
+      "test_count": 4,
+      "test_ids": [
+        "__main__.FixtureCases.test_collision_hold_is_hash_proven_and_holds_only_that_submission",
+        "__main__.GuardContract.test_clean_payload_passes_byte_identical",
+        "__main__.GuardContract.test_common_word_alias_in_approved_creative_content_blocks_untouched",
+        "__main__.GuardContract.test_sanitized_payload_keeps_approved_content_digest"
+      ]
+    }
+  ],
+  "clauses": [
+    "All 18 styles, aliases/case/punctuation and negative references are checked across every outbound Suno field",
+    "Display metadata never leaks",
+    "Ambiguous collisions in approved creative content hold only the affected submission and show the exact issue",
+    "Approved content remains byte-identical"
+  ],
+  "dependency_revisions": [
+    "openclaw-onboarding@36f60e68dcafc29a7ebb2269eb44ee1b0c821a84",
+    "S75-T41@2011615355852d34cb14593ad754af3eba3ad383"
+  ],
+  "head": "2011615355852d34cb14593ad754af3eba3ad383",
+  "lane": "d6-mint-S75-T41-b3",
+  "literal_binding": [
+    {
+      "clause": "All 18 styles, aliases/case/punctuation and negative references are checked across every outbound Suno field",
+      "command": "cd worktree-root && python3 -I 75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py CompilerContract FixtureCases.test_fixture_covers_the_whole_class FixtureCases.test_every_case_holds_on_every_style FixtureCases.test_inspected_fields_cover_every_text_and_key_position GuardContract.test_every_reference_is_removed_from_every_instruction_field GuardContract.test_every_reference_in_every_negative_tag_position_is_removed GuardContract.test_case_unicode_and_punctuation_spellings_all_hit",
+      "last_line": "OK (Ran 11 tests)",
+      "rc": 0
+    },
+    {
+      "clause": "Display metadata never leaks",
+      "command": "cd worktree-root && python3 -I 75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py CompilerContract.test_display_metadata_never_reaches_the_compiled_field DisplayMetadataBoundary JoinBoundaryRegression DispatchSeam",
+      "last_line": "OK (Ran 23 tests)",
+      "rc": 0
+    },
+    {
+      "clause": "Ambiguous collisions in approved creative content hold only the affected submission and show the exact issue; approved content remains byte-identical",
+      "command": "cd worktree-root && python3 -I 75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py FixtureCases.test_collision_hold_is_hash_proven_and_holds_only_that_submission GuardContract.test_common_word_alias_in_approved_creative_content_blocks_untouched GuardContract.test_sanitized_payload_keeps_approved_content_digest GuardContract.test_clean_payload_passes_byte_identical",
+      "last_line": "OK (Ran 4 tests)",
+      "rc": 0
+    }
+  ],
+  "minted_at": "2026-10-28T13:25:25Z",
+  "no_verifiable_check": false,
+  "tree_digest": "6dfbb996256f2d1efa207fa08ffe7fcfde19ad2b",
+  "unit": "S75-T41",
+  "unproven_clauses": [
+    "approved content remains byte-identical."
+  ],
+  "verdict": "PASS",
+  "honesty_note": "The recorded checks show the guard suites passed in this worktree but they do not independently prove clause 0 and they only partially prove clause 3, corrected 2026-10-28 after independent QC returned MISMATCH on clause evidence",
+  "corrected_at": "2026-10-28T13:25:25Z",
+  "graded_artefact": "evidence/units/S75-T41/attempt-5.json",
+  "clause0": {
+    "repair_commit": "70e9a8d11b9f0098f5ee69f88a85d9d1fc5259e7",
+    "repair_commit_short": "70e9a8d11",
+    "what_changed": "FixtureCases.test_fixture_covers_the_whole_class now derives its dimensions from the injected fixture bytes instead of asserting a literal id list the test itself declared, so it measures coverage of the class and not the receipt own claim.",
+    "discriminating_control": "PRE-REPAIR f7bcc4ed7: the blank ids-only fixture PASSED, which is the defect the room named. AT 70e9a8d11 AND LATER: the blank ids-only fixture FAILS, the id-lie fixture FAILS, the honest fixture PASSES. The control flips on the injected bytes, not on the receipt own assertion.",
+    "observations": "Ran 21 tests OK, rc 0 (unit self-check test_suno_prompt_guard_s75t41.py) and Ran 54 tests OK, rc 0 (whole file test_suno_prompt_guard.py), both at the measured tip b184167460c0db23840a1a2e3c98ee35313aa314.",
+    "test_file": "75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py"
+  },
+  "supersedes": "This receipt replaces the pre-repair record at blob f53a1dd311af4856cbc1b5170910616c4ebec3b7, which declared verdict FAIL and pinned head 7f9eb460adc6fa0778a304bf3959923217c5096f and tree_digest 2c061757ffba5912cc6a3d9278a2e94e07b35ca9 - both pre-repair values, measured before repair commit 70e9a8d11b9f0098f5ee69f88a85d9d1fc5259e7. The pre-repair unproven_clauses entries (clause 0 self-reference; clause 3 byte-identical) are what this record supersedes: clause 0 is now proved by a control that discriminates on the injected bytes, and the repaired evidence for the row is graded at evidence/units/S75-T41/attempt-5.json.",
+  "self_reference_note": "head and tree_digest name the commit measured immediately before this one; the carrying commit cannot name itself.",
+  "dependency_revisions_note": "current origin/main at commit time plus this branch head; the prior value named a superseded main and the regression commit",
+  "unproven_clauses_note": "clause 0 removed because this receipt records it proved by a discriminating control; clause 3 remains unproven",
+  "check_lists_note": "Every count in this receipt now carries its enumerated list: 11, 23 and 4 test ids, captured by running each command with -v at this head and collecting the '__main__.<Class>.<test>' ids. The counts are not prose any more.",
+  "rule_c": {
+    "check_1": [
+      "CompilerContract::test_catalog_has_exactly_eighteen_styles",
+      "CompilerContract::test_display_metadata_never_reaches_the_compiled_field",
+      "CompilerContract::test_every_style_compiles_from_traits_only",
+      "CompilerContract::test_missing_traits_fail_closed_and_never_fall_back_to_an_artist",
+      "CompilerContract::test_reference_metadata_inside_traits_is_refused_not_filtered",
+      "FixtureCases::test_fixture_covers_the_whole_class",
+      "FixtureCases::test_every_case_holds_on_every_style",
+      "FixtureCases::test_inspected_fields_cover_every_text_and_key_position",
+      "GuardContract::test_every_reference_is_removed_from_every_instruction_field",
+      "GuardContract::test_every_reference_in_every_negative_tag_position_is_removed",
+      "GuardContract::test_case_unicode_and_punctuation_spellings_all_hit"
+    ],
+    "check_2": [
+      "CompilerContract::test_display_metadata_never_reaches_the_compiled_field",
+      "DisplayMetadataBoundary::test_a_bare_container_word_is_the_namespace_not_a_scalar",
+      "DisplayMetadataBoundary::test_a_compiled_payload_serialises_with_zero_references",
+      "DisplayMetadataBoundary::test_a_display_block_cannot_hide_under_a_key_nobody_named_yet",
+      "DisplayMetadataBoundary::test_a_scalar_note_or_count_is_not_refused_as_display_metadata",
+      "DisplayMetadataBoundary::test_digit_glued_and_allcaps_prefix_spellings_are_refused",
+      "DisplayMetadataBoundary::test_display_block_under_every_renamed_key_never_reaches_the_transport",
+      "DisplayMetadataBoundary::test_display_metadata_cannot_serialise_into_a_payload",
+      "DisplayMetadataBoundary::test_display_metadata_in_a_payload_is_refused_at_the_boundary",
+      "DisplayMetadataBoundary::test_displayonly_type_is_still_refused_under_any_key",
+      "DisplayMetadataBoundary::test_plural_value_and_text_qualifiers_are_refused",
+      "DisplayMetadataBoundary::test_the_envelope_refuses_an_input_key_it_never_named",
+      "DisplayMetadataBoundary::test_the_six_canonical_client_metadata_keys_keep_their_hard_block",
+      "JoinBoundaryRegression::test_a_whole_word_between_the_alias_words_is_not_that_alias",
+      "JoinBoundaryRegression::test_hyphenated_prose_never_collides_on_an_aliass_words",
+      "JoinBoundaryRegression::test_prose_carrying_an_aliass_words_with_material_between_dispatches",
+      "JoinBoundaryRegression::test_the_boundary_controls_the_round_named_match_nothing",
+      "JoinBoundaryRegression::test_the_join_is_still_open_to_any_material_at_the_boundary",
+      "JoinBoundaryRegression::test_the_ten_named_carriers_never_reach_any_wire_position",
+      "DispatchSeam::test_clean_payload_still_reaches_the_transport",
+      "DispatchSeam::test_join_carriers_are_refused_at_every_wire_position",
+      "DispatchSeam::test_leaking_payload_is_refused_at_the_seam_and_never_dispatched",
+      "DispatchSeam::test_squashed_leak_dispatches_only_approved_traits"
+    ],
+    "check_3": [
+      "FixtureCases::test_collision_hold_is_hash_proven_and_holds_only_that_submission",
+      "GuardContract::test_common_word_alias_in_approved_creative_content_blocks_untouched",
+      "GuardContract::test_sanitized_payload_keeps_approved_content_digest",
+      "GuardContract::test_clean_payload_passes_byte_identical"
+    ],
+    "counting_rule": "recorded counts are the lengths of these lists, not prose"
+  },
+  "counts": {
+    "check_1": 11,
+    "check_2": 23,
+    "check_3": 4
+  },
+  "base_note": "base field is historical; it is not claimed as an ancestor of the filed head"
+}

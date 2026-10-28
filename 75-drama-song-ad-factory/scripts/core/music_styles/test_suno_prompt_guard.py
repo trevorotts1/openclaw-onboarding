@@ -13,6 +13,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 import sys
 import unittest
 
@@ -426,22 +427,121 @@ def references_left(payload, aliases):
 class FixtureCases(unittest.TestCase):
     """The fixture's guard_cases, proved on all eighteen styles."""
 
-    REQUIRED_CASES = (
-        "key-position-map-key", "nested-map-key", "array-element-map-key",
-        "case-variant-key", "punctuation-variant-key",
-        "negative-reference-key", "negative-reference-value",
-        "negative-reference-instruction", "collision-hold-approved-lyrics",
+    #: Clause 0 names these coverage dimensions.  A dimension is counted only
+    #: when a case's INJECTED BYTES witness it; an id is a claim and is never
+    #: the oracle.  A fixture whose cases are named but empty witnesses none.
+    REQUIRED_DIMENSIONS = (
+        "case-variant", "punctuation-variant",
+        "key-position", "list-value", "instruction-value", "nested-position",
+        "negative-key", "negative-list-value", "negative-instruction",
+        "approved-content",
     )
+
+    #: Words that make a scalar instruction a NEGATIVE reference, not a trait.
+    NEGATION = re.compile(
+        r"\b(?:do not|don't|does not|no|never|avoid|exclude|not in the style)\b",
+        re.IGNORECASE)
 
     def setUp(self):
         self.catalog = load_catalog()
         self.aliases = G.alias_set(self.catalog)
         self.cases = self.catalog.get("guard_cases") or []
 
+    def _forms_in(self, text):
+        """The case and punctuation spellings actually written in one text.
+
+        Derived from the catalogue's own display names, so a case that claims
+        "case-variant" but injects the canonical spelling witnesses nothing.
+        """
+        case_variants, punctuation_variants = set(), set()
+        for name in references(self.catalog):
+            upper = name.upper()
+            if upper != name and upper in text:
+                case_variants.add(name)
+            for spelling in (name + "’s", name + "'s",
+                             name.replace(" ", "-"),
+                             name.replace(" ", "")):
+                if spelling != name and spelling in text:
+                    punctuation_variants.add(name)
+        return case_variants, punctuation_variants
+
+    def _witnessed(self, payload):
+        """Dimensions this payload's bytes witness, read from the bytes."""
+        found = set()
+        for path, text in G._walk_text(payload):
+            if not G.find_matches(str(text), self.aliases):
+                continue
+            dot = G._dot(path)
+            in_list = isinstance(G._get(payload, path[:-1]), list)
+            case_variants, punctuation_variants = self._forms_in(str(text))
+            if case_variants:
+                found.add("case-variant")
+            if punctuation_variants:
+                found.add("punctuation-variant")
+            if len(path) >= 4:
+                found.add("nested-position")
+            if G.is_protected(path, G.DEFAULT_PROTECTED_PATHS):
+                found.add("approved-content")
+                continue
+            if in_list:
+                found.add("list-value")
+                if "negative" in dot:
+                    found.add("negative-list-value")
+            else:
+                found.add("instruction-value")
+                if "negative" in dot or self.NEGATION.search(str(text)):
+                    found.add("negative-instruction")
+        for path, key in G._walk_keys(payload):
+            if not G.find_matches(str(key), self.aliases):
+                continue
+            dot = G._dot(path)
+            case_variants, punctuation_variants = self._forms_in(str(key))
+            found.add("key-position")
+            if case_variants:
+                found.add("case-variant")
+            if punctuation_variants:
+                found.add("punctuation-variant")
+            if len(path) >= 4:
+                found.add("nested-position")
+            if "negative" in dot:
+                found.add("negative-key")
+        return found
+
     def test_fixture_covers_the_whole_class(self):
-        ids = [case["id"] for case in self.cases]
-        for wanted in self.REQUIRED_CASES:
-            self.assertIn(wanted, ids)
+        """Clause 0 coverage, measured on the injected bytes and never on ids.
+
+        Each required dimension must be witnessed by what a case actually puts
+        into the payload, and an id that names a dimension the bytes do not
+        show is a failure.  This is the property; the previous version asserted
+        a list of ids the test itself declared, which is the receipt's claim.
+        """
+        self.assertTrue(self.cases, "the fixture carries no guard_cases")
+        witnessed = set()
+        per_case = {}
+        for case in self.cases:
+            payload = deep_merge(envelope(self.catalog, STYLE_IDS[0]),
+                                 case["inject"])
+            dimensions = self._witnessed(payload)
+            per_case[case["id"]] = dimensions
+            witnessed |= dimensions
+        missing = sorted(set(self.REQUIRED_DIMENSIONS) - witnessed)
+        self.assertEqual(missing, [],
+                         "no case actually injects: %r" % (missing,))
+        for case_id, dimensions in per_case.items():
+            if "key" in case_id:
+                self.assertIn("key-position", dimensions, case_id)
+            if "case-variant" in case_id:
+                self.assertIn("case-variant", dimensions, case_id)
+            if "punctuation-variant" in case_id:
+                self.assertIn("punctuation-variant", dimensions, case_id)
+            if "negative" in case_id:
+                self.assertTrue(
+                    dimensions & {"negative-key", "negative-list-value",
+                                  "negative-instruction"},
+                    "%s claims a negative reference the bytes do not show"
+                    % case_id)
+            if "collision" in case_id:
+                self.assertIn("approved-content", dimensions, case_id)
 
     def test_every_case_holds_on_every_style(self):
         self.assertTrue(self.cases)

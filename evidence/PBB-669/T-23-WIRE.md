@@ -1,7 +1,7 @@
 # T-23 WIRE — `monthly_manifest.py`
 
 Lane `PBB-669` (BUILD, role `deepseek-chain`). Repo `<PATH>`.
-Worktree `<PATH>/worktrees/PBB-669`.
+Worktree `<PATH>`.
 
 | | |
 |---|---|
@@ -41,8 +41,8 @@ Logs: `scratch/lanes/PBB-669/logs/`.
 Tree built from the sha, not from the working copy:
 
 ```
-BASE=$(git -C <PATH> rev-parse origin/main)   # c994359d...
-git -C <PATH> archive "$BASE" | tar -x -C scratch/lanes/PBB-669/base-tree
+BASE=$(git -C "<PATH>" rev-parse origin/main)   # c994359d...
+git -C "<PATH>" archive "$BASE" | tar -x -C scratch/lanes/PBB-669/base-tree
 python3 -I scratch/lanes/PBB-669/scan_refs.py scratch/lanes/PBB-669/base-tree monthly_manifest --self-dir shared-utils/manifest --verbose
 ```
 
@@ -218,7 +218,7 @@ rewriting, was the gap), any other unit's files. No merge, no push to main, no s
 ## 10. Reproduce
 
 ```bash
-source "<PATH>/loop-control/Purple-Billboard-Client-System-Build/env.sh"
+source "<PATH>"
 L="$LOOP_ROOT/scratch/lanes/PBB-669"
 python3 -I "$L/scan_refs.py" "$LOOP_ROOT/worktrees/PBB-669" monthly_manifest --self-dir shared-utils/manifest --verbose
 python3 -I "$L/probe_validate.py" "$LOOP_ROOT/worktrees/PBB-669" "$LOOP_ROOT/tmp/pbb669/cases-wired"

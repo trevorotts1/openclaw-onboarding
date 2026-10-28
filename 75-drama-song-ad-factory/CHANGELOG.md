@@ -4,6 +4,10 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.134 - 2026-10-28 - chore(train20): land the S75-T41 receipt and its guard tests
+
+Lands the S75-T41 receipt, attempts and suno prompt guard tests in the train20 batch.
+
 ## v2.9.133
 
 - Suno outbound alias guard now fails closed in the case that still leaked: shipped
