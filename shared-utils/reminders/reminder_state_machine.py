@@ -502,6 +502,11 @@ class ReminderStateMachine:
                                  "bot_paused": decision["bot_paused"],
                                  "source": "handoff"}}
 
+        # The marker make_gate_evaluator attaches (consent_guard) is what tells
+        # outbound_gate.dispatch to re-run this evaluator inside the send
+        # transaction. A plain closure drops it, so carry over whatever the
+        # inner evaluator carries instead of re-declaring the flag here.
+        evaluate.__dict__.update(getattr(consent_evaluator, "__dict__", {}))
         return evaluate
 
     # ── storage ────────────────────────────────────────────────────────────

@@ -3616,3 +3616,19 @@ jobs:
           fi
           python3 -I "$t"
           echo "✓ T-29 human handoff lifecycle suite (50 cases) is green"
+      - name: T-36 bootstrap engine suite (explicit path)
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="38-conversational-ai-system/tools/tests/test_bootstrap_engine.py"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=T-36 bootstrap engine suite SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
+            echo "⚠ SKIP (reason: $t is absent from this checkout) — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          echo "resolved $root/$t"
+          ls -l "$t"
+          python3 "$t"
+          echo "✓ T-36 bootstrap engine suite ran and passed"

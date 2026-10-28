@@ -196,6 +196,51 @@ def _account_home() -> str:
     return home
 
 
+def _seal_key_refusal(what: str) -> str:
+    try:
+        where = _seal_key_path()
+    except CapabilityError:
+        where = f"<installation home>/{_SEAL_KEY_DEFAULT}"
+    return (
+        f"the provenance signing key cannot be selected at runtime: {what}. "
+        f"{_SEAL_KEY_ENV} and {_SEAL_KEY_FILE_ENV} are refused outright — a key the "
+        "caller supplies is a key the caller chose, which is no integrity at all — and "
+        "there is no override hook, because an override would have to be authenticated "
+        "by something the caller does not control and nothing inside a standard-library "
+        "process is that thing. The key is read only from the provisioned file "
+        f"{where}, a regular file (never a symlink) "
+        "owned by this uid and not readable by group or others, inside a directory "
+        "owned by this uid that grants no access to group or others. Provision it "
+        "there out of band (mode 0600 in a mode 0700 directory) or let this "
+        "installation generate it once with os.urandom(). Both signing and "
+        "verification fail closed while the key cannot be resolved."
+    )
+
+
+def _operator_home() -> str:
+    """The installation owner's home — from the real uid, never from $HOME.
+
+    os.path.expanduser() and Path.home() read $HOME first, and $HOME is process
+    environment: a caller that controls the environment would then control where
+    the key file is read from, which is the same defect as choosing the key. The
+    passwd database is not an environment variable.
+    """
+    home = ""
+    try:
+        import pwd
+
+        home = pwd.getpwuid(os.getuid()).pw_dir
+    except Exception:  # pragma: no cover - non-POSIX hosts only
+        home = ""
+    if home and os.path.isdir(home):
+        return home
+    raise CapabilityError(
+        "the provenance signing key cannot be located: the installation owner's "
+        "home directory is not resolvable from the real uid, and the location is "
+        "deliberately never taken from the process environment"
+    )
+
+
 def _seal_key_path() -> str:
     """The ONE place the signing key lives. Fixed: nothing a caller hands in moves it.
 
@@ -225,9 +270,78 @@ def _decode_seal_key(raw: bytes, where: str) -> bytes:
     )
 
 
-def _create_seal_key(path: str) -> bytes:
-    """Mint the installation key once, 0600, outside the repository."""
+def _read_provisioned_seal_key(path: str) -> bytes:
+    """Read the provisioned key, refusing anything the caller could have planted."""
+    uid = os.getuid()
+    try:
+        info = os.lstat(path)
+    except OSError as exc:
+        raise CapabilityError(
+            _seal_key_refusal(f"the key file {path} is not provisioned ({exc.strerror or exc})")
+        ) from exc
+    import stat as _stat
+
+    if _stat.S_ISLNK(info.st_mode):
+        raise CapabilityError(
+            _seal_key_refusal(f"the key file {path} is a symbolic link, not a provisioned key")
+        )
+    if not _stat.S_ISREG(info.st_mode):
+        raise CapabilityError(
+            _seal_key_refusal(f"the key file {path} is not a regular file")
+        )
+    if info.st_uid != uid:
+        raise CapabilityError(
+            _seal_key_refusal(f"the key file {path} is owned by uid {info.st_uid}, not this uid {uid}")
+        )
+    if info.st_mode & 0o077:
+        raise CapabilityError(
+            _seal_key_refusal(
+                f"the key file {path} is group- or world-accessible "
+                f"(mode {oct(info.st_mode & 0o777)}); a key others can read is a key others can sign with"
+            )
+        )
     directory = os.path.dirname(path)
+    try:
+        parent = os.lstat(directory)
+    except OSError as exc:
+        raise CapabilityError(
+            _seal_key_refusal(f"the key directory {directory} is not provisioned ({exc.strerror or exc})")
+        ) from exc
+    if _stat.S_ISLNK(parent.st_mode) or not _stat.S_ISDIR(parent.st_mode):
+        raise CapabilityError(
+            _seal_key_refusal(f"the key directory {directory} is not a real directory")
+        )
+    if parent.st_uid != uid:
+        raise CapabilityError(
+            _seal_key_refusal(f"the key directory {directory} is owned by uid {parent.st_uid}, not this uid {uid}")
+        )
+    if parent.st_mode & 0o077:
+        raise CapabilityError(
+            _seal_key_refusal(
+                f"the key directory {directory} grants access to group or others "
+                f"(mode {oct(parent.st_mode & 0o777)}); a directory others can enter is a key others can replace"
+            )
+        )
+    try:
+        with open(path, "rb") as handle:
+            key = _decode_seal_key(handle.read(), path)
+    except OSError as exc:
+        raise CapabilityError(
+            _seal_key_refusal(f"the key file {path} cannot be read ({exc.strerror or exc})")
+        ) from exc
+    return key
+
+
+def _create_seal_key(path: str) -> bytes:
+    """Mint the installation key once, 0600, outside the repository.
+
+    The value comes from os.urandom() and is written by THIS process: a caller
+    who controls the environment cannot choose it, and a key file planted in
+    advance is not created here at all — it is read by _read_provisioned_seal_key
+    and must pass its ownership and mode checks first.
+    """
+    directory = os.path.dirname(path)
+    uid = os.getuid()
     try:
         os.makedirs(directory, mode=0o700, exist_ok=True)
     except OSError as exc:
@@ -238,16 +352,10 @@ def _create_seal_key(path: str) -> bytes:
             "run under the account that owns the installation. This module has no "
             "environment override to fall back on."
         ) from exc
+    import stat as _stat
+
     try:
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError:
-        try:
-            with open(path, "rb") as handle:
-                return _decode_seal_key(handle.read(), path)
-        except OSError as exc:
-            raise CapabilityError(
-                f"cannot read the provenance signing key {path}: {exc}"
-            ) from exc
+        parent = os.lstat(directory)
     except OSError as exc:
         raise CapabilityError(
             f"no provenance signing key exists and one cannot be created at {path}: "
@@ -261,13 +369,13 @@ def _create_seal_key(path: str) -> bytes:
             handle.write(key.hex().encode("ascii") + b"\n")
     except OSError as exc:
         raise CapabilityError(
-            f"cannot write the provenance signing key {path}: {exc}"
+            _seal_key_refusal(f"the key file {path} cannot be written ({exc.strerror or exc})")
         ) from exc
     try:
         os.chmod(path, 0o600)
     except OSError:
         pass
-    return key
+    return _read_provisioned_seal_key(path)
 
 
 def _installation_seal_key() -> bytes:
@@ -290,16 +398,10 @@ def _installation_seal_key() -> bytes:
     """
     path = _seal_key_path()
     cached = _SEAL_KEY_CACHE.get(path)
-    if cached:
+    if cached is not None:
         return cached
-    if os.path.exists(path):
-        try:
-            with open(path, "rb") as handle:
-                key = _decode_seal_key(handle.read(), path)
-        except OSError as exc:
-            raise CapabilityError(
-                f"cannot read the provenance signing key {path}: {exc}"
-            ) from exc
+    if os.path.lexists(path):
+        key = _read_provisioned_seal_key(path)
     else:
         key = _create_seal_key(path)
     _SEAL_KEY_CACHE[path] = key
@@ -350,7 +452,14 @@ def _seal(record: dict, path: Optional[str] = None) -> dict:
 
 
 def _is_sanctioned(record: Any, path: Optional[str] = None) -> bool:
-    """True only when the record carries a marker that fits its own bytes."""
+    """True only when the record carries a marker that fits its own bytes.
+
+    A predicate, so it never raises: when the signing key cannot be resolved at
+    all (an environment override is set, the provisioned file is missing or is
+    group-readable) there is no key to verify against, and the answer is False —
+    never "probably fine". A broken key installation can therefore only ever
+    produce a refusal, which is the fail-closed direction.
+    """
     if not isinstance(record, dict):
         return False
     provenance = record.get("provenance")
@@ -365,13 +474,15 @@ def _is_sanctioned(record: Any, path: Optional[str] = None) -> bool:
         return False
     try:
         payload = _seal_payload(record)
+        key = _installation_seal_key()
     except CapabilityError:
         return False
-    expected = hmac.new(_installation_seal_key(), payload, hashlib.sha256).hexdigest()
+    expected = hmac.new(key, payload, hashlib.sha256).hexdigest()
     return hmac.compare_digest(mac, expected)
 
 
 def _require_sanctioned(record: Any, path: Optional[str] = None, what: str = "this package") -> None:
+    _installation_seal_key()  # surface a broken key installation loudly, not silently
     if not _is_sanctioned(record, path):
         raise CapabilityError(
             f"{what} carries no sanctioned provenance marker, so it cannot mint "

@@ -10,12 +10,6 @@ Four changelog-only units landed together (`fix/s38-44-changelog` @ `8278e0d8`, 
 
 `skill-version.txt` moves v2.1.37 -> v2.1.38 and the `SKILL.md` frontmatter follows. No other file in the skill was touched by the version stamp.
 
-## [v2.1.38] - 2026-10-28 - documentation release: ships the v2.1.36 and v2.1.37 entries that were missing from this file
-
-No engine, CLI, template, guard or QC script behaviour changes in this release. Its content is this heading, the paragraph below it, the two entries, and two version lines.
-
-Main already read v2.1.37 in `skill-version.txt` but carried neither a v2.1.36 nor a v2.1.37 heading here, so what was missing on main was the documentation, not the version. G3 requires a `skill-version.txt` change alongside any edit inside a skill directory and has no documentation exemption, so a changelog-only commit cannot land at all. This release carries those entries under its own marker.
-
 ## [v2.1.37] - 2026-10-27 - batch 20261027-2242: the automation-template schema lane rebuilt on main, plus a real template-count pin
 
 The schema lane landed once before on a base that could not merge, so it was rebuilt on current main and paired with the count pin the guard was missing. Two commits, not one: the rebuild is `33825d414be3faec7eb2fbf261aaa07712afedb5` and the count pin is `049dd8a3962c8a8977027c4d2642fdbf565f85db`. Both landed on main in `135cf961114db06097fa3ad8222dd44be1ddf9e0`.
@@ -35,6 +29,22 @@ Two test-only units shipped between v2.1.35 and this stamp. No engine, CLI, temp
 ### The portable mktemp template is pinned by a test
 
 `qc-built-workflow.sh` writes its export through `mktemp "${TMPDIR:-/tmp}/qc-wf-export-XXXXXX"`. BSD `mktemp` requires the Xs to be the last characters of the template, so the earlier `...XXXXXX.json` form created that literal shared path instead of a unique one. The script calls `mktemp` once and installs `trap 'rm -f "$TMP"' EXIT`, so one run does not collide with itself; the failure appears when that literal path already exists — from an interrupted earlier run, another checkout or a parallel job — and the call then dies with `mktemp: mkstemp failed on <path>: File exists`, rc 1. The pre-existing suite did not catch this: with the old form restored, the fifty pre-existing tests in `tests/test_qc_built_workflow.py` stay green and the only failure is the new test itself (50 passed, 1 failed). Which assert it fails on depends on the restored form, so both are named: the form that actually shipped before the fix was `mktemp /tmp/qc-wf-export-XXXXXX.json`, unquoted and with a suffix after the Xs, and restoring it fails the test at its own template lookup (`no quoted mktemp template found`), before any `mktemp` runs; a quoted template that still carries a suffix fails one step later, at the second call, with `mktemp: mkstemp failed on <path>: File exists`. `tests/test_qc_built_workflow.py::test_export_temp_template_is_portable` (f589ff0f8) reads the quoted template out of the script with a regex rather than restating it, points `TMPDIR` at `tmp_path`, runs `mktemp` twice and requires two distinct paths, so a future edit that puts a suffix after the Xs now fails the suite.
+
+### A missing graph fixture is not a malformed one
+
+`validate_graph` maps both an absent export and an unparseable one to rc 2 with verdict UNVERIFIED. A case pointed at a path that does not exist would therefore look like a passing malformed-input test while proving nothing. cc273cc1 hoists the parametrize list in `tests/test_validate_graph.py` into a module-level `GRAPH_CASES` and adds `test_every_named_fixture_exists`, which asserts every fixture the cases name is actually present. `unparseable.badjson` is still exercised by the existing cases and still returns rc 2 with verdict UNVERIFIED.
+
+### Version lockstep
+
+`skill-version.txt` moves v2.1.35 -> v2.1.36 and the `SKILL.md` frontmatter follows. No other file in the skill was touched by the version stamp.
+
+## [v2.1.36] - 2026-10-27 - batch 20261027-2022: two test-only units (portable mktemp template pinned, graph fixture presence asserted)
+
+Two test-only units shipped between v2.1.35 and this stamp. No engine, CLI, template or QC script behaviour changed in this batch; the only non-test files touched are the two version markers.
+
+### The portable mktemp template is pinned by a test
+
+`qc-built-workflow.sh` writes its export through `mktemp "${TMPDIR:-/tmp}/qc-wf-export-XXXXXX"`. BSD `mktemp` requires the Xs to be the last characters of the template, so the earlier `...XXXXXX.json` form created that literal shared path instead of a unique one. The script calls `mktemp` once and installs `trap 'rm -f "$TMP"' EXIT`, so one run does not collide with itself; the failure appears when that literal path already exists — from an interrupted earlier run, another checkout or a parallel job — and the call then dies with `mktemp: mkstemp failed on <path>: File exists`, rc 1. The pre-existing suite did not catch this: with the old form restored, `tests/test_qc_built_workflow.py` stays green (50 passed, 1 failed, and the single failure is the new test itself, which fails because the old unquoted form does not match its quoted-template regex). `tests/test_qc_built_workflow.py::test_export_temp_template_is_portable` (f589ff0f8) reads the quoted template out of the script with a regex rather than restating it, points `TMPDIR` at `tmp_path`, runs `mktemp` twice and requires two distinct paths, so a future edit that puts a suffix after the Xs now fails the suite.
 
 ### A missing graph fixture is not a malformed one
 

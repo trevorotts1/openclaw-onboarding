@@ -314,8 +314,24 @@ class TestVersionMarkersAgree(unittest.TestCase):
 
 
 class TestCapabilityCli(unittest.TestCase):
+    # The CLI runs in its own process, so it cannot inherit this module's patched
+    # path resolver. It gets the same code-level relocation through a small shim
+    # that patches the resolver and then runs the CLI. Nothing about the key or
+    # its location travels through the environment — the module refuses that.
+    _SHIM = (
+        "import runpy, sys\n"
+        "sys.path.insert(0, {shared!r})\n"
+        "import personal_profile_capability as _ppc\n"
+        "_ppc._seal_key_path = lambda: {key!r}\n"
+        "sys.argv = [{cli!r}] + sys.argv[1:]\n"
+        "runpy.run_path({cli!r}, run_name='__main__')\n"
+    )
+
     def _run(self, *args, cwd=_ONB_ROOT):
+        shim = self._SHIM.format(shared=_SHARED, key=_KEY_PATH, cli=CLI)
         env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+        env.pop("PERSONAL_PROFILE_CAPABILITY_SEAL_KEY", None)
+        env.pop("PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE", None)
         return subprocess.run(
             [sys.executable, "-c", _CLI_BOOTSTRAP, _KEY_FILE, CLI, *args],
             cwd=cwd,

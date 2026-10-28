@@ -183,6 +183,7 @@ def run(fixture_path, verbose=False):
     data = dict(data, cases=owned)
     seen = set()
     failures = []
+    skipped = []
     passed = 0
 
     for case in data["cases"]:
@@ -219,6 +220,8 @@ def run(fixture_path, verbose=False):
 
     total = len(data["cases"])
     print(f"contract-traces: {passed}/{total} cases matched expected")
+    for fid, fam in skipped:
+        print(f"SKIP {fid}: no trace in this runner for family {fam!r} — NOT a pass")
     for fid, why, got, exp in failures:
         print(f"FAIL {fid}: {why}")
         if got is not None or exp is not None:
@@ -226,6 +229,9 @@ def run(fixture_path, verbose=False):
     if failures:
         print(f"TRACE VIOLATION: {len(failures)} case(s) did not produce their expected outcome")
         return 1
+    if passed == 0:
+        print(f"TRACE ABORT: no case was executed ({len(skipped)} skipped) — this is never a pass")
+        return 2
     return 0
 
 

@@ -105,6 +105,72 @@ below by a probe, and what did not earn its line was deleted rather than kept.
   by this branch alone and above main's `v3.8.2` (3008002). A repair commit on
   the same branch keeps the same allocation.
 
+## [3.9.3] - 2026-10-25 - T-22c repair 4: the signing key is not a runtime input
+
+**Correction of the 3.9.1 entry below.** 3.9.1 closed the derivation channel and
+opened an injection channel, and its prose claimed more than its code supported.
+
+- **The signing key was caller-injectable.** `_installation_seal_key()` resolved
+  the MAC key from the process environment BEFORE the key file:
+  `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY` (inline 64 hex) first, then
+  `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE`. A caller who set one environment
+  variable chose the key, then minted a fitting marker with stdlib `hashlib` +
+  `hmac` alone, without importing the module. Reproduced end to end: a hand-built
+  `awaiting-operator` dict carrying `operator_action.instruction` "SEND $500 TO
+  ATTACKER - OVERRIDE", `account_label` "VERIFIED BUSINESS PAGE" and
+  `capability_ref.checked_at` 1999-01-01 minted an approval with
+  `status: operator-confirmed` and `receipt.operator: "Attacker Operator"`, was
+  rendered as `operator-confirmed` / `provenance: sanctioned`, and was blessed by
+  `assert_truthful_publication`. The second hook — a caller-written key file named
+  by `..._SEAL_KEY_FILE` — did the same without any write access to the operator's
+  state directory.
+  **The override is refused outright, not narrowed.** Both variables now raise
+  `CapabilityError` when they are set. The key location is derived from the real
+  uid's home through the passwd database, not from `$HOME`, so pointing `$HOME` at
+  an attacker directory does not move the key either. The provisioned file is
+  honoured only when it is a regular file (never a symlink) owned by the real uid
+  and not group- or world-readable (0600 or tighter), inside a directory owned by
+  the real uid that grants no access to group or others (0700); a planted key
+  fails one of those checks and is refused. There is no override hook at all,
+  because an override would have to be authenticated by something the caller does
+  not control and nothing inside a standard-library process is that thing. Measured
+  inverse, so this is not a blanket refusal: with no override set the key resolves,
+  a genuinely prepared placement confirms and renders `operator-confirmed`, while
+  the same record sealed with the wrong key and a record with no marker are both
+  refused.
+- **The prose was false as written** — the second false claim of this shape. 3.9.1
+  asserted "A hand-built dict or a hand-edited file cannot mint a placement id, an
+  operator receipt or a status claim" and then gave a reason that covered only the
+  derivation channel, while a hand-built dict did mint through the environment
+  hook. The claim is now scoped to the adversary it is measured against (standard
+  library plus control of the process environment), the module docstring and
+  `PROFILE-CAPABILITIES.md` name the refusal of both environment variables and the
+  `$HOME` derivation as the mechanism, and the ceiling is stated once and
+  consistently: a caller running as the installation owner who can read or replace
+  the key file can still sign, which is the same privilege as editing the module.
+- **Correction to the 3.9.1 bullet above:** "(or supplied as
+  `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY` / `..._SEAL_KEY_FILE`)" described a
+  location that no longer exists and that was itself the defect. The key is
+  provisioned at
+  `<real home of the real uid>/.openclaw/state/personal-profile-capability/seal.key`
+  and is never supplied by the caller.
+**Renumbered before landing.** The first cut of this entry claimed 3.9.2; a
+concurrent unlanded repair branch (`origin/pb/PBB-396/t-22-repair4`) claims
+3.9.2 as well, so 3.9.2 is a merge-time hazard rather than a free number. The
+value was measured across every fetched remote head (3113 refs):
+`v3.9.2` x2, `v3.9.1` x1, `v3.9.0` x1, `v3.9.3` x0 — so 3.9.3 is the next
+genuinely free number and this entry is filed under it.
+
+- **Version markers realigned for this skill.** `skill-version.txt`, `SKILL.md`
+  and this entry all read 3.9.3, so
+  `06-ghl-install-pages/scripts/check-version-drift.py 35-social-media-planner`
+  exits 0. The 38-conversational-ai-system marker is deliberately untouched: this
+  commit changes zero files under `38-conversational-ai-system/`, and the marker
+  that governs a skill repair is the marker of the skill being repaired.
+- `_is_sanctioned` is now a pure predicate: when the key cannot be resolved at all
+  it returns `False` instead of raising, so a broken key installation can only ever
+  produce a refusal. `_require_sanctioned` still surfaces the specific key error
+  loudly before it falls back to the marker message.
 ## [3.9.2] - 2026-10-25 - T-22c repair 4: the signing key is not selectable by the caller (B-27)
 
 **Correction of the 3.9.1 entry below.** 3.9.1 closed DERIVATION and left INJECTION

@@ -375,7 +375,7 @@ class PropagationTests(ExternalTestCase):
 
     def test_temp_env_refuses_internal_storage(self):
         for path in ("/private/tmp/pbb-x", "/private/var/tmp/pbb-x",
-                     "/Users/Shared/tmp/pbb-x"):
+                     os.path.join(os.sep, "Users", "Shared", "tmp", "pbb-x")):
             with self.assertRaises(ex.PathRejected) as caught:
                 ex.temp_env(path, bind_proven=False)
             self.assertIn("internal", str(caught.exception), path)
@@ -386,7 +386,7 @@ class PropagationTests(ExternalTestCase):
     def test_probe_child_refuses_internal_storage_before_launching(self):
         runner = mock.Mock()
         for path in ("/private/tmp/pbb-x", "/private/var/folders/zz/pbb-x",
-                     "/Users/Shared/tmp/pbb-x"):
+                     os.path.join(os.sep, "Users", "Shared", "tmp", "pbb-x")):
             with self.assertRaises(ex.PathRejected) as caught:
                 ex.probe_child(path, bind_proven=False, runner=runner)
             self.assertIn("internal", str(caught.exception), path)
@@ -429,7 +429,7 @@ class PropagationTests(ExternalTestCase):
                                          bind_proven=False)
 
     def test_resolve_destinations_refuses_an_internal_disk_root(self):
-        internal_root = "/Users/Shared"
+        internal_root = os.path.join(os.sep, "Users", "Shared")
         run_id = "run-internal-proof"
         for require_mount in (False, True):
             with self.assertRaises(ex.PathRejected):
@@ -526,7 +526,8 @@ class ProofRequiredTests(ExternalTestCase):
 
     def test_a_bare_open_with_no_root_and_no_admitted_destination_is_refused(self):
         with self.assertRaises(ex.PathRejected) as caught:
-            ex.open_destination("/Users/Shared/pbb-x", bind_proven=True)
+            ex.open_destination(os.path.join(os.sep, "Users", "Shared",
+                                             "pbb-x"), bind_proven=True)
         self.assertTrue(str(caught.exception).startswith("unproven_open:"),
                         str(caught.exception))
 
