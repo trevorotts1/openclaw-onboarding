@@ -6,6 +6,10 @@
 
 - **Train4 version stamp, skill 38 v2.0.213 -> v2.0.214.** Units touching skill 38: `s38-44-skipcount` and `pb/PBB-2361/repair` @ `0934c8036` (`tools/interactive_owner.py` plus two test files). Skill 44 moves v2.1.38 -> v2.1.39 for `s38-44-changelog-v6`. `S75-T03` is evidence only. Version stamp only.
 
+## [2.0.214] - 2026-10-28 - chore(rebase-lane-2): rebase pb/PBB-1016/PBB-458-t-15-build onto main, keep the T-15 deletion record
+
+- **Rebase resolution, version stamp only.** Conflict lane 2 rebuilt `pb/PBB-1016/PBB-458-t-15-build` (@ `ab3f4123ed18`) on `origin/main` @ `da41be56f427`. Only two paths conflicted and both are allowed classes: this CHANGELOG and `skill-version.txt`. No product, CI or test file was touched. The branch's `[2.0.138]` entry (the T-15 bonus-access deletion record, 114 lines) is kept in full and placed in descending order between `[2.0.143]` and `[2.0.134]`; heading count 353 -> 355 = main 353 + `[2.0.138]` + this entry, zero lines deleted (`diff` main vs resolved: 114 insertions, 0 deletions, block byte-identical). The branch stamped `v2.0.138`; the higher stamp is main's `v2.0.213`, so this commit stamps `v2.0.214` in `skill-version.txt` and in the `SKILL.md` frontmatter.
+
 ## [2.0.213] - 2026-10-28 - chore(lane-7): version stamp for the lane 7 four-unit batch
 
 ## [2.0.212] - 2026-10-28 - chore(batch-fanout-0250-lane8): Skill 38 to v2.0.212
