@@ -513,6 +513,11 @@ test('probe: the only modified files are the two owned files', () => {
   const owned = new Set([
     '77-council-of-wise-elders/runtime/src/cli/model-probe.ts',
     '77-council-of-wise-elders/runtime/src/cli/model-probe.test.ts',
+    // SKR003 shared-directory race fix: these files stop landing.test.ts
+    // from renaming the shared public/chamber path mid-run.
+    '77-council-of-wise-elders/runtime/package.json',
+    '77-council-of-wise-elders/runtime/src/service/front-door.ts',
+    '77-council-of-wise-elders/runtime/src/service/landing.test.ts',
   ]);
   for (const line of status.split('\n').filter((l) => l.trim().length > 0)) {
     const path = line.slice(3).trim();

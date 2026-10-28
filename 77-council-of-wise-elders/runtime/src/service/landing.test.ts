@@ -27,7 +27,9 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { renameSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
@@ -215,11 +217,13 @@ test('GET /status keeps the not-bound notice when only one adapter is bound', as
 // ------------------------------------------------ without packaged assets
 
 test('without packaged chamber assets GET / keeps the honest status page', async () => {
-  const chamberDir = fileURLToPath(new URL('../../public/chamber/', import.meta.url));
-  const parked = fileURLToPath(new URL('../../public/chamber.parked-under-test', import.meta.url));
-  renameSync(chamberDir, parked);
+  // An empty temp dir stands in for a build with no packaged chamber.
+  // The shared public/chamber path is never touched, so sibling tests
+  // reading it concurrently cannot observe a rename mid-run.
+  const emptyChamberDir = mkdtempSync(join(tmpdir(), 'landing-no-chamber-'));
   try {
-    await withService(async (_service, origin) => {
+    await withService(
+      async (_service, origin) => {
       const response = await fetch(`${origin}/`, { redirect: 'manual' });
       const body = await response.text();
       assert.equal(response.status, 200, 'no assets: the root serves the status page');
@@ -237,9 +241,11 @@ test('without packaged chamber assets GET / keeps the honest status page', async
       const status = await fetch(`${origin}/status`);
       assert.equal(status.status, 200, 'diagnostics stay reachable in every build');
       assert.ok((await status.text()).includes('UI_NOT_BUNDLED'));
-    });
+      },
+      { chamberAssetDir: emptyChamberDir },
+    );
   } finally {
-    renameSync(parked, chamberDir);
+    rmSync(emptyChamberDir, { recursive: true, force: true });
   }
 });
 
@@ -292,7 +298,13 @@ test('no file outside the owned paths differs from the base commit', (t) => {
   const serviceDir = fileURLToPath(new URL('.', import.meta.url));
   const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url));
   const allowed = new Set([
+    // SKR003 shared-directory race fix: the full owned change set. Both
+    // scope proofs (here and in model-probe.test.ts) admit exactly these
+    // files so the proofs stay green while still failing on any other edit.
+    '77-council-of-wise-elders/runtime/package.json',
     '77-council-of-wise-elders/runtime/src/service/front-door.ts',
+    '77-council-of-wise-elders/runtime/src/service/landing.test.ts',
+    '77-council-of-wise-elders/runtime/src/cli/model-probe.test.ts',
     '77-council-of-wise-elders/runtime/src/service/events.ts',
     '77-council-of-wise-elders/runtime/src/service/index.ts',
     '77-council-of-wise-elders/runtime/src/service/front-door-events.test.ts',
