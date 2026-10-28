@@ -1,0 +1,132 @@
+{
+  "unit": "S75-T32",
+  "acceptance_row": "S75-A32",
+  "generation": "attempt-5",
+  "written_at": "2026-10-28T09:44:42Z",
+  "written_by": "s75 receipt composer lane, branch s75x/receipt-S75-T32",
+  "generation_provenance": "supersedes attempt-4, which stamped 15c10ec0 (a shallow boundary commit and the branch's interim proof-pending commit) instead of the certified tip.",
+  "independent_checker": {
+    "checker_id": "fresh-qc-opus-chain-lane-T32",
+    "checker_model": "route=opus-chain; served=not observed by the lane",
+    "receipt_path": "<CONTROL>/qc/S75-T32.15c10ec00de47b51e49b7f70a9341d658204adb8.json",
+    "copied_verbatim_from_receipt": true,
+    "receipt_verdict": "PASS",
+    "receipt_caveat_quoted": "Recorded from an earlier checker lane's observed runs after that lane ended before writing its receipt; the counts and the broken check name are that lane's measurements, not re-derived here.",
+    "receipt_checks": [
+      "clean head suite: 389 checks, ALL PASS, rc=0",
+      "mutation control: broke named check '1g validate_catalog', rc=1"
+    ]
+  },
+  "dependencies": {
+    "base_sha": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "merge_sha": "429a9e54a8debc48131110212d9b721cd0018462",
+    "merge_sha_source": "<CONTROL>/ledger.json branch_records entry id S75-BR-S75-T32-r4, fields branch=s75/S75-T32-r4, head=05ddd5018e596931a9bce100718b88bc8b83fa50, merge_commit, merge_proof.instrument=git-cherry, merge_proof.origin_main=1d1b8d2c8d85395f119c37f7c046597ea4b94199",
+    "merge_sha_scope_note": "Ledger branch_records read in this lane held S75-T32 records r1, r3 and r4; r4 was the latest whose merge_commit field was read. No merge_commit was read for s75/S75-T32-r7, the lineage named by attempt-candidate-3.json, so this value is the latest ledger merge sha actually read, not a claim that it is the r7 merge.",
+    "predecessor_attempts": [
+      "attempt-candidate-1.json (declared_head 83f878f3c8235456d0b0a906d881f17215948671, checker PENDING)",
+      "attempt-candidate-2.json (declared_head 682757c9197d9905aecf25b737ff4afcf26e12ff, checker PENDING)",
+      "attempt-candidate-3.json (candidate head fe25719cc7617f362e5b46e9a7cb8dc19fc3e886 on s75/S75-T32-r7)"
+    ]
+  },
+  "base": {
+    "sha": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "ref": "origin/main",
+    "merge_tree_status": "not measurable from this clone: the repository is shallow (.git/shallow holds two boundary commits, one of which is b37010c6a itself), so no merge base exists locally and merge-tree returns 128. This is a limitation of the measuring clone, not a property of the branch or of main."
+  },
+  "candidate": {
+    "branch": "s75x/receipt-S75-T32",
+    "head": "9241f43fb99c7307e7c1cd712cab12482d90a069",
+    "remote_branch_sha_before_write": "9241f43fb99c7307e7c1cd712cab12482d90a069",
+    "worktree": "<CONTROL>/wt-t32-a5",
+    "worktree_mode": "git worktree add --detach <path> s75x/receipt-S75-T32; core.worktree set to the worktree path; git rev-parse --show-toplevel returned that path",
+    "changed_files_command": "git log --no-merges --name-only --format='' -n 6 HEAD | sort -u, filtered to evidence/units/S75-T32/",
+    "changed_files": [
+      "evidence/units/S75-T32/attempt-1.json",
+      "evidence/units/S75-T32/attempt-4.json",
+      "evidence/units/S75-T32/attempt-candidate-1.json",
+      "evidence/units/S75-T32/attempt-candidate-2.json",
+      "evidence/units/S75-T32/attempt-candidate-3.json",
+      "evidence/units/S75-T32/receipt.json"
+    ],
+    "changed_files_count": 6,
+    "self_reference_note": "A commit cannot name the commit that carries it; this artefact certifies the tip 9241f43f and the commit carrying this file sits after it on the same branch.",
+    "changed_files_note": "Raw git log --no-merges --name-only --format='' -n 6 HEAD | sort -u returned 14167 entries: 6 under evidence/units/S75-T32/ plus 14161 out-of-scope entries, dominated by the shallow root-commit 15c10ec00 full-tree snapshot (14165 files; per-commit counts 9241f43fb=1, a1beac70f=1, 89df33a0b=1, 15c10ec00=14165); the out-of-scope entries were dropped as artifacts of a shallow tree comparison."
+  },
+  "repository_gate": {
+    "workflow": ".github/workflows/qc-static.yml",
+    "workflow_ref": "origin/main",
+    "workflow_name": "QC static checks",
+    "job": "qc-static",
+    "applies_to_unit_paths": true,
+    "applies_reason": "Named steps below read this unit's paths either by an explicit pathscope that reaches a changed file, or indirectly by walking the whole tracked tree (git ls-files / repo-wide script), which reads every unit file including evidence/units/S75-T32/.",
+    "direct_pathscope_steps": [
+      {
+        "step": "Python syntax (shared-utils + Skill 22/23 scripts)",
+        "read_path": "find shared-utils 22-book-to-persona-coaching-leadership-system 23-ai-workforce-blueprint ...",
+        "unit_paths_read": [
+          "shared-utils/nudge-incomplete-interviews.py",
+          "shared-utils/reminders/reminder_state_machine.py"
+        ]
+      },
+      {
+        "step": "Skill 23 PRD-2.15 static greps (schema + INSTRUCTIONS + build-workforce)",
+        "read_path": "grep -q 'api\\.telegram\\.org' shared-utils/nudge-incomplete-interviews.py 23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh",
+        "unit_paths_read": [
+          "shared-utils/nudge-incomplete-interviews.py"
+        ]
+      },
+      {
+        "step": "T-17 shared reminder slots + reserved final action (state machine suite)",
+        "read_path": "python3 -m unittest discover -s shared-utils/reminders/tests (suite imports reminder_state_machine)",
+        "unit_paths_read": [
+          "shared-utils/reminders/reminder_state_machine.py"
+        ]
+      }
+    ],
+    "indirect_whole_repo_steps": [
+      {
+        "step": "CRITICAL-1 — No real client names in tracked files",
+        "read_path": "bash scripts/qc-assert-no-client-names.sh -> git ls-files (tracked-only, every tracked file)",
+        "unit_paths_read": "all 22 changed files, including evidence/units/S75-T32/receipt.json"
+      },
+      {
+        "step": "FLEET-STANDARDS §3 — WhatsApp permanently disabled (no enabled:true in JSON, no uncommented WHATSAPP_NUMBER in env files)",
+        "read_path": "git ls-files -z -- '*.json'",
+        "unit_paths_read": [
+          "evidence/engineering-loop-registration.json",
+          "evidence/units/S75-T32/receipt.json"
+        ]
+      },
+      {
+        "step": "AF3: local-candidate-loop guard (32-command-center-setup + repo-wide)",
+        "read_path": "step name declares repo-wide scan; path list in the step names shared-utils/key_resolver.py, shared-utils/api_key_utils.py, shared-utils/llm_score.py",
+        "unit_paths_read": "repo-wide coverage over shared-utils/, therefore shared-utils/nudge-incomplete-interviews.py and shared-utils/reminders/reminder_state_machine.py"
+      }
+    ],
+    "steps_that_cannot_read_unit_paths": [
+      {
+        "step": "chmod-600 coverage — every .sh that writes secrets/.env must also chmod 600",
+        "read_path": "git ls-files -- '*.sh'",
+        "why_not": "pathscope is *.sh only; this unit's changed files contain no .sh file"
+      },
+      {
+        "step": "AGENTS.md N28 — No destructive cron payloads (rm -rf / npm uninstall -g openclaw / brew uninstall)",
+        "read_path": "git ls-files -- '*.sh'",
+        "why_not": "pathscope is *.sh only; no .sh in the unit's changed files"
+      },
+      {
+        "step": "Skill 75 empty-home test suite (manual 02 B6)",
+        "read_path": "find 75-drama-song-ad-factory/scripts/core -type f -name 'test_*.py'",
+        "why_not": "reaches only 75-drama-song-ad-factory/scripts/core; the unit's changed 75-* files are CHANGELOG.md, SKILL.md and skill-version.txt, none inside scripts/core"
+      }
+    ]
+  },
+  "head_sha": "9241f43fb99c7307e7c1cd712cab12482d90a069",
+  "head_sha_verified": "git cat-file -e 9241f43f^{commit} exited 0; git rev-parse HEAD in the detached worktree returned the same sha",
+  "base_sha_verified": "git cat-file -e b37010c6a^{commit} exited 0",
+  "defects_corrected": [
+    "D1 stale stamp replaced with 9241f43f",
+    "D2 changed_files recomputed branch-locally instead of against origin/main in a shallow tree",
+    "D3 merge-tree cause restated as a clone limitation rather than a repository fact"
+  ]
+}
