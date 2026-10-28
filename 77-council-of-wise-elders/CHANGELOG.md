@@ -1,5 +1,13 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.66: the front door serves the landing routes, and the model probe covers the CLI path (batch lane 9 version stamp)
+
+In plain English: the council's front-door service now handles the landing routes it advertises, and the CLI model probe is covered by its own test, so a broken probe fails the suite instead of the door.
+
+- Front door (`w77s/skr003-racefix`, 023bf6448): `runtime/src/service/front-door.ts` carries the route handling, with `runtime/src/service/landing.test.ts` covering it.
+- Model probe test (`w77s/skr002-fix`, 676bac441): `runtime/src/cli/model-probe.test.ts` covers the probe path.
+- Release commit only carries the version ceremony for those changes (`skill-version.txt`, `version`, `SKILL.md` frontmatter, this entry). No runtime source, contract, prompt, roster or provider-order content changed beyond the units above.
+
 ## v1.0.65: the persona-root probes stop false-failing when the checkout path contains a space (HARNESS-FIX-1076)
 
 In plain English: three tests spawned a helper script using the URL's raw `pathname`, which keeps `%20` where a directory name has a space, so a checkout under a folder with a space in its name reported "Cannot find module" and went red for a reason that had nothing to do with the product. The probes now resolve the path with `fileURLToPath`, so the same tree passes under any folder name.

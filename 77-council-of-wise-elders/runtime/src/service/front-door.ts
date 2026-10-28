@@ -26,6 +26,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { pathToFileURL } from 'node:url';
 
 import { openCouncilUrl, type BrowserOpenResult } from '../bridges/browser-open.js';
 import { SEAT_IDS, SESSION_MODES, SESSION_VISIBILITIES } from '../contracts/enums.js';
@@ -103,6 +104,14 @@ export interface FrontDoorOptions {
    */
   convening?: CouncilConveningPort;
   readiness?: FrontDoorReadinessDeps;
+  /**
+   * Override the packaged chamber asset directory (absolute path). Unset
+   * keeps the packaged `public/chamber` roots. Tests use this to simulate
+   * a missing-assets build in an isolated temp dir instead of renaming
+   * the shared `public/chamber` path, which races sibling tests running
+   * in the same `npm test` process.
+   */
+  chamberAssetDir?: string;
 }
 
 const MAX_BODY_BYTES = 1_048_576;
@@ -146,7 +155,10 @@ const CHAMBER_ROOT_FILES: ReadonlyMap<string, string> = new Map([
   ['RECEIPT.md', 'text/markdown; charset=utf-8'],
 ]);
 
-function chamberAssetRoot(): URL | null {
+function chamberAssetRoot(overrideDir?: string): URL | null {
+  if (overrideDir !== undefined) {
+    return pathToFileURL(overrideDir.endsWith('/') ? overrideDir : `${overrideDir}/`);
+  }
   for (const root of CHAMBER_ASSET_ROOTS) {
     if (existsSync(root)) return root;
   }
@@ -154,8 +166,8 @@ function chamberAssetRoot(): URL | null {
 }
 
 /** The chamber is only a landing target when its own entry page exists. */
-function chamberLandingReady(): boolean {
-  const root = chamberAssetRoot();
+function chamberLandingReady(overrideDir?: string): boolean {
+  const root = chamberAssetRoot(overrideDir);
   return root !== null && existsSync(new URL('index.html', root));
 }
 
@@ -501,7 +513,7 @@ export class CouncilFrontDoor {
     // cannot reach). Without the assets the root keeps the honest status
     // page, and the diagnostics always remain reachable at `/status`.
     if (method === 'GET' && path === '/') {
-      if (chamberLandingReady()) {
+      if (chamberLandingReady(this.options.chamberAssetDir)) {
         res.writeHead(302, {
           location: '/chamber/',
           'content-length': 0,
@@ -855,7 +867,7 @@ export class CouncilFrontDoor {
    * No directory listing, no traversal, no external asset.
    */
   private serveChamberAsset(path: string, res: ServerResponse): boolean {
-    const root = chamberAssetRoot();
+    const root = chamberAssetRoot(this.options.chamberAssetDir);
     if (!root) return false;
 
     let relative: string;
@@ -947,7 +959,7 @@ export class CouncilFrontDoor {
     // reader/adapter means the old unbound wording would be false.
     // The UI notice follows the packaged assets: when the chamber is
     // packaged the page points at it instead of reporting it missing.
-    const uiReady = chamberLandingReady();
+    const uiReady = chamberLandingReady(this.options.chamberAssetDir);
     const uiNotice = uiReady
       ? `<div class="notice"><strong>Council room ready</strong> — the full Council room is open at <a href="${escapeHtml(`${origin}/chamber/`)}"><code>/chamber/</code></a>.</div>`
       : '<div class="notice"><strong>UI_NOT_BUNDLED</strong> — the full Council chamber UI is not packaged in this build, so <code>/chamber/</code> is not served. Install the packaged Council runtime assets, then re-run service-readiness.</div>';
