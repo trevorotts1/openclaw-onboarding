@@ -1081,13 +1081,15 @@ class BookkeepingTests(unittest.TestCase):
     def changed_paths(self):
         """Paths this branch itself changed, or None when git cannot say.
 
-        Three-dot against the pinned main: the branch's own divergence, with
-        everything it merged from main excluded -- so merging main never counts
-        as this branch's change, while bumping the marker does.
+        Three-dot against live origin/main, not the pin: the branch's own
+        divergence, with everything it merged from main excluded -- so merging
+        main never counts as this branch's change, while bumping the marker
+        does. A pinned base goes stale as main advances and reads main's own
+        version bumps as this branch's.
         """
         done = subprocess.run(
             ["git", "-C", str(REPO_ROOT), "diff", "--name-only",
-             "%s...HEAD" % MAIN_PIN_SHA],
+             "origin/main...HEAD"],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if done.returncode != 0:
             return None
@@ -1113,7 +1115,7 @@ class BookkeepingTests(unittest.TestCase):
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
 
     def main_marker(self):
-        return self.git("show", MAIN_PIN_SHA + ":38-conversational-ai-system/"
+        return self.git("show", "origin/main:38-conversational-ai-system/"
                                 "skill-version.txt").stdout.strip()
 
     def local_marker(self):
@@ -1165,7 +1167,7 @@ class BookkeepingTests(unittest.TestCase):
                                  "%s is already on origin/main" % version)
 
     def main_changelog_versions(self):
-        text = self.git("show", MAIN_PIN_SHA + ":38-conversational-ai-system/"
+        text = self.git("show", "origin/main:38-conversational-ai-system/"
                                 "CHANGELOG.md").stdout
         return [tuple(int(p) for p in m.split("."))
                 for m in re.findall(r"^## \[?v?(\d+\.\d+\.\d+)\]?", text, re.M)]
