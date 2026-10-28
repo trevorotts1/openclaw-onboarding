@@ -34,10 +34,9 @@ LEAK_TOKENS = ("/Users/", "/private/tmp", "scratchpad", "blackceomacmini")
 # the same set or it reports them as orphans whenever the index omits them.
 NON_TEMPLATE_FILES = frozenset({"automation-build.schema.json", "text-sets.json"})
 
-# The real automation-template count on this tree, measured with NON_TEMPLATE_FILES
-# excluded (49 on disk, 49 indexed, sets equal). Pinning it is what makes a SYMMETRIC
-# drift (file AND row deleted together) fail; a bare disk==index comparison cannot see
-# that. Update this only alongside a real template add/remove.
+# Pinned template count, taken from main at the time this guard was written. The set
+# comparisons catch one-sided drift; this catches the symmetric case, where a template
+# file AND its index row disappear together and both sides agree with each other.
 EXPECTED_TEMPLATE_COUNT = 49
 
 
@@ -107,15 +106,19 @@ def main(argv: list[str]) -> int:
             errors.append(f"automation templates on disk but NOT in index (orphans): {sorted(disk - idx)}")
         if idx - disk:
             errors.append(f"automation ids in index but NO file (phantoms): {sorted(idx - disk)}")
-        # Both sides are pinned to the measured template count, and each error names the
-        # side that drifted. Hardcoding the count here is what let the guard disagree with
-        # the index after the two non-template data files stopped being indexed.
+        # The expected count is the number of real templates, which is exactly the
+        # index size once both sides exclude the same non-template files. Hardcoding a
+        # number here is what let the guard disagree with the index after the two
+        # non-template data files stopped being indexed.
         if len(idx) != EXPECTED_TEMPLATE_COUNT:
-            errors.append(f"automation index count drift: expected {EXPECTED_TEMPLATE_COUNT}, "
-                          f"found {len(idx)} rows in {auto_index}")
+            errors.append(
+                f"automation template count drift: {len(idx)} in index, "
+                f"pinned floor is {EXPECTED_TEMPLATE_COUNT} "
+                "(a template missing from BOTH disk and index is still drift)")
         if len(disk) != EXPECTED_TEMPLATE_COUNT:
-            errors.append(f"automation template count drift: expected {EXPECTED_TEMPLATE_COUNT}, "
-                          f"found {len(disk)} templates on disk")
+            errors.append(
+                f"automation template count drift: {len(disk)} on disk, "
+                f"pinned floor is {EXPECTED_TEMPLATE_COUNT}")
 
     # (3) link-map integrity (v2 canonical): funnel ids + automation refs resolve
     funnel_ids = {k.split("/", 1)[1] for k in _disk_templates(funnel_root)}
@@ -174,9 +177,9 @@ def main(argv: list[str]) -> int:
         for e in errors:
             print(f"  ✗ {e}")
         return 1
-    print(f"OK — funnel(38) + automation({EXPECTED_TEMPLATE_COUNT}) libraries, indexes, link map, "
-          f"and persona crosswalk are in sync ({len(lm_funnels)} funnels mapped, 0 broken refs, "
-          f"0 phantoms, 0 unresolved persona refs, portable indexes).")
+    print(f"OK — funnel(38) + automation(%d)" % EXPECTED_TEMPLATE_COUNT + " libraries, indexes, link map, and persona crosswalk "
+          f"are in sync ({len(lm_funnels)} funnels mapped, 0 broken refs, 0 phantoms, "
+          f"0 unresolved persona refs, portable indexes).")
     return 0
 
 
