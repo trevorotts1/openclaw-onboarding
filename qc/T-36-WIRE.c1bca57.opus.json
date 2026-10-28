@@ -1,0 +1,157 @@
+{
+  "unit": "PBB-1064",
+  "attempt": 1,
+  "role": "BUILD",
+  "room": "purple-billboard",
+  "task": "T-36-WIRE guard repair for PBB-651",
+  "lane_branch": "pb/PBB-1064/t-36-guardfix",
+  "worktree": "<PATH>/Purple-Billboard-Client-System-Build/worktrees/PBB-1064-t36",
+  "head": "c1bca572f4768b62429ecf53f193cc593ccb3bff",
+  "head7": "c1bca57",
+  "base": "1d1b8d2c8d85395f119c37f7c046597ea4b94199",
+  "base_note": "origin/main recorded after git fetch origin in <PATH>/openclaw-onboarding; unchanged for the duration of this lane",
+  "checker": "PBB-1064",
+  "model": "opus-chain",
+  "instrument": {
+    "guard": "scripts/ci/fast-guards.d/ceo-tools-root-schema-guard.sh",
+    "guard_body": "set -e; cd \"$GITHUB_WORKSPACE\"; bash scripts/test-ceo-tool-gate.sh",
+    "test": "scripts/test-ceo-tool-gate.sh (752 lines, 45 assertions, sections A..M)",
+    "battery": "scripts/ci/fast_guards.py (sequential; git checkout -- . && git clean -fdxq between guards)",
+    "invocation": "GITHUB_WORKSPACE=<tree> bash scripts/ci/fast-guards.d/ceo-tools-root-schema-guard.sh",
+    "environment": "macOS Darwin 25.3.0, /bin/bash, TMPDIR on the portable run root, no /data/.openclaw/openclaw.json on the box"
+  },
+  "reported_failure": {
+    "source": "<PATH>/batch-merge-room/scratchpads/bmr-precheck-T-36-WIRE/fg-head.log",
+    "lines": "fg-head.log:695 (assertion FAIL), fg-head.log:722 (ceo-tools-root-schema-guard: FAIL (27s))",
+    "failing_assertion": "I1b: apply-routing-fix.sh did not log the PA-freeze skip — L2/L5",
+    "reported_assertion_output": "[apply-routing-fix] L2: default agent (id=personal-assistant) is a PERSONAL-ASSISTANT/non-router — SKIPPING pptx skill-deny (a PA is not a router; gating it would freeze it). v13.2.2 PA-freeze guard.|[apply-routing-fix] L5: default agent (id=personal-assistant) is a PERSONAL-ASSISTANT/non-router — SKIPPING (a PA is not a router). v13.2.2 PA-freeze guard.",
+    "reported_output_satisfies_all_three_I1b_predicates": true,
+    "predicates": [
+      "printf '%s' \"$I1_OUT\" | grep -qi \"PERSONAL-ASSISTANT/non-router\"",
+      "printf '%s' \"$I1_OUT\" | grep -qiE \"L2:.*SKIPPING\"",
+      "printf '%s' \"$I1_OUT\" | grep -qiE \"L5:.*SKIPPING\""
+    ],
+    "main_reference": "fg-main.log:695 I1b PASS, :721 guard PASS, :723 ceo-tools-root-schema-guard: PASS (27s)"
+  },
+  "reproduction": {
+    "old_head_c1bca57": {
+      "runs": 4,
+      "runs_detail": "1 initial + 3 determinism repeats, standalone guard in a fresh worktree at c1bca572f",
+      "exit_codes": [0, 0, 0, 0],
+      "assertion_I1b": "PASS in every run",
+      "result": "REPORTED FAILURE NOT REPRODUCED"
+    },
+    "origin_main_control_1d1b8d2c": {
+      "runs": 1,
+      "worktree": "<PATH>/Purple-Billboard-Client-System-Build/worktrees/PBB-1064-main-det (detached at 1d1b8d2c8)",
+      "exit_code": 0,
+      "result": "PASS"
+    },
+    "full_battery_at_head": {
+      "command": "GITHUB_WORKSPACE=<head worktree> GITHUB_EVENT_NAME=workflow_dispatch python3 scripts/ci/fast_guards.py",
+      "ceo_guard_result": "PASS (log line 10565 of the battery summary)",
+      "battery_totals": "83 passed, 15 failed, 0 skipped",
+      "battery_rc": 1,
+      "battery_rc_reason": "the 15 unrelated failures listed in defects; ceo-tools-root-schema-guard is not one of them"
+    },
+    "replay_in_merge_room_own_tree_copy": {
+      "tree": "<PATH>/batch-merge-room/scratchpads/bmr-precheck-T-36-WIRE/h",
+      "tree_git_status": "clean (rc 0, no porcelain lines)",
+      "exit_code": 0,
+      "assertion_I1b": "PASS",
+      "result": "PASS — the exact tree the pre-check failed on now passes byte-for-byte"
+    },
+    "guard_input_identity_proof": {
+      "method": "sha256 of every file scripts/test-ceo-tool-gate.sh reads, room copy h/ vs this lane's worktree, both at c1bca572f",
+      "scripts/apply-routing-fix.sh": "SAME 1b0eaac28c92",
+      "scripts/apply-fleet-standards.sh": "SAME 26e922ed8264",
+      "scripts/test-ceo-tool-gate.sh": "SAME 5639268a657e",
+      "hooks/lib-ceo-tool-gate.sh": "SAME 4032c24f9864",
+      "scripts/verify-routing.sh": "SAME 130e2f56ddb5",
+      "23-ai-workforce-blueprint/scripts/build-workforce.py": "SAME 1b091bcb38fd",
+      "conclusion": "the failing run and the passing runs read identical bytes"
+    },
+    "assertion_mechanism_probes": {
+      "script": "<PATH>/Purple-Billboard-Client-System-Build/tmp/PBB-1064-exp2.sh",
+      "captured_I1_OUT_bytes": 3869,
+      "grep_rc_via_pipefail_variable_form": { "r1": 0, "r2": 0, "r3": 0 },
+      "grep_rc_on_file": { "r1": 0, "r2": 0, "r3": 0 },
+      "pipefail_SIGPIPE_probe_sizes": { "1000": 0, "4000": 0, "16000": 0, "65536": 0, "200000": 0, "1000000": 0 },
+      "locale_probe": { "C": [0, 0], "en_US.UTF-8": [0, 0], "UTF-8": [0, 0] },
+      "conclusion": "size, SIGPIPE-under-pipefail and locale are all ruled out as the false-negative mechanism on this box"
+    }
+  },
+  "cause": {
+    "found": false,
+    "attributable_to_T_36": false,
+    "evidence_not_attributable": [
+      "T-36's whole delta vs 1d1b8d2c is 3 files: .github/workflows/qc-static.yml (+17), 38-conversational-ai-system/scripts/03-create-journey-templates.sh, evidence/PBB-651/T-36-WIRE.md (+229). None is read by scripts/test-ceo-tool-gate.sh or by any of its 6 inputs.",
+      "fast-guards.json gives ceo-tools-root-schema-guard a pull_request/push paths filter of exactly: scripts/apply-fleet-standards.sh, scripts/apply-routing-fix.sh, scripts/grant-ceo-consent.sh, scripts/verify-routing.sh, scripts/test-ceo-tool-gate.sh, hooks/lib-ceo-tool-gate.sh, 23-ai-workforce-blueprint/scripts/build-workforce.py, .github/workflows/ceo-tools-root-schema-guard.yml. No T-36 changed path is in it, so real CI would SKIP this guard for this PR; the pre-check ran it because git diff base...head returned no file list and fast_guards.py then runs every guard.",
+      "The battery is demonstrably run-to-run nondeterministic at the SAME commit: the room's head run has roll-converges-gateway-watchdog-guard FAIL and records-pipeline-fail-closed-guard PASS; this lane's full battery run at c1bca572f has roll-converges PASS and records-pipeline FAIL. Same tree, opposite verdicts.",
+      "The room's own I1b message proves a false negative: the captured I1_OUT it printed satisfies all three I1b predicates, yet the _bad branch executed."
+    ],
+    "status": "UNDETERMINED — a false negative inside the shared test harness at that moment; not reproducible at the same commit in 6 runs. No product code defect to repair."
+  },
+  "fix": {
+    "code_changed": false,
+    "files_changed_by_this_lane": ["qc/T-36-WIRE.c1bca57.opus.json"],
+    "rationale": "The guard exits 0 at the head in every reproduction attempted, including a replay inside the pre-check's own clean tree copy. Editing scripts/test-ceo-tool-gate.sh or the guard wrapper is forbidden by this lane's brief (no weakening, no skipping, no editing the guard to make it pass), and there is no head file whose change causes the failure. The lazy-correct minimal change is therefore none; this lane commits the receipt as its artifact.",
+    "guard_untouched": true,
+    "assertions_removed_or_weakened": 0
+  },
+  "checks": [
+    { "name": "control: git merge-base --is-ancestor deadbeef origin/main (must abort 128)", "rc": 128, "log": "inline: fatal: Not a valid object name deadbeef" },
+    { "name": "git fetch origin; record origin/main", "rc": 0, "value": "1d1b8d2c8d85395f119c37f7c046597ea4b94199" },
+    { "name": "ceo-tools-root-schema-guard at head c1bca572f (standalone, run 1)", "rc": 0, "log": "<PATH>/Purple-Billboard-Client-System-Build/tmp/PBB-1064-guard-head.log" },
+    { "name": "ceo-tools-root-schema-guard at head c1bca572f (determinism repeats 2-4)", "rc": 0, "log": "<PATH>/Purple-Billboard-Client-System-Build/tmp/PBB-1064-det-1.log, -det-2.log, -det-3.log" },
+    { "name": "ceo-tools-root-schema-guard at origin/main 1d1b8d2c8", "rc": 0, "log": "<PATH>/Purple-Billboard-Client-System-Build/tmp/PBB-1064-guard-main.log" },
+    { "name": "full fast-guards battery at head (ceo guard PASS; 15 unrelated guards FAIL)", "rc": 1, "ceo_guard_rc": 0, "log": "<PATH>/Purple-Billboard-Client-System-Build/tmp/PBB-1064-fg-head.log" },
+    { "name": "ceo-tools-root-schema-guard replay in merge-room tree copy h/", "rc": 0, "log": "<PATH>/Purple-Billboard-Client-System-Build/tmp/PBB-1064-h-replay.log" },
+    { "name": "guard-input sha256 identity, room copy vs lane worktree (6/6 SAME)", "rc": 0 },
+    { "name": "T-36 gate: python3 38-conversational-ai-system/tools/tests/test_bootstrap_engine.py", "rc": 0, "detail": "Ran 35 tests in 1.054s — OK", "log": "<PATH>/Purple-Billboard-Client-System-Build/tmp/PBB-1064-t36-suite.log" },
+    { "name": "T-36 gate: bash -n 38-conversational-ai-system/scripts/03-create-journey-templates.sh", "rc": 0 },
+    { "name": "T-36 gate: 38-conversational-ai-system/scripts/qc-config-schema-safety.sh", "rc": 0, "detail": "RESULT: PASS — no config-invalidating writes and no jq-1.7-invalid programs", "log": "<PATH>/Purple-Billboard-Client-System-Build/tmp/PBB-1064-schema-safety.log" },
+    { "name": "git merge-tree --write-tree origin/main HEAD", "rc": 0, "detail": "tree 53dfdf3a82e556d74637f486b00ff66f6260a190", "log": "<PATH>/Purple-Billboard-Client-System-Build/tmp/PBB-1064-mergetree.out" },
+    { "name": "git status --porcelain in the lane worktree before commit", "rc": 0, "detail": "clean" }
+  ],
+  "defects": [
+    {
+      "id": "D1",
+      "severity": "medium",
+      "owner": "fast-guard harness lane (shared scripts/test-ceo-tool-gate.sh), not T-36",
+      "finding": "I1b and the rest of the battery can produce a false FAIL: the room's fg-head.log:695 shows the I1b assertion failing while the I1_OUT it printed satisfies all three of its own predicates. Reproduced as a harness nondeterminism, not a product defect; the failing mechanism could not be identified on this box (size, SIGPIPE-under-pipefail, and locale all ruled out by measurement).",
+      "action": "recorded, not changed — the lane brief forbids editing the guard or its test to make it pass"
+    },
+    {
+      "id": "D2",
+      "severity": "low",
+      "owner": "batch-merge-room pre-check invocation",
+      "finding": "The pre-check forced every fast guard to run because its git diff base...head produced no file list; ceo-tools-root-schema-guard is not triggered by any of T-36's three changed paths, so real CI SKIPs it for this PR.",
+      "action": "recorded"
+    },
+    {
+      "id": "D3",
+      "severity": "info",
+      "owner": "shared battery",
+      "finding": "At the same commit c1bca572f the battery is nondeterministic across runs: roll-converges-gateway-watchdog-guard PASS in this lane vs FAIL in the room; records-pipeline-fail-closed-guard FAIL in this lane vs PASS in the room. Confirmed against both runs' own summary lines.",
+      "action": "recorded"
+    },
+    {
+      "id": "D4",
+      "severity": "info",
+      "owner": "this lane",
+      "finding": "No code change is required to make the guard pass at c1bca572f; the unit's artifact is this receipt.",
+      "action": "none"
+    }
+  ],
+  "verdict": "PASS_AT_HEAD",
+  "verdict_scope": "the guard requirement only — ceo-tools-root-schema-guard exits 0 at c1bca572f in 6 independent runs including a replay in the pre-check's own tree; T-36-WIRE's previously recorded Sonnet PASS stands unaltered. This receipt is BUILD evidence and is NOT a QC approval, NOT a filing, NOT a merge, and NOT a self-approval; an independent judge lane must still decide.",
+  "not_done": [
+    "no merge",
+    "no push to main",
+    "no force-push",
+    "no reset",
+    "no edit to ledger, census, DECISIONS, CHANGELOG.md or skill-version.txt",
+    "no edit to the guard, its test, or any T-36 source file"
+  ]
+}
