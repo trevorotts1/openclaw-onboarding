@@ -1,3 +1,9 @@
+## [v2.1.38] - 2026-10-28 - documentation release: ships the v2.1.36 and v2.1.37 entries that were missing from this file
+
+No engine, CLI, template, guard or QC script behaviour changes in this release. Its content is this heading, the paragraph below it, the two entries, and two version lines.
+
+Main already read v2.1.37 in `skill-version.txt` but carried neither a v2.1.36 nor a v2.1.37 heading here, so what was missing on main was the documentation, not the version. G3 requires a `skill-version.txt` change alongside any edit inside a skill directory and has no documentation exemption, so a changelog-only commit cannot land at all. This release carries those entries under its own marker.
+
 ## [v2.1.37] - 2026-10-27 - batch 20261027-2242: the automation-template schema lane rebuilt on main, plus a real template-count pin
 
 The schema lane landed once before on a base that could not merge, so it was rebuilt on current main and paired with the count pin the guard was missing. Two commits, not one: the rebuild is `33825d414be3faec7eb2fbf261aaa07712afedb5` and the count pin is `049dd8a3962c8a8977027c4d2642fdbf565f85db`. Both landed on main in `135cf961114db06097fa3ad8222dd44be1ddf9e0`.
