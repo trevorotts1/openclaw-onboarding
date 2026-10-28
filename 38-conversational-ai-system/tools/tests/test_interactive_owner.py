@@ -1359,19 +1359,17 @@ class BookkeepingTests(unittest.TestCase):
         # newest the file is main's own legacy history -- it already carries
         # one deliberate reversal (1.0.0 then a v2.0.0 generation roll) -- and
         # rewriting it is not this task's.
-        versions = self.changelog_versions()
-        self.assertGreaterEqual(len(versions), 4)
-        owned = self.owned_changelog_versions()
-        for earlier, later in zip(owned, owned[1:]):
+        versions = self.owned_changelog_versions()
+        if not versions:
+            self.fail("the change adds no CHANGELOG entry of its own")
+        for earlier, later in zip(versions, versions[1:]):
             self.assertGreater(earlier, later,
-                               "the entries this change adds must be newest-first "
-                               "and distinct: %s" % (owned,))
-        if not owned:
-            return
+                               "the entries this change adds must be "
+                               "newest-first and distinct: %s" % (versions,))
         if not self.git_ok:
             self.skipTest("the pinned main is not in this checkout")
         main_top = max(self.main_changelog_versions())
-        self.assertGreater(owned[0], main_top,
+        self.assertGreater(versions[0], main_top,
                            "the newest entry must sit above main's newest")
 
     def test_no_version_names_two_different_changes(self):
