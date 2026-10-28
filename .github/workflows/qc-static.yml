@@ -3616,3 +3616,8 @@ jobs:
           fi
           python3 -I "$t"
           echo "✓ T-29 human handoff lifecycle suite (50 cases) is green"
+      # T-23 (shared-utils/manifest) — the joined-monthly-approval suite is
+      # wired here BY EXPLICIT NAME. No discovery loop in this workflow reaches
+      # `shared-utils/manifest/tests`, so naming the path is what makes it run
+      # at all. Path resolved from the repo root; absent checkout SKIPs LOUDLY
+      # rather than passing silently.
