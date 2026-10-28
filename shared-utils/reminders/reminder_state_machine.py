@@ -111,6 +111,21 @@ from outbound_gate import (  # noqa: E402
 )
 from tenant_identity import TenantIdentity  # noqa: E402
 
+# T-16 mobile-first capture and the ONE logical SMS email ask. This module owns
+# WHEN a shared reminder may go out; plan_capture owns WHICH ask that reminder
+# may carry and whether any ask is still permitted, so the field decision is
+# delegated here and never restated in this file.
+_CAPTURE_ROOT = Path(__file__).resolve().parents[1]        # shared-utils
+if str(_CAPTURE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_CAPTURE_ROOT))
+from capture.progressive_capture import (  # noqa: E402
+    ASK_NOT_CREATED,
+    CaptureFacts,
+    CapturePlan,
+    KnownFields,
+    plan_capture,
+)
+
 # ── collection states (DATA-CONTRACTS section 8) ────────────────────────────
 
 STATE_INVITED = "invited"
@@ -187,6 +202,21 @@ def _consent_is_terminal(reason: str) -> bool:
     """DATA-CONTRACTS section 7 scope. Fail closed: unknown is never broader
     permission, so only the two narrow refusals leave the sequence running."""
     return reason not in NARROW_CONSENT_REASONS
+
+
+def capture_ask_field(plan: CapturePlan) -> Optional[str]:
+    """The field a reminder slot may ask, or None when no ask is permitted.
+
+    plan_capture (T-16) returns the ACCESS_PASS as an ask without a field: a
+    pass is not a capture question, so a reminder slot never carries it. When
+    nothing here names a field, the policy has said no ask at all - pass-only,
+    a field refusal, an exhausted ask budget or a stop - and the slot must not
+    send.
+    """
+    for ask in plan.asks:
+        if ask.field is not None:
+            return ask.field
+    return None
 
 
 class ReminderError(Exception):
@@ -929,13 +959,25 @@ class ReminderStateMachine:
                       campaign: Optional[str] = None,
                       now: Optional[float] = None,
                       lease_seconds: float = 60.0,
-                      before_dispatch: Optional[Callable[[str], None]] = None
+                      before_dispatch: Optional[Callable[[str], None]] = None,
+                      known: Optional[KnownFields] = None,
+                      capture_facts: Optional[CaptureFacts] = None,
+                      access_ready: bool = False,
+                      ask_state: str = ASK_NOT_CREATED,
+                      asks_used: int = 0
                       ) -> SendResult:
         """Reserve and dispatch ONE due reminder through the common gate.
 
         The contact lock is held for the reservation. The gate is evaluated
         fresh inside dispatch(), so a STOP, refusal or human fence recorded
         after the action was queued still blocks the send.
+
+        When the caller supplies the person's known fields (T-16), the slot
+        carries only the ask plan_capture permits: a field refusal, an
+        exhausted ask budget, a stop, or email already known (pass-only) sends
+        nothing and returns the policy's own reason. The decision is recorded
+        as a `capture_ask_planned` / `capture_ask_refused` event so the caller
+        renders the field the policy named, never a restated one.
         """
         key = _key(tenant_id, contact, seq)
         ts = time.time() if now is None else float(now)
@@ -957,6 +999,28 @@ class ReminderStateMachine:
                                   reason=decision.reason, channel=channel)
 
             slot_index = int(decision.slot_index)
+
+            # T-16: this due slot carries only the ask the capture policy
+            # permits. The machine owns WHEN; plan_capture owns WHICH field may
+            # be asked, and says pass-only when the email is already known, so
+            # no second email ask can be restated here.
+            if known is not None:
+                plan = plan_capture(
+                    known, facts=capture_facts, access_ready=access_ready,
+                    ask_state=ask_state, asks_used=asks_used,
+                    dm_channel=channel.upper())
+                field_asked = capture_ask_field(plan)
+                if field_asked is None:
+                    self._event_write(key, "capture_ask_refused", {
+                        "slot_index": slot_index, "channel": channel,
+                        "capture_state": plan.state,
+                        "reason": plan.reason}, ts)
+                    return SendResult("not_due", reason=plan.reason)
+                self._event_write(key, "capture_ask_planned", {
+                    "slot_index": slot_index, "channel": channel,
+                    "field": field_asked, "capture_state": plan.state,
+                    "reason": plan.reason}, ts)
+
             aid = _action_id("rem", tenant_id, contact, seq, slot_index)
 
             # Queue-time pre-check. It is NOT permission: dispatch() rechecks.
@@ -1872,6 +1936,60 @@ def _selfcheck() -> int:
     ok(snap2["state"] == STATE_STOPPED_DECLINED,
        "a declined collection closes stopped_declined")
     ok(snap2["terminal"], "stopped_declined is terminal")
+
+    # ── T-16: the reminder carries only the ask the capture policy permits ──
+    contact3 = identity.bind("t1", [("sms_number", "+15550102", True)],
+                             source="selfcheck")
+    machine.open_sequence("t1", contact3, "seq-3", now=2000.0)
+    machine.adopt_policy("t1", contact3, "seq-3", policy, now=2001.0)
+    machine.record_initial_invitation("t1", contact3, "seq-3",
+                                      invitation_id="inv-3", now=2010.0)
+    seen_capture: List[str] = []
+
+    def capture_sender(ctx):
+        seen_capture.append(ctx["action_id"])
+        return {"provider": "selfcheck", "message_id": ctx["action_id"]}
+
+    # Mobile missing: the only thing this sequence may ask is the mobile, so
+    # the reminder goes out and the plan is on the production event trail.
+    planned = machine.send_reminder(
+        "t1", contact3, "seq-3", capture_sender, channel="facebook", now=2021.0,
+        known=KnownFields(), access_ready=False)
+    ok(planned.sent and len(seen_capture) == 1,
+       "a capture sequence with no field asks mobile first")
+    events3 = machine.events("t1", contact3, "seq-3")
+    planned_events = [e for e in events3 if e["event"] == "capture_ask_planned"]
+    ok(bool(planned_events),
+       "the reminder send path consults plan_capture")
+    ok(planned_events[0]["payload"]["field"] == "mobile",
+       "the planned ask names the field the policy permits")
+
+    # Email and mobile both known: pass-only, so the email is never re-asked
+    # and no reminder is sent.
+    contact4 = identity.bind("t1", [("sms_number", "+15550103", True)],
+                             source="selfcheck")
+    machine.open_sequence("t1", contact4, "seq-4", now=2100.0)
+    machine.adopt_policy("t1", contact4, "seq-4", policy, now=2101.0)
+    machine.record_initial_invitation("t1", contact4, "seq-4",
+                                      invitation_id="inv-4", now=2110.0)
+    seen_more: List[str] = []
+
+    def capture_sender2(ctx):
+        seen_more.append(ctx["action_id"])
+        return {"provider": "selfcheck", "message_id": ctx["action_id"]}
+
+    blocked = machine.send_reminder(
+        "t1", contact4, "seq-4", capture_sender2, channel="facebook",
+        now=2121.0,
+        known=KnownFields(mobile="+15550103", email="owner@example.com"),
+        access_ready=True)
+    ok(blocked.status == "not_due" and not seen_more,
+       "email already known is pass-only: no email ask is restated")
+    ok(blocked.reason == "email_known_pass_only",
+       "the refusal names the capture policy's own reason")
+    events4 = [e["event"] for e in machine.events("t1", contact4, "seq-4")]
+    ok("capture_ask_refused" in events4,
+       "a refused ask is recorded, never silently dropped")
 
     print("reminder_state_machine self-check: %d assertions passed" % passed)
     return 0
