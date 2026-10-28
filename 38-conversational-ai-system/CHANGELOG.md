@@ -1,3 +1,7 @@
+## [2.0.221] - 2026-10-28 - Skill 38 to v2.0.221
+
+Rebase-carry of PBB-2314 (88e9684ab) onto live main: branch-relative bookkeeping invariants for test_interactive_owner.py (BookkeepingTests read the fork point, not the moving tip), spliced onto main's evolved file keeping FulfillmentCliTests and the diff-window owned_changelog_versions work. Version stamp only beyond the carried test change.
+
 ## [2.0.220] - 2026-10-28 - chore(train20): batch landing of the PBB-1708 interactive-owner tests
 
 Lands the T-25 interactive-owner tests from PBB-1708 in the train20 batch.
