@@ -1141,6 +1141,21 @@ Safety on both paths: the pre-change mapping body is backed up next to the confi
 
 Tests: `scripts/lib-docker-tenant.test.sh`, `tests/repair-inbound-hooks.test.sh` (selftest extended with the body-migration and stale-agentId-rebind cases).
 
+## [2.0.32] - 2026-10-24 - evidence(T-04): verified external storage binding, child temp propagation and measured global capacity (PBB-177)
+
+Evidence only. No runtime, installer, schema or provider behaviour changes; the artifact is a receipt, not enforcement.
+
+- `evidence/storage-and-resource-receipt.json` (new, repo root): 11 clauses and 8 explicit unknowns, each clause carrying the exact command, exit code and raw output that produced it.
+- Mount identity: `<PATH>` is a live external APFS USB mount on `/dev/disk7s1`, `st_dev 16777244`, and its IOMedia UUID `9584F366-F6FB-4A40-AA75-DB2EA0FA01EA` equals the pinned value.
+- Recorded device pin is stale: `config/storage.json` still says `/dev/disk5s1` / `16777240`, and `tools/control.py` never reads either key (0 matches, control `minimum_free_bytes` = 1). Identity is anchored by UUID, so this is a stale record, not a wrong volume.
+- Destinations: all configured worktree, scratch, temp, cache and output parents resolve with no symlink component on the mount device.
+- Child propagation: `TMPDIR`/`TMP`/`TEMP` reach a distinct child shell (PID 86707), a Python child and its grandchild, and Node; the real temp file's parent and device match the mount.
+- Tool paths, measured gaps: npm and pip default to the internal disk and are external only with their documented overrides; macOS `mktemp` ignores `TMPDIR` and writes to the internal disk (`dev 16777232`); `PYTHONPYCACHEPREFIX` is ignored by the `-I` interpreter the engineering loop runs.
+- Run-root audit: 4 `node_modules` links under worktrees and 5 under scratch resolve off-volume to the internal disk; 24 PATH-shim links under the temp root point at system executables.
+- Capacity: filesystem total 4000770232320 bytes / avail 2524230701056 bytes at the sample; memory 24 GiB with 5254676480 bytes reclaimable; platform ceilings 10 agents per workflow / 50 workflows / 500 agents read live and mirrored in the package. Provider quota, memory admission and non-probed tool caches stay UNKNOWN.
+- Deliberately not done: no storage guard was added to `tools/control.py` and no config value was changed. Fixing the stale pin or enforcing a reserve floor is separate work against the package's own control code.
+- Risk level: LOW (evidence artifact and bookkeeping only).
+
 ## [2.0.19] - 2026-10-13 - refactor(models): client-choice model selection, no prescribed models
 
 Model selection doctrine applied across the skill: no surface prescribes a specific model by name anymore. Selection resolves as (1) the client's explicit choice, (2) the client's configured default model, (3) a stop with a clear ask-the-client message. Where an old prescription carried a real rationale (reasoning depth, context size, speed, cost), it is kept as a recommendation with its reason, as guidance the client can override, never wired as a fallback value in code or config.
