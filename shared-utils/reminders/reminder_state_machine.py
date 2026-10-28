@@ -977,8 +977,8 @@ class ReminderStateMachine:
         fresh inside dispatch(), so a STOP, refusal or human fence recorded
         after the action was queued still blocks the send.
 
-        When the caller supplies the person's known fields (T-16), the slot
-        carries only the ask plan_capture permits: a field refusal, an
+        The slot carries only the ask plan_capture permits (T-16, always
+        consulted; absent known fields count as none known): a field refusal, an
         exhausted ask budget, a stop, or email already known (pass-only) sends
         nothing and returns the policy's own reason. The decision is recorded
         as a `capture_ask_planned` / `capture_ask_refused` event so the caller
@@ -1008,23 +1008,24 @@ class ReminderStateMachine:
             # T-16: this due slot carries only the ask the capture policy
             # permits. The machine owns WHEN; plan_capture owns WHICH field may
             # be asked, and says pass-only when the email is already known, so
-            # no second email ask can be restated here.
-            if known is not None:
-                plan = plan_capture(
-                    known, facts=capture_facts, access_ready=access_ready,
-                    ask_state=ask_state, asks_used=asks_used,
-                    dm_channel=channel.upper())
-                field_asked = capture_ask_field(plan)
-                if field_asked is None:
-                    self._event_write(key, "capture_ask_refused", {
-                        "slot_index": slot_index, "channel": channel,
-                        "capture_state": plan.state,
-                        "reason": plan.reason}, ts)
-                    return SendResult("not_due", reason=plan.reason)
-                self._event_write(key, "capture_ask_planned", {
+            # no second email ask can be restated here. Always consulted;
+            # absent known fields count as none known.
+            plan = plan_capture(
+                known if known is not None else KnownFields(),
+                facts=capture_facts, access_ready=access_ready,
+                ask_state=ask_state, asks_used=asks_used,
+                dm_channel=channel.upper())
+            field_asked = capture_ask_field(plan)
+            if field_asked is None:
+                self._event_write(key, "capture_ask_refused", {
                     "slot_index": slot_index, "channel": channel,
-                    "field": field_asked, "capture_state": plan.state,
+                    "capture_state": plan.state,
                     "reason": plan.reason}, ts)
+                return SendResult("not_due", reason=plan.reason)
+            self._event_write(key, "capture_ask_planned", {
+                "slot_index": slot_index, "channel": channel,
+                "field": field_asked, "capture_state": plan.state,
+                "reason": plan.reason}, ts)
 
             aid = _action_id("rem", tenant_id, contact, seq, slot_index)
 
