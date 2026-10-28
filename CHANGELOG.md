@@ -31,6 +31,15 @@
 - Merges pull request #2549 (`batch/s75-b3`, merged 2026-10-24T22:32:03Z), which lands two Skill 75 units that were accepted and independently attested but never merged: S75-T10 `SCRIPT-WRITER-OWNER` and S75-T24 `VISUAL-UX-OWNER`. Both merged `--no-ff` with no hand edits.
 - In plain English: two Skill 75 pieces that had already passed review were found sitting unmerged and were put into the package.
 
+## [Unreleased]  -  2026-10-24  -  PBB-177 / T-04: verified external storage binding and measured global capacity
+
+- Adds `evidence/storage-and-resource-receipt.json` and bumps Skill 38 to v2.0.34 with its own changelog entry. The receipt binds the live external mount by media UUID, resolves every configured parent and device, and proves child `TMPDIR`/`TMP`/`TEMP`/tempfile propagation for shell, Python (including a grandchild) and Node.
+- Measured facts, each with the command and exit code that produced it: mount `/dev/disk7s1`, `st_dev 16777244`, UUID `9584F366-F6FB-4A40-AA75-DB2EA0FA01EA`; filesystem 4000770232320 bytes total and 2524230701056 available; 24 GiB RAM with 5254676480 bytes reclaimable; limits 10 agents per workflow / 50 workflows / 500 agents.
+- Recorded gaps, not papered over: the `config/storage.json` device pin is stale (`disk5s1` / `16777240`) and is never read by `tools/control.py`; macOS `mktemp` ignores `TMPDIR` and writes to the internal disk; `PYTHONPYCACHEPREFIX` is ignored under `-I`; and 9 `node_modules` symlinks under the run roots resolve off-volume.
+- In plain English: this proves where the work actually lives and where temporary files really go, and it names the places where the proof shows a hole instead of pretending they are covered.
+- Nothing is enforced yet. No control code, config, ledger, provider, limit or credential was changed; provider quota, memory admission and unprobed tool caches remain explicitly UNKNOWN.
+- Risk level: LOW (evidence artifact and bookkeeping only).
+
 ## [Unreleased]  -  2026-10-24  -  T-43: onboarding cohort integration receipts bind one shared target owner, compatibility, red-subset isolation, exact gates and named-repair remote proof
 
 - In plain English: the onboarding batch train can now freeze a compatible cohort before anything lands. It refuses to run on a local file pretending to be a lock, refuses two units that edit the same file unless one combined owner candidate is named, holds a red unit and its true dependents while unrelated green work continues, requires an exact-SHA independent PASS receipt with the named checks (a broad ALL_PASS is not evidence), and proves a named repair by its actual content on the remote target after a baseline merge. Anything not observed is recorded as UNKNOWN with the reason, never as success, and the record it produces is `onboarding-remote-merge-receipts`.
