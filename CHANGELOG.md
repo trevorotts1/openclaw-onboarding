@@ -71,6 +71,15 @@
 - Nothing is enforced yet. No control code, config, ledger, provider, limit or credential was changed; provider quota, memory admission and unprobed tool caches remain explicitly UNKNOWN.
 - Risk level: LOW (evidence artifact and bookkeeping only).
 
+## [Unreleased]  -  2026-10-24  -  PBB-220 / T-05: adopted engineering loop and proven launchd observer/owner-action bridge
+
+- Adds `CONTROL/eng_loop.py`, `CONTROL/owner_handler.py` and `evidence/engineering-loop-registration.json`, and bumps Skill 38 to v2.0.34. The existing narrow adapter is extended, not replaced: the owner handler is byte-identical and the adapter changes only to allow an isolated label/plist/store.
+- Proven with actual IDs on one synthetic action: create, launchd-tick dispatch, owner ACK, a separate completion receipt, duplicate create/dispatch refused with exactly one effect, a host-level crash followed by replacement resume, and a stop whose read-back completion is a distinct receipt from its ACK.
+- Independent observation came from a separate process reading the effect file and the SQLite store, plus native `launchctl print` with two known-present positive controls. The production engineering job was observed running and left untouched.
+- In plain English: the loop that observes and dispatches work is now a real background macOS job with a durable queue, and the proof shows the same work cannot be performed twice by accident.
+- Nothing is enforced beyond this candidate: C-05, C-F15, C-F18 and C-F19 stay UNVERIFIED for independent QC, and the receipt names what was not exercised.
+- Risk level: LOW (additive control code and evidence; no provider, credential, customer or runtime change).
+
 ## [v27.1.65]  -  2026-10-23  -  Skill 75: enforce approved lip-sync clips and audio provenance through final delivery
 
 ## [v27.1.64]  -  2026-10-22  -  W10 canary: A12 runtime-proof harness and the A-row execution runner
