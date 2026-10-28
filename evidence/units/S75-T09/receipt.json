@@ -1,0 +1,26 @@
+{
+ "unit": "S75-T09",
+ "head": "e7e2e17e4ea675d66cd4669cf5bd89da26626ec7",
+ "verdict": "PASS",
+ "minted_at": "2026-10-28T06:53:41Z",
+ "lane": "d6-mint-S75-T09-b2",
+ "acceptance_row": "S75-A09 / S75-T09 | Missing cast/world/story plan prevents script generation; each scene has causal necessity and valid cast/location references; timing is provisional until selected music.",
+ "checks": [
+  {
+   "command": "python3 75-drama-song-ad-factory/scripts/core/test_story_planner_s75t09.py",
+   "rc": 0,
+   "last_line": "all checks passed"
+  },
+  {
+   "command": "python3 75-drama-song-ad-factory/scripts/core/story_planner.py selftest",
+   "rc": 0,
+   "last_line": "all checks passed"
+  },
+  {
+   "command": "python3 -I 75-drama-song-ad-factory/scripts/core/test_story_planner_s75t09.py",
+   "rc": 0,
+   "last_line": "all checks passed"
+  }
+ ],
+ "no_verifiable_check": false
+}

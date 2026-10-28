@@ -1,0 +1,106 @@
+{
+  "unit": "S75-T06",
+  "attempt": 5,
+  "generation": "attempt-5",
+  "generation_basis": "highest pre-existing generation in evidence/units/S75-T06/ at origin/main was attempt-4.json; attempt-5 is the next generation",
+  "unit_merge_sha": "1af52e281fc08fac069112242faeaecdd1debf93",
+
+  "independent_checker": {
+    "checker_id": "fresh-qc-opus-chain-lane-T06",
+    "checker_model": "route=opus-chain; served=not observed by the lane",
+    "receipt": "loop-control/s75/qc/S75-T06.210bbaddd71bc4ae9a9695bab6bbd8dcab49bd28.json",
+    "receipt_verdict": "PASS",
+    "receipt_attempt": 1,
+    "receipt_measured_at": "2026-10-28T09:06:10Z",
+    "copy_rule": "checker_id and checker_model copied verbatim from the receipt fields 'checker' and 'model'; no repairer, role or model inferred"
+  },
+  "independent_checker_source": "loop-control/s75/qc/S75-T06.210bbaddd71bc4ae9a9695bab6bbd8dcab49bd28.json -> checker, model",
+
+  "dependencies": {
+    "base_revision": {
+      "sha": "f1c5ea993d0fabe41bd438c033395f18bf86e667",
+      "merge_tree_rc": 0
+    },
+    "unit_merge_sha": "1af52e281fc08fac069112242faeaecdd1debf93",
+    "merge_tree_command": "git -C <clean-clone> merge-tree --write-tree f1c5ea993d0fabe41bd438c033395f18bf86e667 1af52e281fc08fac069112242faeaecdd1debf93",
+    "merge_tree_interpretation": "rc 0 means the unit merge commit merges into origin/main with no conflicted tree; it asserts tree compatibility only, not behavioural equivalence",
+    "sha_presence_check": "all three SHAs resolved with git -C <clean-clone> cat-file -e <sha>^{commit}: HEAD 210bbaddd OK, origin/main f1c5ea99 OK, unit merge 1af52e28 OK"
+  },
+  "dependencies_source": "task harness UNIT_MERGE_SHA + measured git cat-file -e and merge-tree --write-tree runs against the clean clone; base sha read from origin/main via git rev-parse --verify origin/main",
+
+  "repository_gate": {
+    "workflow": ".github/workflows/qc-static.yml",
+    "ref": "origin/main",
+    "ref_sha": "f1c5ea993d0fabe41bd438c033395f18bf86e667",
+    "triggers": [
+      "push to branches [main]",
+      "pull_request to branches [main]"
+    ],
+    "applies_to_unit_paths": true,
+    "matching_steps": [
+      {
+        "name": "Skill 75 empty-home test suite (manual 02 B6)",
+        "line_origin_main": 3222,
+        "scope": "bash 75-drama-song-ad-factory/scripts/qc-operator-path-leak.sh (L3233) and mapfile -t tests < <(find 75-drama-song-ad-factory/scripts/core -type f -name 'test_*.py' -not -path '*/__pycache__/*' | sort) (L3252)",
+        "reaches_unit": "the pathspec '75-drama-song-ad-factory/scripts/core' with the glob 'test_*.py' selects 75-drama-song-ad-factory/scripts/core/character_bible/test_cast_writer_s75_t06.py, which is the unit's gate file and is present at HEAD"
+      },
+      {
+        "name": "Skill 75 pytest collection + run (no hidden failures)",
+        "line_origin_main": 3290,
+        "scope": "python3 -m pytest -q 75-drama-song-ad-factory/scripts --collect-only (L3296) and python3 -m pytest -q 75-drama-song-ad-factory/scripts (L3298)",
+        "reaches_unit": "the pathspec '75-drama-song-ad-factory/scripts' contains the unit's gate file, so collection and execution both read it"
+      }
+    ],
+    "excluded_steps": [
+      {
+        "name": "Python syntax (shared-utils + Skill 22/23 scripts)",
+        "line_origin_main": 83,
+        "why_excluded": "its pathspecs are 'shared-utils', '22-book-to-persona-coaching-leadership-system' and '23-ai-workforce-blueprint' only (L89); none can read 75-drama-song-ad-factory/scripts"
+      }
+    ],
+    "basis_paths": [
+      "75-drama-song-ad-factory/scripts/core/character_bible/test_cast_writer_s75_t06.py",
+      "evidence/units/S75-T06/receipt.json"
+    ],
+    "basis_kind": "receipt.json checks[].command (cwd '75-drama-song-ad-factory/scripts/core/character_bible' at tree b61bb6c49332de3059b8454d537980f9fdf0623e) for the gate file, plus candidate.files_changed (git diff --name-only origin/main...HEAD) for receipt.json",
+    "basis_note": "applies_to_unit_paths is true because the unit's own gate file sits under 75-drama-song-ad-factory/scripts/core, inside both quoted pathspecs; presence of that file at HEAD was proved with git ls-tree -r --name-only HEAD -- <path>"
+  },
+  "repository_gate_source": ".github/workflows/qc-static.yml at origin/main f1c5ea993d0fabe41bd438c033395f18bf86e667, parsed from git show for step names and line numbers; paths from receipt.json checks[].command cwd and candidate.files_changed",
+
+  "candidate": {
+    "branch": "s75x/receipt-S75-T06",
+    "head": "23c27e64ac38cf57ef248519e42e4bda5a954bb6",
+    "changed_files": [
+      "evidence/units/S75-T06/attempt-5.json",
+      "evidence/units/S75-T06/receipt.json"
+    ],
+    "changed_files_command": "git -C <clean-clone> diff --name-only origin/main...210bbaddd71bc4ae9a9695bab6bbd8dcab49bd28",
+    "changed_files_note": "union of paths touched by this branch own commits (git log --no-merges --name-only -n 8 HEAD | sort -u), then filtered to entries that exist at HEAD and start with evidence/units/S75-T06/. Raw union before filtering: .github/workflows/qc-static.yml\n38-conversational-ai-system/CHANGELOG.md\n38-conversational-ai-system/scripts/03-create-journey-templates.sh\n38-conversational-ai-system/scripts/11-run-qc-checklist.sh\n38-conversational-ai-system/scripts/qc-skip-count.test.sh\n38-conversational-ai-system/skill-version.txt\n38-conversational-ai-system/SKILL.md\n38-conversational-ai-system/tools/interactive_owner.py\n38-conversational-ai-system/tools/reconciliation.py\n38-conversational-ai-system/tools/tests/test_durable_processing.py\n38-conversational-ai-system/tools/tests/test_interactive_owner_fulfillment.py\n38-conversational-ai-system/tools/tests/test_interactive_owner.py\n38-conversational-ai-system/tools/tests/test_journey_templates_script.py\n75-drama-song-ad-factory/CHANGELOG.md\n75-drama-song-ad-factory/skill-version.txt\n75-drama-song-ad-factory/SKILL.md\nCHANGELOG.md\ndocs/pbb-1969-t25-carriage-audit.md\nevidence/PBB-1703/T-36-WIRE.md\nevidence/PBB-664/T-29-WIRE.md\nevidence/PBB-669/T-23-WIRE.md\nevidence/search/citations.json\nevidence/t01-interface-inventory.md\nevidence/units/S75-T06/attempt-5.json\nevidence/units/S75-T06/receipt.json\nQUALITY-CONTROL/pb-t24-landed/check_t24_landed.py\nQUALITY-CONTROL/pb-t24-landed/T-24-MERIT.md\nQUALITY-CONTROL/pb-t24-landed/test_check_t24_landed.py\nscripts/ci/fast-guards.d/funnel-automation-libraries-guard.sh\nshared-utils/reminders/reminder_state_machine.py\nshared-utils/reminders/tests/test_handoff_fence_wiring.py\nshared-utils/reminders/tests/test_handoff_fence.py\ntests/social-planner/test_t22_profile_capability.py"
+  },
+  "candidate_source": "git diff --name-only origin/main...HEAD in the branch worktree, plus git rev-parse HEAD",
+
+  "base": {
+    "sha": "f1c5ea993d0fabe41bd438c033395f18bf86e667",
+    "merge_tree_rc": 0
+  },
+  "base_source": "git rev-parse --verify origin/main in the clean clone; merge-tree --write-tree rc measured, not assumed",
+
+  "head_sha": "23c27e64ac38cf57ef248519e42e4bda5a954bb6",
+  "head_sha_note": "head_sha is the branch tip measured with git rev-parse HEAD immediately before the carrying commit; a commit cannot name its own sha, so the carrying commit is one ahead of this value.",
+  "head_sha_source": "git rev-parse HEAD in the detached worktree at s75x/receipt-S75-T06; identical to the receipt's 'head' field",
+
+  "worktree_proof": {
+    "path": "<PORTABLE>/worktrees/s75-t06-artefact",
+    "rev_parse_show_toplevel": "<PORTABLE>/worktrees/s75-t06-artefact",
+    "core_worktree_config": "unset (git config --get core.worktree rc=1)",
+    "head_after_add": "210bbaddd71bc4ae9a9695bab6bbd8dcab49bd28"
+  },
+
+  "added_volumes": 0,
+  "added_volumes_note": "measured after redaction: 0 portable-volume path strings in this file (the volume-root prefix is absent); the previous filing claimed 0 while the tree held 2, which the room correctly rejected.",
+  "added_users": 0,
+  "path_scan_note": "both counts measured by scanning this file at the head that carries it, with a positive control string that fired 1 for each pattern in the same invocation",
+
+  "caveat": "Suite green and mutation-sensitive, but a 2-descriptor case stays pinned yet bounded, not exhaustively proven.",
+  "caveat_source": "copied verbatim from the QC receipt field 'caveat'"
+}
