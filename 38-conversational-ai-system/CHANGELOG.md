@@ -1,3 +1,7 @@
+## [2.0.214] - 2026-10-28 - chore(train4): version stamp for the squashed unit train
+
+- **Train4 version stamp, skill 38 v2.0.213 -> v2.0.214.** Units touching skill 38: `s38-44-skipcount` and `pb/PBB-2361/repair` @ `0934c8036` (`tools/interactive_owner.py` plus two test files). Skill 44 moves v2.1.38 -> v2.1.39 for `s38-44-changelog-v6`. `S75-T03` is evidence only. Version stamp only.
+
 ## [2.0.213] - 2026-10-28 - chore(lane-7): version stamp for the lane 7 four-unit batch
 
 ## [2.0.212] - 2026-10-28 - chore(batch-fanout-0250-lane8): Skill 38 to v2.0.212
