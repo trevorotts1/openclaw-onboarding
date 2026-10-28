@@ -1,3 +1,11 @@
+## [v2.1.38] - 2026-10-28 - batch 20261028-0602: the four changelog stamps for this skill, landed in one lane
+
+Four changelog-only units landed together (`fix/s38-44-changelog` @ `8278e0d8`, `-v2` @ `98f0dae9`, `-v3` @ `52a1f2b9`, `-v4` @ `2c1a4054`). They are cumulative edits to this one file; the v2.1.36 and v2.1.37 entries below are carried verbatim from the v4 branch. No engine, CLI, template or QC script behaviour changed in this batch.
+
+### Version lockstep
+
+`skill-version.txt` moves v2.1.37 -> v2.1.38 and the `SKILL.md` frontmatter follows. No other file in the skill was touched by the version stamp.
+
 ## [v2.1.37] - 2026-10-27 - batch 20261027-2242: the automation-template schema lane rebuilt on main, plus a real template-count pin
 
 The schema lane landed once before on a base that could not merge, so it was rebuilt on current main and paired with the count pin the guard was missing. Two commits, not one: the rebuild is `33825d414be3faec7eb2fbf261aaa07712afedb5` and the count pin is `049dd8a3962c8a8977027c4d2642fdbf565f85db`. Both landed on main in `135cf961114db06097fa3ad8222dd44be1ddf9e0`.

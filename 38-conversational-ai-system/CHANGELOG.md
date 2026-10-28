@@ -1,3 +1,7 @@
+## [2.0.207] - 2026-10-28 - chore(batch-20261028-0602): Skill 38 to v2.0.207 for T-23, T-25 and T-04
+
+- **Batch 20261028-0602 version stamp, Skill 38 v2.0.206 -> v2.0.207.** T-23 (`pb/PBB-1028/PBB-794-t-23-wire` @ `071c0672`), T-25 (`pb/PBB-1029/PBB-809-t-25-enforce-proof` @ `09b4260e`) and T-04 (`pb/PBB-1034/PBB-831-t-04-candidate` @ `72e2abde`) touch skill 38 files in this batch (new `tools/pb_contracts.py`, `tools/reconciliation.py`, `tools/tests/test_interactive_owner.py`, plus their `.github/workflows/qc-static.yml` wiring). No skill code changed in this commit; version stamp only.
+
 ## [2.0.203] - 2026-10-27 - chore(batch-20261027-0754): Skill 38 to v2.0.203 for T-56 (scope includes T-57)
 
 - **Batch 20261027-0754 version stamp, Skill 38 v2.0.202 -> v2.0.203.** T-56 (`pb/PBB-944/t-56-rebase` @ `75d69adb`) touches skill 38 files in this batch (`schemas/approval-manifest.schema.json`, `schemas/outbound-action.schema.json`, `tools/durable_store.py`, `tools/pb_contracts.py`; scope includes T-57). No skill code changed in this commit; version stamp only.
