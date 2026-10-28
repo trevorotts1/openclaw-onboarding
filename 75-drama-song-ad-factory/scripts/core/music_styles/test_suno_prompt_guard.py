@@ -22,6 +22,7 @@ if CORE not in sys.path:
 
 from music_styles import prompt_compiler as PC          # noqa: E402
 from music_styles import suno_prompt_guard as G          # noqa: E402
+from music_styles import catalog as C                    # noqa: E402
 from suno_recipe import suno_recipe as R                 # noqa: E402
 
 SKILL_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
@@ -1045,6 +1046,144 @@ class DispatchSeam(unittest.TestCase):
         self.assertEqual(len(sent), 1)
         self.assertEqual(G.find_matches(json.dumps(sent[0], ensure_ascii=False),
                                         self.aliases), [])
+
+
+class ShippedCatalogFailClosed(unittest.TestCase):
+    """S75-A41 fail-closed (S75-T41-alias): the dispatch seam guards with the
+    SHIPPED 18-style catalog even when the caller omits ``alias_catalog`` and
+    the request carries no ``_alias_catalog`` -- the sweep can no longer be
+    silently skipped by leaving the catalog out.  No fixture catalog is
+    injected anywhere in this class: the shipped module is the only source."""
+
+    CLIENT = DispatchSeam.CLIENT
+    HOOK = DispatchSeam.HOOK
+    SHEET = DispatchSeam.SHEET
+    HOOK_PLAN = DispatchSeam.HOOK_PLAN
+    PACE_ORDER = DispatchSeam.PACE_ORDER
+    STYLE_ID = DispatchSeam.STYLE_ID
+
+    def _dispatch_no_catalog(self, mutate=None):
+        """(requests the transport received, seam error or None).
+
+        Identical to DispatchSeam._dispatch except ``alias_catalog`` is never
+        passed and no ``_alias_catalog`` rides the request: the SHIPPED path.
+        """
+        import length_formula as LF
+        import song_dispatch as SD
+        import suno_recipe as R
+        sent = []
+
+        def transport(request):
+            sent.append(request)
+            return []
+
+        plan = dict(LF.plan(60, (15, 20)), style_id=self.STYLE_ID,
+                    hook_plan=self.HOOK_PLAN, pace_change=self.PACE_ORDER)
+        req = R.build_request(self.STYLE_ID, self.SHEET, self.CLIENT, "T",
+                              plan["delivered_s"], hook_plan=self.HOOK_PLAN,
+                              pace_plan=self.PACE_ORDER)
+        req["input"]["duration"] = plan["delivered_s"]
+        self.assertNotIn("_alias_catalog", req)
+        if mutate:
+            mutate(req["input"])
+        try:
+            SD.run_takes(req, plan, transport, lambda t: {}, lambda t, r: None,
+                         "One closed door. Get the book.", " ".join(self.HOOK),
+                         (15, 20), kie=lambda fn, lbl, generation=False: fn(),
+                         style_id=self.STYLE_ID, cap_cents=6)
+        except Exception as exc:                      # noqa: BLE001 - the seam's own refusal
+            return sent, exc
+        return sent, None
+
+    def test_omitted_catalog_still_strips_a_real_artist_name(self):
+        def mutate(inp):
+            inp["style"] = (inp["style"]
+                            + ", in the style of Whitney Houston")
+        sent, err = self._dispatch_no_catalog(mutate)
+        self.assertIsNone(err, err)
+        self.assertEqual(len(sent), 1)
+        wire = json.dumps(sent[0], ensure_ascii=False)
+        self.assertNotIn("Whitney Houston", wire)
+        probe = G.alias_set({"styles": {
+            "<run>": {"client_references": {
+                "artists": ["Whitney Houston"]}}}})
+        self.assertEqual(G.find_matches(wire, probe), [])
+
+    def test_omitted_catalog_still_blocks_an_unrewritable_reference(self):
+        def mutate(inp):
+            inp["style"] = "Whitney Houston"
+        sent, err = self._dispatch_no_catalog(mutate)
+        self.assertEqual(sent, [])
+        self.assertIsNotNone(err)
+        self.assertIn("OUTGOING_REFERENCE_BLOCKED", str(err))
+
+    def test_omitted_catalog_clean_payload_still_reaches_the_transport(self):
+        sent, err = self._dispatch_no_catalog()
+        self.assertIsNone(err, err)
+        self.assertEqual(len(sent), 1)
+
+    def test_shipped_catalog_covers_all_eighteen_styles(self):
+        import song_dispatch.song_dispatch as SDM
+        shipped = SDM._shipped_alias_catalog()
+        self.assertEqual(len(shipped.get("styles", {})), 18)
+        aliases = G.alias_set(shipped)
+        self.assertTrue(aliases)
+        for sid in C.style_ids():
+            for ref in C.client_references(sid):
+                self.assertTrue(G.find_matches(ref, aliases),
+                                (sid, ref))
+
+    def test_unreadable_shipped_catalog_with_partial_caller_catalog_refuses(self):
+        # S75-T41-alias r3: shipped unreadable + PARTIAL caller catalog must
+        # refuse (MISSING_ALIAS_CATALOG), never union caller-only refs and send
+        # a raw artist name. Written against the leaking code this FAILS: one
+        # send carrying "Whitney Houston" reaches the transport.
+        import length_formula as LF
+        import song_dispatch as SD
+        import song_dispatch.song_dispatch as SDM
+        import suno_recipe as R
+        real = SDM._shipped_alias_catalog
+        SDM._shipped_alias_catalog = lambda: {}
+        try:
+            partial = {"styles": {"<run>": {
+                "style_id": "<run>",
+                "client_references": {"artists": ["Imaginary Leak Artist"],
+                                      "aliases": [], "reference_songs": []}}}}
+            sent = []
+
+            def transport(request):
+                sent.append(request)
+                return []
+
+            plan = dict(LF.plan(60, (15, 20)), style_id=self.STYLE_ID,
+                        hook_plan=self.HOOK_PLAN, pace_change=self.PACE_ORDER)
+            req = R.build_request(self.STYLE_ID, self.SHEET, self.CLIENT,
+                                  "T", plan["delivered_s"],
+                                  hook_plan=self.HOOK_PLAN,
+                                  pace_plan=self.PACE_ORDER)
+            req["input"]["duration"] = plan["delivered_s"]
+            req["input"]["style"] = (req["input"]["style"]
+                                     + ", in the style of Whitney Houston")
+            try:
+                SD.run_takes(req, plan, transport, lambda t: {},
+                             lambda t, r: None,
+                             "One closed door. Get the book.",
+                             " ".join(self.HOOK), (15, 20),
+                             kie=lambda fn, lbl, generation=False: fn(),
+                             style_id=self.STYLE_ID, cap_cents=6,
+                             alias_catalog=partial)
+            except Exception as exc:  # noqa: BLE001 - the seam's own refusal
+                err = exc
+            else:
+                err = None
+            self.assertEqual(sent, [])
+            self.assertIsNotNone(err)
+            self.assertIn("MISSING_ALIAS_CATALOG", str(err))
+            wire = "".join(json.dumps(request, ensure_ascii=False)
+                           for request in sent)
+            self.assertNotIn("Whitney Houston", wire)
+        finally:
+            SDM._shipped_alias_catalog = real
 
 class Hygiene(unittest.TestCase):
     def test_modules_are_stdlib_only_and_never_touch_a_provider(self):

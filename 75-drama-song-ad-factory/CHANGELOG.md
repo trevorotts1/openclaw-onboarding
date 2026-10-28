@@ -4,6 +4,14 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.133
+
+- Suno outbound alias guard now fails closed in the case that still leaked: shipped
+  catalog unreadable AND the caller supplies a partial catalog. The seam raises
+  `DispatchError: MISSING_ALIAS_CATALOG` instead of sending an unswept style.
+  Before the fix that combination put `in the style of Whitney Houston` on the
+  wire (1 send, 1953 bytes); after it, 0 sends and nothing on the wire.
+
 ## v2.9.132 - 2026-10-28 - chore(batch-consolidate-20261028-0700): version stamp for the consolidated fanout batch
 
 - **Consolidation 20261028-0700 version stamp, skill 75 v2.9.131 -> v2.9.132.** Skill content changed by units merged into batch/consolidate-20261028-0700. Version stamp, SKILL.md frontmatter and this entry only.
