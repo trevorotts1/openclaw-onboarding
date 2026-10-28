@@ -226,7 +226,11 @@ def provision(path, app, root, env):
             registration = dict(kind='self', **{k:s[k] for k in ('tenantId','companyId','installationId')})
             if host in registry:
                 if any(registry[host].get(k) != v for k,v in registration.items()): raise ValueError('public host is registered to a different identity')
-            else: registry[host] = registration
+            else:
+                # Record the Access subject now when the confirmed owner email is known; issuer and audience exist only
+                # in the live Cloudflare Access login, which register-access reads. A placeholder is never a sign-in identity.
+                email = str(s.get('contactEmail') or '').strip().lower()
+                registry[host] = {**registration, **({'subjects': [email]} if re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', email) and not email.startswith('pending+') else {})}
             values['MC_TENANT_REGISTRY_JSON'] = json.dumps(registry,separators=(',',':'))
             preserve('MC_TENANT_PUBLIC_URL', origin)
         replace_env(app, target, {k:v for k,v in values.items() if original_values.get(k)!=v or k.endswith('_JSON')})

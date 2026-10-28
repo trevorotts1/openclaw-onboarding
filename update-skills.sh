@@ -11645,6 +11645,24 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
     python3 "$SKILLS_DIR/shared-utils/ensure_persona_contexts.py" --app "$_CC_DIR" 2>&1 | sed 's/^/  /' || true
   fi
 
+  # Command Center provisioning self-heal, every roll (idempotent, advisory, never aborts the update):
+  #  * cc-interview-flag: an interview finished through the script / Telegram path left
+  #    clients.interview_complete at 0, so task ingest parked every task in General Task. Mirrored only
+  #    when build-state interviewComplete is exactly true.
+  #  * cc-company-slug: more than one companies row and no COMPANY_SLUG rejects every task.
+  #  * cc-tenant-registry: a public host without Access issuer/audience/subjects locks the owner out
+  #    after Cloudflare sign-in. Boxes hold no Cloudflare credentials, so this only reports, on a
+  #    greppable CC_TENANT_REGISTRY_ACCESS_MISSING line.
+  if cc_is_valid_checkout "$_CC_DIR"; then
+    if [ -f "$SKILLS_DIR/shared-utils/ensure_cc_interview_flag.py" ]; then
+      python3 "$SKILLS_DIR/shared-utils/ensure_cc_interview_flag.py" --app "$_CC_DIR" \
+        --state "$_STATE_FILE" 2>&1 | sed 's/^/  /' || true
+    fi
+    if [ -f "$SKILLS_DIR/shared-utils/ensure_cc_tenant_env.py" ]; then
+      python3 "$SKILLS_DIR/shared-utils/ensure_cc_tenant_env.py" --app "$_CC_DIR" 2>&1 | sed 's/^/  /' || true
+    fi
+  fi
+
   # >>> TRAP3-CC-BOOTSTRAP-BRANCH-BEGIN  (extracted verbatim by scripts/test-updater-traps-1-and-3.sh)
   #
   # U005 -- EXIT-CODE CONTRACT (STAMP/CC-REFRESH ORDERING):

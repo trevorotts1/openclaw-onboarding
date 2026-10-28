@@ -1,5 +1,9 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.65 - 2026-10-28 - fix(32): the public host's registry entry records the owner's Access subject at provision; tenant doc matches the persona-context rule
+
+`interview-launch.py provision` now records `subjects: [<owner email>]` on the public host's `MC_TENANT_REGISTRY_JSON` entry when it creates the entry and the build state holds a real owner `contactEmail` (never a `pending+` placeholder, never added to an existing entry). Issuer and audience still come only from the live Cloudflare Access login, which `register-access` reads; boxes hold no Cloudflare credentials, so the roll reports a host still missing them on a `CC_TENANT_REGISTRY_ACCESS_MISSING` line (`shared-utils/ensure_cc_tenant_env.py`). `TENANT-CONFIGURATION.md` now states the rule the Command Center applies to the persona company config (no id fields, or every id field equal to the key). skill-version v13.1.64 -> v13.1.65.
+
 ## v13.1.64 - 2026-10-27 - chore(batch-20261027-0754): version stamp for T-56 (scope includes T-57)
 
 Batch 20261027-0754 version stamp, Skill 32 v13.1.63 -> v13.1.64. T-56 (`pb/PBB-944/t-56-rebase` @ `75d69adb`) touches skill 32 files in this batch (`32-command-center-setup/scripts/verify-tenant-readiness.py`; scope includes T-57). No skill code changed in this commit; version stamp only.
