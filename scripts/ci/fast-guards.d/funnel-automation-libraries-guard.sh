@@ -38,6 +38,7 @@ python3 -m pytest 06-ghl-install-pages/tests/test_funnel_matcher.py \
                   06-ghl-install-pages/tests/test_a_u9_exemplar_injection.py \
                   44-convert-and-flow-operator/tests/test_automation_matcher.py \
                   49-signature-funnel/scripts/test_copy_persona_blend_seam.py -q
+python3 -m pytest 44-convert-and-flow-operator/tests/test_qc_built_workflow.py -q
 python3 tests/unit/fab-qc.test.py
 python3 tests/unit/fab-artifact.test.py
 python3 tests/unit/persona-crosswalk.test.py
