@@ -1,3 +1,5 @@
+## [v2.1.40] - 2026-10-28 - chore(train11): version stamp for the twelve-unit train
+
 ## [v2.1.39] - 2026-10-28 - rebase lane: version stamp above main for the changelog merge
 
 Main is already at v2.1.38, so this merge keeps both changelog entry sets and carries a stamp above main's. No engine, CLI, template, guard or QC script behaviour changed.

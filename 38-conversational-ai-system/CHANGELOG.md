@@ -1,3 +1,5 @@
+## [2.0.218] - 2026-10-28 - chore(train11): version stamp for the twelve-unit train
+
 ## [2.0.217] - 2026-10-28 - chore(train8): version stamp for PBB-816 reconciled changelog
 
 - **Train8 version stamp, Skill 38 v2.0.216 -> v2.0.217.** PBB-816 (`pb/PBB-816/skill38-v2.0.192-reconciled` @ `545695047`) adds a changelog block only; the branch name mentions v2.0.192 but its tree carries v2.0.215, verified, so no downgrade. Version stamp only, no skill code changed.
