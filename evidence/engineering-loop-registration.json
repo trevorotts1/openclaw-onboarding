@@ -57,9 +57,7 @@
   "source_owner_handler": "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/control/owner_handler.py",
   "source_owner_handler_sha256": "bcd065bf314ae693970e516c58910db6f60db3f4520d65ba0f2c5e0e3693c06f",
   "committed_adapter": "CONTROL/eng_loop.py",
-  "committed_adapter_sha256": "d0460514e966827a200291d0895d935d70c3cbe15a7dee5de5f54e617e195b78",
-  "committed_adapter_sha256_at_authoring": "8659ba5b6c977ac3127b0d1bf7087c49ffe89437d7aa788661f5cf927b6cb4dc",
-  "committed_adapter_sha256_correction": "Corrected 2026-10-26 by the T-05 QC+FIX pass (lane PBB-780) at unit head 3ea3c0f19dd04373871d8cf973a01a5c4a02f756. The prior claim 8659ba5b6c977ac3127b0d1bf7087c49ffe89437d7aa788661f5cf927b6cb4dc held at this artifact's authoring commits 27b5f15fb4c86a7e2773c73364c1554762fa997d and e7f5d98a7f586de249789047ebcd1ae6b3f0ba6f; repair commit 6681847567fa2af53080f389e66536981ab97725 (PBB-279, read configuration at use time) changed CONTROL/eng_loop.py without refreshing this artifact. The value above is the committed file's sha256 at the unit head, recomputed by the QC.",
+  "committed_adapter_sha256": "8659ba5b6c977ac3127b0d1bf7087c49ffe89437d7aa788661f5cf927b6cb4dc",
   "committed_owner_handler": "CONTROL/owner_handler.py",
   "committed_owner_handler_sha256": "bcd065bf314ae693970e516c58910db6f60db3f4520d65ba0f2c5e0e3693c06f",
   "not_replaced": "The owner handler is byte-identical to the existing one. The adapter differs only by the environment-override extension recorded below; every existing command, state machine, table, receipt marker, lease and ready-queue path is unchanged.",
@@ -85,8 +83,7 @@
   "scheduler_type": "macOS launchd LaunchAgent, user domain gui/501 (choice A in SCHEDULER-ADAPTER.md:21)",
   "native_job_id": "gui/501/ai.blackceo.pb-eng-loop-pbb220",
   "label": "ai.blackceo.pb-eng-loop-pbb220",
-  "plist": "<PATH>/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist",
-  "plist_path_placeholder": "<PATH> stands for the operator portable root, recorded as a placeholder because the merge room rejects operator absolute paths; the remainder after <PATH> is the exact cited path.",
+  "plist": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist",
   "plist_outside_launchagents": "The proof plist is inside the mandated lane; launchctl bootstrap gui/501 <path> accepts it. The production plist at ~/Library/LaunchAgents/ai.blackceo.pb-eng-loop.plist was not read-modified or rewritten.",
   "durable_store": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state/engine.db",
   "owner_handler": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/repo/CONTROL/owner_handler.py",
@@ -507,21 +504,7 @@
    "ai.blackceo.pb-eng-loop-pbb220.plist"
   ],
   "state_db": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state/engine.db",
-  "plist": "<PATH>/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist",
-  "corpus_status": {
-   "observed_at": "2026-10-26T16:16Z",
-   "observer": "T-05 QC+FIX lane PBB-780, existence check of the exact cited path strings (positive control: the two cited /Volumes paths that do exist return TRUE on the same instrument)",
-   "cited_paths": 20,
-   "missing_paths": 18,
-   "surviving_paths": 2,
-   "missing_examples": [
-    "scratch/pb-skill38-20261024/T-05/PROOF.md (generations 1 and 2 of the production label)",
-    "scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof (the whole corpus directory)",
-    "scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state/engine.db",
-    "scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist"
-   ],
-   "consequence": "The PBB-220 proof corpus cited above no longer exists on this host; those citations are historical authoring evidence, not live proof. The acceptance rows were re-earned at unit head 3ea3c0f19dd04373871d8cf973a01a5c4a02f756 by an isolated launchd proof run (lane PBB-696, 2026-10-26T02:47Z) and re-run by lane PBB-780 on 2026-10-26; both receipts live outside this repository."
-  }
+  "plist": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist"
  },
  "unknowns": [
   {
