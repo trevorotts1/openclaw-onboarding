@@ -1,3 +1,7 @@
+## [2.0.221] - 2026-10-28 - rebase PBB-1710 evidence rebuild onto live main (lane batch1)
+
+Carries the PBB-1710 T-05 registration evidence rebuild: richer corpus_status (counting method, proof-artifacts and document scopes, prior observation) onto live main, keeping main's sha lines, correction narrative, and plist redaction.
+
 ## [2.0.220] - 2026-10-28 - chore(train20): batch landing of the PBB-1708 interactive-owner tests
 
 Lands the T-25 interactive-owner tests from PBB-1708 in the train20 batch.
