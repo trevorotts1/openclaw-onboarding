@@ -1,0 +1,208 @@
+{
+  "unit": "S75-T08",
+  "attempt": 2,
+  "stamp_note": "Restamp of attempt-1 at the unchanged head. attempt-1.json is left in place unmodified per the room's instruction. head_sha and candidate.head name the measured revision bd74cff7cd74103b0d91903d5e64404df877039a because an artefact inside a commit cannot name that same commit.",
+  "dependencies": [
+    {
+      "role": "base",
+      "sha": "f1c5ea993d0fabe41bd438c033395f18bf86e667",
+      "source": "receipt.base"
+    },
+    {
+      "role": "unit_merge",
+      "sha": "bd74cff7cd74103b0d91903d5e64404df877039a",
+      "source": "branch head of s75x/receipt-S75-T08 at the measured revision (direct parent of the commit carrying this artefact)"
+    }
+  ],
+  "independent_checker": {
+    "checker_id": "fresh-qc-opus-chain-lane-T08-both-tables",
+    "checker_model": "route=opus-chain; served=not observed by the lane",
+    "receipt": "loop-control/s75/qc/S75-T08.bd74cff7cd74103b0d91903d5e64404df877039a.json"
+  },
+  "repository_gate": {
+    "workflow": ".github/workflows/qc-static.yml",
+    "workflow_revision": "origin/main",
+    "workflow_sha": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "direct_pathscope_steps": [
+      {
+        "name": "Skill 75 empty-home test suite (manual 02 B6)",
+        "pathspecs": [
+          "75-drama-song-ad-factory/scripts/qc-operator-path-leak.sh",
+          "75-drama-song-ad-factory/scripts/core/**"
+        ],
+        "applies": false,
+        "why": "pathscope covers only skill-75 scripts/core, so evidence/units/S75-T08/attempt-2.json is outside it"
+      },
+      {
+        "name": "Skill 75 pytest collection + run (no hidden failures)",
+        "pathspecs": [
+          "75-drama-song-ad-factory/scripts",
+          "75-drama-song-ad-factory/scripts/**/test_*.py"
+        ],
+        "applies": false,
+        "why": "collects and runs only 75-drama-song-ad-factory/scripts; evidence/ paths are never collected"
+      }
+    ],
+    "indirect_pathscope_steps": [
+      {
+        "name": "CRITICAL-1 \u2014 No real client names in tracked files",
+        "command": "bash scripts/qc-assert-no-client-names.sh",
+        "applies": true,
+        "why": "the script enumerates git ls-files with no path filter, i.e. every tracked file, so a newly tracked artefact under evidence/units/ is read even though no pathspec names it"
+      },
+      {
+        "name": "FLEET-STANDARDS \u00a73 \u2014 WhatsApp permanently disabled (no enabled:true in JSON, no uncommented WHATSAPP_NUMBER in env files)",
+        "command": "git ls-files -z -- '*.json' | xargs -0 -r -n 1 -P \"$(nproc)\" bash -c '... python3 scripts/qc-check-whatsapp-json.py \"$1\" ...'",
+        "applies": true,
+        "why": "reads and JSON-parses every tracked .json with no path filter, so this artefact is read; a non-empty file that fails to parse fails the step closed"
+      },
+      {
+        "name": "AGENTS.md N28 \u2014 No destructive cron payloads",
+        "command": "git ls-files -- '*.sh'",
+        "applies": false,
+        "why": "pathspec is *.sh only; this artefact is JSON"
+      },
+      {
+        "name": "chmod-600 coverage \u2014 every .sh that writes secrets/.env must also chmod 600",
+        "command": "git ls-files -- '*.sh'",
+        "applies": false,
+        "why": "pathspec is *.sh only; this artefact is JSON"
+      }
+    ],
+    "applies_to_unit_paths": true,
+    "basis_kind": "indirect pathscope: git ls-files enumeration with no path filter (steps 138 and 139) reads every tracked file, so evidence/units/S75-T08/attempt-2.json is in scope; the direct skill-75 pathspecs (steps 149/150) do not cover evidence/ paths",
+    "notes": "workflow measured at origin/main b37010c6a001bb5a51913d6e567911258f9ac2e0"
+  },
+  "restamp_measurement": {
+    "measured_head": "bd74cff7cd74103b0d91903d5e64404df877039a",
+    "origin_main": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "module": "75-drama-song-ad-factory/scripts/core/story_first_contracts.py",
+    "module_blob_at_measured_head": "",
+    "module_blob_on_disk": "",
+    "probe": "check_stage('script_lyrics', registry with research_bundle/episode_cast_manifest/causal_story_beats/scene_plan COMPLETE and episode_world absent)",
+    "reproduce": {
+      "rc": 1,
+      "code": "ORDER",
+      "packet": {
+        "stage": "script_lyrics",
+        "missing": [
+          "episode_world"
+        ],
+        "unfinished_stages": [
+          "cast_and_world"
+        ],
+        "approval_defects": [],
+        "schema_defects": []
+      }
+    },
+    "control": {
+      "rc": 0,
+      "code": "ADMITTED",
+      "packet": {
+        "stage": "script_lyrics",
+        "admitted": true,
+        "requires": [
+          "research_bundle",
+          "episode_cast_manifest",
+          "causal_story_beats",
+          "scene_plan"
+        ]
+      },
+      "mutation": "scratch copy of story_first_contracts.py with episode_world dropped from _FOUNDATION and removed from STAGE_PRODUCES['cast_and_world']"
+    }
+  },
+  "candidate": {
+    "branch": "s75x/receipt-S75-T08",
+    "head": "bd74cff7cd74103b0d91903d5e64404df877039a",
+    "changed_files": [
+      ".github/workflows/qc-static.yml",
+      "38-conversational-ai-system/CHANGELOG.md",
+      "38-conversational-ai-system/SKILL.md",
+      "38-conversational-ai-system/scripts/03-create-journey-templates.sh",
+      "38-conversational-ai-system/scripts/11-run-qc-checklist.sh",
+      "38-conversational-ai-system/scripts/qc-skip-count.test.sh",
+      "38-conversational-ai-system/skill-version.txt",
+      "38-conversational-ai-system/tests/contract_traces_runner.py",
+      "38-conversational-ai-system/tests/f03_f12_contract_traces_runner.py",
+      "38-conversational-ai-system/tools/interactive_owner.py",
+      "38-conversational-ai-system/tools/reconciliation.py",
+      "38-conversational-ai-system/tools/tests/test_durable_processing.py",
+      "38-conversational-ai-system/tools/tests/test_interactive_owner.py",
+      "38-conversational-ai-system/tools/tests/test_interactive_owner_fulfillment.py",
+      "38-conversational-ai-system/tools/tests/test_journey_templates_script.py",
+      "44-convert-and-flow-operator/CHANGELOG.md",
+      "44-convert-and-flow-operator/SKILL.md",
+      "44-convert-and-flow-operator/automation-templates/_links/funnel-to-automation.json",
+      "44-convert-and-flow-operator/automation-templates/_matcher/catalog-index.json",
+      "44-convert-and-flow-operator/automation-templates/_schema/prose-only.json",
+      "44-convert-and-flow-operator/skill-version.txt",
+      "44-convert-and-flow-operator/tests/test_automation_matcher.py",
+      "75-drama-song-ad-factory/CHANGELOG.md",
+      "75-drama-song-ad-factory/SKILL.md",
+      "75-drama-song-ad-factory/references/prompt-templates/music/folk-storytelling.json",
+      "75-drama-song-ad-factory/scripts/core/character_library/test_notion_store_s75_t15.py",
+      "75-drama-song-ad-factory/scripts/core/intake_preflight/test_factory_card_purpose_w3u2.py",
+      "75-drama-song-ad-factory/scripts/core/real_content_replay_s75_t41.json",
+      "75-drama-song-ad-factory/scripts/core/replay_real_content_s75_t41.py",
+      "75-drama-song-ad-factory/shared-bridge/studio_bridge.py",
+      "75-drama-song-ad-factory/skill-version.txt",
+      "75-drama-song-ad-factory/tests/story_first_acceptance/__init__.py",
+      "75-drama-song-ad-factory/tests/story_first_acceptance/acceptance_fixtures.py",
+      "75-drama-song-ad-factory/tests/story_first_acceptance/cell_matrix.py",
+      "75-drama-song-ad-factory/tests/story_first_acceptance/run_acceptance.py",
+      "75-drama-song-ad-factory/tests/story_first_acceptance/test_cross_flavor_acceptance.py",
+      "77-council-of-wise-elders/CHANGELOG.md",
+      "77-council-of-wise-elders/SKILL.md",
+      "77-council-of-wise-elders/runtime/package.json",
+      "77-council-of-wise-elders/runtime/src/cli/model-probe.test.ts",
+      "77-council-of-wise-elders/runtime/src/service/front-door.ts",
+      "77-council-of-wise-elders/runtime/src/service/landing.test.ts",
+      "77-council-of-wise-elders/skill-version.txt",
+      "77-council-of-wise-elders/version",
+      "CHANGELOG.md",
+      "QUALITY-CONTROL/pb-t24-landed/T-24-MERIT.md",
+      "QUALITY-CONTROL/pb-t24-landed/check_t24_landed.py",
+      "QUALITY-CONTROL/pb-t24-landed/test_check_t24_landed.py",
+      "docs/pbb-1969-t25-carriage-audit.md",
+      "evidence/PBB-1703/T-36-WIRE.md",
+      "evidence/PBB-648/T-16-WIRE.md",
+      "evidence/PBB-664/T-29-WIRE.md",
+      "evidence/PBB-669/T-23-WIRE.md",
+      "evidence/S75X-W3/S75X-W3-U1.qc.json",
+      "evidence/S75X-W3/S75X-W3-U1.verdict.json",
+      "evidence/S75X-W3/S75X-W3-U2.qc.json",
+      "evidence/S75X-W3/S75X-W3-U2.verdict.json",
+      "evidence/closeout/T-50-CLOSEOUT.PBB-960.md",
+      "evidence/closeout/T-50-CLOSEOUT.md",
+      "evidence/engineering-loop-registration.json",
+      "evidence/search/citations.json",
+      "evidence/t01-interface-inventory.md",
+      "evidence/units/S75-T02/arbiter-receipt.json",
+      "evidence/units/S75-T02/attempt-candidate-1.json",
+      "evidence/units/S75-T02/attempt-candidate-2.json",
+      "evidence/units/S75-T04/attempt-r10-candidate-refiled.json",
+      "evidence/units/S75-T08/receipt.json",
+      "evidence/units/S75-T35/attempt-r3.json",
+      "scripts/check-funnel-automation-library-drift.py",
+      "scripts/ci/fast-guards.d/funnel-automation-libraries-guard.sh",
+      "scripts/lib/job_uuid_gate.py",
+      "shared-utils/nudge-incomplete-interviews.py",
+      "shared-utils/reminders/reminder_state_machine.py",
+      "shared-utils/reminders/tests/test_handoff_fence.py",
+      "shared-utils/reminders/tests/test_handoff_fence_wiring.py",
+      "tests/social-planner/test_t22_profile_capability.py",
+      "tests/unit/funnel-automation-library-drift-guard.test.py",
+      "tests/unit/job-uuid-gate.test.py"
+    ],
+    "changed_files_basis": "git diff --name-only f1c5ea993d0fabe41bd438c033395f18bf86e667 bd74cff7cd74103b0d91903d5e64404df877039a (declared base to measured head)",
+    "unit_commit_changed_files": [
+      "evidence/units/S75-T08/receipt.json"
+    ],
+    "unit_commit_changed_files_basis": "git diff --name-only bd74cff7cd74103b0d91903d5e64404df877039a^ bd74cff7cd74103b0d91903d5e64404df877039a (the commit that added attempt-1.json)"
+  },
+  "base": {
+    "sha": "f1c5ea993d0fabe41bd438c033395f18bf86e667",
+    "merge_tree_rc": 0
+  },
+  "head_sha": "bd74cff7cd74103b0d91903d5e64404df877039a"
+}
