@@ -6,18 +6,7 @@
  "title": "Adopt/extend the existing persistent engineering loop and prove the observer/owner-action bridge",
  "repository_scope": "control",
  "repo": "trevorotts1/openclaw-onboarding",
- "branch": "pb/PBB-1966/t-05-recarry",
- "branch_at_authoring": "pb/PBB-325/t-05-repair2",
- "branch_note": "Confirmed with git ls-remote origin: refs/heads/pb/PBB-1966/t-05-recarry is the branch that carries this artifact, and it was the only remote ref containing head 5ae53d19f01128a4579cebc0b0106905f53cac57 when the recarry landed there. The branch field above is the ref this artifact is carried on now; branch_at_authoring is the ref named when it was first written.",
- "this_change": {
-  "measured_at_head": "5ae53d19f01128a4579cebc0b0106905f53cac57",
-  "measured_at_head_note": "Every value in this artifact was measured against 5ae53d19f01128a4579cebc0b0106905f53cac57. The correction commit that carries this block sits directly on top of it and changes no other file, so these measurements hold at the branch tip.",
-  "origin_main_at_measurement": "8cb74925ad94c05ce9eb639e7554d02fcd780e20",
-  "files_changed_vs_origin_main": 1,
-  "changed_file": "evidence/engineering-loop-registration.json",
-  "change_status": "M",
-  "scope": "The only file in this tree that differs from origin/main is this artifact. The change is confined to this artifact: the branch and adapter-hash fields, the corpus_status measurement and this block. No source, test, skill or ledger file differs from origin/main."
- },
+ "branch": "pb/PBB-325/t-05-repair2",
  "base_commit": "9023e6b0e04cddb2c01a779c4bc0baef166d0a07",
  "base_commit_note": "Cut from origin/main at this commit. The reviewed candidate e7f5d98a was parented on 702d6e4cdb4e (T-04/PBB-177), which verifier PBB-263 independently FAILED; T-05 was therefore re-parented off it. That commit is NOT an ancestor of this branch and nothing here depends on T-04's bytes.",
  "author_alias": "deepseek-chain",
@@ -70,7 +59,7 @@
   "committed_adapter": "CONTROL/eng_loop.py",
   "committed_adapter_sha256": "d8062c0ea39dc9e19cfae76583f6cfb015cfbffc45209cce0fc8d15a8cc40a6a",
   "committed_adapter_sha256_at_authoring": "8659ba5b6c977ac3127b0d1bf7087c49ffe89437d7aa788661f5cf927b6cb4dc",
-  "committed_adapter_sha256_correction": "Measured from this tree, not carried forward. sha256 of CONTROL/eng_loop.py is 8659ba5b6c977ac3127b0d1bf7087c49ffe89437d7aa788661f5cf927b6cb4dc at the authoring commits 27b5f15fb4c86a7e2773c73364c1554762fa997d and e7f5d98a7f586de249789047ebcd1ae6b3f0ba6f; d0460514e966827a200291d0895d935d70c3cbe15a7dee5de5f54e617e195b78 at the PBB-279 repair commit 6681847567fa2af53080f389e66536981ab97725 and at the 2026-10-26 QC head 3ea3c0f19dd04373871d8cf973a01a5c4a02f756; and d8062c0ea39dc9e19cfae76583f6cfb015cfbffc45209cce0fc8d15a8cc40a6a from commit b9b6f609747ad7ead6c5dc34f5fe1abfa3d3a94b (2026-10-27, T-38 shared runtime adapters) onward, which rewrote CONTROL/eng_loop.py on main after that QC froze d0460514. The value above is the committed file's sha256 read from this tree at unit head 5ae53d19f01128a4579cebc0b0106905f53cac57, which is byte-identical to origin/main 8cb74925ad94c05ce9eb639e7554d02fcd780e20.",
+  "committed_adapter_sha256_correction": "Corrected 2026-10-26 by the T-05 QC+FIX pass (lane PBB-780) at unit head 3ea3c0f19dd04373871d8cf973a01a5c4a02f756. The prior claim 8659ba5b6c977ac3127b0d1bf7087c49ffe89437d7aa788661f5cf927b6cb4dc held at this artifact's authoring commits 27b5f15fb4c86a7e2773c73364c1554762fa997d and e7f5d98a7f586de249789047ebcd1ae6b3f0ba6f; repair commit 6681847567fa2af53080f389e66536981ab97725 (PBB-279, read configuration at use time) changed CONTROL/eng_loop.py without refreshing this artifact. The value above is the committed file's sha256 at the unit head, recomputed by the QC. Rebased 2026-10-27 onto origin/main 1d1b8d2c8d85395f119c37f7c046597ea4b94199 for filing (lane PBB-1026); origin/main had advanced CONTROL/eng_loop.py to blob 7b351581ffb0d488a65f81e2f166c6742ef9ea79, so the value above was mechanically recomputed at the rebased head as d8062c0ea39dc9e19cfae76583f6cfb015cfbffc45209cce0fc8d15a8cc40a6a. The unit-head value d0460514e966827a200291d0895d935d70c3cbe15a7dee5de5f54e617e195b78 remains correct for head 3ea3c0f19dd04373871d8cf973a01a5c4a02f756.",
   "committed_owner_handler": "CONTROL/owner_handler.py",
   "committed_owner_handler_sha256": "bcd065bf314ae693970e516c58910db6f60db3f4520d65ba0f2c5e0e3693c06f",
   "not_replaced": "The owner handler is byte-identical to the existing one. The adapter differs only by the environment-override extension recorded below; every existing command, state machine, table, receipt marker, lease and ready-queue path is unchanged.",
@@ -520,14 +509,10 @@
   "plist": "<PATH>",
   "corpus_status": {
    "observed_at": "2026-10-26T16:16Z",
-   "observer": "Re-measured 2026-10-27 by the PBB-2184 evidence-fix lane: every distinct path string cited in this artifact, normalised for trailing escapes, passed to an existence check (positive control: the two cited source-adapter paths that do exist return TRUE on the same instrument)",
-   "cited_paths": 27,
-   "missing_paths": 25,
+   "observer": "T-05 QC+FIX lane PBB-780, existence check of the exact cited path strings (positive control: the two cited /Volumes paths that do exist return TRUE on the same instrument)",
+   "cited_paths": 20,
+   "missing_paths": 18,
    "surviving_paths": 2,
-   "missing_breakdown": {
-    "under_proof_corpus": 23,
-    "temp_roots": 2
-   },
    "missing_examples": [
     "scratch/pb-skill38-20261024/T-05/PROOF.md (generations 1 and 2 of the production label)",
     "scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof (the whole corpus directory)",
