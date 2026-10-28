@@ -1,3 +1,7 @@
+## [2.0.207] - 2026-10-28 - chore(batch-fanout-0250-lane7): Skill 38 to v2.0.207
+
+- **Batch fanout lane 7 version stamp, Skill 38 v2.0.206 -> v2.0.207.** Landed lane-7 units touching skill 38: t01-h1-citations-carry (`4c567690`), T-22-REPAIR4-CLEAN (`585fc0d8`), T-04 (`c54a3cfb`), T-36-CARRY (`3bc7ee91`), carry-f03-f12-traces (`e77b334e`), carry-t22-merit (`7c67879b`), T-24-CHECKS-CARRY (`c4e610e3`). Version stamp only.
+
 ## [2.0.203] - 2026-10-27 - chore(batch-20261027-0754): Skill 38 to v2.0.203 for T-56 (scope includes T-57)
 
 - **Batch 20261027-0754 version stamp, Skill 38 v2.0.202 -> v2.0.203.** T-56 (`pb/PBB-944/t-56-rebase` @ `75d69adb`) touches skill 38 files in this batch (`schemas/approval-manifest.schema.json`, `schemas/outbound-action.schema.json`, `tools/durable_store.py`, `tools/pb_contracts.py`; scope includes T-57). No skill code changed in this commit; version stamp only.
