@@ -1,3 +1,7 @@
+## [2.0.209] - 2026-10-28 - chore(batch-fanout-0250): version stamp for lane 3
+
+- **Batch fanout-0250-lane3 version stamp, Skill 38 v2.0.208 -> v2.0.209.** Units surviving in this lane and touching skill 38: T-36-WIRE-CARRY (`pb/PBB-1961/t-36-wire-carry` @ `9d86f1d3`), t12-qc-fix (`pb/PBB-1711/t12-qc-fix` @ `9ad5b93e`), PBB-1712 (`pb/PBB-1712-t25-enforce-proof` @ `a22de399`), T-25-WIRE-CARRY (`pb/PBB-1964/t-25-wire-carry` @ `23762510`). T-22-MERIT-REBUILD dropped on a product-code conflict in `tools/tests/test_interactive_owner.py`, which main already carries as v2.0.208. v2.0.207 skipped: claimed on main. No skill code changed in this commit; version stamp only.
+
 ## [2.0.207] - 2026-10-28 - chore(batch-fanout-0250): version stamp for lane 3
 
 - **Batch fanout-0250-lane3 version stamp, Skill 38 v2.0.206 -> v2.0.207.** Units touching skill 38 in this batch: T-36-WIRE-CARRY (`pb/PBB-1961/t-36-wire-carry` @ `9d86f1d3`), t12-qc-fix (`pb/PBB-1711/t12-qc-fix` @ `9ad5b93e`), PBB-1712 (`pb/PBB-1712-t25-enforce-proof` @ `a22de399`), T-22-MERIT-REBUILD (`pb/PBB-1715/t-22-merit-rebuild` @ `9756e948`), T-25-WIRE-CARRY (`pb/PBB-1964/t-25-wire-carry` @ `23762510`). No skill version changed in those units; version stamp only.

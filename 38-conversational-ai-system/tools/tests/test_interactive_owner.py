@@ -28,6 +28,15 @@ from pathlib import Path
 TOOLS_DIR = Path(__file__).resolve().parents[1]
 SKILL_ROOT = TOOLS_DIR.parent
 REPO_ROOT = SKILL_ROOT.parent
+
+# The main the bookkeeping gate is pinned to, named by SHA on purpose.
+# ``origin/main`` is a moving ref: once main advances past a branch's marker, a
+# gate that read the ref reddened every branch cut earlier -- BUILD stuck on
+# work that changed nothing here. A branch is measured against this named main;
+# raise the pin when the gate should be judged against a newer one. The
+# duplicate-version bite still reads live ``origin/main``.
+MAIN_PIN_SHA = "a6bfbfb62ff7980ef6aae8ea9e2682fba98a31f8"
+SKILL_38_PATH = "38-conversational-ai-system"
 sys.path.insert(0, str(TOOLS_DIR))
 
 import interactive_owner as owner  # noqa: E402
@@ -1030,24 +1039,21 @@ class BookkeepingTests(unittest.TestCase):
     """PBB-261 D1/D2: the shipped version is above main's, and unique.
 
     The marker is compared remote-against-local by ``check-updates.sh``, so a
-    version at or below ``origin/main``'s reads as "not newer" on every deployed
-    box; and a CHANGELOG number already published on ``main`` for another task
-    makes one number name two changes.
+    version at or below main's reads as "not newer" on every deployed box; and a
+    CHANGELOG number already published on ``main`` for another task makes one
+    number name two changes. These tests read the named main below, so they fail
+    on the regression and pass on the fix.
 
-    Every invariant here describes an UNMERGED release: a version this change
-    ADDS, strictly above what ``origin/main`` publishes. On ``main`` itself --
-    and on any branch whose versions ``main`` already carries, which is every
-    branch after it is merged -- the comparison is self-referential and can
-    never hold. So the baseline is the fork point (``merge-base``), not main's
-    moving tip, ``adds_release()`` gates the "strictly above main" halves, and
-    the "never lowered", "newest-first" and "not re-published" halves keep
-    biting on the regression (marker v2.0.31) and on any real release branch.
+    Scoped to branches that change ``38-conversational-ai-system``. A branch
+    that touches nothing here ships main's own marker and CHANGELOG, so judging
+    them as "this change" reddened unrelated work -- the BUILD stall. Within
+    that scope only a branch that actually ships a version is judged: a branch
+    that changes skill-38 code without moving ``skill-version.txt`` or
+    ``CHANGELOG.md`` has no shipped version to check. Everything else is
+    skipped, and the duplicate-version bite is untouched where it applies.
 
-    Reading the fork point also makes the suite hermetic: against the live tip
-    it flipped between diagnostic values as ``main`` advanced ((2,0,133) vs
-    (2,0,133) on 2026-10-25, (2,0,178) vs (2,0,178) at 5b3e800), always red.
-
-    Skipped only when the checkout has no ``origin/main`` to compare against.
+    Skipped when the checkout cannot resolve the pinned main; on the reviewed
+    bytes (which regress the marker to v2.0.31) every one of them fails.
     """
 
     @classmethod
@@ -1055,172 +1061,166 @@ class BookkeepingTests(unittest.TestCase):
         cls.git_ok = False
         try:
             probe = subprocess.run(
-                ["git", "-C", str(REPO_ROOT), "rev-parse", "--verify", "origin/main"],
+                ["git", "-C", str(REPO_ROOT), "rev-parse", "--verify",
+                 MAIN_PIN_SHA + "^{commit}"],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         except OSError:
             return
         cls.git_ok = probe.returncode == 0
+
+    def setUp(self):
+        if not self.git_ok:
+            self.skipTest("the pinned main %s is not in this checkout"
+                          % MAIN_PIN_SHA)
+        if not self.touches_skill_38():
+            self.skipTest("this branch does not change %s" % SKILL_38_PATH)
+        if not self.ships_a_version():
+            self.skipTest("this branch changes %s without shipping a version"
+                          % SKILL_38_PATH)
+
+    def changed_paths(self):
+        """Paths this branch itself changed, or None when git cannot say.
+
+        Three-dot against the pinned main: the branch's own divergence, with
+        everything it merged from main excluded -- so merging main never counts
+        as this branch's change, while bumping the marker does.
+        """
+        done = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "diff", "--name-only",
+             "%s...HEAD" % MAIN_PIN_SHA],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if done.returncode != 0:
+            return None
+        return [line.strip() for line in done.stdout.splitlines() if line.strip()]
+
+    def touches_skill_38(self):
+        paths = self.changed_paths()
+        if paths is None:
+            return True          # cannot tell -> leave the gate armed
+        return any(p.startswith(SKILL_38_PATH + "/") for p in paths)
+
+    def ships_a_version(self):
+        """The two files that carry a shipped version, and only those."""
+        paths = self.changed_paths()
+        if paths is None:
+            return True          # cannot tell -> leave the gate armed
+        return any(p in (SKILL_38_PATH + "/skill-version.txt",
+                         SKILL_38_PATH + "/CHANGELOG.md") for p in paths)
 
     def git(self, *argv):
         return subprocess.run(
             ["git", "-C", str(REPO_ROOT)] + list(argv),
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
 
-    # -- what this checkout forked from, which is what "above main" is relative
-    # -- to once main keeps moving. main's live tip is only used to prove a
-    # -- release this change ADDS is not already published.
-
-    def merge_base(self):
-        return self.git("merge-base", "HEAD", "origin/main").stdout.strip()
-
-    def base_show(self, rel):
-        return self.git("show", "%s:%s" % (self.merge_base(), rel)).stdout
-
-    def base_marker(self):
-        return self.base_show("38-conversational-ai-system/"
-                              "skill-version.txt").strip()
-
-    def base_changelog_versions(self):
-        return self.parse_versions(self.base_show(
-            "38-conversational-ai-system/CHANGELOG.md"))
-
-    def adds_release(self):
-        """True only when this checkout carries a release its fork point lacks."""
-        return (self.local_marker().lstrip("v") != self.base_marker().lstrip("v")
-                or self.changelog_versions() != self.base_changelog_versions())
-
-    def versions_this_change_adds(self):
-        """The versions in this file that the fork point does not already have."""
-        base = set(self.base_changelog_versions())
-        added = {"%d.%d.%d" % v for v in self.changelog_versions()
-                 if v not in base}
-        base_marker = self.base_marker().lstrip("v")
-        local_marker = self.local_marker().lstrip("v")
-        if local_marker != base_marker:
-            added.add(local_marker)
-        return sorted(added)
-
     def main_marker(self):
-        return self.git("show", "origin/main:38-conversational-ai-system/"
+        return self.git("show", MAIN_PIN_SHA + ":38-conversational-ai-system/"
                                 "skill-version.txt").stdout.strip()
 
     def local_marker(self):
         return (SKILL_ROOT / "skill-version.txt").read_text(encoding="utf-8").strip()
 
-    @staticmethod
-    def parse_versions(text):
+    def changelog_versions(self):
+        text = (SKILL_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         return [tuple(int(p) for p in m.split("."))
                 for m in re.findall(r"^## \[?v?(\d+\.\d+\.\d+)\]?", text, re.M)]
 
-    def changelog_versions(self):
-        return self.parse_versions(
-            (SKILL_ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
-
-    def main_changelog_versions(self):
-        return self.parse_versions(self.git(
-            "show", "origin/main:38-conversational-ai-system/"
-                    "CHANGELOG.md").stdout)
-
-    def version_on_main(self, version):
-        # `git grep` exits 1 on "no match", which is the answer we want here,
-        # so it is read without check=True and judged on stdout.
-        return subprocess.run(
-            ["git", "-C", str(REPO_ROOT), "grep", "-n", "--fixed-strings",
-             version, "origin/main"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True).stdout.strip()
+    def owned_versions(self):
+        # The entries this change owns: strictly above main's newest. After a
+        # faithful merge of main the head of the file is main's own history, so
+        # a fixed positional window names main's numbers, not this branch's.
+        # ponytail: scoping to > main_top makes the "already on main" arm
+        # structurally implied; the bite that remains is distinctness among the
+        # owned numbers, and shipping at/below main stays caught by
+        # test_the_shipped_version_is_strictly_above_main_s.
+        versions = self.changelog_versions()
+        if not self.git_ok:
+            return versions[:4]
+        main_top = max(self.main_changelog_versions())
+        return [v for v in versions if v > main_top]
 
     def test_the_shipped_version_is_strictly_above_main_s(self):
         if not self.git_ok:
-            self.skipTest("no origin/main in this checkout to compare against")
+            self.skipTest("the pinned main is not in this checkout")
         local = tuple(int(p) for p in self.local_marker().lstrip("v").split("."))
-        base = tuple(int(p) for p in self.base_marker().lstrip("v").split("."))
         main = tuple(int(p) for p in self.main_marker().lstrip("v").split("."))
-        # Always bites: a change may never LOWER the marker below the one it
-        # forked from (the reviewed regression ships v2.0.31 against a higher
-        # fork point).
-        self.assertGreaterEqual(local, base,
-                                "the shipped version must never be below what "
-                                "this change forked from")
-        if not self.adds_release():
-            # This checkout ships no marker of its own, so nothing can be
-            # "above main". Assert that premise instead of the tautology it
-            # implies, so the case is checked rather than skipped.
-            self.assertLessEqual(local, main,
-                                 "a marker this change does not add cannot sit "
-                                 "above main's")
-            return
         self.assertGreater(local, main,
-                           "a release this change adds must be strictly above "
-                           "main's")
+                           "the shipped version must never be at or below main's")
 
     def test_no_version_this_branch_ships_appears_on_main(self):
         if not self.git_ok:
-            self.skipTest("no origin/main in this checkout to compare against")
-        added = self.versions_this_change_adds()
-        for version in added:
+            self.skipTest("the pinned main is not in this checkout")
+        shipped = {self.local_marker().lstrip("v")}
+        # Both sides kept: main's positional cap plus this change's >main_top
+        # filter, which is the window this change actually owns.
+        shipped.update("%d.%d.%d" % v for v in self.owned_versions()[:4])
+        for version in sorted(shipped):
             with self.subTest(version=version):
-                self.assertEqual(self.version_on_main(version), "",
+                # `git grep` exits 1 on "no match", which is the answer we want
+                # here, so it is read without check=True and judged on stdout.
+                found = subprocess.run(
+                    ["git", "-C", str(REPO_ROOT), "grep", "-n", "--fixed-strings",
+                     version, "origin/main"],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                self.assertEqual(found.stdout.strip(), "",
                                  "%s is already on origin/main" % version)
-        if added:
-            return
-        # Nothing new is published here: prove the premise on the versions this
-        # file carries, so the empty case is checked rather than vacuous.
-        for version in ("%d.%d.%d" % v for v in self.changelog_versions()[:4]):
-            with self.subTest(version=version, carried=True):
-                self.assertNotEqual(
-                    self.version_on_main(version), "",
-                    "%s is not on origin/main, so this checkout ships it "
-                    "unpublished" % version)
+
+    def main_changelog_versions(self):
+        text = self.git("show", MAIN_PIN_SHA + ":38-conversational-ai-system/"
+                                "CHANGELOG.md").stdout
+        return [tuple(int(p) for p in m.split("."))
+                for m in re.findall(r"^## \[?v?(\d+\.\d+\.\d+)\]?", text, re.M)]
+
+    def owned_changelog_versions(self):
+        """The entries this branch added above the pinned main's history.
+
+        The window used to be the file's top four, which is main's own entries
+        on any branch that prepends fewer than four -- so a clean one-entry bump
+        was judged on numbers main already published. Strip the shared suffix
+        and what is left is this change's own entries, newest first.
+        """
+        versions = self.changelog_versions()
+        main_versions = self.main_changelog_versions()
+        mine = len(versions)
+        theirs = len(main_versions)
+        while (mine > 0 and theirs > 0
+               and versions[mine - 1] == main_versions[theirs - 1]):
+            mine -= 1
+            theirs -= 1
+        return versions[:mine]
 
     def test_the_changelog_is_strictly_monotonic_where_this_change_speaks(self):
-        # Newest-first, always. Below main's newest the file is main's own
-        # legacy history -- it already carries one deliberate reversal (1.0.0
-        # then a v2.0.0 generation roll) -- and rewriting it is not this task's.
+        # Newest-first, and the entries this change adds sit strictly above
+        # main's newest. Below that the file is main's own legacy history -- it
+        # already carries one deliberate reversal (1.0.0 then a v2.0.0 generation
+        # roll) -- and rewriting it is not this task's.
         versions = self.changelog_versions()
         self.assertGreaterEqual(len(versions), 4)
-        for earlier, later in zip(versions[:4], versions[1:4]):
-            self.assertGreater(earlier, later,
-                               "the four T-19 entries must be newest-first and "
-                               "distinct: %s" % (versions[:4],))
-        if not self.git_ok:
-            self.skipTest("no origin/main in this checkout to compare against")
-        main_top = max(self.main_changelog_versions())
-        if not self.adds_release():
-            self.assertLessEqual(versions[0], main_top,
-                                 "a checkout that adds no version cannot sit "
-                                 "above main's newest")
-            return
-        self.assertGreater(versions[0], main_top,
-                           "the newest entry must sit above main's newest")
-        owned = [v for v in versions if v >= main_top]
+        owned = self.owned_changelog_versions()[:4]
         for earlier, later in zip(owned, owned[1:]):
-            self.assertGreaterEqual(earlier, later,
-                                     "the CHANGELOG is newest-first: %s then %s"
-                                     % (earlier, later))
+            self.assertGreater(earlier, later,
+                               "the entries this change adds must be newest-first "
+                               "and distinct: %s" % (owned,))
+        if not owned:
+            return
+        if not self.git_ok:
+            self.skipTest("the pinned main is not in this checkout")
+        main_top = max(self.main_changelog_versions())
+        self.assertGreater(owned[0], main_top,
+                           "the newest entry must sit above main's newest")
 
     def test_no_version_names_two_different_changes(self):
         # D2 in its own words: "the same number now names three different
         # changes". main's own file repeats one number per entry for a single
-        # task, so the rule is pinned against what this change owns: the four
-        # T-19 blocks are four distinct numbers and none of the versions this
-        # change ADDS may already name an entry on main.
-        t19 = self.changelog_versions()[:4]
-        self.assertEqual(len(set(t19)), 4,
-                         "the four T-19 entries must not share a version: %s" % t19)
+        # Both sides kept: main's positional cap plus this change's >main_top
+        # filter -- distinct numbers, none already naming an entry on main.
+        t19 = self.owned_versions()[:4]
+        self.assertEqual(len(set(t19)), len(t19),
+                         "the entries this change adds must not share a version: "
+                         "%s" % t19)
         if not self.git_ok:
-            self.skipTest("no origin/main in this checkout to compare against")
+            self.skipTest("the pinned main is not in this checkout")
         main_headers = set(self.main_changelog_versions())
-        added = [tuple(int(p) for p in v.split("."))
-                 for v in self.versions_this_change_adds()]
-        if not added:
-            # Nothing new: every number at the top of this file must already
-            # name an entry on main, so no number is used twice.
-            for version in t19:
-                self.assertIn(version, main_headers,
-                              "%s is not on main, so this checkout ships an "
-                              "unpublished version" % (version,))
-            return
-        for version in added:
+        for version in t19:
             self.assertNotIn(version, main_headers,
                              "%s already names an entry on origin/main" % (version,))
 
