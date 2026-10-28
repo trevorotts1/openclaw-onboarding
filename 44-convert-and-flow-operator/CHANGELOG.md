@@ -1,3 +1,23 @@
+## [v2.1.38] - 2026-10-28 - chore(batch-consolidate-20261028-0700): version stamp for the consolidated fanout batch
+
+- **Consolidation 20261028-0700 version stamp, skill 44 v2.1.37 -> v2.1.38.** Skill content changed by units merged into batch/consolidate-20261028-0700. Version stamp, SKILL.md frontmatter and this entry only.
+
+## [v2.1.36] - 2026-10-27 - batch 20261027-2022: two test-only units (portable mktemp template pinned, graph fixture presence asserted)
+
+Two test-only units shipped between v2.1.35 and this stamp. No engine, CLI, template or QC script behaviour changed in this batch; the only non-test files touched are the two version markers.
+
+### The portable mktemp template is pinned by a test
+
+`qc-built-workflow.sh` writes its export through `mktemp "${TMPDIR:-/tmp}/qc-wf-export-XXXXXX"`. BSD `mktemp` requires the Xs to be the last characters of the template, so the earlier `...XXXXXX.json` form created that literal shared path instead of a unique one. The script calls `mktemp` once and installs `trap 'rm -f "$TMP"' EXIT`, so one run does not collide with itself; the failure appears when that literal path already exists — from an interrupted earlier run, another checkout or a parallel job — and the call then dies with `mktemp: mkstemp failed on <path>: File exists`, rc 1. The pre-existing suite did not catch this: with the old form restored, `tests/test_qc_built_workflow.py` stays green (50 passed, 1 failed, and the single failure is the new test itself, which fails because the old unquoted form does not match its quoted-template regex). `tests/test_qc_built_workflow.py::test_export_temp_template_is_portable` (f589ff0f8) reads the quoted template out of the script with a regex rather than restating it, points `TMPDIR` at `tmp_path`, runs `mktemp` twice and requires two distinct paths, so a future edit that puts a suffix after the Xs now fails the suite.
+
+### A missing graph fixture is not a malformed one
+
+`validate_graph` maps both an absent export and an unparseable one to rc 2 with verdict UNVERIFIED. A case pointed at a path that does not exist would therefore look like a passing malformed-input test while proving nothing. cc273cc1 hoists the parametrize list in `tests/test_validate_graph.py` into a module-level `GRAPH_CASES` and adds `test_every_named_fixture_exists`, which asserts every fixture the cases name is actually present. `unparseable.badjson` is still exercised by the existing cases and still returns rc 2 with verdict UNVERIFIED.
+
+### Version lockstep
+
+`skill-version.txt` moves v2.1.35 -> v2.1.36 and the `SKILL.md` frontmatter follows. No other file in the skill was touched by the version stamp.
+
 ## [v2.1.35] - 2026-10-27 - batch 20261027-1826: five units (schema graph, portable mktemp, malformed-JSON fixture, UNINITIALISED skip, status field shift)
 
 Five units shipped between v2.1.28 and this stamp. The merge room assigns the version; the entries below are carried verbatim from the batch's pending changelog.
