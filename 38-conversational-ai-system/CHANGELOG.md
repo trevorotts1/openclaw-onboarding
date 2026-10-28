@@ -1,3 +1,7 @@
+## [2.0.220] - 2026-10-28 - chore(train20): batch landing of the PBB-1708 interactive-owner tests
+
+Lands the T-25 interactive-owner tests from PBB-1708 in the train20 batch.
+
 ## [2.0.219] - 2026-10-28 - chore(train14): restore the 2.0.29-2.0.31 entries and carry the T-36 provenance comments
 
 ## [2.0.218] - 2026-10-28 - chore(train11): version stamp for the twelve-unit train
