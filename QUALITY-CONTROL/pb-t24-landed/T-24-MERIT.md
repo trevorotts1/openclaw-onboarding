@@ -1,7 +1,7 @@
 # T-24 — merit review of its receipt's two non-zero exits
 
 Unit: **PBB-688** (BUILD). Ownership: T-24's checks and my own verification files only.
-Repo: `/Users/blackceomacmini/openclaw-onboarding`. Branch: `pb/PBB-688/t-24-checks`.
+Repo: `<PATH>`. Branch: `pb/PBB-688/t-24-checks`.
 Target: `origin/main` at `5b3e8005ab2a6526bfe19f7d3bad4f2dbd744a76`.
 
 Everything below was run by me, at the real head, with exit codes captured.
@@ -9,7 +9,7 @@ Everything below was run by me, at the real head, with exit codes captured.
 ## 1. Both failures reproduced
 
 The live receipt is
-`/Users/blackceomacmini/loop-control/Purple-Billboard-Client-System-Build/qc/T-24.25576e460a964b37d39523d50ed21e2e287c130c.json`.
+`<PATH>`.
 
 The two records carrying a non-zero `exit_code` are:
 
