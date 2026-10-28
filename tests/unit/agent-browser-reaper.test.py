@@ -49,7 +49,7 @@ def sec(etime):
 @unittest.skipIf(Path("/data/.openclaw").is_dir(), "refusing to run the reaper against a real /data/.openclaw")
 class Reaper(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="reaper-test-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="abtest-")   # NOT "reaper": the daemon sweep skips any command line containing that word)
         self.home = self.tmp / "home"; (self.home / ".openclaw").mkdir(parents=True)
         self.oc = self.home / ".openclaw"
         self.bin = self.tmp / "bin"; self.bin.mkdir()
