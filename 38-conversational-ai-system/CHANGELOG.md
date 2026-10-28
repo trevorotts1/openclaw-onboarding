@@ -1,3 +1,7 @@
+## [2.0.221] - 2026-10-28
+
+Carries the PBB-1710 T-05 registration evidence rebuild onto live main, keeping main's six corpus_status values and adding proof-artifacts/document scopes with repo-relative paths.
+
 ## [2.0.220] - 2026-10-28 - chore(train20): batch landing of the PBB-1708 interactive-owner tests
 
 Lands the T-25 interactive-owner tests from PBB-1708 in the train20 batch.
