@@ -1602,6 +1602,7 @@ jobs:
           python3 tests/unit/ensure-persona-contexts.test.py
           bash tests/unit/prune-openclaw-json-backups.test.sh
           bash tests/unit/qc-env-stores.test.sh
+          python3 tests/unit/verify-tenant-readiness-access.test.py
 
       - name: "retired Ollama deepseek-v4-flash ids stay out of shipped files (R19)"
         shell: bash

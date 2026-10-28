@@ -3862,7 +3862,9 @@ if [[ -f "$STATE_FILE" ]]; then
   # its update.sh / atomic-deploy.sh tiers never run cc_ensure_fresh_build.
   # jq's `//` collapses false→empty, so this membership test is done in one jq
   # pass rather than via state_get.
-  if ! "$WORKFORCE_PYTHON" "$SKILL_DIR/scripts/verify-tenant-readiness.py" "$STATE_FILE" >>"$LOG_FILE" 2>&1; then
+  # --port: when the public host sits behind Cloudflare Access (302 to its login) the probe asks the Command
+  # Center on this box (127.0.0.1:$DASHBOARD_PORT) with the public Host header instead of failing on the redirect.
+  if ! "$WORKFORCE_PYTHON" "$SKILL_DIR/scripts/verify-tenant-readiness.py" "$STATE_FILE" --port "$DASHBOARD_PORT" >>"$LOG_FILE" 2>&1; then
     log "WARN" "Tenant readiness pending. Configure this client's own IDs and enrollment per TENANT-CONFIGURATION.md; recovery remains enabled."
     state_set '.commandCenterTenantReady = false'
   fi

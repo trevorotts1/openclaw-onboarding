@@ -1,3 +1,12 @@
+## [Unreleased]  -  2026-10-28  -  Tenant readiness probe: a public host behind Cloudflare Access is probed on loopback, so installs stop stamping done-degraded
+
+- Defect: on boxes whose Command Center public host sits behind Cloudflare Access, the Skill 32 installer's tenant readiness probe (`verify-tenant-readiness.py`, run by `run-full-install.sh` including `--update-only`) called the public hostname, received a 302 to the Access login, failed with "authenticated readiness probe failed: HTTPError", left `commandCenterTenantReady` false, and stamped the build `done-degraded` with `commandCenterDegradedPhases=tenantReadiness`. Boxes with complete tenant ids failed too, so the fault was the probe, not the box.
+- Fix: a redirect to the host's own `*.cloudflareaccess.com` login now sends the same `/api/auth/tenant-ready` request to the Command Center on the box (`http://127.0.0.1:<port>`, public `Host` header, same bearer token). The receipt must still match the tenant, company, installation, host and protocol exactly. Nothing is weakened: redirects are never followed, any other redirect or failure still fails with no fallback, a ready-looking body on an error status never passes, and a 403/503 from the receiver is reported with its own `missing` names instead of a bare `HTTPError`.
+- Skill 32 `skill-version.txt` and `SKILL.md` read `v13.1.66` (G3). Test: `tests/unit/verify-tenant-readiness-access.test.py` (wired into `qc-static`); 5 of its 9 cases failed on the previous probe.
+- Not changed: the `--interview` and `--startability` modes still check the public `interview-ready` receipt, which by design needs the public origin (their Access guidance is in `shared-utils/interview_invitation.py`).
+- In plain English: installs on boxes that sit behind Cloudflare sign-in stop being marked "degraded" for a check that could never pass from the box itself, and a box that really is missing its registration or persona setup still fails, now with the exact missing items named.
+- Risk level: LOW. The only new network call is to this box's own loopback port, and only after the public host has answered with its own Access login redirect.
+
 ## [Unreleased]  -  2026-10-26  -  Skill 75 batch merge: 13 units from wave-2 and wave-3 consolidated into one branch
 
 - Lands the 13 accepted S75 units on one branch, `batch/s75-all-13`, instead of two separately-refreshing wave branches, because each wave refresh restarted the 18-22 minute gate suite while `main` moved and neither wave could land.

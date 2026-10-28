@@ -1,5 +1,9 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.66 - 2026-10-28 - fix(32): the tenant readiness probe no longer fails on a public host behind Cloudflare Access
+
+`verify-tenant-readiness.py` called `/api/auth/tenant-ready` on the PUBLIC hostname. A host behind Cloudflare Access answers that with a 302 to its login page, so the probe failed with "authenticated readiness probe failed: HTTPError", `commandCenterTenantReady` stayed false, and every `--update-only` run stamped the build `done-degraded` with `commandCenterDegradedPhases=tenantReadiness` even on boxes with complete tenant ids. The probe now treats a redirect to the host's own `*.cloudflareaccess.com` login as "Access in front" and asks the Command Center on this box instead (`http://127.0.0.1:<port>/api/auth/tenant-ready` with the public `Host` header and the same bearer token; `--port`, which `run-full-install.sh` now passes as `$DASHBOARD_PORT`). The receipt is checked against the same exact tenant, company, installation, host and protocol identities. Redirects are still never followed, any other redirect or failure still fails with no fallback, and a 403/503 from the receiver is now reported with the receiver's own `missing` names (for example `persona_company_context_or_catalog`) instead of a bare `HTTPError`. skill-version v13.1.64 -> v13.1.66.
+
 ## v13.1.64 - 2026-10-27 - chore(batch-20261027-0754): version stamp for T-56 (scope includes T-57)
 
 Batch 20261027-0754 version stamp, Skill 32 v13.1.63 -> v13.1.64. T-56 (`pb/PBB-944/t-56-rebase` @ `75d69adb`) touches skill 32 files in this batch (`32-command-center-setup/scripts/verify-tenant-readiness.py`; scope includes T-57). No skill code changed in this commit; version stamp only.
