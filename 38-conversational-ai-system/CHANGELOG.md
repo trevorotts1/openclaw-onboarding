@@ -1,3 +1,7 @@
+## [2.0.215] - 2026-10-28 - chore(train6): version stamp for four changelog units
+
+- **Train6 version stamp, skill 38 v2.0.214 -> v2.0.215.** Units in this train add changelog entries only: PBB-458 t-15 build, PBB-2330 carry, PBB-2331 carry, PBB-2338 t-04 renumber. PBB-2333 was dropped from the batch after QC static invariants failed on the skill-38 personal-data gate: its changelog entry embeds two real launchd labels (two real launchd job labels, redacted here). No skill code changed by the stamp; version stamp only.
+
 ## [2.0.214] - 2026-10-28 - chore(train4): version stamp for the squashed unit train
 
 - **Train4 version stamp, skill 38 v2.0.213 -> v2.0.214.** Units touching skill 38: `s38-44-skipcount` and `pb/PBB-2361/repair` @ `0934c8036` (`tools/interactive_owner.py` plus two test files). Skill 44 moves v2.1.38 -> v2.1.39 for `s38-44-changelog-v6`. `S75-T03` is evidence only. Version stamp only.
