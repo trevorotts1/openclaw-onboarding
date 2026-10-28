@@ -1,3 +1,7 @@
+## [2.0.215] - 2026-10-28 - chore(train6): version stamp for four changelog units
+
+- **Train6 version stamp, skill 38 v2.0.214 -> v2.0.215.** Units in this train add changelog entries only: PBB-458 t-15 build, PBB-2330 carry, PBB-2331 carry, PBB-2338 t-04 renumber. PBB-2333 was dropped from the batch after QC static invariants failed on the skill-38 personal-data gate: its changelog entry embeds two real launchd labels (two real launchd job labels, redacted here). No skill code changed by the stamp; version stamp only.
+
 ## [2.0.214] - 2026-10-28 - chore(train4): version stamp for the squashed unit train
 
 - **Train4 version stamp, skill 38 v2.0.213 -> v2.0.214.** Units touching skill 38: `s38-44-skipcount` and `pb/PBB-2361/repair` @ `0934c8036` (`tools/interactive_owner.py` plus two test files). Skill 44 moves v2.1.38 -> v2.1.39 for `s38-44-changelog-v6`. `S75-T03` is evidence only. Version stamp only.
@@ -23,6 +27,24 @@
 ## [2.0.208] - 2026-10-28 - chore(batch-20261028-0250): version stamp for T-25 and T-04
 
 - **Batch 20261028-0250 version stamp, Skill 38 v2.0.206 -> v2.0.208.** T-25 (`pb/PBB-1029/PBB-809-t-25-enforce-proof` @ `09b4260e`) adds `tools/reconciliation.py` and T-04 (`pb/PBB-1034/PBB-831-t-04-candidate` @ `72e2abde`) updates `tools/tests/test_interactive_owner.py`. v2.0.207 skipped: claimed by unmerged branches. No skill code changed in this commit; version stamp only.
+
+## [2.0.205] - 2026-10-27 - test(T-08/F5): pin the trusted-contact-mapping decision that made F5 unreachable (PBB-229)
+
+F5 of the T-08 QC verdict was "`NO_TRUSTED_CONTACT_MAPPING` can never fire". The behaviour that closes it landed after `053c4fee`; this entry records the decision in the suite so it cannot drift back, and adds no product behaviour.
+
+The gate key `trusted_contact_mapping_evidence_id` is mandatory but nullable, and that is now asserted rather than implied. A gate that carries the key with no mapping refuses by name — `SUPPRESSED` / `NO_TRUSTED_CONTACT_MAPPING` with `errors == []`. A gate that omits the key was never written against this contract and stays `INVALID_GATE` naming the field. Making the field optional would put the reason code back behind a schema default; treating an omitted key as "no mapping" would let an unbound gate through the check. Both directions are refused by the new `test_a_missing_mapping_key_is_malformed_not_a_named_refusal`, which sits beside the existing blank/null and real-id control tests.
+
+That test already sits on `main` (the PBB-349 repair landed it there), so this carry adds no second copy of it and no schema, gate or fixture change.
+
+Proof, one instrument (`evidence/W05/f5_proof.py`, the same dispatch call as the suite) over three extracted trees, case set A, as recorded in `evidence/W05/T-08-f5-proof.md`: `053c4fee` 0/8, `8e98f155e` 3/8, this tree 8/8. The 1/8 and 4/8 this entry first carried were case set B, whose single pre-fix "hold" is an artefact of the pre-fix tree rejecting every gate that carries the key; set A is the list of record and this entry quotes it.
+
+Tests on the carried tree, measured here rather than inherited: `scripts/qc-pb-contracts.sh` exit 0, 47 tests OK; `python3 -I evidence/W05/f5_proof.py … A` exit 0, 8/8 cases held; `tools/tests` discovery exit 1 — 523 tests, 3 failures, 1 skip — where all 3 failures are the pre-existing `BookkeepingTests.test_no_version_this_branch_ships_appears_on_main` red that `main` carries itself. The class control is a detached `origin/main` in the same checkout: exit 1, 5 failures, same test, same assertion, because `MAIN_PIN_SHA` `a6bfbfb62` still records v2.0.178 and `owned_changelog_versions` therefore reports main's own newer entries as "this branch's". None of the three names this change (they name 2.0.201, 2.0.202, 2.0.203), and `test_a_missing_mapping_key_is_malformed_not_a_named_refusal` passes.
+
+Version 2.0.205 allocated at carry onto main. The branch originally allocated 2.0.34 against a `main` at 2.0.33; `main` has since reached 2.0.204, so the number is re-cut one patch above it rather than carried down.
+
+## [2.0.204] - 2026-10-27 - chore(batch-20261027-1420): heading backfill for the v2.0.204 version stamp
+
+- **Heading backfill.** The batch stamp `d031eb77a` set `38-conversational-ai-system/skill-version.txt` to v2.0.204 without adding this heading, which breaks rule 3 of `scripts/qc-assert-commit-version-claim.py` (the first heading must equal the version file) for every later commit that edits this file. Added here so this record-only carry keeps that rule true. No skill code changed.
 
 ## [2.0.203] - 2026-10-27 - chore(batch-20261027-0754): Skill 38 to v2.0.203 for T-56 (scope includes T-57)
 
@@ -495,6 +517,120 @@ One new adapter, `shared-utils/routes/instagram/route_adapter.py`, plus its suit
 - **Suites, twice each, real rc, against a detached `origin/main` baseline at `b011d2cc2` (the main this branch merged).** Contract suite `test_pb_contracts.py`: candidate `Ran 46 tests … OK` rc 0 twice; baseline `Ran 42 tests … OK` rc 0 twice. `scripts/qc-pb-contracts.sh`: rc 0 twice on both trees (46 / 42 tests). Skill-38 tools discovery: candidate `Ran 410 tests` **4 failures** rc 1 twice; baseline `Ran 406 tests` **7 failures** rc 1 twice. The candidate's four are a **strict subset** of the baseline's seven — nothing new, and three cleared (`2.0.130` leg, monotonicity, shipped-above-main). An earlier cut of this entry said the two failing-name sets were byte-identical; that was measured against a pre-merge base and is corrected here to what the detached baseline shows. Every red is `test_interactive_owner.BookkeepingTests`, red on `origin/main` itself: `test_no_version_names_two_different_changes` and `test_no_version_this_branch_ships_appears_on_main` for `2.0.131`, `2.0.132`, `2.0.133` (that test greps the top four CHANGELOG numbers as bare strings, and main itself carries three of them). That window is owner decision #237 and is reported as numbers only, not scored here. Repo-root `tests/unit`: `Ran 1302 tests` **5 failures, 1 skipped** rc 1 twice, and the same five names on both trees (`test_execution_policy…test_managed_block_carries_four_categories`, `test_jev28_managed_instructions…test_canonical_policy_keeps_four_way_s5_4_distinction`, `test_owner_sends_hold…test_passing_gate_fires_control`, `test_skill23_build_nondestructive…test_existing_agent_is_not_repointed_to_a_new_sparse_tree`, `…test_no_duplicate_for_department_registered_under_another_key`) — its own baseline, nothing added. All eight `35-social-media-planner/scripts` suites rc 0 on both trees, twice. `bash scripts/bump-version.sh --check` rc 0 on both trees, twice.
 - **Mutation control.** With `idempotency_key()` reverted to the pre-fix `tenant_id::logical_intent_key`, the suite returned `rc 1` and exactly **1** failure — `test_a_new_approved_cycle_is_a_new_placement_not_a_duplicate` — with every retry and control case still passing. Restored from a copy, `sha256` of `pb_contracts.py` identical before and after (`2ff379022c3c889beeb8ead35a748186da8b210ec7a27d2603ee098fec6894e9`). A test that fails nothing when the fix is removed would have been decoration. The repair round (PBB-484) re-ran the matrix as 7 mutations against the suite: the `public_placement` guard put back, and `placement_id`, `account_id`, `account_binding_revision`, `content_revision`, `campaign_cycle_id` dropped from the identity one at a time — every one `rc 1`, each killed by the test naming that field, with `pb_contracts.py` restored byte-identical after every mutation.
 - **Bookkeeping.** Version allocated `v2.0.143` — **PROVISIONAL**, strictly above `origin/main`'s marker `v2.0.133` and held by this branch alone, enumerated NUMERICALLY as `major*1000000+minor*1000+patch` over `git for-each-ref --format='%(objectname) %(refname)' refs/remotes/origin` — a **bare prefix, no `/*` glob**: 2040 refs, 1984 distinct commits, 2040 readable versions, 0 unreadable, 0 unparsable, with the known-present control `origin/main` reading `v2.0.133` (numeric `2000133`) in the same run and exactly one ref holding `2.0.143` (this branch). The highest claim on `origin` is **`v2.0.149` on `pb/PBB-449/t-21-update`**, above this one, so the number stays PROVISIONAL and the single serial renumber writer at merge owns the final number. Absence on `origin/main` measured over every blob of that tree (13797 blobs, 12755 read back) in all three token forms, each with its own result: `'[2.0.143]'` **absent, 0 matches**, `'v2.0.143'` **absent, 0 matches**, bare `'2.0.143'` **absent, 0 matches**; present-token controls in the same run `'[2.0.133]'` present (2 matches) and `'v2.0.133'` present (3 matches), known-absent control `'[9.9.999]'` absent. Brackets mandatory: a bare number false-matches a neighbouring version as a substring.
+## [2.0.138] - 2026-10-25 - fix(bonus): the bonus access adapter is unreachable from every production path, so it is deleted rather than wired to a shim (T-15 repair, PBB-559 of PBB-458)
+
+This branch carried `shared-utils/bonus/access_adapter.py` (427 lines) and
+`shared-utils/bonus/tests/test_access_adapter.py` (360 lines, 39 tests). Verifier
+PBB-557 returned FAIL on two structural defects that a green test run cannot see.
+Both are reproduced below before the change and proven after it. The decision is
+**DELETE — module and suite both removed**, recorded here with the capability it
+costs.
+
+- **DEFECT 1 reproduced — zero production call sites.** Whole-tree scan of every
+  tracked code file (`.py .sh .js .ts .yml .yaml .md .txt .json`, test paths
+  excluded) at head `28969668f` for the token `access_adapter`: **2 non-test hits**,
+  and both are the module's own docstring and this CHANGELOG's prose. The test
+  file is the only other reference. The scanner discriminates in the same run:
+  the known-present control token `presentation_job` returns **195 non-test files**
+  (`23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh`,
+  `shared-utils/persona_for_job.py`, `shared-utils/llm_score.py`, …). A 195-vs-2
+  split where both hits are prose is a real absence, not a broken search. The
+  verifier's narrower extension set measured the same split as 123-vs-1; both
+  instruments agree the module is reachable only from its own test file.
+- **The wire-or-delete decision and its justification.** Wiring was rejected on
+  evidence, not preference. The only states `authorize()` accepts are the five
+  dimension verdicts (identity/grant/credential/SMS/resource), and the only
+  systems that can produce them are **T-14 `bonus-access-capability-decision`
+  (ledger status `NOT_STARTED`, decision `BLOCKED` for every automated route, code
+  living on an unmerged candidate `origin/pb/PBB-356/t-14-repair3@dc5c25aa5`)**
+  and **T-48 `named-owner-live-proof` (ledger status `DEFERRED_AUTH`)**. Neither
+  ships. The spec-designated consumer is T-16 `shared-utils/capture/progressive_capture.py`
+  (ledger `build_depends_on` includes `T-15`), which is itself reachable only from
+  its own tests — 0 non-test callers on `origin/main` — so a call edge into it is
+  dead-to-dead. Every other candidate was ruled out by contract:
+  `38-conversational-ai-system/tools/direct_fulfillment.py` states in its own
+  docstring "There is no dependency on any bonus access module" and the adapter
+  states the mirror rule (C-F07, original gift must not depend on the bonus lane);
+  `consent_gate`/`tenant_identity`/`interactive_owner`/`pb_contracts` answer
+  different questions (consent scope, tenant identity, one-responder routing,
+  contract shapes) and none of them holds bonus-access verdicts to hand over.
+  Inventing a caller, or feeding `progressive_capture` fabricated states so a
+  search returns a hit, is the self-reference in a new shirt that already failed
+  two other units. So the module goes.
+- **Capability lost, stated plainly.** Deleting this module loses T-15's
+  acceptance capability entirely — the decomposition of bonus access into five
+  independently-refused authorizations, and the same-member ledger that binds an
+  SMS handle and an email handle to one member, records a failed step against the
+  member the channel resolved to, and resumes exactly that step on return.
+  Nothing on main provides it. `preparing_access` remains an inert capture state
+  in `shared-utils/capture/progressive_capture.py`, and `BONUS_COMMENT` in
+  `pb_contracts.py` remains a purpose label with no authorization semantics. The
+  clause is **unmet**, not met elsewhere. A future T-15 must land alongside its
+  real producer (T-14's route decision) and its real consumer (T-16/T-48), not
+  ahead of them. Checks **C-15, C-F04, C-F07, C-F11 stay UNVERIFIED**.
+- **DEFECT 2 resolved by removal, proven both ways.** The suite
+  `test_access_adapter.py` was executed by no workflow (0 of 66 files under
+  `.github/workflows/` name `test_access_adapter` or `bonus`; no `pytest.ini`,
+  `setup.cfg`, `tox.ini`, `pyproject.toml` or `conftest.py` at repo root, under
+  `shared-utils/` or under `shared-utils/bonus/` — all 12 probed paths absent).
+  Wiring a suite for a deleted module would name a path that never executes — the
+  same defect wearing a hat. After the deletion the suite file is absent from the
+  tree, so there is nothing for a workflow to collect and the defect is vacuous
+  rather than papered over: re-running the workflow scan reports
+  `test_access_adapter` **and** `bonus` at 0 hits with the file absent, and
+  `presentation_job` at 195 as the known-present control. The sibling suites this
+  entry does run are named explicitly by their own invocations below.
+- **DEFECT 3 corrected — the baseline was stale.** The prior entry recorded its
+  baseline as `7477816dc2fd350a837a751dc8631aaaedb956ef`; measured, that commit
+  exists and is an ancestor of head, but it is **not** current `origin/main`. The
+  real baseline is **`75a5a26a6bf7298eb4e3e1adcd7465ea4c6ec7c2`**, confirmed by
+  three agreeing reads (`git rev-parse origin/main`,
+  `git ls-remote --heads origin main`,
+  `gh api repos/<OWNER>/<REPO>/branches/main --jq .commit.sha`),
+  each returning that sha, and
+  `git merge-base --is-ancestor 75a5a26a6bf7 origin/main` **rc 0**. The suite table
+  below is re-measured against a detached `origin/main` worktree at that commit;
+  the earlier table was measured against a stale base and is superseded.
+
+SUITES, twice each, real counts and exit codes captured per command (no pipe on
+the measured command). Baseline = detached `origin/main` worktree at
+`75a5a26a6bf7298eb4e3e1adcd7465ea4c6ec7c2`; candidate = this commit.
+  baseline `bash 38-conversational-ai-system/scripts/qc-pb-contracts.sh` -> rc 0, Ran 42, OK (both passes)
+  baseline `python3 -I 38-conversational-ai-system/tools/tests/test_direct_fulfillment.py` -> rc 0, Ran 16, OK (both passes)
+  baseline `python3 -I shared-utils/handoff/tests/test_handoff.py` -> rc 0, Ran 50, OK (both passes)
+  baseline `python3 -I shared-utils/bonus/tests/test_access_adapter.py` -> **rc 2, file absent on baseline** — absence, not a failing baseline
+  baseline `git cat-file -e 75a5a26a6bf7:shared-utils/bonus/tests/test_access_adapter.py` -> **rc 128, path does not exist**
+  candidate `bash 38-conversational-ai-system/scripts/qc-pb-contracts.sh` -> rc 0, Ran 42, OK (both passes)
+  candidate `python3 -I 38-conversational-ai-system/tools/tests/test_direct_fulfillment.py` -> rc 0, Ran 16, OK (both passes)
+  candidate `python3 -I shared-utils/handoff/tests/test_handoff.py` -> rc 0, Ran 50, OK (both passes)
+  candidate `python3 -I shared-utils/bonus/tests/test_access_adapter.py` -> **cannot run — file deleted by this commit, by design**
+  pre-change run of the same suite from the head copy of the file -> rc 0, Ran 39, OK (the code itself was green; reachability is what failed it)
+No failure delta and no count delta on any pre-existing suite across baseline and
+candidate: 42 / 16 / 50 identical in both trees, twice each.
+
+INSTRUMENT PROOF, BOTH POLARITIES, on the same git that produced the tables:
+  expected-PASS ancestor `git merge-base --is-ancestor 75a5a26a6bf7 origin/main` -> rc 0
+  known-present `git cat-file -e 28969668f:README.md` -> rc 0
+  known-absent `git cat-file -e 28969668f:ZZZ-DEFINITELY-NOT-HERE-9f3a.txt` -> rc 128 (path-absent, instrument abort — absence, not a broken probe)
+  known-unlanded `git rev-list --count origin/main..063eb36307dd21465125d84f673cfefbad4e154c` -> 3 (expected 3)
+  control `git rev-list --count origin/main..75a5a26a6bf7` -> 0
+Every search above carries a known-present control. No 127 anywhere.
+
+D2 IS NOT THIS UNIT'S: `test_interactive_owner.BookkeepingTests` is
+**D2-attributed — unscored**; it influences no row here. `fast-guards` red is
+parity with main.
+
+BOOKKEEPING. Version marker stays **`v2.0.138`** — this repair changes no number;
+version allocation is the orchestrator's alone. This entry keeps its heading and
+its number so the merge-time writer sees one stable candidate.
+
+TEST DIFF. Net effect versus head is a deletion: `shared-utils/bonus/__init__.py`,
+`shared-utils/bonus/access_adapter.py` and
+`shared-utils/bonus/tests/test_access_adapter.py` are removed (787 lines), this
+entry replaces the previous `[2.0.138]` text, and no other file is touched. The
+39 tests removed with the module are removed with the capability; they tested
+only the deleted code.
+
 ## [2.0.134] - 2026-10-25 - feat(t26-duty): the owner reads the answer duty its handoffs carry (T-26 clause (d), PBB-479)
 
 T-26's clause (d) is "distinct public/private duty". Skill 35 stamps
@@ -695,6 +831,18 @@ Tests: `tools/tests/test_pb_contracts.py` 43 (42 previous + 1; the diff to `orig
 The recorded `launchctl print` capture in `evidence/engineering-loop-registration.json` embedded the real operator home directory in its `raw` field — an `ALWAYS_ON_TOKEN` banned by `scripts/qc-assert-no-client-names.sh`, which failed PR #2555's `QC static invariants` check with exactly 1 hit at that file's line 96. One substitution and one disclosure, nothing else: the home-directory component of the plist path is rendered as the placeholder `{{operatorHome}}` (the `{{...}}` placeholder shape named in that script's remedy text; `{{operatorHome}}` is not in `ALWAYS_ON_TOKENS`), and a new sibling `raw_redaction` field discloses exactly that substitution. The launchd attributes that make the T-05 acceptance proof real are byte-identical in that `raw` field — user domain `gui/501`, the job label exactly as launchd reported it, `active count = 1`, `type = LaunchAgent`, `state = running`, and the arguments tail `tick --run-id pb-eng-loop-20261024T0807Z-g2` with its run id and generation suffix. No record is deleted or hollowed out. (The label literal itself is quoted only in `evidence/`, outside this skill tree: this tree's own `qc-no-personal-data.sh` bans the operating brand token that label carries, so restating it here would red-block a gate whose whole purpose is that no identifier ships in skill content.)
 
 - **Bookkeeping.** Version allocated `v2.0.105` (reserved for this batch) and assigned in this same commit. Absence on `origin/main` measured with BOTH token forms, each printing its own rc: `git grep --fixed-strings -n '[2.0.105]' origin/main` rc 1 and `git grep --fixed-strings -n 'v2.0.105' origin/main` rc 1, against the known-present control `git grep --fixed-strings -n '[2.0.34]' origin/main` rc 0 at `38-conversational-ai-system/CHANGELOG.md:61`. Brackets mandatory: a bare number false-matches the presentations skill's v22.0.3x..v22.0.8x as a substring. The number is deliberately NOT inherited from `7105bab51` (v2.0.98), which is already held by `pb/PBB-376/t-28-repair4` and would create a duplicate.
+
+## [2.0.102] - 2026-10-25 - evidence(T-04): verified external storage binding, child temp propagation and measured global capacity (PBB-318 repair of PBB-177, record repaired under PBB-357)
+
+Repair round 2 for T-04. Verifier PBB-339 FAILED `f0542970` on two defects, both in the commit's own record/proof layer, with nothing weakened in tests: (D1) the new gate refused a wholly true record, and (D2) the message's closing "Evidence only; no control code ... changed" was contradicted by the commit's own diff. Both are repaired here.
+
+- **D1 — the gate refused a true record (repaired).** `scripts/qc-assert-commit-version-claim.py` rule 4 scanned the WHOLE root `CHANGELOG.md` for the first "bumps Skill 38 to vX.Y.Z" line, so the first such line ever written became the stale match for every later bump. On a wholly true fixture — message "Bumps Skill 38 to v2.0.9", `skill-version.txt` v2.0.9, skill heading `[2.0.9]`, newest root entry carrying no Skill 38 wording, and an older entry carrying "Bumps Skill 38 to v2.0.8" — the previously committed gate printed `VIOLATION HEAD: CHANGELOG.md's first 'bumps Skill 38 to' line is v2.0.8 but 38-conversational-ai-system/skill-version.txt is v2.0.9` and exited 1. Rule 4 now reads only the newest root entry (the text before the second `^## [` heading, which is this file's append-at-top shape) and treats "no claim in that entry" as no claim. The same fixture on the repaired gate prints `ok   HEAD` then `PASS — 1 commit(s) checked; every Skill 38 version claim matches its commit.` and exits 0. The rule still bites: a fixture whose NEWEST entry claims v2.0.8 while the files say v2.0.9 prints `VIOLATION HEAD: CHANGELOG.md's newest entry says 'bumps Skill 38 to v2.0.8' but 38-conversational-ai-system/skill-version.txt is v2.0.9` and exits 1.
+- **D1 — the pin fails when the fix is reverted.** Mutating the call site back to `ROOT_CLAIM_RE.search(root_log)` makes `--self-test` exit 1 with `SELF-TEST FAIL — 1 fixture(s) behaved wrongly`, naming the new `PBB-339 D1: wholly true record, only 'bumps Skill 38 to' line is older` fixture. Unmutated, `--self-test` exits 0: `SELF-TEST PASS — 12 fixtures: wrong records fail, right records pass` (10 before this repair; both discriminator fixtures are added here).
+- **D1 — the gate still discriminates on real bytes.** `python3 scripts/qc-assert-commit-version-claim.py --commit 7c6248c6e5f2aafd791125597f3588e3993b7c66` → exit 1, `VIOLATION 7c6248c6e5f2aafd791125597f3588e3993b7c66: commit message claims Skill 38 2.0.32 but the commit contains v2.0.34`. Control on the abandoned repair `--commit 702d6e4cdb` → exit 0, `ok   702d6e4cdb` then `PASS — 1 commit(s) checked; every Skill 38 version claim matches its commit.`
+- **D2 — the scope claim is now true as written (repaired).** The previous message closed with "Evidence only; no control code, config, ledger, provider, limit or credential changed" while the same commit added `scripts/qc-assert-commit-version-claim.py` and modified `scripts/ci/fast-guards.d/skill-version-newline-guard.sh`. The message and the root CHANGELOG entry now say what the diff does: a read-only CI gate is added and the existing newline guard is extended to run it, and no Purple-Billboard control-plane code, config, ledger, provider, limit or credential changed.
+- **Artifact re-landed byte-identical.** `evidence/storage-and-resource-receipt.json` is the same blob as the reviewed commit: `git rev-parse f0542970:evidence/storage-and-resource-receipt.json` and `git hash-object evidence/storage-and-resource-receipt.json` both print `e8cfbbad1f54d20233c60996bc155504d817885b`. Its measured claims and recorded gaps are unchanged: mount `/dev/disk7s1`, `st_dev 16777244`, UUID `9584F366-F6FB-4A40-AA75-DB2EA0FA01EA`; every configured parent on that device; child `TMPDIR`/`TMP`/`TEMP`/tempfile propagation for shell, Python (child and grandchild) and Node; filesystem 4000770232320 bytes total; 24 GiB RAM. Gaps stay recorded: stale `config/storage.json` device pin (`disk5s1` / `16777240`) never read by `tools/control.py`; macOS `mktemp` ignores `TMPDIR`; `PYTHONPYCACHEPREFIX` is ignored under `-I`; 9 `node_modules` links resolve off-volume. Provider quota, memory admission and unprobed tool caches remain UNKNOWN.
+- **Deliberately not done.** No storage guard was added to `tools/control.py`, no config value was changed, and the abandoned repair commit `702d6e4cdb` is not an ancestor of this commit (`git merge-base --is-ancestor 702d6e4cdb HEAD` → exit 1). Fixing the stale pin or enforcing a reserve floor is separate work against the package's own control code.
+- Risk level: LOW (evidence artifact, bookkeeping and one read-only CI gate).
 
 ## [2.0.98] - 2026-10-25 - test(booking): every link of the same-day-move exclusion is pinned, and the thesis is shown not asserted (T-28 repair 4, PBB-376)
 
