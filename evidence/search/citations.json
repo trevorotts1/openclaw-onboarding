@@ -3,7 +3,7 @@
   "unit": "PBB-206",
   "ledger_task": "T-01",
   "pin": "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
-  "note": "Every file:line citation used by evidence/t01-interface-inventory.md is listed here with the exact substring that must occur on that line of the pinned blob. check_citations.py reads git show <pin>:<path>, never the working tree.",
+  "note": "The machine-checkable subset of evidence/t01-interface-inventory.md's line references: each entry names a path explicitly and the exact substring that must occur on that line of the pinned blob. check_citations.py reads git show <pin>:<path>, never the working tree. This manifest is NOT exhaustive - section 11 of the document names what it does not cover (51 bare :NN references, and every handoff reference, since no shared-utils/handoff/ entry appears here).",
   "citations": [
     {
       "interface": "G1",
