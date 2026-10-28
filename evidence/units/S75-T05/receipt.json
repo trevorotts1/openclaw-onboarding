@@ -1,0 +1,26 @@
+{
+"acceptance_row":"S75-A05",
+"checks":[
+{
+"command":"python3 -I 75-drama-song-ad-factory/scripts/core/character_bible/test_identity_s75_t05.py",
+"last_line":"OK",
+"rc":0
+},
+{
+"command":"python3 -I -m py_compile 75-drama-song-ad-factory/scripts/core/character_bible/identity.py 75-drama-song-ad-factory/scripts/core/character_bible/test_identity_s75_t05.py",
+"last_line":"(no output, exit 0)",
+"rc":0
+},
+{
+"command":"python3 -I -c '\nimport copy,sys\nsys.path.insert(0,\"75-drama-song-ad-factory/scripts/core/character_bible\")\nimport identity as ID\nimport test_identity_s75_t05 as T\nexpected={\"lead\",\"supporting\",\"recurring\",\"speaking\",\"reacting\"}\nassert expected <= set(ID.ROLES), sorted(set(ID.ROLES))\nrec=T.mara()\nID.validate_identity(rec)\nrefused=0\nfor f in (\"identity_summary\",\"wants\",\"fears\",\"occupation\",\"beliefs\"):\n    r2=copy.deepcopy(rec)\n    r2.pop(f)\n    r2[\"content_digest\"]=ID.canonical_digest(r2)\n    try:\n        ID.validate_identity(r2)\n    except ID.IdentityDefect:\n        refused+=1\n    else:\n        raise AssertionError(\"missing field accepted: \"+f)\nbody=T.manifest()\nbody[\"cast\"][0][\"episode_role\"]=\"extra\"\ntry:\n    ID.validate_cast(body,T.library())\nexcept ID.CastDefect:\n    bad_role_refused=1\nelse:\n    raise AssertionError(\"bad episode_role accepted\")\nprint(\"PROBE_OK roles=%d incomplete_refused=%d bad_role_refused=%d\" % (len(expected),refused,bad_role_refused))\n'",
+"last_line":"PROBE_OK roles=5 incomplete_refused=5 bad_role_refused=1",
+"rc":0
+}
+],
+"head":"c20ab86248b6fa3b7ca5db0d01eb46a07100f1a5",
+"lane":"d6-mint-S75-T05-corrected-r3",
+"minted_at":"2026-10-28T06:34:58Z",
+"no_verifiable_check":false,
+"unit":"S75-T05",
+"verdict":"PASS"
+}
