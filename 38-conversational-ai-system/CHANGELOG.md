@@ -1,3 +1,7 @@
+## [2.0.216] - 2026-10-28 - chore(train7): version stamp and the changelog blocks train6 dropped
+
+- **Train7 version stamp, Skill 38 v2.0.215 -> v2.0.216.** Train6 (#2706) deduped changelog blocks by version NUMBER, so blocks sharing a version with an earlier stamp were silently skipped; train7 carries them by exact text. Blocks carried here belong to PBB-458 t-15 build, PBB-2330 carry and PBB-2338 t-04 renumber. PBB-2331 is NOT in this train: its block embeds a real launchd job label, which the skill-38 personal-data gate rejects, so it is answered separately rather than redacted into a false record. T-50 content-1 reconciled also lands here. Version stamp only, no skill code changed.
+
 ## [2.0.215] - 2026-10-28 - chore(train6): version stamp for four changelog units
 
 - **Train6 version stamp, skill 38 v2.0.214 -> v2.0.215.** Units in this train add changelog entries only: PBB-458 t-15 build, PBB-2330 carry, PBB-2331 carry, PBB-2338 t-04 renumber. PBB-2333 was dropped from the batch after QC static invariants failed on the skill-38 personal-data gate: its changelog entry embeds two real launchd labels (two real launchd job labels, redacted here). No skill code changed by the stamp; version stamp only.
