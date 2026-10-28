@@ -1,7 +1,7 @@
 ---
 name: conversational-ai-system
 description: Communication-driven funnel system (v5.14) that builds GHL conversation playbooks — appointment booking, brainstorm Q&A, and multi-phase qualification flows — using GHL Workflow AI nodes and OpenClaw playbooks. Differentiates from CloseBot with friendly proactive engagement over scripted pitching.
-version: v2.0.212
+version: v2.0.213
 ---
 
 # Skill 38: Conversational AI System
