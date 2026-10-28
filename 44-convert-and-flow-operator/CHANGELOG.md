@@ -1,14 +1,30 @@
-## [v2.1.38] - 2026-10-28 - chore(batch-consolidate-20261028-0700): version stamp for the consolidated fanout batch
+## [v2.1.38] - 2026-10-28 - batch 20261028-0631: the four changelog stamps for this skill, landed in one lane
 
-- **Consolidation 20261028-0700 version stamp, skill 44 v2.1.37 -> v2.1.38.** Skill content changed by units merged into batch/consolidate-20261028-0700. Version stamp, SKILL.md frontmatter and this entry only.
+Four changelog-only units landed together (`fix/s38-44-changelog` @ `8278e0d8`, `-v2` @ `98f0dae9`, `-v3` @ `52a1f2b9`, `-v4` @ `2c1a4054`). They are cumulative edits to this one file; the v2.1.36 and v2.1.37 entries below are carried verbatim from the v4 branch. No engine, CLI, template or QC script behaviour changed in this batch.
+
+### Version lockstep
+
+`skill-version.txt` moves v2.1.37 -> v2.1.38 and the `SKILL.md` frontmatter follows. No other file in the skill was touched by the version stamp.
+
+## [v2.1.37] - 2026-10-27 - batch 20261027-2242: the automation-template schema lane rebuilt on main, plus a real template-count pin
+
+The schema lane landed once before on a base that could not merge, so it was rebuilt on current main and paired with the count pin the guard was missing. Two commits, not one: the rebuild is `33825d414be3faec7eb2fbf261aaa07712afedb5` and the count pin is `049dd8a3962c8a8977027c4d2642fdbf565f85db`. Both landed on main in `135cf961114db06097fa3ad8222dd44be1ddf9e0`.
+
+### The template schema, now on a base that merges
+
+The automation-template library carries a machine-readable layer: every template declares `schema_version` and `kind`, the buildable set is expressed as graphs, and the rest are recorded as prose-only with a reason naming a fact the prose never gives. Sixteen templates are buildable and thirty-three are prose-only of forty-nine. The catalog index no longer counts the two non-template data files, so `templateCount` is forty-nine and the guard excludes `automation-build.schema.json` and `text-sets.json` from the template set. Thirteen prose-only reasons were refined to the prose that actually exists; nothing was invented to fill a gap.
+
+### The count is pinned on both sides
+
+`scripts/check-funnel-automation-library-drift.py` carries one constant, `EXPECTED_TEMPLATE_COUNT = 49`, checked against **both** the index length and the disk count, and its success line derives the printed number from that constant instead of a literal. The pin value moved with the measure: fifty-one `.json` files under the old guard rule at `7f9eb460adc6fa0778a304bf3959923217c5096f`, forty-nine templates here, the difference being the two files the guard now excludes by name. Stated plainly: main's previous one-sided disk pin already caught deleting a template file together with its index row, because the disk count moved either way. What is new is the index-side check, the derived message, `tests/unit/funnel-automation-library-drift-guard.test.py`, and one line wiring that test into `scripts/ci/fast-guards.d/funnel-automation-libraries-guard.sh`. The regression test covers four cases — clean tree, file-only loss, index-only loss and symmetric loss — and it fails when the pin is removed, when the pin is set to fifty-one, or when **both** count checks are dropped; dropping only one side still passes, because the other side's pin and the index-versus-disk set comparison cover the same loss.
 
 ## [v2.1.36] - 2026-10-27 - batch 20261027-2022: two test-only units (portable mktemp template pinned, graph fixture presence asserted)
 
-Two test-only units shipped between v2.1.35 and this stamp. No engine, CLI, template or QC script behaviour changed in this batch; the only non-test files touched are the two version markers.
+Two test-only units shipped between v2.1.35 and this stamp. No engine, CLI, template or QC script behaviour changed in this batch; within this skill the only non-test files touched are the two version markers.
 
 ### The portable mktemp template is pinned by a test
 
-`qc-built-workflow.sh` writes its export through `mktemp "${TMPDIR:-/tmp}/qc-wf-export-XXXXXX"`. BSD `mktemp` requires the Xs to be the last characters of the template, so the earlier `...XXXXXX.json` form created that literal shared path instead of a unique one. The script calls `mktemp` once and installs `trap 'rm -f "$TMP"' EXIT`, so one run does not collide with itself; the failure appears when that literal path already exists — from an interrupted earlier run, another checkout or a parallel job — and the call then dies with `mktemp: mkstemp failed on <path>: File exists`, rc 1. The pre-existing suite did not catch this: with the old form restored, `tests/test_qc_built_workflow.py` stays green (50 passed, 1 failed, and the single failure is the new test itself, which fails because the old unquoted form does not match its quoted-template regex). `tests/test_qc_built_workflow.py::test_export_temp_template_is_portable` (f589ff0f8) reads the quoted template out of the script with a regex rather than restating it, points `TMPDIR` at `tmp_path`, runs `mktemp` twice and requires two distinct paths, so a future edit that puts a suffix after the Xs now fails the suite.
+`qc-built-workflow.sh` writes its export through `mktemp "${TMPDIR:-/tmp}/qc-wf-export-XXXXXX"`. BSD `mktemp` requires the Xs to be the last characters of the template, so the earlier `...XXXXXX.json` form created that literal shared path instead of a unique one. The script calls `mktemp` once and installs `trap 'rm -f "$TMP"' EXIT`, so one run does not collide with itself; the failure appears when that literal path already exists — from an interrupted earlier run, another checkout or a parallel job — and the call then dies with `mktemp: mkstemp failed on <path>: File exists`, rc 1. The pre-existing suite did not catch this: with the old form restored, the fifty pre-existing tests in `tests/test_qc_built_workflow.py` stay green and the only failure is the new test itself (50 passed, 1 failed). Which assert it fails on depends on the restored form, so both are named: the form that actually shipped before the fix was `mktemp /tmp/qc-wf-export-XXXXXX.json`, unquoted and with a suffix after the Xs, and restoring it fails the test at its own template lookup (`no quoted mktemp template found`), before any `mktemp` runs; a quoted template that still carries a suffix fails one step later, at the second call, with `mktemp: mkstemp failed on <path>: File exists`. `tests/test_qc_built_workflow.py::test_export_temp_template_is_portable` (f589ff0f8) reads the quoted template out of the script with a regex rather than restating it, points `TMPDIR` at `tmp_path`, runs `mktemp` twice and requires two distinct paths, so a future edit that puts a suffix after the Xs now fails the suite.
 
 ### A missing graph fixture is not a malformed one
 
