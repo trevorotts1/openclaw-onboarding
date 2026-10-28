@@ -3615,6 +3615,7 @@ jobs:
           echo "resolved $root/$t"
           ls -l "$t"
           python3 "$t"
+          python3 -I shared-utils/reminders/reminder_state_machine.py --selfcheck
           echo "✓ T-16 progressive capture + the one logical SMS email ask suite ran and passed"
       - name: T-16 reminder host self-check (discriminates the wiring, rc-gated)
         shell: bash
