@@ -1,3 +1,9 @@
+## [2.0.222] - 2026-10-28
+
+Carries the PBB-177 T-04 operator-path redaction onto live main: every operator volume root in `evidence/storage-and-resource-receipt.json` becomes the `<PATH>` placeholder (118 sites), plus the two remaining operator-home strings on added lines (the HOME entry in the launchd observed block and the internal-root probe path in the ledger-guard command), matching the unit's second commit. Changelog lines on main already carried the redacted text, so no changelog replay was needed beyond this stamp. Verifies clean against the skill-38 suite.
+
+Carry of PBB-2314 (88e9684ab) onto live main: the BookkeepingTests in `test_interactive_owner.py` read the fork point (merge-base), not the moving tip, so a release this change adds is judged strictly above main without reddening every branch main has passed. `owned_changelog_versions` is replaced by `versions_this_change_adds()`; the duplicate-version check compares added versions against `main_changelog_versions` headings only (main's heading-only rule), never a whole-tree fixed-string scan. Version stamp only beyond the carried test change.
+
 ## [2.0.221] - 2026-10-28
 
 Carries the PBB-1710 T-05 registration evidence rebuild onto live main, keeping main's six corpus_status values and adding proof-artifacts/document scopes with repo-relative paths.
