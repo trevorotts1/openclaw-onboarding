@@ -1,3 +1,7 @@
+## [2.0.221] - 2026-10-28 - rebase PBB-177 T-04 path redaction onto live main (lane batch1)
+
+Carries the PBB-177 T-04 operator-path redaction onto live main: every operator volume root in `evidence/storage-and-resource-receipt.json` becomes the `<PATH>` placeholder (118 sites), matching the unit's second commit. Changelog lines on main already carried the redacted text, so no changelog replay was needed beyond this stamp. Verifies clean against the skill-38 suite.
+
 ## [2.0.220] - 2026-10-28 - chore(train20): batch landing of the PBB-1708 interactive-owner tests
 
 Lands the T-25 interactive-owner tests from PBB-1708 in the train20 batch.
