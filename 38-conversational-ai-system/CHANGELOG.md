@@ -1,3 +1,7 @@
+## [2.0.217] - 2026-10-28 - chore(train8): version stamp for PBB-816 reconciled changelog
+
+- **Train8 version stamp, Skill 38 v2.0.216 -> v2.0.217.** PBB-816 (`pb/PBB-816/skill38-v2.0.192-reconciled` @ `545695047`) adds a changelog block only; the branch name mentions v2.0.192 but its tree carries v2.0.215, verified, so no downgrade. Version stamp only, no skill code changed.
+
 ## [2.0.216] - 2026-10-28 - chore(train7): version stamp and the changelog blocks train6 dropped
 
 - **Train7 version stamp, Skill 38 v2.0.215 -> v2.0.216.** Train6 (#2706) deduped changelog blocks by version NUMBER, so blocks sharing a version with an earlier stamp were silently skipped; train7 carries them by exact text. Blocks carried here belong to PBB-458 t-15 build, PBB-2330 carry and PBB-2338 t-04 renumber. PBB-2331 is NOT in this train: its block embeds a real launchd job label, which the skill-38 personal-data gate rejects, so it is answered separately rather than redacted into a false record. T-50 content-1 reconciled also lands here. Version stamp only, no skill code changed.
