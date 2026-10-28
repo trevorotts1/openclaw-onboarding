@@ -15,10 +15,10 @@ The previous T-50 attempt pinned the measurement point with commit
 owned_paths is []") on `pb/T-50-1`. Measured now:
 
 ```
-git -C /Users/blackceomacmini/openclaw-onboarding diff --name-only \
+git -C <PATH> diff --name-only \
   origin/main...b1d6cf125c21bd90b76e4282dbfeb27aa3109b15 | wc -l
 # 0
-git -C /Users/blackceomacmini/openclaw-onboarding diff --stat \
+git -C <PATH> diff --stat \
   origin/main...b1d6cf125c21bd90b76e4282dbfeb27aa3109b15
 # (no output — tree identical to origin/main)
 ```
@@ -51,7 +51,7 @@ same-file exact-line. `added == carried + absent` holds on every row.
 Reproduce with:
 
 ```
-python3 -I "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/tmp/t50-content.py" /tmp/t50-content.json
+python3 -I "<PATH>" /tmp/t50-content.json
 ```
 
 | Verdict | Units |
@@ -100,7 +100,7 @@ test runs, no merges"), `runs_after = null`.
 Delivery object measured:
 
 ```
-shasum -a 256 /Users/blackceomacmini/Downloads/Purple-Billboard-System-Review-2026-10-26.md
+shasum -a 256 <PATH>
 # 562b51e49b815c04c847acad1b4cf2913c3ab119ec3c1d0dbe92ff2198395ad4
 ```
 
@@ -119,7 +119,7 @@ setUp skips unless `touches_skill_38()` and `ships_a_version()` (lines
 Measured on `origin/main` = `7a206be19`:
 
 ```
-git -C /Users/blackceomacmini/openclaw-onboarding show \
+git -C <PATH> show \
   origin/main:38-conversational-ai-system/tools/tests/test_interactive_owner.py
 # line 38  = 'MAIN_PIN_SHA = "a6bfbfb62ff7980ef6aae8ea9e2682fba98a31f8"'
 # line 1071-1079 = setUp() with git_ok / touches_skill_38 / ships_a_version skips
