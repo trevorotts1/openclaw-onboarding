@@ -174,15 +174,15 @@ units' owned paths) and this lane did not touch them.
 Dirty worktrees at this head (path, porcelain line count):
 
 ```
-<operator-home>/openclaw-onboarding                         12
-<operator-home>/graphify-snapshots/openclaw-onboarding-...   1
+<PATH>                                                             12
+<PATH>                                                              1
 <run-root>/worktrees/PBB-526                                       44
 <run-root>/worktrees/PBB-535                                       88
 <run-root>/worktrees/PBB-576                                        1
 <run-root>/worktrees/PBB-608                                       45
 <run-root>/worktrees/PBB-649                                        1
-<PATH>                   3
-<PATH>                                 1
+<PATH>                                                              3
+<PATH>                                                              1
 ```
 
 Honest reading, and the one claim in this document that is NOT proven: "no worktree/tmp/
