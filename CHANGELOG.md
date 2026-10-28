@@ -31,6 +31,15 @@
 - Merges pull request #2549 (`batch/s75-b3`, merged 2026-10-24T22:32:03Z), which lands two Skill 75 units that were accepted and independently attested but never merged: S75-T10 `SCRIPT-WRITER-OWNER` and S75-T24 `VISUAL-UX-OWNER`. Both merged `--no-ff` with no hand edits.
 - In plain English: two Skill 75 pieces that had already passed review were found sitting unmerged and were put into the package.
 
+## [Unreleased]  -  2026-10-24  -  PBB-177 / T-04: verified external storage binding and measured global capacity
+
+- Adds `evidence/storage-and-resource-receipt.json` and bumps Skill 38 to v2.0.34 with its own changelog entry. The receipt binds the live external mount by media UUID, resolves every configured parent and device, and proves child `TMPDIR`/`TMP`/`TEMP`/tempfile propagation for shell, Python (including a grandchild) and Node.
+- Measured facts, each with the command and exit code that produced it: mount `/dev/disk7s1`, `st_dev 16777244`, UUID `9584F366-F6FB-4A40-AA75-DB2EA0FA01EA`; filesystem 4000770232320 bytes total and 2524230701056 available; 24 GiB RAM with 5254676480 bytes reclaimable; limits 10 agents per workflow / 50 workflows / 500 agents.
+- Recorded gaps, not papered over: the `config/storage.json` device pin is stale (`disk5s1` / `16777240`) and is never read by `tools/control.py`; macOS `mktemp` ignores `TMPDIR` and writes to the internal disk; `PYTHONPYCACHEPREFIX` is ignored under `-I`; and 9 `node_modules` symlinks under the run roots resolve off-volume.
+- In plain English: this proves where the work actually lives and where temporary files really go, and it names the places where the proof shows a hole instead of pretending they are covered.
+- Nothing is enforced yet. No control code, config, ledger, provider, limit or credential was changed; provider quota, memory admission and unprobed tool caches remain explicitly UNKNOWN.
+- Risk level: LOW (evidence artifact and bookkeeping only).
+
 ## [Unreleased]  -  2026-10-24  -  T-43: onboarding cohort integration receipts bind one shared target owner, compatibility, red-subset isolation, exact gates and named-repair remote proof
 
 - In plain English: the onboarding batch train can now freeze a compatible cohort before anything lands. It refuses to run on a local file pretending to be a lock, refuses two units that edit the same file unless one combined owner candidate is named, holds a red unit and its true dependents while unrelated green work continues, requires an exact-SHA independent PASS receipt with the named checks (a broad ALL_PASS is not evidence), and proves a named repair by its actual content on the remote target after a baseline merge. Anything not observed is recorded as UNKNOWN with the reason, never as success, and the record it produces is `onboarding-remote-merge-receipts`.
@@ -39,6 +48,15 @@
 
 - T-43 repair (QC round 3): the law now covers the fields the round-2 repair still read as defaults. `cleanup_disposition` no longer hands out the `eligible` deletion authorisation from an unobserved `remote_merge_proof_ids` — `"junk"`, `[""]`, `[None]`, `[7]`, `1` and `{"p":1}` are `UNKNOWN` like the sibling `consumers` check already was; an unobserved `files` or `depends_on` entry is never `str()`-coerced into a path or a dependency id; a unit `state` that is not exactly `green`/`red` is `UNKNOWN`, never silently "not red"; `build_receipt` and `verify_receipt` require the target `before`/`after` to be observed hex object ids; `prove_named_repair` requires an observed repair id, target ref and head, and refuses `None == None` as content equivalence; a built receipt is never `UNKNOWN` without a reason; and `exact_independent_gate`'s identity and check names are observed strings.
 - T-43 repair (QC round 4): `schema.kind` is observed by SHAPE before it is compared, so a value that merely claims equality with a known kind - an object whose `__eq__` says `== "none"`, or a `str` subclass - can never reach the "no schema clause" branch and be ADMITTED. The version pin now also reads the number declared at a NAMED `origin/main` SHA and refuses a candidate marker that does not move above it, so a stale renumber cannot pass. The landing merges live `origin/main` (`3c798db6659c`) into the stack instead of sitting 127 commits behind it. Full record: `38-conversational-ai-system/CHANGELOG.md`, entry `2.0.128` (PROVISIONAL).
+
+## [Unreleased]  -  2026-10-24  -  PBB-177 / T-04: verified external storage binding and measured global capacity
+
+- Adds `evidence/storage-and-resource-receipt.json` and bumps Skill 38 to v2.0.32 with its own changelog entry. The receipt binds the live external mount by media UUID, resolves every configured parent and device, and proves child `TMPDIR`/`TMP`/`TEMP`/tempfile propagation for shell, Python (including a grandchild) and Node.
+- Measured facts, each with the command and exit code that produced it: mount `/dev/disk7s1`, `st_dev 16777244`, UUID `9584F366-F6FB-4A40-AA75-DB2EA0FA01EA`; filesystem 4000770232320 bytes total and 2524230701056 available; 24 GiB RAM with 5254676480 bytes reclaimable; limits 10 agents per workflow / 50 workflows / 500 agents.
+- Recorded gaps, not papered over: the `config/storage.json` device pin is stale (`disk5s1` / `16777240`) and is never read by `tools/control.py`; macOS `mktemp` ignores `TMPDIR` and writes to the internal disk; `PYTHONPYCACHEPREFIX` is ignored under `-I`; and 9 `node_modules` symlinks under the run roots resolve off-volume.
+- In plain English: this proves where the work actually lives and where temporary files really go, and it names the places where the proof shows a hole instead of pretending they are covered.
+- Nothing is enforced yet. No control code, config, ledger, provider, limit or credential was changed; provider quota, memory admission and unprobed tool caches remain explicitly UNKNOWN.
+- Risk level: LOW (evidence artifact and bookkeeping only).
 
 ## [v27.1.65]  -  2026-10-23  -  Skill 75: enforce approved lip-sync clips and audio provenance through final delivery
 
