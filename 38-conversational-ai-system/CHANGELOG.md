@@ -24,6 +24,20 @@
 
 - **Batch 20261028-0250 version stamp, Skill 38 v2.0.206 -> v2.0.208.** T-25 (`pb/PBB-1029/PBB-809-t-25-enforce-proof` @ `09b4260e`) adds `tools/reconciliation.py` and T-04 (`pb/PBB-1034/PBB-831-t-04-candidate` @ `72e2abde`) updates `tools/tests/test_interactive_owner.py`. v2.0.207 skipped: claimed by unmerged branches. No skill code changed in this commit; version stamp only.
 
+## [2.0.205] - 2026-10-27 - test(T-08/F5): pin the trusted-contact-mapping decision that made F5 unreachable (PBB-229)
+
+F5 of the T-08 QC verdict was "`NO_TRUSTED_CONTACT_MAPPING` can never fire". The behaviour that closes it landed after `053c4fee`; this entry records the decision in the suite so it cannot drift back, and adds no product behaviour.
+
+The gate key `trusted_contact_mapping_evidence_id` is mandatory but nullable, and that is now asserted rather than implied. A gate that carries the key with no mapping refuses by name — `SUPPRESSED` / `NO_TRUSTED_CONTACT_MAPPING` with `errors == []`. A gate that omits the key was never written against this contract and stays `INVALID_GATE` naming the field. Making the field optional would put the reason code back behind a schema default; treating an omitted key as "no mapping" would let an unbound gate through the check. Both directions are refused by the new `test_a_missing_mapping_key_is_malformed_not_a_named_refusal`, which sits beside the existing blank/null and real-id control tests.
+
+That test already sits on `main` (the PBB-349 repair landed it there), so this carry adds no second copy of it and no schema, gate or fixture change.
+
+Proof, one instrument (`evidence/W05/f5_proof.py`, the same dispatch call as the suite) over three extracted trees, case set A, as recorded in `evidence/W05/T-08-f5-proof.md`: `053c4fee` 0/8, `8e98f155e` 3/8, this tree 8/8. The 1/8 and 4/8 this entry first carried were case set B, whose single pre-fix "hold" is an artefact of the pre-fix tree rejecting every gate that carries the key; set A is the list of record and this entry quotes it.
+
+Tests on the carried tree, measured here rather than inherited: `scripts/qc-pb-contracts.sh` exit 0, 47 tests OK; `python3 -I evidence/W05/f5_proof.py … A` exit 0, 8/8 cases held; `tools/tests` discovery exit 1 — 523 tests, 3 failures, 1 skip — where all 3 failures are the pre-existing `BookkeepingTests.test_no_version_this_branch_ships_appears_on_main` red that `main` carries itself. The class control is a detached `origin/main` in the same checkout: exit 1, 5 failures, same test, same assertion, because `MAIN_PIN_SHA` `a6bfbfb62` still records v2.0.178 and `owned_changelog_versions` therefore reports main's own newer entries as "this branch's". None of the three names this change (they name 2.0.201, 2.0.202, 2.0.203), and `test_a_missing_mapping_key_is_malformed_not_a_named_refusal` passes.
+
+Version 2.0.205 allocated at carry onto main. The branch originally allocated 2.0.34 against a `main` at 2.0.33; `main` has since reached 2.0.204, so the number is re-cut one patch above it rather than carried down.
+
 ## [2.0.203] - 2026-10-27 - chore(batch-20261027-0754): Skill 38 to v2.0.203 for T-56 (scope includes T-57)
 
 - **Batch 20261027-0754 version stamp, Skill 38 v2.0.202 -> v2.0.203.** T-56 (`pb/PBB-944/t-56-rebase` @ `75d69adb`) touches skill 38 files in this batch (`schemas/approval-manifest.schema.json`, `schemas/outbound-action.schema.json`, `tools/durable_store.py`, `tools/pb_contracts.py`; scope includes T-57). No skill code changed in this commit; version stamp only.
