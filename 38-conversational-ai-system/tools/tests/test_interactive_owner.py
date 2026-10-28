@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import hashlib
 import io
 import json
 import re
@@ -581,6 +582,166 @@ class CliTests(unittest.TestCase):
         )
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out)["route"]["id"], owner.OWNER_OPENCLAW)
+
+
+class FulfillmentCliTests(unittest.TestCase):
+    """PBB-698 T-25: the owner that answers a step may also deliver the gift.
+
+    ``direct_fulfillment.py`` had no production importer, so the exactly-once
+    delivery path was reachable only from its own unittest module. These tests
+    prove the CLI that now calls it: resolution runs BEFORE any effect (a stale
+    tap leaves no outbox row, no journal line and no transport call), the
+    durable basis is written by its own command and never minted by the send,
+    and a repeat call reports ``already_satisfied`` instead of sending twice.
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="interactive-owner-fulfill-"))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def run_cli(self, *argv):
+        buffer = io.StringIO()
+        err = io.StringIO()
+        with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(err):
+            code = owner.main(list(argv))
+        return code, buffer.getvalue(), err.getvalue()
+
+    def write(self, name, doc):
+        path = self.tmp / name
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        return str(path)
+
+    def item(self, **overrides):
+        doc = {
+            "item_id": "gift-1",
+            "version": "1",
+            "content_sha256": hashlib.sha256(b"the gift").hexdigest(),
+            "approved": True,
+            "purpose": owner.PURPOSE_ORIGINAL_GIFT,
+            "content_uri": "https://example.test/gift-1",
+        }
+        doc.update(overrides)
+        return doc
+
+    def basis(self, **overrides):
+        doc = {
+            "tenant_id": "tenant-alpha",
+            "canonical_contact_id": "c-1",
+            "item_id": "gift-1",
+            "version": "1",
+            "basis": "owner_approved",
+            "actor": "op-1",
+            "evidence": "contract:launch-ai/tenant-alpha/loc-1/spring-offer",
+            "channel": "sms",
+            "address": "+15550100",
+        }
+        doc.update(overrides)
+        return doc
+
+    def fulfill_argv(self, item_path, basis_path, event=None):
+        return (
+            "fulfill",
+            "--contract", fixture("valid.json"),
+            "--event", GOOD_EVENT if event is None else event,
+            "--outbox", str(self.tmp / "outbox.db"),
+            "--ledger", str(self.tmp / "ledger.db"),
+            "--journal", str(self.tmp / "journal.jsonl"),
+            "--item", item_path,
+            "--basis", basis_path,
+        )
+
+    def journal_lines(self):
+        path = self.tmp / "journal.jsonl"
+        if not path.exists():
+            return []
+        return [line for line in path.read_text(encoding="utf-8").splitlines()
+                if line.strip()]
+
+    def test_stale_tap_is_refused_before_any_effect(self):
+        item = self.write("item.json", self.item())
+        basis = self.write("basis.json", self.basis())
+        stale = json.dumps({"kind": "control", "step_id": "pick_time",
+                            "control_id": "wed_2pm", "generation": 2})
+        code, out, _ = self.run_cli(*self.fulfill_argv(item, basis, stale))
+        payload = json.loads(out)
+        self.assertEqual(code, 1)
+        self.assertEqual(payload["status"], "refused")
+        self.assertEqual(payload["code"], owner.STALE_TAP)
+        self.assertFalse((self.tmp / "outbox.db").exists())
+        self.assertFalse((self.tmp / "journal.jsonl").exists())
+
+    def test_no_recorded_basis_means_no_send(self):
+        item = self.write("item.json", self.item())
+        basis = self.write("basis.json", self.basis())
+        code, out, _ = self.run_cli(*self.fulfill_argv(item, basis))
+        payload = json.loads(out)
+        self.assertEqual(code, 1)
+        self.assertEqual(payload["status"], "refused")
+        self.assertEqual(payload["reason"], "no_delivery_basis")
+        self.assertEqual(self.journal_lines(), [])
+
+    def test_record_basis_sends_nothing(self):
+        basis = self.write("basis.json", self.basis())
+        code, out, _ = self.run_cli(
+            "record-basis", "--ledger", str(self.tmp / "ledger.db"), "--basis", basis
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue(json.loads(out)["ok"])
+        self.assertFalse((self.tmp / "journal.jsonl").exists())
+        self.assertFalse((self.tmp / "outbox.db").exists())
+
+    def test_fulfill_sends_once_then_reports_already_satisfied(self):
+        item = self.write("item.json", self.item())
+        basis = self.write("basis.json", self.basis())
+        code, out, _ = self.run_cli(
+            "record-basis", "--ledger", str(self.tmp / "ledger.db"), "--basis", basis
+        )
+        self.assertEqual(code, 0)
+
+        argv = self.fulfill_argv(item, basis)
+        first_code, first_out, _ = self.run_cli(*argv)
+        first = json.loads(first_out)
+        self.assertEqual(first_code, 0)
+        self.assertTrue(first["ok"])
+        self.assertEqual(first["status"], "sent")
+        self.assertEqual(len(self.journal_lines()), 1)
+
+        second_code, second_out, _ = self.run_cli(*argv)
+        second = json.loads(second_out)
+        self.assertEqual(second_code, 0)
+        self.assertEqual(second["status"], "already_satisfied")
+        self.assertEqual(second["action_id"], first["action_id"])
+        self.assertEqual(len(self.journal_lines()), 1)
+
+    def test_item_purpose_must_be_the_original_gift(self):
+        item = self.write("item.json", self.item(purpose="ORDER_UPDATE"))
+        basis = self.write("basis.json", self.basis())
+        code, out, err = self.run_cli(*self.fulfill_argv(item, basis))
+        self.assertEqual(code, 2)
+        self.assertEqual(out, "")
+        self.assertIn("ORIGINAL_GIFT", err)
+
+    def test_basis_for_a_different_item_is_refused(self):
+        item = self.write("item.json", self.item())
+        basis = self.write("basis.json", self.basis(item_id="gift-2"))
+        code, out, err = self.run_cli(*self.fulfill_argv(item, basis))
+        self.assertEqual(code, 2)
+        self.assertEqual(out, "")
+        self.assertIn("different promised item", err)
+
+    def test_an_unapproved_item_is_never_sent(self):
+        item = self.write("item.json", self.item(approved=False))
+        basis = self.write("basis.json", self.basis())
+        code, out, _ = self.run_cli(
+            "record-basis", "--ledger", str(self.tmp / "ledger.db"), "--basis", basis
+        )
+        self.assertEqual(code, 0)
+        code, out, err = self.run_cli(*self.fulfill_argv(item, basis))
+        self.assertEqual(code, 2)
+        self.assertIn("not approved", err)
+        self.assertEqual(self.journal_lines(), [])
 
 
 GOOD_EVENT = json.dumps(
