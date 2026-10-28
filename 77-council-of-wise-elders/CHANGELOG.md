@@ -1,5 +1,9 @@
 # Council of Wise Elders (77): Changelog
 
+## 1.0.66 - 2026-10-28 - chore(batch-consolidate-20261028-0700): version stamp for the consolidated fanout batch
+
+- **Consolidation 20261028-0700 version stamp, skill 77 v1.0.65 -> v1.0.66.** Skill content changed by units merged into batch/consolidate-20261028-0700; version stamp, SKILL.md frontmatter and this entry only. No product code changed in this commit.
+
 ## v1.0.65: the persona-root probes stop false-failing when the checkout path contains a space (HARNESS-FIX-1076)
 
 In plain English: three tests spawned a helper script using the URL's raw `pathname`, which keeps `%20` where a directory name has a space, so a checkout under a folder with a space in its name reported "Cannot find module" and went red for a reason that had nothing to do with the product. The probes now resolve the path with `fileURLToPath`, so the same tree passes under any folder name.
