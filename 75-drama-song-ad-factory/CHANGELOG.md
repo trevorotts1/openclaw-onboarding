@@ -4,6 +4,10 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.132 - 2026-10-28 - chore(batch-consolidate-20261028-0700): version stamp for the consolidated fanout batch
+
+- **Consolidation 20261028-0700 version stamp, skill 75 v2.9.131 -> v2.9.132.** Skill content changed by units merged into batch/consolidate-20261028-0700. Version stamp, SKILL.md frontmatter and this entry only.
+
 ## v2.9.131 - 2026-10-28 - chore(batch-fanout-0250-lane9): version stamp for batch lane 9
 
 - **Batch fanout lane 9 version stamp, skill 75 v2.9.130 -> v2.9.131.** Main reads v2.9.130, so this lane takes main+1 and G3 sees a real bump against the merge base. The units in this lane touching skill 75 are S75-CATALOG (`s75/S75-CATALOG` @ `678b021e`), S75-T32-R1 (`s75/S75-T32-r1` @ `6a7be9f9`) and S75-T41-SHARED-RULE (`s75/S75-T41-shared-rule` @ `61390619`). They add the folk-storytelling prompt template, a real-content replay driver with its recorded S75-T41 fixture, and the story-first acceptance suite (`tests/story_first_acceptance/`). No other skill code changed in this commit; version stamp and this entry only.
