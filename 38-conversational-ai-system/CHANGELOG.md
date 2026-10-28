@@ -1,3 +1,7 @@
+## [2.0.212] - 2026-10-28 - chore(batch-fanout-0250-lane8): Skill 38 to v2.0.212
+
+- **Batch fanout lane 8 version stamp, Skill 38 v2.0.211 -> v2.0.212.** carry-t12-qc-fix (`pb/PBB-2352/carry-t12-qc-fix` @ `9c1df17c`) and carry-t25-enforce-proof (`pb/PBB-2353/carry-t25-enforce-proof` @ `cdc260da`) touch skill 38 files in this batched branch (`tools/reconciliation.py`, `tools/tests/test_durable_processing.py`). v2.0.209 to v2.0.211 were taken by fanout lanes 4 and 6 and by consolidation 20261028-0700. PBB-698, carry-t05-qcfix, repair, t05-adapter-hash and T-16-WIRE dropped from this lane. Version stamp only.
+
 ## [2.0.211] - 2026-10-28 - chore(batch-consolidate-20261028-0700): version stamp for the consolidated fanout batch
 
 - **Consolidation 20261028-0700 version stamp, skill 38 v2.0.210 -> v2.0.211.** Skill content changed by units merged into batch/consolidate-20261028-0700. Version stamp, SKILL.md frontmatter and this entry only.
