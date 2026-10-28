@@ -1,3 +1,7 @@
+## [2.0.207] - 2026-10-28 - chore(batch-fanout-0250-lane7): Skill 38 to v2.0.207
+
+- **Batch fanout lane 7 version stamp, Skill 38 v2.0.206 -> v2.0.207.** Landed lane-7 units touching skill 38: T-38-REPAIR2 (`a6ed9c9b`), t01-h1-citations-carry (`4c567690`), T-05-HYGIENE-CARRY (`069be928`), T-22-REPAIR4-CLEAN (`585fc0d8`), T-38 (`6eedc4ea`), T-04 (`c54a3cfb`), T-36-CARRY (`3bc7ee91`), carry-f03-f12-traces (`e77b334e`), carry-t22-merit (`7c67879b`), T-24-CHECKS-CARRY (`c4e610e3`). Version stamp only.
+
 ## [2.0.204] - 2026-10-27 - fix(runtime): T-38 runtime adapters — both repair rounds carried from `pb/PBB-276/t-38-repair2` (PBB-139, PBB-276)
 
 Carried record. The code of both rounds below is already on `origin/main` (`b9b6f6097`), which restates it with `bind_proven` made a required keyword-only argument on every admission surface. Their original `## [vX]` headings named `v2.0.29` and `v2.0.34`, both since allocated to other units on main (T-13, T-08d, T-23, T-28), so the headings are demoted to labels here, and operator absolute paths are replaced by `<PATH>`; nothing else is changed.
