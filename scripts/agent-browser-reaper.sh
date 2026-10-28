@@ -22,11 +22,16 @@
 #       AND mtime older than AB_HARD_AGE_MIN → remove (covers crashed managers).
 #   (4) AB_MAX_LIVE tripwire: count Chromium procs UNDER THE AGENT-BROWSER /
 #       Playwright PROFILE TREE ONLY (match --user-data-dir/profile under
-#       ~/.agent-browser or the Playwright fallback dir — NEVER a bare `chrome`
-#       name; the operator box runs ~23 unrelated Google Chrome / Claude procs
-#       that MUST survive). If over the cap → MESSAGE Rescue Rangers + log; only
-#       SIGKILL a Chromium whose owning session lease is gone AND proc age >
-#       AB_PROC_HARD_AGE_MIN.
+#       ~/.agent-browser, $OC_ROOT/tmp/agent-browser-chrome-*, ~/.ab-heartbeat or
+#       the Playwright fallback dir, or a Chrome for Testing binary under
+#       ~/.agent-browser/browsers — NEVER a bare `chrome` name; the operator box
+#       runs ~23 unrelated Google Chrome / Claude procs that MUST survive). If
+#       over the cap → MESSAGE Rescue Rangers + log; only stop (SIGTERM, then
+#       SIGKILL a survivor) a Chromium whose owning session lease is gone AND
+#       proc age > AB_PROC_HARD_AGE_MIN.
+#   (4b) Orphaned daemons: an `agent-browser-*` daemon whose parent is PID 1,
+#       with no live Chromium child left (none, or reaped above), no live lease
+#       and age > AB_PROC_HARD_AGE_MIN, is stopped the same way.
 #   (5) Log reclaimed proc count + bytes. Stale atomic-mkdir lock cleanup.
 #
 # SAFETY (mirrors scripts/orphan-temp-sweep.sh):
@@ -104,6 +109,24 @@ _mtime() { stat -f%m "$1" 2>/dev/null || stat -c%Y "$1" 2>/dev/null || echo 0; }
 # Portable file size (macOS stat -f%z, GNU stat -c%s).
 _size() { stat -f%z "$1" 2>/dev/null || stat -c%s "$1" 2>/dev/null || echo 0; }
 _now() { date -u +%s; }
+
+# Seconds from a `ps -o etime` value ([[dd-]hh:]mm:ss); empty when it is not that shape.
+_etime_to_sec() {
+  printf '%s' "$1" | tr -d '[:space:]' | awk '
+    $0 !~ /^([0-9]+-)?([0-9]+:)?[0-9]+:[0-9]+$/ { exit }
+    { e=$0; d=0; if (e ~ /-/) { split(e,a,"-"); d=a[1]; e=a[2] }
+      n=split(e,t,":"); s=(n==3) ? t[1]*3600+t[2]*60+t[3] : t[1]*60+t[2]; print d*86400+s }'
+}
+# Process age in seconds. Linux ps has `etimes`; macOS/BSD ps rejects that keyword and prints its whole keyword
+# list to STDOUT, so the value is tested for a number and `etime` is parsed instead. Empty = cannot confirm.
+_proc_age_sec() {
+  local pid="$1" a
+  a="$(ps -o etimes= -p "$pid" 2>/dev/null | tr -d '[:space:]')"
+  [[ "$a" =~ ^[0-9]+$ ]] || a="$(_etime_to_sec "$(ps -o etime= -p "$pid" 2>/dev/null)")"
+  [[ "$a" =~ ^[0-9]+$ ]] && printf '%s' "$a"
+}
+# Escape a literal path for use inside a grep -E alternation.
+_re_esc() { printf '%s' "$1" | sed 's/[][\.*^$+?(){}|]/\\&/g'; }
 
 # Headless-forced agent-browser call (D6) — the reaper also never opens a window.
 _AB() { command "$AB_BIN" --headed false "$@"; }
@@ -274,8 +297,12 @@ fi
 # agent-browser engine dir OR the Playwright fallback profile dir. We NEVER match
 # a bare `chrome`/`Chrome`/`Claude` — the operator's own Google Chrome.app /
 # Claude.app must survive.
-profile_pat="$AB_ENGINE_DIR"
-[[ -n "$PLAYWRIGHT_DIR" ]] && profile_pat="$AB_ENGINE_DIR|$PLAYWRIGHT_DIR"
+# Scoped trees: the engine dir, the current agent-browser temp profiles ($OC_ROOT/tmp/agent-browser-chrome-<id>),
+# the heartbeat profile, and the Playwright fallback dir; plus any process running a Chrome for Testing binary
+# from the engine dir's browsers/ folder (its command line has no profile flag in front of the path).
+_E_AB="$(_re_esc "$AB_ENGINE_DIR")"; _E_PW="$(_re_esc "$PLAYWRIGHT_DIR")"
+_E_TMP="$(_re_esc "$OC_ROOT/tmp/agent-browser-chrome-")"; _E_HB="$(_re_esc "$HOME/.ab-heartbeat")"
+SCOPE_RE="(--user-data-dir|--profile|profile-directory)[= ]?[^ ]*($_E_AB|$_E_PW|$_E_TMP|${_E_HB}( |/|\$))|${_E_AB}/browsers/"
 
 # Collect PIDs of Chromium bound to a scoped profile dir. `ps -ww` for full args.
 # bash 3.2 has no `mapfile`; read line-by-line into an indexed array instead.
@@ -285,7 +312,7 @@ while IFS= read -r _pid; do
   SCOPED_PIDS[${#SCOPED_PIDS[@]}]="$_pid"
 done < <(
   ps -axww -o pid=,etime=,command= 2>/dev/null \
-    | grep -E "(--user-data-dir|--profile|profile-directory)[= ]?[^ ]*($AB_ENGINE_DIR|$PLAYWRIGHT_DIR)" \
+    | grep -E "$SCOPE_RE" \
     | grep -Ei 'chrom|headless_shell' \
     | grep -vi 'grep' \
     | awk '{print $1}'
@@ -306,7 +333,7 @@ if (( live_count > MAX_LIVE )); then
     # path the rescue agent reads. Never use openclaw message send to a Telegram group
     # for escalation: bots cannot read other bots, so that path is silently dropped.
     if [[ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" && "$DRY_RUN" != "1" ]]; then
-      local _esc_msg="${msg//\\/\\\\}"; _esc_msg="${_esc_msg//\"/\\\"}"
+      _esc_msg="${msg//\\/\\\\}"; _esc_msg="${_esc_msg//\"/\\\"}"
       curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
         -H 'Content-Type: application/json' \
         ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
@@ -322,18 +349,43 @@ else
   rm -f "$TRIPWIRE_STAMP" 2>/dev/null || true
 fi
 
-# Only SIGKILL a scoped Chromium whose owning session lease is GONE AND whose
-# proc age > AB_PROC_HARD_AGE_MIN. (etime parse is best-effort; if we cannot
-# confirm age we DO NOT kill — fail safe toward leaving it alive.)
+# Stop a leaked process: SIGTERM first, bounded wait, then SIGKILL ONLY a survivor that is still the SAME
+# process (start time unchanged — PID-reuse safe; a PID recycled during the grace window is never killed).
+# P3 (plan §9.3): GRACEFUL STOP BEFORE FORCE.  $1 pid  $2 what it is  $3 age in seconds
+REAPED_LIST=" "
+_reap_pid() {
+  local pid="$1" what="$2" age_sec="$3" start_before start_after _gwait=0
+  REAPED_LIST="$REAPED_LIST$pid "
+  if [[ "$DRY_RUN" == "1" ]]; then
+    log "DRY" "would SIGTERM then (after grace) SIGKILL $what pid $pid (age ${age_sec}s, no live lease)"
+    return 0
+  fi
+  start_before="$(ps -o lstart= -p "$pid" 2>/dev/null | tr -s ' ')"
+  kill -TERM "$pid" 2>/dev/null && log "SWEPT" "SIGTERM to $what pid $pid (graceful stop first)" || log "WARN" "could not SIGTERM pid $pid"
+  while [[ "$_gwait" -lt "${AB_STOP_GRACE_S:-10}" ]]; do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 1
+    _gwait=$((_gwait + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    start_after="$(ps -o lstart= -p "$pid" 2>/dev/null | tr -s ' ')"
+    if [[ -n "$start_before" && "$start_before" == "$start_after" ]]; then
+      kill -9 "$pid" 2>/dev/null && log "SWEPT" "SIGKILL $what pid $pid after ${_gwait}s grace (age ${age_sec}s, no live lease)" || log "WARN" "could not SIGKILL pid $pid"
+    else
+      log "INFO" "pid $pid identity changed during grace (PID reuse?) — NOT killing (fail safe)"
+    fi
+  fi
+}
+
+# Stop a scoped Chromium whose owning session lease is GONE AND whose proc age > AB_PROC_HARD_AGE_MIN. (If we
+# cannot confirm the age we DO NOT kill — fail safe toward leaving it alive.)
 if [[ "${LOCK_LIVE:-0}" != "1" ]]; then
   # bash-3.2-safe expansion of a possibly-empty array under `set -u`.
   for pid in ${SCOPED_PIDS[@]+"${SCOPED_PIDS[@]}"}; do
     [[ -n "$pid" ]] || continue
-    # proc age in seconds via ps etimes (Linux) or compute from etime (mac).
-    age_sec="$(ps -o etimes= -p "$pid" 2>/dev/null | tr -d '[:space:]')"
-    if [[ -z "$age_sec" || ! "$age_sec" =~ ^[0-9]+$ ]]; then
-      # macOS has no etimes; be conservative — skip the kill (fail safe).
-      log "INFO" "pid $pid: cannot confirm age (no etimes) — NOT killing (fail safe)"
+    age_sec="$(_proc_age_sec "$pid")"
+    if [[ -z "$age_sec" ]]; then
+      log "INFO" "pid $pid: cannot confirm age (neither etimes nor etime parsed) — NOT killing (fail safe)"
       continue
     fi
     if (( age_sec < PROC_HARD_AGE_MIN * 60 )); then
@@ -345,32 +397,37 @@ if [[ "${LOCK_LIVE:-0}" != "1" ]]; then
       log "INFO" "pid $pid: a live lease exists — NOT killing (could be owned)"
       continue
     fi
-    if [[ "$DRY_RUN" == "1" ]]; then
-      log "DRY" "would SIGTERM then (after grace) SIGKILL leaked scoped Chromium pid $pid (age ${age_sec}s, no live lease)"
-    else
-      # P3 (plan §9.3): GRACEFUL STOP BEFORE FORCE. SIGTERM first, bounded
-      # wait, then SIGKILL ONLY a survivor that is still the SAME process
-      # (start time unchanged — PID-reuse safe). A PID recycled during the
-      # grace window is never killed (fail safe toward leaving it alive).
-      start_before="$(ps -o lstart= -p "$pid" 2>/dev/null | tr -s ' ')"
-      kill -TERM "$pid" 2>/dev/null && log "SWEPT" "SIGTERM to leaked scoped Chromium pid $pid (graceful stop first)" || log "WARN" "could not SIGTERM pid $pid"
-      _gwait=0
-      while [[ "$_gwait" -lt "${AB_STOP_GRACE_S:-10}" ]]; do
-        kill -0 "$pid" 2>/dev/null || break
-        sleep 1
-        _gwait=$((_gwait + 1))
-      done
-      if kill -0 "$pid" 2>/dev/null; then
-        start_after="$(ps -o lstart= -p "$pid" 2>/dev/null | tr -s ' ')"
-        if [[ -n "$start_before" && "$start_before" == "$start_after" ]]; then
-          kill -9 "$pid" 2>/dev/null && log "SWEPT" "SIGKILL leaked scoped Chromium pid $pid after ${_gwait}s grace (age ${age_sec}s, no live lease)" || log "WARN" "could not SIGKILL pid $pid"
-        else
-          log "INFO" "pid $pid identity changed during grace (PID reuse?) — NOT killing (fail safe)"
-        fi
-      fi
-    fi
+    _reap_pid "$pid" "leaked scoped Chromium" "$age_sec"
     reclaimed_procs=$((reclaimed_procs + 1))
   done
+fi
+
+# ── (4b) Orphaned agent-browser daemons ────────────────────────────────────────
+# The daemon that launched a browser outlives it (reparented to PID 1), and a daemon whose browser is already
+# gone is never matched by the Chromium sweep above. Select processes whose executable is `agent-browser-*`
+# (never the `agent-browser` CLI, never anything with "reaper" in its command line), PPID 1, with NO live
+# Chromium child left (a child this pass just stopped counts as gone), no live lease, age > the kill age.
+if [[ "${LOCK_LIVE:-0}" != "1" ]]; then
+  while IFS= read -r pid; do
+    [[ -n "$pid" ]] || continue
+    age_sec="$(_proc_age_sec "$pid")"
+    [[ -n "$age_sec" ]] || continue
+    (( age_sec < PROC_HARD_AGE_MIN * 60 )) && continue
+    if (( $(_known_count) > 0 )); then
+      log "INFO" "daemon pid $pid: a live lease exists — NOT killing (could be owned)"
+      continue
+    fi
+    _reap_pid "$pid" "orphaned agent-browser daemon" "$age_sec"
+    reclaimed_procs=$((reclaimed_procs + 1))
+  done < <(
+    ps -axww -o pid=,ppid=,etime=,command= 2>/dev/null | awk -v reaped="$REAPED_LIST" '
+      { pid=$1; ppid=$2; c=$0; sub(/^[ \t]*[0-9]+[ \t]+[0-9]+[ \t]+[^ \t]+[ \t]+/, "", c)
+        split(c, w, " "); m=split(w[1], p, "/")
+        P[NR]=pid; PP[NR]=ppid; C[NR]=tolower(c); B[NR]=p[m]
+        if (index(reaped, " " pid " ") == 0 && C[NR] ~ /chrom|headless_shell/) kid[ppid]=1 }
+      END { for (i=1; i<=NR; i++)
+              if (B[i] ~ /^agent-browser-/ && C[i] !~ /reaper/ && PP[i] == 1 && !(P[i] in kid)) print P[i] }'
+  )
 fi
 
 # ── (5) Log reclaimed totals ──────────────────────────────────────────────────
