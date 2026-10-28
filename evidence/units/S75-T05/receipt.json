@@ -1,0 +1,26 @@
+{
+"acceptance_row":"S75-A05",
+"checks":[
+{
+"command":"python3 -I 75-drama-song-ad-factory/scripts/core/character_bible/test_identity_s75_t05.py",
+"last_line":"OK",
+"rc":0
+},
+{
+"command":"python3 -I -m py_compile 75-drama-song-ad-factory/scripts/core/character_bible/identity.py 75-drama-song-ad-factory/scripts/core/character_bible/test_identity_s75_t05.py",
+"last_line":"(no output, exit 0)",
+"rc":0
+},
+{
+"command":"python3 -I scratch/lanes/d6-S75-T05/probe_roles.py",
+"last_line":"PROBE_OK roles=5 incomplete_refused=5 bad_role_refused=1",
+"rc":0
+}
+],
+"head":"c20ab86248b6fa3b7ca5db0d01eb46a07100f1a5",
+"lane":"d6-mint-S75-T05",
+"minted_at":"2026-10-28T05:58:04Z",
+"no_verifiable_check":false,
+"unit":"S75-T05",
+"verdict":"PASS"
+}
