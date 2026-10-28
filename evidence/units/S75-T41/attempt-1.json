@@ -1,0 +1,37 @@
+{
+  "unit": "S75-T41",
+  "acceptance_row": "S75-A41",
+  "generation": 1,
+  "kind": "product fix, not a receipt",
+  "candidate": {
+    "branch": "s75/S75-T41-alias-failclosed",
+    "head": "6af7c6dd077ad760ebabf93c957de6d62cb7e5bc",
+    "files_changed": 2,
+    "added_lines": 195,
+    "deleted_lines": 3,
+    "changed_files": [
+      "75-drama-song-ad-factory/scripts/core/song_dispatch/song_dispatch.py",
+      "75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py"
+    ]
+  },
+  "base": {
+    "origin_main_at_measurement": "4aac8bb6a916e47e1c1c3b38ed618696aedf3f89",
+    "merge_tree_rc": 0,
+    "merge_base_is_ancestor_rc": 1
+  },
+  "dependency_revisions": [
+    "openclaw-onboarding@4aac8bb6a916e47e1c1c3b38ed618696aedf3f89"
+  ],
+  "what_changed": "run_takes now unions caller-supplied refs over an always-loaded shipped 18-style catalog via _with_shipped_aliases, and refuses loudly if the shipped catalog cannot be read. Before this change the shipped call path could run with no alias catalog at all, which meant artist names passed through unsanitised.",
+  "independent_checker": {
+    "lane": "sonnet-chain, read-only on the branch, did not author the fix",
+    "verdict": "CONFIRMED, leak closed",
+    "observed_counts": "guard file 54 -> 58; new test class 4/4; music_styles 194 -> 198; song_dispatch 22; guard_s75t41 21; all rc 0",
+    "count_discrepancy_recorded_honestly": "the fix lane's claim of 'before 326 passed / after 330 passed' did NOT reproduce on any scope the checker tried; the +4 delta did reproduce. The absolute numbers are therefore not attested and must not be quoted as if they were.",
+    "revert_control": "with ONLY the production change reverted and the new tests kept, the suite produced 2 FAIL + 1 ERROR and the raw string 'Whitney Houston' was present in the wire JSON. The new tests therefore genuinely gate the fix and are not decorative.",
+    "wire_after_fix": "one send, 1921 bytes, sha256 13c5d19f...bfff091, style tail '...back to the groove.,' with no Whitney / Nippy / Houston substring anywhere",
+    "bare_name_case": "style of only a bare artist name -> OUTGOING_REFERENCE_BLOCKED, zero sends",
+    "residual_disclosed": "the loud fail-closed refusal path is exercised when the caller supplies no catalog; a caller that supplies a partial or wrong catalog is not covered by the observed proof and remains unproven."
+  },
+  "verdict": "the shipped path no longer puts a raw artist name on the wire; row S75-A41 clause 1 is satisfied on the path measured"
+}
