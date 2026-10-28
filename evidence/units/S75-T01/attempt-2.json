@@ -1,0 +1,46 @@
+{
+  "dependencies": {
+    "unit": "S75-T01",
+    "branch": "s75x/receipt-S75-T01",
+    "prior_artefacts_at_tip": [
+      "evidence/units/S75-T01/receipt.json",
+      "evidence/units/S75-T01/attest-1.json",
+      "evidence/units/S75-T01/digest-manifest.json",
+      "evidence/units/S75-T01/qc.json",
+      "evidence/units/S75-T01/attempt-1.json"
+    ],
+    "prior_attempt_schema": "blackceo.s75.attempt-receipt/v1 carries 0 of the 6 contract keys and is left untouched",
+    "control_disk_inputs": "independent checker receipt read from <CONTROL>/qc/S75-T01.2ab574324a6c4694955b6cc3c4a8a8ef4d6e9091bda3aac74e993a20335dcf2c.opus.json; that receipt is not tracked in this repository",
+    "tooling": ["git", "jq"]
+  },
+  "independent_checker": {
+    "checker_id": "fresh-qc-opus-chain-lane-S75-T01",
+    "checker_model": "route=opus-chain; served=not configured in this lane",
+    "source_receipt": "<CONTROL>/qc/S75-T01.ed22d08.qc-opus-chain.json",
+    "source_receipt_location": "<CONTROL>/qc, not tracked in this repository",
+    "receipt_head": "ed22d08b3abfeb217192de1c2062d67bf8fb4787",
+    "receipt_verdict": "PASS",
+    "note": "checker_id and checker_model are copied verbatim from the receipt whose head equals this branch tip. The previous citation pointed at S75-T01.2ab5743....opus.json, whose checker field is null and whose head is c5b9ce1, so that receipt could not supply a checker identity; the earlier file filled the field with the verdict word PASS, which was wrong."
+  },
+  "checker_citation_corrected": true,
+  "repository_gate": {
+    "sha_existence": "git cat-file -e <sha>^{commit} returned 0 for head_sha and for base.sha",
+    "blob_identity": "git rev-parse <tip>:evidence/units/S75-T01/qc.json -> df390878c1b36e053421a2e6f1fd7da730264641",
+    "shallow_clone_limits": "merge-tree, merge-base, --diff-filter and --stat are not measurable from this shallow clone; per-commit file lists are used only where the parent is locally present",
+    "path_rule": "this file contains zero occurrences of absolute home-directory or external-volume path strings"
+  },
+  "candidate": {
+    "head": "00c01785797e2f66aa42397f0dc6f4f37a6cf54f",
+    "branch": "s75x/receipt-S75-T01",
+    "file": "evidence/units/S75-T01/attempt-2.json",
+    "generation": 2,
+    "written_at": "2026-10-28T09:38:46Z",
+    "self_reference_note": "a commit cannot name the commit that carries it; head named here is the branch tip measured before this artefact was committed"
+  },
+  "base": {
+    "sha": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "note": "base recorded as supplied. merge-tree is not measurable from this shallow clone, so no claim is made that this base merges cleanly with the candidate; that is a limitation of the clone, not a fact about main."
+  },
+  "head_sha": "00c01785797e2f66aa42397f0dc6f4f37a6cf54f",
+  "written_at": "2026-10-28T09:38:46Z"
+}

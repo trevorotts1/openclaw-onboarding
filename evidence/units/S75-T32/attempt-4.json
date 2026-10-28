@@ -1,0 +1,145 @@
+{
+  "unit": "S75-T32",
+  "acceptance_row": "S75-A32",
+  "generation": "attempt-4",
+  "written_at": "2026-10-28T00:00:00Z",
+  "written_by": "s75 receipt composer lane (sonnet), branch s75x/receipt-S75-T32",
+  "generation_provenance": "evidence/units/S75-T32/ listed before this write contained attempt-candidate-1.json, attempt-candidate-2.json, attempt-candidate-3.json, receipt.json. Highest existing attempt generation = 3 (attempt-candidate-3.json); this file is the next generation. It is also the first file in the directory matching the contract name attempt-<N>.json.",
+  "independent_checker": {
+    "checker_id": "fresh-qc-opus-chain-lane-T32",
+    "checker_model": "route=opus-chain; served=not observed by the lane",
+    "receipt_path": "<CONTROL>/qc/S75-T32.15c10ec00de47b51e49b7f70a9341d658204adb8.json",
+    "copied_verbatim_from_receipt": true,
+    "receipt_verdict": "PASS",
+    "receipt_caveat_quoted": "Recorded from an earlier checker lane's observed runs after that lane ended before writing its receipt; the counts and the broken check name are that lane's measurements, not re-derived here.",
+    "receipt_checks": [
+      "clean head suite: 389 checks, ALL PASS, rc=0",
+      "mutation control: broke named check '1g validate_catalog', rc=1"
+    ]
+  },
+  "dependencies": {
+    "base_sha": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "merge_sha": "429a9e54a8debc48131110212d9b721cd0018462",
+    "merge_sha_source": "<CONTROL>/ledger.json branch_records entry id S75-BR-S75-T32-r4, fields branch=s75/S75-T32-r4, head=05ddd5018e596931a9bce100718b88bc8b83fa50, merge_commit, merge_proof.instrument=git-cherry, merge_proof.origin_main=1d1b8d2c8d85395f119c37f7c046597ea4b94199",
+    "merge_sha_scope_note": "Ledger branch_records read in this lane held S75-T32 records r1, r3 and r4; r4 was the latest whose merge_commit field was read. No merge_commit was read for s75/S75-T32-r7, the lineage named by attempt-candidate-3.json, so this value is the latest ledger merge sha actually read, not a claim that it is the r7 merge.",
+    "predecessor_attempts": [
+      "attempt-candidate-1.json (declared_head 83f878f3c8235456d0b0a906d881f17215948671, checker PENDING)",
+      "attempt-candidate-2.json (declared_head 682757c9197d9905aecf25b737ff4afcf26e12ff, checker PENDING)",
+      "attempt-candidate-3.json (candidate head fe25719cc7617f362e5b46e9a7cb8dc19fc3e886 on s75/S75-T32-r7)"
+    ]
+  },
+  "base": {
+    "sha": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "ref": "origin/main",
+    "merge_tree_rc": 128,
+    "merge_tree_command": "git -C <worktree> merge-tree --write-tree origin/main HEAD",
+    "merge_tree_stderr": "fatal: refusing to merge unrelated histories",
+    "merge_tree_cause": "The clone is shallow (git rev-parse --is-shallow-repository = true), so origin/main and HEAD share no common ancestor in the object store; git merge-base origin/main HEAD exits 1 and merge-tree refuses. The rc is the real observed value, not a merge conflict. Two-tree diff git diff --name-only origin/main HEAD still resolves and produced candidate.changed_files.",
+    "rc_verified_at": "2026-10-28"
+  },
+  "candidate": {
+    "branch": "s75x/receipt-S75-T32",
+    "head": "15c10ec00de47b51e49b7f70a9341d658204adb8",
+    "remote_branch_sha_before_write": "15c10ec00de47b51e49b7f70a9341d658204adb8",
+    "worktree": "<CONTROL>/worktrees/rcpt-T32-g1",
+    "worktree_mode": "git worktree add --detach <path> s75x/receipt-S75-T32; core.worktree set to the worktree path; git rev-parse --show-toplevel returned that path",
+    "changed_files_command": "git diff --name-only origin/main HEAD",
+    "changed_files": [
+      "38-conversational-ai-system/CHANGELOG.md",
+      "38-conversational-ai-system/SKILL.md",
+      "38-conversational-ai-system/skill-version.txt",
+      "38-conversational-ai-system/tests/contract_traces_runner.py",
+      "38-conversational-ai-system/tests/f03_f12_contract_traces_runner.py",
+      "44-convert-and-flow-operator/CHANGELOG.md",
+      "44-convert-and-flow-operator/SKILL.md",
+      "44-convert-and-flow-operator/skill-version.txt",
+      "75-drama-song-ad-factory/CHANGELOG.md",
+      "75-drama-song-ad-factory/SKILL.md",
+      "75-drama-song-ad-factory/skill-version.txt",
+      "77-council-of-wise-elders/CHANGELOG.md",
+      "77-council-of-wise-elders/SKILL.md",
+      "77-council-of-wise-elders/skill-version.txt",
+      "77-council-of-wise-elders/version",
+      "evidence/PBB-648/T-16-WIRE.md",
+      "evidence/closeout/T-50-CLOSEOUT.PBB-960.md",
+      "evidence/closeout/T-50-CLOSEOUT.md",
+      "evidence/engineering-loop-registration.json",
+      "evidence/units/S75-T32/receipt.json",
+      "shared-utils/nudge-incomplete-interviews.py",
+      "shared-utils/reminders/reminder_state_machine.py"
+    ],
+    "changed_files_count": 22
+  },
+  "repository_gate": {
+    "workflow": ".github/workflows/qc-static.yml",
+    "workflow_ref": "origin/main",
+    "workflow_name": "QC static checks",
+    "job": "qc-static",
+    "applies_to_unit_paths": true,
+    "applies_reason": "Named steps below read this unit's paths either by an explicit pathscope that reaches a changed file, or indirectly by walking the whole tracked tree (git ls-files / repo-wide script), which reads every unit file including evidence/units/S75-T32/.",
+    "direct_pathscope_steps": [
+      {
+        "step": "Python syntax (shared-utils + Skill 22/23 scripts)",
+        "read_path": "find shared-utils 22-book-to-persona-coaching-leadership-system 23-ai-workforce-blueprint ...",
+        "unit_paths_read": [
+          "shared-utils/nudge-incomplete-interviews.py",
+          "shared-utils/reminders/reminder_state_machine.py"
+        ]
+      },
+      {
+        "step": "Skill 23 PRD-2.15 static greps (schema + INSTRUCTIONS + build-workforce)",
+        "read_path": "grep -q 'api\\.telegram\\.org' shared-utils/nudge-incomplete-interviews.py 23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh",
+        "unit_paths_read": [
+          "shared-utils/nudge-incomplete-interviews.py"
+        ]
+      },
+      {
+        "step": "T-17 shared reminder slots + reserved final action (state machine suite)",
+        "read_path": "python3 -m unittest discover -s shared-utils/reminders/tests (suite imports reminder_state_machine)",
+        "unit_paths_read": [
+          "shared-utils/reminders/reminder_state_machine.py"
+        ]
+      }
+    ],
+    "indirect_whole_repo_steps": [
+      {
+        "step": "CRITICAL-1 — No real client names in tracked files",
+        "read_path": "bash scripts/qc-assert-no-client-names.sh -> git ls-files (tracked-only, every tracked file)",
+        "unit_paths_read": "all 22 changed files, including evidence/units/S75-T32/receipt.json"
+      },
+      {
+        "step": "FLEET-STANDARDS §3 — WhatsApp permanently disabled (no enabled:true in JSON, no uncommented WHATSAPP_NUMBER in env files)",
+        "read_path": "git ls-files -z -- '*.json'",
+        "unit_paths_read": [
+          "evidence/engineering-loop-registration.json",
+          "evidence/units/S75-T32/receipt.json"
+        ]
+      },
+      {
+        "step": "AF3: local-candidate-loop guard (32-command-center-setup + repo-wide)",
+        "read_path": "step name declares repo-wide scan; path list in the step names shared-utils/key_resolver.py, shared-utils/api_key_utils.py, shared-utils/llm_score.py",
+        "unit_paths_read": "repo-wide coverage over shared-utils/, therefore shared-utils/nudge-incomplete-interviews.py and shared-utils/reminders/reminder_state_machine.py"
+      }
+    ],
+    "steps_that_cannot_read_unit_paths": [
+      {
+        "step": "chmod-600 coverage — every .sh that writes secrets/.env must also chmod 600",
+        "read_path": "git ls-files -- '*.sh'",
+        "why_not": "pathscope is *.sh only; this unit's changed files contain no .sh file"
+      },
+      {
+        "step": "AGENTS.md N28 — No destructive cron payloads (rm -rf / npm uninstall -g openclaw / brew uninstall)",
+        "read_path": "git ls-files -- '*.sh'",
+        "why_not": "pathscope is *.sh only; no .sh in the unit's changed files"
+      },
+      {
+        "step": "Skill 75 empty-home test suite (manual 02 B6)",
+        "read_path": "find 75-drama-song-ad-factory/scripts/core -type f -name 'test_*.py'",
+        "why_not": "reaches only 75-drama-song-ad-factory/scripts/core; the unit's changed 75-* files are CHANGELOG.md, SKILL.md and skill-version.txt, none inside scripts/core"
+      }
+    ]
+  },
+  "head_sha": "15c10ec00de47b51e49b7f70a9341d658204adb8",
+  "head_sha_verified": "git cat-file -e 15c10ec00de47b51e49b7f70a9341d658204adb8^{commit} exited 0; git rev-parse HEAD in the detached worktree returned the same sha",
+  "base_sha_verified": "git cat-file -e b37010c6a001bb5a51913d6e567911258f9ac2e0^{commit} exited 0"
+}
