@@ -485,6 +485,18 @@ if [ "$COMPLETE" = true ]; then
   # won't, since the build will proceed). Matches the marker written by
   # report_interview_not_complete() in resume-workforce-build.sh.
   rm -f "$STATE_DIR/.workforce-interview-not-complete.reported" 2>/dev/null || true
+
+  # Mirror interviewComplete into the Command Center database. Task ingest reads
+  # clients.interview_complete (is_self=1), not this file, and only the Command
+  # Center interview web page ever set it: an interview finished through this
+  # script (Telegram / agent path) left the flag 0 and every task parked in
+  # General Task. Idempotent, fail-soft (no Command Center = nothing to mirror),
+  # and it only ever sets the flag when the state above is exactly true. Never
+  # fatal: the roll re-applies it (shared-utils/ensure_cc_interview_flag.py).
+  CC_FLAG_HELPER="$UPD_SCRIPT_DIR/../../shared-utils/ensure_cc_interview_flag.py"
+  if [ -f "$CC_FLAG_HELPER" ]; then
+    "$WORKFORCE_PYTHON" "$CC_FLAG_HELPER" --state "$STATE" || true
+  fi
 fi
 
 # PRD-3.3 R3.1 (auto-closeout): KICK THE BUILD deterministically.
