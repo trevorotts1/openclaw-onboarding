@@ -2,8 +2,8 @@
   "unit": "S75-T07",
   "head": "e7e2e17e4ea675d66cd4669cf5bd89da26626ec7",
   "verdict": "PASS",
-  "minted_at": "2026-10-28T05:55:20Z",
-  "lane": "d6-mint-S75-T07",
+  "minted_at": "2026-10-28T06:22:50Z",
+  "lane": "d6-mint-S75-T07-corrected-r2",
   "acceptance_row": "S75-A07",
   "checks": [
     {
@@ -12,7 +12,7 @@
       "last_line": "36 passed, 0 failed, 36 total"
     },
     {
-      "command": "python3 -I -c lexicon JSON load",
+      "command": "python3 -I -c \"import json; d=json.load(open('75-drama-song-ad-factory/scripts/core/character_bible/content_lexicon.json')); print('lexicon_words=%d' % len(d['words']))\"",
       "rc": 0,
       "last_line": "lexicon_words=724"
     }
