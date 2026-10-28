@@ -1,0 +1,21 @@
+{
+  "unit": "S75-T07",
+  "head": "e7e2e17e4ea675d66cd4669cf5bd89da26626ec7",
+  "verdict": "PASS",
+  "minted_at": "2026-10-28T05:55:20Z",
+  "lane": "d6-mint-S75-T07",
+  "acceptance_row": "S75-A07",
+  "checks": [
+    {
+      "command": "python3 -I 75-drama-song-ad-factory/scripts/core/character_bible/test_cast_validation_s75_t07.py",
+      "rc": 0,
+      "last_line": "36 passed, 0 failed, 36 total"
+    },
+    {
+      "command": "python3 -I -c lexicon JSON load",
+      "rc": 0,
+      "last_line": "lexicon_words=724"
+    }
+  ],
+  "no_verifiable_check": false
+}
