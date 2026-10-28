@@ -150,8 +150,8 @@ class Reaper(unittest.TestCase):
         self.assertEqual(self.would(out), set(), out)
 
     # -- 3. orphaned daemons -------------------------------------------------------------------
-    DAEMON = "/Users/box/.local/lib/node_modules/agent-browser/bin/agent-browser-darwin-arm64"
-    def daemon(self, pid, etime=OLD, ppid=1, exe=DAEMON, args=""):
+    def daemon(self, pid, etime=OLD, ppid=1, exe=None, args=""):
+        exe = exe or "%s/.local/lib/node_modules/agent-browser/bin/agent-browser-darwin-arm64" % self.home
         return (pid, ppid, etime, ("%s %s" % (exe, args)).strip())
     def test_orphaned_daemon_with_no_browser_is_reaped(self):
         r, out = self.run_reaper([self.daemon(45001)], style="mac")
