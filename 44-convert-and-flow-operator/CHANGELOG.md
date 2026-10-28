@@ -1,3 +1,7 @@
+## [v2.1.39] - 2026-10-28 - rebase lane: version stamp above main for the changelog merge
+
+Main is already at v2.1.38, so this merge keeps both changelog entry sets and carries a stamp above main's. No engine, CLI, template, guard or QC script behaviour changed.
+
 ## [v2.1.38] - 2026-10-28 - batch 20261028-0631: the four changelog stamps for this skill, landed in one lane
 
 Four changelog-only units landed together (`fix/s38-44-changelog` @ `8278e0d8`, `-v2` @ `98f0dae9`, `-v3` @ `52a1f2b9`, `-v4` @ `2c1a4054`). They are cumulative edits to this one file; the v2.1.36 and v2.1.37 entries below are carried verbatim from the v4 branch. No engine, CLI, template or QC script behaviour changed in this batch.
@@ -5,6 +9,12 @@ Four changelog-only units landed together (`fix/s38-44-changelog` @ `8278e0d8`, 
 ### Version lockstep
 
 `skill-version.txt` moves v2.1.37 -> v2.1.38 and the `SKILL.md` frontmatter follows. No other file in the skill was touched by the version stamp.
+
+## [v2.1.38] - 2026-10-28 - documentation release: ships the v2.1.36 and v2.1.37 entries that were missing from this file
+
+No engine, CLI, template, guard or QC script behaviour changes in this release. Its content is this heading, the paragraph below it, the two entries, and two version lines.
+
+Main already read v2.1.37 in `skill-version.txt` but carried neither a v2.1.36 nor a v2.1.37 heading here, so what was missing on main was the documentation, not the version. G3 requires a `skill-version.txt` change alongside any edit inside a skill directory and has no documentation exemption, so a changelog-only commit cannot land at all. This release carries those entries under its own marker.
 
 ## [v2.1.37] - 2026-10-27 - batch 20261027-2242: the automation-template schema lane rebuilt on main, plus a real template-count pin
 
@@ -156,6 +166,10 @@ Markers only; no code change.
 - credential precedence and quoted-value behavior unchanged
 
 # Changelog — convert-and-flow-operator (Skill 44)
+
+## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.
 
 ## [2.1.18] - 2026-10-19 - fix(ghl): bind the V4 route/enable probe to the call tenant
 
@@ -1262,7 +1276,3 @@ by an Opus diagnostic 2026-06-11. These are NEW bugs — disjoint from the 1.0.3
   platform/vps/ (venv at /data/.openclaw/tools/..., owner-nudge on expired token).
 - Client-facing plain-language auto-re-grab disclosure in INSTALL.md (binding transparency).
 - qc-convert-and-flow.sh with assertions for all acceptance criteria.
-
-## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
-
-No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.
