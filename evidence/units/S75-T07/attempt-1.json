@@ -1,0 +1,69 @@
+{
+  "schema": "s75.evidence.attempt/v1",
+  "unit": "S75-T07",
+  "acceptance_row": "S75-A07",
+  "branch": "s75x/receipt-S75-T07",
+  "attempt": 1,
+  "builder_lane": "deepseek-chain",
+  "generation_note": "First attempt artefact on this branch. The tip carried only evidence/units/S75-T07/receipt.json, which is a receipt and not an attempt generation; no attempt-<N>.json of any number existed at the tip.",
+  "dependencies": [
+    {
+      "path": "evidence/units/S75-T07/receipt.json",
+      "blob": "c8123b27ef0c1749cff96f0fba236e6ffda53c14",
+      "role": "tip receipt of record for this unit; verdict PASS at head e7e2e17e4ea675d66cd4669cf5bd89da26626ec7",
+      "identity_evidence": "git rev-parse 1a4b060a04f8b69b4b2b6b4b3dcef949f91758a6:evidence/units/S75-T07/receipt.json"
+    },
+    {
+      "path": "75-drama-song-ad-factory/scripts/core/character_bible/test_cast_validation_s75_t07.py",
+      "blob": "4c0068a4ac6272c8d5dcc2f04416a2ed919d6ad5",
+      "role": "the unit's own test file named by the tip receipt check 1",
+      "identity_evidence": "git rev-parse HEAD:75-drama-song-ad-factory/scripts/core/character_bible/test_cast_validation_s75_t07.py"
+    },
+    {
+      "path": "75-drama-song-ad-factory/scripts/core/character_bible/content_lexicon.json",
+      "blob": "f73182d46fa2d06c28516e69866bdcebc5e4fcfb",
+      "role": "bounded vocabulary named by the tip receipt check 2",
+      "identity_evidence": "git rev-parse HEAD:75-drama-song-ad-factory/scripts/core/character_bible/content_lexicon.json"
+    }
+  ],
+  "independent_checker": {
+    "checker_id": "recheck-S75-T07",
+    "checker_model": "sonnet",
+    "checker_role": "independent reviewer",
+    "verbatim_source": "newest QC receipt for this unit: file S75-T07.f3114c8d143b2f26f4bc86248d5d5e0540bb16cd.json in the control qc directory, newest of the seven S75-T07 files by mtime. Copied verbatim from it: model \"sonnet\"; identity_source \"assigned by the s75 recheck lane: model sonnet, checker recheck-S75-T07\"; checker_role \"independent reviewer\".",
+    "qc_verdict": "PASS",
+    "qc_digest": "f3114c8d143b2f26f4bc86248d5d5e0540bb16cd",
+    "qc_receipt_head": "e320b7d5f7d89ac181f56cf12825145c0830433a",
+    "qc_receipt_attempt": 9,
+    "qc_receipt_base": "835a2a38093147708338b9db01c311a946a00da4"
+  },
+  "repository_gate": {
+    "gate": "the unit's recorded checks as carried by evidence/units/S75-T07/receipt.json (blob c8123b27ef0c1749cff96f0fba236e6ffda53c14)",
+    "status": "recorded PASS in the tip receipt at head e7e2e17e4ea675d66cd4669cf5bd89da26626ec7; not re-executed by this build rung, which is static only",
+    "recorded_checks": [
+      {
+        "command": "python3 -I 75-drama-song-ad-factory/scripts/core/character_bible/test_cast_validation_s75_t07.py",
+        "rc": 0,
+        "last_line": "36 passed, 0 failed, 36 total"
+      },
+      {
+        "command": "python3 -I -c \"import json; d=json.load(open('75-drama-song-ad-factory/scripts/core/character_bible/content_lexicon.json')); print('lexicon_words=%d' % len(d['words']))\"",
+        "rc": 0,
+        "last_line": "lexicon_words=724"
+      }
+    ],
+    "independent_gate": "the newest QC receipt also records four clause probes and one discriminating control, all exit 0 at its own head e320b7d5f7d89ac181f56cf12825145c0830433a, with the control failing at the parent 835a2a38, which is why the row is PASS"
+  },
+  "candidate": {
+    "head": "1a4b060a04f8b69b4b2b6b4b3dcef949f91758a6",
+    "branch": "s75x/receipt-S75-T07",
+    "measured_at": "2026-10-28",
+    "self_reference_note": "a commit cannot name the commit that carries it, so this value names the tip measured immediately before attempt-1.json was written; the commit that carries this file necessarily has a different sha, and that carrying sha is reported in the builder report, not here"
+  },
+  "base": {
+    "sha": "da41be56f42735a9f83e2b1735ee8f666d935c7d",
+    "ref": "origin/main",
+    "note": "merge-tree is not measurable from this shallow clone: .git/shallow holds 23 boundary commits, so any diff or merge-base against origin/main would be a lie. This value is the current origin/main sha as read here, and is not claimed to be a merge-base."
+  },
+  "head_sha": "1a4b060a04f8b69b4b2b6b4b3dcef949f91758a6"
+}
