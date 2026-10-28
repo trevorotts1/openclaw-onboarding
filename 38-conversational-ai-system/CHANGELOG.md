@@ -1,3 +1,7 @@
+## [2.0.207] - 2026-10-28 - chore(fanout-0250-lane5): Skill 38 to v2.0.207 (G3 bump)
+
+- **Batch fanout lane 5 version stamp, Skill 38 v2.0.206 -> v2.0.207.** Six units in this lane touch skill 38 files: PBB-686 (`pb/PBB-2173/carry-PBB-686-traces` @ `300e67c6`), carry-3ee2a64 (`pb/PBB-2175/carry-3ee2a64` @ `b7c9803a`), carry-proof-receipt (`pb/PBB-2176/carry-proof-receipt` @ `2b613d3f`), carry-t08-candidate (`pb/PBB-2177/carry-t08-candidate` @ `62f9b282`), carry-1064-t36 (`pb/PBB-2179/carry-1064-t36` @ `6dc61ddb`), pbb1203-fixture-cleanup-carry (`pb/PBB-2312/pbb1203-fixture-cleanup-carry` @ `58806e0c`). No skill code changed in this commit; version stamp only.
+
 ## [2.0.203] - 2026-10-27 - chore(batch-20261027-0754): Skill 38 to v2.0.203 for T-56 (scope includes T-57)
 
 - **Batch 20261027-0754 version stamp, Skill 38 v2.0.202 -> v2.0.203.** T-56 (`pb/PBB-944/t-56-rebase` @ `75d69adb`) touches skill 38 files in this batch (`schemas/approval-manifest.schema.json`, `schemas/outbound-action.schema.json`, `tools/durable_store.py`, `tools/pb_contracts.py`; scope includes T-57). No skill code changed in this commit; version stamp only.
