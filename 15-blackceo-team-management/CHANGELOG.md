@@ -4,6 +4,17 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [7.1.8] - 2026-10-29
+
+### Fixed - REMOTE RESCUE INSTALLER ON A BOX WITH A BELOW-FLOOR NODE FIRST ON PATH
+
+- Defect (Big Fleet Roll 20261029, a Mac on OpenClaw 2026.10.8): with a below-floor node first on PATH, every `openclaw` call prints `openclaw: Retrying with "<cli-node>/node" (cached OpenClaw runtime; current Node failed runtime admission).` on stderr. `scripts/lib/rr-validate-candidate.sh` ran `openclaw config validate --json` with `2>&1` and parsed the whole text as one JSON document, so a VALID candidate (`{"valid":true,...,"warnings":[]}`) was classified `candidate-invalid` and refused (state `refused`, installer exit 4, live config untouched). `update-skills.sh` then withheld the skill's `.wired` sentinel.
+- Fix, `scripts/lib/rr-validate-candidate.sh`: stdout and stderr are captured apart and the verdict is the last JSON object that carries a `valid` key, so runtime-retry preamble lines on either stream are ignored. Still fail-closed: no verdict, a non-zero exit, or no `openclaw` on PATH is a refusal, and the refusal detail never quotes the retry line.
+- Defect, same run: `Routing acceptance BLOCKED: no installed OpenClaw resolver found` although `<prefix>/lib/node_modules/openclaw/dist/plugin-sdk/routing.js` existed. The resolver search used `npm root -g`, which answers for whichever node is first on PATH, not for the package that holds the `openclaw` binary.
+- Fix, `scripts/install-remote-rescue.sh`: the search now starts from the package directory of the `openclaw` binary on PATH (symlink followed), then `OPENCLAW_ROUTING_MODULE`, `npm root -g`, and the fixed prefixes, now including `/opt/homebrew/lib/node_modules`. A box with no resolver is still reported BLOCKED.
+- Test: `tests/unit/skill15-cli-preamble.test.sh` (10 checks): retry line on stderr and on stdout, an invalid verdict, no verdict, a non-zero exit and an absent `openclaw` (all still refused), and two end-to-end installer runs (candidate promoted with the retry line present; resolver found when `npm root -g` names another root, with a BLOCKED control). Checks 1, 2, 4, 6 and 7 fail on 7.1.7.
+- skill-version v7.1.7 -> v7.1.8.
+
 ## [7.1.7] - 2026-10-13
 
 ### Changed - model doctrine cleanup
