@@ -20,6 +20,13 @@
 # failed): the status is written and the job exits 20 at once, because a human is
 # needed. The final exit code is the code of the FIRST failed step.
 #
+# Every script this job pulls — oc-supervisor-install.py, git_ff_sync.sh,
+# oc-atomic-upgrade.sh, oc-schema-migrate.py, weekly-full-update.sh — comes from
+# ONE ref: --onboarding-sha when the roll pins one, else live main (unchanged
+# behavior when no pin is passed). The ref actually used is written to the status
+# file as onboarding_ref, with the pin itself as onboarding_sha ("" when none).
+# That is what makes a frozen roll stay frozen while it runs.
+#
 # The job writes ONE status file the operator watch reads:
 #   <openclaw root>/fleet-refresh/agent-pull-status.json
 # with the fields in references/agent-pull.md section 10.9 and SKILL.md section 18.2.
@@ -46,7 +53,8 @@
 set -u
 
 VERSION="1.2.0"
-REPO_RAW="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main"
+REPO_RAW_BASE="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding"
+REPO_RAW="$REPO_RAW_BASE/main"
 
 EX_OK=0
 EX_UPGRADE=20
@@ -64,6 +72,8 @@ LAUNCH_EPOCH=""
 TARGET_VERSION=""
 NINE9ROUTER_TARGET="${NINEROUTER_TARGET:-}"
 NINE_SETUP_SHA="${NINE_SETUP_SHA:-}"   # optional pin: the 999 checkout HEAD must equal it (CAN012)
+ONBOARDING_SHA="${ONBOARDING_SHA:-}"   # optional pin: fetch EVERY script this job pulls at this sha, not live main
+ONBOARDING_REF="main"                  # the ref actually used: the pinned sha, or main when unpinned
 
 # The 999 installer's own required key names (its parse_api_docs contract) and
 # the aliases a box may store a key under. NEVER printed. Writing canonicalises:
@@ -91,12 +101,15 @@ now_utc() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
 usage() {
   sed -n '2,42p' "$SELF"
   echo ""
-  echo "Usage: self-update.sh --roll-id ID --openclaw-target X.Y.Z [--ninerouter-target VERSION] [--999-sha SHA]"
+  echo "Usage: self-update.sh --roll-id ID --openclaw-target X.Y.Z [--ninerouter-target VERSION] [--999-sha SHA] [--onboarding-sha SHA]"
   echo "       self-update.sh --roll-id ID --openclaw-target X.Y.Z --foreground   (no detach; for tests)"
   echo ""
   echo "  --openclaw-target   also accepted as --target-version"
   echo "  --ninerouter-target also accepted as --9router-target"
   echo "  --999-sha           optional: the 999-setup HEAD must equal this sha (and origin/main)"
+  echo "  --onboarding-sha    optional: fetch every script this job pulls (oc-atomic-upgrade.sh,"
+  echo "                      oc-schema-migrate.py, oc-supervisor-install.py, git_ff_sync.sh,"
+  echo "                      weekly-full-update.sh) at this 40-hex commit, not live main"
   exit "$1"
 }
 
@@ -295,11 +308,12 @@ status_write() {  # phase finished stuck
   fi
   python3 - "$STATUS_JSON" "$RUN_ID" "$ROLL_ID" "$1" "$STARTED" "$(now_utc)" "$2" \
     "$STEP_CODES" "$STAMP_BEFORE" "$(read_stamp)" "$OC_BEFORE" "$(oc_after)" \
-    "$NR_BEFORE" "$(nr_version)" "$ROLLED_BACK" "$NEEDS_RESTART" "$STEP_ROLLBACKS" "$3" "$_tail" <<'PY'
+    "$NR_BEFORE" "$(nr_version)" "$ROLLED_BACK" "$NEEDS_RESTART" "$STEP_ROLLBACKS" "$3" "$_tail" \
+    "$ONBOARDING_SHA" "$ONBOARDING_REF" <<'PY'
 import json, os, sys
 (dest, run_id, roll_id, phase, started, updated, finished, codes,
  stamp_b, stamp_a, oc_b, oc_a, nr_b, nr_a, rolled_back, needs_restart,
- rollbacks, stuck, tailf) = sys.argv[1:20]
+ rollbacks, stuck, tailf, onboarding_sha, onboarding_ref) = sys.argv[1:22]
 slow = {}
 for part in (codes or "").split(";"):
     if "=" not in part:
@@ -341,6 +355,8 @@ d = {
     "needs_host_restart": needs_restart == "1",
     "step_rollbacks": rolls,
     "stuck_reason": stuck,
+    "onboarding_sha": onboarding_sha,
+    "onboarding_ref": onboarding_ref,
     "error_tail": tail,
 }
 d = {k: (v.replace("\r", " ") if isinstance(v, str) else v) for k, v in d.items()}
@@ -388,6 +404,9 @@ while [ "$#" -gt 0 ]; do
     --999-sha)
       [ "$#" -ge 2 ] || { echo "self-update.sh: --999-sha needs a value" >&2; exit "$EX_REFUSE"; }
       NINE_SETUP_SHA="$2"; shift 2 ;;
+    --onboarding-sha)
+      [ "$#" -ge 2 ] || { echo "self-update.sh: --onboarding-sha needs a value" >&2; exit "$EX_REFUSE"; }
+      ONBOARDING_SHA="$2"; shift 2 ;;
     --detached)    MODE_DETACHED=1; shift ;;
     --foreground)  MODE_FOREGROUND=1; shift ;;
     -h|--help)     usage 0 ;;
@@ -409,6 +428,22 @@ case "$NINE_SETUP_SHA" in
   *[!0-9a-f]*) echo "self-update.sh: REFUSED — --999-sha must be 7-40 hex characters" >&2; exit "$EX_REFUSE" ;;
   *) [ "${#NINE_SETUP_SHA}" -ge 7 ] && [ "${#NINE_SETUP_SHA}" -le 40 ] || { echo "self-update.sh: REFUSED — --999-sha must be 7-40 hex characters" >&2; exit "$EX_REFUSE"; } ;;
 esac
+
+# A pinned onboarding sha becomes a PATH SEGMENT in every raw fetch URL, so it
+# is a full commit id: exactly 40 hex characters, nothing else. A short sha or
+# a branch name would let the roll drift, which is the defect the pin closes.
+ONBOARDING_SHA="$(printf '%s' "$ONBOARDING_SHA" | tr 'A-F' 'a-f')"
+if [ -n "$ONBOARDING_SHA" ]; then
+  case "$ONBOARDING_SHA" in
+    *[!0-9a-f]*) echo "self-update.sh: REFUSED — --onboarding-sha must be 40 hex characters" >&2; exit "$EX_REFUSE" ;;
+  esac
+  [ "${#ONBOARDING_SHA}" -eq 40 ] || { echo "self-update.sh: REFUSED — --onboarding-sha must be 40 hex characters" >&2; exit "$EX_REFUSE"; }
+  ONBOARDING_REF="$ONBOARDING_SHA"
+fi
+
+# Every script this job pulls comes from THIS ref: the roll's frozen onboarding
+# sha when the trigger passes one, else live main (the pre-pin behavior).
+REPO_RAW="$REPO_RAW_BASE/$ONBOARDING_REF"
 
 # The launcher's run id. Printed as the FIRST stdout line, below, and passed to
 # the detached child. Kept when the child receives it with --run-id.
@@ -572,6 +607,9 @@ if [ "$MODE_DETACHED" = 0 ] && [ "$MODE_FOREGROUND" = 0 ]; then
   [ -n "$TARGET_VERSION" ] && set -- "$@" --openclaw-target "$TARGET_VERSION"
   [ -n "$NINE9ROUTER_TARGET" ] && set -- "$@" --ninerouter-target "$NINE9ROUTER_TARGET"
   [ -n "$NINE_SETUP_SHA" ] && set -- "$@" --999-sha "$NINE_SETUP_SHA"
+  # The pin MUST reach the child: the child is the one that fetches, so dropping
+  # it here would silently put the whole roll back on live main.
+  [ -n "$ONBOARDING_SHA" ] && set -- "$@" --onboarding-sha "$ONBOARDING_SHA"
   # critic.C9: a Mac job can run past an hour (the 999 installer opens Apple's
   # dialog and waits up to 60 minutes; a gateway outage has measured 10-20 min
   # and once about 2 h). caffeinate -dimsu holds a power assertion for exactly the
@@ -659,8 +697,8 @@ find_999() {
 # anything else is left untouched and reported; never reset --hard / stash /
 # branch delete), then PROVE the checkout HEAD is origin/main (and the pinned sha
 # when the roll passes one). self-update.sh is delivered as a single file, so the
-# helper is fetched from main like the other update scripts; a sibling copy is
-# only the fallback.
+# helper is fetched from the pinned onboarding ref (main when unpinned) like the
+# other update scripts; a sibling copy is only the fallback.
 FFSYNC=""
 get_ffsync() {
   [ -z "$FFSYNC" ] || return 0
@@ -1093,9 +1131,9 @@ else
 fi
 
 # ══ step 4: content update ═══════════════════════════════════════════════════
-# The same entry point the Sunday cron uses: fetched from main, so the box
-# always runs the newest version of it. It never restarts the gateway and never
-# messages a client.
+# The same entry point the Sunday cron uses: fetched from the pinned onboarding
+# ref (main when unpinned). It never restarts the gateway and never messages a
+# client.
 
 log "STEP update: weekly-full-update.sh"
 status_write "update" "" ""
