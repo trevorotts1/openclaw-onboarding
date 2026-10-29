@@ -28,7 +28,7 @@ GUARD_SH="$REPO_ROOT/scripts/memory-guard.sh"
 ENSURE="$REPO_ROOT/scripts/ensure-pipeline-crons.sh"
 INSTALL="$REPO_ROOT/install.sh"
 FIXTURE="$REPO_ROOT/tests/fixtures/fake-openclaw-cron.py"
-MIN_SELFTEST_PASSES=110
+MIN_SELFTEST_PASSES=140
 CANONICAL_OWNER_CHAT="$REPO_ROOT/shared-utils/resolve-owner-chat.sh"
 
 PASS=0; FAIL=0
@@ -62,7 +62,12 @@ for want in "original dead -> nemotron chosen" "original + nemotron dead -> gemi
             "state.json and \`status\` hold no key-like text" \
             "probe runs for the configured default agent, not the first entry or main" \
             "a CLI call is cut off at the time budget, not at its own timeout" \
-            "run as root: exit 2, REFUSED, no CLI call at all"; do
+            "run as root: exit 2, REFUSED, no CLI call at all" \
+            "dead primary + retired OpenRouter model + unconfigured Gemini: memory search off, one notice (it used to retry forever)" \
+            "never 'gone': (503): Service Unavailable" \
+            "idle pass: agents marked default:true stay on when the default cannot be determined" \
+            "protection does not depend on the default resolver working: markers, system agent, orchestrator, main" \
+            "probe config: no agent keeps an off switch, memory search forced on, no fallback"; do
   if grep -qF "PASS $want" "$SANDBOX/self.log"; then pass "1c: case ran: $want"; else fail "1c: case missing or failing: $want"; fi
 done
 
@@ -96,6 +101,21 @@ a = set(re.findall(r'\d+', mine.group(1))) if mine else set()
 b = set(canon.group(1).split()) if canon else set()
 print("    memory-guard.py: %s\n    canonical:       %s" % (sorted(a), sorted(b))) if a != b or not a else None
 sys.exit(0 if a and a == b else 1)
+PY
+
+python3 - "$REPO_ROOT/CHANGELOG.md" <<'PY' && pass "2a3: CHANGELOG states the real backup/state facts (OpenClaw's own .bak.1 and .last-good; state.json 0600 keeps the original remote)" || fail "2a3: CHANGELOG entry is wrong about backups or the state file"
+import re, sys
+t = open(sys.argv[1]).read()
+entry = t[:t.index("\n## [", 5)] if "\n## [" in t[5:] else t
+bad = []
+if "no backup is made" in entry.lower():
+    bad.append("still says 'no backup is made'")
+for need in ("openclaw.json.bak.1", ".last-good", "state.json", "mode 600", "`remote`"):
+    if need not in entry:
+        bad.append("missing: " + need)
+if bad:
+    print("    " + "; ".join(bad))
+sys.exit(1 if bad else 0)
 PY
 
 mk_box() { # <tag> <with-script 0|1> -> sets H B J C

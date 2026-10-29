@@ -124,6 +124,25 @@ DEAD_KEY_RE = re.compile(
     r"account (is )?(suspended|disabled|deactivated)",
     re.IGNORECASE,
 )
+# A probe error that means the MODEL or its endpoint is gone for good (retired, "no endpoints
+# found", 404 on the model, 400 invalid model): retrying tomorrow will not help, so the slot is
+# unusable, exactly like a dead key. Real texts: `... (400): Model X does not exist` (2026.10.8),
+# OpenRouter `No endpoints found for X`, Gemini `models/X is not found for API version v1beta`.
+# A network failure, timeout, 5xx or 429 rate limit is never "gone", whatever else the text says
+# (TRANSIENT_RE wins): OpenRouter free models also answer 404/503 for a while when busy, which is
+# why a "gone" verdict is confirmed by a second probe 90 s later, like a dead key.
+MODEL_GONE_RE = re.compile(
+    r"no endpoints found|model[_ -]?not[_ -]?found|invalid[ _-]model|unknown model|no such model|"
+    r"\bmodel\b[^\n]{0,100}\b(does not exist|is not found|not found|is not supported|no longer (available|supported)|"
+    r"has been (deprecated|retired|removed|discontinued|decommissioned))|"
+    r"\bmodels/\S+ is not found|\b404\b[^\n]{0,200}\bmodel\b|\bmodel\b[^\n]{0,200}\b404\b",
+    re.IGNORECASE,
+)
+TRANSIENT_RE = re.compile(
+    r"\b(429|5\d\d)\b|rate[ _-]?limit|too many requests|time[ds]?[ -]?out|ETIMEDOUT|ECONN\w*|ENOTFOUND|EAI_AGAIN|"
+    r"fetch failed|socket|network|overloaded|temporar|unavailable",
+    re.IGNORECASE,
+)
 # A provider that cannot be used on this box at all: no key, an env variable that is not set, or a
 # provider OpenClaw does not know. Real CLI texts (2026.10.8): `No API key found for provider "google"`,
 # `Unknown memory embedding provider: openrouter`, `openai embedding credentials are not configured
@@ -132,7 +151,7 @@ UNCONFIGURED_RE = re.compile(
     r"No API key found for provider|Unknown memory embedding provider|"
     r"embedding credentials are not configured|Environment variable \"[A-Z0-9_]+\" is missing or empty",
 )
-UNUSABLE = ("dead", "unconfigured")
+UNUSABLE = ("dead", "gone", "unconfigured")
 # Anything key-shaped in provider error text (vendor-prefixed, masked "sk-ab***yz", long tokens).
 KEYLIKE_RE = re.compile(
     r"\b(?:sk|rk|pk|nvapi|ghp|xox[abp])[-_][A-Za-z0-9_\-\*\.]{6,}"
@@ -326,16 +345,33 @@ def agent_search(entry):
     return ((entry or {}).get("memory") or {}).get("search") or {}
 
 
+def system_agent_key(cfg):
+    """The roster key named by agents.defaults.systemAgent.agentId (case-insensitive), else None."""
+    ents = entries(cfg)
+    sysid = str((((cfg.get("agents") or {}).get("defaults") or {}).get("systemAgent") or {}).get("agentId") or "").strip().lower()
+    return next((k for k in ents if k.lower() == sysid), None) if sysid else None
+
+
+def protected_ids(cfg):
+    """Agents the idle check never touches, however quiet: main, anything marked
+    `default: true`, the configured system agent, the resolved default, any master orchestrator.
+    Several of these can exist at once and the default can be unknowable, so none of them
+    depends on default_agent_id() succeeding."""
+    out = set(ALWAYS_ON_IDS)
+    out |= {a for a, e in entries(cfg).items() if isinstance(e, dict) and e.get("default") is True}
+    out |= {k for k in (system_agent_key(cfg), default_agent_id(cfg)) if k}
+    out |= {a for a in entries(cfg) if any(p in a for p in ALWAYS_ON_PATTERNS)}
+    return out
+
+
 def default_agent_id(cfg):
     """The agent OpenClaw itself treats as the default (2026.10.x resolveAmbientOwnerAgentId):
     agents.defaults.systemAgent.agentId, else the single `default: true` marker (not under
     explicit ownership), else the only agent. Beyond that, `main` if it exists. None when it
     cannot be told (several agents, no marker, no main): callers then leave the box alone."""
     ents, agents = entries(cfg), cfg.get("agents") or {}
-    low = {k.lower(): k for k in ents}
-    sysid = str(((agents.get("defaults") or {}).get("systemAgent") or {}).get("agentId") or "").strip().lower()
-    if sysid in low:
-        return low[sysid]
+    if system_agent_key(cfg):
+        return system_agent_key(cfg)
     if agents.get("ownership") != "explicit":
         marked = [a for a, e in ents.items() if isinstance(e, dict) and e.get("default") is True]
         if len(marked) == 1:
@@ -429,12 +465,22 @@ def slot_patch(cfg, orig, chain, i, cur, mm_off):
 
 def probe_cfg(cfg, patch, agent_id):
     """What the probe runs against: the config as the patch would leave it, memory search
-    forced on, and no fallback (so the probe measures that one provider, not its fallback)."""
+    forced on, no fallback (so the probe measures that one provider, not its fallback), and
+    no per-agent off switches. Those are irrelevant to whether a provider and key work, and
+    they break the probe: when ANY agent has memory search (or the agent itself) switched
+    off, OpenClaw's command-side secret analysis (2026.10.8) treats a SecretRef shared at
+    memory.search.remote.apiKey as inactive and the OpenRouter slot reads as unresolvable.
+    (The running Gateway is not affected: with the same SecretRef in its own config and idle
+    workers switched off, `memory status` resolves it and the probe passes, verified in a
+    sandbox Gateway.)"""
     c = merge_patch(copy.deepcopy(cfg), patch)
     c.setdefault("memory", {}).setdefault("search", {}).update({"enabled": True, "fallback": "none"})
-    ent = entries(c).get(agent_id)
-    if isinstance(ent, dict) and agent_search(ent).get("enabled") is False:
-        ent["memory"]["search"]["enabled"] = True
+    for ent in entries(c).values():
+        if isinstance(ent, dict):
+            if ent.get("enabled") is False:
+                ent.pop("enabled")
+            if agent_search(ent).get("enabled") is False:
+                ent["memory"]["search"].pop("enabled")
     return c
 
 
@@ -452,7 +498,7 @@ def parse_json(text):
 def probe(box, agent_id, cfg):
     """Run OpenClaw's own embedding probe against a read-only temp copy of cfg.
 
-    Returns (state, detail); state: ok | dead | unconfigured | transient | none."""
+    Returns (state, detail); state: ok | dead | gone | unconfigured | transient | none."""
     os.makedirs(box.state_dir, mode=0o700, exist_ok=True)
     for old in glob.glob(os.path.join(box.state_dir, ".probe-*.json")):  # left by a killed run
         try:
@@ -481,7 +527,13 @@ def probe(box, agent_id, cfg):
         if pr.get("ok") is True:
             return "ok", ""
         raw = str(pr.get("error") or "probe failed")
-        return ("dead" if DEAD_KEY_RE.search(raw) else "transient"), redact(raw)[:200]
+        if DEAD_KEY_RE.search(raw):
+            verdict = "dead"
+        elif MODEL_GONE_RE.search(raw) and not TRANSIENT_RE.search(raw):
+            verdict = "gone"
+        else:
+            verdict = "transient"
+        return verdict, redact(raw)[:200]
     e = row.get("error")
     msg = str(e.get("message") if isinstance(e, dict) else e or "")
     if UNCONFIGURED_RE.search(msg + "\n" + err):
@@ -492,8 +544,8 @@ def probe(box, agent_id, cfg):
 
 
 def survey(box, cfg, orig, chain, cur, mm_off, agent, sleep):
-    """Probe the chain top-down, stopping at the first slot that works. A dead verdict is
-    re-checked once, CONFIRM_DELAY_S later, but only when something could act on it (a
+    """Probe the chain top-down, stopping at the first slot that works. A dead (or model-gone)
+    verdict is re-checked once, CONFIRM_DELAY_S later, but only when something could act on it (a
     dead slot at or below the current one) and only if the wait, the re-probes and the
     write after them still fit in the time budget; otherwise it stays unconfirmed and
     nothing changes this run. Unconfigured slots are deterministic: no re-check."""
@@ -506,7 +558,7 @@ def survey(box, cfg, orig, chain, cur, mm_off, agent, sleep):
         res.append(one(i))
         if res[-1][0] == "ok":
             break
-    dead = [i for i, r in enumerate(res) if r[0] == "dead"]
+    dead = [i for i, r in enumerate(res) if r[0] in ("dead", "gone")]
     if dead and dead[-1] >= cur:
         if box.remaining() < CONFIRM_DELAY_S + len(dead) * PROBE_TIMEOUT_S + WRITE_RESERVE_S:
             box.log("dead verdict on %s but too little of the time budget is left to confirm it; changing nothing"
@@ -576,7 +628,7 @@ def tell_client(box, cfg, chain, res, st):
     provs = bills([c for c, r in zip(chain, res) if r[0] == "dead"]) or bills(chain)
     names = [PROVIDER_NAME[p] for p in provs]
     msg = ("Heads up from your AI team: memory search has no working key right now (%s). It looks like "
-           "the accounts are out of money, were switched off, or have no key set up. To keep your box "
+           "the accounts are out of money, were switched off, have no key set up, or the model is no longer offered. To keep your box "
            "running smoothly, memory search is paused for now. Your agents keep doing their jobs; they "
            "just can't search their notes until a key works again. Please add funds or check the keys "
            "at: %s. Memory search turns back on by itself once a key works."
@@ -734,10 +786,6 @@ def activity(box, aid):
     return last, first
 
 
-def always_on(aid, default_id):
-    return aid in ALWAYS_ON_IDS or aid == default_id or any(p in aid for p in ALWAYS_ON_PATTERNS)
-
-
 def idle_pass(box, days=IDLE_DAYS_DEFAULT):
     cfg = box.config()
     ok, why = schema_ok(cfg)
@@ -748,7 +796,7 @@ def idle_pass(box, days=IDLE_DAYS_DEFAULT):
     ist = st.setdefault("idle", {})
     owned = ist.setdefault("disabled", {})
     cutoff = box.now - days * 86400
-    dflt = default_agent_id(cfg)
+    keep_on = protected_ids(cfg)
     off, on, kept, report, unread = {}, {}, 0, [], []
 
     for aid, ent in sorted(entries(cfg).items()):
@@ -759,7 +807,7 @@ def idle_pass(box, days=IDLE_DAYS_DEFAULT):
         if aid in owned and cur is not False:
             owned.pop(aid)  # someone else turned it back on; it is theirs now
             continue
-        if always_on(aid, dflt):
+        if aid in keep_on:
             continue
         if aid not in owned and (cur is False or ms.get("provider") or ms.get("model")):
             continue  # someone else's choice: leave it alone
@@ -839,8 +887,12 @@ if args[:2] == ["memory", "status"]:
     if mode_of("hang"):
         time.sleep(float(mode_of("hang")))
     cfgp = os.environ.get("OPENCLAW_CONFIG_PATH") or os.path.join(d, "root", "openclaw.json")
-    ms = (json.load(open(cfgp)).get("memory") or {}).get("search", {})
+    cfgd = json.load(open(cfgp))
+    ms = (cfgd.get("memory") or {}).get("search", {})
     open(os.path.join(d, "seen.log"), "a").write(json.dumps(ms) + "\n")
+    ents = (cfgd.get("agents") or {}).get("entries") or {}
+    off = sum(1 for e in ents.values() if isinstance(e, dict) and (e.get("enabled") is False or ((e.get("memory") or {}).get("search") or {}).get("enabled") is False))
+    open(os.path.join(d, "agentsoff.log"), "a").write(str(off) + "\n")
     if os.path.exists(os.path.join(d, "banner")):
         print("[plugins] 3 loaded"); print("Config warnings: one plugin is disabled")
     if ms.get("enabled") is False:
@@ -925,7 +977,7 @@ def _self_test():
             """Fresh box: this config, no guard state, no call history, these probe answers."""
             json.dump(cfg, open(os.path.join(root, "openclaw.json"), "w"))
             shutil.rmtree(os.path.join(root, "memory-guard"), ignore_errors=True)
-            for n in ("calls.log", "seen.log", "envs.log", "banner", "hang", "patchmode", "msgmode", "version"):
+            for n in ("calls.log", "seen.log", "agentsoff.log", "envs.log", "banner", "hang", "patchmode", "msgmode", "version"):
                 if os.path.exists(os.path.join(d, n)):
                     os.remove(os.path.join(d, n))
             shutil.rmtree(os.path.join(d, "stray"), ignore_errors=True)
@@ -1165,6 +1217,65 @@ def _self_test():
         check("a transient outage on the primary is not turned into 'all dead' by unconfigured backups",
               not kinds(cs, "config", "patch") and on() and not kinds(cs, "message", "send"))
 
+        # ---- 6b2. a model or endpoint that is gone for good is unusable too; network trouble never is
+        reset(mkcfg(OPENAI_MS))
+        for text in ("openai embeddings failed (model: nvidia/x:free, batch size: 1) (400): Model nvidia/x does not exist",
+                     "openai embeddings failed (404): No endpoints found for nvidia/nemotron-3.5-embed-1b:free.",
+                     "gemini embeddings failed (404): models/gemini-embedding-9 is not found for API version v1beta",
+                     "openai embeddings failed (400): invalid model ID",
+                     "openai embeddings failed (404): The model `text-embedding-ada-001` has been deprecated",
+                     "(404) model_not_found: The model does not exist or you do not have access to it"):
+            answer(openai=text)
+            check("model gone: %s" % text[:58], probe(box(), "main", mkcfg(OPENAI_MS))[0] == "gone")
+        for text in ("fetch failed | bad port", "request timed out after 30000ms", "(503): Service Unavailable",
+                     "(429): Rate limit exceeded: free-models-per-day", "(502): model overloaded, retry later",
+                     "(500): model not found in cache, retrying", "connect ECONNREFUSED 127.0.0.1:11434",
+                     "(404): Not Found", "(400): input is too long"):
+            answer(openai=text)
+            check("never 'gone': %s" % text[:58], probe(box(), "main", mkcfg(OPENAI_MS))[0] == "transient")
+
+        GONE = "openai embeddings failed (404): No endpoints found for nvidia/nemotron-3.5-embed-1b:free."
+        NOGEMINI = "UNCONF:No API key found for provider \"google\"."
+        reset(mkcfg(OPENAI_MS), default="ok", openai=DEAD, openrouter=GONE, gemini=NOGEMINI)
+        cs = run_key()
+        sends = kinds(cs, "message", "send")
+        check("dead primary + retired OpenRouter model + unconfigured Gemini: memory search off, one notice (it used to retry forever)",
+              ms_now().get("enabled") is False and len(sends) == 1 and len(kinds(cs, "config", "patch")) == 1)
+        check("... the notice names the dead key only, not the retired model or the missing key",
+              sends and "(OpenAI)" in sends[0][-1] and "OpenRouter" not in sends[0][-1] and "Gemini" not in sends[0][-1])
+        check("... a 'gone' verdict is confirmed like a dead key (5 probes, one 90 s wait)",
+              len(kinds(cs, "memory", "status")) == 5 and slept == [CONFIRM_DELAY_S])
+        reset(mkcfg(OPENAI_MS), default="ok", openai=DEAD, openrouter=GONE, gemini="ok")
+        run_key()
+        check("dead primary, retired OpenRouter model, working Gemini: Gemini is chosen", ms_now()["provider"] == "gemini")
+        reset(mkcfg(OPENAI_MS), default="ok", openai="openai embeddings failed (404): model_not_found", openrouter="ok")
+        run_key()
+        check("a primary whose model is retired falls through to the backup", ms_now()["model"] == NEMOTRON["model"])
+        reset(mkcfg(OPENAI_MS), default="ok", openai=DEAD, openrouter="(429): Rate limit exceeded: free-models-per-day", gemini=NOGEMINI)
+        cs = run_key()
+        check("a rate-limited backup is transient: nothing is switched off",
+              not kinds(cs, "config", "patch") and on() and not kinds(cs, "message", "send"))
+        reset(mkcfg(OPENAI_MS), default="ok", openai=DEAD, openrouter="(503): No endpoints found for nvidia/nemotron-3.5-embed-1b:free", gemini=NOGEMINI)
+        cs = run_key()
+        check("'no endpoints found' behind a 503 is transient: nothing is switched off",
+              not kinds(cs, "config", "patch") and on() and not kinds(cs, "message", "send"))
+
+        # ---- 6b3. the probe copy carries no per-agent off switches (they poison the shared SecretRef check)
+        off_cfg = mkcfg(OPENAI_MS, {"w-off": {"memory": {"search": {"enabled": False}}}, "w-dead": {"enabled": False}, "w-on": {}})
+        pc = probe_cfg(off_cfg, {}, "main")
+        check("probe config: no agent keeps an off switch, memory search forced on, no fallback",
+              all("enabled" not in agent_search(e) and e.get("enabled") is not False for e in entries(pc).values())
+              and pc["memory"]["search"]["enabled"] is True and pc["memory"]["search"]["fallback"] == "none")
+        check("... and the real config is not touched by building it",
+              agent_search(off_cfg["agents"]["entries"]["w-off"]).get("enabled") is False and off_cfg["agents"]["entries"]["w-dead"]["enabled"] is False)
+        reset(off_cfg, default="ok", openai=DEAD, openrouter="ok")
+        run_key()
+        seen = [json.loads(l) for l in open(os.path.join(d, "seen.log"))]
+        offs = [int(l) for l in open(os.path.join(d, "agentsoff.log"))]
+        check("every probe actually run was given such a copy (the fake counts the off switches in the file the CLI was handed)",
+              seen and offs and set(offs) == {0} and all(sm.get("enabled") is True for sm in seen)
+              and ms_now()["model"] == NEMOTRON["model"] and agent_search(entries(cfg_now())["w-off"]).get("enabled") is False)
+
         # ---- 6c. every CLI call names the box's state dir and config; a write must land
         reset(mkcfg(OPENAI_MS), default="ok", openai=DEAD, openrouter="ok")
         cs = run_key()
@@ -1341,6 +1452,41 @@ def _self_test():
               all(agent_search(e[a]).get("enabled") is not False for a in ("dept-cron", "dept-quiet"))
               and sum("cannot read its activity" in l for l in LOG) == 2)
         os.remove(sdb)
+
+        # agents the idle check must never touch, even when the default cannot be worked out
+        prot_cfg = {"memory": {"search": {"provider": "gemini", "model": "gemini-embedding-2"}},
+                    "agents": {"defaults": {"systemAgent": {"agentId": "Sys"}},
+                               "entries": {"alpha": {"default": True}, "beta": {"default": True}, "sys": {},
+                                           "dept-master-orchestrator": {}, "dept-plain": {}}}}
+        check("protected: every default marker, the system agent and the orchestrator",
+              protected_ids(prot_cfg) == {"main", "alpha", "beta", "sys", "dept-master-orchestrator"})
+        marker_cfg = {"memory": prot_cfg["memory"], "agents": {"defaults": {}, "entries": {
+            "alpha": {"default": True}, "beta": {"default": True}, "dept-plain": {}}}}
+        check("two default markers and no main: default really is unknown", default_agent_id(marker_cfg) is None)
+        for aid in ("alpha", "beta", "dept-plain"):
+            mkdb(aid, old)
+        reset(marker_cfg)
+        idle_pass(box())
+        e = entries(cfg_now())
+        check("idle pass: agents marked default:true stay on when the default cannot be determined",
+              all(agent_search(e[a]).get("enabled") is not False for a in ("alpha", "beta")))
+        check("... while an ordinary idle worker is still turned off", agent_search(e["dept-plain"]).get("enabled") is False)
+        sys_cfg = {"memory": prot_cfg["memory"], "agents": {"defaults": {"systemAgent": {"agentId": "SYS"}},
+                   "entries": {"sys": {}, "dept-plain": {}}}}
+        mkdb("sys", old)
+        reset(sys_cfg)
+        idle_pass(box())
+        e = entries(cfg_now())
+        real_default = default_agent_id
+        globals()["default_agent_id"] = lambda cfg: None  # whatever the default resolver says, these stay protected
+        try:
+            blind = protected_ids(prot_cfg)
+        finally:
+            globals()["default_agent_id"] = real_default
+        check("protection does not depend on the default resolver working: markers, system agent, orchestrator, main",
+              blind == {"main", "alpha", "beta", "sys", "dept-master-orchestrator"})
+        check("idle pass: the configured system agent stays on",
+              agent_search(e["sys"]).get("enabled") is not False and agent_search(e["dept-plain"]).get("enabled") is False)
 
         class Boom(Box):
             def log(self, msg):
