@@ -110,7 +110,12 @@
 #   not reliably after "03:00 New York" on a box set to another zone. A CLI that
 #   rejects --tz is retried without it, because a cron in the wrong zone still
 #   beats no cron at all.
-ENSURE_PIPELINE_CRONS_VERSION="v14.2.1"
+# v14.3.0 - MEMORY GUARD: registers `memory-guard` (02:15 America/New_York, COMMAND
+#   kind, zero LLM tokens, no delivery). Nightly memory-search key check with the
+#   backup chain, plus the idle-worker check (scripts/memory-guard.py). It sits
+#   ahead of the 03:00 New York dreaming run, so the day's embeddings use a working
+#   key. Added to MANAGED_RECONCILE_CRONS and the main() audit list in lockstep.
+ENSURE_PIPELINE_CRONS_VERSION="v14.3.0"
 
 set -u
 
@@ -927,6 +932,10 @@ MANAGED_RECONCILE_CRONS=(
   # on 3 of 3 Macs carrying the cron, 2026-09-22.
   "bootstrap-validate-daily"
   "bootstrap-compact-weekly"
+  # Nightly memory-search key check + idle workers (scripts/memory-guard.py).
+  # Registered below and audited in main(); listed here so the reconcile pass
+  # repairs an existing copy that was born announce+last.
+  "memory-guard"
 )
 
 # Emit one TSV row per managed cron that currently exists, with the fields the
@@ -1291,6 +1300,14 @@ main() {
   _ensure_health_cron "bootstrap-validate-daily" "0 5 * * *"   "bootstrap-validate-daily.sh"               || fails=$((fails + 1))
   _ensure_health_cron "bootstrap-compact-weekly" "30 4 * * 0"  "bootstrap-compact-weekly.sh" "America/New_York" || fails=$((fails + 1))
 
+  # ── MEMORY GUARD: nightly key check, backup chain, idle workers ─────────────
+  # COMMAND kind (no model, no delivery). 02:15 America/New_York puts it before
+  # the 03:00 New York dreaming run, in the same zone for the same ordering
+  # reason as bootstrap-compact-weekly above. A missing script (older bundle) is
+  # a SKIP, advisory only. The job itself only talks to the client when every
+  # memory-search option is dead; see scripts/memory-guard.py.
+  _ensure_health_cron "memory-guard"             "15 2 * * *" "memory-guard.sh" "America/New_York"        || fails=$((fails + 1))
+
   # ── GHL TOKEN LIVENESS (Skills 44 + 46) ─────────────────────────────────────
   # Daily at 08:00 UTC: checks if the client's GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN
   # is still exchangeable at securetoken.googleapis.com. On INVALID, the check
@@ -1313,7 +1330,7 @@ main() {
   for _n in "workforce-build-resume" "interview-nudge" "closeout-readiness-watchdog" "closeout-resume" \
             "index-model-drift-check" "orphan-temp-sweep" "disk-usage-alert" "pre-july14-embed-migrate" \
             "toolsearch-drift-guard" "agent-browser-reaper" "ghl-token-liveness" \
-            "bootstrap-validate-daily" "bootstrap-compact-weekly"; do
+            "bootstrap-validate-daily" "bootstrap-compact-weekly" "memory-guard"; do
     _cron_present "$_n" && present="${present}${_n} "
   done
   present="${present% }"  # trim trailing space

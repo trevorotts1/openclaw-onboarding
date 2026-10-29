@@ -142,33 +142,11 @@
    "execution_sops": []
   },
   {
-   "skill": "11",
-   "slug": "superdesign",
-   "name": "superdesign",
-   "client_facing": false,
-   "archived": true,
-   "description": "ARCHIVED.",
-   "dept_owner": "openclaw-maintenance",
-   "intent_triggers": [],
-   "execution_sops": []
-  },
-  {
    "skill": "12",
    "slug": "openrouter-setup",
    "name": "openrouter-setup",
    "client_facing": false,
    "description": "Install-time: OpenRouter setup.",
-   "dept_owner": "openclaw-maintenance",
-   "intent_triggers": [],
-   "execution_sops": []
-  },
-  {
-   "skill": "13",
-   "slug": "google-workspace-setup",
-   "name": "google-workspace-setup",
-   "client_facing": false,
-   "archived": true,
-   "description": "ARCHIVED.",
    "dept_owner": "openclaw-maintenance",
    "intent_triggers": [],
    "execution_sops": []
@@ -278,17 +256,6 @@
    "name": "youtube-watcher",
    "client_facing": false,
    "description": "Install-time: YouTube monitoring/watcher.",
-   "dept_owner": "openclaw-maintenance",
-   "intent_triggers": [],
-   "execution_sops": []
-  },
-  {
-   "skill": "21",
-   "slug": "tavily-search",
-   "name": "tavily-search",
-   "client_facing": false,
-   "archived": true,
-   "description": "ARCHIVED.",
    "dept_owner": "openclaw-maintenance",
    "intent_triggers": [],
    "execution_sops": []
@@ -484,28 +451,6 @@
    "name": "command-center-setup",
    "client_facing": false,
    "description": "Install-time: Command Center dashboard setup.",
-   "dept_owner": "openclaw-maintenance",
-   "intent_triggers": [],
-   "execution_sops": []
-  },
-  {
-   "skill": "33",
-   "slug": "department-heads",
-   "name": "department-heads",
-   "client_facing": false,
-   "archived": true,
-   "description": "ARCHIVED.",
-   "dept_owner": "openclaw-maintenance",
-   "intent_triggers": [],
-   "execution_sops": []
-  },
-  {
-   "skill": "34",
-   "slug": "intelligent-staffing",
-   "name": "intelligent-staffing",
-   "client_facing": false,
-   "archived": true,
-   "description": "ARCHIVED.",
    "dept_owner": "openclaw-maintenance",
    "intent_triggers": [],
    "execution_sops": []

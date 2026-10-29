@@ -73,8 +73,8 @@ Confirm or set:
 ### 4. Canonical workspace files
 At workspace root, create or update:
 - `USER.md` (owner profile + Behavioral Identity Profile)
-- `AGENTS.md` (company-wide rules — symlinked into every per-role workspace)
-- `TOOLS.md` (company-wide tool registry — symlinked)
+- `AGENTS.md` (company-wide rules — the box's master; every agent workspace holds a real-file copy of it, re-synced on every roll, never a symlink)
+- `TOOLS.md` (company-wide tool registry — the box's master; real-file copies, re-synced on every roll, never a symlink)
 - `SOUL.md` (company mission/beliefs)
 
 ### 5. Download skill files from GitHub

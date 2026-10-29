@@ -204,7 +204,7 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 >
 > **NOTE (v20.0.39) — feat: Presentation Department change order v2 + ROLE-16 Healer-Presentations.** Comprehensive P0-P5 presentation pipeline fixes (API contract, doctrine restorations, Hook Lab, Delivery Concierge, Presenter Coach, Capacity/Reliability watchdog), plus ROLE-16 Healer-Presentations added to presentations department. Presentations dept count 15->16, total_roles 281->282. See [CHANGELOG.md](CHANGELOG.md).
 >
-> **NOTE (v20.0.39) — feat: shared core-file unification (Zero-Human-Workforce file model).** On every box, ALL of an account's agents + sub-agents now SHARE the box's ONE canonical `AGENTS.md` / `TOOLS.md` / `USER.md` via symlink (not duplicated); per-agent `IDENTITY.md` / `SOUL.md` / `MEMORY.md` / `HEARTBEAT.md` stay each agent's own. `link_shared_core_files()` runs at install (`install.sh` Step 10a) and on every update (`update-skills.sh`). Co-mingling guard: the symlink target is always the LOCAL box's own canonical, resolved from that box's own `openclaw.json` — never a cross-box/cross-account path. Nested workflow agents (`*/workflows/*/agents/*`) are exempt. Non-destructive (backups + additive `IDENTITY.md` preservation) and idempotent. QC check 9.9 enforces it. Full rule: [docs/SHARED-CORE-FILES.md](docs/SHARED-CORE-FILES.md). See [CHANGELOG.md](CHANGELOG.md).
+> **NOTE (v20.0.39) — feat: shared core-file unification (Zero-Human-Workforce file model).** On every box, ALL of an account's agents + sub-agents now SHARE the box's ONE canonical `AGENTS.md` / `TOOLS.md` / `USER.md` via a verified real-file copy (amended 2026-07-31: never a symlink, the runtime rejects it); per-agent `IDENTITY.md` / `SOUL.md` / `MEMORY.md` / `HEARTBEAT.md` stay each agent's own. `link_shared_core_files()` runs at install (`install.sh` Step 10a) and on every update (`update-skills.sh`). Co-mingling guard: the copy source is always the LOCAL box's own canonical, resolved from that box's own `openclaw.json` — never a cross-box/cross-account path. Nested workflow agents (`*/workflows/*/agents/*`) are exempt. Non-destructive (backups + additive `IDENTITY.md` preservation) and idempotent. QC check 9.9 enforces it. Full rule: [docs/SHARED-CORE-FILES.md](docs/SHARED-CORE-FILES.md). See [CHANGELOG.md](CHANGELOG.md).
 >
 > **NOTE (v20.0.39) — fix: safe_json_edit validate/rollback guard added (parity with VPS v10.16.49 skills.path fix).** The VPS updater was writing `skills.path` into `openclaw.json` — rejected by OpenClaw 2026.5.x — which aborted the entire VPS updater before writing `.onboarding-version`. Mac updater had no such write but equally lacked a validate/rollback harness. `safe_json_edit()` added as a forward-defense guard for any future direct json edits. See [CHANGELOG.md](CHANGELOG.md).
 >
@@ -221,7 +221,7 @@ This is the **unified repo** for both platforms (PRD 2.1). Platform-specific fil
 
 > Previously the VPS installer was a separate repo (`trevorotts1/openclaw-onboarding-vps`). That repo will become an archived pointer to this unified one. Do not add new features to the VPS repo.
 
-This repo contains **83 numbered skill folders (01–83)**: 78 active plus 5 archived (11, 13, 21, 33, 34), plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
+This repo contains **78 numbered skill folders** (numbered 01 to 83; 11, 13, 21, 33 and 34 were retired and are no longer shipped or installed), plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update via Terminal or Telegram.
 
@@ -281,9 +281,7 @@ That file is the master instruction file. It contains:
 | 08-vercel-setup | Vercel Setup |
 | 09-context7 | Context7 Setup |
 | 10-github-setup | GitHub Setup |
-| 11-superdesign-ARCHIVED | SuperDesign (ARCHIVED — replaced by Skill 45 Design Intelligence Library) |
 | 12-openrouter-setup | OpenRouter Setup |
-| 13-google-workspace-setup-ARCHIVED | Google Workspace Setup (ARCHIVED — replaced by skill 14) |
 | 14-google-workspace-integration | Google Workspace Integration |
 | 15-blackceo-team-management | BlackCEO Team Management |
 | 16-summarize-youtube | Summarize YouTube |
@@ -291,7 +289,6 @@ That file is the master instruction file. It contains:
 | 18-proactive-agent | Proactive Agent |
 | 19-humanizer | Humanizer |
 | 20-youtube-watcher | YouTube Watcher |
-| 21-tavily-search-ARCHIVED | Tavily Search (ARCHIVED — Tavily no longer used; replaced by Skill 03 Agent Browser) |
 | 22-book-to-persona-coaching-leadership-system | Book-to-Persona Coaching Leadership System |
 | 23-ai-workforce-blueprint | AI Workforce Blueprint |
 | 24-storyboard-writer | Storyboard Writer |
@@ -303,8 +300,6 @@ That file is the master instruction file. It contains:
 | 30-fish-audio-api-reference | Fish Audio API Reference |
 | 31-upgraded-memory-system | Upgraded Memory System |
 | 32-command-center-setup | Command Center Setup |
-| 33-department-heads-ARCHIVED | Department Heads (ARCHIVED) |
-| 34-intelligent-staffing-ARCHIVED | Intelligent Staffing (ARCHIVED) |
 | 35-social-media-planner | Social Media Planner — FFmpeg ≥4.0 + kie.ai key required. Routes GHL operations through skill 36 MCPs when installed. |
 | 36-ghl-mcp-setup | **GHL MCP Setup** — 5-tier GHL access chain: Official MCP (36 tools) → Community MCP (588 tools) → REST API (skill 29) → Playwright → Codex Computer Use. Sets `$GHL_COMMUNITY_MCP_URL`, installs launchd plist (macOS), wires cardinal rules into SOUL.md/AGENTS.md/TOOLS.md/MEMORY.md, includes 20-assertion QC script. |
 | 37-zhc-closeout | **ZHC Closeout** — the zero-human-company build-completion sequence: closeout infographics + celebration video, the multi-section Notion page tree in the client's own workspace, the owner Telegram sequence, the Command Center fire, and n8n wire-up. |
@@ -355,7 +350,7 @@ That file is the master instruction file. It contains:
 | 82-signature-thank-you | **Signature Thank-You (v0.1.0)** — the terminal Signature Launch thank-you / confirmation page skill: builds the post-purchase confirmation and access experience showing exactly what the customer actually purchased (verified against the normalized purchase snapshot and Skill 44 entitlement state), its actual charges and terms, and what happens next. No new pitch, no new offer, no new-charge CTA; fulfillment authority is Skill 44 — this skill consumes entitlement state, never grants it, and fulfillment never depends on the buyer reaching the page. |
 | 83-black-friday-launcher | **Black Friday Launcher (v0.2.0)** — the launcher that composes the separate page skills into one runtime walk for the buyer: validated intake, build-time page generation kept separate from buyer-time navigation, the canonical verified-payment route graph (U1 after the original purchase, D1 only on an explicit U1 decline, U2 only after a verified U1 or D1 purchase), a fail-closed entitlement attestation gate (Brand Management membership qualifies without a purchase; School of AI alone does not; ZHC only with Brand Management), Council advice recorded in launch planning and never blocking, native Convert and Flow checkout bound by contract and never a dispatch adapter, and package/receipt assembly with completeness checks. Verified offer facts only; a defaulted price, level or entitlement fails the build. Cross-sales is carried as an offer relationship on the thank-you page with the teaching content marked pending. Records itself as number 83 with number_final=false and enabled_in_999=false until its dependency package is satisfied. |
 
-**Total: 83 numbered skill folders** (01–83): **78 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
+**Total: 78 numbered skill folders.** The numbers 11, 13, 21, 33 and 34 are retired: they are not shipped, and every update roll moves any copy an older roll left on a box out of the skills folder (see `docs/archived-skill-tombstones.json`). This matches the live skill tree on `main`.
 
 
 > **Note:** The Voice Call Plugin (`@openclaw/voice-call`) is installed separately via `openclaw plugins install @openclaw/voice-call`. It is NOT part of the onboarding skill sequence — installing it as a skill caused double-install conflicts.
@@ -410,21 +405,25 @@ See **[docs/STT-TRANSCRIPTION.md](docs/STT-TRANSCRIPTION.md)** for the full note
 ## Shared Core Files (Zero-Human-Workforce file model)
 
 On **every box**, all of that account's agents and sub-agents **share the box's
-ONE canonical `AGENTS.md`, `TOOLS.md`, and `USER.md`** via **symlink** (not
-duplicated). Each agent keeps its **own** `IDENTITY.md`, `SOUL.md`, `MEMORY.md`,
-and `HEARTBEAT.md`.
+ONE canonical `AGENTS.md`, `TOOLS.md`, and `USER.md`**: each agent workspace
+holds a **real-file copy of the box's master, re-synced on every roll, never a
+symlink** (the OpenClaw runtime treats a symlink that leaves the agent's own
+workspace as a missing file). Each agent keeps its **own** `IDENTITY.md`,
+`SOUL.md`, `MEMORY.md`, and `HEARTBEAT.md`; department-specific content goes in
+that department's `IDENTITY.md`, never in the three shared files.
 
 - **CANON_DIR** = the box's default agent workspace (`agents.defaults.workspace`,
   same resolver as `install.sh` Step 10).
-- **Co-mingling guard:** the symlink target is always the LOCAL box's own
+- **Co-mingling guard:** the copy source is always the LOCAL box's own
   canonical, resolved from that box's own `openclaw.json` — never a hardcoded or
-  cross-box/cross-account path. A client box links to the client's own files.
+  cross-box/cross-account path. A client box copies from the client's own files,
+  and the company tree it syncs is this box's own company only.
 - **Nested workflow agent exemption:** internal workflow micro-agents (`*/workflows/*/agents/*`)
   are never touched.
 - **Non-destructive + idempotent:** real files are backed up
   (`*.bak-unify-<ts>`) and any unique content is preserved into
-  the agent's own `IDENTITY.md` before linking; correct symlinks are no-ops on
-  re-run. Backups are bounded: the `$UNIFY_BAK_KEEP` newest (default 3) are
+  the agent's own `IDENTITY.md` before the copy is replaced; a copy already
+  identical to the master is a no-op on re-run. Backups are bounded: the `$UNIFY_BAK_KEEP` newest (default 3) are
   kept per target, oldest deleted first. A second pass at the end of every
   roll (`reclaim_unify_backups`) bounds the backups the unify scan cannot
   reach — orphaned role folders, hidden archive dot-dirs, and the out-of-tree
