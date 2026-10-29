@@ -106,7 +106,14 @@ PY
 python3 - "$REPO_ROOT/CHANGELOG.md" <<'PY' && pass "2a3: CHANGELOG states the real backup/state facts (OpenClaw's own .bak.1 and .last-good; state.json 0600 keeps the original remote)" || fail "2a3: CHANGELOG entry is wrong about backups or the state file"
 import re, sys
 t = open(sys.argv[1]).read()
-entry = t[:t.index("\n## [", 5)] if "\n## [" in t[5:] else t
+# Find THIS change's entry by its title, not by position: when several fixes land in one
+# batch the entry is no longer the first one in the file.
+m = re.search(r'^## \[[^\n]*Memory guard[^\n]*\n', t, re.M)
+if m:
+    nxt = t.find("\n## [", m.end())
+    entry = t[m.start():nxt if nxt != -1 else len(t)]
+else:
+    entry = ""
 bad = []
 if "no backup is made" in entry.lower():
     bad.append("still says 'no backup is made'")
