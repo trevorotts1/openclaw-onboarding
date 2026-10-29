@@ -433,9 +433,21 @@ _ghl_listener_state() {
   printf 'unknown'
 }
 
+# 1 when gateway.tls.enabled is true in the config file named by $1, else 0 (also
+# unreadable). A TLS gateway answers https ONLY: an http:// probe gets an empty
+# reply, so a healthy gateway would read as down.
+_gw_tls_flag() {
+  OC_CFG="$1" python3 -c 'import json,os
+try:
+    t=((json.load(open(os.environ["OC_CFG"])).get("gateway") or {}).get("tls") or {}).get("enabled")
+    print(1 if str(t).lower()=="true" else 0)
+except Exception:
+    print(0)' 2>/dev/null || printf '0'
+}
+
 _ghl_gw_up() {
   command -v curl >/dev/null 2>&1 || return 1
-  local port code
+  local port code s=http k=""
   port="18789"
   if [ -f "$OC_JSON" ] && command -v python3 >/dev/null 2>&1; then
     port="$(python3 - "$OC_JSON" <<'PYEOF' 2>/dev/null || printf '18789'
@@ -447,7 +459,9 @@ except Exception:
 PYEOF
 )"
   fi
-  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:${port:-18789}/healthz" 2>/dev/null || true)"
+  if [ -f "$OC_JSON" ] && [ "$(_gw_tls_flag "$OC_JSON")" = "1" ]; then s=https; k="-k"; fi
+  # shellcheck disable=SC2086  # k is empty or the single word -k (loopback only)
+  code="$(curl -s $k -o /dev/null -w '%{http_code}' --max-time 3 "$s://127.0.0.1:${port:-18789}/healthz" 2>/dev/null || true)"
   [ "$code" = "200" ]
 }
 
@@ -1644,14 +1658,16 @@ PROBE="$(
 # is gated on it. Port = gateway.port from openclaw.json (default 18789).
 gw_up() {
   command -v curl >/dev/null 2>&1 || return 1
-  local _cfg _port _code
+  local _cfg _port _code _s=http _k=""
   _cfg="${OPENCLAW_CONFIG:-${OC_JSON:-$HOME/.openclaw/openclaw.json}}"
   _port="$(OC_CFG="$_cfg" python3 -c 'import json,os
 try:
     print(int((json.load(open(os.environ["OC_CFG"])).get("gateway") or {}).get("port") or 18789))
 except Exception:
     print(18789)' 2>/dev/null)"
-  _code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:${_port:-18789}/healthz" 2>/dev/null || true)"
+  if [ "$(_gw_tls_flag "$_cfg")" = "1" ]; then _s=https; _k="-k"; fi
+  # shellcheck disable=SC2086  # _k is empty or the single word -k (loopback only)
+  _code="$(curl -s $_k -o /dev/null -w '%{http_code}' --max-time 3 "$_s://127.0.0.1:${_port:-18789}/healthz" 2>/dev/null || true)"
   [ "$_code" = "200" ]
 }
 
