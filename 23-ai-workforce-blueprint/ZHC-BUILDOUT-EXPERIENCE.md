@@ -79,7 +79,8 @@ reduced workforce.
 - **Specialists are role folders instantiated FROM the role library.** Each
   specialist is a folder under its department (`NN-role-slug/`) with
   `IDENTITY.md / SOUL.md / MEMORY.md / HEARTBEAT.md / how-to.md / SOP/` and
-  symlinked `AGENTS/TOOLS/USER`. Their `how-to.md` is **token-filled from the
+  real-file copies of the box's master `TOOLS` / `USER` (re-synced every roll,
+  never a symlink; no `AGENTS.md` in a role folder, U053). Their `how-to.md` is **token-filled from the
   335-role library + SOP library** (335 roles / 23 departments as of v12.6.0) -- minimal token burn, identical
   across clients. **Do NOT regenerate a doc with an LLM when a template exists.**
   LLM/free-form writing is reserved ONLY for roles with no comparable template

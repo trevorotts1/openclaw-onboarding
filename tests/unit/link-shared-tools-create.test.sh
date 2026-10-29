@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# link-shared-tools-create.test.sh (RRS001) -- link_shared_core_files must CREATE
-# TOOLS.md for a registered agents.entries{} workspace that has none.
+# link-shared-tools-create.test.sh (RRS001, widened 2026-10-29 "one rulebook") --
+# link_shared_core_files must CREATE the missing AGENTS.md / TOOLS.md / USER.md
+# of a registered agents.entries{} / agents.list[] workspace.
+#
+# RRS001 first covered TOOLS.md only and left AGENTS.md / USER.md "absent stays
+# absent". The owner-approved one-rulebook rule (docs/SHARED-CORE-FILES.md)
+# creates all three for a REGISTERED workspace; an UNREGISTERED folder still
+# gains nothing. The full fixture box lives in shared-core-entries-sync.test.sh.
 #
 # THE LIVE BUG: "absent stays absent". OpenClaw 2026.10.x no longer seeds TOOLS.md,
 # so an agent created after that change got a workspace with no TOOLS.md and the
@@ -21,7 +27,7 @@ run_one() {
   local D="$SANDBOX/$LABEL"; mkdir -p "$D"
   awk '/^link_shared_core_files\(\) \{/{f=1} f{print} f && /^\}$/{exit}' "$ROOT/$SRC" > "$D/fn.sh"
   bash -n "$D/fn.sh" || { bad "$LABEL: extracted function does not parse"; return; }
-  grep -q 'CREATED_TOOLS' "$D/fn.sh" || { bad "$LABEL: no TOOLS.md create pass in $SRC (fix missing?)"; return; }
+  grep -q 'registered agent had none' "$D/fn.sh" || { bad "$LABEL: no create-missing pass in $SRC (fix missing?)"; return; }
 
   (
     set +e
@@ -43,14 +49,20 @@ JSON
     R=0
     cmp -s "$CANON/TOOLS.md" "$REG/TOOLS.md" || { echo "no-create-entries"; R=1; }
     cmp -s "$CANON/TOOLS.md" "$REG3/TOOLS.md" || { echo "no-create-list"; R=1; }
-    [ "$(cat "$REG2/TOOLS.md")" = "agent own tools" ] || { echo "existing-tools-overwritten"; R=1; }
+    # one rulebook: a registered workspace's divergent TOOLS.md is now refreshed like any
+    # other -- master wins, the original is backed up, its unique text goes to IDENTITY.md
+    cmp -s "$CANON/TOOLS.md" "$REG2/TOOLS.md" || { echo "divergent-tools-not-refreshed"; R=1; }
+    grep -qF "agent own tools" "$REG2"/TOOLS.md.bak-unify-* 2>/dev/null || { echo "no-backup-of-original"; R=1; }
+    grep -qF "agent own tools" "$REG2/IDENTITY.md" 2>/dev/null || { echo "unique-text-not-preserved"; R=1; }
     [ -e "$UNREG/TOOLS.md" ] && { echo "unregistered-touched"; R=1; }
-    [ -e "$REG/AGENTS.md" ] && { echo "agents-created"; R=1; }
-    [ -e "$REG/USER.md" ] && { echo "user-created"; R=1; }
+    cmp -s "$CANON/AGENTS.md" "$REG/AGENTS.md" || { echo "agents-not-created"; R=1; }
+    cmp -s "$CANON/USER.md" "$REG/USER.md" || { echo "user-not-created"; R=1; }
+    cmp -s "$CANON/AGENTS.md" "$REG3/AGENTS.md" || { echo "agents-not-created-list"; R=1; }
+    [ -e "$UNREG/AGENTS.md" ] || [ -e "$UNREG/USER.md" ] && { echo "unregistered-touched"; R=1; }
     exit $R
   ) > "$D/out.txt" 2>&1
   local RC=$?
-  if [ $RC -eq 0 ]; then ok "$LABEL: TOOLS.md created for entries{} and list[] workspaces; AGENTS.md/USER.md stay absent; unregistered dir untouched"
+  if [ $RC -eq 0 ]; then ok "$LABEL: AGENTS/TOOLS/USER created for entries{} and list[] workspaces; divergent TOOLS.md refreshed (backup + preserved); unregistered dir untouched"
   else bad "$LABEL: $(tr '\n' ' ' < "$D/out.txt")"; fi
 
   # fail-open: an empty canonical TOOLS.md creates nothing

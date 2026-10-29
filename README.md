@@ -204,7 +204,7 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 >
 > **NOTE (v20.0.39) — feat: Presentation Department change order v2 + ROLE-16 Healer-Presentations.** Comprehensive P0-P5 presentation pipeline fixes (API contract, doctrine restorations, Hook Lab, Delivery Concierge, Presenter Coach, Capacity/Reliability watchdog), plus ROLE-16 Healer-Presentations added to presentations department. Presentations dept count 15->16, total_roles 281->282. See [CHANGELOG.md](CHANGELOG.md).
 >
-> **NOTE (v20.0.39) — feat: shared core-file unification (Zero-Human-Workforce file model).** On every box, ALL of an account's agents + sub-agents now SHARE the box's ONE canonical `AGENTS.md` / `TOOLS.md` / `USER.md` via symlink (not duplicated); per-agent `IDENTITY.md` / `SOUL.md` / `MEMORY.md` / `HEARTBEAT.md` stay each agent's own. `link_shared_core_files()` runs at install (`install.sh` Step 10a) and on every update (`update-skills.sh`). Co-mingling guard: the symlink target is always the LOCAL box's own canonical, resolved from that box's own `openclaw.json` — never a cross-box/cross-account path. Nested workflow agents (`*/workflows/*/agents/*`) are exempt. Non-destructive (backups + additive `IDENTITY.md` preservation) and idempotent. QC check 9.9 enforces it. Full rule: [docs/SHARED-CORE-FILES.md](docs/SHARED-CORE-FILES.md). See [CHANGELOG.md](CHANGELOG.md).
+> **NOTE (v20.0.39) — feat: shared core-file unification (Zero-Human-Workforce file model).** On every box, ALL of an account's agents + sub-agents now SHARE the box's ONE canonical `AGENTS.md` / `TOOLS.md` / `USER.md` via a verified real-file copy (amended 2026-07-31: never a symlink, the runtime rejects it); per-agent `IDENTITY.md` / `SOUL.md` / `MEMORY.md` / `HEARTBEAT.md` stay each agent's own. `link_shared_core_files()` runs at install (`install.sh` Step 10a) and on every update (`update-skills.sh`). Co-mingling guard: the copy source is always the LOCAL box's own canonical, resolved from that box's own `openclaw.json` — never a cross-box/cross-account path. Nested workflow agents (`*/workflows/*/agents/*`) are exempt. Non-destructive (backups + additive `IDENTITY.md` preservation) and idempotent. QC check 9.9 enforces it. Full rule: [docs/SHARED-CORE-FILES.md](docs/SHARED-CORE-FILES.md). See [CHANGELOG.md](CHANGELOG.md).
 >
 > **NOTE (v20.0.39) — fix: safe_json_edit validate/rollback guard added (parity with VPS v10.16.49 skills.path fix).** The VPS updater was writing `skills.path` into `openclaw.json` — rejected by OpenClaw 2026.5.x — which aborted the entire VPS updater before writing `.onboarding-version`. Mac updater had no such write but equally lacked a validate/rollback harness. `safe_json_edit()` added as a forward-defense guard for any future direct json edits. See [CHANGELOG.md](CHANGELOG.md).
 >
@@ -405,21 +405,25 @@ See **[docs/STT-TRANSCRIPTION.md](docs/STT-TRANSCRIPTION.md)** for the full note
 ## Shared Core Files (Zero-Human-Workforce file model)
 
 On **every box**, all of that account's agents and sub-agents **share the box's
-ONE canonical `AGENTS.md`, `TOOLS.md`, and `USER.md`** via **symlink** (not
-duplicated). Each agent keeps its **own** `IDENTITY.md`, `SOUL.md`, `MEMORY.md`,
-and `HEARTBEAT.md`.
+ONE canonical `AGENTS.md`, `TOOLS.md`, and `USER.md`**: each agent workspace
+holds a **real-file copy of the box's master, re-synced on every roll, never a
+symlink** (the OpenClaw runtime treats a symlink that leaves the agent's own
+workspace as a missing file). Each agent keeps its **own** `IDENTITY.md`,
+`SOUL.md`, `MEMORY.md`, and `HEARTBEAT.md`; department-specific content goes in
+that department's `IDENTITY.md`, never in the three shared files.
 
 - **CANON_DIR** = the box's default agent workspace (`agents.defaults.workspace`,
   same resolver as `install.sh` Step 10).
-- **Co-mingling guard:** the symlink target is always the LOCAL box's own
+- **Co-mingling guard:** the copy source is always the LOCAL box's own
   canonical, resolved from that box's own `openclaw.json` — never a hardcoded or
-  cross-box/cross-account path. A client box links to the client's own files.
+  cross-box/cross-account path. A client box copies from the client's own files,
+  and the company tree it syncs is this box's own company only.
 - **Nested workflow agent exemption:** internal workflow micro-agents (`*/workflows/*/agents/*`)
   are never touched.
 - **Non-destructive + idempotent:** real files are backed up
   (`*.bak-unify-<ts>`) and any unique content is preserved into
-  the agent's own `IDENTITY.md` before linking; correct symlinks are no-ops on
-  re-run. Backups are bounded: the `$UNIFY_BAK_KEEP` newest (default 3) are
+  the agent's own `IDENTITY.md` before the copy is replaced; a copy already
+  identical to the master is a no-op on re-run. Backups are bounded: the `$UNIFY_BAK_KEEP` newest (default 3) are
   kept per target, oldest deleted first. A second pass at the end of every
   roll (`reclaim_unify_backups`) bounds the backups the unify scan cannot
   reach — orphaned role folders, hidden archive dot-dirs, and the out-of-tree

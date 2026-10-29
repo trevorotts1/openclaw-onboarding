@@ -107,7 +107,7 @@ When a persona is present, this file is subordinate to it.
 
 ### Morning (first 60 minutes)
 
-1. Load the symlinked SOUL.md, HEARTBEAT.md, TOOLS.md, AGENTS.md, and USER.md. Confirm nothing changed overnight that alters this department's standards or permissions.
+1. Load your SOUL.md, HEARTBEAT.md, TOOLS.md, AGENTS.md, and USER.md (TOOLS.md, AGENTS.md and USER.md are real-file copies of the box's master, re-synced every roll). Confirm nothing changed overnight that alters this department's standards or permissions.
 2. Check the orchestrator channel for directives from {{AI_CEO_NAME}}. Any new directive gets logged to the pipeline file with a decision date before you do anything else.
 3. Walk the pipeline board: every concept in `discovery`, `validating`, `packaging`, `ready`, or `blocked`. Any card without a next action and a date is a defect — fix the card or the concept does not exist.
 4. Triage today's decisions: any concept whose decision date has arrived must be decided today (kill, park, or advance). Never let a decision date slip silently.

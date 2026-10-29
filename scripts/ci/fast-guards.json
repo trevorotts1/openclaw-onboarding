@@ -3180,6 +3180,52 @@
   }
  },
  {
+  "name": "shared-core-entries-sync-guard",
+  "was": "(new, one shared rulebook sync)",
+  "script": "scripts/ci/fast-guards.d/shared-core-entries-sync-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "install.sh",
+     "update-skills.sh",
+     "scripts/qc-system-integrity.sh",
+     "docs/SHARED-CORE-FILES.md",
+     "23-ai-workforce-blueprint/scripts/shared_core_copy.py",
+     "23-ai-workforce-blueprint/scripts/create_role_workspaces.py",
+     "23-ai-workforce-blueprint/scripts/test_role_workspace_symlinks.py",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/TOOLS.md",
+     "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/TOOLS.md",
+     "tests/unit/shared-core-entries-sync.test.sh",
+     "tests/unit/link-shared-tools-create.test.sh",
+     "scripts/ci/fast-guards.d/shared-core-entries-sync-guard.sh"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "install.sh",
+     "update-skills.sh",
+     "scripts/qc-system-integrity.sh",
+     "docs/SHARED-CORE-FILES.md",
+     "23-ai-workforce-blueprint/scripts/shared_core_copy.py",
+     "23-ai-workforce-blueprint/scripts/create_role_workspaces.py",
+     "23-ai-workforce-blueprint/scripts/test_role_workspace_symlinks.py",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/TOOLS.md",
+     "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/TOOLS.md",
+     "tests/unit/shared-core-entries-sync.test.sh",
+     "tests/unit/link-shared-tools-create.test.sh",
+     "scripts/ci/fast-guards.d/shared-core-entries-sync-guard.sh"
+    ]
+   }
+  }
+ },
+ {
   "name": "updater-skill-box-state-guard",
   "was": "updater-skill-box-state-guard.yml",
   "script": "scripts/ci/fast-guards.d/updater-skill-box-state-guard.sh",
