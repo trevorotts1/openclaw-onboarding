@@ -462,14 +462,16 @@ Create folder: ~/.openclaw/workspace/departments/[dept-name]/
 - HEARTBEAT.md - department-specific priorities from interview
 - memory/ folder - for daily session logs
 
-**Inherited files (copied from main CEO workspace ~/.openclaw/workspace/):**
+**Inherited files (REAL-FILE copies of the master in the main CEO workspace ~/.openclaw/workspace/, never symlinks):**
 - TOOLS.md - same tools, same credentials
 - AGENTS.md - same behavioral playbook
 - USER.md - same human, same preferences
 
-**🔴 After copying AGENTS.md to each department workspace, APPEND the Persona Operating Protocol:**
+**🔴 ONE RULEBOOK. Do NOT hand-edit a department's AGENTS.md, TOOLS.md or USER.md.** Every agent on the box uses the box's ONE master copy of those three files. Each `install.sh` / `update-skills.sh` roll copies the master over every department copy (the old copy is kept as `.bak-unify-<timestamp>` and any text only it contained is moved into that department's own IDENTITY.md), so an edit made to a department copy does not last. Content that belongs to ONE department (its persona notes, its department-specific tool notes, its rules) goes in that department's IDENTITY.md. Never create a symlink for these files: the OpenClaw runtime treats a symlink that leaves the agent's own workspace as a missing file.
 
-Add this section to the BOTTOM of each department's AGENTS.md:
+**🔴 Persona Operating Protocol: add it ONCE, to the MASTER AGENTS.md (~/.openclaw/workspace/AGENTS.md), before the department copies are made:**
+
+If the master AGENTS.md does not already contain the heading `## 🔴🔴🔴 Persona Operating Protocol`, append the section below to the BOTTOM of the master AGENTS.md. Then make (or re-make) the department copies from the master. Do not append it to any department's AGENTS.md.
 
 ```markdown
 ## 🔴🔴🔴 Persona Operating Protocol (Dynamic Selection Engine — v11.4.0)
@@ -541,7 +543,7 @@ If you hit an edge case the SOP doesn't cover:
 - Document the edge case + research outcome in today's daily journal.
 ```
 
-Replace `[your-dept]` with the actual department folder name (e.g., `marketing`, `sales`, `operations`).
+Leave `[your-dept]` exactly as written. The text is the same for every department because it lives in the one master AGENTS.md. Each agent substitutes its own department folder name (the name of the folder that holds its own IDENTITY.md, e.g., `marketing`, `sales`, `operations`) when it runs the command.
 
 **Why this matters:** Without this protocol, department agents inherit the generic AGENTS.md but have no instruction to dynamically select and APPLY the right persona at task time. The governing-personas.md file sits there unused. This protocol makes dynamic persona selection mandatory on every task, using Gemini search to find the best match and a 5-layer scoring system to pick the winner.
 

@@ -558,6 +558,13 @@ check "9.8" "Master AGENTS.md / TOOLS.md / USER.md exist at workspace root" \
 # foreign/hardcoded path. FAIL-OPEN mirrors link_shared_core_files(): if
 # canonical itself is missing/unreadable/empty, that filename is skipped
 # (not measurable) rather than false-failing every workspace.
+# ONE RULEBOOK (2026-10-29): the candidate set is the SAME one the updater
+# syncs -- every registered workspace (agents.entries{}, agents.list[],
+# agents.defaults.workspace) plus the scan of <oc-root>/workspaces (incl.
+# command-center/<dept>), <canon>/agents and <canon>/departments, with backup,
+# vendored and template trees skipped. A REGISTERED workspace that is MISSING a
+# core file is a FAIL too (the updater creates it); a department role folder
+# (departments/<dept>/<role>) is allowed to have no AGENTS.md (U053).
 UNIFY_BAD=$(OCJSON="$OCJSON" python3 - <<'PYEOF' 2>/dev/null || echo "ERR"
 import hashlib, json, os
 ocjson = os.environ["OCJSON"]
@@ -598,29 +605,50 @@ for f in ("AGENTS.md", "TOOLS.md", "USER.md"):
     except Exception:
         pass
 
-# Enumerate candidate agent workspaces: openclaw.json agents[].workspace plus a
-# scan of the workspace's agents/ + departments/ trees.
-cands = set()
-for ag in agents.get("list", []) or []:
-    if isinstance(ag, dict) and ag.get("workspace"):
-        cands.add(os.path.expanduser(ag["workspace"]))
-for sub in ("agents", "departments"):
-    base = os.path.join(canon_real, sub)
+# Enumerate candidate agent workspaces. REGISTERED: agents.entries{} values
+# (current shape), agents.list[] (legacy shape) and agents.defaults.workspace.
+# SCANNED: <oc-root>/workspaces (command-center/<dept> ...), <canon>/agents and
+# <canon>/departments (departments/<dept>/<role>). The skip list is the same one
+# link_shared_core_files() uses (tests/unit/shared-core-entries-sync.test.sh
+# keeps them equal): backup trees, hidden dirs, departments-archive,
+# node_modules and vendored skill / onboarding / template trees are never
+# agent workspaces.
+import fnmatch
+UNIFY_SKIP_DIRS = (".*", "*.bak*", "*.backup*", "node_modules", "departments-archive", "onboarding", "fleet-refresh", "skills", "templates", "codex-home")
+oc_root = os.path.dirname(os.path.abspath(ocjson))
+ent = agents.get("entries") if isinstance(agents.get("entries"), dict) else {}
+lst = agents.get("list") if isinstance(agents.get("list"), list) else []
+dfl = agents.get("defaults") if isinstance(agents.get("defaults"), dict) else {}
+registered = set()
+for e in list(ent.values()) + lst + [dfl]:
+    ws = e.get("workspace") if isinstance(e, dict) else None
+    if isinstance(ws, str) and ws.strip():
+        registered.add(os.path.realpath(os.path.expanduser(ws.strip())))
+cands = set(registered)
+for base in (os.path.join(oc_root, "workspaces"),
+             os.path.join(canon_real, "agents"),
+             os.path.join(canon_real, "departments")):
     if os.path.isdir(base):
         for root, dirs, files in os.walk(base):
+            dirs[:] = [d for d in dirs if not any(fnmatch.fnmatchcase(d, g) for g in UNIFY_SKIP_DIRS)]
             if os.path.exists(os.path.join(root, "AGENTS.md")) \
                or os.path.exists(os.path.join(root, "IDENTITY.md")) \
                or os.path.exists(os.path.join(root, "SOUL.md")):
-                cands.add(root)
+                cands.add(os.path.realpath(root))  # realpath: one entry per workspace, however it was found
 
 bad = []
-for w in cands:
+for w in sorted(cands):
     wr = os.path.realpath(w)
     if wr == canon_real:
+        continue
+    if not os.path.isdir(wr):
         continue
     # NESTED WORKFLOW AGENT EXEMPTION.
     if "/workflows/" in (wr + "/") and "/agents/" in (wr + "/").split("/workflows/", 1)[1]:
         continue
+    is_reg = wr in registered
+    # departments/<dept>/<role> never carries an AGENTS.md (U053 disposition).
+    is_role = "/departments/" in wr and "/" in wr.split("/departments/", 1)[1]
     for f in ("AGENTS.md", "TOOLS.md", "USER.md"):
         p = os.path.join(wr, f)
         if f not in canon_hash:
@@ -629,7 +657,9 @@ for w in cands:
             bad.append("%s/%s is a SYMLINK (N29 amended: the runtime rejects cross-workspace symlinks -- must be a real file copy)" % (wr, f))
             continue
         if not os.path.isfile(p):
-            continue  # absent is allowed (left absent by the unifier)
+            if is_reg and not (f == "AGENTS.md" and is_role):
+                bad.append("%s/%s is MISSING from a registered agent workspace (the updater creates it from canonical)" % (wr, f))
+            continue  # an unregistered folder may have none (left absent by the unifier)
         try:
             with open(p, "rb") as fh:
                 p_bytes = fh.read()

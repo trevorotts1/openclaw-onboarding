@@ -170,14 +170,17 @@ Example structure:
     └── memory/
 ```
 
-### 3.3 Create Symlinks to Shared Files
-Each department workspace will have symlinks to shared files from your main workspace:
-- TOOLS.md
+### 3.3 Copy the Shared Rulebook Files (real files, never symlinks)
+Every agent on the box uses ONE rulebook. Each department workspace gets a REAL-FILE COPY of these three files from your main workspace (the master):
 - AGENTS.md
-- HEARTBEAT.md
-- SOUL.md
+- TOOLS.md
+- USER.md
 
-**Important:** The agent uses absolute paths (like `/Users/username/clawd/TOOLS.md`), not tilde paths (`~/.openclaw/workspace/TOOLS.md`). This ensures symlinks work correctly.
+**Do not create a symlink for any of them.** The OpenClaw runtime treats a symlink that leaves the agent's own workspace as a missing file and the agent then runs with no instructions. Do not hand-edit a department's copy either: each `install.sh` / `update-skills.sh` roll copies the master over it (the old copy is kept as `.bak-unify-<timestamp>`). Anything that belongs to one department goes in that department's IDENTITY.md.
+
+`SOUL.md` and `HEARTBEAT.md` are NOT shared. Each department keeps its own real SOUL.md and HEARTBEAT.md.
+
+**Important:** Copy with `cp` (or run `bash scripts/scaffold-agent-files.sh`, which already does this), using full absolute paths (the whole path, starting with `/`), not tilde paths (`~/.openclaw/workspace/TOOLS.md`).
 
 ---
 
@@ -728,7 +731,7 @@ cat ~/.openclaw/workspace/memory/$(date +%Y-%m-%d).md | grep -i "selected.*perso
 
 **Why this matters:** Department agents have `governing-personas.md` files and a Persona Operating Protocol in their AGENTS.md. But if the runtime wiring is broken, agents will skip the search, skip the alignment, skip the log, and just default to the same persona every time. This test catches all three failure modes before go-live.
 
-**If an agent fails:** Check that their department AGENTS.md contains the `## 🔴🔴🔴 Persona Operating Protocol` section. If missing, append it manually and re-test. Also verify BOTH `scripts/gemini-search.py` AND `~/.openclaw/skills/23-ai-workforce-blueprint/scripts/persona-selector-v2.py` exist and are executable. The agent calls `persona-selector-v2.py` for every task; it internally calls `gemini-search.py` (Stage C of the funnel) for semantic candidate retrieval. `select-persona-for-task.py` is a deprecated shim that delegates to v2.
+**If an agent fails:** Check that their department AGENTS.md contains the `## 🔴🔴🔴 Persona Operating Protocol` section. If missing, the box's MASTER AGENTS.md is missing it: append it to the master (never to a department copy), run `update-skills.sh` so the roll copies the master to every department, and re-test. Also verify BOTH `scripts/gemini-search.py` AND `~/.openclaw/skills/23-ai-workforce-blueprint/scripts/persona-selector-v2.py` exist and are executable. The agent calls `persona-selector-v2.py` for every task; it internally calls `gemini-search.py` (Stage C of the funnel) for semantic candidate retrieval. `select-persona-for-task.py` is a deprecated shim that delegates to v2.
 
 ### 7.6 Report Results
 The agent sends you a summary in Telegram:

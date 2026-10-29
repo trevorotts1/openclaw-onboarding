@@ -4,7 +4,10 @@
 > operator) from symlink to copy-on-run — see *Why a copy, not a symlink*
 > below. Implemented by `link_shared_core_files()` in `install.sh` (Step 10a)
 > and `update-skills.sh` (post-wiring), enforced by QC check `9.9` in
-> `scripts/qc-system-integrity.sh`.
+> `scripts/qc-system-integrity.sh`. **Widened 2026-10-29 (owner-approved, "one
+> rulebook"):** the refresher now covers `agents.entries` workspaces, creates
+> missing copies for registered agents, and skips backup / vendored trees. See
+> *Which workspaces are covered* below.
 
 ## The rule, in one sentence
 
@@ -98,6 +101,60 @@ client's content copied into it. The resolver reads only the local box's
 `openclaw.json` and resolves only the local workspace, so a foreign path's
 content can never be written into a client's file. This is the
 [NO-COMINGLING-RULE](../NO-COMINGLING-RULE.md) applied at the filesystem layer.
+
+## Which workspaces are covered (one rulebook, 2026-10-29)
+
+Every agent and department on a box uses ONE rulebook: its `AGENTS.md`,
+`TOOLS.md` and `USER.md` are identical to the box's one master copy
+(`CANON_DIR`). Symlinks stay forbidden (see *Why a copy, not a symlink*), so the
+master is a real file and every other workspace holds a real copy that each
+`install.sh` / `update-skills.sh` roll re-syncs. Both scripts build the same
+candidate set (the `LSC-CANDIDATES-BEGIN` block, kept byte-identical by
+`tests/unit/shared-core-entries-sync.test.sh`):
+
+| Source | What it is | Missing file |
+|--------|------------|--------------|
+| `agents.entries{}` | the current config shape: an object keyed by agent id, each with a `workspace` | **created** from the master |
+| `agents.list[]` | the legacy shape: an array whose entries carry their own `workspace` | **created** from the master |
+| `agents.defaults.workspace` | the workspace of every agent that declares none | **created** from the master |
+| scan of `<oc-root>/workspaces` (includes `workspaces/command-center/<dept>`) | agent-shaped folders (they hold an `AGENTS.md`, `IDENTITY.md` or `SOUL.md`) | stays absent |
+| scan of `<canon>/agents` and `<canon>/departments` (includes `departments/<dept>/<role>`) | same | stays absent |
+
+A *registered* workspace is a real agent, so a missing core file is created for
+it. A folder found only by the scan is kept in step when it already holds a
+core file and never gains one (no churn).
+
+**Role folders (U053 disposition, unchanged).** A department role folder
+(`departments/<dept>/<role>`) carries no `AGENTS.md`: the U053 pass retires it
+with a backup, and the sync does not recreate it, even if the folder is
+registered. A role folder still keeps `TOOLS.md` and `USER.md` as real copies
+and they are re-synced and created like any other. If a role folder is ever
+registered as its own agent and must load an `AGENTS.md`, that is a U053
+decision for the owner, not something this sync overrides.
+
+**The scan never rewrites a file that belongs to something else.** It does not
+descend into a directory whose name matches any of: a hidden name (`.*`, which
+covers `.floor-backups` and `codex-home/.tmp`), `*.bak*`, `*.backup*`,
+`departments-archive`, `node_modules`, `onboarding`, `fleet-refresh`, `skills`,
+`templates`, `codex-home`. Backup copies, vendored skill folders and template
+trees keep their own `AGENTS.md`. Registered workspaces are the owner's
+explicit list and are not filtered by name.
+
+**Department-specific content goes in that department's `IDENTITY.md`, never in
+`AGENTS.md`, `TOOLS.md` or `USER.md`.** Hand edits to a department copy are
+overwritten on the next roll (the original is kept in `.bak-unify-<ts>`, newest
+`UNIFY_BAK_KEEP`). On the first sync of a drifted copy, any block the master
+does not already contain is appended to that department's own `IDENTITY.md`.
+That is how the two department-specific role-library tool files
+(`templates/role-library/presentations/TOOLS.md` and
+`templates/role-library/rescue-rangers/TOOLS.md`) behave: a freshly scaffolded
+department starts with that file as its `TOOLS.md`, the next sync replaces it
+with the master and the whole of its unique content is preserved in the
+department's `IDENTITY.md` (41 and 18 unique blocks; proven by
+`tests/unit/shared-core-entries-sync.test.sh` case S9). The owner wants ONE
+rulebook, so the template stays as the starting point and the master wins on
+the roll. Shared text that every department needs (for example the Persona
+Operating Protocol) is added once to the master `AGENTS.md`.
 
 ## Nested workflow agent exemption
 
@@ -213,7 +270,10 @@ A pre-existing **symlink** (a relic of the pre-amendment behavior) is
 no preservation step runs for it, since a symlink has no content of its own
 to preserve.
 
-A file that is **absent** is left absent (no churn).
+A file that is **absent** is created from the master when the workspace is
+**registered** (`agents.entries`, `agents.list`, `agents.defaults.workspace`)
+and left absent otherwise (no churn). A department role folder never gets an
+`AGENTS.md` (U053).
 
 **Fail-open, never destructive:** if the canonical source itself is
 unreadable or empty, **every** agent's existing copy of that file is left
@@ -230,7 +290,7 @@ The unifier is fully idempotent:
   **no-op** (no rewrite, no backup, no churn).
 - A **symlink** (any target) → migrated to a verified real copy (logged).
 - A real file that **differs** → backed up + preserved + overwritten (once).
-- An absent file → left absent.
+- An absent file in a registered workspace → created; elsewhere → left absent.
 
 A **second run produces no new backups and no churn** — the preservation
 marker prevents re-appending, and already-correct copies are skipped by their
@@ -246,14 +306,19 @@ content hash. Every action is logged with the `[link-shared]` prefix.
 ## QC enforcement
 
 `scripts/qc-system-integrity.sh` check **9.9** asserts that, for **every
-non-workflow-agent workspace**, `AGENTS.md` / `TOOLS.md` / `USER.md` **exist
-as real files and are byte-identical (content hash) to `CANON_DIR`**. A
+non-workflow-agent workspace in the same candidate set the sync uses**
+(`agents.entries`, `agents.list`, `agents.defaults.workspace`, plus the scan of
+`workspaces/`, `agents/` and `departments/` with the same skip list),
+`AGENTS.md` / `TOOLS.md` / `USER.md` **exist as real files and are
+byte-identical (content hash) to `CANON_DIR`**. A
 **symlink is itself a FAIL** now, regardless of what it resolves to — a
 symlink that happens to point at the right canonical bytes would still be
 rejected by the runtime's boundary guard, so a pure content check without the
 symlink test would let that exact failure mode go green again. Files that
-differ in content, or are unreadable, also emit a QC failure line. Absent
-files are allowed.
+differ in content, or are unreadable, also emit a QC failure line. A file
+missing from a **registered** workspace is a FAIL (the sync creates it); a
+missing file in a scan-only folder, and a missing `AGENTS.md` in a department
+role folder (U053), are allowed.
 
 ## Relationship to N19
 
