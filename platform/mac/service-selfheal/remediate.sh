@@ -61,18 +61,33 @@ log() { echo "[$(ts)] $*" >> "$LOG"; }
 # from cron on some boxes ("*/5 * * * * remediate.sh"), where there is no
 # LaunchAgent to boot out. The lock is the mechanism that covers both.
 #
-# STALE LOCKS EXPIRE. A crashed upgrade must never wedge self-heal off forever,
-# so a lock older than 60 minutes is ignored and reported — the atomic
-# procedure's own worst case is a couple of minutes.
+# STALE LOCKS EXPIRE — BUT NEVER BY AGE (mac.MAC-13, skill §7 "Age alone never
+# proves a lock stale"). A crashed upgrade must never wedge self-heal off
+# forever, so the lock is ignored when its RECORDED OWNER is provably gone: the
+# pid is dead, or the pid now belongs to a DIFFERENT process (a recycled pid is
+# proven by the start identity no longer matching). Nothing here looks at the
+# file's mtime: a slow but live upgrade is never healed out from under itself.
 LOCK_FILE="$HOME/.openclaw/.openclaw-maintenance-lock"
 [ -d "/data/.openclaw" ] && LOCK_FILE="/data/.openclaw/.openclaw-maintenance-lock"
 if [ -f "$LOCK_FILE" ]; then
-  if [ -n "$(find "$LOCK_FILE" -mmin +60 2>/dev/null)" ]; then
-    log "STALE maintenance lock at $LOCK_FILE (older than 60m) — IGNORING it and healing normally. If an upgrade is genuinely still running, stop this agent by hand."
-  else
-    log "MAINTENANCE LOCK HELD ($LOCK_FILE) — standing down. An atomic OpenClaw upgrade is in progress; re-bootstrapping the gateway now would revert its config migration."
+  _ml_pid="$(sed -n 's/^pid=//p' "$LOCK_FILE" 2>/dev/null | head -1 | tr -cd '0-9')"
+  _ml_start="$(sed -n 's/^start=//p' "$LOCK_FILE" 2>/dev/null | head -1)"
+  _ml_live=0
+  if [ -n "$_ml_pid" ] && kill -0 "$_ml_pid" 2>/dev/null; then
+    if [ -z "$_ml_start" ] || [ "$_ml_start" = "none" ]; then
+      # No start identity recorded (a pre-MAC-13 lock): a live pid is the only
+      # proof available, and it is still proof of a live process.
+      _ml_live=1
+    else
+      _ml_now="$(ps -o lstart= -p "$_ml_pid" 2>/dev/null | tr -s ' ' | sed 's/^ *//;s/ *$//')"
+      [ "$_ml_now" = "$_ml_start" ] && _ml_live=1
+    fi
+  fi
+  if [ "$_ml_live" = 1 ]; then
+    log "MAINTENANCE LOCK HELD ($LOCK_FILE, owner pid $_ml_pid, start identity matches) — standing down. An atomic OpenClaw upgrade is in progress; re-bootstrapping the gateway now would revert its config migration."
     exit 0
   fi
+  log "STALE maintenance lock at $LOCK_FILE (recorded owner pid ${_ml_pid:-unknown} is not running, or that pid now belongs to a different process) — IGNORING it and healing normally. Staleness is proven by the owner's death, never by the lock's age."
 fi
 
 overall_rc=0

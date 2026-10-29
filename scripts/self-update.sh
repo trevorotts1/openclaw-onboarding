@@ -62,6 +62,10 @@ EX_UPDATE=21
 EX_REFUSE=22
 EX_999=23
 EX_9ROUTER=24
+# 75 = the content step was DEFERRED: another updater legitimately owned this
+# box, so nothing was changed — and this run says so instead of claiming OK
+# (critic.C13). It is NOT a failure: no FIRST_FAIL, no stuck note.
+EX_DEFERRED=75
 
 SELF="$0"
 MODE_DETACHED=0
@@ -551,9 +555,155 @@ lock_take() {
   return 1
 }
 
+# ── SHARED INSTALLATION LEASE (mac.MAC-1 / mac.MAC-2 / consistency.C1) ───────
+# One box has exactly ONE update owner. This run takes the same lease as
+# update-skills.sh, oc-atomic-upgrade.sh, the weekly content update and the
+# Saturday cron at /tmp/openclaw-update.lock. Liveness is decided by the RECORD
+# (pid + process start identity + run id), never by the file's age and never by
+# its mere existence (mac.MAC-13). scripts/box-update-lock.sh is the helper; a
+# box that predates it gets the identical record shape inline, so a
+# helper-present writer and this copy still see each other.
+#
+# NESTED writers (this run → weekly-full-update → fleet-refresh →
+# update-skills → oc-atomic) are DESCENDANTS of the holder and INHERIT the
+# lease: they neither rewrite the record nor release it. Refusing them is the
+# defect that closed PR #2612.
+OC_LEASE_PATH="${OPENCLAW_UPDATE_LEASE:-/tmp/openclaw-update.lock}"
+OC_LEASE_STATE=""      # "" | owned | inherited
+OC_LEASE_IMPL=""
+
+_oclease_start() { ps -o lstart= -p "$1" 2>/dev/null | tr -s ' ' | sed 's/^ *//;s/ *$//' || true; }
+_oclease_ppid()  { ps -o ppid= -p "$1" 2>/dev/null | tr -d ' ' || true; }
+_oclease_rpid() {
+  if [ -d "$OC_LEASE_PATH" ]; then head -1 "$OC_LEASE_PATH/pid" 2>/dev/null || true
+  else sed -n 's/^pid=\([0-9][0-9]*\).*/\1/p' "$OC_LEASE_PATH" 2>/dev/null | head -1 || true
+  fi
+  return 0
+}
+_oclease_rstart() { sed -n 's/^start=//p' "$OC_LEASE_PATH" 2>/dev/null | head -1 || true; return 0; }
+
+_oclease_owner_live() {
+  local _p _s
+  if [ -d "$OC_LEASE_PATH" ]; then
+    _p="$(_oclease_rpid)"; [ -n "$_p" ] || return 1
+    kill -0 "$_p" 2>/dev/null || return 1
+    return 0                     # legacy mkdir lease: pid only, never age
+  fi
+  [ -f "$OC_LEASE_PATH" ] || return 1
+  _p="$(_oclease_rpid)"; [ -n "$_p" ] || return 1
+  kill -0 "$_p" 2>/dev/null || return 1
+  _s="$(_oclease_rstart)"
+  if [ -n "$_s" ]; then [ "$(_oclease_start "$_p")" = "$_s" ] || return 1; fi
+  return 0
+}
+
+# 0 = this process is the holder or a descendant of it. A legacy mkdir lease
+# carries no start identity, so it can never prove a process tree.
+_oclease_in_owner_tree() {
+  [ -d "$OC_LEASE_PATH" ] && return 1
+  _oclease_owner_live || return 1
+  local _p _cur _n
+  _p="$(_oclease_rpid)"; _cur="$$"; _n=0
+  while [ -n "$_cur" ] && [ "$_cur" -gt 1 ] 2>/dev/null && [ "$_n" -lt 64 ]; do
+    [ "$_cur" = "$_p" ] && return 0
+    _cur="$(_oclease_ppid "$_cur")"
+    _n=$((_n + 1))
+  done
+  return 1
+}
+
+_oclease_write_own() {
+  printf 'pid=%s\nstart=%s\nrun_id=%s\nrole=%s\ninstall_path=%s\nutc=%s\n' \
+    "$$" "$(_oclease_start "$$")" "${RUN_ID:-}" "self-update" "${ROOT:-}" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$OC_LEASE_PATH" 2>/dev/null
+}
+
+_oclease_load_helper() {
+  local _h _d
+  _d="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)"
+  for _h in "$_d/box-update-lock.sh" \
+            "${ROOT:-$HOME/.openclaw}/scripts/box-update-lock.sh" \
+            "${ROOT:-$HOME/.openclaw}/fleet-refresh/onboarding/scripts/box-update-lock.sh"; do
+    if [ -f "$_h" ]; then
+      # shellcheck source=/dev/null
+      . "$_h" || continue
+      command -v box_update_lock_acquire >/dev/null 2>&1 && return 0
+    fi
+  done
+  return 1
+}
+
+# 0 held (owned or inherited) · 3 a live foreign writer owns it · 1 unrecoverable.
+_oclease_acquire() {
+  OC_LEASE_IMPL="inline"
+  if _oclease_load_helper; then OC_LEASE_IMPL="helper"; fi
+
+  if [ "$OC_LEASE_IMPL" = "helper" ]; then
+    box_update_lock_acquire "$OC_LEASE_PATH" "${RUN_ID:-self-update-$$}" "self-update" "${ROOT:-}"
+    case "$?" in
+      0) OC_LEASE_STATE="owned"; log "lock: $OC_LEASE_PATH held (shared lease, run ${RUN_ID:-})"; return 0 ;;
+      3) return 3 ;;
+      *) return 1 ;;
+    esac
+  fi
+
+  if _oclease_in_owner_tree; then
+    OC_LEASE_STATE="inherited"
+    BFX_LOCK_RUN_ID="$(sed -n 's/^run_id=//p' "$OC_LEASE_PATH" 2>/dev/null | head -1 || true)"
+    BFX_LOCK_OWNER_PID="$(_oclease_rpid)"
+    export BFX_LOCK_RUN_ID BFX_LOCK_OWNER_PID
+    log "lock: inherited $OC_LEASE_PATH from pid $(_oclease_rpid) (nested writer)"
+    return 0
+  fi
+
+  if [ -e "$OC_LEASE_PATH" ] && [ ! -f "$OC_LEASE_PATH" ]; then
+    _oclease_owner_live && return 3
+    rm -rf "$OC_LEASE_PATH" 2>/dev/null || return 1
+  fi
+
+  if command -v flock >/dev/null 2>&1; then
+    exec 9<>"$OC_LEASE_PATH" 2>/dev/null || return 1
+    if ! flock -n 9 2>/dev/null; then
+      exec 9>&- 2>/dev/null || true
+      return 3
+    fi
+    if _oclease_owner_live; then
+      flock -u 9 2>/dev/null || true
+      exec 9>&- 2>/dev/null || true
+      return 3
+    fi
+    _oclease_write_own || return 1
+    OC_LEASE_STATE="owned"
+    log "lock: acquired $OC_LEASE_PATH (flock + record, pid $$)"
+    return 0
+  fi
+
+  _oclease_owner_live && return 3
+  if [ -e "$OC_LEASE_PATH" ]; then rm -f "$OC_LEASE_PATH" 2>/dev/null || return 1; fi
+  ( set -o noclobber; : > "$OC_LEASE_PATH" ) 2>/dev/null || return 3
+  _oclease_write_own || return 1
+  OC_LEASE_STATE="owned"
+  log "lock: acquired $OC_LEASE_PATH (exclusive create, pid $$)"
+  return 0
+}
+
+# Only the OWNER releases; an inherited lease belongs to the ancestor.
+_oclease_release() {
+  if [ "$OC_LEASE_STATE" = "owned" ]; then
+    if [ "$OC_LEASE_IMPL" = "helper" ]; then
+      command -v box_update_lock_release >/dev/null 2>&1 && box_update_lock_release
+    elif _oclease_owner_live && [ "$(_oclease_rpid)" = "$$" ]; then
+      rm -rf "$OC_LEASE_PATH" 2>/dev/null || true
+    fi
+  fi
+  OC_LEASE_STATE=""
+  return 0
+}
+
 cleanup() {
   [ -n "${WORK:-}" ] && rm -rf "$WORK" 2>/dev/null
   [ "${LOCK_OWNED:-0}" = 1 ] && rm -rf "$LOCK_DIR" 2>/dev/null
+  command -v _oclease_release >/dev/null 2>&1 && _oclease_release
   :
 }
 # MAC-7: one handler for EXIT only, plus a signal handler that STOPS the job.
@@ -668,6 +818,20 @@ WORK="$(mktemp -d "${TMPDIR:-/tmp}/self-update.XXXXXX")" || {
   log "REFUSED: could not create a temp dir"
   finish "$EX_REFUSE" "preflight"
 }
+
+# ── the shared installation lease, taken by the process that DOES the work ───
+# The launcher above only forks and exits, so it must never own the lease (its
+# pid would go stale the moment it exits). This point is reached ONLY by a
+# worker: the detached child, or --foreground. One box, one update owner.
+_oclease_acquire
+_OC_LEASE_RC=$?
+if [ "$_OC_LEASE_RC" = 3 ]; then
+  log "REFUSED: the shared installation lease (${OC_LEASE_PATH}) is held by another live updater (pid $(_oclease_rpid)) — no second writer on this box"
+  finish "$EX_REFUSE" "preflight" "shared installation lease held by another live updater"
+elif [ "$_OC_LEASE_RC" != 0 ]; then
+  log "REFUSED: could not take the shared installation lease at ${OC_LEASE_PATH}"
+  finish "$EX_REFUSE" "preflight" "shared installation lease unrecoverable"
+fi
 
 fetch() {  # url dest
   curl -fsSL --max-time 60 "$1" -o "$2" >>"$LOG" 2>&1
@@ -1145,6 +1309,10 @@ if [ -f "$ROOT/openclaw.json" ]; then
 fi
 
 UPD_RC=0
+# critic.C11 (code side): under self-update the content step must NEVER be
+# handed to the bare no-snapshot/no-rollback updater. weekly-full-update.sh
+# sees this flag and exits non-zero instead of falling back.
+export SELF_UPDATE_RUN=1
 if ! fetch "$REPO_RAW/scripts/weekly-full-update.sh" "$WORK/weekly-full-update.sh"; then
   log "FAIL update: could not fetch scripts/weekly-full-update.sh from main"
   UPD_RC=$EX_UPDATE
@@ -1161,6 +1329,15 @@ else
   fi
 fi
 if [ "$UPD_RC" -eq 2 ] && [ "$IS_DOCKER" = 0 ]; then ROLLED_BACK=1; fi
+# critic.C13: exit 75 from the content step is DEFERRED, not done and not a
+# failure. Record it as deferred so no reader ever sees "OK update" for a run
+# that changed nothing, and exit 75 rather than 0.
+if [ "$UPD_RC" -eq 75 ]; then
+  log "DEFERRED update: another updater legitimately owns this box (exit 75) — content was NOT changed by this run"
+  record_step "update" 75
+  record_step "update_deferred" 1
+  finish "$EX_DEFERRED" "done" "content update deferred: another updater held this box (exit 75) — nothing was changed by this step"
+fi
 record_step "update" "$UPD_RC"
 if [ "$UPD_RC" -ne 0 ]; then
   log "FAIL update: weekly-full-update.sh exited $UPD_RC"
