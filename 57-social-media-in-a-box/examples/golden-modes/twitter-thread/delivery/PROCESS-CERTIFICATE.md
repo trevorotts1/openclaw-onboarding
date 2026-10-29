@@ -12,7 +12,7 @@
 - **Client-copy verbatim OK:** True
 - **Creative (frame proven, picture free):** mode=None theme_source=None persona=config em_dash=ban-all series_len=7 arc=tv-season
 - **Models used:** google/gemini-2.0-flash-001, meta-llama/llama-3.1-70b-instruct
-- **Labeled deliverables dest root:** `~/Downloads/Social-Media-in-a-Box/northwind-bakehouse/twitter-thread`
-- **Certificate SHA:** `177c6d0cf5e7c9cd46163c74b2085fabf80e0df61b582454646ac97ad21dea36`
+- **Labeled deliverables dest root:** `~/Downloads/Social-Media-in-a-Box/northwind-bakehouse/2026-W28`
+- **Certificate SHA:** `1d789cf244e19c3cee6c74aa03110460ddb481ecb8f356f9d4b65a95165a1b9e`
 
 Issued by `build_manifest.py`. The publisher (P7) refuses to run without this certificate. Client runtime uses the client's OWN provider chain — the `zero_anthropic` proof above is a hard gate. `done` is claimed only from this certificate plus a live GHL post-listing verify.

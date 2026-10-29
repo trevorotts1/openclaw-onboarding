@@ -10,8 +10,11 @@ EXACTLY what they asked for.'
 ## Reproduce
 
 ```
-bash social-media-entry.sh --run-dir examples/golden-creative/run --mode brief
+SMIB_TEST_ENTRY=1 bash social-media-entry.sh --run-dir <temp copy of examples/golden-creative/run> --mode brief
 ```
+(test posture: the fixture config carries offline `probes`, which the production entry refuses, and the
+run dir needs a logged owner offline token at `working/copy/preflight-offline-token.json`; run it on a
+temp copy, never in place. `../../verify.sh` does exactly this.)
 
 `../../verify.sh` step 2c re-runs it in a read-only temp copy and asserts the certificate below.
 

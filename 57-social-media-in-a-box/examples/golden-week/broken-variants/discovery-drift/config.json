@@ -1,5 +1,5 @@
 {
-  "$broken_variant": "C2 discovery drift — the live GHL connected-accounts listing shows a twitter account the client connected, but the config platforms enum does not carry it and no platformsExcluded entry logs a deliberate skip. This is the BANNED silent-miss (a channel the client actually connected must never be silently skipped): preflight_gate.py must BLOCK with AF-SM-DISCOVERY-DRIFT. Everything else is green so the drift is the ONLY failure.",
+  "$broken_variant": "C2 discovery drift — the live GHL connected-accounts listing shows a twitter account the client connected, but the config platforms enum does not carry it and no platformsExcluded entry logs a deliberate skip. This is the BANNED silent-miss (a channel the client actually connected must never be silently skipped): under the F06 contract preflight_gate.py stays green and the account plan reports twitter as skipped / connected-but-unconfigured (never silent); AF-SM-DISCOVERY-DRIFT blocks only an unconfirmable discovery. Everything else is green so the drift is the ONLY signal.",
   "brandName": "Northwind Bakehouse",
   "pit": "pit-set",
   "locationId": "loc-fixture",

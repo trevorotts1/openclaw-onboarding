@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import importlib
 import importlib.util
 import json
 import os
@@ -326,6 +327,17 @@ class CheckoutMappingTests(unittest.TestCase):
         validator = mapping["validator"]
         self.assertEqual(validator["state"], "bound", validator)
         self.assertIn(validator["probe"]["result"], ("accepted", "rejected"))
+        # Row 23: the probe names the interpreter it ran under, so a missing
+        # dependency is attributable instead of "whatever python3 resolved to".
+        self.assertEqual(validator["interpreter"], sys.executable)
+
+    def test_an_unavailable_probe_names_its_interpreter(self):
+        with mock.patch.object(checkout, "_load_validator",
+                               side_effect=ModuleNotFoundError("No module named 'attrs'")):
+            validator = self.mapping("single_simple")["validator"]
+        self.assertEqual(validator["state"], "unavailable")
+        self.assertIn("attrs", validator["error"])
+        self.assertEqual(validator["interpreter"], sys.executable)
 
     def test_the_mapping_is_derived_from_the_contract_file(self):
         mapping = self.mapping("single_simple")
@@ -529,6 +541,8 @@ class PackageRecordTests(unittest.TestCase):
         self.assertEqual(len(fails), 1, fails)
         self.assertTrue(fails[0].startswith("AF-LAUNCH-CHECKOUT-VALIDATOR"), fails)
         self.assertIn("unavailable", fails[0])
+        # the message points at the recorded probe interpreter (row 23)
+        self.assertIn(sys.executable, fails[0])
 
     def test_the_cli_fails_closed_when_the_validator_cannot_load(self):
         # L25-BF-40 in the form the verifier reproduced it: the command, not
@@ -688,6 +702,44 @@ class DependencyPackageTests(unittest.TestCase):
         self.assertLessEqual(set(report["blockers"]), {"runtime-jsonschema"})
         self.assertIs(report["enabled_in_999"], report["would_enable"])
 
+    def test_a_half_installed_jsonschema_is_missing_and_names_the_interpreter(self):
+        # Row 23: find_spec('jsonschema') is True when jsonschema's own dependency
+        # (attrs) is missing, so the old check read "present" and the Skill 79
+        # validator then failed with "No module named attrs". attrs is shadowed by
+        # a stub that raises the same error, so the fault is identical on every
+        # machine; the unshadowed run is the control for the shadow.
+        shadow = tempfile.TemporaryDirectory()
+        self.addCleanup(shadow.cleanup)
+        stub = Path(shadow.name) / "attrs"
+        stub.mkdir()
+        (stub / "__init__.py").write_text(
+            'raise ModuleNotFoundError("No module named \'attrs\'")\n', encoding="utf-8")
+        code = ("import json; from launcher_core import dependencies; "
+                "print(json.dumps(next(e for e in dependencies.check()['entries'] "
+                "if e['id'] == 'runtime-jsonschema')))")
+
+        def entry(extra_path):
+            env = dict(os.environ)
+            parts = [extra_path] if extra_path else []
+            if env.get("PYTHONPATH"):
+                parts.append(env["PYTHONPATH"])
+            if parts:
+                env["PYTHONPATH"] = os.pathsep.join(parts)
+            else:
+                env.pop("PYTHONPATH", None)
+            run = subprocess.run([sys.executable, "-c", code], cwd=str(SKILL_ROOT),
+                                 env=env, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            return json.loads(run.stdout)
+
+        control = entry(None)
+        self.assertEqual(control["status"], "present", control)
+        self.assertIn(sys.executable, control["evidence"])
+        shadowed = entry(shadow.name)
+        self.assertEqual(shadowed["status"], "missing", shadowed)
+        self.assertIn("attrs", shadowed["evidence"])
+        self.assertIn(sys.executable, shadowed["evidence"])
+
     def test_preflight_is_not_enabled_without_a_registered_skill(self):
         with tempfile.TemporaryDirectory() as tmp:
             report = dependencies.check(Path(tmp))
@@ -708,8 +760,11 @@ class DependencyPackageTests(unittest.TestCase):
         # be missing. Runtime packages are interpreter-level, so they report
         # what the running interpreter imports (verify.sh refuses to run without
         # jsonschema) and are the only entries an empty root may show present.
-        runtime_present = ["runtime-jsonschema"] if (
-            importlib.util.find_spec("jsonschema") is not None) else []
+        try:
+            importlib.import_module("jsonschema")
+            runtime_present = ["runtime-jsonschema"]
+        except Exception:  # find_spec would say present for a half-installed package
+            runtime_present = []
         self.assertEqual(report["present"], runtime_present)
         self.assertTrue(all(e["status"] == "missing" for e in report["entries"]
                             if e["id"] != "runtime-jsonschema"))

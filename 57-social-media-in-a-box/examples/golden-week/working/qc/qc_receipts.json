@@ -1,0 +1,28 @@
+[
+  {
+    "artifact_id": "fb-carousel-contract",
+    "revision": 1,
+    "sha256": "5e1e98134dda38214c8d4c6e20fd20ae819a4479891f922efca3a27b7c169f41",
+    "producer_id": "producer-content-1",
+    "qc_reviewer_id": "reviewer-qc-1",
+    "qc_result": "pass",
+    "rubric_scores": {
+      "accuracy": 5,
+      "brand": 5
+    },
+    "reviewed_at": "2026-07-07T12:00:00Z"
+  },
+  {
+    "artifact_id": "reformat-contract",
+    "revision": 1,
+    "sha256": "10a00d77d3ffcf60ee33ade70f476541262cdcdbe9f06418408db43cb7087ed3",
+    "producer_id": "producer-content-1",
+    "qc_reviewer_id": "reviewer-qc-1",
+    "qc_result": "pass",
+    "rubric_scores": {
+      "accuracy": 5,
+      "brand": 5
+    },
+    "reviewed_at": "2026-07-07T12:00:00Z"
+  }
+]

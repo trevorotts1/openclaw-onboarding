@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -248,16 +249,23 @@ ADMINISTRABLE = set(SUPPLIED_FIELDS) | set(OPERATIONAL_DEFAULTS)
 
 def _probe_validator(mapping: Dict[str, Any],
                      supplied: Dict[str, Any]) -> Dict[str, Any]:
-    """Call the real Skill 79 validator. The binding is proved, not assumed."""
+    """Call the real Skill 79 validator. The binding is proved, not assumed.
+
+    The validator loads in this process, so it runs under ``sys.executable`` and
+    nothing else. Every record names that interpreter: a missing dependency of
+    jsonschema (``No module named 'attrs'``) is otherwise unattributable on a
+    machine with more than one Python (Big Fleet Roll error log, row 23).
+    """
+    interpreter = sys.executable
     module = None
     try:
         module = _load_validator()
     except Exception as exc:  # import failure is a recorded fact
         return {"module": validator_ref(), "state": "unavailable",
-                "error": str(exc)}
+                "error": str(exc), "interpreter": interpreter}
     if module is None or not callable(getattr(module, "validate_request", None)):
         return {"module": validator_ref(), "state": "unavailable",
-                "error": "validate_request is absent"}
+                "error": "validate_request is absent", "interpreter": interpreter}
     # The probe replays the inner checkout_request envelope only: document-level
     # fields (schema_version) live on the document, and $defs/checkout_request
     # sets additionalProperties false, so smuggling one in makes every probe a
@@ -265,7 +273,8 @@ def _probe_validator(mapping: Dict[str, Any],
     request = dict(supplied)
     for name, (value, _reason) in OPERATIONAL_DEFAULTS.items():
         request[name] = value
-    probe: Dict[str, Any] = {"module": validator_ref(), "state": "bound"}
+    probe: Dict[str, Any] = {"module": validator_ref(), "state": "bound",
+                             "interpreter": interpreter}
     try:
         module.validate_request(request)
         probe["probe"] = {"result": "accepted"}

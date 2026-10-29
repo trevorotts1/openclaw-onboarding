@@ -8,8 +8,13 @@ fail-closed rejection.
 ## Reproduce
 
 ```
-bash social-media-entry.sh --run-dir examples/golden-week --mode week
+bash verify.sh        # step 2 copies this golden to a temp dir and runs the entry in the test posture
 ```
+
+The committed `config.json` carries an offline `probes` block, which the PRODUCTION entry refuses by
+design (`AF-SM-EXEC-MODE`). The sanctioned way to run it is the trusted TEST entry
+(`SMIB_TEST_ENTRY=1`) plus a logged owner offline token at `working/copy/preflight-offline-token.json`;
+`verify.sh` stages that token into the temp copy so this directory stays byte-for-byte untouched.
 
 Expected: all nine phases `[OK]`, `ALL REQUESTED PHASES PASSED`, a certificate with
 `zero_anthropic: true / prompt_hashes_ok: true / all_gates_pass: true`.

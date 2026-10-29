@@ -11,7 +11,7 @@
 - **Overrides logged OK:** True
 - **Client-copy verbatim OK:** True
 - **Creative (frame proven, picture free):** mode=None theme_source=None persona=config em_dash=ban-all series_len=7 arc=tv-season
-- **Models used:** meta-llama/llama-3.1-70b-instruct, s2-pro, nano-banana-pro
-- **Certificate SHA:** `19071d3dcf588d41f09eaed29b726e1494421ed1db223f434aefce6bea7c214c`
+- **Models used:** meta-llama/llama-3.1-70b-instruct, s2-pro, gpt-image-2-5-sunburst-text-to-image
+- **Certificate SHA:** `f34103fb7e01187c0dd00d30185cf6bf38d8bef4d38ef12ee8152e7039d62bd9`
 
 Issued by `build_manifest.py`. The publisher (P7) refuses to run without this certificate. Client runtime uses the client's OWN provider chain — the `zero_anthropic` proof above is a hard gate. `done` is claimed only from this certificate plus a live GHL post-listing verify.

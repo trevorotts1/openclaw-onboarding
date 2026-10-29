@@ -20,5 +20,10 @@
     "yes",
     "9.2",
     "first-100 theme"
-  ]
+  ],
+  "spreadsheet_id": "sheet-northwind-planner",
+  "schema_version": "planner-2026.09-v1",
+  "row_key": "2026-07-06",
+  "updatedRange": "Planner!A2:T2",
+  "content_hash": "92cbde6092390b6b4cb85ad454181ed776f2123bc55a6de9a6f202beca18ae8c"
 }

@@ -1,5 +1,23 @@
 {
   "themeOfWeek": "Why your first 100 customers matter more than your next 10,000",
   "plannerSheetId": "sheet-northwind-planner",
-  "weekOf": "2026-07-06"
+  "weekOf": "2026-07-06",
+  "producerId": "producer-content-1",
+  "platforms": [
+    "facebook",
+    "instagram",
+    "linkedin"
+  ],
+  "plannedItems": [
+    {
+      "artifact_id": "fb-carousel-contract",
+      "revision": 1,
+      "path": "working/content/bands/fb-carousel.json"
+    },
+    {
+      "artifact_id": "reformat-contract",
+      "revision": 1,
+      "path": "working/content/bands/reformat.json"
+    }
+  ]
 }
