@@ -41,8 +41,8 @@
 # RECEIPTS in the state dir: last-run.json (overwritten) and runs.log (append-only,
 # one line per run) with the time, mode, counts, and every refusal as host:REASON
 # (skipped hosts are counted on the line and named in last-run.json). "provisioned"
-# names every host whose Council address this run proved exists — created now,
-# already provisioned by an earlier run, or login-synced — so a client provisioned
+# names every host whose Council address this run proved exists - created now,
+# already provisioned by an earlier run, or login-synced - so a client provisioned
 # before is never missing from the address list.
 #
 # STEP 1 each run is ensure-cc-access.sh (same mode, so --apply only when this job

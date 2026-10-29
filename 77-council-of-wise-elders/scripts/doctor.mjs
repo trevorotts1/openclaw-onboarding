@@ -173,6 +173,14 @@ if (existsSync(manifestPath)) {
   } else {
     fail(`manifest drift: computed ${aggregate} over ${fileCount} files, manifest says ${manifest.aggregate_sha256} over ${manifest.file_count}. Rebuild with scripts/build-bundles.mjs`);
   }
+  // The fourth version carrier. scripts/selected-tree-gate.mjs (wire.sh's
+  // TREE_GATE) refuses a tree whose manifest skill_version disagrees with the
+  // other three, so the doctor must refuse it first, not pass it.
+  if (norm(manifest.skill_version) && norm(manifest.skill_version) === norm(versionFile)) {
+    pass(`manifest skill_version matches version (${norm(versionFile)})`);
+  } else {
+    fail(`manifest skill_version ${manifest.skill_version ?? "(missing)"} != version ${versionFile.trim()}. Rebuild with scripts/build-bundles.mjs`);
+  }
 } else {
   fail("manifest.json missing: run scripts/build-bundles.mjs");
 }
