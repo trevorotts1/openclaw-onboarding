@@ -58,7 +58,11 @@ echo ""
 [ -f "$SUPHELPER" ] || { echo "FATAL: $SUPHELPER not found"; exit 1; }
 
 SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/oc-atomic-test.XXXXXX")"
-cleanup() { rm -rf "$SANDBOX"; }
+cleanup() {
+  local _p
+  for _p in $(cat "$SANDBOX"/state*/spawned.pids 2>/dev/null); do kill "$_p" 2>/dev/null; done
+  rm -rf "$SANDBOX"
+}
 trap cleanup EXIT
 
 OLD_V="2026.7.1"
@@ -190,6 +194,42 @@ if [ "\${1:-}" = "config" ] && [ "\${2:-}" = "schema" ]; then
     echo '{"properties":{"agents":{"additionalProperties":false,"properties":{"defaults":{},"list":{}}},"skills":{"properties":{"workshop":{"additionalProperties":false,"properties":{"autonomous":{"properties":{"mode":{"anyOf":[{"const":"off"},{"const":"auto"},{"const":"propose"}]}}}}}}}}}'
   fi
   exit 0
+fi
+# doctor --fix (2026.10.8): records the context it ran in -- is the gateway loaded, which build is
+# installed, is stdin at EOF -- so the test asserts on what doctor actually saw. \$STATE/doctor_mode:
+#   (unset) ok | fail | fail_holder (a stale CLI grabs the state DB, then doctor fails) | hang |
+#   audit (refuses like the real audit-logs step until the raw checkpoint rows are gone) | audit_always |
+#   models (rewrites agents.defaults.model) | touch (changes only an unrelated key)
+if [ "\${1:-}" = "doctor" ]; then
+  {
+    echo "args=\$*"
+    if [ -f "\$STATE/loaded_ai.openclaw.gateway" ]; then echo "gateway_loaded=yes"; else echo "gateway_loaded=no"; fi
+    echo "version=\$V"
+    read -r -t 2 _x; echo "stdin_rc=\$?"
+  } >> "\$STATE/doctor_ctx"
+  DB="\$HOME/.openclaw/state/openclaw.sqlite"
+  MODE="\$(cat "\$STATE/doctor_mode" 2>/dev/null)"
+  case "\$MODE" in
+    fail) echo "doctor: agent database migration failed" >&2; exit 1 ;;
+    fail_holder)
+      sleep 300 >/dev/null 2>&1 </dev/null &
+      P=\$!
+      echo "\$P" >> "\$STATE/lsof_holders"; echo "\$P" >> "\$STATE/spawned.pids"
+      echo "node /opt/x/bin/openclaw status" > "\$STATE/ps_\$P.args"; echo "03:00:00" > "\$STATE/ps_\$P.etime"
+      echo "doctor: boom" >&2; exit 1 ;;
+    hang) sleep 30; exit 0 ;;
+    audit|audit_always)
+      N=0
+      if [ -f "\$DB" ]; then
+        N="\$(python3 -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("select count(*) from diagnostic_events where scope=?", ("migration.legacy-audit-raw",)).fetchone()[0])' "\$DB" 2>/dev/null || echo 0)"
+      fi
+      if [ "\$MODE" = "audit_always" ] || [ "\$N" -gt 0 ]; then
+        echo "Audit logs: sanitized archive changed after checkpoint; refusing to import" >&2; exit 1
+      fi ;;
+    models) python3 -c 'import json,os;p=os.environ["HOME"]+"/.openclaw/openclaw.json";c=json.load(open(p));c["agents"]["defaults"]["model"]={"primary":"p/doctor-changed","fallbacks":[]};json.dump(c,open(p,"w"),indent=2)' ;;
+    touch) python3 -c 'import json,os;p=os.environ["HOME"]+"/.openclaw/openclaw.json";c=json.load(open(p));c["doctorWasHere"]=True;json.dump(c,open(p,"w"),indent=2)' ;;
+  esac
+  echo "doctor: ok"; exit 0
 fi
 # CAN014: the NEW build rejects skills.workshop.autonomous.mode "propose" (2026.10.5).
 # config validate --json is its verdict: rc 1 + {"valid":false,"issues":[...]}.
@@ -329,14 +369,31 @@ EOF
   printf '#!/bin/bash\nexit 0\n' > "$dir/node"
   # ps: the live gateway's command line is the plist's launch path (or $STATE/ps_args); its age is
   # $STATE/ps_etime (default 00:00 = just started, i.e. after every fixture file was written).
+  # A spawned state-database holder has its own answers: $state/ps_<pid>.args and ps_<pid>.etime.
   cat > "$dir/ps" <<EOF
 #!/bin/bash
+P=""; prev=""
+for a in "\$@"; do [ "\$prev" = "-p" ] && P="\$a"; prev="\$a"; done
 case "\$*" in
-  *etime*) if [ -f "$state/ps_etime" ]; then cat "$state/ps_etime"; else echo "00:00"; fi ;;
-  *) if [ -f "$state/ps_args" ]; then cat "$state/ps_args"; else echo "node \$HOME/sup/lib/node_modules/openclaw/dist/index.js gateway"; fi ;;
+  *etime*) if [ -n "\$P" ] && [ -f "$state/ps_\$P.etime" ]; then cat "$state/ps_\$P.etime"
+           elif [ -f "$state/ps_etime" ]; then cat "$state/ps_etime"; else echo "00:00"; fi ;;
+  *) if [ -n "\$P" ] && [ -f "$state/ps_\$P.args" ]; then cat "$state/ps_\$P.args"
+     elif [ -f "$state/ps_args" ]; then cat "$state/ps_args"; else echo "node \$HOME/sup/lib/node_modules/openclaw/dist/index.js gateway"; fi ;;
 esac
 EOF
-  chmod +x "$dir/openclaw" "$dir/npm" "$dir/launchctl" "$dir/docker" "$dir/hostname" "$dir/curl" "$dir/node" "$dir/ps"
+  # lsof: the pids in $state/lsof_holders that are still alive "hold" the state database.
+  cat > "$dir/lsof" <<EOF
+#!/bin/bash
+STATE="$state"
+echo "lsof \$*" >> "\$STATE/events"
+[ -f "\$STATE/lsof_holders" ] || exit 1
+rc=1
+while read -r p; do
+  if [ -n "\$p" ] && kill -0 "\$p" 2>/dev/null; then echo "\$p"; rc=0; fi
+done < "\$STATE/lsof_holders"
+exit \$rc
+EOF
+  chmod +x "$dir/openclaw" "$dir/npm" "$dir/launchctl" "$dir/docker" "$dir/hostname" "$dir/curl" "$dir/node" "$dir/ps" "$dir/lsof"
 }
 
 # write_supervisor <home> <node> <prefix> <version>
@@ -382,7 +439,7 @@ run_atomic() {
   HOME="$home" PATH="$stubs:/usr/bin:/bin:/usr/sbin:/sbin" \
     OC_ATOMIC_QUIESCE_PROOF_SECONDS=1 OC_ATOMIC_STABILITY_SECONDS=1 \
     OC_ATOMIC_BOOTOUT_TIMEOUT="${T_BOOTOUT_TIMEOUT:-6}" OC_ATOMIC_HEALTH_TIMEOUT="${T_HEALTH_TIMEOUT:-4}" \
-    OC_ATOMIC_SETTLE_SECONDS="${T_SETTLE:-1}" \
+    OC_ATOMIC_SETTLE_SECONDS="${T_SETTLE:-1}" OC_ATOMIC_DOCTOR_TIMEOUT="${T_DOCTOR_TIMEOUT:-60}" \
     bash "$script" --upgrade 2>&1
 }
 
@@ -418,6 +475,46 @@ if "list" in a and "entries" in a: print("BOTH")
 elif "list" in a: print("LEGACY:%d" % len(a["list"]))
 elif "entries" in a: print("ENTRIES:%d" % len(a["entries"]))
 else: print("NEITHER")
+PY
+}
+
+# make_state_db <home> -- the shared state database with the audit checkpoint rows doctor trips over:
+# two raw-archive rows (the ones that may be dropped), the LIVE coordination lease scope and an
+# unrelated scope (which must never be touched).
+make_state_db() {
+  mkdir -p "$1/.openclaw/state"
+  python3 - "$1/.openclaw/state/openclaw.sqlite" <<'PY'
+import sqlite3, sys
+c = sqlite3.connect(sys.argv[1])
+c.execute("create table diagnostic_events (id integer primary key, scope text, key text, payload text)")
+c.executemany("insert into diagnostic_events(scope, key, payload) values (?, ?, ?)", [
+    ("migration.legacy-audit-raw", "k1", "{\"offset\": 10}"),
+    ("migration.legacy-audit-raw", "k2", "{\"offset\": 20}"),
+    ("migration.legacy-audit", "lease", "live"),
+    ("other.scope", "x", "y")])
+c.commit()
+PY
+}
+scope_count() {   # <db> <scope>
+  python3 -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("select count(*) from diagnostic_events where scope=?", (sys.argv[2],)).fetchone()[0])' "$1" "$2"
+}
+# spawn_holder <state> <ps args> <ps etime> -- a REAL background process that lsof reports as holding the state DB.
+spawn_holder() {
+  local state="$1" p
+  sleep 300 >/dev/null 2>&1 </dev/null &
+  p=$!
+  echo "$p" >> "$state/lsof_holders"; echo "$p" >> "$state/spawned.pids"
+  printf '%s\n' "$2" > "$state/ps_$p.args"; printf '%s\n' "$3" > "$state/ps_$p.etime"
+  echo "$p"
+}
+alive() { kill -0 "$1" 2>/dev/null; }
+doctor_calls() { grep -c '^openclaw doctor' "$1/events" 2>/dev/null || true; }
+set_models() {   # <home> -- give the config a model selection for doctor to (not) change
+  python3 - "$1/.openclaw/openclaw.json" <<'PY'
+import json, sys
+c = json.load(open(sys.argv[1]))
+c["agents"]["defaults"]["model"] = {"primary": "p/one", "fallbacks": ["p/two"]}
+json.dump(c, open(sys.argv[1], "w"), indent=2)
 PY
 }
 
@@ -1087,6 +1184,213 @@ for kind in A B; do
     fail "16$kind: rc=$RC16 (want 78 with no install, no stop, no success text). Output: $OUT16"
   fi
 done
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (17) fleet-roll #18: stale openclaw CLI processes holding the state database are reaped, nothing else ---"
+# Holders are REAL background processes; lsof is a stub that lists the ones still alive. Their
+# command lines and ages come from the ps stub. The assertions are on which processes are alive.
+
+# 17a. only stale bare CLIs hold it: both die, doctor runs afterwards, the upgrade completes.
+H17="$(make_box b17 clean)"; S17="$SANDBOX/stubs17"; ST17="$SANDBOX/state17"
+make_stubs "$S17" "$ST17" versioned
+make_state_db "$H17"
+P17A="$(spawn_holder "$ST17" "node /opt/x/bin/openclaw doctor --json" "05:00:00")"
+P17B="$(spawn_holder "$ST17" "/usr/local/bin/openclaw config validate" "02-03:00:00")"
+OUT17="$(run_atomic "$H17" "$S17" "$ST17")"; RC17=$?
+if [ "$RC17" -eq 0 ] && ! alive "$P17A" && ! alive "$P17B"; then
+  pass "17a: two stale bare openclaw CLI holders (a node-hosted one and a direct one, one days old) were stopped and the upgrade completed (rc=0)"
+else
+  fail "17a: rc=$RC17 stale holders alive: A=$(alive "$P17A" && echo yes || echo no) B=$(alive "$P17B" && echo yes || echo no). Output: $OUT17"
+fi
+if grep -q "reaped stale openclaw CLI holder pid $P17A (openclaw doctor" <<<"$OUT17" \
+   && grep -q "reaped stale openclaw CLI holder pid $P17B (openclaw config" <<<"$OUT17"; then
+  pass "17b: each kill was logged with its pid and subcommand"
+else
+  fail "17b: the kills were not logged. Output: $OUT17"
+fi
+L_REAP="$(grep -n "reaped stale openclaw CLI holder pid $P17A" <<<"$OUT17" | head -1 | cut -d: -f1)"
+L_DOC="$(grep -n "running the NEW binary: openclaw doctor" <<<"$OUT17" | head -1 | cut -d: -f1)"
+if [ -n "$L_REAP" ] && [ -n "$L_DOC" ] && [ "$L_REAP" -lt "$L_DOC" ]; then
+  pass "17c: ORDER — the holder was reaped BEFORE doctor ran"
+else
+  fail "17c: reap line $L_REAP, doctor line $L_DOC"
+fi
+
+# 17d. a mixed set: only the stale bare CLI dies. The gateway service, a node service, the OpenClaw
+# app, a CLI that started during this run and an unrelated program all survive. Doctor needs exclusive
+# access, so it is NOT run and the upgrade rolls back instead of fighting over the database.
+H17M="$(make_box b17m clean)"; S17M="$SANDBOX/stubs17m"; ST17M="$SANDBOX/state17m"
+make_stubs "$S17M" "$ST17M" versioned
+make_state_db "$H17M"
+P_STALE="$(spawn_holder "$ST17M" "node /opt/x/bin/openclaw status" "05:00:00")"
+P_GW="$(spawn_holder "$ST17M" "node /opt/x/lib/node_modules/openclaw/dist/index.js gateway" "05:00:00")"
+P_NODE="$(spawn_holder "$ST17M" "node /opt/x/bin/openclaw node run" "05:00:00")"
+P_APP="$(spawn_holder "$ST17M" "/Applications/OpenClaw.app/Contents/MacOS/OpenClaw" "05:00:00")"
+P_FRESH="$(spawn_holder "$ST17M" "node /opt/x/bin/openclaw status" "00:00")"
+P_OTHER="$(spawn_holder "$ST17M" "python3 /opt/x/other.py" "05:00:00")"
+OUT17M="$(run_atomic "$H17M" "$S17M" "$ST17M")"; RC17M=$?
+SURV=""; for p in "$P_GW" "$P_NODE" "$P_APP" "$P_FRESH" "$P_OTHER"; do alive "$p" || SURV="$SURV $p(DEAD)"; done
+if ! alive "$P_STALE" && [ -z "$SURV" ]; then
+  pass "17d: ONLY the stale bare CLI was killed; the gateway service, node service, OpenClaw app, a CLI started during this run and an unrelated program all survived"
+else
+  fail "17d: stale alive=$(alive "$P_STALE" && echo yes || echo no); protected killed:$SURV"
+fi
+if [ "$RC17M" -eq 78 ] && [ "$(doctor_calls "$ST17M")" = "0" ] && [ "$(cat "$ST17M/version")" = "$OLD_V" ] && [ -f "$ST17M/loaded_ai.openclaw.gateway" ]; then
+  pass "17e: holders that may not be stopped -> doctor NOT run, rolled back (rc=78), binary $OLD_V, gateway loaded"
+else
+  fail "17e: rc=$RC17M doctor_calls=$(doctor_calls "$ST17M") version=$(cat "$ST17M/version"). Output: $OUT17M"
+fi
+if grep -q "pid $P_GW is not a bare openclaw CLI" <<<"$OUT17M" && grep -q "pid $P_NODE is not a bare openclaw CLI" <<<"$OUT17M" \
+   && grep -q "pid $P_APP is not a bare openclaw CLI" <<<"$OUT17M" && grep -q "pid $P_FRESH (openclaw status) started during this run" <<<"$OUT17M"; then
+  pass "17f: each survivor was logged with the reason it was left alone"
+else
+  fail "17f: missing 'left alone' reasons. Output: $OUT17M"
+fi
+for p in "$P_GW" "$P_NODE" "$P_APP" "$P_FRESH" "$P_OTHER"; do kill "$p" 2>/dev/null; done
+
+# 17g. MUTATION: with the reaper neutered the SAME stale holder survives -- so 17a measures the reaper.
+python3 - "$ATOMIC" "$MUT_DIR/oc-atomic-upgrade.noreap.sh" <<'PY'
+import sys
+s = open(sys.argv[1], encoding="utf-8").read()
+m = s.replace("_reap_state_holders() {\n", "_reap_state_holders() { return 0; }\n_reap_state_holders_neutered() {\n", 1)
+if m == s:
+    sys.exit(1)
+open(sys.argv[2], "w", encoding="utf-8").write(m)
+PY
+H17N="$(make_box b17n clean)"; S17N="$SANDBOX/stubs17n"; ST17N="$SANDBOX/state17n"
+make_stubs "$S17N" "$ST17N" versioned
+make_state_db "$H17N"
+P17N="$(spawn_holder "$ST17N" "node /opt/x/bin/openclaw doctor --json" "05:00:00")"
+run_atomic "$H17N" "$S17N" "$ST17N" "$MUT_DIR/oc-atomic-upgrade.noreap.sh" >/dev/null 2>&1
+if alive "$P17N" && ! cmp -s "$ATOMIC" "$MUT_DIR/oc-atomic-upgrade.noreap.sh"; then
+  pass "17g: MUTATION PROOF — with _reap_state_holders neutered the same stale holder survives, so 17a is caused by the reaper"
+else
+  fail "17g: the stale holder died (or the mutation did not apply) with the reaper neutered"
+fi
+kill "$P17N" 2>/dev/null
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (18) fleet-roll #16: doctor --fix runs with the NEW binary, after the quiesce and before the start ---"
+H18="$(make_box b18 clean)"; S18="$SANDBOX/stubs18"; ST18="$SANDBOX/state18"
+make_stubs "$S18" "$ST18" versioned
+make_state_db "$H18"
+OUT18="$(run_atomic "$H18" "$S18" "$ST18")"; RC18=$?
+DB18="$H18/.openclaw/state/openclaw.sqlite"
+if [ "$RC18" -eq 0 ] && grep -q 'ATOMIC UPGRADE COMPLETE' <<<"$OUT18" && [ "$(doctor_calls "$ST18")" = "1" ]; then
+  pass "18a: the upgrade ran doctor exactly once and completed (rc=0)"
+else
+  fail "18a: rc=$RC18 doctor_calls=$(doctor_calls "$ST18"). Output: $OUT18"
+fi
+if grep -qx 'args=doctor --fix --non-interactive' "$ST18/doctor_ctx" && grep -qx 'gateway_loaded=no' "$ST18/doctor_ctx" \
+   && grep -qx "version=$NEW_V" "$ST18/doctor_ctx" && grep -qx 'stdin_rc=1' "$ST18/doctor_ctx"; then
+  pass "18b: doctor ran non-interactively with stdin at EOF, with the gateway booted out, on the NEW binary ($NEW_V)"
+else
+  fail "18b: doctor's context was wrong: $(tr '\n' ' ' < "$ST18/doctor_ctx" 2>/dev/null)"
+fi
+if [ "$(event_order "$ST18" "launchctl bootout" "openclaw doctor")" = "OK" ] && [ "$(event_order "$ST18" "npm install" "openclaw doctor")" = "OK" ] \
+   && [ "$(event_order "$ST18" "openclaw doctor" "launchctl bootstrap")" = "OK" ]; then
+  pass "18c: ORDER — bootout, then install, then doctor, then the gateway start"
+else
+  fail "18c: ORDER VIOLATION. Events: $(tr '\n' '|' < "$ST18/events")"
+fi
+if [ "$(scope_count "$DB18" migration.legacy-audit-raw)" = "2" ]; then
+  pass "18d: with doctor happy, the state database was not edited (no checkpoint rows deleted)"
+else
+  fail "18d: checkpoint rows were deleted although doctor never refused"
+fi
+
+# 18e. the legacy-audit-raw refusal: ONLY that scope's rows are dropped, doctor is re-run once and passes.
+H18B="$(make_box b18b clean)"; S18B="$SANDBOX/stubs18b"; ST18B="$SANDBOX/state18b"
+make_stubs "$S18B" "$ST18B" versioned
+make_state_db "$H18B"; echo audit > "$ST18B/doctor_mode"
+DB18B="$H18B/.openclaw/state/openclaw.sqlite"
+OUT18B="$(run_atomic "$H18B" "$S18B" "$ST18B")"; RC18B=$?
+if [ "$RC18B" -eq 0 ] && [ "$(doctor_calls "$ST18B")" = "2" ] && [ "$(scope_count "$DB18B" migration.legacy-audit-raw)" = "0" ]; then
+  pass "18e: doctor refused on the audit checkpoint, the raw rows were dropped, doctor was re-run once and the upgrade completed (rc=0)"
+else
+  fail "18e: rc=$RC18B doctor_calls=$(doctor_calls "$ST18B") raw_rows=$(scope_count "$DB18B" migration.legacy-audit-raw). Output: $OUT18B"
+fi
+if [ "$(scope_count "$DB18B" migration.legacy-audit)" = "1" ] && [ "$(scope_count "$DB18B" other.scope)" = "1" ]; then
+  pass "18f: the live lease scope 'migration.legacy-audit' and every other scope were left untouched (exact scope match, never a LIKE)"
+else
+  fail "18f: other scopes were damaged: lease=$(scope_count "$DB18B" migration.legacy-audit) other=$(scope_count "$DB18B" other.scope)"
+fi
+SAVED18B="$(ls "$H18B"/.openclaw/audit-checkpoint-rows-*.json 2>/dev/null | head -1)"
+if [ -n "$SAVED18B" ] && [ "$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$SAVED18B")" = "2" ] \
+   && grep -q 'rows before=2 deleted=2 after=0' <<<"$OUT18B"; then
+  pass "18g: the deleted rows were saved first and the before/after counts were logged (before=2 deleted=2 after=0)"
+else
+  fail "18g: no saved rows / no count log. saved='$SAVED18B'. Output: $OUT18B"
+fi
+
+# 18h. a refusal that persists after the repair: doctor is NOT looped on, the existing rollback runs.
+H18C="$(make_box b18c clean)"; S18C="$SANDBOX/stubs18c"; ST18C="$SANDBOX/state18c"
+make_stubs "$S18C" "$ST18C" versioned
+make_state_db "$H18C"; echo audit_always > "$ST18C/doctor_mode"
+CFG18C="$H18C/.openclaw/openclaw.json"; SHA18C="$(sha_of "$CFG18C")"
+OUT18C="$(run_atomic "$H18C" "$S18C" "$ST18C")"; RC18C=$?
+if [ "$RC18C" -eq 78 ] && [ "$(doctor_calls "$ST18C")" = "2" ] && [ "$(cat "$ST18C/version")" = "$OLD_V" ] \
+   && [ "$(sha_of "$CFG18C")" = "$SHA18C" ] && [ -f "$ST18C/loaded_ai.openclaw.gateway" ]; then
+  pass "18h: a refusal that survives the repair -> exactly 2 doctor runs, then rollback (rc=78): binary $OLD_V, config byte-identical, gateway loaded"
+else
+  fail "18h: rc=$RC18C doctor_calls=$(doctor_calls "$ST18C") version=$(cat "$ST18C/version"). Output: $OUT18C"
+fi
+
+# 18i. a doctor failure that is NOT the audit refusal: one run, no database edit, rollback -- and a stale
+# CLI that grabbed the database during doctor is reaped before the rollback restarts the gateway.
+H18D="$(make_box b18d clean)"; S18D="$SANDBOX/stubs18d"; ST18D="$SANDBOX/state18d"
+make_stubs "$S18D" "$ST18D" versioned
+make_state_db "$H18D"; echo fail_holder > "$ST18D/doctor_mode"
+CFG18D="$H18D/.openclaw/openclaw.json"; SHA18D="$(sha_of "$CFG18D")"
+OUT18D="$(run_atomic "$H18D" "$S18D" "$ST18D")"; RC18D=$?
+if [ "$RC18D" -eq 78 ] && [ "$(doctor_calls "$ST18D")" = "1" ] && [ "$(scope_count "$H18D/.openclaw/state/openclaw.sqlite" migration.legacy-audit-raw)" = "2" ] \
+   && [ "$(cat "$ST18D/version")" = "$OLD_V" ] && [ "$(sha_of "$CFG18D")" = "$SHA18D" ] && [ -f "$ST18D/loaded_ai.openclaw.gateway" ]; then
+  pass "18i: doctor failure -> ONE run, no database edit, rolled back (rc=78): binary $OLD_V, config byte-identical, gateway loaded"
+else
+  fail "18i: rc=$RC18D doctor_calls=$(doctor_calls "$ST18D") version=$(cat "$ST18D/version"). Output: $OUT18D"
+fi
+P18D="$(tail -1 "$ST18D/spawned.pids" 2>/dev/null)"
+if [ -n "$P18D" ] && ! alive "$P18D" && grep -q "reaped stale openclaw CLI holder pid $P18D (openclaw status, .*before the rollback restart)" <<<"$OUT18D"; then
+  pass "18j: a stale CLI that took the database during doctor was reaped before the ROLLBACK restart, and logged"
+else
+  fail "18j: holder pid '$P18D' alive=$(alive "$P18D" && echo yes || echo no). Output: $OUT18D"
+fi
+
+# 18k. doctor that never returns is bounded and rolled back.
+H18E="$(make_box b18e clean)"; S18E="$SANDBOX/stubs18e"; ST18E="$SANDBOX/state18e"
+make_stubs "$S18E" "$ST18E" versioned
+echo hang > "$ST18E/doctor_mode"
+OUT18E="$(T_DOCTOR_TIMEOUT=2 run_atomic "$H18E" "$S18E" "$ST18E")"; RC18E=$?
+if [ "$RC18E" -eq 78 ] && grep -q 'did not finish within 2s' <<<"$OUT18E" && [ "$(cat "$ST18E/version")" = "$OLD_V" ]; then
+  pass "18k: a hung doctor was killed after the bound (2s) and the upgrade rolled back (rc=78)"
+else
+  fail "18k: rc=$RC18E. Output: $OUT18E"
+fi
+
+# 18l/m. model/provider names: doctor that changes them -> rollback; doctor that changes only something else -> fine.
+H18F="$(make_box b18f clean)"; S18F="$SANDBOX/stubs18f"; ST18F="$SANDBOX/state18f"
+make_stubs "$S18F" "$ST18F" versioned
+set_models "$H18F"; echo models > "$ST18F/doctor_mode"
+CFG18F="$H18F/.openclaw/openclaw.json"; SHA18F="$(sha_of "$CFG18F")"
+OUT18F="$(run_atomic "$H18F" "$S18F" "$ST18F")"; RC18F=$?
+if [ "$RC18F" -eq 78 ] && grep -q 'changed the model/provider selection' <<<"$OUT18F" && [ "$(sha_of "$CFG18F")" = "$SHA18F" ] \
+   && [ "$(cat "$ST18F/version")" = "$OLD_V" ] && ! grep -q 'doctor-changed' "$CFG18F"; then
+  pass "18l: doctor changed agents.defaults.model -> rolled back (rc=78), config restored byte-identical, binary $OLD_V"
+else
+  fail "18l: rc=$RC18F. Output: $OUT18F"
+fi
+H18G="$(make_box b18g clean)"; S18G="$SANDBOX/stubs18g"; ST18G="$SANDBOX/state18g"
+make_stubs "$S18G" "$ST18G" versioned
+set_models "$H18G"; echo touch > "$ST18G/doctor_mode"
+OUT18G="$(run_atomic "$H18G" "$S18G" "$ST18G")"; RC18G=$?
+if [ "$RC18G" -eq 0 ] && grep -q '"doctorWasHere": true' "$H18G/.openclaw/openclaw.json" && grep -q '"primary": "p/one"' "$H18G/.openclaw/openclaw.json" \
+   && grep -q 'model/provider names identical' <<<"$OUT18G"; then
+  pass "18m: CONTROL — doctor changed only an unrelated key, model names identical -> the upgrade completed (rc=0); the model check is not over-sensitive"
+else
+  fail "18m: rc=$RC18G. Output: $OUT18G"
+fi
 
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""
