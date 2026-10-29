@@ -14,6 +14,13 @@ All notable changes to this skill wrapper are documented here.
 ---
 
 
+## [v27.1.77] - 2026-10-26 - oct-25 fix batch: l13-l19 Skill 6 maintenance-cron and QC hardening
+
+- `update-skills.sh` ran only the FIRST `scripts/install-*.sh` it found, so the page-inventory, routing-drift and selector-drift maintenance jobs were never registered on any box. New aggregate installer `scripts/install-skill6-maintenance-crons.sh` names all four installers explicitly, consumes (never forwards) the `--idempotent` flag, and reports REGISTERED / ABSENT / UNKNOWN per job from `openclaw cron list --all --json`. New `scripts/lib-cron-presence.sh`: presence is judged on `--all` listings (a disabled job is a TOMBSTONE - reported, never re-enabled or duplicated), new jobs get `--no-deliver`, and an existing job announcing is repaired in place with `openclaw cron edit`. Tests: `tests/test_skill6_cron_installers_full_visibility.py`, `tests/unit/skill6-maintenance-installers-all-run.test.sh`.
+- `check-agent-browser-reaper-schedule.sh` no longer passes on a registered-but-disabled reaper (finding 28): it reads `enabled`/`status` from the same listing and FAILS on a registered `enabled=false` job, with UNKNOWN (rc 2) for an unreadable state and jq/python parser parity. SKILL.md documents the check.
+- QC gates fail closed: `qc-built-funnel.sh` propagates the SEO/media pre-gate's exit status (an import failure or unreadable evidence JSON is no longer a pass; a missing `seoMeta` is no longer a warn-only), and `qc-ghl-install-pages.sh` requires a capability receipt THIS invocation proved fresh (stale `working/skill6-capability.json` is deleted and re-probed; the token resolves like runtime). The archive sweep refuses to report CLEAN over an empty discovered run set (finding 50), judged on discovery input, not directory existence. `guard-ghl-method-decision.sh` fails when its corpus checker crashes. Regression tests pin every new gate's own verdict line.
+- Repo-locked pair (`skill-version.txt` + SKILL.md `metadata.version`) moved by the oct-25 batch-prep lockstep (v27.1.74 -> v27.1.77); 06's own `check-version-drift.py` passes again. This CHANGELOG number is 06's independent per-skill log.
+
 ## [v27.1.72] - 2026-10-22 - feat: folder-create implemented behind a capture gate
 
 - GAP CLOSED: `funnel_folder` / `website_folder` existed in the recipe contract and the LIST route was captured live, but NO folder-create path or verb existed in any module. Implemented in `tools/ghl_rest_canvas.py`: `folder_list_path` (both type scopes, an undeclared scope is refused), `folder_create_path`, `folder_create_body`, `folder_create`.
