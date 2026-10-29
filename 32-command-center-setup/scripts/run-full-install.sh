@@ -1553,6 +1553,19 @@ cc_route_update_through_canonical_path() {
   local atomic_deploy="$DASHBOARD_DIR/scripts/atomic-deploy.sh"
   if [[ "${CC_AT_PIN:-0}" == "1" ]]; then
     log "INFO" "phase=6 (update-only): no Command Center deploy: the checkout already contains the pinned release"
+    # Nothing is deployed on this pass, but the FINAL check still requires
+    # commandCenterBuildFresh. Returning here without stamping left the key unset
+    # on every pin-current box, so a successful run ended done-degraded
+    # (ccBuildFresh(6)). Stamp it from the same live content oracle every other
+    # path uses (build-inventory.sh --verify): true only when the served .next
+    # really verifies against this checkout.
+    if cc_served_build_current; then
+      log "INFO" "phase=6 (update-only): content verification PASSED — served .next verifies against $DASHBOARD_DIR (build-inventory VERIFIED)"
+      [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = true' 2>/dev/null || true
+    else
+      log "WARN" "phase=6 (update-only): content verification FAILED — served .next does not verify against $DASHBOARD_DIR (missing/mismatched/obsolete manifest) — commandCenterBuildFresh=false"
+      [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = false' 2>/dev/null || true
+    fi
     return 0
   fi
   if [[ "${CC_ZERO_DOWNTIME:-0}" == "1" ]]; then
@@ -1647,8 +1660,8 @@ cc_route_update_through_canonical_path() {
   # ---- Item 02: content, not timestamp. The served bundle must verify against
   # this tree (build-inventory.sh --verify — the same oracle cc-start.sh's
   # PRES-046 gate runs). This is what stamps commandCenterBuildFresh now that
-  # cc_ensure_fresh_build no longer stamps it. Tier 1/2 return before this line
-  # only on the early CC_AT_PIN pass, which never stamps.
+  # cc_ensure_fresh_build no longer stamps it. The early CC_AT_PIN pass returns
+  # before this line and stamps the same key itself from the same oracle.
   if cc_served_build_current; then
     log "INFO" "phase=6 (update-only): content verification PASSED — served .next verifies against $DASHBOARD_DIR (build-inventory VERIFIED)"
     [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = true' 2>/dev/null || true
@@ -1759,6 +1772,27 @@ cc_with_node() {
   "$@"
 }
 
+# A user npm config with ignore-scripts=true makes `npm ci` skip better-sqlite3's
+# install script, so its native binding is never built and every later db:push /
+# db:seed / build dies with "migration incomplete". After the install, load the
+# binding with the exact node the Command Center runs on (cc_with_node). If it
+# does not load, rebuild ONLY that package for this one command with
+# --ignore-scripts=false (a per-command flag: the user's npm config, global or
+# project, is never changed) and load it again. A checkout without better-sqlite3
+# in node_modules has nothing to repair. Still broken after the rebuild is fatal:
+# db:push would fail on it anyway, so stop here with the real reason.
+cc_ensure_sqlite_binding() {
+  local probe='new (require("better-sqlite3"))(":memory:").close()'
+  [[ -d "$DASHBOARD_DIR/node_modules/better-sqlite3" ]] || return 0
+  ( cd "$DASHBOARD_DIR" && cc_with_node node -e "$probe" >>"$LOG_FILE" 2>&1 ) && return 0
+  log "WARN" "phase=6: better-sqlite3 native binding does not load with the Command Center node (npm ignore-scripts=true skips its build) - rebuilding that one package with --ignore-scripts=false"
+  ( cd "$DASHBOARD_DIR" && cc_with_node npm rebuild better-sqlite3 --ignore-scripts=false >>"$LOG_FILE" 2>&1 ) \
+    || log "WARN" "phase=6: npm rebuild better-sqlite3 exited non-zero; testing the binding anyway"
+  ( cd "$DASHBOARD_DIR" && cc_with_node node -e "$probe" >>"$LOG_FILE" 2>&1 ) \
+    || fail_install "phase=6: better-sqlite3 native binding still does not load with the Command Center node after npm rebuild; refusing migrations/deployment. See $LOG_FILE."
+  log "INFO" "phase=6: better-sqlite3 native binding rebuilt and loads with the Command Center node"
+}
+
 # CC >=7.1.0 ships an audited lockfile. Never resolve a replacement graph,
 # including after a failed clean install; failure must stop before migrations.
 cc_install_locked_dependencies() {
@@ -1768,6 +1802,7 @@ cc_install_locked_dependencies() {
   if ! ( cd "$DASHBOARD_DIR" && cc_with_node npm ci --engine-strict --no-audit --no-fund >>"$LOG_FILE" 2>&1 ); then
     fail_install "phase=6: npm ci failed; dependencies were not installed successfully; refusing migrations/deployment"
   fi
+  cc_ensure_sqlite_binding
 }
 
 cc_load_launch_environment() {
