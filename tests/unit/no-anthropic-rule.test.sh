@@ -5,7 +5,7 @@
 # 2026-10-29). Before this change the fleet update path (update-skills.sh ->
 # apply-fleet-standards.sh -> repair-model-sovereignty.sh) silently stripped an
 # Anthropic fallback, the anthropic provider block, the anthropic plugin entry and
-# the anthropic plugins.allow id from a client's openclaw.json (Talaya Kelley lost
+# the anthropic plugins.allow id from a client's openclaw.json (one client lost
 # openrouter/anthropic/claude-haiku-4.5 that way on 2026-10-29).
 #
 # WHAT THIS PROVES (hermetic: its own mktemp HOME, a stub `openclaw`, no network):
