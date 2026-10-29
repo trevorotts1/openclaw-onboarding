@@ -274,7 +274,7 @@ env CF_API_BASE="http://127.0.0.1:$PORT/client/v4" COUNCIL_ACCESS_STATE_DIR="$WO
     CLOUDFLARE_API_TOKEN="$TOKEN" CLOUDFLARE_ACCOUNT_ID=qc-acct CLOUDFLARE_ZONE_ID=wrong-zone \
     COUNCIL_ACCESS_ENV_FILE="$WORK/excl.env" TMPDIR="$WORK/tmp" "$SCRIPT" --apply >"$WORK/out/case.excl" 2>&1; RC=$?
 check "excluded host newbox: silent (no CC_ACCESS line at all), zero writes to it, no app" bash -c "test '$RC' = 0 && ! grep -q 'newbox' '$WORK/out/case.excl' && test \"$(app_count newbox)\" = 0"
-check "excluded host newbox: not one write was for it (only rescbox CREATED + driftbox RECONCILED)" test "$(nonget_count)" = 2
+check "excluded host newbox: not one write was for it (only rescbox + localbox CREATED + driftbox RECONCILED)" test "$(nonget_count)" = 3
 check "the run still proceeds for the others (rescbox CREATED)" bash -c "grep -q '^CC_ACCESS: rescbox.$Z CREATED' '$WORK/out/case.excl'"
 check "the excluded host is absent from the receipt" bash -c "! grep -q 'newbox' '$WORK/state/cc-access-last-run.json'"
 
