@@ -58,9 +58,17 @@ echo ""
 [ -f "$SUPHELPER" ] || { echo "FATAL: $SUPHELPER not found"; exit 1; }
 
 SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/oc-atomic-test.XXXXXX")"
+# The script takes the box's shared installation lease. Point EVERY invocation in this file at a lease inside the
+# sandbox: the default /tmp/openclaw-update.lock is the real box's, and two runs of this suite (or a real update)
+# at once would refuse each other ("LOCK HELD ... displaced") and fail a case that has nothing to do with the lease.
+export OPENCLAW_UPDATE_LEASE="$SANDBOX/openclaw-update.lock"
 cleanup() {
-  local _p
+  local _p f
   for _p in $(cat "$SANDBOX"/state*/spawned.pids 2>/dev/null); do kill "$_p" 2>/dev/null; done
+  # orphan "gateway" processes a case spawned (BFR #33) must never outlive the run
+  for f in "$SANDBOX"/state*/orphan_pid "$SANDBOX"/state*/extra_pids; do
+    [ -f "$f" ] && for _p in $(cat "$f" 2>/dev/null); do kill -KILL "$_p" 2>/dev/null; done
+  done
   rm -rf "$SANDBOX"
 }
 trap cleanup EXIT
@@ -139,6 +147,21 @@ EOF
 }
 EOF
       ;;
+    plugin)          # clean agents + a plugins block: codex (whose module will not load) and another plugin
+      cat > "$1" <<'EOF'
+{
+  "agents": {"defaults": {"workspace": "~/defaults-workspace"}},
+  "plugins": {
+    "allow": ["codex", "other"],
+    "entries": {
+      "codex": {"enabled": true, "config": {"keep": "me", "n": [1, 2]}},
+      "other": {"enabled": true}
+    }
+  },
+  "channels": {"telegram": {"enabled": true}}
+}
+EOF
+      ;;
     entries)
       cat > "$1" <<'EOF'
 {
@@ -207,6 +230,24 @@ if [ "\${1:-}" = "doctor" ]; then
     echo "version=\$V"
     read -r -t 2 _x; echo "stdin_rc=\$?"
   } >> "\$STATE/doctor_ctx"
+  # BFR #33: an orphan gateway appears while doctor --fix runs and goes on holding the state database
+  if [ "\${2:-}" = "--fix" ] && [ -f "\$STATE/spawn_orphan_on_doctor_fix" ] && [ ! -f "\$STATE/orphan_pid" ]; then
+    ( exec -a "node \$HOME/sup/lib/node_modules/openclaw/dist/index.js gateway --token SECRET-ORPHAN-TOKEN" sleep 300 ) >/dev/null 2>&1 &
+    echo \$! > "\$STATE/orphan_pid"; touch "\$STATE/realps_\$!"; echo \$! >> "\$STATE/lsof_holders"
+  fi
+  # BFR #24: with \$STATE/doctor_broken_plugin = <id>, doctor SPINS on that plugin's module (the same error
+  # again and again, never returning) for as long as the plugin's entry is enabled. \$STATE/doctor_noise prints
+  # one load error that names no plugin (exit 0); doctor_noise_fail does the same and exits 1.
+  if [ -f "\$STATE/doctor_broken_plugin" ]; then
+    ID="\$(cat "\$STATE/doctor_broken_plugin")"
+    if python3 "$dir/plugin_enabled.py" "\$HOME/.openclaw/openclaw.json" "\$ID"; then
+      for i in 1 2 3 4 5 6 7 8 9 10; do echo "[\$(date +%s)] Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/opt/oc/node_modules/openclaw/dist/plugin-sdk/session-store-runtime.js' imported from \$HOME/.openclaw/extensions/\$ID/dist/doctor-contract-api.js"; sleep 0.2; done
+      sleep 300
+      exit 1
+    fi
+  fi
+  if [ -f "\$STATE/doctor_noise" ]; then echo "warn: optional dependency ERR_MODULE_NOT_FOUND for '/opt/x/optional.js' (ignored)"; fi
+  if [ -f "\$STATE/doctor_noise_fail" ]; then echo "Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/opt/x/optional.js'" >&2; exit 1; fi
   DB="\$HOME/.openclaw/state/openclaw.sqlite"
   MODE="\$(cat "\$STATE/doctor_mode" 2>/dev/null)"
   case "\$MODE" in
@@ -234,7 +275,20 @@ fi
 # CAN014: the NEW build rejects skills.workshop.autonomous.mode "propose" (2026.10.5).
 # config validate --json is its verdict: rc 1 + {"valid":false,"issues":[...]}.
 if [ "\${1:-}" = "config" ] && [ "\${2:-}" = "validate" ]; then
-  if [ -f "\$STATE/validate_fail" ] || { [ "\$V" = "$NEW_V" ] && grep -Eq '"mode": *"(propose|bogus)"' "\$HOME/.openclaw/openclaw.json" 2>/dev/null; }; then
+  CFG="\${OPENCLAW_CONFIG_PATH:-\$HOME/.openclaw/openclaw.json}"
+  SD="\${OPENCLAW_STATE_DIR:-LIVE}"; [ "\$SD" = "\$HOME/.openclaw" ] && SD=LIVE
+  echo "validate state=\$SD cfg=\$(basename "\$CFG") ro=\${OPENCLAW_CONFIG_READONLY:-0}" >> "\$STATE/events"
+  # BFR #25: the REAL 2026.10.5 validate takes the sqlite maintenance lock even when read-only. Against
+  # the LIVE state directory while the gateway job is loaded (serving), that stops the gateway answering.
+  if [ "\$SD" = "LIVE" ] && [ -f "\$STATE/loaded_ai.openclaw.gateway" ]; then
+    echo "validate-took-the-live-lock-while-serving" >> "\$STATE/lock_collisions"
+    rm -f "\$STATE/loaded_ai.openclaw.gateway"; touch "\$STATE/healthz_down"
+  fi
+  if [ -f "\$STATE/validate_blind" ]; then echo '{"ok":true,"valid":true}'; exit 0; fi   # an instrument that cannot tell good from bad
+  if grep -q '__oc_atomic_probe__' "\$CFG" 2>/dev/null; then
+    echo '{"ok":false,"valid":false,"issues":[{"path":"agents","message":"Unrecognized key"}]}'; exit 1
+  fi
+  if [ -f "\$STATE/validate_fail" ] || { [ "\$V" = "$NEW_V" ] && grep -Eq '"mode": *"(propose|bogus)"' "\$CFG" 2>/dev/null; }; then
     echo '{"ok":false,"valid":false,"issues":[{"path":"skills.workshop.autonomous.mode","message":"Invalid input (allowed: off, auto)"}]}'
     exit 1
   fi
@@ -249,6 +303,8 @@ STATE="$state"
 echo "npm \$* #via=\$0" >> "\$STATE/events"
 if [ "\${1:-}" = "view" ]; then cat "\$STATE/latest"; exit 0; fi
 if [ "\${1:-}" = "install" ]; then
+  # BFR #21: the invariant, witnessed. npm must NEVER run while the gateway job is loaded.
+  [ -f "\$STATE/loaded_ai.openclaw.gateway" ] && echo "npm \$* while-gateway-loaded" >> "\$STATE/npm_while_loaded"
   # CAN015: two installs can exist. \`--prefix P\` writes the package the supervisor
   # launches (P/lib/node_modules/openclaw); a bare \`install -g\` writes only the
   # copy \`openclaw\` on PATH reports (\$STATE/version). With \$STATE/split, the two
@@ -262,11 +318,19 @@ if [ "\${1:-}" = "install" ]; then
   if [ -n "\$PFX" ]; then
     mkdir -p "\$PFX/lib/node_modules/openclaw"
     printf '{"name":"openclaw","version":"%s"}\n' "\$VER" > "\$PFX/lib/node_modules/openclaw/package.json"
+    mkdir -p "\$PFX/lib/node_modules/openclaw/dist"; : > "\$PFX/lib/node_modules/openclaw/dist/index.js"   # a complete install ships the file the gateway launches
     [ -f "\$STATE/split" ] || printf '%s' "\$VER" > "\$STATE/version"
   elif [ -n "\$VER" ]; then
     printf '%s' "\$VER" > "\$STATE/version"
   fi
   echo "npm-install-witness \$*" >> "\$STATE/npm_installs"
+  ENTRY="\$PFX/lib/node_modules/openclaw/dist/index.js"
+  # an npm that dies half-way: new package.json written, the file the gateway launches gone
+  if [ "\$VER" = "$NEW_V" ] && [ -f "\$STATE/npm_half_new" ]; then rm -f "\$ENTRY"; echo "npm ERR! killed" >&2; exit 1; fi
+  # a reinstall of the OLD build that leaves the same half-written tree
+  if [ "\$VER" = "$OLD_V" ] && [ -f "\$STATE/half_old_install" ]; then rm -f "\$ENTRY"; fi
+  # after the NEW install, launchd stops honouring bootout (the rollback cannot hold the job stopped)
+  if [ "\$VER" = "$NEW_V" ] && [ -f "\$STATE/arm_bootout_noop_after_install" ]; then touch "\$STATE/bootout_noop"; fi
   exit 0
 fi
 exit 0
@@ -312,6 +376,10 @@ case "\${1:-}" in
     LBL="\$(basename "\${2:-}")"
     _settle "\$LBL"
     [ -f "\$STATE/loaded_\$LBL" ] || exit 1
+    # BFR #33: while an orphan gateway owns the state directory the real job exits 78 (EX_CONFIG): loaded, NO pid
+    if [ "\$LBL" = "ai.openclaw.gateway" ] && [ -f "\$STATE/orphan_pid" ] && kill -0 "\$(cat "\$STATE/orphan_pid")" 2>/dev/null; then
+      echo "	state = spawn scheduled"; exit 0
+    fi
     P="\$(cat "\$STATE/pid" 2>/dev/null)"
     # crash-loop is a property of the NEW build; the restored old build is stable
     if [ -f "\$STATE/pid_flip" ] && [ "\$(cat "\$STATE/version" 2>/dev/null)" != "$OLD_V" ]; then P=\$((P+1)); printf '%s' "\$P" > "\$STATE/pid"; fi
@@ -372,6 +440,9 @@ EOF
   # A spawned state-database holder has its own answers: $state/ps_<pid>.args and ps_<pid>.etime.
   cat > "$dir/ps" <<EOF
 #!/bin/bash
+# a pid a test registered (a real background process) is answered by the real ps
+PSBIN=/bin/ps; [ -x "\$PSBIN" ] || PSBIN=/usr/bin/ps
+for a in "\$@"; do case "\$a" in [0-9]*) [ -f "$state/realps_\$a" ] && exec "\$PSBIN" "\$@" ;; esac; done
 P=""; prev=""
 for a in "\$@"; do [ "\$prev" = "-p" ] && P="\$a"; prev="\$a"; done
 case "\$*" in
@@ -393,7 +464,22 @@ while read -r p; do
 done < "\$STATE/lsof_holders"
 exit \$rc
 EOF
-  chmod +x "$dir/openclaw" "$dir/npm" "$dir/launchctl" "$dir/docker" "$dir/hostname" "$dir/curl" "$dir/node" "$dir/ps" "$dir/lsof"
+  cat > "$dir/plugin_enabled.py" <<'PYEOF'
+import json, sys
+cfg = json.load(open(sys.argv[1], encoding="utf-8"))
+e = ((cfg.get("plugins") or {}).get("entries") or {}).get(sys.argv[2])
+sys.exit(0 if isinstance(e, dict) and e.get("enabled") is not False else 1)
+PYEOF
+  # flock: a Linux host has it and macOS does not, so the script's lease takes a different branch on each (`exec 9<>lease`
+  # plus `flock -n 9`). Every box here gets a flock that grants (refuses `-n` while $state/flock_busy exists), so the suite
+  # runs the LINUX lease path on a Mac too. Calls go to $state/flock_calls, not events (several cases count and order events).
+  cat > "$dir/flock" <<EOF
+#!/bin/bash
+echo "flock \$*" >> "$state/flock_calls"
+[ "\${1:-}" = "-n" ] && [ -f "$state/flock_busy" ] && exit 1     # another process holds the lock
+exit 0
+EOF
+  chmod +x "$dir/openclaw" "$dir/npm" "$dir/launchctl" "$dir/docker" "$dir/hostname" "$dir/curl" "$dir/node" "$dir/ps" "$dir/lsof" "$dir/flock"
 }
 
 # write_supervisor <home> <node> <prefix> <version>
@@ -440,6 +526,7 @@ run_atomic() {
     OC_ATOMIC_QUIESCE_PROOF_SECONDS=1 OC_ATOMIC_STABILITY_SECONDS=1 \
     OC_ATOMIC_BOOTOUT_TIMEOUT="${T_BOOTOUT_TIMEOUT:-6}" OC_ATOMIC_HEALTH_TIMEOUT="${T_HEALTH_TIMEOUT:-4}" \
     OC_ATOMIC_SETTLE_SECONDS="${T_SETTLE:-1}" OC_ATOMIC_DOCTOR_TIMEOUT="${T_DOCTOR_TIMEOUT:-60}" \
+    OC_ATOMIC_DOCTOR_LOOP_LINES="${T_LOOP_LINES:-}" \
     bash "$script" --upgrade 2>&1
 }
 
@@ -1186,6 +1273,526 @@ for kind in A B; do
 done
 
 # ═══════════════════════════════════════════════════════════════════════════
+# BIG FLEET ROLL 20261019, errors #21 #24 #25 #33. Same rules as everything above: the
+# real script runs against fixture boxes with stubbed tools, and every assertion is on an
+# OBSERVED side effect. Each fix also has a MUTATION case (the one function neutered, the
+# same box run again) so a green result cannot be a harness that stopped measuring.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# mutate_copy <name> <python-replace-old> <python-replace-new> -> path of a mutated copy that sits
+# beside the REAL, unmutated engine files (see case 5 for why that matters). Fails the case loudly
+# when the line to neuter is not found.
+mutate_copy() {
+  local name="$1" dst="$MUT_DIR/$1.sh"
+  MUT_SRC="$ATOMIC" MUT_DST="$dst" MUT_OLD="$2" MUT_NEW="$3" python3 - <<'PY'
+import os, sys
+s = open(os.environ["MUT_SRC"], encoding="utf-8").read()
+old, new = os.environ["MUT_OLD"], os.environ["MUT_NEW"]
+if s.count(old) != 1:
+    sys.stderr.write("MUTATION DID NOT APPLY (%d matches)\n" % s.count(old)); sys.exit(1)
+open(os.environ["MUT_DST"], "w").write(s.replace(old, new))
+PY
+  [ $? -eq 0 ] && printf '%s' "$dst"
+}
+
+# spawn_gateway_like <state> <home> [extra-args] [ignore-term] -> pid. A REAL background process whose
+# command line is `node <entry> gateway ...`, registered as holding the state database (the lsof
+# stub answers for it only while it is alive) and as visible to the real ps. ppid becomes 1.
+spawn_gateway_like() {
+  local state="$1" home="$2" extra="${3:-}" ign="${4:-}" pid
+  mkdir -p "$home/.openclaw/state"; : > "$home/.openclaw/state/openclaw.sqlite"
+  if [ -n "$ign" ]; then
+    ( trap '' TERM; exec -a "node $home/sup/lib/node_modules/openclaw/dist/index.js gateway $extra" sleep 300 ) >/dev/null 2>&1 &
+  else
+    ( exec -a "node $home/sup/lib/node_modules/openclaw/dist/index.js gateway $extra" sleep 300 ) >/dev/null 2>&1 &
+  fi
+  pid=$!
+  touch "$state/realps_$pid"; echo "$pid" >> "$state/lsof_holders"; echo "$pid" >> "$state/extra_pids"
+  printf '%s' "$pid"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (B21) error #21: npm runs ONLY with the gateway job booted out; never a start onto an incomplete package ---"
+# A crash-looping start puts the job back in launchd BEFORE the rollback reinstalls the old build.
+# KeepAlive then respawns the gateway against the half-written tree. The stub npm records every
+# install that ran while the job was loaded (npm_while_loaded): the invariant is that it stays absent.
+npm_window_check() {   # <events-file> -> OK, or the reason the rollback's reinstall was not inside a stopped window
+  python3 - "$1" <<'PY'
+import sys
+L = open(sys.argv[1], encoding="utf-8").read().splitlines()
+ni = [i for i, l in enumerate(L) if l.startswith("npm install")]
+if len(ni) < 2: print("FEWER-THAN-2-INSTALLS"); raise SystemExit
+last, prev = ni[-1], ni[-2]
+gw = lambda l, verb: ("launchctl " + verb) in l and "ai.openclaw.gateway" in l
+bo = [i for i in range(prev + 1, last) if gw(L[i], "bootout")]
+if not bo: print("NO-BOOTOUT-BETWEEN-THE-TWO-INSTALLS"); raise SystemExit
+inside = [l for l in L[bo[-1] + 1:last] if gw(l, "bootstrap")]
+if inside: print("BOOTSTRAP-INSIDE-THE-WINDOW"); raise SystemExit
+after = [l for l in L[last + 1:] if gw(l, "bootstrap")]
+print("OK" if after else "NO-BOOTSTRAP-AFTER-THE-PACKAGE-WAS-COMPLETE")
+PY
+}
+H21="$(make_box b21 clean)"; S21="$SANDBOX/stubs21"; ST21="$SANDBOX/state21"
+make_stubs "$S21" "$ST21" versioned; touch "$ST21/pid_flip"
+OUT21="$(run_atomic "$H21" "$S21" "$ST21")"; RC21=$?
+if [ "$RC21" -eq 78 ] && [ "$(cat "$ST21/version")" = "$OLD_V" ] && [ "$(grep -c npm-install-witness "$ST21/npm_installs")" -eq 2 ]; then
+  pass "B21a: crash-loop after the start -> rolled back (rc=78) and the OLD build was reinstalled ($OLD_V)"
+else
+  fail "B21a: rc=$RC21 version=$(cat "$ST21/version") installs=$(grep -c npm-install-witness "$ST21/npm_installs" 2>/dev/null). Output: $OUT21"
+fi
+if [ ! -f "$ST21/npm_while_loaded" ]; then
+  pass "B21b: npm NEVER ran while the gateway job was loaded (forward install and rollback reinstall)"
+else
+  fail "B21b: npm ran with the gateway job LOADED: $(cat "$ST21/npm_while_loaded")"
+fi
+W21="$(npm_window_check "$ST21/events")"
+[ "$W21" = "OK" ] && pass "B21c: ORDER — bootout, then the rollback's npm install, and only then the bootstrap ($W21)" \
+                  || fail "B21c: the rollback reinstall was not inside a stopped window ($W21). Events: $(tr '\n' '|' < "$ST21/events")"
+
+# MUTATION: neuter ONLY the "make sure the job is out before npm" step. The same box must now show the
+# invariant violated, else B21b was green for some other reason.
+MUT21="$(mutate_copy bfr21-mut '_gateway_stop_for_npm() {
+  _gateway_loaded || return 0' '_gateway_stop_for_npm() {
+  return 0   # MUTATED
+  _gateway_loaded || return 0')"
+H21M="$(make_box b21m clean)"; S21M="$SANDBOX/stubs21m"; ST21M="$SANDBOX/state21m"
+make_stubs "$S21M" "$ST21M" versioned; touch "$ST21M/pid_flip"
+OUT21M="$(run_atomic "$H21M" "$S21M" "$ST21M" "$MUT21")"; RC21M=$?
+if [ -n "$MUT21" ] && [ -f "$ST21M/npm_while_loaded" ]; then
+  pass "B21d: MUTATION PROOF — with only the stop-before-npm step neutered, the rollback DID run npm with the job loaded ($(cat "$ST21M/npm_while_loaded"))"
+else
+  fail "B21d: the mutant did not reproduce the defect (mutant=${MUT21:-none}, rc=$RC21M), so B21b measures nothing. Output: $OUT21M"
+fi
+
+# The job can no longer be booted out (launchd stops honouring bootout after the new install): the
+# rollback must REFUSE to run npm into a tree a respawning gateway is importing, and say a human is needed.
+H21E="$(make_box b21e clean)"; S21E="$SANDBOX/stubs21e"; ST21E="$SANDBOX/state21e"
+make_stubs "$S21E" "$ST21E" versioned; touch "$ST21E/pid_flip" "$ST21E/arm_bootout_noop_after_install"
+OUT21E="$(T_BOOTOUT_TIMEOUT=2 run_atomic "$H21E" "$S21E" "$ST21E")"; RC21E=$?
+if [ "$RC21E" -eq 70 ] && [ "$(grep -c npm-install-witness "$ST21E/npm_installs")" -eq 1 ] && [ ! -f "$ST21E/npm_while_loaded" ] \
+   && grep -q 'BINARY RESTORE NOT ATTEMPTED' <<<"$OUT21E"; then
+  pass "B21e: a job that cannot be held stopped -> NO reinstall into a live tree, exit 70 (a human is needed), nothing claimed"
+else
+  fail "B21e: rc=$RC21E installs=$(grep -c npm-install-witness "$ST21E/npm_installs") while_loaded=$([ -f "$ST21E/npm_while_loaded" ] && echo yes || echo no). Output: $OUT21E"
+fi
+
+# The old build's reinstall leaves a half-written tree (the entry file is missing): the gateway must NOT be
+# bootstrapped onto it (it could only crash-loop), and the rollback must say so rather than claim success.
+H21F="$(make_box b21f clean)"; S21F="$SANDBOX/stubs21f"; ST21F="$SANDBOX/state21f"
+make_stubs "$S21F" "$ST21F" versioned; touch "$ST21F/pid_flip" "$ST21F/half_old_install"
+OUT21F="$(run_atomic "$H21F" "$S21F" "$ST21F")"; RC21F=$?
+LASTNPM21F="$(grep -n '^npm install' "$ST21F/events" | tail -1 | cut -d: -f1)"
+BOOT_AFTER21F="$(tail -n +"$((LASTNPM21F+1))" "$ST21F/events" | grep -c 'launchctl bootstrap.*ai.openclaw.gateway')"
+if [ "$RC21F" -eq 70 ] && [ "${BOOT_AFTER21F:-9}" -eq 0 ] && grep -q 'GATEWAY NOT RE-LOADED' <<<"$OUT21F" && ! grep -q 'rollback complete and VERIFIED' <<<"$OUT21F"; then
+  pass "B21f: package incomplete after the reinstall -> the gateway was NOT bootstrapped onto it, rollback reports FAILED (rc=70)"
+else
+  fail "B21f: rc=$RC21F bootstraps-after-last-npm=$BOOT_AFTER21F. Output: $OUT21F"
+fi
+
+# npm itself dies half-way on the FORWARD install (new package.json written, entry file gone). The
+# install "failed", but the tree is half-written: the rollback must repair it, not trust the exit code.
+H21G="$(make_box b21g clean)"; S21G="$SANDBOX/stubs21g"; ST21G="$SANDBOX/state21g"
+make_stubs "$S21G" "$ST21G" versioned; touch "$ST21G/npm_half_new"
+OUT21G="$(run_atomic "$H21G" "$S21G" "$ST21G")"; RC21G=$?
+if [ "$RC21G" -eq 78 ] && [ "$(cat "$ST21G/version")" = "$OLD_V" ] && [ -f "$H21G/sup/lib/node_modules/openclaw/dist/index.js" ] \
+   && [ "$(grep -c npm-install-witness "$ST21G/npm_installs")" -eq 2 ] && [ ! -f "$ST21G/npm_while_loaded" ] && [ -f "$ST21G/loaded_ai.openclaw.gateway" ]; then
+  pass "B21g: npm died half-way on the forward install -> the half-written tree was REPAIRED (old build reinstalled, entry file back), gateway back up"
+else
+  fail "B21g: rc=$RC21G version=$(cat "$ST21G/version") entry=$([ -f "$H21G/sup/lib/node_modules/openclaw/dist/index.js" ] && echo yes || echo MISSING). Output: $OUT21G"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (B25) error #25: a config check against a SERVING gateway never takes the live lock ---"
+# The stub's `config validate` models 2026.10.5: against the LIVE state dir while the job is loaded it
+# takes the lock and the gateway stops answering (recorded in lock_collisions, job unloaded).
+H25="$(make_box b25 clean)"; S25="$SANDBOX/stubs25"; ST25="$SANDBOX/state25"
+make_stubs "$S25" "$ST25" versioned; set_installed "$H25" "$ST25" "$NEW_V"
+OUT25="$(run_atomic "$H25" "$S25" "$ST25")"; RC25=$?
+if [ "$RC25" -eq 0 ] && grep -q 'nothing to do' <<<"$OUT25" && [ ! -f "$ST25/lock_collisions" ] && [ -f "$ST25/loaded_ai.openclaw.gateway" ]; then
+  pass "B25a: already on target with a SERVING gateway -> 'nothing to do', no live lock taken, the gateway is still loaded (rc=0)"
+else
+  fail "B25a: rc=$RC25 collisions=$(cat "$ST25/lock_collisions" 2>/dev/null) loaded=$([ -f "$ST25/loaded_ai.openclaw.gateway" ] && echo yes || echo NO). Output: $OUT25"
+fi
+V25="$(grep '^validate state=' "$ST25/events" | sed 's/state=[^ ]*/state=ISO/' | tr '\n' '|')"
+if [ "$(grep -c '^validate state=' "$ST25/events")" -eq 3 ] && ! grep -q '^validate state=LIVE' "$ST25/events" \
+   && [ "$V25" = "validate state=ISO cfg=control-good.json ro=1|validate state=ISO cfg=control-bad.json ro=1|validate state=ISO cfg=openclaw.json ro=1|" ]; then
+  pass "B25b: the check ran in a private state dir, read-only, as known-good control -> known-bad control -> the real config"
+else
+  fail "B25b: validate calls were: $V25"
+fi
+# the config the box really has was what got checked, and the box's own config was not touched
+H25B="$(make_box b25b propose)"; S25B="$SANDBOX/stubs25b"; ST25B="$SANDBOX/state25b"
+make_stubs "$S25B" "$ST25B" versioned; set_installed "$H25B" "$ST25B" "$NEW_V"
+OUT25B="$(run_atomic "$H25B" "$S25B" "$ST25B")"; RC25B=$?
+if [ "$RC25B" -eq 0 ] && grep -Eq '"mode": *"off"' "$H25B/.openclaw/openclaw.json" && [ ! -f "$ST25B/lock_collisions" ] \
+   && [ -f "$ST25B/loaded_ai.openclaw.gateway" ] && grep -q 'ATOMIC UPGRADE COMPLETE' <<<"$OUT25B"; then
+  pass "B25c: a serving gateway on a config the build REJECTS -> rejected by the isolated check, repaired in the quiesce, no live lock taken while it served"
+else
+  fail "B25c: rc=$RC25B collisions=$(cat "$ST25B/lock_collisions" 2>/dev/null). Output: $OUT25B"
+fi
+# an instrument that cannot tell good from bad is UNDETERMINED, never 'valid'
+H25C="$(make_box b25c clean)"; S25C="$SANDBOX/stubs25c"; ST25C="$SANDBOX/state25c"
+make_stubs "$S25C" "$ST25C" versioned; set_installed "$H25C" "$ST25C" "$NEW_V"; touch "$ST25C/validate_blind"
+OUT25C="$(run_atomic "$H25C" "$S25C" "$ST25C")"; RC25C=$?
+if grep -q 'UNDETERMINED' <<<"$OUT25C" && ! grep -q 'nothing to do' <<<"$OUT25C" && [ ! -f "$ST25C/lock_collisions" ] && grep -q 'launchctl bootout' "$ST25C/events"; then
+  pass "B25d: a validator that accepts the known-bad control is UNDETERMINED -> never 'nothing to do'; the full procedure checked it inside the quiesce (rc=$RC25C)"
+else
+  fail "B25d: rc=$RC25C. Output: $OUT25C"
+fi
+# MUTATION: take the isolation away. The same serving box must now lose its gateway to the validate.
+MUT25="$(mutate_copy bfr25-mut '  if _gateway_loaded; then _config_valid_isolated; return $?; fi' '  :   # MUTATED: no isolation')"
+H25M="$(make_box b25m clean)"; S25M="$SANDBOX/stubs25m"; ST25M="$SANDBOX/state25m"
+make_stubs "$S25M" "$ST25M" versioned; set_installed "$H25M" "$ST25M" "$NEW_V"
+OUT25M="$(run_atomic "$H25M" "$S25M" "$ST25M" "$MUT25")"; RC25M=$?
+if [ -n "$MUT25" ] && [ -f "$ST25M/lock_collisions" ] && [ ! -f "$ST25M/loaded_ai.openclaw.gateway" ]; then
+  pass "B25e: MUTATION PROOF — without the isolation the validate DID take the live lock and the serving gateway went down"
+else
+  fail "B25e: the mutant did not reproduce the defect (mutant=${MUT25:-none}, rc=$RC25M). Output: $OUT25M"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (B33) error #33: an orphan gateway that owns the state dir is stopped by identity before the start ---"
+# Case A: the orphan is there from the start (ppid 1, started by an earlier run). While it lives the
+# stub's job is loaded but has NO pid - the LaunchAgent exiting 78. Only reaping it lets the upgrade finish.
+H33="$(make_box b33 clean)"; S33="$SANDBOX/stubs33"; ST33="$SANDBOX/state33"
+make_stubs "$S33" "$ST33" versioned
+OP33="$(spawn_gateway_like "$ST33" "$H33" "--token SECRET-ORPHAN-TOKEN")"; echo "$OP33" > "$ST33/orphan_pid"
+OUT33="$(run_atomic "$H33" "$S33" "$ST33")"; RC33=$?
+if [ "$RC33" -eq 0 ] && ! kill -0 "$OP33" 2>/dev/null && grep -q "ORPHAN GATEWAY pid $OP33" <<<"$OUT33" && grep -q 'ATOMIC UPGRADE COMPLETE' <<<"$OUT33"; then
+  pass "B33a: an orphan gateway (pid $OP33) holding the state dir was stopped and the upgrade completed (rc=0)"
+else
+  fail "B33a: rc=$RC33 orphan-alive=$(kill -0 "$OP33" 2>/dev/null && echo yes || echo no). Output: $OUT33"
+fi
+L_ORPHAN="$(grep -n "ORPHAN GATEWAY pid $OP33" <<<"$OUT33" | head -1 | cut -d: -f1)"; L_INSTALL="$(grep -n 'installing openclaw@' <<<"$OUT33" | head -1 | cut -d: -f1)"
+if [ -n "$L_ORPHAN" ] && [ -n "$L_INSTALL" ] && [ "$L_ORPHAN" -lt "$L_INSTALL" ] && grep -q 'after the quiesce' <<<"$OUT33"; then
+  pass "B33b: it was reaped right after the quiesce, BEFORE the install and the quiescence proof"
+else
+  fail "B33b: orphan line $L_ORPHAN, install line $L_INSTALL. Output: $OUT33"
+fi
+if ! grep -q 'SECRET-ORPHAN-TOKEN' <<<"$OUT33"; then
+  pass "B33c: the gateway's command line (it carried a token) never reached the log - only the entry path was named"
+else
+  fail "B33c: a secret from the orphan's command line was LOGGED"
+fi
+# Case B: the orphan appears AFTER the quiesce and after doctor (so only the pre-start reap can catch it): the pre-start reap is the one that must catch it.
+H33B="$(make_box b33b clean)"; S33B="$SANDBOX/stubs33b"; ST33B="$SANDBOX/state33b"
+make_stubs "$S33B" "$ST33B" versioned; touch "$ST33B/spawn_orphan_on_doctor_fix"; mkdir -p "$H33B/.openclaw/state"; : > "$H33B/.openclaw/state/openclaw.sqlite"
+OUT33B="$(run_atomic "$H33B" "$S33B" "$ST33B")"; RC33B=$?
+OP33B="$(cat "$ST33B/orphan_pid" 2>/dev/null)"
+if [ -n "$OP33B" ] && [ "$RC33B" -eq 0 ] && ! kill -0 "$OP33B" 2>/dev/null && grep -q 'before the gateway start' <<<"$OUT33B" && grep -q "ORPHAN GATEWAY pid $OP33B" <<<"$OUT33B"; then
+  pass "B33d: an orphan that appeared after doctor was stopped just before the start, and the gateway came up (rc=0)"
+else
+  fail "B33d: rc=$RC33B orphan=$OP33B alive=$(kill -0 "${OP33B:-0}" 2>/dev/null && echo yes || echo no). Output: $OUT33B"
+fi
+# MUTATION: no reaper. The same box must now fail to start (job loaded, no pid) and roll back, orphan still alive.
+MUT33="$(mutate_copy bfr33-mut '_reap_orphan_gateways() {
+  local where="$1"' '_reap_orphan_gateways() {
+  return 0   # MUTATED
+  local where="$1"')"
+H33M="$(make_box b33m clean)"; S33M="$SANDBOX/stubs33m"; ST33M="$SANDBOX/state33m"
+make_stubs "$S33M" "$ST33M" versioned; touch "$ST33M/spawn_orphan_on_doctor_fix"; mkdir -p "$H33M/.openclaw/state"; : > "$H33M/.openclaw/state/openclaw.sqlite"
+OUT33M="$(run_atomic "$H33M" "$S33M" "$ST33M" "$MUT33")"; RC33M=$?
+OP33M="$(cat "$ST33M/orphan_pid" 2>/dev/null)"
+if [ -n "$MUT33" ] && [ -n "$OP33M" ] && kill -0 "$OP33M" 2>/dev/null && [ "$RC33M" -ne 0 ] && ! grep -q 'ATOMIC UPGRADE COMPLETE' <<<"$OUT33M"; then
+  pass "B33e: MUTATION PROOF — with no reaper the orphan survives, the start finds no pid, and the box rolls back (rc=$RC33M): the exact #33 failure"
+else
+  fail "B33e: the mutant did not reproduce the defect (mutant=${MUT33:-none}, rc=$RC33M, orphan alive=$(kill -0 "${OP33M:-0}" 2>/dev/null && echo yes || echo no))"
+fi
+[ -n "$OP33M" ] && kill -KILL "$OP33M" 2>/dev/null
+# Case C: an orphan that ignores SIGTERM is killed (SIGKILL) after the bounded wait.
+H33C="$(make_box b33c clean)"; S33C="$SANDBOX/stubs33c"; ST33C="$SANDBOX/state33c"
+make_stubs "$S33C" "$ST33C" versioned
+OP33C="$(spawn_gateway_like "$ST33C" "$H33C" "" ignore)"; echo "$OP33C" > "$ST33C/orphan_pid"
+OUT33C="$(run_atomic "$H33C" "$S33C" "$ST33C")"; RC33C=$?
+if [ "$RC33C" -eq 0 ] && ! kill -0 "$OP33C" 2>/dev/null && grep -q "orphan gateway pid $OP33C stopped" <<<"$OUT33C"; then
+  pass "B33f: an orphan that ignores SIGTERM was stopped after the bounded wait (rc=0)"
+else
+  fail "B33f: rc=$RC33C alive=$(kill -0 "$OP33C" 2>/dev/null && echo yes || echo no). Output: $OUT33C"
+fi
+
+# Direct calls of the reaper (the script sourced without its main): what it must LEAVE ALONE.
+SRC_DIR="$SANDBOX/srcable"; mkdir -p "$SRC_DIR"
+cp "$MIGRATOR" "$SRC_DIR/oc-schema-migrate.py"; cp "$SUPHELPER" "$SRC_DIR/oc-supervisor-install.py"
+python3 - "$ATOMIC" "$SRC_DIR/oc-atomic-upgrade.sh" <<'PY'
+import sys
+s = open(sys.argv[1], encoding="utf-8").read().rstrip()
+assert s.endswith('main "$@"'), "the script no longer ends with main"
+open(sys.argv[2], "w").write(s[:-len('main "$@"')] + "\n")
+PY
+direct() {   # <home> <stubs> <snippet> -> output of the snippet, run with the script's functions loaded
+  HOME="$1" PATH="$2:/usr/bin:/bin:/usr/sbin:/sbin" bash -c 'source "$0" && _resolve_root && SUPERVISOR=launchd && '"$3" "$SRC_DIR/oc-atomic-upgrade.sh" 2>&1
+}
+H33D="$(make_box b33d clean)"; S33D="$SANDBOX/stubs33d"; ST33D="$SANDBOX/state33d"
+make_stubs "$S33D" "$ST33D" versioned; touch "$ST33D/loaded_ai.openclaw.gateway"
+JOB33D="$(spawn_gateway_like "$ST33D" "$H33D")"; printf '%s' "$JOB33D" > "$ST33D/pid"      # the launchd job's own gateway
+ORP33D="$(spawn_gateway_like "$ST33D" "$H33D")"                                              # a second one: the orphan
+( exec -a "python3 /opt/other-tool/run.py" sleep 300 ) >/dev/null 2>&1 &
+OTH33D=$!; touch "$ST33D/realps_$OTH33D"; echo "$OTH33D" >> "$ST33D/lsof_holders"; echo "$OTH33D" >> "$ST33D/extra_pids"
+( exec -a "node $H33D/sup/lib/node_modules/openclaw/dist/index.js status" sleep 300 ) >/dev/null 2>&1 &
+CLI33D=$!; touch "$ST33D/realps_$CLI33D"; echo "$CLI33D" >> "$ST33D/lsof_holders"; echo "$CLI33D" >> "$ST33D/extra_pids"
+OUT33D="$(direct "$H33D" "$S33D" '_reap_orphan_gateways "direct"; echo "rc=$?"')"
+if ! kill -0 "$ORP33D" 2>/dev/null && kill -0 "$JOB33D" 2>/dev/null && kill -0 "$OTH33D" 2>/dev/null && kill -0 "$CLI33D" 2>/dev/null \
+   && grep -q "pid $JOB33D is the launchd job's gateway - left alone" <<<"$OUT33D" && grep -q 'rc=0' <<<"$OUT33D"; then
+  pass "B33g: of four state-database holders only the ORPHAN gateway was stopped; the launchd job's own gateway, a non-openclaw program and a bare openclaw CLI were left alone"
+else
+  fail "B33g: orphan-alive=$(kill -0 "$ORP33D" 2>/dev/null && echo yes || echo no) job-alive=$(kill -0 "$JOB33D" 2>/dev/null && echo yes || echo NO) other-alive=$(kill -0 "$OTH33D" 2>/dev/null && echo yes || echo NO) cli-alive=$(kill -0 "$CLI33D" 2>/dev/null && echo yes || echo NO). Output: $OUT33D"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (B24) error #24: a plugin whose module fails to load is killed early, named, disabled (only its flag) and doctor re-run - never a hang ---"
+# With $STATE/doctor_broken_plugin the stub doctor prints the SAME ERR_MODULE_NOT_FOUND line again and again
+# (a timestamp in front, so no two lines are byte-identical) and never returns, for as long as that plugin's
+# entry is enabled. The bound is 60s here: finishing in seconds proves the LOOP DETECTOR acted, not the bound.
+H24="$(make_box b24 plugin)"; S24="$SANDBOX/stubs24"; ST24="$SANDBOX/state24"
+make_stubs "$S24" "$ST24" versioned; printf 'codex' > "$ST24/doctor_broken_plugin"
+CFG24="$H24/.openclaw/openclaw.json"; cp "$CFG24" "$SANDBOX/cfg24.before"
+T24_START=$SECONDS
+OUT24="$(run_atomic "$H24" "$S24" "$ST24")"; RC24=$?
+T24_ELAPSED=$((SECONDS - T24_START))
+if [ "$RC24" -eq 0 ] && grep -q 'ATOMIC UPGRADE COMPLETE' <<<"$OUT24" && grep -q "QUARANTINED plugin 'codex'" <<<"$OUT24" && [ "$T24_ELAPSED" -lt 40 ]; then
+  pass "B24a: the looping plugin was named (codex) and quarantined; doctor then ran and the upgrade completed (rc=0) in ${T24_ELAPSED}s - far inside the 60s bound"
+else
+  fail "B24a: rc=$RC24 (${T24_ELAPSED}s). Output: $OUT24"
+fi
+if python3 - "$SANDBOX/cfg24.before" "$CFG24" <<'PY'
+import json, sys
+b = json.load(open(sys.argv[1], encoding="utf-8")); a = json.load(open(sys.argv[2], encoding="utf-8"))
+assert a["plugins"]["entries"]["codex"]["enabled"] is False, "codex was not disabled"
+a["plugins"]["entries"]["codex"]["enabled"] = True
+assert a == b, "something besides plugins.entries.codex.enabled changed (allow list, entry config, other plugins, models, ...)"
+PY
+then
+  pass "B24b: ONLY plugins.entries.codex.enabled changed - the allow list, codex's own config, the other plugin and everything else are identical"
+else
+  fail "B24b: the config changed beyond the one flag"
+fi
+REC24="$H24/.openclaw/oc-atomic-plugin-quarantine.jsonl"
+if python3 - "$REC24" <<'PY'
+import json, sys
+r = [json.loads(l) for l in open(sys.argv[1], encoding="utf-8") if l.strip()]
+assert len(r) == 1 and r[0]["event"] == "quarantined" and r[0]["plugin"] == "codex", r
+assert r[0]["was_enabled"] == "true" and "restore" in r[0] and r[0]["config_backup"], r
+assert "session-store-runtime" in r[0]["failing_import"], r
+PY
+then
+  pass "B24c: the quarantine is RECORDED (plugin, failing import, previous value, config backup, how to restore)"
+else
+  fail "B24c: record missing or wrong: $(cat "$REC24" 2>/dev/null)"
+fi
+if ! grep -Eq '^openclaw plugins ' "$ST24/events" && ! grep -Eq 'plugins (install|enable|update)' "$ST24/events"; then
+  pass "B24d: no 'openclaw plugins ...' call of any kind was made - codex is never installed, enabled or updated"
+else
+  fail "B24d: a plugins command ran: $(grep 'plugins' "$ST24/events" | tr '\n' '|')"
+fi
+if [ "$(grep -c '^openclaw doctor --fix' "$ST24/events")" -eq 2 ]; then
+  pass "B24e: doctor --fix ran twice: killed when it began to loop, then run again once the plugin's entry was disabled"
+else
+  fail "B24e: doctor --fix runs: $(grep -c '^openclaw doctor --fix' "$ST24/events"). Events: $(tr '\n' '|' < "$ST24/events")"
+fi
+# A load error that names NO configured plugin is never acted on (no guessing): one noisy line + exit 0 is fine,
+# and a failing doctor whose only clue is such a line is a plain failure -> rollback with the config untouched.
+H24N="$(make_box b24n plugin)"; S24N="$SANDBOX/stubs24n"; ST24N="$SANDBOX/state24n"
+make_stubs "$S24N" "$ST24N" versioned; touch "$ST24N/doctor_noise"
+SHA24N="$(sha_of "$H24N/.openclaw/openclaw.json")"
+OUT24N="$(run_atomic "$H24N" "$S24N" "$ST24N")"; RC24N=$?
+if [ "$RC24N" -eq 0 ] && ! grep -q 'QUARANTINED' <<<"$OUT24N" && [ "$(sha_of "$H24N/.openclaw/openclaw.json")" = "$SHA24N" ] && [ ! -f "$H24N/.openclaw/oc-atomic-plugin-quarantine.jsonl" ]; then
+  pass "B24f: a doctor that merely mentions a load error once and succeeds disabled NOTHING (config byte-identical, no record)"
+else
+  fail "B24f: rc=$RC24N. Output: $OUT24N"
+fi
+H24U="$(make_box b24u plugin)"; S24U="$SANDBOX/stubs24u"; ST24U="$SANDBOX/state24u"
+make_stubs "$S24U" "$ST24U" versioned; touch "$ST24U/doctor_noise_fail"
+SHA24U="$(sha_of "$H24U/.openclaw/openclaw.json")"
+OUT24U="$(run_atomic "$H24U" "$S24U" "$ST24U")"; RC24U=$?
+if [ "$RC24U" -eq 78 ] && ! grep -q 'QUARANTINED' <<<"$OUT24U" && [ "$(sha_of "$H24U/.openclaw/openclaw.json")" = "$SHA24U" ] && [ ! -f "$H24U/.openclaw/oc-atomic-plugin-quarantine.jsonl" ] \
+   && [ "$(cat "$ST24U/version")" = "$OLD_V" ]; then
+  pass "B24g: a failing doctor whose load error names no configured plugin -> NOTHING disabled, rolled back (rc=78), config byte-identical, binary $OLD_V"
+else
+  fail "B24g: rc=$RC24U. Output: $OUT24U"
+fi
+# ROLLBACK after a quarantine restores the config byte for byte (the entry is enabled again) and says so in the record.
+H24R="$(make_box b24r plugin)"; S24R="$SANDBOX/stubs24r"; ST24R="$SANDBOX/state24r"
+make_stubs "$S24R" "$ST24R" versioned; printf 'codex' > "$ST24R/doctor_broken_plugin"; touch "$ST24R/pid_flip"
+SHA24R="$(sha_of "$H24R/.openclaw/openclaw.json")"
+OUT24R="$(run_atomic "$H24R" "$S24R" "$ST24R")"; RC24R=$?
+if [ "$RC24R" -eq 78 ] && [ "$(sha_of "$H24R/.openclaw/openclaw.json")" = "$SHA24R" ] && grep -q '"event": "reverted-by-rollback"' "$H24R/.openclaw/oc-atomic-plugin-quarantine.jsonl" 2>/dev/null; then
+  pass "B24h: a later failure rolled back (rc=78): the config is BYTE-IDENTICAL (codex enabled again) and the record says it was reverted"
+else
+  fail "B24h: rc=$RC24R sha-equal=$([ "$(sha_of "$H24R/.openclaw/openclaw.json")" = "$SHA24R" ] && echo yes || echo NO) record=$(cat "$H24R/.openclaw/oc-atomic-plugin-quarantine.jsonl" 2>/dev/null)"
+fi
+# The loop detector OFF (OC_ATOMIC_DOCTOR_LOOP_LINES=0): the bound alone ends the spin, and the same attribution works.
+H24B="$(make_box b24b plugin)"; S24B="$SANDBOX/stubs24b"; ST24B="$SANDBOX/state24b"
+make_stubs "$S24B" "$ST24B" versioned; printf 'codex' > "$ST24B/doctor_broken_plugin"
+OUT24B="$(T_LOOP_LINES=0 T_DOCTOR_TIMEOUT=4 run_atomic "$H24B" "$S24B" "$ST24B")"; RC24B=$?
+if [ "$RC24B" -eq 0 ] && grep -q "QUARANTINED plugin 'codex'" <<<"$OUT24B" && [ "$(grep -c '^openclaw doctor --fix' "$ST24B/events")" -eq 2 ]; then
+  pass "B24i: with the loop detector off, a doctor killed at its 4s BOUND is attributed from its output the same way (rc=0)"
+else
+  fail "B24i: rc=$RC24B. Output: $OUT24B"
+fi
+# MUTATION: no quarantine. The same box's doctor is killed (loop detector) and the upgrade rolls back instead of finishing.
+MUT24="$(mutate_copy bfr24-mut '_quarantine_from_output() {
+  local hit id imp' '_quarantine_from_output() {
+  return 1   # MUTATED
+  local hit id imp')"
+H24M="$(make_box b24m plugin)"; S24M="$SANDBOX/stubs24m"; ST24M="$SANDBOX/state24m"
+make_stubs "$S24M" "$ST24M" versioned; printf 'codex' > "$ST24M/doctor_broken_plugin"
+OUT24M="$(run_atomic "$H24M" "$S24M" "$ST24M" "$MUT24")"; RC24M=$?
+if [ -n "$MUT24" ] && [ "$RC24M" -eq 78 ] && ! grep -q 'ATOMIC UPGRADE COMPLETE' <<<"$OUT24M" && grep -q 'spinning on the same module-load error' <<<"$OUT24M"; then
+  pass "B24j: MUTATION PROOF — without the quarantine the same box's doctor is killed as a loop and the upgrade rolls back (rc=78)"
+else
+  fail "B24j: the mutant did not reproduce the failure (mutant=${MUT24:-none}, rc=$RC24M). Output: $OUT24M"
+fi
+# The loop detector itself, driven directly: the same normalised line N times kills the command (rc 125); fewer, or other
+# text, does not - and the plain bound still reports 124.
+LD_DIR="$SANDBOX/loopdet"; mkdir -p "$LD_DIR"
+ld() {   # <bound> <loop-n> <script> -> rc of _run_bounded
+  printf '%s\n' "$3" > "$LD_DIR/cmd.sh"
+  PATH="/usr/bin:/bin:/usr/sbin:/sbin" OC_BOUNDED_LOOP_RE='ERR_MODULE_NOT_FOUND' OC_BOUNDED_LOOP_N="$2" \
+    bash -c 'source "$0"; _run_bounded "$1" "$2" bash "$3"; echo $?' "$SRC_DIR/oc-atomic-upgrade.sh" "$1" "$LD_DIR/out.txt" "$LD_DIR/cmd.sh" 2>/dev/null | tail -1
+}
+LD1="$(ld 20 4 'for i in 1 2 3 4 5 6; do echo "[$i$i$i] ERR_MODULE_NOT_FOUND x $i"; done; sleep 60')"
+LD2="$(ld 3 4 'echo "ERR_MODULE_NOT_FOUND a"; echo "ERR_MODULE_NOT_FOUND b"; echo "ERR_MODULE_NOT_FOUND c"; sleep 60')"
+LD3="$(ld 20 4 'echo "ERR_MODULE_NOT_FOUND a"; sleep 1; echo done; exit 0')"
+LD4="$(ld 20 0 'for i in 1 2 3 4 5 6; do echo "ERR_MODULE_NOT_FOUND"; done; sleep 1; exit 3')"
+if [ "$LD1" = "125" ] && [ "$LD2" = "124" ] && [ "$LD3" = "0" ] && [ "$LD4" = "3" ]; then
+  pass "B24k: loop detector — the same line (digits ignored) 4 times -> killed early (125); 3 DIFFERENT lines -> only the bound (124); one mention + success -> 0; detector off -> the command's own rc (3)"
+else
+  fail "B24k: LD1=$LD1 (want 125) LD2=$LD2 (want 124) LD3=$LD3 (want 0) LD4=$LD4 (want 3)"
+fi
+
+# The attribution rules themselves (pure engine calls): evidence is a path component or 'plugin <id>', never a bare word.
+ATT_DIR="$SANDBOX/attr"; mkdir -p "$ATT_DIR"
+printf '{"plugins":{"entries":{"codex":{"enabled":true},"other":{"enabled":true},"browser":{"enabled":true},"off":{"enabled":false}}}}\n' > "$ATT_DIR/cfg.json"
+att() { printf '%s\n' "$1" > "$ATT_DIR/out.txt"; python3 "$MIGRATOR" plugin-attribute "$ATT_DIR/out.txt" "$ATT_DIR/cfg.json" 2>&1; }
+A1="$(att "Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/o/openclaw/dist/plugin-sdk/x.js' imported from /h/.openclaw/extensions/codex/dist/a.js")"
+A2="$(att "Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/o/openclaw/dist/browser/x.js' imported from /o/openclaw/dist/core/a.js")"
+A3="$(att "ERR_MODULE_NOT_FOUND imported from /h/.openclaw/extensions/codex/a.js and from /h/.openclaw/extensions/other/b.js")"
+A4="$(att "[plugins] plugin codex failed to load: ERR_MODULE_NOT_FOUND openclaw/plugin-sdk/session-store-runtime")"
+A5="$(att "Error [ERR_MODULE_NOT_FOUND]: imported from /h/.openclaw/extensions/off/a.js")"
+A6="$(att "everything is fine")"
+if [ "${A1%%	*}" = "codex" ] && [[ "$A2" == NONE:* ]] && [[ "$A3" == NONE:*several* ]] && [ "${A4%%	*}" = "codex" ] && [[ "$A5" == NONE:* ]] && [[ "$A6" == NONE:* ]]; then
+  pass "B24l: attribution — a path component (extensions/<id>) or 'plugin <id>' names the plugin; a bare directory word, two equally-named plugins, an already-disabled plugin and a clean log name NOTHING"
+else
+  fail "B24l: A1='$A1' A2='$A2' A3='$A3' A4='$A4' A5='$A5' A6='$A6'"
+fi
+python3 "$MIGRATOR" plugin-disable "$ATT_DIR/cfg.json" ghost "$ATT_DIR/ghost.out" >/dev/null 2>&1; RG=$?
+if [ "$RG" -eq 3 ] && [ ! -e "$ATT_DIR/ghost.out" ]; then
+  pass "B24m: disabling a plugin that has no entry is REFUSED (rc=3) - an entry is never invented, nothing written"
+else
+  fail "B24m: rc=$RG out-exists=$([ -e "$ATT_DIR/ghost.out" ] && echo yes || echo no)"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (B-plan) --dry-run names the four new safeguards and touches nothing ---"
+HPL="$(make_box bplan clean)"; SPL="$SANDBOX/stubsplan"; STPL="$SANDBOX/stateplan"
+make_stubs "$SPL" "$STPL" versioned; touch "$STPL/loaded_ai.openclaw.gateway"
+OUTPL="$(HOME="$HPL" PATH="$SPL:/usr/bin:/bin:/usr/sbin:/sbin" bash "$ATOMIC" --upgrade --dry-run 2>&1)"; RCPL=$?
+if [ "$RCPL" -eq 0 ] && grep -q 'ORPHAN\|orphan gateway' <<<"$OUTPL" && grep -q 'plugins.entries' <<<"$OUTPL" && grep -q 'whole window' <<<"$OUTPL" \
+   && grep -q 'known-good/known-bad controls' <<<"$OUTPL" \
+   && ! grep -Eq 'launchctl (bootout|bootstrap)|^npm install|^openclaw doctor' "$STPL/events"; then
+  pass "Bplan: --dry-run lists the orphan reap, the plugin quarantine, the held npm window and the isolated validate, and ran no stop/install/doctor"
+else
+  fail "Bplan: rc=$RCPL. Output: $OUTPL"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (B-lease) on a host WITH flock the lease must not silence stderr for the rest of the run ---"
+# A bare `exec 9<>"$OC_LEASE_PATH" 2>/dev/null` applies its 2>/dev/null to the WHOLE script (an exec with only redirections is
+# permanent), so on Linux every later _err line and refusal banner - each rollback reason - vanished from the log, and B24j
+# failed in CI only. make_stubs puts a flock on PATH so a Mac takes the same branch. The real script finds
+# scripts/box-update-lock.sh beside it and uses that lease instead, so these cases run copies that sit beside the engine files
+# only (mutate_copy), which take the inline flock branch. CONTROL = the shipped lease lines; each MUTANT puts back ONE old line.
+LF1='{ exec 9<>"$OC_LEASE_PATH"; } 2>/dev/null || return 1'
+LO1='exec 9<>"$OC_LEASE_PATH" 2>/dev/null || return 1'
+LF2='if ! flock -n 9 2>/dev/null; then
+      { exec 9>&-; } 2>/dev/null || true'
+LO2='if ! flock -n 9 2>/dev/null; then
+      exec 9>&- 2>/dev/null || true'
+LF3='flock -u 9 2>/dev/null || true
+      { exec 9>&-; } 2>/dev/null || true'
+LO3='flock -u 9 2>/dev/null || true
+      exec 9>&- 2>/dev/null || true'
+LCTL="$(mutate_copy bfl-ctl "$LF1" "$LF1")"
+LMU1="$(mutate_copy bfl-mut1 "$LF1" "$LO1")"
+LMU2="$(mutate_copy bfl-mut2 "$LF2" "$LO2")"
+LMU3="$(mutate_copy bfl-mut3 "$LF3" "$LO3")"
+
+# lease_case <tag> <script> [busy] -> output; rc in RCL. The schema probe fails, so the run is refused AFTER the lease is
+# taken and the only thing that says why is an _err line (the case-6 scenario). With "busy" the flock stub refuses -n.
+lease_case() {
+  local tag="$1" script="$2" busy="${3:-}" h s st
+  h="$(make_box "bl$tag" clean)"; s="$SANDBOX/stubsbl$tag"; st="$SANDBOX/statebl$tag"
+  make_stubs "$s" "$st" versioned 1
+  [ -z "$busy" ] || touch "$st/flock_busy"
+  run_atomic "$h" "$s" "$st" "$script"
+}
+
+OUTLA="$(lease_case a "$LCTL")"; RCLA=$?
+if [ -n "$LCTL" ] && [ "$RCLA" -eq 78 ] && grep -qx 'flock -n 9' "$SANDBOX/statebla/flock_calls" 2>/dev/null \
+   && grep -q 'flock + record' <<<"$OUTLA" && grep -q 'ERROR ROLLING BACK: `openclaw config schema` FAILED' <<<"$OUTLA" \
+   && [ "$(grep -n 'flock + record' <<<"$OUTLA" | head -1 | cut -d: -f1)" -lt "$(grep -n 'ERROR ROLLING BACK' <<<"$OUTLA" | head -1 | cut -d: -f1)" ]; then
+  pass "B-lease a: flock was used (flock -n 9) and the rollback reason logged AFTER the lease was taken reached the output (rc=78)"
+else
+  fail "B-lease a: rc=$RCLA flock_calls=$(tr '\n' '|' < "$SANDBOX/statebla/flock_calls" 2>/dev/null). Output: $OUTLA"
+fi
+OUTLB="$(lease_case b "$LMU1")"; RCLB=$?
+if [ -n "$LMU1" ] && [ "$RCLB" -eq 78 ] && grep -q 'flock + record' <<<"$OUTLB" && grep -q 'rollback complete and VERIFIED' <<<"$OUTLB" \
+   && ! grep -q 'ERROR ROLLING BACK' <<<"$OUTLB"; then
+  pass "B-lease b: MUTATION PROOF - with the old 'exec 9<>lease 2>/dev/null' the same run rolls back (stdout) but the reason is GONE from the log"
+else
+  fail "B-lease b: the mutant did not reproduce the defect (mutant=${LMU1:-none}, rc=$RCLB). Output: $OUTLB"
+fi
+
+OUTLC="$(lease_case c "$LCTL" busy)"; RCLC=$?
+if [ "$RCLC" -eq 78 ] && grep -q 'UPGRADE REFUSED' <<<"$OUTLC" && grep -q 'SHARED INSTALLATION LEASE is held' <<<"$OUTLC" \
+   && ! grep -q 'installing openclaw@' <<<"$OUTLC"; then
+  pass "B-lease c: a busy flock refuses (rc=78) and the refusal banner reaches the output; nothing was installed"
+else
+  fail "B-lease c: rc=$RCLC. Output: $OUTLC"
+fi
+OUTLD="$(lease_case d "$LMU2" busy)"; RCLD=$?
+if [ -n "$LMU2" ] && [ "$RCLD" -eq 78 ] && ! grep -q 'UPGRADE REFUSED' <<<"$OUTLD"; then
+  pass "B-lease d: MUTATION PROOF - with the old 'exec 9>&- 2>/dev/null' on the busy path the refusal banner is swallowed"
+else
+  fail "B-lease d: the mutant did not reproduce the defect (mutant=${LMU2:-none}, rc=$RCLD). Output: $OUTLD"
+fi
+
+# A live foreign updater already named in the lease: flock grants, the record says someone else owns it -> refuse. Pinned, because
+# an unpinned run stands down earlier (the cron guard) and never reaches the acquire.
+lease_foreign_case() {
+  local tag="$1" script="$2" h s st sp
+  h="$(make_box "bl$tag" clean)"; s="$SANDBOX/stubsbl$tag"; st="$SANDBOX/statebl$tag"
+  make_stubs "$s" "$st" versioned 1
+  sleep 300 >/dev/null 2>&1 & sp=$!; echo "$sp" >> "$st/spawned.pids"
+  printf 'pid=%s\nrole=oc-atomic-upgrade\n' "$sp" > "$SANDBOX/lease-foreign-$tag"
+  touch "$st/loaded_ai.openclaw.gateway"
+  HOME="$h" PATH="$s:/usr/bin:/bin:/usr/sbin:/sbin" OPENCLAW_UPDATE_LEASE="$SANDBOX/lease-foreign-$tag" \
+    OC_ATOMIC_QUIESCE_PROOF_SECONDS=1 OC_ATOMIC_STABILITY_SECONDS=1 \
+    bash "$script" --upgrade --target-version "$NEW_V" 2>&1
+  local rc=$?
+  kill "$sp" 2>/dev/null
+  return $rc
+}
+OUTLE="$(lease_foreign_case e "$LCTL")"; RCLE=$?
+if [ "$RCLE" -eq 78 ] && grep -q 'UPGRADE REFUSED' <<<"$OUTLE" && grep -q 'SHARED INSTALLATION LEASE is held' <<<"$OUTLE"; then
+  pass "B-lease e: a live foreign owner in the lease refuses the run (rc=78) and the banner reaches the output"
+else
+  fail "B-lease e: rc=$RCLE. Output: $OUTLE"
+fi
+OUTLF="$(lease_foreign_case f "$LMU3")"; RCLF=$?
+if [ -n "$LMU3" ] && [ "$RCLF" -eq 78 ] && ! grep -q 'UPGRADE REFUSED' <<<"$OUTLF"; then
+  pass "B-lease f: MUTATION PROOF - with the old 'exec 9>&- 2>/dev/null' on the foreign-owner path the refusal banner is swallowed"
+else
+  fail "B-lease f: the mutant did not reproduce the defect (mutant=${LMU3:-none}, rc=$RCLF). Output: $OUTLF"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
 echo ""
 echo "--- (17) fleet-roll #18: stale openclaw CLI processes holding the state database are reaped, nothing else ---"
 # Holders are REAL background processes; lsof is a stub that lists the ones still alive. Their
@@ -1217,9 +1824,11 @@ else
   fail "17c: reap line $L_REAP, doctor line $L_DOC"
 fi
 
-# 17d. a mixed set: only the stale bare CLI dies. The gateway service, a node service, the OpenClaw
-# app, a CLI that started during this run and an unrelated program all survive. Doctor needs exclusive
-# access, so it is NOT run and the upgrade rolls back instead of fighting over the database.
+# 17d. a mixed set: the stale bare CLI dies, and so does the GATEWAY holding the database - the launchd job is
+# booted out at this point, so a gateway that still owns the state dir is an ORPHAN (error #33, stopped by
+# identity before anything else). A node service, the OpenClaw app, a CLI that started during this run and an
+# unrelated program all survive. Doctor needs exclusive access, so it is NOT run and the upgrade rolls back
+# instead of fighting over the database.
 H17M="$(make_box b17m clean)"; S17M="$SANDBOX/stubs17m"; ST17M="$SANDBOX/state17m"
 make_stubs "$S17M" "$ST17M" versioned
 make_state_db "$H17M"
@@ -1230,24 +1839,24 @@ P_APP="$(spawn_holder "$ST17M" "/Applications/OpenClaw.app/Contents/MacOS/OpenCl
 P_FRESH="$(spawn_holder "$ST17M" "node /opt/x/bin/openclaw status" "00:00")"
 P_OTHER="$(spawn_holder "$ST17M" "python3 /opt/x/other.py" "05:00:00")"
 OUT17M="$(run_atomic "$H17M" "$S17M" "$ST17M")"; RC17M=$?
-SURV=""; for p in "$P_GW" "$P_NODE" "$P_APP" "$P_FRESH" "$P_OTHER"; do alive "$p" || SURV="$SURV $p(DEAD)"; done
-if ! alive "$P_STALE" && [ -z "$SURV" ]; then
-  pass "17d: ONLY the stale bare CLI was killed; the gateway service, node service, OpenClaw app, a CLI started during this run and an unrelated program all survived"
+SURV=""; for p in "$P_NODE" "$P_APP" "$P_FRESH" "$P_OTHER"; do alive "$p" || SURV="$SURV $p(DEAD)"; done
+if ! alive "$P_STALE" && ! alive "$P_GW" && [ -z "$SURV" ]; then
+  pass "17d: the stale bare CLI and the orphan GATEWAY were stopped; the node service, OpenClaw app, a CLI started during this run and an unrelated program all survived"
 else
-  fail "17d: stale alive=$(alive "$P_STALE" && echo yes || echo no); protected killed:$SURV"
+  fail "17d: stale alive=$(alive "$P_STALE" && echo yes || echo no) gateway alive=$(alive "$P_GW" && echo yes || echo no); protected killed:$SURV"
 fi
 if [ "$RC17M" -eq 78 ] && [ "$(doctor_calls "$ST17M")" = "0" ] && [ "$(cat "$ST17M/version")" = "$OLD_V" ] && [ -f "$ST17M/loaded_ai.openclaw.gateway" ]; then
   pass "17e: holders that may not be stopped -> doctor NOT run, rolled back (rc=78), binary $OLD_V, gateway loaded"
 else
   fail "17e: rc=$RC17M doctor_calls=$(doctor_calls "$ST17M") version=$(cat "$ST17M/version"). Output: $OUT17M"
 fi
-if grep -q "pid $P_GW is not a bare openclaw CLI" <<<"$OUT17M" && grep -q "pid $P_NODE is not a bare openclaw CLI" <<<"$OUT17M" \
+if grep -q "ORPHAN GATEWAY pid $P_GW" <<<"$OUT17M" && grep -q "pid $P_NODE is not a bare openclaw CLI" <<<"$OUT17M" \
    && grep -q "pid $P_APP is not a bare openclaw CLI" <<<"$OUT17M" && grep -q "pid $P_FRESH (openclaw status) started during this run" <<<"$OUT17M"; then
-  pass "17f: each survivor was logged with the reason it was left alone"
+  pass "17f: the orphan gateway kill and each survivor's reason for being left alone were logged"
 else
   fail "17f: missing 'left alone' reasons. Output: $OUT17M"
 fi
-for p in "$P_GW" "$P_NODE" "$P_APP" "$P_FRESH" "$P_OTHER"; do kill "$p" 2>/dev/null; done
+for p in "$P_NODE" "$P_APP" "$P_FRESH" "$P_OTHER"; do kill "$p" 2>/dev/null; done
 
 # 17g. MUTATION: with the reaper neutered the SAME stale holder survives -- so 17a measures the reaper.
 python3 - "$ATOMIC" "$MUT_DIR/oc-atomic-upgrade.noreap.sh" <<'PY'
