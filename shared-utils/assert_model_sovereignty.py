@@ -8,7 +8,7 @@ The single assertion this gate enforces:
   unless its resolved model is ALL of:
     (a) non-null AND not the `openrouter/free` literal nor any bare "free" default
     (b) present in the client's available inventory
-    (c) NOT in FORBIDDEN_PREFIXES (Anthropic)
+    (c) NOT in FORBIDDEN_PREFIXES (empty: no vendor is forbidden)
     (d) modality-appropriate (capabilities ⊇ required_modality)
 
   Otherwise the dispatch is BLOCKED and routed to needs_owner_input — NEVER
@@ -58,57 +58,21 @@ except Exception:  # noqa: BLE001
         sm = None  # type: ignore
 
 
-# ─── SK2-16 — canonical Anthropic / Claude model-id detector (one source) ─────
-# The SINGLE place the "is this an Anthropic model?" test lives. Skill 52
-# (Avatar Alchemist) previously carried FOUR divergent copies of this regex
-# (aa_qc_cert, aa_director tier-check + bypass-scan, aa_build_check) with
-# INCONSISTENT coverage — some missed the `anthropic.` dot route, some missed
-# bare `opus`/`sonnet`/`haiku`, some missed a bare `anthropic` provider token.
-# They now all defer to the two functions below so detection can never drift.
-#
-# Two inputs, two purpose-built matchers (same source of truth, no divergence):
-#   • is_anthropic_model(id)          — a DISCRETE model-id string (a config
-#       field, a resolved model id, a cert verifier_model). STRICT: matches
-#       `anthropic` in any form (slash `anthropic/`, dot `anthropic.` /
-#       `us.anthropic.`, or bare), the whole `claude` family (claude, claude-3,
-#       claude-5, claude-opus/-sonnet/-haiku, future gens), AND the bare
-#       Anthropic model families opus / sonnet / haiku (word-bounded).
-#   • text_has_anthropic_model_id(t)  — scans FREE TEXT (a prompt .md, a
-#       manifest .json) for a sneaked Anthropic model *id*. ID-SHAPED so it does
-#       NOT false-positive on prose or on compliance documentation that merely
-#       names the vendor or quotes the ban regex — e.g. a comment "the sole
-#       Anthropic-Sonnet chain is removed per the client-path rule" or a manifest
-#       line 'G-NOANTHROPIC hard-fails any /anthropic|claude/i id'. Only a real
-#       id-shaped token trips it: `anthropic/<m>`, `anthropic.<m>`,
-#       `openrouter/anthropic/<m>`, or `claude-<gen>` (claude-3, claude-opus-4,
-#       claude-instant, future gens).
-_ANTHROPIC_MODEL_ID_RE = re.compile(
-    r"anthropic|claude|\b(?:opus|sonnet|haiku)\b", re.IGNORECASE
-)
-_ANTHROPIC_IN_TEXT_RE = re.compile(
-    r"anthropic[/.][a-z0-9]|\bclaude-[a-z0-9]", re.IGNORECASE
-)
+# ─── Anthropic / Claude detector (retired) ────────────────────────────────────
+# There is NO rule against Anthropic / Claude models any more (Trevor order
+# 2026-10-29). These two names are kept as stable imports for the skill scripts
+# (Skill 52 Avatar Alchemist and others) that call them; both always return
+# False, so nothing refuses, strips or fails on an Anthropic / Claude id.
 
 
 def is_anthropic_model(model_id) -> bool:
-    """True iff a DISCRETE model-id string references an Anthropic/Claude model.
-
-    Fail-closed by contract: an EMPTY/None id returns False here (it is 'not an
-    Anthropic id'), but an empty *resolved* model id is separately a hard failure
-    at each caller's gate — callers must reject a missing id in their own right
-    (they do). This function only answers the Anthropic-family question.
-    """
-    return bool(_ANTHROPIC_MODEL_ID_RE.search(str(model_id or "")))
+    """Always False: no vendor is banned. Kept so existing importers keep working."""
+    return False
 
 
 def text_has_anthropic_model_id(text) -> bool:
-    """True iff FREE TEXT contains an id-shaped Anthropic/Claude model reference.
-
-    Used by content bypass-scans over prompts/manifests. Deliberately narrower
-    than is_anthropic_model so prose that names the vendor while DOCUMENTING its
-    removal is not flagged as a violation.
-    """
-    return bool(_ANTHROPIC_IN_TEXT_RE.search(str(text or "")))
+    """Always False: no vendor is banned. Kept so existing importers keep working."""
+    return False
 
 
 def assert_model_sovereignty(
@@ -149,10 +113,10 @@ def assert_model_sovereignty(
                        f"Resolved model is the free sentinel '{mid}' — never a valid "
                        f"resolution (PLAN.md §7). Dispatch BLOCKED.")
 
-    # (c) not forbidden (Anthropic)
+    # (c) FORBIDDEN_PREFIXES is empty, so no model is forbidden by vendor.
     if sm._is_forbidden(mid):
         return verdict(False, "FORBIDDEN",
-                       f"Resolved model '{mid}' is forbidden (Anthropic). BLOCKED.")
+                       f"Resolved model '{mid}' is forbidden. BLOCKED.")
 
     # (b) present in inventory
     if inventory is None:

@@ -570,9 +570,8 @@ _cc_gen_secret() {
 }
 
 # _cc_model_is_sovereign — exit 0 when the model id is a valid sovereign DEFAULT
-# for a TEXT task: non-empty, NOT a free default, and NOT Anthropic-forbidden.
-# Mirrors the CC model-selector rules (FORBIDDEN_PREFIXES + `:free`/openrouter
-# free) so the value we write is actually HONOURED by resolveSovereignDefault
+# for a TEXT task: non-empty and NOT a free default (no vendor is forbidden).
+# Mirrors the CC model-selector rules (`:free`/openrouter free) so the value we write is actually HONOURED by resolveSovereignDefault
 # rather than silently dropped. Case-insensitive.
 _cc_model_is_sovereign() {
   local m
@@ -580,11 +579,6 @@ _cc_model_is_sovereign() {
   [[ -n "$m" ]] || return 1
   case "$m" in
     openrouter/free|*:free) return 1 ;;                # free default — forbidden
-  esac
-  case "$m" in
-    # Anthropic in any form (never in a client runtime): provider-prefixed routes
-    # and BARE claude-* families that carry no `anthropic/` prefix.
-    *anthropic*|*claude*) return 1 ;;
   esac
   return 0
 }

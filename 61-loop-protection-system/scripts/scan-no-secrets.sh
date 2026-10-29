@@ -75,7 +75,7 @@ _cleanup_selftest() { [ -n "${SELFTEST_TMP:-}" ] && rm -rf "$SELFTEST_TMP"; retu
 trap _cleanup_selftest EXIT
 
 # ---- the four merge-gate scanner basenames (self-exclusion) ----------------
-SELF_NAMES="scan-no-secrets.sh scan-no-json-exports.sh scan-no-client-identifiers.sh guard-no-anthropic-runtime.py"
+SELF_NAMES="scan-no-secrets.sh scan-no-json-exports.sh scan-no-client-identifiers.sh"
 
 # ---- options ---------------------------------------------------------------
 OPT_ROOT=""

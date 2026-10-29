@@ -41,16 +41,10 @@ def test_catalog_defaults_bind_mimo_build_glm_check():
     assert AM.MODELS[REC["build"]]["reasoning"]["effort_selector"] is False  # never fabricated
 
 
-def test_sonnet_is_excluded_from_the_catalog_outright():
-    for m in AM.MODELS.values():
-        assert not AM.banned_hits(m["id"]), m["id"]
-        assert not AM.banned_hits(m["label"]), m["label"]
-        for a in m["aliases"]:
-            assert not AM.banned_hits(a), a
-    assert not any("sonnet" in _k for _k in AM.MODELS)
-    assert "sonnet-chain" not in AM.MODELS
-    rows = AM.selectable()
-    assert not any(AM.banned_hits(r["id"]) or AM.banned_hits(r["label"]) for r in rows)
+def test_no_family_is_excluded_from_the_catalog():
+    # No vendor rule: nothing is filtered out of the catalog by family name.
+    assert not hasattr(AM, "banned_hits")
+    assert len(AM.selectable()) == len(AM.MODELS)
 
 
 def test_two_plain_language_selection_questions_one_recommended_pair():
@@ -117,47 +111,13 @@ def test_selecting_mimo_binds_real_dispatch():
         shutil.rmtree(rd, ignore_errors=True)
 
 
-def test_sonnet_request_refused_through_every_route():
-    # catalog / alias / free-text family names
-    for name in ("Sonnet", "sonnet-chain", "claude sonnet", "Claude Sonnet",
-                 "claude-sonnet-4.5", "sonnet 3.5", "sonnet chain"):
-        c, err = AM.parse("%s builds, GLM 5.3 checks" % name)
-        assert c is None and err, name
+def test_unlisted_sonnet_request_is_unknown_not_banned():
+    # Sonnet is not in the catalog (nothing is added automatically), so it is an
+    # ordinary unknown name: MODEL_UNKNOWN, never MODEL_NOT_PERMITTED.
+    for name in ("Sonnet", "sonnet-chain", "claude sonnet", "claude-sonnet-4.5"):
         res = AM.check_result(name, "GLM 5.3")
-        assert res["ok"] is False and res["error_code"] == "MODEL_NOT_PERMITTED", name
+        assert res["ok"] is False and res["error_code"] == "MODEL_UNKNOWN", name
         assert res["selectable"] and res["recommended"] == REC and res["next_action"], name
-        assert not any(AM.banned_hits(r["id"]) for r in res["selectable"]), name
-    assert AM.check("Sonnet", "claude sonnet")[0] is None
-    # cache and fallback routes at dispatch admission
-    rd = _run_dir()
-    try:
-        AM.bind_roles(rd, "MiMo 2.6 Pro", "GLM 5.3")
-        for kw in ({"cached_model": "sonnet-chain"}, {"fallbacks": ["sonnet-chain"]},
-                   {"requested_model": "sonnet-chain"}):
-            adm = AM.admit_dispatch(rd, "build", kw.pop("requested_model", "mimo"), **kw)
-            assert adm["ok"] is False and adm["error_code"] == "MODEL_NOT_PERMITTED", kw
-            assert adm["selectable"] and adm["next_action"], kw
-        # a poisoned stored binding (cache) is refused, never used
-        rd2 = _run_dir()
-        try:
-            doc = {"schema": AM.STORE_SCHEMA, "binding_id": "x", "attempts": [],
-                   "bindings": {"build": {"model_id": "sonnet-chain", "route": "router-alias",
-                                          "bound_at": "t", "bound_by": "cache"},
-                                "check": {"model_id": GLM, "route": "openrouter",
-                                          "bound_at": "t", "bound_by": "cache"}}}
-            AM._write_store(rd2, doc)
-            adm = AM.admit_dispatch(rd2, "build", "sonnet-chain")
-            assert adm["ok"] is False and adm["error_code"] == "MODEL_NOT_PERMITTED"
-        finally:
-            shutil.rmtree(rd2, ignore_errors=True)
-        # and a response claim naming Sonnet is refused
-        rec = AM.record_attempt(
-            rd, "build", "a1", requested_model="mimo",
-            resolved_provider_model="xiaomi/mimo-v2.6-pro",
-            response_model="sonnet-chain", route="openrouter")
-        assert rec["ok"] is False and rec["error_code"] == "MODEL_NOT_PERMITTED"
-    finally:
-        shutil.rmtree(rd, ignore_errors=True)
 
 
 def test_other_approved_models_stay_configurable():
@@ -273,11 +233,9 @@ def test_choice_is_recorded_in_the_approved_summary():
     assert st["answers"][MODELS_AT - 1]["value"] == REC         # selecting the recommended pair stores it
 
 
-def test_card_question_surface_carries_no_excluded_model():
+def test_card_question_surface():
     q = AM.card_question()
     assert q["id"] == "models" and q["recommended"] == 0
-    text = " ".join([q["ask"]] + ["%s %s" % o for o in q["options"]])
-    assert not AM.banned_hits(text)                             # no UI surface prints Sonnet
     assert AM.recommended_text() == ("MiMo 2.6 Pro (OpenRouter) builds, GLM 5.3 (OpenRouter) checks")
 
 

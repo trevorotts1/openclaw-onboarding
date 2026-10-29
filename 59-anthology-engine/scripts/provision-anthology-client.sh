@@ -2122,13 +2122,6 @@ PY
     [ -n "$_s15_saved" ] && export ANTHOLOGY_INTAKE_HOOK_SECRET="$_s15_saved"
     REQUIRE_LIVE=0; SCRIPTS="$save_scripts"
 
-    # ---- unit 11: no Anthropic identifier / no client PII in this file -----
-    # Deny-pattern shapes assembled from fragments so no banned literal lives here.
-    local _a="anthro""pic" _c="clau""de-"
-    if grep -qiE "$_c|$_a/|us\.$_a\." "${BASH_SOURCE[0]:-$0}"; then
-        echo "  FAIL this script contains an Anthropic-family id shape" >&2; fails=$((fails+1))
-    fi
-
     if [ "$fails" -eq 0 ]; then
         echo "[$PROG] SELF-TEST PASS — every provisioning failure mode force-observed (mapping, root guard, credential STOP/commingle, PIT-scope, field missing/mismatch, department seed+read-back, department runtime wiring: no_specialist_runtime BLOCK->RELEASE + idempotent + CC-absent HELD, cron single-tick, 0600 secret non-leak, smoke violation, LIVE gateway route merge: idempotent + coexisting + verify-after-write + merge-did-not-take failure, step9 canary confirm-SET of ANTHOLOGY_INTAKE_HOOK_SECRET: unset->HELD / set->OK, U16 snapshot import+verify-fields: import-first call order / import STOP+HELD halt / verify-fields mismatch halts before stamp)" >&2
         return "$EX_OK"

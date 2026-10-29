@@ -42,7 +42,6 @@
     "google/gemini-2.0-flash-001",
     "meta-llama/llama-3.1-70b-instruct"
   ],
-  "zero_anthropic": true,
   "agency_isolation_ok": true,
   "all_gates_pass": true,
   "creative": {
@@ -64,5 +63,5 @@
   "deploy_mode": "publish-on-cert",
   "failures": [],
   "pass": true,
-  "certificate_sha": "9783310821999f2a29a96a14e608cc024238409f127ad61c2d67c8f41b22aa7f"
+  "certificate_sha": "c24d651b95a87a35a253ad4e46af8cd3194889aaa40b6bf33d91abb3553c8d97"
 }

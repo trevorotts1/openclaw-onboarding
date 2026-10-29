@@ -10,8 +10,8 @@
 #
 #   1.  DEPS CHECK        -- python3 must be present (exit 6, AE_DEPS_MISSING).
 #   1b. MODEL-MAP PRE-GATE -- if a resolved model-map.json exists in the run dir,
-#                          it must carry NO <CLIENT_*> placeholder and no
-#                          Anthropic-family id (exit 8, AF-AE-UNRESOLVED-MODELMAP);
+#                          it must carry NO <CLIENT_*> placeholder
+#                          (exit 8, AF-AE-UNRESOLVED-MODELMAP);
 #                          preflight.sh --check is the resolver-as-pre-gate.
 #   2.  BYPASS-SCAN       -- refuse any hand-rolled, UNGOVERNED external sender in
 #                          the RUN directory: an n8n webhook, an Airtable write, a
@@ -38,7 +38,7 @@
 #   5  -- BYPASS-SCAN tripped (hand-rolled ungoverned external sender in the run dir)
 #   6  -- DEPS CHECK failed (AE_DEPS_MISSING)
 #   7  -- VERSION/HASH PIN failed (hash mismatch, no owner skip)
-#   8  -- MODEL-MAP PRE-GATE failed (residual <CLIENT_*> placeholder / Anthropic-family id)
+#   8  -- MODEL-MAP PRE-GATE failed (residual <CLIENT_*> placeholder)
 #   4  -- malformed participant key (must be <contact>::<anthology>)
 # ============================================================================
 
@@ -198,7 +198,7 @@ engine will not run unresolved; resolve the tier map on a configured box (prefli
         PF_RC=$?
         if [ "$PF_RC" -eq 2 ]; then
             gate_fail "AF-AE-UNRESOLVED-MODELMAP" 8 "the model-map.json (${GATE_MAP_DIR}/model-map.json) still carries \
-<CLIENT_*> placeholders or an Anthropic-family id -- the fleet installer has not resolved this box. \
+<CLIENT_*> placeholders -- the fleet installer has not resolved this box. \
 Resolve the tier map on a configured box (preflight.sh) and re-run."
         else
             echo "  (preflight --check non-fatal rc=$PF_RC; continuing)"
@@ -298,7 +298,6 @@ ENFORCE_CANDIDATES=(
     "$SELF_DIR/anthology-engine-entry.sh"
     "$SELF_DIR/ENGINE-MANIFEST.json"
     "$SCRIPTS/guard-prompt-pins.py"
-    "$SCRIPTS/guard-no-anthropic-runtime.py"
     "$SCRIPTS/guard-font-floor.py"
     "$SCRIPTS/guard-cron-inventory.py"
 )

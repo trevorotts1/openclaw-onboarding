@@ -18,7 +18,7 @@
 #
 # Sections 1-3 NEVER touch an external API - the D-ESCALATE drill injects a failing transport
 # to prove the UNSENT fallback WITHOUT any network call. Proves the whole system
-# end to end: every script self-test, the four merge-gate scanners clean over the
+# end to end: every script self-test, the three merge-gate scanners clean over the
 # tree, and one drill per class (D-RESTART, D-SIG, D-RESEND, D-OFFSET, D-ORPHAN,
 # D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-ESC-DRIFT, D-ESC-DEDUP,
 # D-ESC-BACKOFF, D-ESC-NEWKEY, D-ESC-TICK, D-DRYRUN, D-ARMED-PARK, D-REVERT,
@@ -94,9 +94,8 @@ else
 fi
 rm -f /tmp/loop-verify-paidtier.$$ 2>/dev/null || true
 
-# ---- 2. four merge-gate scanners CLEAN over the tree ------------------------
-step "2/4 four merge-gate scanners CLEAN over the skill tree"
-python3 "$SCRIPTS/guard-no-anthropic-runtime.py" >/dev/null 2>&1 && ok "guard-no-anthropic (0)" || bad "guard-no-anthropic"
+# ---- 2. three merge-gate scanners CLEAN over the tree ------------------------
+step "2/4 three merge-gate scanners CLEAN over the skill tree"
 SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-secrets.sh" --root "$SELF_DIR" --strict >/dev/null 2>&1 && ok "scan-no-secrets (0)" || bad "scan-no-secrets"
 SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-client-identifiers.sh" --root "$SELF_DIR" >/dev/null 2>&1 && ok "scan-no-client-identifiers (0)" || bad "scan-no-client-identifiers"
 SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-json-exports.sh" --root "$SELF_DIR" >/dev/null 2>&1 && ok "scan-no-json-exports (0)" || bad "scan-no-json-exports"

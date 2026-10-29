@@ -57,7 +57,6 @@
     "gemini-2.0-flash",
     "gpt-image-2-5-sunburst-text-to-image"
   ],
-  "zero_anthropic": true,
   "agency_isolation_ok": true,
   "all_gates_pass": true,
   "creative": {
@@ -99,5 +98,5 @@
   "deploy_mode": "publish-on-cert",
   "failures": [],
   "pass": true,
-  "certificate_sha": "ce054b03f3ff87363ba0715dafb0cc4472df77892ed85dba23dfb50cf915dd9c"
+  "certificate_sha": "143a28b15840edfb1420dd77f903c1b0e7a23be3981d9c3c8077c5f3480905ea"
 }

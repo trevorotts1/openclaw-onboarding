@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # preflight.sh — resolve the CLIENT box's OWN configured providers (per-box
 # capability test) and write model-map.json (TIER-A/B/SEARCH) + provider_caps.
-# NEVER Anthropic; client keys only.
+# Client keys only.
 #
 # FIX-XC-09f: this script used to "probe" by baking hardcoded env DEFAULTS
 # (`AA_TIER_A:-ollama-cloud/qwen3-235b` …) — so on ANY box it silently wrote a
@@ -54,13 +54,6 @@ _missing=""
 if [ -n "$_missing" ]; then
   die "unresolved provider tier(s):$_missing. Set them from THIS box's OpenClaw provider config (or provide AA_PROVIDER_PROBE_CMD). preflight refuses to write a guessed default."
 fi
-
-# ── Anthropic ban (client-path rule) on every resolved id ────────────────────
-for m in "$TIER_A" "$TIER_B" "$SEARCH"; do
-  case "$m" in
-    *anthropic*|*claude*) die "AF-AV-NOANTHROPIC: resolved model '$m' matches /anthropic|claude/ (client-path ban)";;
-  esac
-done
 
 # ── Validate each resolved id against the box's REAL OpenClaw config ──────────
 # Best-effort: locate the box's OpenClaw config and, if found, assert each
@@ -138,7 +131,7 @@ json.dump({
   "tiers": {"A": a, "B": b, "SEARCH": s},
   "provider_caps": {"concurrent": int(cap)},
   "resolved_from": (cfg or "explicit-override/probe"),
-  "rule": "client's own providers only; G-NOANTHROPIC bans /anthropic|claude/i; "
+  "rule": "client's own providers only; "
           "client's express choice never substituted; tiers resolved from THIS box's "
           "OpenClaw config, never a baked default",
 }, open(out, "w"), indent=2)

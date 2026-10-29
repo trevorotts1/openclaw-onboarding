@@ -76,8 +76,6 @@ _CHAPTER_HEAD_RE = re.compile(r"^\s{0,3}#{0,6}\s*chapter\s+(\d{1,2})\b", re.IGNO
 _DAY_HEAD_RE = re.compile(r"^\s{0,3}#{0,6}\s*day\s+(\d{1,2})\b\s*[—\-:]", re.IGNORECASE)
 # Unresolved template tokens: {{...}} or $('...') / $("...").
 _PLACEHOLDER_RE = re.compile(r"\{\{[^}]*\}\}|\$\(\s*['\"][^'\"]*['\"]\s*\)")
-# Anthropic / claude model-id family (case-insensitive by design for ledger ids).
-_ANTHROPIC_RE = re.compile(r"anthropic|claude", re.IGNORECASE)
 # Numbered / bulleted top-level list item (for counting titles / outcomes).
 _NUM_ITEM_RE = re.compile(r"^\s*\d+[\.\)]\s+\S")
 _BULLET_ITEM_RE = re.compile(r"^\s*[-*+•]\s+\S")

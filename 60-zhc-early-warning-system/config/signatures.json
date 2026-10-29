@@ -6,12 +6,8 @@
     "class_pin": "provider_sk|caf_pit|google_api|aws_akid|slack_token|github_pat|private_key|jwt|bearer_literal",
     "note": "S8 reuses the Skill 59 secret-CLASS detector verbatim. This pin records which classes the sentinel expects; a class version bump rides the repo, never a box-local edit. The VALUE is never stored, printed, or reproduced."
   },
-  "anthropic_family_deny_prefixes": [
-    "claude-",
-    "anthropic/",
-    "us.anthropic."
-  ],
-  "anthropic_family_deny_note": "S1/S2 flag a model/provider id beginning with any of these prefixes as an Anthropic-family change; on a CLIENT box that is P1 (client skills never use Anthropic models). These are deny-list prefixes, not runtime ids.",
+  "anthropic_family_deny_prefixes": [],
+  "anthropic_family_deny_note": "EMPTY. There is no rule against Anthropic / Claude models any more (Trevor order 2026-10-29), so S1/S2 no longer raise P1 for an Anthropic-family id. A prefix listed here would be flagged as a family change on a CLIENT box (P1).",
   "paid_tier_markers": {
     "suffix_deny": [":cloud"],
     "suffix_deny_note": "D11: a :cloud suffix is Ollama Cloud, a SUBSCRIPTION (config/billing-models.json). It counts as a billable tier for S5 only (furnace wastes allowance); S1/S2 raise P1 on a client box for metered_provider_slugs alone.",

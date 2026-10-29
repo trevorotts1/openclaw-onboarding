@@ -7,7 +7,7 @@
 # the temp dir is removed on exit. Exits NONZERO on ANY failure so it can gate a
 # merge / CI / a post-install check.
 #
-# What it proves (all offline, client-providers-only, ZERO Anthropic at runtime):
+# What it proves (all offline, client-providers-only):
 #   1  every fail-closed prover's built-in --self-test (VALID passes + BAD fails)
 #   2  the front door (entry.sh: deps->bypass-scan->egress-scan->hash-pin->nonce+key)
 #      + the foreman plan
@@ -17,7 +17,7 @@
 #   2c REPRO+BLOCK: version=book intake NEVER reaches the 40-stage brand
 #      dispatch (aa_director.py hard-stops, exit 4, route.json written)
 #   2d REPRO+BLOCK: a run ledger that OMITS a stage's model id fails closed
-#      (G-NOANTHROPIC no longer passes by omission)
+#      (G-MODEL-RECORDED no longer passes by omission)
 #   2e REPRO+BLOCK: a pure-stdlib urllib uploader is REJECTED by the egress gate
 #   3  the golden BRAND run end-to-end: 40/40 content invariants + a REAL
 #      HMAC-signed, --verify-cert-passing certificate (not a keyless self-sha256)
@@ -26,7 +26,7 @@
 #   4  the five broken variants each fail closed with a DISTINCT AF-AV-* code
 #   5  version=book ROUTES (Book skill present) and PARKS book-skill-not-available
 #      (Book skill absent) — never served by the brand pipeline
-#   6  no Anthropic MODEL IDs and no PII on the client-facing surface
+#   6  no PII on the client-facing surface
 #   7  hermetic: zero .pyc / __pycache__ leaks the operator's absolute path
 #
 # Usage:  bash 52-avatar-alchemist/verify.sh
@@ -202,8 +202,8 @@ rec = json.loads(rec_path.read_text())
 rec.pop("model", None)
 rec_path.write_text(json.dumps(rec, indent=2))
 PYOMIT
-expect_fail "run ledger + receipt omitting a stage's model id -> AF-AV-NOANTHROPIC (not a vacuous pass)" \
-    "AF-AV-NOANTHROPIC" \
+expect_fail "run ledger + receipt omitting a stage's model id -> AF-AV-MODEL-UNRECORDED (not a vacuous pass)" \
+    "AF-AV-MODEL-UNRECORDED" \
     "$PY" "$S/aa_build_check.py" --run "$OMIT_RUN"
 
 echo ""
@@ -339,14 +339,7 @@ expect_fail "version=book PARKS book-skill-not-available (absent)" "AF-AV-BOOK-S
     "$PY" "$S/aa_intake_gate.py" --intake "$GD/broken-variants/book_intake.json"
 
 echo ""
-echo "-- 6) client-path hygiene: no Anthropic model ids, no PII ----------------"
-ANTHRO_PAT='anthropic/|claude-[0-9]|claude-sonnet|claude-opus|claude-haiku|claude-3|claude-4'
-if grep -REnI "$ANTHRO_PAT" "$GD/run" "$GD/delivery" "$GDLIVE" "$SKILL_DIR/prompts" "$SKILL_DIR"/*.json >/dev/null 2>&1; then
-    fail "Anthropic MODEL ID present on the client-run/prompt/manifest surface"
-    grep -REnI "$ANTHRO_PAT" "$GD/run" "$GD/delivery" "$SKILL_DIR/prompts" "$SKILL_DIR"/*.json | sed 's/^/         /'
-else
-    pass "no Anthropic model ids (G-NOANTHROPIC surface clean)"
-fi
+echo "-- 6) client-path hygiene: no PII ----------------"
 if grep -REoiI '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' "$GD" 2>/dev/null \
      | grep -viE '@example\.(com|org|net)' | grep -q .; then
     fail "non-example email (possible PII) in the golden sample"

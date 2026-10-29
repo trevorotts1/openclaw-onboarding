@@ -12,7 +12,7 @@
 # bakes a default model id, NEVER substitutes the client's expressed choice, and
 # FAILS CLOSED (exit 2) when a REQUIRED tier has no resolvable client model or the
 # client has configured no usable model at all. Credentials are referenced by LABEL
-# only. It NEVER writes an Anthropic-family id and NEVER an operator key.
+# only. It NEVER writes an operator key.
 #
 # MODES:
 #   (default) RESOLVE -- resolve every tier from the client's OWN openclaw.json and
@@ -21,15 +21,15 @@
 #                        OWNER PINS: a top-level "owner_pins" object in an existing
 #                        OUT_DIR/model-map.json ({"HEAVY-WRITER": "<client model id>"})
 #                        survives re-resolution. Each pin is validated like any
-#                        resolved link (Anthropic-deny + provider support + the
+#                        resolved link (provider support + the
 #                        client's OWN inventory), placed at order 1 of that role's
 #                        chain with the auto-resolved links kept as fallbacks, and
 #                        carried forward verbatim. An invalid pin FAILS CLOSED
 #                        (exit 2, AF-AE-UNRESOLVED-MODELMAP); never silently dropped.
 #   --check           -- PRE-GATE: read an existing OUT_DIR/model-map.json and
 #                        fail-closed if it still carries <CLIENT_*> placeholders
-#                        (AF-AE-UNRESOLVED-MODELMAP) or an Anthropic-family id
-#                        (AF-AE-ANTHROPIC). A missing map is a clean pass (the
+#                        (AF-AE-UNRESOLVED-MODELMAP). An Anthropic-family id is
+#                        NOT refused (no vendor rule). A missing map is a clean pass (the
 #                        installer resolves per box).
 #   --broker-check    -- E9-short: a THIN assertion that the n8n Drive credential
 #                        broker is CONFIGURED on this box (N8N_DRIVE_WEBHOOK_URL +
@@ -51,7 +51,7 @@
 #                        broker (it is NOT part of the default RESOLVE flow, which is
 #                        unchanged and stays broker-agnostic).
 #
-# Exit 0 = ok; 2 = banned id / residual placeholder / broker not configured
+# Exit 0 = ok; 2 = residual placeholder / broker not configured
 #          (fail-closed); 3 = usage.
 set -uo pipefail  # Intentional: no -e; exit codes handled explicitly per house contract (ENGINE-MANIFEST.json rows 30-32)
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -176,23 +176,6 @@ if residual:
     print("AF-AE-UNRESOLVED-MODELMAP: model-map.json still carries placeholder(s): %s"
           % ", ".join(residual), file=sys.stderr)
     sys.exit(2)
-# Deny Anthropic-family identifiers. The banned id shapes are assembled from
-# fragments so no contiguous banned literal ever lives in this file.
-_a = "anthro" + "pic"
-_c = "clau" + "de-"
-banned = re.compile(_c + r"|" + _a + r"/|us\." + _a + r"\.", re.I)
-def scan(node, path):
-    if isinstance(node, dict):
-        for k, v in node.items():
-            scan(v, path + "." + str(k))
-    elif isinstance(node, list):
-        for i, v in enumerate(node):
-            scan(v, "%s[%d]" % (path, i))
-    elif isinstance(node, str):
-        if banned.search(node):
-            print("AF-AE-ANTHROPIC: resolved map carries a banned id at %s: %r" % (path, node), file=sys.stderr)
-            sys.exit(2)
-scan(data.get("tiers", {}), "tiers")
 # CONCURRENCY ADVISORY (SPEC 8.4): warn when the HEAVY-WRITER primary provider
 # carries a low concurrency cap (<= 8) in the resolved map. Warning only --
 # never changes the exit code. Mirrors the resolve-mode advisory so --check
@@ -214,7 +197,7 @@ if hw_primary and hw_primary in caps:
               "(wave limit); a webhook spike is capped cross-process at %d in-flight calls. "
               "Consider raising provider_caps.%s if higher concurrency is intended."
               % (hw_primary, cap, cap, hw_primary), file=sys.stderr)
-print("  preflight --check: resolved model-map.json OK (no residual placeholder, no Anthropic-family id)")
+print("  preflight --check: resolved model-map.json OK (no residual placeholder)")
 sys.exit(0)
 PY
     exit $?
@@ -232,7 +215,7 @@ fi
 # bakes a default model id and NEVER substitutes the client's expressed choice; a
 # REQUIRED tier with no resolvable client model FAILS CLOSED (exit 2). Credentials
 # are referenced by LABEL only (a label is not a secret; the value stays in the
-# client env). NEVER an Anthropic-family id; NEVER an operator key.
+# client env). NEVER an operator key.
 # --------------------------------------------------------------------------
 # Locate the fleet shared-utils (select_model.py) -- repo checkout first, then the
 # installed-skills mirrors. Absence is a HARD fail: we resolve real client models
@@ -263,19 +246,8 @@ OUT_DIR = os.environ["OUT_DIR"]
 SMDIR = os.environ.get("SELECT_MODEL_DIR", "")
 CFG = os.environ.get("OPENCLAW_CFG", "").strip() or None
 
-# Anthropic-family deny shape, assembled from fragments so this file carries no
-# contiguous banned literal (mirrors model_router.py + the --check block above).
-_a = "anthro" + "pic"
-_c = "clau" + "de-"
-banned = re.compile(_c + r"|" + _a + r"/|us\." + _a + r"\.", re.I)
-
 tmpl = json.load(open(TEMPLATE, encoding="utf-8"))
 tiers_tmpl = tmpl.get("tiers", {})
-
-# Defense in depth: the shipped template must itself never carry an Anthropic id.
-if banned.search(json.dumps(tiers_tmpl)):
-    print("AF-AE-ANTHROPIC: template carries a banned id (refusing to resolve)", file=sys.stderr)
-    sys.exit(2)
 
 # The fleet's single source of truth for reading + resolving the client's own model.
 if not SMDIR or not os.path.isfile(os.path.join(SMDIR, "select_model.py")):
@@ -288,8 +260,7 @@ sys.path.insert(0, SMDIR)
 import select_model as sm  # noqa: E402
 
 # The exact fields the fleet harvests as the client's OWN configured models
-# (agents.defaults.model, agents.list[].model, models.list[]); forbidden
-# (Anthropic) ids are already filtered by _list_available_models.
+# (agents.defaults.model, agents.list[].model, models.list[]); 
 cfg = sm._load_openclaw_config(CFG)
 inventory = [m for m in sm._list_available_models(cfg)
              if m and m.strip().lower() not in sm.FREE_SENTINELS]
@@ -298,8 +269,8 @@ inventory = [m for m in sm._list_available_models(cfg)
 # never substitutes a hardcoded default (client-sovereignty; mirrors select_model's
 # needs_owner_input and Skills 52/53 preflight hard-fail).
 if not inventory:
-    print("AF-AE-UNRESOLVED-MODELMAP: the client has configured NO usable (non-Anthropic, "
-          "non-free) model in openclaw.json (%s). The engine never substitutes a default; "
+    print("AF-AE-UNRESOLVED-MODELMAP: the client has configured NO usable "
+          "(non-free) model in openclaw.json (%s). The engine never substitutes a default; "
           "configure the client's OWN model(s) and re-run."
           % (CFG or "no config found"), file=sys.stderr)
     sys.exit(2)
@@ -336,8 +307,6 @@ def to_link(fleet_id):
     elif low.startswith("kimi/") or low.startswith("moonshot") or low.startswith("kimi-"):
         prov, native = "kimi", (mid.split("/", 1)[1] if "/" in mid else mid)
     else:
-        return None
-    if banned.search(native) or banned.search(mid):   # defense in depth
         return None
     cred, slot, base = PROVIDER_META[prov]
     link = {"provider": prov, "model": native, "credential_label": cred, "slotting": slot}
@@ -479,7 +448,7 @@ if unresolved_optional:
 #     "owner_pins": { "HEAVY-WRITER": "ollama/kimi-k2.6:0711-cloud" }
 #
 # Each pin is validated through the SAME checks an auto-resolved link passes
-# (Anthropic-deny, to_link provider support, and membership in the client's OWN
+# (to_link provider support, and membership in the client's OWN
 # configured inventory), then placed at ORDER 1 of that role's chain with the
 # auto-resolved links kept behind it as ordered fallbacks. owner_pins is carried
 # forward verbatim into the written map so the NEXT roll honors it again. A pin
@@ -530,12 +499,6 @@ for role, pinned in sorted(owner_pins.items()):
         print("AF-AE-UNRESOLVED-MODELMAP: owner_pins names role %r, which this box does not "
               "resolve. Pinnable roles on this box: %s."
               % (role, ", ".join(pinnable) or "(none)"), file=sys.stderr)
-        sys.exit(2)
-    if banned.search(pin):
-        # The denied id is deliberately NOT echoed back.
-        print("AF-AE-UNRESOLVED-MODELMAP: the owner pin for %s names a DENIED model family. "
-              "The engine never runs an Anthropic-family model. Pin one of the client's OWN "
-              "non-Anthropic models and re-run." % role, file=sys.stderr)
         sys.exit(2)
     if pin.lower() not in inventory_by_low:
         print("AF-AE-UNRESOLVED-MODELMAP: the owner pin %s -> %s is NOT one of the client's OWN "
@@ -698,7 +661,7 @@ resolved = {
     "skill": "anthology-engine",
     "resolved_per_box": True,
     "note": "Resolved from the CLIENT's OWN configured models (openclaw.json) via the fleet "
-            "shared-utils/select_model.py. NEVER an Anthropic-family id, NEVER operator keys, "
+            "shared-utils/select_model.py. NEVER operator keys, "
             "NEVER a substituted default; credentials are referenced by LABEL only.",
     "deny_policy": tmpl.get("deny_policy", {}),
     "tiers": resolved_tiers,
@@ -731,15 +694,12 @@ if hw_chain2:
               "or ensure the box has funded fallback tiers in the chain."
               % (hw_prov, int(hw_cap)), file=sys.stderr)
 
-# Final fail-closed audit: no residual placeholder, no Anthropic id.
+# Final fail-closed audit: no residual placeholder.
 blob = json.dumps(resolved)
 residual = sorted(set(re.findall(r"<CLIENT[A-Z0-9_]*>|<CLIENT_[^>]*>", blob)))
 if residual:
     print("AF-AE-UNRESOLVED-MODELMAP: resolver left placeholder(s): %s" % ", ".join(residual),
           file=sys.stderr)
-    sys.exit(2)
-if banned.search(blob):
-    print("AF-AE-ANTHROPIC: resolved map carries a banned id (refusing to write)", file=sys.stderr)
     sys.exit(2)
 
 out = os.path.join(OUT_DIR, "model-map.json")
@@ -750,5 +710,5 @@ for name, t in resolved_tiers.items():
     print("   tier %-13s -> %s (client's OWN models)" % (name, chain))
 PY
 rc=$?
-[ "$rc" -eq 0 ] && echo "preflight: PASS (client's own models resolved into every REQUIRED tier; no Anthropic-family id)"
+[ "$rc" -eq 0 ] && echo "preflight: PASS (client's own models resolved into every REQUIRED tier)"
 exit "$rc"

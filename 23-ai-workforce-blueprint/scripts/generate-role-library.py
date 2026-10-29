@@ -25,7 +25,7 @@ All sub-agent spawn configs use:
   - Ollama :cloud variants (per N14)
   - timeout_seconds: 5400 (90 min, per N15)
   - the highest reasoning setting the client's chosen model supports
-  - no Anthropic, no GPT (N2, N5)
+  - no GPT (N5)
   - no silent downgrade (N10)
 """
 import argparse
@@ -152,7 +152,7 @@ def write_orchestrator_rcb():
     content += "- [x] I will spawn 4 QC first, then 1 2nd-opinion, then 20 writers staggered 5s\n"
     content += "- [x] I will use timeout_seconds=5400 on every sub-agent (N15)\n"
     content += "- [x] I will use Ollama :cloud primary, OpenRouter fallback only (N3/N4/N14)\n"
-    content += "- [x] I will never use Anthropic (N2) or GPT (N5)\n"
+    content += "- [x] I will never use GPT (N5)\n"
     content += "- [x] I will checkpoint state every 60s and detect dead sub-agents at 90min silence (N15)\n"
     content += "- [x] I will never escalate to owner — QC + 2nd-opinion are terminal (N8)\n"
     ORCHESTRATOR_RCB.write_text(content)
@@ -219,7 +219,7 @@ def _role_model_spec(role_env, role_label, max_tokens, temperature):
         spec["fallback_1"] = {"provider": fb_provider, "model": fb_model,
                               "reasoning": "high", "max_tokens": max_tokens,
                               "temperature": temperature, "timeout_seconds": 5400}
-    spec.update({"no_silent_downgrade": True, "no_anthropic": True, "no_gpt": True})
+    spec.update({"no_silent_downgrade": True, "no_gpt": True})
     return spec
 
 

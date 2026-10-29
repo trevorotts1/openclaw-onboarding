@@ -41,16 +41,15 @@ GOVERNING RULES
 - ``--dry-run`` default: write plan + field-map + ordered click list WITHOUT
   browser execution; flip off only after a full end-to-end live-verified run
 
-MODEL DOCTRINE — client-owned providers, NEVER Anthropic
----------------------------------------------------------
+MODEL DOCTRINE — client-owned providers
+----------------------------------------
 Model: the client's choice, or the client's configured default model, resolved
 via tools/model_router.py (MODEL_ROUTER_CHOICE / MODEL_ROUTER_DEFAULT). No
 model is prescribed by name here, and ladder building stops with an
 ask-the-client error when the client has configured neither. Recommendation:
 reliable tool calling for execution and a vision-capable model for QC, because
 the drive loop is tool calls and QC reads screenshots. ``thinking=high`` on
-every rung. MiniMax M2 is BANNED. ``assert_model_sovereignty`` hard-blocks any
-Anthropic slug before dispatch.
+every rung. MiniMax M2 is BANNED.
 
 COMMAND CENTER HOOKS (fail-soft — never block the build)
 ---------------------------------------------------------
@@ -3825,7 +3824,6 @@ def _selftest() -> int:
         ).lower()
         for banned in (
             "minimax-m2", "minimax_m2",
-            "anthropic", "claude", "opus", "sonnet", "haiku",
         ):
             if banned in ladders_json:
                 errors.append(

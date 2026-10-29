@@ -79,16 +79,15 @@ is auditable and de-duplicated:
     conventions, on purpose: container NAMES → ``ZHC `` (fleet), machine
     KEYS/TAGS → ``zhc_`` (must be lowercase / no-space per GHL).
 
-MODEL DOCTRINE — client-owned providers, NEVER Anthropic
---------------------------------------------------------
+MODEL DOCTRINE — client-owned providers
+----------------------------------------
 Model: the client's choice, or the client's configured default model, resolved
 at plan time via tools/model_router.py (MODEL_ROUTER_CHOICE /
 MODEL_ROUTER_DEFAULT). This module prescribes no model by name, and plan
 building stops with an ask-the-client error when the client has configured
 neither. Recommendation: reliable tool calling for browser control and a
 vision-capable model for QC, because every drive-loop step is a tool call and
-QC reads screenshots. thinking=high on every rung. MiniMax M2 is BANNED. No
-Anthropic slug ever.
+QC reads screenshots. thinking=high on every rung. MiniMax M2 is BANNED.
 
 NO LOGIN CODE — auth is handled upstream by the dispatcher / seeded browser
 session (token-only doctrine). The CI guard forbids login patterns outside
@@ -3238,7 +3237,7 @@ def _selftest() -> int:
     #    test configuration: the client's configured default in selftest form)
     _test_env = {"MODEL_ROUTER_DEFAULT": "selftest-default:cloud"}
     lad = json.dumps(build_think_ladder(_test_env) + build_execute_ladder(_test_env) + build_qc_ladder(_test_env)).lower()
-    for banned in ("minimax-m2", "minimax_m2", "anthropic", "claude", "opus", "sonnet", "haiku"):
+    for banned in ("minimax-m2", "minimax_m2"):
         if banned in lad:
             errors.append(f"BANNED model token in ladders: {banned}")
 

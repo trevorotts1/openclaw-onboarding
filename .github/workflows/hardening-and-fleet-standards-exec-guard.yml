@@ -40,6 +40,7 @@ on:
       - tests/unit/fleet-standards-legacy-exec-mode.test.sh
       - scripts/repair-model-sovereignty.sh
       - tests/unit/repair-model-sovereignty-no-truncate.test.sh
+      - tests/unit/no-anthropic-rule.test.sh
       - scripts/ensure-burn-guard.sh
       - scripts/oc-schema-migrate.py
       - tests/unit/burn-guard.test.sh
@@ -54,6 +55,7 @@ on:
       - tests/unit/fleet-standards-legacy-exec-mode.test.sh
       - scripts/repair-model-sovereignty.sh
       - tests/unit/repair-model-sovereignty-no-truncate.test.sh
+      - tests/unit/no-anthropic-rule.test.sh
       - scripts/ensure-burn-guard.sh
       - scripts/oc-schema-migrate.py
       - tests/unit/burn-guard.test.sh
@@ -89,6 +91,9 @@ jobs:
 
       - name: Model-sovereignty repair never truncates fallback chains
         run: bash tests/unit/repair-model-sovereignty-no-truncate.test.sh
+
+      - name: No rule against Anthropic models (the whole roll keeps an Anthropic fallback/provider/plugin)
+        run: bash tests/unit/no-anthropic-rule.test.sh
 
       - name: Burn guard keeps skill-collection-review crons off (unset/auto -> the value the installed build accepts)
         run: bash tests/unit/burn-guard.test.sh

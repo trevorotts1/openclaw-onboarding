@@ -29,15 +29,12 @@ WHAT IT CHECKS (read-only by default)
      what turns a single bad pin into a company-wide outage.
   4. ALL-OLLAMA CHAIN — every rung on one provider. An Ollama Cloud cap/429 is
      ACCOUNT-level, so the whole chain fails as a single unit.
-  5. ANTHROPIC PIN — client boxes must never pin Anthropic models (cost
-     doctrine). Reported separately.
 
 EXIT CODES:  0 = clean (or warnings only)   1 = fatal pins found   2 = bad usage
 Use --strict to also fail on warnings.
 """
 import argparse, json, os, sys
 
-ANTHROPIC_MARKERS = ('anthropic/', 'claude-')
 OLLAMA_FAMILY = {'ollama', 'ollama-cloud'}
 
 
@@ -116,8 +113,6 @@ def main():
                 fatal.append((label, mid, f'provider "{p}" NOT registered on this box{extra}'))
             elif mid not in allow:
                 warn.append((label, mid, 'not in agents.defaults.models allowlist'))
-            if any(m in mid for m in ANTHROPIC_MARKERS):
-                warn.append((label, mid, 'ANTHROPIC pin on a client box (cost doctrine)'))
 
     no_fallback, all_ollama = [], []
 

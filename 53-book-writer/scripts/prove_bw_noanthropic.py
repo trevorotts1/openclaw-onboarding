@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 # =============================================================================
-# SKILL 53 — BOOK WRITER :: NO-ANTHROPIC GATE (fail-closed)
+# SKILL 53 — BOOK WRITER :: RUN-ENV CREDENTIAL GATE (fail-closed)
 # -----------------------------------------------------------------------------
-# ⛔ BINDING: the shipped skill running on a CLIENT box NEVER uses Anthropic models.
-# Every model id recorded in RUN-LEDGER.json is checked against /anthropic|claude/i;
-# any match fails. The run env is also checked for operator credential names.
+# There is NO rule against Anthropic / Claude models (Trevor order 2026-10-29), so a
+# RUN-LEDGER model id is never rejected for its vendor. The file name and the
+# AF-BK-ANTHROPIC code are legacy identifiers kept so manifests, goldens and
+# reports stay stable; the code now fires ONLY when an operator credential name
+# appears in the run env (clients use their OWN keys, never the operator's).
 #
-#   AF-BK-ANTHROPIC — a RUN-LEDGER model id matches /anthropic|claude/i, or an
-#                     operator credential name appears in the run env.
+#   AF-BK-ANTHROPIC — an operator credential name appears in the run env.
 #
 # EXIT: 0 PASS · 2 AUTOFAIL · 3 USAGE/IO.
 # USAGE: prove_bw_noanthropic.py <RUN-LEDGER.json> [--env-keys k1,k2] [--json] | --self-test
 # =============================================================================
-"""Fail-closed no-Anthropic model-id gate (Skill 53)."""
+"""Fail-closed run-env operator-credential gate (Skill 53)."""
 
 import argparse
 import os
@@ -35,9 +36,8 @@ _OPERATOR_CRED_HINTS = ("OPERATOR_", "BLACKCEO_OPERATOR", "OC_OPERATOR_KEY")
 
 def _iter_string_leaves(obj, path="ledger"):
     """Yield (json_path, string) for EVERY string leaf anywhere in the ledger
-    structure — not just keys named 'model'. A model id can hide under any alias
-    (model_name / modelId / llm / engine / model_used / preflight_tier_map …), so
-    the deep scan tests every string value against the ban regex."""
+    structure (a model id can hide under any alias key). Used to count the model
+    ids a ledger records."""
     if isinstance(obj, dict):
         for k, v in obj.items():
             yield from _iter_string_leaves(v, "%s.%s" % (path, k))
@@ -50,14 +50,8 @@ def _iter_string_leaves(obj, path="ledger"):
 
 def evaluate(ledger, env=None) -> c.Result:
     r = c.Result("prove_bw_noanthropic")
-    found_any = False
-    for jpath, mid in _iter_string_leaves(ledger):
-        found_any = True
-        if c._ANTHROPIC_RE.search(mid):
-            r.fail(AF_ANTHROPIC, "/anthropic|claude/i string %r at %s (client boxes never run "
-                   "Anthropic)" % (mid, jpath))
-    if not found_any:
-        r.note("ledger has no string values (nothing to reject)")
+    if not any(True for _ in _iter_string_leaves(ledger)):
+        r.note("ledger has no string values")
     # operator credential names in the run env
     env = env if env is not None else dict(os.environ)
     for k in env:
@@ -66,7 +60,7 @@ def evaluate(ledger, env=None) -> c.Result:
             r.fail(AF_ANTHROPIC, "operator credential name %r present in the run env "
                    "(clients use their OWN keys, never the operator's)" % k)
     if r.passed:
-        r.note("no /anthropic|claude/i model id; no operator credential name in env")
+        r.note("no operator credential name in env")
     return r
 
 
@@ -80,32 +74,12 @@ def self_test() -> int:
                        {"stage": "10-suggested-titles", "resolved_model": "openrouter/some-open-model"}]}
     checks = []
     checks.append(("clean ledger PASSES", evaluate(good, env={}).passed))
-    bad = {"stages": [{"stage": "13-create-outline", "model": "anthropic/claude-opus-4"}]}
-    checks.append(("anthropic/claude-opus-4 AUTOFAILs AF-BK-ANTHROPIC",
-                   any(cd == AF_ANTHROPIC for cd, _ in evaluate(bad, env={}).violations)))
-    bad2 = {"stages": [{"stage": "x", "resolved_model": "claude-sonnet-4"}]}
-    checks.append(("bare claude-sonnet-4 AUTOFAILs AF-BK-ANTHROPIC",
-                   any(cd == AF_ANTHROPIC for cd, _ in evaluate(bad2, env={}).violations)))
+    named = {"stages": [{"stage": "13-create-outline", "model": "anthropic/claude-opus-4"}]}
+    checks.append(("an Anthropic-family model id in the ledger PASSES (no vendor rule)",
+                   evaluate(named, env={}).passed))
     checks.append(("operator cred name in env AUTOFAILs AF-BK-ANTHROPIC",
                    any(cd == AF_ANTHROPIC for cd, _ in
                        evaluate(good, env={"OPERATOR_OPENROUTER_KEY": "x"}).violations)))
-    checks.append(("model as LIST value [\"anthropic/claude-opus-4\"] AUTOFAILs",
-                   any(cd == AF_ANTHROPIC for cd, _ in evaluate(
-                       {"stages": [{"model": ["anthropic/claude-opus-4"]}]}, env={}).violations)))
-    checks.append(("NESTED dict model {\"id\": \"anthropic/x\"} AUTOFAILs",
-                   any(cd == AF_ANTHROPIC for cd, _ in evaluate(
-                       {"stages": [{"model": {"id": "anthropic/claude-x"}}]}, env={}).violations)))
-    alias_bad = {"stages": [{"stage": "x", "model_name": "claude-haiku"},
-                            {"stage": "y", "modelId": "anthropic/eu.x"},
-                            {"stage": "z", "llm": "claude-instant"},
-                            {"stage": "w", "engine": "us.anthropic.claude-3"},
-                            {"stage": "v", "model_used": "claude-fable"}]}
-    checks.append(("alias keys model_name/modelId/llm/engine/model_used ALL AUTOFAILs",
-                   all(any(cd == AF_ANTHROPIC for cd, _ in evaluate(
-                       {"stages": [s]}, env={}).violations) for s in alias_bad["stages"])))
-    tier_bad = {"preflight_tier_map": {"thinking": "claude-opus-5"}}
-    checks.append(("preflight_tier_map value claude-opus-5 AUTOFAILs",
-                   any(cd == AF_ANTHROPIC for cd, _ in evaluate(tier_bad, env={}).violations)))
     checks.append(("ANTHROPIC_API_KEY in env does NOT autofail (host-side agent-harness var, "
                    "not a client-run credential)",
                    not any(cd == AF_ANTHROPIC for cd, _ in
@@ -117,7 +91,7 @@ def self_test() -> int:
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Book Writer no-Anthropic gate (Skill 53).")
+    ap = argparse.ArgumentParser(description="Book Writer run-env operator-credential gate (Skill 53).")
     ap.add_argument("ledger", nargs="?", help="RUN-LEDGER.json")
     ap.add_argument("--env-keys", help="comma-separated env key names to check (default: live env)")
     ap.add_argument("--json", action="store_true")
