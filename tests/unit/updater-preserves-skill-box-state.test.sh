@@ -91,6 +91,10 @@ LIB="$WORK/lib.sh"
   # The real lock release and main's EXIT-trap wrapper, verbatim. Each run
   # below holds the mkdir-style lock (the macOS path), the one that leaks
   # when the release is skipped; a flock fd would close with the process.
+  # rc6 (shared installation lease): release_update_lock reads the lease state and
+  # judges ownership through the _ulock_* readers, so those are extracted verbatim
+  # too (state variables up to, not including, the helper loader).
+  awk '/^_ulock_impl=""/{on=1} /^# Prefer the shared helper when the box has it/{on=0} on{print}' "$TARGET"
   awk '/^release_update_lock\(\) *\{/,/^}/' "$TARGET"
   awk '/^oc_update_exit_trap\(\) *\{/,/^}/' "$TARGET"
   # The helpers exist only after the fix; absent on the old updater, which is
@@ -145,6 +149,8 @@ simulate_update() {
     UPDATE_LOCK_FD="" UPDATE_LOCK_PATH="$WORK/update.lock"
     UPDATE_LOCK_PID_FILE="$UPDATE_LOCK_PATH/pid"
     command rm -rf "$UPDATE_LOCK_PATH"; mkdir "$UPDATE_LOCK_PATH" && echo "$$" > "$UPDATE_LOCK_PID_FILE"
+    # The run owns this (legacy mkdir) lease; the real acquire sets the same state.
+    _ulock_impl="inline"; _ulock_state="owned"
     eval "$TRAP_LINE"
     SKILLS_DIR="$1/skills" SKILL_DIR="$2/${4:-$SKILL}/" SKILL_NAME="${4:-$SKILL}"
     install_one_skill )
