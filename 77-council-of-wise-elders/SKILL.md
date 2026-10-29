@@ -1,5 +1,5 @@
 ---
-version: 1.0.68
+version: 1.0.69
 name: council-of-wise-elders
 description: Convene a source-grounded Council of Wise Elders for business or
   personal decisions, test alternatives, explain disagreements, produce one
@@ -206,7 +206,7 @@ counsel artifact.
    Preserve unknowns and show the prepared brief.
 4. Resolve the model route from the CALLING agent first, then the
    runtime. The routes `blackceo-council routes` returns are the council
-   runtime's own configured providers on this box — they are NOT the
+   runtime's own configured providers on this box - they are NOT the
    calling agent's models, and they must never be presented as if they
    were (never list claude-nine, Claude Code, or DeepSeek options to an
    OpenClaw client whose agent runs on a different provider).

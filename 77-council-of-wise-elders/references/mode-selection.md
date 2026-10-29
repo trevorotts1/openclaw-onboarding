@@ -10,16 +10,16 @@ still seven of nine.
 
 Two shipped modules matter, and only one of them runs on a live convene:
 
-- `runtime/src/flow/mode-select.ts` — `selectMode(question, explicitMode?)`.
+- `runtime/src/flow/mode-select.ts` - `selectMode(question, explicitMode?)`.
   The one selector: one question in, one `{ mode, source, reason }` out.
-- `runtime/src/service/driver.ts` — `resolveModeSelection(explicit,
+- `runtime/src/service/driver.ts` - `resolveModeSelection(explicit,
   question)`. The resolver the shipped convene service calls; for a question
   with text it delegates to `selectMode`. `driver.ts` is imported by
   `runtime/src/service/composition.ts` and the service barrel, and its
   convene build is where a live session's mode is resolved.
 
 `runtime/src/flow/convene-flow.ts` also calls `selectMode`, but no `src`
-module imports it — only its own test (`src/flow/convene-flow-mode.test.ts`)
+module imports it - only its own test (`src/flow/convene-flow-mode.test.ts`)
 does. It is a flow module on its own test path, not the path a shipped
 convene takes.
 
@@ -57,10 +57,10 @@ selectMode(question, explicitMode?) -> { mode, source, reason }
      <c>) selected <mode>`
   2. client choice of `light`, `medium`, `heavy`: `client selected <mode>`
   3. client choice of `full`, `selected`, `quick`, `consult`: `client
-     selected <mode> (council size <size>)` — for example
+     selected <mode> (council size <size>)` - for example
      `client selected quick (council size light)`
   4. the driver's client choice, for any of the seven values: `client
-     selected <mode>`, verbatim, with no size suffix — the driver returns
+     selected <mode>`, verbatim, with no size suffix - the driver returns
      the client's mode unchanged and never maps it
   5. the driver, with no explicit mode and no question text: `no question
      text to classify; defaulted to medium`
@@ -93,7 +93,7 @@ Layer notes, all measured:
   `SessionMode`, so an out-of-enum value is a type error at the boundary,
   and a value that reaches a session anyway fails `sessionSpecSchema` at
   path `mode` (`invalid_value`: `Invalid option: expected one of
-  "full"|"selected"|"quick"|"consult"|"light"|"medium"|"heavy"`) — it is
+  "full"|"selected"|"quick"|"consult"|"light"|"medium"|"heavy"`) - it is
   not a runtime fallback.
 - A value outside `SESSION_MODES` is not a mode for `selectMode`: it falls
   through to the automatic classification, whose score belongs to the
@@ -118,15 +118,15 @@ in every mode:
 | `consult` | exactly one |
 | `selected` | two to eight |
 | `light`, `medium`, `heavy` | all nine |
-| `quick` | no seat-count rule — 1, 2 and 9 seats all validate |
+| `quick` | no seat-count rule - 1, 2 and 9 seats all validate |
 
 ### What the four older modes do
 
 `full`, `selected`, `quick` and `consult` keep their own behaviour and
 their own protocol (`references/protocol.md`). `isCouncilSize()` is false
-for them, so the driver gives them the older modes' fixed ceilings —
+for them, so the driver gives them the older modes' fixed ceilings -
 `max_provider_requests` 50, `max_output_repairs` 9, `max_transport_retries`
-8 — a `rounds` of `null`, and a concurrency limit of 1. No wave width is
+8 - a `rounds` of `null`, and a concurrency limit of 1. No wave width is
 taken from `MODE_ROUND_POLICY` for them.
 
 The schema then constrains the panel. A convene with `consult` and no
@@ -195,7 +195,7 @@ Negation, measured:
 | `no legal risk` | 2 (stakes 0, breadth 2, ambiguity 0) | light |
 | `we go without a contract` | 2 (stakes 0, breadth 2, ambiguity 0) | light |
 | `we were never sued` | 0 (stakes 0, breadth 0, ambiguity 0) | light |
-| `we will not hire, we will fire people` | 6 (stakes 4, breadth 2, ambiguity 0) | medium — the comma ends the clause, so `fire` is scoped only by its own clause |
+| `we will not hire, we will fire people` | 6 (stakes 4, breadth 2, ambiguity 0) | medium - the comma ends the clause, so `fire` is scoped only by its own clause |
 
 Inflections, measured: `we hired someone` and `we hire someone` both score
 6 (stakes 4, breadth 2, ambiguity 0) and select medium; `we are suing them`
@@ -317,7 +317,7 @@ the fixtures pinned by `runtime/src/flow/mode-select.test.ts`.
 | "What time is the council meeting?" | 1 | breadth 1 (one question mark) | light |
 | "Should I rename the newsletter?" | 4 | breadth 3 (newsletter domain + question mark), ambiguity 1 (`should i`) | light, at the top of the band |
 | "Should we renegotiate the vendor contract pricing before the renewal, or wait?" | 13 | stakes 4 (`contract`), breadth 7 (three domain groups plus question mark), ambiguity 2 (`should we`, `or`) | medium, at the top of the band |
-| "Our company faces a lawsuit over a data breach; should we terminate the vendor contract, notify regulators, and lay off the security team while we negotiate the acquisition?" | 28 | stakes 16 (capped at four distinct stake terms), breadth 10 (four domain groups — contract/legal, people/hiring, security/data, vendors/procurement — plus semicolon and question mark), ambiguity 2 (`should we`, `and`) | heavy |
+| "Our company faces a lawsuit over a data breach; should we terminate the vendor contract, notify regulators, and lay off the security team while we negotiate the acquisition?" | 28 | stakes 16 (capped at four distinct stake terms), breadth 10 (four domain groups - contract/legal, people/hiring, security/data, vendors/procurement - plus semicolon and question mark), ambiguity 2 (`should we`, `and`) | heavy |
 | "Run this on heavy." | not scored | client choice | heavy, source `client` |
 
 The maximum possible total is 37: stakes 16, breadth 12 (8 for the domain
