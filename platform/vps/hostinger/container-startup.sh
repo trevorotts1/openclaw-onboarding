@@ -14,7 +14,10 @@
 #
 #   0. the boot patcher hostinger-wrapper-patch.py (if present in
 #      $DATA/.openclaw/scripts) neutralises the wrapper's harmful boot writes, including the
-#      re-created legacy agents/main/agent/auth-profiles.json (fail-soft);
+#      re-created legacy agents/main/agent/auth-profiles.json. It FAILS CLOSED: a patcher
+#      that cannot prove a safe result stops this boot;
+#   0b. reassert-apt-deps.sh (if present) re-installs the apt packages a recreate dropped,
+#      backgrounded after a settle delay;
 #   1. once the gateway answers /healthz 200, `pm2 resurrect` restores the saved
 #      list WITH the RETIRED community GHL MCP entry stripped out of it first
 #      (nothing that may call the openclaw CLI runs before that);
@@ -39,8 +42,19 @@ if [ "$(id -u)" = "0" ]; then
   chown -R node:node "$PM2_HOME" 2>/dev/null || true
   exec runuser -u node -- env HOME="$DATA" PATH="$PATH" PM2_HOME="$PM2_HOME" OPENCLAW_DATA="$DATA" bash "$0"
 fi
-export PATH="$DATA/.npm-global/bin:$DATA/linuxbrew/.linuxbrew/bin:$PATH"
-export NODE_PATH="$DATA/.npm-global/lib/node_modules"
+# HOME must be the PERSISTENT mount. The image may run us as node straight from its
+# own entrypoint, and then HOME is the throwaway layer: the updater's
+# $HOME/.claude (lib-frontdoor.sh) and $HOME/.openclaw/.venv-presentations
+# (update-skills.sh) would silently land outside /data. Re-exec once with HOME=$DATA
+# so every child - and every agent turn we spawn - inherits it.
+if [ "${HOME:-}" != "$DATA" ]; then
+  exec env HOME="$DATA" PATH="$PATH" PM2_HOME="$PM2_HOME" OPENCLAW_DATA="$DATA" bash "$0"
+fi
+# The persistent npm prefix. The image already sets NPM_CONFIG_PREFIX=/data/.npm-global;
+# what a recreate loses - and what the hardening probe checks - is the PATH and NODE_PATH
+# export, so both are written out in full here rather than only via $DATA.
+export PATH=/data/.npm-global/bin:$DATA/.npm-global/bin:$DATA/linuxbrew/.linuxbrew/bin:$PATH
+export NODE_PATH=/data/.npm-global/lib/node_modules
 LOGS="$DATA/.openclaw/logs"
 CC_DIR="$DATA/projects/command-center"
 mkdir -p "$LOGS" 2>/dev/null || true
@@ -114,11 +128,35 @@ gw_wait_ready() {
   done
 }
 
-# Boot patcher, fail-soft. install-startup-hook.sh copies it to $DATA/.openclaw/scripts/.
+# Boot patcher, FAIL CLOSED (Trevor 2026-10-19). install-startup-hook.sh copies it to
+# $DATA/.openclaw/scripts/. The patcher exits 0 only when this exact wrapper's approved
+# profile was applied and verified, or when a known-good copy whose recorded SHA-256 it
+# proved was restored. Anything else - and the boot STOPS: a box that boots unpatched
+# loses openclaw.json on the first wrapper write and dies on exit 78, which is the
+# failure this whole script exists to prevent. The `echo` below is the only diagnostic
+# a host operator gets from docker logs, so it names the log file.
 HWP="$DATA/.openclaw/scripts/hostinger-wrapper-patch.py"
-[ -f "$HWP" ] && { python3 "$HWP" >> "$LOGS/hostinger-wrapper-patch.boot.log" 2>&1 || true; }
+if [ -f "$HWP" ]; then
+  if ! python3 "$HWP" >> "$LOGS/hostinger-wrapper-patch.boot.log" 2>&1; then
+    echo "[boot] STOPPED: hostinger-wrapper-patch.py failed and no digest-bound known-good copy was proved; see $LOGS/hostinger-wrapper-patch.boot.log" >> "$LOGS/container-startup.log" 2>/dev/null || true
+    echo "[boot] STOPPED: wrapper patcher failed; refusing to start the gateway unpatched" >&2
+    exit 1
+  fi
+fi
 
-# The wait runs first so its (up to 120 s) delay is not charged to the gateway-ready cap.
+# apt packages live in the throwaway layer, so every apt install the roll makes is
+# re-asserted at boot. Backgrounded after a settle delay so it never runs before the
+# gateway owns the state database (same gateway-first rule as pm2 below). The script
+# is idempotent: it exits 0 the moment every expected binary resolves.
+RA="$DATA/.openclaw/scripts/reassert-apt-deps.sh"
+if [ -f "$RA" ]; then
+  ( sleep 90 && OPENCLAW_DATA="$DATA" bash "$RA" ) >/dev/null 2>&1 &
+fi
+
+# The owner-heartbeat wait runs first so its (up to 120 s) delay is not charged to the
+# gateway-ready cap. A fast `docker restart` otherwise leaves the gateway dead with
+# "cannot verify Gateway ownership ... owner-heartbeat is fresh", and the wrapper does
+# not retry. Never removed by a rollback.
 WAIT_SCRIPT="${GW_WAIT_SCRIPT:-$DATA/.openclaw/scripts/wait-gateway-owner-stale.sh}"
 [ -f "$WAIT_SCRIPT" ] && { OPENCLAW_DATA="$DATA" bash "$WAIT_SCRIPT" >> "$LOGS/wait-gateway-owner-stale.boot.log" 2>&1 || true; }
 

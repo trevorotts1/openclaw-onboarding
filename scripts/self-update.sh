@@ -1,5 +1,5 @@
 #!/bin/sh
-# self-update.sh — v1.1.0
+# self-update.sh — v1.2.0
 #
 # The box's own self-update runner. Starts itself in a detached session, then
 # runs these steps IN THIS ORDER (Trevor, transcript L14):
@@ -20,9 +20,16 @@
 # failed): the status is written and the job exits 20 at once, because a human is
 # needed. The final exit code is the code of the FIRST failed step.
 #
+# Every script this job pulls — oc-supervisor-install.py, git_ff_sync.sh,
+# oc-atomic-upgrade.sh, oc-schema-migrate.py, weekly-full-update.sh — comes from
+# ONE ref: --onboarding-sha when the roll pins one, else live main (unchanged
+# behavior when no pin is passed). The ref actually used is written to the status
+# file as onboarding_ref, with the pin itself as onboarding_sha ("" when none).
+# That is what makes a frozen roll stay frozen while it runs.
+#
 # The job writes ONE status file the operator watch reads:
 #   <openclaw root>/fleet-refresh/agent-pull-status.json
-# with the fields in references/agent-pull.md section 10.9 and SKILL.md:362.
+# with the fields in references/agent-pull.md section 10.9 and SKILL.md section 18.2.
 # The per-roll log file is kept.
 #
 # The launcher prints, as its FIRST stdout line:
@@ -45,8 +52,9 @@
 # associative params, no mapfile, no ${x^^}, no heredoc nested inside $( ).
 set -u
 
-VERSION="1.1.0"
-REPO_RAW="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main"
+VERSION="1.2.0"
+REPO_RAW_BASE="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding"
+REPO_RAW="$REPO_RAW_BASE/main"
 
 EX_OK=0
 EX_UPGRADE=20
@@ -54,6 +62,10 @@ EX_UPDATE=21
 EX_REFUSE=22
 EX_999=23
 EX_9ROUTER=24
+# 75 = the content step was DEFERRED: another updater legitimately owned this
+# box, so nothing was changed — and this run says so instead of claiming OK
+# (critic.C13). It is NOT a failure: no FIRST_FAIL, no stuck note.
+EX_DEFERRED=75
 
 SELF="$0"
 MODE_DETACHED=0
@@ -64,6 +76,8 @@ LAUNCH_EPOCH=""
 TARGET_VERSION=""
 NINE9ROUTER_TARGET="${NINEROUTER_TARGET:-}"
 NINE_SETUP_SHA="${NINE_SETUP_SHA:-}"   # optional pin: the 999 checkout HEAD must equal it (CAN012)
+ONBOARDING_SHA="${ONBOARDING_SHA:-}"   # optional pin: fetch EVERY script this job pulls at this sha, not live main
+ONBOARDING_REF="main"                  # the ref actually used: the pinned sha, or main when unpinned
 
 # The 999 installer's own required key names (its parse_api_docs contract) and
 # the aliases a box may store a key under. NEVER printed. Writing canonicalises:
@@ -77,6 +91,9 @@ API_DOCS_FILE="$API_DOCS_DIR/api-docs.md"
 ROLLED_BACK=0
 NEEDS_RESTART=0
 STEP_CODES=""
+# "step|restored_version|healthz_200_utc;" — the schema field agent-pull.md
+# section 10.9 promises. Populated only from a measured probe, never assumed.
+STEP_ROLLBACKS=""
 FIRST_FAIL=""
 STUCK_NOTE=""
 LOCK_OWNED=0
@@ -88,12 +105,15 @@ now_utc() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
 usage() {
   sed -n '2,42p' "$SELF"
   echo ""
-  echo "Usage: self-update.sh --roll-id ID --openclaw-target X.Y.Z [--ninerouter-target VERSION] [--999-sha SHA]"
+  echo "Usage: self-update.sh --roll-id ID --openclaw-target X.Y.Z [--ninerouter-target VERSION] [--999-sha SHA] [--onboarding-sha SHA]"
   echo "       self-update.sh --roll-id ID --openclaw-target X.Y.Z --foreground   (no detach; for tests)"
   echo ""
   echo "  --openclaw-target   also accepted as --target-version"
   echo "  --ninerouter-target also accepted as --9router-target"
   echo "  --999-sha           optional: the 999-setup HEAD must equal this sha (and origin/main)"
+  echo "  --onboarding-sha    optional: fetch every script this job pulls (oc-atomic-upgrade.sh,"
+  echo "                      oc-schema-migrate.py, oc-supervisor-install.py, git_ff_sync.sh,"
+  echo "                      weekly-full-update.sh) at this 40-hex commit, not live main"
   exit "$1"
 }
 
@@ -200,18 +220,104 @@ nr_pkg() {
 # status file must never cause a side effect.
 nr_version() { json_version "$(nr_pkg)"; }
 
+# ── health probes and step rollbacks (NB2, MAC-6, modeB.B11) ─────────────────
+# SKILL.md section 18.3 promises that after ANY rollback the job re-proves
+# /healthz 200 from the restored install and writes needs_host_restart when it
+# cannot. Same port rule as oc-atomic-upgrade.sh: gateway.port from the config.
+gateway_port() {
+  [ -f "$ROOT/openclaw.json" ] || { printf '18789'; return 0; }
+  _gp="$(OC_CFG="$ROOT/openclaw.json" python3 -c 'import json,os
+try:
+    print(int((json.load(open(os.environ["OC_CFG"])).get("gateway") or {}).get("port") or 18789))
+except Exception:
+    print(18789)' 2>/dev/null)"
+  printf '%s' "${_gp:-18789}"
+}
+
+healthz_ok() {  # 0 ONLY on a measured 200; no curl = cannot prove = 1
+  command -v curl >/dev/null 2>&1 || return 1
+  [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 \
+        "http://127.0.0.1:$(gateway_port)/healthz" 2>/dev/null)" = "200" ]
+}
+
+healthz_wait() {  # [seconds] — bounded re-probe; a restart can take a minute
+  _hw_end=$(( $(date +%s) + ${1:-20} ))
+  while :; do
+    healthz_ok && return 0
+    [ "$(date +%s)" -lt "$_hw_end" ] || return 1
+    sleep 2
+  done
+}
+
+nr_health_ok() {  # 9Router answers /api/health 2xx (nine_router_guard.py contract)
+  command -v curl >/dev/null 2>&1 || return 1
+  _nrp="${NINEROUTER_PORT:-}"
+  case "$_nrp" in ''|*[!0-9]*) _nrp=20128 ;; esac
+  curl -fsS -m 3 -o /dev/null "http://127.0.0.1:$_nrp/api/health" 2>/dev/null
+}
+
+# The marker update-skills.sh also writes. status_write reads it, so this is the
+# writer hostinger.H7 found missing repo-wide.
+mark_needs_restart() {  # reason
+  NEEDS_RESTART=1
+  ( umask 077; printf '%s\n' "${1:-unproven}" > "$REFRESH_DIR/needs_host_restart" ) 2>/dev/null || true
+  log "health: needs_host_restart=1 (${1:-unproven})"
+}
+
+record_rollback() {  # step restored_version healthz_rc
+  _rb_h=""
+  [ "$3" = 0 ] && _rb_h="$(now_utc)"
+  STEP_ROLLBACKS="${STEP_ROLLBACKS}$1|$2|$_rb_h;"
+}
+
+# After a failed or rolled-back step: PROVE the gateway and the router, then
+# record what is actually there. Never rolls anything back by itself. A bounded
+# re-probe is used only where a restart may be in flight (the upgrade step), so a
+# failure on a healthy box costs one GET.
+probe_after_fail() {  # step [wait_seconds]
+  if [ "${2:-0}" -gt 0 ]; then
+    healthz_wait "$2" || _pf_up=1
+    _pf_up="${_pf_up:-0}"
+  else
+    healthz_ok || _pf_up=1
+    _pf_up="${_pf_up:-0}"
+  fi
+  if [ "$_pf_up" = 0 ]; then
+    log "health: $1 — gateway /healthz 200"
+  else
+    log "health: $1 — gateway /healthz did NOT answer 200"
+    mark_needs_restart "$1: /healthz not 200 after the failed step"
+  fi
+  if nr_health_ok; then
+    log "health: $1 — 9router /api/health ok"
+  else
+    log "health: $1 — 9router /api/health did not answer"
+  fi
+  record_rollback "$1" "$(oc_version)" "$_pf_up"
+  unset _pf_up
+}
+
+# NB12 / agent-pull.md section 6.1: a managed 999 clone that fails refuses the
+# step behind this named guard instead of handing the box to a bare updater.
+FLEET_REQUIRE_SAFETY_NET="${FLEET_REQUIRE_SAFETY_NET:-1}"
+
 status_write() {  # phase finished stuck
   mkdir -p "$ROOT/fleet-refresh" 2>/dev/null || return 0
   _tail="${TMPDIR:-/tmp}/self-update-tail.$$"
   tail -n 20 "$LOG" 2>/dev/null | _redact > "$_tail" 2>/dev/null || : > "$_tail"
-  [ -f "$ROOT/fleet-refresh/needs_host_restart" ] && NEEDS_RESTART=1 || NEEDS_RESTART=0
+  if [ -f "$ROOT/fleet-refresh/needs_host_restart" ] || [ "${NEEDS_RESTART:-0}" = 1 ]; then
+    NEEDS_RESTART=1
+  else
+    NEEDS_RESTART=0
+  fi
   python3 - "$STATUS_JSON" "$RUN_ID" "$ROLL_ID" "$1" "$STARTED" "$(now_utc)" "$2" \
     "$STEP_CODES" "$STAMP_BEFORE" "$(read_stamp)" "$OC_BEFORE" "$(oc_after)" \
-    "$NR_BEFORE" "$(nr_version)" "$ROLLED_BACK" "$NEEDS_RESTART" "$3" "$_tail" <<'PY'
+    "$NR_BEFORE" "$(nr_version)" "$ROLLED_BACK" "$NEEDS_RESTART" "$STEP_ROLLBACKS" "$3" "$_tail" \
+    "$ONBOARDING_SHA" "$ONBOARDING_REF" <<'PY'
 import json, os, sys
 (dest, run_id, roll_id, phase, started, updated, finished, codes,
  stamp_b, stamp_a, oc_b, oc_a, nr_b, nr_a, rolled_back, needs_restart,
- stuck, tailf) = sys.argv[1:19]
+ rollbacks, stuck, tailf, onboarding_sha, onboarding_ref) = sys.argv[1:22]
 slow = {}
 for part in (codes or "").split(";"):
     if "=" not in part:
@@ -221,6 +327,15 @@ for part in (codes or "").split(";"):
         slow[k] = int(v)
     except ValueError:
         pass
+rolls = []
+for part in (rollbacks or "").split(";"):
+    if "|" not in part:
+        continue
+    bits = (part.split("|") + ["", ""])[:3]
+    if not bits[0]:
+        continue
+    rolls.append({"step": bits[0], "restored_version": bits[1],
+                  "healthz_200_utc": bits[2]})
 try:
     with open(tailf, "r", errors="replace") as f:
         tail = f.read()[-8000:]
@@ -242,7 +357,10 @@ d = {
     "ninerouter_after": nr_a,
     "rolled_back": rolled_back == "1",
     "needs_host_restart": needs_restart == "1",
+    "step_rollbacks": rolls,
     "stuck_reason": stuck,
+    "onboarding_sha": onboarding_sha,
+    "onboarding_ref": onboarding_ref,
     "error_tail": tail,
 }
 d = {k: (v.replace("\r", " ") if isinstance(v, str) else v) for k, v in d.items()}
@@ -290,6 +408,9 @@ while [ "$#" -gt 0 ]; do
     --999-sha)
       [ "$#" -ge 2 ] || { echo "self-update.sh: --999-sha needs a value" >&2; exit "$EX_REFUSE"; }
       NINE_SETUP_SHA="$2"; shift 2 ;;
+    --onboarding-sha)
+      [ "$#" -ge 2 ] || { echo "self-update.sh: --onboarding-sha needs a value" >&2; exit "$EX_REFUSE"; }
+      ONBOARDING_SHA="$2"; shift 2 ;;
     --detached)    MODE_DETACHED=1; shift ;;
     --foreground)  MODE_FOREGROUND=1; shift ;;
     -h|--help)     usage 0 ;;
@@ -311,6 +432,22 @@ case "$NINE_SETUP_SHA" in
   *[!0-9a-f]*) echo "self-update.sh: REFUSED — --999-sha must be 7-40 hex characters" >&2; exit "$EX_REFUSE" ;;
   *) [ "${#NINE_SETUP_SHA}" -ge 7 ] && [ "${#NINE_SETUP_SHA}" -le 40 ] || { echo "self-update.sh: REFUSED — --999-sha must be 7-40 hex characters" >&2; exit "$EX_REFUSE"; } ;;
 esac
+
+# A pinned onboarding sha becomes a PATH SEGMENT in every raw fetch URL, so it
+# is a full commit id: exactly 40 hex characters, nothing else. A short sha or
+# a branch name would let the roll drift, which is the defect the pin closes.
+ONBOARDING_SHA="$(printf '%s' "$ONBOARDING_SHA" | tr 'A-F' 'a-f')"
+if [ -n "$ONBOARDING_SHA" ]; then
+  case "$ONBOARDING_SHA" in
+    *[!0-9a-f]*) echo "self-update.sh: REFUSED — --onboarding-sha must be 40 hex characters" >&2; exit "$EX_REFUSE" ;;
+  esac
+  [ "${#ONBOARDING_SHA}" -eq 40 ] || { echo "self-update.sh: REFUSED — --onboarding-sha must be 40 hex characters" >&2; exit "$EX_REFUSE"; }
+  ONBOARDING_REF="$ONBOARDING_SHA"
+fi
+
+# Every script this job pulls comes from THIS ref: the roll's frozen onboarding
+# sha when the trigger passes one, else live main (the pre-pin behavior).
+REPO_RAW="$REPO_RAW_BASE/$ONBOARDING_REF"
 
 # The launcher's run id. Printed as the FIRST stdout line, below, and passed to
 # the detached child. Kept when the child receives it with --run-id.
@@ -356,8 +493,34 @@ STARTED="$(now_utc)"
 
 IS_DOCKER=0
 [ -f /.dockerenv ] && IS_DOCKER=1
+# SELF_UPDATE_DOCKER=1 is a TEST SEAM only: it lets the Docker branches be
+# exercised off a Docker host. Nothing on a box ever sets it.
+[ "${SELF_UPDATE_DOCKER:-0}" = 1 ] && IS_DOCKER=1
 IS_MAC=0
 [ "$(uname -s)" = "Darwin" ] && IS_MAC=1
+
+# MAC-9: launchd/cron run this with PATH=/usr/bin:/bin, so claude, node, npm and
+# the supervisor's own bin are invisible to the 999 and 9Router steps.
+# weekly-full-update.sh fixes PATH only inside its own process. The 999-managed
+# node dir and 9Router prefix are included because install-9router-guards.sh
+# resolves node from /opt/homebrew/bin, /usr/local/bin and PATH only — never from
+# the 999 tree — so a 999-managed Mac would otherwise fail with "no node binary
+# resolvable" (rc 24, box marked STUCK).
+# The list order IS the priority order: the 999-managed node must win over a
+# Homebrew node, or the guards resolve the wrong one. Build the prefix in one
+# pass and put it in front once (prepending one dir per iteration would reverse
+# the priority).
+_pd_add=""
+for _pd in "$HOME/.local/share/999/node/current/bin" "$HOME/.local/share/999/npm/bin" \
+           "$ROOT/npm-global/bin" "$HOME/.openclaw/npm-global/bin" /data/.openclaw/npm-global/bin \
+           "$HOME/.npm-global/bin" "$HOME/.local/bin" /usr/local/bin /opt/homebrew/bin; do
+  [ -d "$_pd" ] || continue
+  case ":$PATH:" in *":$_pd:"*) continue ;; esac
+  _pd_add="${_pd_add}${_pd}:"
+done
+[ -n "$_pd_add" ] && PATH="${_pd_add%:}:$PATH"
+unset _pd_add _pd
+export PATH
 
 # ── single-instance lock ─────────────────────────────────────────────────────
 # mkdir is atomic. The lock holds the pid and the run id. A live pid means the
@@ -392,12 +555,164 @@ lock_take() {
   return 1
 }
 
+# ── SHARED INSTALLATION LEASE (mac.MAC-1 / mac.MAC-2 / consistency.C1) ───────
+# One box has exactly ONE update owner. This run takes the same lease as
+# update-skills.sh, oc-atomic-upgrade.sh, the weekly content update and the
+# Saturday cron at /tmp/openclaw-update.lock. Liveness is decided by the RECORD
+# (pid + process start identity + run id), never by the file's age and never by
+# its mere existence (mac.MAC-13). scripts/box-update-lock.sh is the helper; a
+# box that predates it gets the identical record shape inline, so a
+# helper-present writer and this copy still see each other.
+#
+# NESTED writers (this run → weekly-full-update → fleet-refresh →
+# update-skills → oc-atomic) are DESCENDANTS of the holder and INHERIT the
+# lease: they neither rewrite the record nor release it. Refusing them is the
+# defect that closed PR #2612.
+OC_LEASE_PATH="${OPENCLAW_UPDATE_LEASE:-/tmp/openclaw-update.lock}"
+OC_LEASE_STATE=""      # "" | owned | inherited
+OC_LEASE_IMPL=""
+
+_oclease_start() { ps -o lstart= -p "$1" 2>/dev/null | tr -s ' ' | sed 's/^ *//;s/ *$//' || true; }
+_oclease_ppid()  { ps -o ppid= -p "$1" 2>/dev/null | tr -d ' ' || true; }
+_oclease_rpid() {
+  if [ -d "$OC_LEASE_PATH" ]; then head -1 "$OC_LEASE_PATH/pid" 2>/dev/null || true
+  else sed -n 's/^pid=\([0-9][0-9]*\).*/\1/p' "$OC_LEASE_PATH" 2>/dev/null | head -1 || true
+  fi
+  return 0
+}
+_oclease_rstart() { sed -n 's/^start=//p' "$OC_LEASE_PATH" 2>/dev/null | head -1 || true; return 0; }
+
+_oclease_owner_live() {
+  local _p _s
+  if [ -d "$OC_LEASE_PATH" ]; then
+    _p="$(_oclease_rpid)"; [ -n "$_p" ] || return 1
+    kill -0 "$_p" 2>/dev/null || return 1
+    return 0                     # legacy mkdir lease: pid only, never age
+  fi
+  [ -f "$OC_LEASE_PATH" ] || return 1
+  _p="$(_oclease_rpid)"; [ -n "$_p" ] || return 1
+  kill -0 "$_p" 2>/dev/null || return 1
+  _s="$(_oclease_rstart)"
+  if [ -n "$_s" ]; then [ "$(_oclease_start "$_p")" = "$_s" ] || return 1; fi
+  return 0
+}
+
+# 0 = this process is the holder or a descendant of it. A legacy mkdir lease
+# carries no start identity, so it can never prove a process tree.
+_oclease_in_owner_tree() {
+  [ -d "$OC_LEASE_PATH" ] && return 1
+  _oclease_owner_live || return 1
+  local _p _cur _n
+  _p="$(_oclease_rpid)"; _cur="$$"; _n=0
+  while [ -n "$_cur" ] && [ "$_cur" -gt 1 ] 2>/dev/null && [ "$_n" -lt 64 ]; do
+    [ "$_cur" = "$_p" ] && return 0
+    _cur="$(_oclease_ppid "$_cur")"
+    _n=$((_n + 1))
+  done
+  return 1
+}
+
+_oclease_write_own() {
+  printf 'pid=%s\nstart=%s\nrun_id=%s\nrole=%s\ninstall_path=%s\nutc=%s\n' \
+    "$$" "$(_oclease_start "$$")" "${RUN_ID:-}" "self-update" "${ROOT:-}" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$OC_LEASE_PATH" 2>/dev/null
+}
+
+_oclease_load_helper() {
+  local _h _d
+  _d="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)"
+  for _h in "$_d/box-update-lock.sh" \
+            "${ROOT:-$HOME/.openclaw}/scripts/box-update-lock.sh" \
+            "${ROOT:-$HOME/.openclaw}/fleet-refresh/onboarding/scripts/box-update-lock.sh"; do
+    if [ -f "$_h" ]; then
+      # shellcheck source=/dev/null
+      . "$_h" || continue
+      command -v box_update_lock_acquire >/dev/null 2>&1 && return 0
+    fi
+  done
+  return 1
+}
+
+# 0 held (owned or inherited) · 3 a live foreign writer owns it · 1 unrecoverable.
+_oclease_acquire() {
+  OC_LEASE_IMPL="inline"
+  if _oclease_load_helper; then OC_LEASE_IMPL="helper"; fi
+
+  if [ "$OC_LEASE_IMPL" = "helper" ]; then
+    box_update_lock_acquire "$OC_LEASE_PATH" "${RUN_ID:-self-update-$$}" "self-update" "${ROOT:-}"
+    case "$?" in
+      0) OC_LEASE_STATE="owned"; log "lock: $OC_LEASE_PATH held (shared lease, run ${RUN_ID:-})"; return 0 ;;
+      3) return 3 ;;
+      *) return 1 ;;
+    esac
+  fi
+
+  if _oclease_in_owner_tree; then
+    OC_LEASE_STATE="inherited"
+    BFX_LOCK_RUN_ID="$(sed -n 's/^run_id=//p' "$OC_LEASE_PATH" 2>/dev/null | head -1 || true)"
+    BFX_LOCK_OWNER_PID="$(_oclease_rpid)"
+    export BFX_LOCK_RUN_ID BFX_LOCK_OWNER_PID
+    log "lock: inherited $OC_LEASE_PATH from pid $(_oclease_rpid) (nested writer)"
+    return 0
+  fi
+
+  if [ -e "$OC_LEASE_PATH" ] && [ ! -f "$OC_LEASE_PATH" ]; then
+    _oclease_owner_live && return 3
+    rm -rf "$OC_LEASE_PATH" 2>/dev/null || return 1
+  fi
+
+  if command -v flock >/dev/null 2>&1; then
+    exec 9<>"$OC_LEASE_PATH" 2>/dev/null || return 1
+    if ! flock -n 9 2>/dev/null; then
+      exec 9>&- 2>/dev/null || true
+      return 3
+    fi
+    if _oclease_owner_live; then
+      flock -u 9 2>/dev/null || true
+      exec 9>&- 2>/dev/null || true
+      return 3
+    fi
+    _oclease_write_own || return 1
+    OC_LEASE_STATE="owned"
+    log "lock: acquired $OC_LEASE_PATH (flock + record, pid $$)"
+    return 0
+  fi
+
+  _oclease_owner_live && return 3
+  if [ -e "$OC_LEASE_PATH" ]; then rm -f "$OC_LEASE_PATH" 2>/dev/null || return 1; fi
+  ( set -o noclobber; : > "$OC_LEASE_PATH" ) 2>/dev/null || return 3
+  _oclease_write_own || return 1
+  OC_LEASE_STATE="owned"
+  log "lock: acquired $OC_LEASE_PATH (exclusive create, pid $$)"
+  return 0
+}
+
+# Only the OWNER releases; an inherited lease belongs to the ancestor.
+_oclease_release() {
+  if [ "$OC_LEASE_STATE" = "owned" ]; then
+    if [ "$OC_LEASE_IMPL" = "helper" ]; then
+      command -v box_update_lock_release >/dev/null 2>&1 && box_update_lock_release
+    elif _oclease_owner_live && [ "$(_oclease_rpid)" = "$$" ]; then
+      rm -rf "$OC_LEASE_PATH" 2>/dev/null || true
+    fi
+  fi
+  OC_LEASE_STATE=""
+  return 0
+}
+
 cleanup() {
   [ -n "${WORK:-}" ] && rm -rf "$WORK" 2>/dev/null
   [ "${LOCK_OWNED:-0}" = 1 ] && rm -rf "$LOCK_DIR" 2>/dev/null
+  command -v _oclease_release >/dev/null 2>&1 && _oclease_release
   :
 }
-trap cleanup EXIT HUP INT TERM
+# MAC-7: one handler for EXIT only, plus a signal handler that STOPS the job.
+# With a single trap for EXIT HUP INT TERM the handler deleted the work dir and
+# released the lock and then kept running, so a second launch took the freed lock
+# and ran alongside. `exit 143` (=128+SIGTERM) still fires the EXIT trap, so the
+# cleanup above still runs exactly once on the way out.
+trap cleanup EXIT
+trap 'exit 143' HUP INT TERM
 
 if [ "$MODE_DETACHED" = 0 ]; then
   lock_take
@@ -442,11 +757,27 @@ if [ "$MODE_DETACHED" = 0 ] && [ "$MODE_FOREGROUND" = 0 ]; then
   [ -n "$TARGET_VERSION" ] && set -- "$@" --openclaw-target "$TARGET_VERSION"
   [ -n "$NINE9ROUTER_TARGET" ] && set -- "$@" --ninerouter-target "$NINE9ROUTER_TARGET"
   [ -n "$NINE_SETUP_SHA" ] && set -- "$@" --999-sha "$NINE_SETUP_SHA"
-  CHILD="$(python3 -c 'import subprocess,sys
+  # The pin MUST reach the child: the child is the one that fetches, so dropping
+  # it here would silently put the whole roll back on live main.
+  [ -n "$ONBOARDING_SHA" ] && set -- "$@" --onboarding-sha "$ONBOARDING_SHA"
+  # critic.C9: a Mac job can run past an hour (the 999 installer opens Apple's
+  # dialog and waits up to 60 minutes; a gateway outage has measured 10-20 min
+  # and once about 2 h). caffeinate -dimsu holds a power assertion for exactly the
+  # child's lifetime, so a sleeping Mac cannot stall the upgrade and leave the box
+  # dark mid-roll. Same pid, same session: caffeinate execs nothing, it waits.
+  if [ "$IS_MAC" = 1 ] && command -v caffeinate >/dev/null 2>&1; then
+    CHILD="$(python3 -c 'import subprocess,sys
+p = subprocess.Popen(sys.argv[2:], stdin=subprocess.DEVNULL,
+                     stdout=open(sys.argv[1], "ab"), stderr=subprocess.STDOUT,
+                     start_new_session=True)
+print(p.pid)' "$LOG" caffeinate -dimsu bash "$SELF" "$@" 2>>"$LOG" </dev/null)"
+  else
+    CHILD="$(python3 -c 'import subprocess,sys
 p = subprocess.Popen(sys.argv[2:], stdin=subprocess.DEVNULL,
                      stdout=open(sys.argv[1], "ab"), stderr=subprocess.STDOUT,
                      start_new_session=True)
 print(p.pid)' "$LOG" bash "$SELF" "$@" 2>>"$LOG" </dev/null)"
+  fi
   if [ -z "$CHILD" ]; then
     echo "self-update.sh: REFUSED — could not start the detached child" >&2
     rm -rf "$LOCK_DIR" 2>/dev/null
@@ -468,10 +799,11 @@ fi
 
 # ── the job (detached child, or --foreground) ────────────────────────────────
 
-# The lock's pid is this process now; the launcher's own pid is already gone.
-if [ "$MODE_DETACHED" = 1 ] && [ -d "$LOCK_DIR" ]; then
-  printf '%s\n' "$$" > "$LOCK_DIR/pid" 2>/dev/null
-fi
+# The lock already names the process the launcher started — the session leader,
+# which is `caffeinate` when the Mac wrapper is in play. Do NOT overwrite it with
+# this shell's own $$: under the wrapper the shell is not the group leader, and
+# the lock's live-pid identity must point at the process that owns the session.
+log "lock: $(cat "$LOCK_DIR/pid" 2>/dev/null) owns the run"
 
 log "START runner v$VERSION pid=$$ root=$ROOT roll=${ROLL_ID:-none} run_id=$RUN_ID openclaw=${TARGET_VERSION:-none} ninerouter=${NINE9ROUTER_TARGET:-none}"
 
@@ -486,6 +818,20 @@ WORK="$(mktemp -d "${TMPDIR:-/tmp}/self-update.XXXXXX")" || {
   log "REFUSED: could not create a temp dir"
   finish "$EX_REFUSE" "preflight"
 }
+
+# ── the shared installation lease, taken by the process that DOES the work ───
+# The launcher above only forks and exits, so it must never own the lease (its
+# pid would go stale the moment it exits). This point is reached ONLY by a
+# worker: the detached child, or --foreground. One box, one update owner.
+_oclease_acquire
+_OC_LEASE_RC=$?
+if [ "$_OC_LEASE_RC" = 3 ]; then
+  log "REFUSED: the shared installation lease (${OC_LEASE_PATH}) is held by another live updater (pid $(_oclease_rpid)) — no second writer on this box"
+  finish "$EX_REFUSE" "preflight" "shared installation lease held by another live updater"
+elif [ "$_OC_LEASE_RC" != 0 ]; then
+  log "REFUSED: could not take the shared installation lease at ${OC_LEASE_PATH}"
+  finish "$EX_REFUSE" "preflight" "shared installation lease unrecoverable"
+fi
 
 fetch() {  # url dest
   curl -fsSL --max-time 60 "$1" -o "$2" >>"$LOG" 2>&1
@@ -515,8 +861,8 @@ find_999() {
 # anything else is left untouched and reported; never reset --hard / stash /
 # branch delete), then PROVE the checkout HEAD is origin/main (and the pinned sha
 # when the roll passes one). self-update.sh is delivered as a single file, so the
-# helper is fetched from main like the other update scripts; a sibling copy is
-# only the fallback.
+# helper is fetched from the pinned onboarding ref (main when unpinned) like the
+# other update scripts; a sibling copy is only the fallback.
 FFSYNC=""
 get_ffsync() {
   [ -z "$FFSYNC" ] || return 0
@@ -741,7 +1087,14 @@ if [ "$IS_MAC" = 1 ] && [ "$IS_DOCKER" = 0 ]; then
       log "999-setup: no $HOME/999-setup — cloning 999 main"
       GIT_TERMINAL_PROMPT=0 git clone --depth 1 https://github.com/trevorotts1/999-setup.git "$HOME/999-setup" >>"$LOG" 2>&1 </dev/null
       _crc=$?
-      [ "$_crc" -eq 0 ] || { log "FAIL 999-setup: git clone exited $_crc"; NINE_RC=$EX_999; NINE_OK=0; }
+      [ "$_crc" -eq 0 ] || {
+        log "FAIL 999-setup: git clone exited $_crc"
+        NINE_RC=$EX_999; NINE_OK=0
+        if [ "$FLEET_REQUIRE_SAFETY_NET" = 1 ]; then
+          log "REFUSED: managed clone unavailable; safety net required (FLEET_REQUIRE_SAFETY_NET=1)"
+          STUCK_NOTE="managed clone unavailable; safety net required"
+        fi
+      }
     else
       log "FAIL 999-setup: git missing — cannot clone 999 main"
       NINE_RC=$EX_999; NINE_OK=0
@@ -752,6 +1105,10 @@ if [ "$IS_MAC" = 1 ] && [ "$IS_DOCKER" = 0 ]; then
   if [ "$NINE_OK" = 1 ] && [ -z "$NINE_REPO" ]; then
     log "FAIL 999-setup: no 999 checkout with .claude/skills/nine-router-setup/scripts/setup-macos.sh (searched \$NINE_SETUP_REPO, <root>/persist-home, \$HOME/999-setup, \$HOME/Documents/999-setup, \$HOME/.claude-nine, skill links)"
     NINE_RC=$EX_999; NINE_OK=0
+    if [ "$FLEET_REQUIRE_SAFETY_NET" = 1 ]; then
+      log "REFUSED: managed clone unavailable; safety net required (FLEET_REQUIRE_SAFETY_NET=1)"
+      STUCK_NOTE="managed clone unavailable; safety net required"
+    fi
   fi
   [ -n "$NINE_REPO" ] && log "999 checkout: $NINE_REPO"
 
@@ -852,7 +1209,10 @@ if [ "$IS_MAC" = 1 ] && [ "$IS_DOCKER" = 0 ]; then
   fi
   [ "$NINE_RC" -eq 0 ] && log "OK 999-setup ($NINE_MODE); gh_auth=PENDING"
   record_step "999-setup" "$NINE_RC"
-  [ "$NINE_RC" -eq 0 ] || record_fail "$NINE_RC" "${STUCK_NOTE:-999-setup exited $NINE_RC}"
+  if [ "$NINE_RC" -eq 0 ]; then :; else
+    record_fail "$NINE_RC" "${STUCK_NOTE:-999-setup exited $NINE_RC}"
+    probe_after_fail "999-setup"
+  fi
 
   # ══ step 2: 9Router upgrade to the pinned target ═══════════════════════════
 
@@ -878,7 +1238,10 @@ if [ "$IS_MAC" = 1 ] && [ "$IS_DOCKER" = 0 ]; then
   fi
   [ "$R9_RC" -eq 0 ] && log "OK 9router: $NINE9ROUTER_TARGET"
   record_step "9router" "$R9_RC"
-  [ "$R9_RC" -eq 0 ] || record_fail "$R9_RC" "9router exited $R9_RC"
+  if [ "$R9_RC" -eq 0 ]; then :; else
+    record_fail "$R9_RC" "9router exited $R9_RC"
+    probe_after_fail "9router"
+  fi
 
 else
   log "STEP 999-setup: skipped (not a macOS host)"
@@ -917,21 +1280,24 @@ else
   record_step "upgrade" "$UPG_RC"
   if [ "$UPG_RC" -eq 70 ]; then
     log "FAIL upgrade: oc-atomic-upgrade.sh exited 70 — rollback failed, a human is needed"
+    # modeB.B11: the rc-70 path used to finish with no needs_host_restart write.
+    probe_after_fail "upgrade" 15
     status_write "upgrade" "$(now_utc)" "upgrade exited 70 (rollback failed)"
     finish 20 "upgrade" "upgrade exited 70 (rollback failed)"
   fi
   if [ "$UPG_RC" -ne 0 ]; then
     log "FAIL upgrade: oc-atomic-upgrade.sh exited $UPG_RC"
     record_fail "$UPG_RC" "upgrade exited $UPG_RC"
+    probe_after_fail "upgrade" 15
   else
     log "OK upgrade: $TARGET_VERSION (the supervisor's install now reports $(oc_version))"
   fi
 fi
 
 # ══ step 4: content update ═══════════════════════════════════════════════════
-# The same entry point the Sunday cron uses: fetched from main, so the box
-# always runs the newest version of it. It never restarts the gateway and never
-# messages a client.
+# The same entry point the Sunday cron uses: fetched from the pinned onboarding
+# ref (main when unpinned). It never restarts the gateway and never messages a
+# client.
 
 log "STEP update: weekly-full-update.sh"
 status_write "update" "" ""
@@ -943,25 +1309,76 @@ if [ -f "$ROOT/openclaw.json" ]; then
 fi
 
 UPD_RC=0
+# critic.C11 (code side): under self-update the content step must NEVER be
+# handed to the bare no-snapshot/no-rollback updater. weekly-full-update.sh
+# sees this flag and exits non-zero instead of falling back.
+export SELF_UPDATE_RUN=1
 if ! fetch "$REPO_RAW/scripts/weekly-full-update.sh" "$WORK/weekly-full-update.sh"; then
   log "FAIL update: could not fetch scripts/weekly-full-update.sh from main"
   UPD_RC=$EX_UPDATE
 else
   bash "$WORK/weekly-full-update.sh" >>"$LOG" 2>&1 </dev/null
   UPD_RC=$?
-fi
-if [ "$UPD_RC" -eq 2 ]; then
-  ROLLED_BACK=1
-  if [ -n "$CFG_BACKUP" ] && [ -f "$CFG_BACKUP" ]; then
-    cp "$CFG_BACKUP" "$ROOT/openclaw.json" 2>/dev/null && log "update: rolled back — restored $ROOT/openclaw.json from $CFG_BACKUP"
+  # NB12: when no onboarding clone can be made, weekly-full-update.sh falls back
+  # to running update-skills.sh straight from main — a narrower TRANSPORT with no
+  # snapshot and no rollback machinery around it. That must be a failed step, not
+  # a success the job cannot undo.
+  if grep -q 'falling back to the root updater fetched from main' "$LOG" 2>/dev/null; then
+    log "FAIL update: weekly-full-update.sh used the no-snapshot fallback transport (raw rc=$UPD_RC) — refusing to report success"
+    UPD_RC=$EX_UPDATE
   fi
+fi
+if [ "$UPD_RC" -eq 2 ] && [ "$IS_DOCKER" = 0 ]; then ROLLED_BACK=1; fi
+# critic.C13: exit 75 from the content step is DEFERRED, not done and not a
+# failure. Record it as deferred so no reader ever sees "OK update" for a run
+# that changed nothing, and exit 75 rather than 0.
+if [ "$UPD_RC" -eq 75 ]; then
+  log "DEFERRED update: another updater legitimately owns this box (exit 75) — content was NOT changed by this run"
+  record_step "update" 75
+  record_step "update_deferred" 1
+  finish "$EX_DEFERRED" "done" "content update deferred: another updater held this box (exit 75) — nothing was changed by this step"
 fi
 record_step "update" "$UPD_RC"
 if [ "$UPD_RC" -ne 0 ]; then
   log "FAIL update: weekly-full-update.sh exited $UPD_RC"
   record_fail "$UPD_RC" "update exited $UPD_RC"
+  probe_after_fail "update"
+  if [ "$IS_DOCKER" = 1 ]; then
+    # hostinger.H7 / critic.C8: a container's gateway can only be restarted from
+    # the host, so an in-container roll back is the wrong answer. Do not roll
+    # back, do not touch the config; ask the host, which does the P5 recreate and
+    # then re-runs the fix.
+    mark_needs_restart "content step failed in a container; host restart required"
+    log "update: Docker — needs_host_restart written; no in-container rollback, no config restore"
+  else
+    # NB2 / MAC-6 / modeB.B11: never cp openclaw.json over a LIVE gateway. The
+    # gateway re-serializes that file about once a minute (setup-weekly-update.sh
+    # documents it), so a restore under a live gateway does not stick and is not
+    # loaded until the next restart. Restore only when the gateway is provably
+    # down; otherwise keep the mode-600 backup for a human and flag the box.
+    if [ -n "$CFG_BACKUP" ] && [ -f "$CFG_BACKUP" ]; then
+      if healthz_ok; then
+        mark_needs_restart "config backup kept: gateway is live, a restore under it is not loaded"
+        log "update: openclaw.json NOT restored (gateway live) — mode-600 backup kept at $CFG_BACKUP"
+      else
+        cp "$CFG_BACKUP" "$ROOT/openclaw.json" 2>/dev/null \
+          && log "update: restored $ROOT/openclaw.json from $CFG_BACKUP (gateway was down)"
+        if healthz_wait 10; then
+          log "rollback: /healthz 200 after the config restore"
+          record_rollback "content-config" "$(oc_version)" 0
+        else
+          mark_needs_restart "config restored but /healthz did not prove 200"
+          record_rollback "content-config" "$(oc_version)" 1
+        fi
+      fi
+    fi
+  fi
 else
   log "OK update"
+  # hostinger.H11: never leave a secret-bearing config copy behind after a clean run.
+  if [ -n "$CFG_BACKUP" ] && [ -f "$CFG_BACKUP" ]; then
+    rm -f "$CFG_BACKUP" 2>/dev/null && log "update: removed the config backup $CFG_BACKUP"
+  fi
 fi
 
 # ══ done ═════════════════════════════════════════════════════════════════════

@@ -438,6 +438,180 @@ except Exception:
   return 1
 }
 
+# ── SHARED INSTALLATION LEASE (mac.MAC-1 / consistency.C1) ───────────────────
+# oc-atomic is the writer that actually moves a box onto a new OpenClaw build,
+# so it MUST hold the same lease as update-skills.sh, self-update.sh and the
+# weekly cron — otherwise two writers migrate the same config concurrently.
+# Liveness is decided by the RECORD (pid + process start identity + run id),
+# never by the file's existence and never by its age (mac.MAC-13).
+#
+# NESTED writers inherit: self-update → (this script) and weekly-full-update →
+# fleet-refresh → (this script) are DESCENDANTS of the lease holder, so they
+# proceed without rewriting or releasing it. Refusing them is the defect that
+# closed PR #2612 — the box's own update chain refused its own children.
+OC_LEASE_PATH="${OPENCLAW_UPDATE_LEASE:-/tmp/openclaw-update.lock}"
+OC_LEASE_STATE=""      # "" | owned | inherited
+OC_LEASE_IMPL=""
+
+_lease_start() { ps -o lstart= -p "$1" 2>/dev/null | tr -s ' ' | sed 's/^ *//;s/ *$//' || true; }
+_lease_ppid()  { ps -o ppid= -p "$1" 2>/dev/null | tr -d ' ' || true; }
+_lease_rpid() {
+  if [ -d "$OC_LEASE_PATH" ]; then head -1 "$OC_LEASE_PATH/pid" 2>/dev/null || true
+  else sed -n 's/^pid=\([0-9][0-9]*\).*/\1/p' "$OC_LEASE_PATH" 2>/dev/null | head -1 || true
+  fi
+  return 0
+}
+_lease_rstart() { sed -n 's/^start=//p' "$OC_LEASE_PATH" 2>/dev/null | head -1 || true; return 0; }
+
+_lease_owner_live() {
+  local _p _s
+  if [ -d "$OC_LEASE_PATH" ]; then
+    _p="$(_lease_rpid)"; [ -n "$_p" ] || return 1
+    kill -0 "$_p" 2>/dev/null || return 1
+    return 0                      # legacy mkdir lease: pid only, never age
+  fi
+  [ -f "$OC_LEASE_PATH" ] || return 1
+  _p="$(_lease_rpid)"; [ -n "$_p" ] || return 1
+  kill -0 "$_p" 2>/dev/null || return 1
+  _s="$(_lease_rstart)"
+  if [ -n "$_s" ]; then [ "$(_lease_start "$_p")" = "$_s" ] || return 1; fi
+  return 0
+}
+
+# 0 = this process is the holder or one of its descendants. A legacy mkdir lease
+# carries no start identity, so it can never prove a process tree.
+_lease_in_owner_tree() {
+  [ -d "$OC_LEASE_PATH" ] && return 1
+  _lease_owner_live || return 1
+  local _p _cur _n
+  _p="$(_lease_rpid)"; _cur="$$"; _n=0
+  while [ -n "$_cur" ] && [ "$_cur" -gt 1 ] 2>/dev/null && [ "$_n" -lt 64 ]; do
+    [ "$_cur" = "$_p" ] && return 0
+    _cur="$(_lease_ppid "$_cur")"
+    _n=$((_n + 1))
+  done
+  return 1
+}
+
+_lease_write_own() {
+  printf 'pid=%s\nstart=%s\nrun_id=%s\nrole=%s\ninstall_path=%s\nutc=%s\n' \
+    "$$" "$(_lease_start "$$")" "${1:-}" "oc-atomic-upgrade" "${OC_ROOT_DIR:-}" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$OC_LEASE_PATH" 2>/dev/null
+}
+
+_lease_load_helper() {
+  local _h _d
+  _d="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)"
+  for _h in "$_d/box-update-lock.sh" \
+            "${OC_ROOT_DIR:-$HOME/.openclaw}/scripts/box-update-lock.sh" \
+            "${OC_ROOT_DIR:-$HOME/.openclaw}/fleet-refresh/onboarding/scripts/box-update-lock.sh"; do
+    if [ -f "$_h" ]; then
+      # shellcheck source=/dev/null
+      . "$_h" || continue
+      declare -F box_update_lock_acquire >/dev/null 2>&1 && return 0
+    fi
+  done
+  return 1
+}
+
+# 0 held · 3 a live foreign writer owns it · 1 unrecoverable.
+_lease_acquire() {
+  OC_LEASE_IMPL="inline"
+  if _lease_load_helper; then OC_LEASE_IMPL="helper"; fi
+
+  if _lease_in_owner_tree; then
+    OC_LEASE_STATE="inherited"
+    # Also export the helper's identity keys so a DESCENDANT that takes the
+    # helper path can prove inheritance from the same run.
+    BFX_LOCK_RUN_ID="$(sed -n 's/^run_id=//p' "$OC_LEASE_PATH" 2>/dev/null | head -1 || true)"
+    BFX_LOCK_OWNER_PID="$(_lease_rpid)"
+    export BFX_LOCK_RUN_ID BFX_LOCK_OWNER_PID
+    _say "lease     : inherited $OC_LEASE_PATH from pid $(_lease_rpid) (nested writer)"
+    return 0
+  fi
+
+  if [ -e "$OC_LEASE_PATH" ] && [ ! -f "$OC_LEASE_PATH" ]; then
+    _lease_owner_live && return 3
+    rm -rf "$OC_LEASE_PATH" 2>/dev/null || return 1
+  fi
+
+  if [ "$OC_LEASE_IMPL" = "helper" ]; then
+    box_update_lock_acquire "$OC_LEASE_PATH" "${RUN_ID:-oc-atomic-$$}" \
+      "oc-atomic-upgrade" "${OC_ROOT_DIR:-}"
+    case "$?" in
+      0) OC_LEASE_STATE="owned"
+         _say "lease     : acquired $OC_LEASE_PATH (shared lease)"
+         return 0 ;;
+      3) return 3 ;;
+      *) return 1 ;;
+    esac
+  fi
+
+  if command -v flock >/dev/null 2>&1; then
+    exec 9<>"$OC_LEASE_PATH" 2>/dev/null || return 1
+    if ! flock -n 9 2>/dev/null; then
+      exec 9>&- 2>/dev/null || true
+      return 3
+    fi
+    if _lease_owner_live; then
+      flock -u 9 2>/dev/null || true
+      exec 9>&- 2>/dev/null || true
+      return 3
+    fi
+    _lease_write_own "${RUN_ID:-oc-atomic-$$}" || return 1
+    OC_LEASE_STATE="owned"
+    _say "lease     : acquired $OC_LEASE_PATH (flock + record, pid $$)"
+    return 0
+  fi
+
+  if _lease_owner_live; then return 3; fi
+  if [ -e "$OC_LEASE_PATH" ]; then rm -f "$OC_LEASE_PATH" 2>/dev/null || return 1; fi
+  ( set -o noclobber; : > "$OC_LEASE_PATH" ) 2>/dev/null || return 3
+  _lease_write_own "${RUN_ID:-oc-atomic-$$}" || return 1
+  OC_LEASE_STATE="owned"
+  _say "lease     : acquired $OC_LEASE_PATH (exclusive create, pid $$)"
+  return 0
+}
+
+_lease_release() {
+  if [ "$OC_LEASE_STATE" = "owned" ]; then
+    if [ "$OC_LEASE_IMPL" = "helper" ]; then
+      command -v box_update_lock_release >/dev/null 2>&1 && box_update_lock_release
+    elif _lease_owner_live && [ "$(_lease_rpid)" = "$$" ]; then
+      rm -rf "$OC_LEASE_PATH" 2>/dev/null || true
+    fi
+  fi
+  OC_LEASE_STATE=""
+  return 0
+}
+
+# mac.MAC-2 — an UNPINNED upgrade (the Saturday 23:59 cron: no
+# --target-version, so the target is whatever npm says at that minute) must
+# never run while another writer owns this box. It reports WHY through
+# _UPW_WHY. A PINNED upgrade does not need this probe: the lease acquire below
+# already refuses a live foreign writer, and a holder in our own process tree
+# is the roll that spawned us.
+_UPW_WHY=""
+_unpinned_foreign_writer() {
+  _UPW_WHY=""
+  local _root _ap
+  _root="${OC_ROOT_DIR:-$HOME/.openclaw}"
+  _ap="$_root/fleet-refresh/agent-pull.lock/pid"
+  if [ -f "$_ap" ]; then
+    local _pp
+    _pp="$(head -1 "$_ap" 2>/dev/null || true)"
+    if [ -n "$_pp" ] && kill -0 "$_pp" 2>/dev/null; then
+      _UPW_WHY="a self-update / agent-pull run holds agent-pull.lock (pid $_pp)"
+      return 0
+    fi
+  fi
+  if _lease_owner_live && ! _lease_in_owner_tree; then
+    _UPW_WHY="the installation lease $OC_LEASE_PATH is held by pid $(_lease_rpid) ($(sed -n 's/^role=//p' "$OC_LEASE_PATH" 2>/dev/null | head -1))"
+    return 0
+  fi
+  return 1
+}
+
 # ── The maintenance lock. remediate.sh / gateway-health-watchdog.sh honour it.
 # ── It exists because the 5-minute self-heal ALSO runs from cron on some boxes,
 # ── where there is no LaunchAgent to boot out — a bootout alone would leave a
@@ -445,8 +619,12 @@ except Exception:
 # ── silently revert the migration (fact 3).
 _lock_acquire() {
   mkdir -p "$OC_ROOT_DIR" 2>/dev/null
-  printf 'pid=%s\nstarted=%s\nreason=oc-atomic-upgrade v%s\n' \
-    "$$" "$(date '+%Y-%m-%dT%H:%M:%S')" "$VERSION" > "$LOCK_FILE" 2>/dev/null
+  # `start=` is the process START IDENTITY (mac.MAC-13): remediate.sh decides a
+  # maintenance lock is stale from pid + this identity, NEVER from its age, so a
+  # slow upgrade is never healed out from under itself and a recycled pid is not
+  # mistaken for a live one. `started=` is the human timestamp.
+  printf 'pid=%s\nstart=%s\nstarted=%s\nreason=oc-atomic-upgrade v%s\n' \
+    "$$" "$(_lease_start "$$")" "$(date '+%Y-%m-%dT%H:%M:%S')" "$VERSION" > "$LOCK_FILE" 2>/dev/null
   if [ ! -f "$LOCK_FILE" ]; then
     _err "could not write the maintenance lock at $LOCK_FILE"
     return 1
@@ -906,6 +1084,29 @@ do_upgrade() {
   SUPERVISOR="$(_detect_supervisor)"
   # What the rollback must put back, recorded BEFORE anything is stopped.
   _gateway_loaded && GATEWAY_LOADED_AT_START=1
+
+  # ── INSTALLATION LEASE + UNPINNED-CRON GUARD ──────────────────────────────
+  # Order matters: BOTH probes look at the lease BEFORE we take it, so an
+  # unpinned Saturday cron can see the roll that owns the box and stand down
+  # instead of racing it (mac.MAC-2). A pinned upgrade (self-update passes
+  # --target-version) skips the unpinned probe: the acquire below is enough.
+  if [ -z "${TARGET_VERSION:-}" ] && _unpinned_foreign_writer; then
+    _refuse_banner \
+      "This upgrade is UNPINNED (no --target-version, so the target would be whatever npm says right now) and ANOTHER UPDATER ALREADY OWNS THIS BOX: $_UPW_WHY. Two writers must never migrate the same installation." \
+      "Nothing was changed. Stand down and let the running update finish."
+    return 78
+  fi
+  _lease_acquire
+  case "$?" in
+    0) trap '_lease_release' EXIT ;;
+    3) _refuse_banner \
+         "The SHARED INSTALLATION LEASE is held by another live updater (pid $(_lease_rpid)). One box has exactly one update owner; a second writer here would migrate this config underneath the first." \
+         "Nothing was changed. Wait for the holder to finish, then re-run."
+       return 78 ;;
+    *) _refuse_banner "The shared installation lease at $OC_LEASE_PATH could not be taken or written." \
+         "Nothing was changed. Check permissions on $OC_LEASE_PATH."
+       return 78 ;;
+  esac
 
   # ── PREFLIGHT. Everything that could refuse is checked BEFORE anything stops,
   # ── so a refusal costs the box nothing at all.
