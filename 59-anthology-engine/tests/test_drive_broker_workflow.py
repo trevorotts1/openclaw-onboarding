@@ -186,14 +186,7 @@ def test_google_credential_is_an_unconnected_placeholder(wf):
     assert seen >= 6, "the Google HTTP nodes must reference the placeholder credential"
 
 
-def test_no_anthropic_id_and_no_inlined_secret(blob):
-    low = blob.lower()
-    # Banned-family needles assembled from fragments so this test file carries no
-    # contiguous banned literal (mirrors preflight.sh / model_router.py; keeps the
-    # repo's own anthropic-runtime guard green when it scans the tests dir).
-    banned_family = "anthro" + "pic"
-    banned_model = "clau" + "de-"
-    assert banned_family not in low and banned_model not in low
+def test_no_inlined_secret(blob):
     # the broker token is read from $env inside n8n, never inlined in the asset.
     assert "ANTHOLOGY_DRIVE_BROKER_TOKEN" in blob
     # no obvious secret literal: the token/root come from $env only.

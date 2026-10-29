@@ -84,9 +84,7 @@ BOILERPLATE_MARKERS = (
 HOME = Path.home()
 
 # Client sovereignty: the authoring model is ALWAYS the box's own default model.
-# Anthropic routes stay forbidden (same markers as shared-utils/select_model.py
-# FORBIDDEN_PREFIXES); a forbidden default is a recorded gap, never swapped out.
-FORBIDDEN_MODEL_MARKERS = ("anthropic/", "anthropic.", "openrouter/anthropic/", "claude-")
+# No vendor is forbidden (FORBIDDEN_PREFIXES in shared-utils/select_model.py is empty).
 
 
 def log(msg):
@@ -145,7 +143,7 @@ def resolve_box_default_model(config_path=None):
 
     Reads agents.defaults.model (string, or {"primary": ...}) from the box's
     openclaw.json. Never returns a hardcoded id: when no default can be
-    resolved, or it is a forbidden (Anthropic) route, returns (None, reason).
+    resolved, returns (None, reason).
     """
     path = next((c for c in _config_candidates(config_path)
                  if c and os.path.isfile(c)), None)
@@ -163,8 +161,6 @@ def resolve_box_default_model(config_path=None):
     if not isinstance(field, str) or not field.strip():
         return None, f"{path} has no agents.defaults.model"
     mid = field.strip()
-    if any(m in mid.lower() for m in FORBIDDEN_MODEL_MARKERS):
-        return None, "box default model is a forbidden (Anthropic) route"
     return mid, ""
 
 

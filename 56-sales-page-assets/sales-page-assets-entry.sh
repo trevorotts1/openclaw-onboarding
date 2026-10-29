@@ -68,7 +68,7 @@ PINNED_FILES=(
 )
 
 # Forbidden patterns in a run's working files — a hand-rolled GHL / ImgBB / image / sender bypass.
-BYPASS_PATTERNS='services\.leadconnectorhq\.com|rest\.gohighlevel\.com|api\.gohighlevel\.com|api\.imgbb\.com|api\.anthropic\.com|smtplib|sendgrid|mailgun|nodemailer|ses\.send_email|send_raw_email|jobs/createtask|api\.kie\.ai|kie_generate\.py|kie_image\.py'
+BYPASS_PATTERNS='services\.leadconnectorhq\.com|rest\.gohighlevel\.com|api\.gohighlevel\.com|api\.imgbb\.com|smtplib|sendgrid|mailgun|nodemailer|ses\.send_email|send_raw_email|jobs/createtask|api\.kie\.ai|kie_generate\.py|kie_image\.py'
 
 die() { printf 'ABORT [%s]: %s\n' "$1" "$2" >&2; exit 1; }
 
@@ -132,7 +132,7 @@ step_bypass_scan() {
   done <<< "$hits"
   if [ -n "$kept" ]; then
     printf 'BYPASS-SCAN hits:\n%s' "$kept" >&2
-    die "BYPASS-SCAN" "run working files hand-roll GHL REST / ImgBB / a raw image createTask / a KIE client script / a mail sender / an Anthropic call. All GHL build+media go through Skill 6; all KIE image and video generation goes through Skill 66 (policy) then Skill 74 (transport), or Skill 63 when the client selected Agnes. Delete the hand-rolled path."
+    die "BYPASS-SCAN" "run working files hand-roll GHL REST / ImgBB / a raw image createTask / a KIE client script / a mail sender. All GHL build+media go through Skill 6; all KIE image and video generation goes through Skill 66 (policy) then Skill 74 (transport), or Skill 63 when the client selected Agnes. Delete the hand-rolled path."
   fi
 }
 
@@ -147,7 +147,7 @@ step_nonce() {
 
 # FIX-XC-09e — resolve the CLIENT's own execution-tier authoring model (role=content),
 # record routing/model-content-receipt.json, and gate it (fail-closed) via prove_sp_cert
-# --model-receipt. The client's OWN strongest model writes the copy; Anthropic is hard-banned.
+# --model-receipt. The client's OWN strongest model writes the copy.
 step_model_receipt() {
   local rd="$1"
   "$PY" - "$rd" <<'PYEOF'
@@ -162,7 +162,6 @@ receipt = {
     "model": model,
     "provider": provider.lower(),
     "tier": tier,
-    "anthropic_banned": True,
     "resolved_at": datetime.datetime.utcnow().isoformat() + "Z",
 }
 os.makedirs(os.path.join(rd, "routing"), exist_ok=True)
@@ -170,7 +169,7 @@ with open(os.path.join(rd, "routing", "model-content-receipt.json"), "w", encodi
     json.dump(receipt, fh, indent=2)
 PYEOF
   "$PY" "$SCRIPTS_DIR/prove_sp_cert.py" --model-receipt "$rd/routing/model-content-receipt.json" \
-    || die "MODEL-TIER" "content-authoring model receipt failed the execution-tier / no-Anthropic gate — set SP_CONTENT_MODEL + SP_CONTENT_PROVIDER (+ SP_CONTENT_TIER) to the CLIENT's own strongest model"
+    || die "MODEL-TIER" "content-authoring model receipt failed the execution-tier gate — set SP_CONTENT_MODEL + SP_CONTENT_PROVIDER (+ SP_CONTENT_TIER) to the CLIENT's own strongest model"
 }
 
 run_pipeline() {

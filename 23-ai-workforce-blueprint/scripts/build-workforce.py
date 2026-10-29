@@ -5161,7 +5161,7 @@ def research_unknown_answer(question: str, context: str = "", purpose_tier: str 
     Returns:
         The model's response text, or None if research is unavailable.
 
-    N1 compliance: the research model is reached via OpenRouter, NOT Anthropic.
+    The research model is reached via OpenRouter.
     N15 alignment: this is the runtime counterpart to web-research-preflight.sh
                    - preflight populates static defaults, this fills gaps.
     """
@@ -7113,7 +7113,7 @@ Use the Lean Six Sigma DMAIC structure for every SOP. Every SOP file must contai
     - Document the edge case AND the research outcome in {DEPT_DIR}/memory/[YYYY-MM-DD].md.
 
 Hard constraints:
-  - NEVER reference Anthropic models. Use the selector chain heavy tier when invoking models.
+  - Use the selector chain heavy tier when invoking models.
   - Plain English. No corporate jargon.
   - Tools referenced must be from {DEPT_TOOLS}. If a useful tool is missing from that list, recommend it under a 'Suggested tool additions' section at the bottom - don't pretend it's available.
   - Cite web research findings inline when a step is derived from research. e.g. 'Per industry benchmark (Perplexity 2026-05-13): companies in {INDUSTRY} typically...'
@@ -8556,8 +8556,8 @@ def _resolve_dept_default_model(dept_id):
         if r.stdout.strip():
             data = json.loads(r.stdout)
             mid = (data.get("model_id") or "").lower()
-            # Defense in depth: never accept a forbidden or free-default model.
-            if mid and "anthropic/" not in mid and "claude-" not in mid and mid not in (
+            # Defense in depth: never accept a free-default model.
+            if mid and mid not in (
                 "openrouter/free", "free"
             ):
                 return data
@@ -8713,7 +8713,7 @@ def resolve_role_model(
                 if r.stdout.strip():
                     data = json.loads(r.stdout)
                     mid = (data.get("model_id") or "").lower()
-                    if mid and "anthropic/" not in mid and "claude-" not in mid:
+                    if mid:
                         return {
                             "model_id": data["model_id"],
                             "capability_class": cls_info.get("capability_class"),
@@ -8881,8 +8881,8 @@ def resolve_dept_agent_model(dept_id, existing_entry=None):
             explicit = existing_model
         if explicit:
             mid = explicit.strip().lower()
-            # Refuse to honor a forbidden pin; fall through to resolution instead.
-            if mid and "anthropic/" not in mid and "claude-" not in mid and mid not in (
+            # Refuse to honor a free-default pin; fall through to resolution instead.
+            if mid and mid not in (
                 "openrouter/free", "free"
             ):
                 return explicit, None
@@ -8900,7 +8900,7 @@ def resolve_dept_agent_model(dept_id, existing_entry=None):
             mid = (resolved or {}).get("model_id")
             if mid:
                 low = mid.lower()
-                if "anthropic/" not in low and "claude-" not in low and low not in (
+                if low not in (
                     "openrouter/free", "free"
                 ):
                     selector_data = {

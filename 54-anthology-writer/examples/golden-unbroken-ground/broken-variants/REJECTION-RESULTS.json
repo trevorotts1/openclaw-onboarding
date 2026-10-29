@@ -76,13 +76,6 @@
     "rejected": true,
     "out_excerpt": "{\n  \"prover\": \"prove_aw_chapter\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-AW-PLACEHOLDER\",\n      \"message\": \"unresolved placeholder(s) in the finalized artifact: {{intake.first_name}}, {{intake.last_name}}\"\n    }\n  ],\n  \"notes\": [\n    \"measured stripped word count 2120 within 2000-3500\",\n    \"'COMPLETION VERIFICATION' block present\",\n    \"locked title carried into the chapter\",\n    \"locked subtitle carried into the chapter\"\n  ]\n}"
   },
-  "ledger_anthropic": {
-    "prover": "aw_build_check.py",
-    "expected_code": "AF-AW-ANTHROPIC",
-    "rc": 2,
-    "rejected": true,
-    "out_excerpt": "{\n  \"prover\": \"aw_build_check\",\n  \"passed\": false,\n  \"violations\": [\n    {\n      \"code\": \"AF-AW-ANTHROPIC\",\n      \"message\": \"stage aw-09-write-chapter resolved to an Anthropic model id 'anthropic/claude-opus-4' \\u2014 client runtime must use the client's strongest NON-Anthropic model\"\n    }\n  ],\n  \"notes\": [\n    \"rewrite_count 0 within budget (<=2)\"\n  ]\n}"
-  },
   "ledger_rewrite_over_budget": {
     "prover": "aw_build_check.py",
     "expected_code": "AF-AW-REWRITE-BUDGET",

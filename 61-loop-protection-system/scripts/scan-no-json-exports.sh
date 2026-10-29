@@ -30,8 +30,7 @@
 #
 # DIVISION OF LABOR (deliberately NOT flagged here, to avoid false positives on the
 # skill's OWN defensive code): a leaked credential VALUE is caught by
-# scan-no-secrets.sh; an Anthropic-family identifier VALUE is caught by
-# guard-no-anthropic-runtime.py. A bare legacy FIELD NAME legitimately appears in
+# scan-no-secrets.sh. A bare legacy FIELD NAME legitimately appears in
 # credential-rejection lists and intake fixtures, so it is NOT a signal here; an
 # actual n8n export always carries the n8n JSON skeleton, which struct_n8n
 # catches "in whole or in part".
@@ -58,7 +57,7 @@ EX_CLEAN=0; EX_ERR=1; EX_USAGE=2; EX_DEP=3; EX_VIOLATION=4
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 ENGINE_DIR="$(cd "$SELF_DIR/.." && pwd)"
 TAG="[scan-no-json-exports]"
-SELF_NAMES="scan-no-secrets.sh scan-no-json-exports.sh scan-no-client-identifiers.sh guard-no-anthropic-runtime.py"
+SELF_NAMES="scan-no-secrets.sh scan-no-json-exports.sh scan-no-client-identifiers.sh"
 
 SELFTEST_TMP=""
 _cleanup_selftest() { [ -n "${SELFTEST_TMP:-}" ] && rm -rf "$SELFTEST_TMP"; return 0; }
@@ -116,7 +115,7 @@ is_self() {
 # so this exemption is inert here, but the path+suffix scoping is kept so a future
 # sanctioned Skill 61 n8n asset at this exact location would not false-positive.
 # Nothing else is exempted, and the CONTENT of anything under config/n8n/ is still
-# covered by scan-no-secrets.sh and guard-no-anthropic-runtime.py.
+# covered by scan-no-secrets.sh.
 is_sanctioned_n8n() {
     case "$1" in
         */config/n8n/*.workflow.json) return 0 ;;

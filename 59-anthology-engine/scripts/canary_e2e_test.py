@@ -164,12 +164,6 @@ EX_BADINVOKE = 2
 EX_HELD = 3
 EX_VIOLATION = 4
 
-# Anthropic-family id shapes assembled from fragments (mirrors every sibling)
-# so this shipped file carries no contiguous banned literal.
-_a = "anthro" + "pic"
-_c = "clau" + "de-"
-BANNED = re.compile(_c + r"|" + _a + r"/|us\." + _a + r"\.", re.I)
-
 # ---------------------------------------------------------------------------
 # Layout (mirrors every sibling script's resolution).
 # ---------------------------------------------------------------------------
@@ -2398,10 +2392,6 @@ def self_test():
         check("judge independence violation refused", rc == 2, "rc=%s" % rc)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-
-    # ---- 4. no Anthropic-family id in this file ----------------------------
-    own = Path(__file__).read_text(encoding="utf-8")
-    check("no Anthropic-family id in canary source", not BANNED.search(own))
 
     # ---- 5. the exit-code map + the stage inventory are coherent ------------
     try:

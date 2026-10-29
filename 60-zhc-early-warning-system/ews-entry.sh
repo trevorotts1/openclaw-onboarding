@@ -94,8 +94,6 @@ aggregate_self_test() {
     for s in scan-no-secrets.sh scan-no-client-identifiers.sh scan-no-json-exports.sh; do
         echo "--- $s ---"; bash "$SCRIPTS/$s" --self-test || rc=1
     done
-    echo "--- guard-no-anthropic-runtime.py ---"
-    python3 "$SCRIPTS/guard-no-anthropic-runtime.py" --self-test || rc=1
     for sh in preflight.sh install.sh; do
         echo "--- $sh ---"; bash "$SELF_DIR/$sh" --self-test || rc=1
     done

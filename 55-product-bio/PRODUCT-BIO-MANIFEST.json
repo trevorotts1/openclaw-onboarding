@@ -4,7 +4,7 @@
   "skill_number": 55,
   "skill_version": "1.0.0",
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Product Bio pipeline. The deterministic orchestrator run_product_bio.py walks these phases IN ORDER (P0->P6) with NO phase skips. Each phase declares its produces_artifact, its _chk_* preflight symbol, and its AF-PB-* gate codes. Every AF-PB-* code below is enforced by a fail-closed, model-free, stdlib-only prover in scripts/; py_symbol names the function that decides it. Editing this file is step (i) of any Product Bio change: add the gate, add the AF code here with its trigger, add the checker, add the golden+attack fixture.",
-  "design_law": "Enforcement, not description. Bands and counts are measured on the STRIPPED text of the artifact; a model's self-reported word count / close count is NEVER trusted. Client runtime uses the CLIENT's own provider chain (model-map.template.json) — NEVER Anthropic/claude-* ids or operator keys. The deterministic gates are provider-neutral Python that run identically everywhere. A client-exact override (e.g. an exact word target) wins over the default band and is recorded on the certificate.",
+  "design_law": "Enforcement, not description. Bands and counts are measured on the STRIPPED text of the artifact; a model's self-reported word count / close count is NEVER trusted. Client runtime uses the CLIENT's own provider chain (model-map.template.json) — NEVER operator keys. The deterministic gates are provider-neutral Python that run identically everywhere. A client-exact override (e.g. an exact word target) wins over the default band and is recorded on the certificate.",
   "source_prompt_pins": {
     "assets/prompts/01-product-bio-writer.md": "82b52e015963353c476c9999c22290305e0afda1982411c2a6f8a6b70a8ed0d8",
     "assets/prompts/02-google-doc-html-writer.md": "f015392af7d415e112d1ca2cc2838cf6ce7a19ad34f90e611c0226833543b8fa"
@@ -112,7 +112,6 @@
     {"code": "AF-PB-DELIVER-MISMATCH", "stage": "P6", "level": "delivery", "trigger": "a pre-existing delivery/product-bio-<slug>.md/.html disagrees byte-for-byte with the QC'd working copy (a swap-after-QC / planted deliverable), or the assembled bundle did not round-trip byte-identical", "enforced_by": "run_product_bio", "py_symbol": "_chk_deliver"},
     {"code": "AF-PB-PROCESS-INTEGRITY", "stage": "P6", "level": "run", "trigger": "a certificate was requested without a full P0->P5 pass", "enforced_by": "run_product_bio", "py_symbol": "_write_certificate"},
     {"code": "AF-PB-ENTRY-BYPASS", "stage": "entry", "level": "run-dir", "trigger": "a hand-rolled uploader/notifier (Google Drive / Slack / Gmail / n8n webhook) is present in the run directory, bypassing the local-labeled-deliverable handoff", "enforced_by": "product-bio-entry", "py_symbol": "bypass_scan"},
-    {"code": "AF-PB-HASH-PIN", "stage": "entry", "level": "enforcement", "trigger": "the enforcement-pair hash does not match the pinned head (ENGINE-PIN.sha256)", "enforced_by": "product-bio-entry", "py_symbol": "version_hash_pin"},
-    {"code": "AF-PB-ANTHROPIC", "stage": "verify", "level": "skill", "trigger": "a claude-* / anthropic model id appears in the shipped skill or the resolved client-path model map", "enforced_by": "verify.sh", "py_symbol": "no_anthropic_scan"}
+    {"code": "AF-PB-HASH-PIN", "stage": "entry", "level": "enforcement", "trigger": "the enforcement-pair hash does not match the pinned head (ENGINE-PIN.sha256)", "enforced_by": "product-bio-entry", "py_symbol": "version_hash_pin"}
   ]
 }

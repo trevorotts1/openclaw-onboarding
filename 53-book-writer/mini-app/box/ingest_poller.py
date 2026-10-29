@@ -100,7 +100,6 @@ AF_CAPABILITY = "AF-BW-MA-CAPABILITY"
 AF_WORKER = "AF-BW-MA-WORKER"
 AF_JOB_PENDING = "AF-BW-MA-JOB-PENDING"
 AF_EXTRACT_NO_TEXT = "AF-BW-MA-EXTRACT-NO-TEXT"
-AF_ANTHROPIC = "AF-BW-MA-ANTHROPIC"
 
 # ---- job status contract (mirror worker/src/media-lib.js JOB_STATUS) --------
 JOB_STATUS = ("queued", "processing", "done", "failed")

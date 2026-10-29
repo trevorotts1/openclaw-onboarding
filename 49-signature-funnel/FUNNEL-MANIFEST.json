@@ -586,11 +586,6 @@
       "enforced_by": "P9-CERTIFY",
       "py_symbol": "prove_sf_cert.evaluate_model_receipt"
     },
-    "AF-FUN-MODEL-NOANTHROPIC": {
-      "trigger": "authoring model provider is Anthropic/Claude (client skills never use Anthropic); FIX-XC-09e",
-      "enforced_by": "P9-CERTIFY",
-      "py_symbol": "prove_sf_cert.evaluate_model_receipt"
-    },
     "AF-FUN-BUILD-PAGESET": {
       "trigger": "the build receipt does not carry every page type the locked 3/5/7 funnel matrix requires (an under-sized receipt — a 7-step funnel with 3 pages — no longer certifies); A10/T0-11",
       "enforced_by": "P7-BUILD",

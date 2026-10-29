@@ -10,14 +10,14 @@
 #   2. golden-week reproduces PASS end-to-end through the sanctioned entry, in a
 #      temp copy, and mints the SAME certificate_sha as the committed golden
 #   3. front-door nonce guard: a direct orchestrator call exits 4
-#   4. broken-variant rejection: 11 DISTINCT AF-SM-* trips (+ the exit-4 nonce),
+#   4. broken-variant rejection: 10 DISTINCT AF-SM-* trips (+ the exit-4 nonce),
 #      each executed for real and asserted on exact exit code + AF-SM-* code
-#   5. full-tree scrub gate green (no client-name / secret / pinData / Anthropic)
+#   5. full-tree scrub gate green (no client-name / secret / pinData)
 #   6. shipped prompt hashes match the canonical pin
-#   7. engine hash matches ENGINE-PIN.sha256; no-Anthropic + no-n8n-runtime scans
+#   7. engine hash matches ENGINE-PIN.sha256; no-n8n-runtime scan
 #
-# It calls NO provider and NO network. No secret/anthropic literal is ever shipped
-# into scanned bytes: the leak/anthropic negatives are materialized into a temp
+# It calls NO provider and NO network. No secret literal is ever shipped
+# into scanned bytes: the leak negatives are materialized into a temp
 # file at test time and deleted.
 
 # Portability guard: this gate is authored for bash (BASH_SOURCE arrays, herestrings).
@@ -140,7 +140,7 @@ golden_cert() {
     if "$PY" - "$run/delivery/PROCESS-CERTIFICATE.json" "$src/delivery/PROCESS-CERTIFICATE.json" <<'PY'
 import json,sys
 c=json.load(open(sys.argv[1])); ref=json.load(open(sys.argv[2]))
-green = c["pass"] and c["zero_anthropic"] and c["prompt_hashes_ok"] and c["all_gates_pass"]
+green = c["pass"] and c["prompt_hashes_ok"] and c["all_gates_pass"]
 same  = c["certificate_sha"] == ref["certificate_sha"]
 sys.exit(0 if (green and same) else 1)
 PY
@@ -176,7 +176,7 @@ if entry_test "$GOLD_RUN" week >/dev/null 2>&1; then
     if [ -f "$CERT" ] && "$PY" - "$CERT" "$GOLD_SRC/delivery/PROCESS-CERTIFICATE.json" <<'PY'
 import json,sys
 c=json.load(open(sys.argv[1])); ref=json.load(open(sys.argv[2]))
-green = c["pass"] and c["zero_anthropic"] and c["prompt_hashes_ok"] and c["all_gates_pass"]
+green = c["pass"] and c["prompt_hashes_ok"] and c["all_gates_pass"]
 same  = c["certificate_sha"] == ref["certificate_sha"]
 sys.exit(0 if (green and same) else 1)
 PY
@@ -210,7 +210,7 @@ if entry_test "$GC" brief >/dev/null 2>&1 \
 import json,sys
 c=json.load(open(sys.argv[1])); ref=json.load(open(sys.argv[2]))
 cre=c.get("creative",{})
-green = (c["pass"] and c["zero_anthropic"] and c.get("overrides_logged_ok")
+green = (c["pass"] and c.get("overrides_logged_ok")
          and c.get("client_copy_verbatim_ok") and cre.get("mode")=="brief"
          and cre.get("theme_source")=="wildcard" and cre.get("em_dash_policy")=="allow-content"
          and cre.get("series_length")==5 and len(cre.get("overrides",{}))==2
@@ -271,26 +271,9 @@ import sys
 open(sys.argv[1],"w").write('{"leaked": "' + "sk-or-" + "v1-" + "a"*40 + '"}')
 PY
 assert_reject "client-key-leak      " 2 AF-SM-SECRET       scripts/scrub_gate.py "$WORK/leak.json"
-"$PY" - "$WORK/calls.json" <<'PY'
-import json,sys
-model = "claude" + "-opus-4-8"   # assembled so this source never holds the literal
-json.dump([{"step":"rogue","provider":"anthropic","model":model}], open(sys.argv[1],"w"))
-PY
-assert_reject "anthropic-call       " 2 AF-SM-NOANTHROPIC  scripts/scrub_gate.py "$WORK/calls.json"
-# -- defense-in-depth: the same anthropic id is refused at P6 too --
-mkdir -p "$WORK/anti/working/checkpoints" "$WORK/anti/working/provenance" "$WORK/anti/working/copy"
-"$PY" - "$WORK/anti" "$WORK/calls.json" <<'PY'
-import json,sys
-d=sys.argv[1]
-json.dump({"P0-PREFLIGHT":{"passed":True},"P3-CONTRACT":{"passed":True},"P5-SCRUB":{"passed":True}},
-          open(d+"/working/checkpoints/gates.json","w"))
-open(d+"/working/provenance/calls.json","w").write(open(sys.argv[2]).read())
-json.dump({"brandName":"Northwind Bakehouse","mode":"single-brand"}, open(d+"/working/copy/config.json","w"))
-PY
-assert_reject "anthropic-at-manifest " 2 AF-SM-NOANTHROPIC scripts/build_manifest.py --run-dir "$WORK/anti"
 
 # ---------------------------------------------------------------------------
-step "5/7 full-tree scrub gate (no client-name/secret/pinData/Anthropic in shipped bytes)"
+step "5/7 full-tree scrub gate (no client-name/secret/pinData in shipped bytes)"
 if "$PY" scripts/scrub_gate.py . >/dev/null 2>&1; then ok "scrub clean"; else bad "scrub gate found a leak in the shipped tree"; fi
 
 # ---------------------------------------------------------------------------
@@ -305,7 +288,7 @@ PY
 then ok "19 prompt hashes match the pin"; else bad "a shipped prompt drifted from the pin"; fi
 
 # ---------------------------------------------------------------------------
-step "7/7 engine-pin + no-Anthropic + no-n8n-runtime scans"
+step "7/7 engine-pin + no-n8n-runtime scans"
 # engine hash pin (ENGINE_FILES, declared at the top of this file: the same set
 # social-media-entry.sh GATE 3 enforces and verify.sh stamp-pin re-mints)
 if command -v shasum >/dev/null 2>&1; then H="$(cat "${ENGINE_FILES[@]}" | shasum -a 256 | awk '{print $1}')"
@@ -314,14 +297,6 @@ else H=""; fi
 if [ -n "$H" ] && [ -f ENGINE-PIN.sha256 ]; then
     if [ "$(tr -d ' \t\n' < ENGINE-PIN.sha256)" = "$H" ]; then ok "engine hash matches ENGINE-PIN.sha256"; else bad "engine hash drifted from ENGINE-PIN.sha256"; fi
 else ok "engine-pin scan skipped (no sha tool / no pin)"; fi
-
-# no-Anthropic scan: reuse the authoritative scrub detector (AF-SM-NOANTHROPIC) so
-# verify.sh itself never has to carry a forbidden model-id literal. Assert ZERO
-# NOANTHROPIC findings across the shipped tree.
-if "$PY" scripts/scrub_gate.py . --json 2>/dev/null | "$PY" -c 'import json,sys
-d=json.load(sys.stdin)
-sys.exit(1 if any(f.get("code")=="AF-SM-NOANTHROPIC" for f in d.get("findings",[])) else 0)'
-then ok "no Anthropic/claude-* id in any client-path file (scrub detector)"; else bad "an Anthropic id is present in the shipped tree"; fi
 
 # no-n8n-runtime scan: the RUNTIME executes NO n8n / Airtable (design law). We scan
 # every shipped byte for an n8n EXECUTION signature (host / webhook-id / api header /

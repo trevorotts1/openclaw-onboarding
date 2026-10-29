@@ -71,12 +71,13 @@ class TestResolveBoxDefault(_Box):
         self.assertIsNone(mid)
         self.assertIn("no agents.defaults.model", why)
 
-    def test_forbidden_default_never_used(self):
-        for bad in ("anthropic/some-model", "openrouter/anthropic/x", "claude-whatever"):
+    def test_anthropic_family_default_is_used_as_configured(self):
+        # No rule against Anthropic models: the box's own default is returned as is.
+        for ok_id in ("anthropic/some-model", "openrouter/anthropic/x", "claude-whatever"):
             mid, why = self.ams.resolve_box_default_model(
-                self.write_cfg({"agents": {"defaults": {"model": {"primary": bad}}}}))
-            self.assertIsNone(mid, bad)
-            self.assertIn("forbidden", why)
+                self.write_cfg({"agents": {"defaults": {"model": {"primary": ok_id}}}}))
+            self.assertEqual(mid, ok_id)
+            self.assertEqual(why, "")
 
     def test_resolve_model_returns_none_on_gap(self):
         self.ams._config_candidates = lambda explicit=None: []

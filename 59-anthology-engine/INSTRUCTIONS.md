@@ -55,8 +55,7 @@ contract and its exit-code classification are fixed (`--plan` prints the contrac
 - No signed certificate = not done. A sub-agent's claim of done is a hypothesis
   until independent verification confirms it.
 - The provers MEASURE the stripped text; a self-reported count is ignored.
-- Every resolved model id is the client's own NON-Anthropic model; the run ledger
-  and every shipped file are checked (AF-AE-ANTHROPIC).
+- Every resolved model id is a model the client configured; no vendor is refused.
 - A hand-rolled ungoverned external sender in a run dir aborts the run
   (AF-AE-BYPASS); all external I/O routes through the engine's sanctioned adapters.
 - Keying is contact_id, never email. Unroutable submissions land in the exceptions
