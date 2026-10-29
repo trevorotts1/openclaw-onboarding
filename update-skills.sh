@@ -2406,10 +2406,10 @@ PYEOF
 # hundreds of duplicate AGENTS.md / TOOLS.md copies that every scanner and refresher walked.
 # Every roll, OUTSIDE the per-version .wired-<version> sentinel (and from the content-current
 # exit, which skips the wiring loop), shared-utils/central_backup.py MOVES such folders (never
-# deletes in the move) into the box's ONE central backup folder (outside every workspace; the
-# macOS ~/Downloads/openclaw-backups or <OpenClaw root>/backups on a Docker box, the rule
-# platform/common.sh OC_BACKUPS uses) and keeps the newest $OPENCLAW_BACKUP_KEEP (default 3)
-# runs per tool there. Idempotent: a second run finds nothing. A real department folder is
+# deletes in the move; one atomic rename, so a move that cannot finish leaves the folder
+# where it was) into the box's ONE central backup folder, <OpenClaw root>/backups on every
+# platform (never ~/Downloads), outside every workspace, and keeps the newest
+# $OPENCLAW_BACKUP_KEEP (default 3) runs per tool there. Idempotent: a second run finds nothing. A real department folder is
 # never moved. The tool refuses to run as root (a root-owned folder on the node-owned volume
 # blocks the next prune), so on a Docker box the roll must run as the box user, as it already
 # does. ALWAYS returns 0: this must never be the thing that fails a roll.

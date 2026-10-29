@@ -1,5 +1,11 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.68 - 2026-10-29 - fix(32): `backfill-dept-agent-personalization.sh` keeps its backups in the box's central backup folder, not inside the department
+
+The backfill copied each department's IDENTITY / SOUL / MEMORY / HEARTBEAT files to `<dept>/.backfill-backup-<UTC stamp>/` before re-scaffolding them, so a backup folder sat inside every department it touched and was walked by every scanner afterwards. It now copies them to `<OpenClaw root>/backups/backfill-dept-personalization/<UTC stamp>/<dept>/` (resolved by `shared-utils/central_backup.py`, outside every workspace) and prunes that tool's folder to the newest 3 runs after the pass. A dry run creates nothing. If `central_backup.py` is not installed yet the script stops before writing anything and says to run the weekly update first. Folders earlier runs left inside a department are moved to the same place by the roll (`update-skills.sh` `migrate_backups_out_of_departments`).
+
+Tests: `tests/unit/backups-out-of-departments.test.sh` (the migration picks up `.backfill-backup-<stamp>` and the other stray backup shapes; 62 checks, 15 mutants caught).
+
 ## v13.1.67 - 2026-10-29 - fix(32): the installer repairs a missing better-sqlite3 native binding, and a pin-current box stamps commandCenterBuildFresh
 
 Two faults from the last Big Fleet Roll, both in `run-full-install.sh`.

@@ -3449,7 +3449,7 @@
  },
  {
   "name": "backups-out-of-departments-guard",
-  "was": "backups-out-of-departments-guard.yml",
+  "was": "(new, backups-out-of-departments 2026-10-29)",
   "script": "scripts/ci/fast-guards.d/backups-out-of-departments-guard.sh",
   "python311": false,
   "events": {
@@ -3462,8 +3462,7 @@
      "32-command-center-setup/scripts/backfill-dept-agent-personalization.sh",
      "23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py",
      "23-ai-workforce-blueprint/scripts/test-phantom-dept-collision-gate.sh",
-     "tests/unit/backups-out-of-departments.test.sh",
-     ".github/workflows/backups-out-of-departments-guard.yml"
+     "tests/unit/backups-out-of-departments.test.sh"
     ]
    },
    "pull_request": {
@@ -3475,8 +3474,7 @@
      "32-command-center-setup/scripts/backfill-dept-agent-personalization.sh",
      "23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py",
      "23-ai-workforce-blueprint/scripts/test-phantom-dept-collision-gate.sh",
-     "tests/unit/backups-out-of-departments.test.sh",
-     ".github/workflows/backups-out-of-departments-guard.yml"
+     "tests/unit/backups-out-of-departments.test.sh"
     ]
    }
   }

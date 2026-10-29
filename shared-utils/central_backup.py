@@ -8,13 +8,19 @@ department tree: <dept>.bak-<tool>-<stamp>/ next to the real departments,
 duplicate AGENTS.md / TOOLS.md copies that every scanner and refresher then walked.
 
 LAYOUT.   <backup root>/<tool>/<UTC stamp YYYYmmddTHHMMSSZ>/...
-BACKUP ROOT (the rule platform/common.sh OC_BACKUPS and Skill 70 pr_backup_root already use):
-    $OPENCLAW_BACKUP_DIR when set, else ~/Downloads/openclaw-backups on macOS,
-    else <OpenClaw root>/backups (Hostinger /data/.openclaw, Contabo and bare Linux).
+BACKUP ROOT, the same on EVERY platform: <OpenClaw root>/backups (Mac ~/.openclaw/backups,
+    Hostinger /data/.openclaw/backups, Contabo /home/node/.openclaw/backups), on the same
+    volume as the workspace so a backup folder is moved with one atomic rename. An ABSOLUTE
+    $OPENCLAW_BACKUP_DIR overrides it (a relative one is ignored with a warning). This
+    mechanism never uses ~/Downloads; the skills-rollback and self-update folders are separate.
 RETENTION. Per tool, the newest $OPENCLAW_BACKUP_KEEP runs are kept (default 3, the same knob
     oc_backup_keep() in update-skills.sh reads). Stamps closer than RUN_GAP seconds are ONE
     run, so a repair that backed up 38 departments seconds apart is kept or pruned as one set,
     never cut in the middle.
+
+A backup folder is moved with os.rename ONLY: never copy-then-delete. If the rename fails (for
+example the workspace and the backup root are on different volumes) the folder stays exactly
+where it was and the failure is logged.
 
 CLI (exit 0 ok, 1 a move or prune failed, 2 usage, 4 refused because the user is root):
     central_backup.py migrate [--dry-run] [--root DIR] [--workspace DIR ...]
@@ -50,7 +56,12 @@ INNER = (
 )
 RESERVED = {"full-backup", "toolsearch-guard", "lean-core-file-system", "install-logs",
             "persist-home", "logs", "skills-rollback", "skills-backup"}
+_WARNED = []
 RUN_GAP = 120  # seconds; stamps this close together are one run
+# What a tool-made run folder inside .floor-backups/ or departments-archive/ is called
+# (20260623T182141Z, 20260623-182141, 20260623_182141, with an optional -N de-dupe tail).
+# Anything else in there was put there by a person and is never touched.
+HOLDER_CHILD_RE = re.compile(r"^\d{8}[T_-]?\d{6}Z?(?:-\d+)?$")
 
 
 def log(msg):
@@ -73,8 +84,8 @@ def oc_root():
             return Path(v)
     home = Path.home() / ".openclaw"
     data = Path("/data/.openclaw")
-    if data.is_dir():
-        if home.is_dir() and os.path.realpath(str(data)) == os.path.realpath(str(home)):
+    if os.path.isdir(str(data)):
+        if os.path.isdir(str(home)) and os.path.realpath(str(data)) == os.path.realpath(str(home)):
             return home
         return data
     return home
@@ -82,11 +93,12 @@ def oc_root():
 
 def backup_root(root=None):
     v = os.environ.get("OPENCLAW_BACKUP_DIR", "")
-    if v:
+    if v and os.path.isabs(v):
         return Path(v)
-    if sys.platform == "darwin":
-        return Path.home() / "Downloads" / "openclaw-backups"
-    return Path(root) / "backups" if root else oc_root() / "backups"
+    if v and not _WARNED:   # a relative path would land wherever the caller happens to be standing
+        _WARNED.append(1)
+        print("[backups-out] IGNORING OPENCLAW_BACKUP_DIR=%r: it is not an absolute path" % v, file=sys.stderr)
+    return (Path(root) if root else oc_root()) / "backups"
 
 
 def _check_tool(tool):
@@ -100,7 +112,7 @@ def run_dir(tool, root=None, create=True):
     tdir = backup_root(root) / _check_tool(tool)
     base = datetime.now(timezone.utc).strftime(FMT)
     run, n = tdir / base, 2
-    while run.exists():
+    while os.path.lexists(str(run)):
         run = tdir / ("%s-%d" % (base, n))
         n += 1
     if create:
@@ -117,10 +129,14 @@ def prune(tool, root=None, dry_run=False, planned=()):
     """Keep the newest keep_n() runs of one tool; return the run names removed.
     `planned` = run names a dry run would add (counted, never deleted)."""
     tdir = backup_root(root) / _check_tool(tool)
+    if os.path.islink(str(tdir)):   # a link may point at somebody else's folder: never prune through it
+        log("SKIP prune: %s is a symlink" % tdir)
+        return []
     have = set()
-    if tdir.is_dir():
-        have = {n for n in os.listdir(str(tdir))
-                if RUN_RE.match(n) and (tdir / n).is_dir() and not (tdir / n).is_symlink()}
+    try:
+        have = {n for n in os.listdir(str(tdir)) if RUN_RE.match(n) and _is_dir(tdir / n)}
+    except OSError:
+        pass   # no such folder yet, or unreadable: nothing to prune
     clusters, last = [], None
     for n in sorted(have | set(planned)):
         e = _epoch(n)
@@ -143,8 +159,8 @@ def prune(tool, root=None, dry_run=False, planned=()):
     return gone
 
 
-def _is_dir(p):
-    return p.is_dir() and not p.is_symlink()
+def _is_dir(p):   # os.path never raises, unlike Path.is_dir() on a folder we cannot stat
+    return os.path.isdir(str(p)) and not os.path.islink(str(p))
 
 
 def _kids(d):
@@ -195,7 +211,13 @@ def _discover(root, extra_workspaces):
         for name, tool in ((".floor-backups", "floor-backups"), ("departments-archive", "departments-archive")):
             if _is_dir(b / name):
                 holders.append(b / name)
-                items += [(c, tool, _parse(c.name, c)[1], None) for c in _kids(b / name) if _is_dir(c)]
+                for c in _kids(b / name):
+                    if not _is_dir(c):
+                        continue
+                    if HOLDER_CHILD_RE.match(c.name):
+                        items.append((c, tool, _parse(c.name, c)[1], None))
+                    else:
+                        log("SKIP %s: not a stamped backup run, so it is not ours to move" % c)
     # a departments/ folder (workspace, company tree) or a Command Center workspace whose
     # children are the departments
     droots = [b / "departments" for b in bases] + [Path(os.path.realpath(str(c))) for c in cc]
@@ -214,6 +236,8 @@ def _discover(root, extra_workspaces):
                 items.append((c, tool, ts, c.name))
                 continue
             for sub, rx, tool in INNER:   # a real department: only its own known backup folders
+                if sub and not _is_dir(c / sub):
+                    continue   # absent, or a symlink we must not follow out of the department
                 for k in _kids(c / sub if sub else c):
                     mm = rx.match(k.name)
                     if mm and _is_dir(k):
@@ -225,10 +249,13 @@ def migrate(root, workspaces=(), dry_run=False):
     root = Path(root)
     broot = backup_root(root)
     breal = os.path.realpath(str(broot))
-    try:
-        cfg = (root / "openclaw.json").read_text(errors="replace")
-    except OSError:
-        cfg = ""
+    cfg = ""
+    if os.path.lexists(str(root / "openclaw.json")):
+        try:
+            cfg = (root / "openclaw.json").read_text(errors="replace")
+        except OSError as exc:   # cannot tell which folders are still in use, so move nothing
+            log("ABORT: openclaw.json exists but cannot be read (%s); nothing was moved" % exc.__class__.__name__)
+            return 0
     moved = failed = 0
     runs, taken, done = {}, set(), set()   # tool -> run names this pass adds; dest paths; real srcs
     log("%sOpenClaw root %s -> backup root %s (keep %d per tool)"
@@ -249,13 +276,13 @@ def migrate(root, workspaces=(), dry_run=False):
         tool = "dept-" + tool if tool in RESERVED else tool
         run, n = broot / tool / ts, 2
         if nested is None:   # the folder IS the run
-            while run.exists() or str(run) in taken:
+            while os.path.lexists(str(run)) or str(run) in taken:
                 run = broot / tool / ("%s-%d" % (ts, n))
                 n += 1
             dest = run
         else:                # many folders can share one run
             dest, k = run / nested, 2
-            while dest.exists() or str(dest) in taken:
+            while os.path.lexists(str(dest)) or str(dest) in taken:
                 dest = run / ("%s.%d" % (nested, k))
                 k += 1
         taken.add(str(dest))
@@ -266,11 +293,9 @@ def migrate(root, workspaces=(), dry_run=False):
             continue
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(src), str(dest))
-        except Exception as exc:  # noqa: BLE001 - a failed move must leave the source untouched
-            if os.path.exists(str(src)) and dest.exists():
-                shutil.rmtree(str(dest), ignore_errors=True)
-            log("FAILED %s -> %s: %s" % (src, dest, exc))
+            os.rename(str(src), str(dest))   # one atomic rename; NEVER copy-then-delete
+        except OSError as exc:   # the folder is exactly where it was, and nothing was deleted
+            log("FAILED %s -> %s: %s (left in place)" % (src, dest, exc))
             failed += 1
             continue
         try:

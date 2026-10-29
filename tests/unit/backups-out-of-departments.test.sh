@@ -24,10 +24,18 @@
 #   G  OPENCLAW_BACKUP_KEEP overrides the count
 #   H  update-skills.sh carries the step, runs it from the end of the roll AND the content-current
 #      exit, outside the .wired loop; the shipped function really moves the folders
-#   I  the backup root follows the platform rule; root is refused
+#   I  the backup root is <OpenClaw root>/backups on EVERY platform (never ~/Downloads); an
+#      absolute OPENCLAW_BACKUP_DIR overrides it, a relative one is ignored; root is refused
+#   L  hardening: a failed rename leaves the source untouched and deletes nothing; a human folder
+#      inside departments-archive/ or .floor-backups/ is never moved; an unstatable central
+#      folder gives FAILED, not a traceback; a symlinked working/ or tool folder is never followed;
+#      the backup root inside a backup folder is not moved into itself; a reserved tool name is
+#      renamed; an unreadable openclaw.json aborts the move
 #   J  apply-u004-phase2.sh writes its backups to the central folder, not into the department
-#   K  FAILABLE: five mutants of the module (guard widened, pruner disabled, mover disabled,
-#      run-grouping off, move turned into delete) are each caught by the same checks
+#   K  FAILABLE: fifteen mutants of the module (guard widened, pruner off, mover off, run-grouping
+#      off, move turned into delete, copy-then-delete restored, stamp filter off, Path.exists
+#      restored, symlink guards off, self-move guard off, reserved rename off, Downloads root
+#      restored, relative backup dir accepted, unreadable-config abort off) are each caught
 #
 # Hermetic: mktemp -d sandbox, HOME redirected into it, no real ~/.openclaw, no network.
 # bash 3.2 safe: no associative arrays, no mapfile. Exit 0 = all pass, 1 = a failure.
@@ -164,6 +172,103 @@ suite() {
     && ok "G1 keep=2 leaves the newest 2" || bad "G1 keep=2 left: $(ls "$CEN/repair-x" | tr '\n' ' ')"
   OPENCLAW_BACKUP_KEEP=banana python3 "$CB" prune --tool repair-x >/dev/null 2>&1
   [ "$(count_dirs "$CEN/repair-x")" = 2 ] && ok "G2 a junk value falls back to the default 3 (nothing more is pruned)" || bad "G2 junk keep value pruned"
+
+  hdr "L: hardening (each check below is also run against a broken copy in section K)"
+  local M mD out2 rc2 b2
+  mini() { M="$(mktemp -d "$SANDBOX/mini.XXXXXX")"; mkdir -p "$M/oc/workspace/departments"; mD="$M/oc/workspace/departments"; }
+  runcb() { OPENCLAW_ROOT="$M/oc" OPENCLAW_BACKUP_DIR="${CBDIR_OVERRIDE:-$M/central}" python3 "$CB" "$@" 2>&1; }
+
+  # L1 (D1): a rename that fails (different volume) leaves the source untouched and deletes nothing
+  mini; mk_bak "$mD/video.bak-prover-fix-20260628T120611Z"; mk_bak "$mD/sales.bak-prover-fix-20260628T120612Z"
+  b2="$(snap_all "$mD")"
+  out2="$(OPENCLAW_ROOT="$M/oc" OPENCLAW_BACKUP_DIR="$M/central" python3 - "$CB" "$M/oc" <<'PY' 2>&1
+import errno, importlib.util, os, sys
+spec = importlib.util.spec_from_file_location("cbm", sys.argv[1]); c = importlib.util.module_from_spec(spec); spec.loader.exec_module(c)
+def boom(a, b): raise OSError(errno.EXDEV, "Invalid cross-device link")
+os.rename = boom
+sys.exit(c.migrate(sys.argv[2]))
+PY
+)"; rc2=$?
+[ "$rc2" = 1 ] && [ "$(snap_all "$mD")" = "$b2" ] && [ "$(find "$M/central" -type f 2>/dev/null | wc -l | tr -d ' ')" = 0 ] \
+  && printf '%s\n' "$out2" | grep -q 'FAILED.*left in place' \
+  && ok "L1 a failed rename: exit 1, FAILED logged, every file still in place, nothing copied or deleted" || bad "L1 failed-rename handling: rc=$rc2 $out2"
+
+  # L2 (D2): a human folder inside departments-archive/ or .floor-backups/ is never moved
+  mini; W2="$M/oc/workspace"
+  mkdir -p "$W2/departments-archive/retired-team1" "$W2/.floor-backups/notes"; echo human > "$W2/departments-archive/retired-team1/a.md"; echo human > "$W2/.floor-backups/notes/a.md"
+  mk_bak "$W2/departments-archive/20261001-101010"; mk_bak "$W2/.floor-backups/20260623T182141Z"
+  out2="$(runcb migrate)"; rc2=$?
+  [ "$rc2" = 0 ] && [ -f "$W2/departments-archive/retired-team1/a.md" ] && [ -f "$W2/.floor-backups/notes/a.md" ] \
+    && [ -z "$(find "$M/central" \( -name retired-team1 -o -name notes \) 2>/dev/null)" ] \
+    && [ -f "$M/central/departments-archive/20261001T101010Z/AGENTS.md" ] && [ -f "$M/central/floor-backups/20260623T182141Z/AGENTS.md" ] \
+    && printf '%s\n' "$out2" | grep -q 'SKIP .*retired-team1' \
+    && ok "L2 only stamped run folders move; retired-team1 and notes stay and are logged SKIP" || bad "L2 holder children: rc=$rc2 $out2"
+
+  # L3 (D4): a central folder we cannot stat gives FAILED, never a traceback. Python 3.9-3.11 raise
+  # PermissionError from Path.exists()/is_dir() there (3.12+ swallow it), so the harness gives
+  # pathlib that old behaviour and the check holds on every Python.
+  mini; mk_bak "$mD/video.bak-prover-fix-20260628T120611Z"; mkdir -p "$M/central/prover-fix"; chmod 000 "$M/central/prover-fix"
+  b2="$(snap_all "$mD")"
+  out2="$(OPENCLAW_ROOT="$M/oc" OPENCLAW_BACKUP_DIR="$M/central" python3 - "$CB" "$M/oc" <<'PY' 2>&1
+import errno, importlib.util, pathlib, sys
+spec = importlib.util.spec_from_file_location("cbm", sys.argv[1]); c = importlib.util.module_from_spec(spec); spec.loader.exec_module(c)
+def _old(self):
+    try:
+        self.stat()
+    except OSError as e:
+        if e.errno not in (errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP):
+            raise
+        return False
+    return True
+pathlib.Path.exists = _old
+pathlib.Path.is_dir = lambda self: _old(self) and __import__("stat").S_ISDIR(self.stat().st_mode)
+sys.exit(c.migrate(sys.argv[2]))
+PY
+)"; rc2=$?; chmod 755 "$M/central/prover-fix"
+  [ "$rc2" = 1 ] && ! printf '%s\n' "$out2" | grep -q Traceback && printf '%s\n' "$out2" | grep -q 'FAILED' && [ "$(snap_all "$mD")" = "$b2" ] \
+    && ok "L3 an unstatable central folder: FAILED logged, no traceback, source intact" || bad "L3 unstatable central folder: rc=$rc2 $out2"
+
+  # L4 (D5): a symlinked working/ is never followed out of the department
+  mini; mkdir -p "$mD/sales/01-role" "$M/ext"; mk_bak "$M/ext/bak-archive-20260601T000000Z"; ln -s "$M/ext" "$mD/sales/working"
+  out2="$(runcb migrate)"; rc2=$?
+  [ "$rc2" = 0 ] && [ -f "$M/ext/bak-archive-20260601T000000Z/AGENTS.md" ] && [ -L "$mD/sales/working" ] && [ ! -e "$M/central/bak-archive" ] \
+    && ok "L4 a symlinked working/ is not followed: the folder behind it is untouched" || bad "L4 symlinked working/: rc=$rc2 $out2"
+
+  # L5 (D6): prune never walks through a symlinked tool folder
+  mini; mkdir -p "$M/ext" "$M/central"; for d in 20260101 20260102 20260103 20260104 20260105; do mkdir -p "$M/ext/${d}T000000Z"; done
+  ln -s "$M/ext" "$M/central/linked"; out2="$(runcb prune --tool linked)"
+  [ "$(count_dirs "$M/ext")" = 5 ] && printf '%s\n' "$out2" | grep -q 'SKIP prune' && ok "L5 a symlinked tool folder is skipped, all 5 runs behind it survive" || bad "L5 symlinked tool folder: $out2"
+
+  # L6: a backup root that sits INSIDE a backup-named folder is never moved into itself
+  mini; STRAY="$mD/stray.bak-x-20260101T000000Z"; mk_bak "$STRAY"
+  out2="$(CBDIR_OVERRIDE="$STRAY/central" runcb migrate)"; rc2=$?
+  [ "$rc2" = 0 ] && [ -f "$STRAY/AGENTS.md" ] && ! printf '%s\n' "$out2" | grep -q FAILED && ok "L6 the backup root inside a backup folder is left alone (exit 0, no FAILED)" || bad "L6 self-move guard: rc=$rc2 $out2"
+
+  # L7: a tool name that collides with a folder the repo already owns is renamed dept-<name>
+  mini; mk_bak "$mD/dept.bak-logs-20260101T000000Z"
+  out2="$(runcb migrate)"; rc2=$?
+  [ "$rc2" = 0 ] && [ -f "$M/central/dept-logs/20260101T000000Z/dept.bak-logs-20260101T000000Z/AGENTS.md" ] && [ ! -e "$M/central/logs" ] \
+    && ok "L7 a reserved tool name (logs) lands in dept-logs/, never in the repo's own logs/" || bad "L7 reserved rename: rc=$rc2 $out2"
+
+  # L8 (D7): a relative OPENCLAW_BACKUP_DIR is ignored, never resolved against the current folder
+  mini; out2="$(cd "$M" && OPENCLAW_ROOT="$M/oc" OPENCLAW_BACKUP_DIR="rel/dir" python3 "$CB" where 2>/dev/null)"
+  [ "$out2" = "$M/oc/backups" ] && [ ! -e "$M/rel" ] && ok "L8 a relative OPENCLAW_BACKUP_DIR is ignored (root falls back to <root>/backups)" || bad "L8 relative backup dir gave '$out2'"
+
+  # L9 (D7): an openclaw.json that exists but cannot be read aborts the move (cannot tell what is in use)
+  mini; mk_bak "$mD/video.bak-prover-fix-20260628T120611Z"; echo '{}' > "$M/oc/openclaw.json"; chmod 000 "$M/oc/openclaw.json"
+  out2="$(runcb migrate)"; rc2=$?; chmod 644 "$M/oc/openclaw.json"
+  [ "$rc2" = 0 ] && [ -d "$mD/video.bak-prover-fix-20260628T120611Z" ] && [ ! -e "$M/central" ] && printf '%s\n' "$out2" | grep -q 'ABORT: openclaw.json exists but cannot be read' \
+    && ok "L9 an unreadable openclaw.json: ABORT logged, exit 0, nothing moved" || bad "L9 unreadable config: rc=$rc2 $out2"
+
+  # L10 (D3): even where sys.platform says macOS, the root is <OpenClaw root>/backups, never ~/Downloads
+  out2="$(env -u OPENCLAW_BACKUP_DIR python3 - "$CB" <<'PY' 2>&1
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("cbm", sys.argv[1]); c = importlib.util.module_from_spec(spec); spec.loader.exec_module(c)
+sys.platform = "darwin"
+print(c.backup_root("/r/.openclaw"))
+PY
+)"
+  [ "$out2" = "/r/.openclaw/backups" ] && ok "L10 the macOS backup root is <root>/backups (no ~/Downloads branch)" || bad "L10 macOS backup root gave '$out2'"
   export HOME="$S_HOME"; unset OPENCLAW_ROOT OPENCLAW_BACKUP_DIR
 }
 
@@ -203,10 +308,10 @@ printf '%s\n' "$OUT" | grep -q 'SKIP: shared-utils/central_backup.py not found' 
 
 # ----- I: platform rule + root refusal ---------------------------------------------
 hdr "I: backup root follows the platform rule; root is refused"
-if [ "$(uname -s)" = Darwin ]; then WANT="$SANDBOX/ih/Downloads/openclaw-backups"; else WANT="$SANDBOX/ir/backups"; fi
+WANT="$SANDBOX/ir/backups"
 mkdir -p "$SANDBOX/ir"
 W1="$(HOME="$SANDBOX/ih" OPENCLAW_ROOT="$SANDBOX/ir" env -u OPENCLAW_BACKUP_DIR python3 "$CB_REAL" where)"
-[ "$W1" = "$WANT" ] && ok "I1 default backup root follows the platform rule (macOS: Downloads/openclaw-backups; Linux, both Docker layouts: <OpenClaw root>/backups)" || bad "I1 backup root '$W1', wanted '$WANT'"
+[ "$W1" = "$WANT" ] && ok "I1 default backup root = <OpenClaw root>/backups on every platform (this host: $(uname -s)); never ~/Downloads" || bad "I1 backup root '$W1', wanted '$WANT'"
 [ "$(OPENCLAW_BACKUP_DIR=/x/y python3 "$CB_REAL" where)" = /x/y ] && ok "I2 OPENCLAW_BACKUP_DIR pins the root" || bad "I2 OPENCLAW_BACKUP_DIR ignored"
 mkdir -p "$SANDBOX/root/oc/workspace/departments/a.bak-x-20260101T000000Z"
 RC="$(cd "$REPO_ROOT/shared-utils" && HOME="$SANDBOX/root" OPENCLAW_ROOT="$SANDBOX/root/oc" OPENCLAW_BACKUP_DIR="$SANDBOX/root/central" \
@@ -238,37 +343,46 @@ RUN="$(ls -d "$JB"/central/apply-u004-phase2/*/ 2>/dev/null | head -1)"
   && ok "J2 nothing was written into the department tree (and the rulebook did install)" || bad "J2 backup folder written inside the department"
 
 # ----- K: mutants -------------------------------------------------------------------
-hdr "K: the same checks catch five broken copies of the module (failability)"
-mutant() {  # name, python snippet that edits the copy
-  local name="$1" snip="$2" m="$SANDBOX/mut-$1.py" pf pf2
+hdr "K: the same checks catch fifteen broken copies of the module (failability)"
+mutant() {  # name: build a copy of the module with ONE defect put back, run the whole suite on it
+  local name="$1" m="$SANDBOX/mut-$1.py" pf pf2
   cp "$CB_REAL" "$m"
-  python3 - "$m" "$snip" <<'PY'
-import re, sys
+  python3 - "$m" "$name" <<'PY'
+import sys
 p, which = sys.argv[1], sys.argv[2]
 s = open(p).read()
+RENAME = 'os.rename(str(src), str(dest))   # one atomic rename; NEVER copy-then-delete'
 edits = {
-  "widen":  (r'^BAK_DIR_RE = .*$', 'BAK_DIR_RE = re.compile(r"ba", re.IGNORECASE)'),
-  "noprune": (r'return max\(n, 1\)', 'return 99'),
-  "nomove": (r'shutil\.move\(str\(src\), str\(dest\)\)', 'pass'),
-  "nogroup": (r'^RUN_GAP = 120.*$', 'RUN_GAP = 0'),
-  "delete": (r'shutil\.move\(str\(src\), str\(dest\)\)', 'shutil.rmtree(str(src)); os.makedirs(str(dest))'),
+  "widen":    ('BAK_DIR_RE = re.compile(r"\\.bak(\\b|[-_.]|$)", re.IGNORECASE)', 'BAK_DIR_RE = re.compile(r"ba", re.IGNORECASE)'),
+  "noprune":  ('return max(n, 1)', 'return 99'),
+  "nomove":   (RENAME, 'pass'),
+  "nogroup":  ('RUN_GAP = 120', 'RUN_GAP = 0'),
+  "delete":   (RENAME, 'shutil.rmtree(str(src)); os.makedirs(str(dest))'),
+  "copydelete": (RENAME, 'shutil.move(str(src), str(dest))'),
+  "holderall": ('if HOLDER_CHILD_RE.match(c.name):', 'if True:'),
+  "pathexists": ('while os.path.lexists(str(dest)) or', 'while Path(str(dest)).exists() or'),
+  "followwork": ('if sub and not _is_dir(c / sub):', 'if False:'),
+  "followtool": ('if os.path.islink(str(tdir)):', 'if False:'),
+  "selfmove": ('if breal == real or breal.startswith(real + os.sep):', 'if False:'),
+  "noreserved": ('tool = "dept-" + tool if tool in RESERVED else tool', 'tool = tool'),
+  "downloads": ('    return (Path(root) if root else oc_root()) / "backups"\n',
+                '    if sys.platform == "darwin":\n        return Path.home() / "Downloads" / "openclaw-backups"\n    return (Path(root) if root else oc_root()) / "backups"\n'),
+  "relative": ('if v and os.path.isabs(v):', 'if v:'),
+  "noabort":  ('            return 0\n    moved = failed = 0', '            cfg = ""\n    moved = failed = 0'),
 }
-pat, rep = edits[which]
-new, n = re.subn(pat, rep, s, flags=re.M)
-if n != 1:
-    sys.exit("mutation %s matched %d places" % (which, n))
-open(p, "w").write(new)
+old, new = edits[which]
+if s.count(old) != 1:
+    sys.exit("mutation %s matched %d places" % (which, s.count(old)))
+open(p, "w").write(s.replace(old, new))
 PY
   [ $? = 0 ] || { bad "K mutant '$name' could not be built"; return; }
   pf=$FAIL; pf2=$PASS; QUIET=1; suite "$m" >/dev/null 2>&1; QUIET=0
   local caught=$((FAIL - pf)); FAIL=$pf; PASS=$pf2   # the mutant's failures are the point, not ours
   [ "$caught" -gt 0 ] && ok "K mutant '$name' is caught ($caught check(s) went red)" || bad "K mutant '$name' SURVIVED: the checks cannot see it"
 }
-mutant widen widen
-mutant noprune noprune
-mutant nomove nomove
-mutant nogroup nogroup
-mutant delete delete
+for m in widen noprune nomove nogroup delete copydelete holderall pathexists followwork followtool selfmove noreserved downloads relative noabort; do
+  mutant "$m"
+done
 
 echo ""
 echo "=== backups-out-of-departments: $PASS passed, $FAIL failed ==="
