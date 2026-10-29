@@ -4,15 +4,13 @@
 Authored by unit W1.9. This is the single choke point through which every billable
 text-generation turn flows. It resolves a capability TIER (never a model name; prompts
 and stage runners speak only tiers) to the CLIENT's own provider chain, advances that
-chain on retryable failures, meters every call, refuses Anthropic-shaped identifiers at
-call time, and on chain exhaustion holds the job durably with exactly ONE deduped founder
+chain on retryable failures, meters every call, and on chain exhaustion holds the job durably with exactly ONE deduped founder
 Telegram alert through the OpenClaw gateway.
 
 TIER MAP (config/model-map.template.json, resolved per box by preflight.sh into
 model-map.json; SPEC 8.1). The router NEVER hardcodes a model name and NEVER validates a
 model name against a known list: forward-dated names (GLM 5.2, Gemini 3.5 Flash, Minimax V3,
-DeepSeek V4.1 Flash, Kimi 2.6, ...) are taken AS-CONFIGURED. The ONLY name it rejects is an
-Anthropic-family shape.
+DeepSeek V4.1 Flash, Kimi 2.6, ...) are taken AS-CONFIGURED. It rejects no vendor.
 
   HEAVY-WRITER : (1) GLM 5.2 on ollama-cloud (baseUrl slotting, maxTokens 65536)
                  (2) OpenRouter GLM 5.2  (3) Gemini 3.5 Flash  (4) HOLD sentinel
@@ -29,9 +27,7 @@ Anthropic-family shape.
 ROUTER SEMANTICS (SPEC 8.2): one call site; per-call pre-meter and post-meter through
 anthology-cost-ledger.py (per-deliverable budgets shared across QC attempts); typed error
 classification (insufficient_credits, auth, rate_limit, timeout, refusal) with chain advance
-on retryable classes and a durable credit_out HOLD when the chain is exhausted; DENY PATTERNS
-refuse any resolved model matching an Anthropic-family shape (mirrors Skill 54 AF-AW-ANTHROPIC
-and anthology_state.py's ledger deny gate); the model ACTUALLY used is recorded honestly for
+on retryable classes and a durable credit_out HOLD when the chain is exhausted; the model ACTUALLY used is recorded honestly for
 the Artifact row and run ledger.
 
 SOVEREIGNTY (SPEC 8.3): the chain is the CLIENT's own accounts under the CLIENT's own labels;
@@ -42,7 +38,7 @@ value is used solely to build an Authorization header, never logged, echoed, or 
 
 Exit codes (SPEC 3.4 row 4; house convention: 1 unexpected error):
   0  completion
-  2  deny-pattern refusal (an Anthropic-shaped identifier reached the router; AF-AE-ANTHROPIC)
+  2  (retired: there is no vendor deny pattern any more)
   3  chain exhausted, job held (durable HOLD + ONE deduped founder alert; AF-AE-CREDIT-HOLD)
   4  budget ceiling block (anthology-cost-ledger.py refused the call before it billed)
 """
@@ -241,22 +237,6 @@ def load_provider_caps(model_map: dict) -> Dict[str, int]:
     return caps
 
 
-# ---------------------------------------------------------------------------
-# Anthropic-family deny pattern. Assembled from FRAGMENTS so this shipped runtime
-# file carries no contiguous banned literal (guard-no-anthropic-runtime.py scans .py
-# source; preflight.sh and verify.sh use the identical fragment convention). The
-# COMPILED pattern is functionally identical to anthology_state.py's ledger deny gate,
-# so the router and the ledger agree on what an Anthropic-shaped id is. SPEC 8.2.
-# ---------------------------------------------------------------------------
-_A = "anthro" + "pic"
-_C = "clau" + "de"
-_ANTHROPIC_DENY_RE = re.compile(
-    r"(?i)(^|[^a-z0-9])(" + _C + r"|" + _A + r")([^a-z0-9]|$)"
-    r"|" + _A + r"/"
-    r"|" + _C + r"-"
-    r"|us\." + _A + r"\.",
-)
-
 _PLACEHOLDER_RE = re.compile(r"<CLIENT[A-Z0-9_]*>|<CLIENT_[^>]*>")
 
 _CREDIT_TERMS = (
@@ -267,11 +247,6 @@ _REFUSAL_TERMS = (
     "content policy", "safety", "cannot assist", "i can't help", "i cannot help",
     "refuse", "moderation", "flagged", "prohibited content",
 )
-
-
-def is_anthropic_shaped(text: str) -> bool:
-    """True iff the string carries an Anthropic-family identifier shape."""
-    return bool(text) and bool(_ANTHROPIC_DENY_RE.search(str(text)))
 
 
 # ---------------------------------------------------------------------------
@@ -317,10 +292,6 @@ class ModelRouterError(Exception):
     """Base router error; carries the engine exit code."""
 
     exit_code = EX_ERR
-
-
-class DenyPatternRefusal(ModelRouterError):
-    exit_code = EX_DENY
 
 
 class ChainExhaustedHold(ModelRouterError):
@@ -429,15 +400,15 @@ def load_model_map(explicit: Optional[str] = None, run_dir: Optional[str] = None
 
 
 def validate_resolved_map(model_map: dict) -> None:
-    """Fail closed on a residual <CLIENT_*> placeholder (unresolved box) or any
-    Anthropic-family id in the TIER TREE (the actual routing surface). Defense in
-    depth beside preflight.sh --check; this runs at every route().
+    """Fail closed on a residual <CLIENT_*> placeholder (unresolved box) in the TIER
+    TREE (the actual routing surface). Defense in depth beside preflight.sh --check;
+    this runs at every route().
 
     Only the tiers subtree is scanned, never free-text prose: both the template's
     $schema_note and preflight.sh's own resolved-map note legitimately contain the
     literal string <CLIENT_*> while DESCRIBING placeholders, and that documentation
     is not a routing hazard. What matters is that every chain link's provider, model,
-    credential_label, and baseUrl are resolved and non-Anthropic."""
+    credential_label, and baseUrl are resolved."""
     tiers = model_map.get("tiers", {})
     residual = sorted(set(_PLACEHOLDER_RE.findall(json.dumps(tiers))))
     if residual:
@@ -445,19 +416,6 @@ def validate_resolved_map(model_map: dict) -> None:
             "model-map tier tree still carries placeholder(s), box not resolved: %s"
             % ", ".join(residual))
 
-    def walk(node, path):
-        if isinstance(node, dict):
-            for k, v in node.items():
-                walk(v, path + "." + str(k))
-        elif isinstance(node, list):
-            for i, v in enumerate(node):
-                walk(v, "%s[%d]" % (path, i))
-        elif isinstance(node, str):
-            if is_anthropic_shaped(node):
-                raise DenyPatternRefusal(
-                    "AF-AE-ANTHROPIC: resolved map carries a banned id at %s" % path)
-
-    walk(tiers, "tiers")
 
 
 def resolve_tier(model_map: dict, tier: str) -> dict:
@@ -682,7 +640,7 @@ def default_alert(dedupe_key: str, message: str) -> None:
 class RouteResult:
     tier: str
     provider: str
-    model_used: str          # honest, non-Anthropic (deny-checked before return)
+    model_used: str          # the model ACTUALLY used, as the provider reported it
     chain_order: int
     text: str
     usage: dict = field(default_factory=dict)
@@ -754,10 +712,6 @@ class ModelRouter:
                 provider, ErrorClass.TRUST,
                 detail="AF-AE-TRUST: provider %r returned a 200 without a 'model' field "
                 "(reported as %r); trust failure — treated as non-2xx (HOLD)" % (provider, model))
-        if is_anthropic_shaped(model) or is_anthropic_shaped(provider):
-            raise DenyPatternRefusal(
-                "AF-AE-ANTHROPIC: resolved model %r on provider %r matches an Anthropic-shaped "
-                "deny pattern; refused at call time (SPEC 8.2)" % (model, provider))
 
     # -- the single call site -------------------------------------------
     def route(self, tier: str, messages: List[dict],
@@ -843,8 +797,7 @@ class ModelRouter:
                                                  "class": pe.error_class.value,
                                                  "status": resp.status, "detail": pe.detail})
                             break
-                        # Honest record: refuse if the provider echoed an Anthropic id
-                        # or if the provider omitted the 'model' field (trust failure).
+                        # Honest record: refuse if the provider omitted the 'model' field (trust failure).
                         try:
                             self._guard_model(parsed["model_used"], provider)
                         except ProviderError as pe:
@@ -931,14 +884,6 @@ def _cli_resolve(args) -> int:
     return EX_OK
 
 
-def _cli_deny_check(args) -> int:
-    if is_anthropic_shaped(args.model):
-        print("DENY: %r matches an Anthropic-family shape (AF-AE-ANTHROPIC)" % args.model)
-        return EX_DENY
-    print("OK: %r is not Anthropic-shaped" % args.model)
-    return EX_OK
-
-
 def _cli_route(args) -> int:
     payload = json.loads(sys.stdin.read())
     tier = payload["tier"]
@@ -992,9 +937,6 @@ def main(argv=None) -> int:
     r.add_argument("tier")
     r.add_argument("--allow-template", action="store_true")
 
-    d = sub.add_parser("deny-check", help="test a model id against the Anthropic deny pattern")
-    d.add_argument("model")
-
     rt = sub.add_parser("route", help="route a turn: JSON {tier,messages,context} on stdin")
     rt.add_argument("--hold-on-credit", action="store_true",
                     help="hold immediately on the first insufficient-credits (default: advance)")
@@ -1007,16 +949,11 @@ def main(argv=None) -> int:
             return _cli_validate(args)
         if args.cmd == "resolve":
             return _cli_resolve(args)
-        if args.cmd == "deny-check":
-            return _cli_deny_check(args)
         if args.cmd == "route":
             return _cli_route(args)
         if args.cmd == "self-test" or args.cmd is None:
             return self_test()
         ap.error("unknown command")
-    except DenyPatternRefusal as exc:
-        sys.stderr.write("[model_router] %s\n" % exc)
-        return EX_DENY
     except ChainExhaustedHold as exc:
         sys.stderr.write("[model_router] HOLD: %s\n" % exc)
         return EX_HOLD
@@ -1116,14 +1053,6 @@ def self_test() -> int:
     except Exception as exc:
         check("resolved synthetic map validates (%s)" % exc, False)
 
-    # t1: deny-check catches an Anthropic-shaped id assembled from fragments
-    forbidden = "cl" + "aude-" + "sonnet-4"          # no literal in source (mirrors sibling)
-    forbidden2 = "anthro" + "pic/" + "cl" + "aude-opus-4"
-    check("deny-check catches a hyphenated vendor model id", is_anthropic_shaped(forbidden))
-    check("deny-check catches a slash-prefixed vendor model id", is_anthropic_shaped(forbidden2))
-    check("deny-check passes a real GLM id", not is_anthropic_shaped("glm-5.2"))
-    check("deny-check passes minimax id", not is_anthropic_shaped("minimax-v3"))
-
     # t2: HEAVY-WRITER succeeds on order-1 (ollama-cloud GLM)
     tr = _ScriptedTransport([_ok_response("glm-5.2", "chapter body")])
     router = ModelRouter(model_map=model_map, transport=tr,
@@ -1214,8 +1143,8 @@ def self_test() -> int:
                          pre_meter=lambda *a, **k: None, post_meter=lambda *a, **k: None,
                          hold_fn=lambda *a, **k: None, alert_fn=lambda *a, **k: None)
     jres = router.route("JUDGE", [{"role": "user", "content": "judge this"}], {"deliverable_key": "d7"})
-    check("JUDGE routes and records a non-Anthropic honest model",
-          jres.model_used == "minimax-v3" and not is_anthropic_shaped(jres.model_used))
+    check("JUDGE routes and records the honest model used",
+          jres.model_used == "minimax-v3")
 
     # t9: IMAGE tier is refused (handled by cover_render.py)
     router = ModelRouter(model_map=model_map, transport=_ScriptedTransport([]),
@@ -1234,14 +1163,14 @@ def self_test() -> int:
     except UnresolvedMapError:
         check("unresolved placeholder map fails closed (UnresolvedMapError)", True)
 
-    # t11: a map carrying an Anthropic id fails closed
-    poisoned = _synthetic_resolved_map()
-    poisoned["tiers"]["HEAVY-WRITER"]["chain"][0]["model"] = "cl" + "aude-" + "opus-4"
+    # t11: a map carrying an Anthropic-family id is NOT refused (no vendor rule)
+    anthropic_ok = _synthetic_resolved_map()
+    anthropic_ok["tiers"]["HEAVY-WRITER"]["chain"][0]["model"] = "cl" + "aude-" + "opus-4"
     try:
-        ModelRouter(model_map=poisoned)
-        check("Anthropic-poisoned map fails closed", False)
-    except DenyPatternRefusal:
-        check("Anthropic-poisoned map fails closed (DenyPatternRefusal, exit 2)", True)
+        ModelRouter(model_map=anthropic_ok)
+        check("a map naming an Anthropic-family id is accepted", True)
+    except Exception as exc:
+        check("a map naming an Anthropic-family id is accepted (%s)" % exc, False)
 
     # t12: hold-immediately-on-credit-out short-circuits on the FIRST 402
     holds, alerts = [], []

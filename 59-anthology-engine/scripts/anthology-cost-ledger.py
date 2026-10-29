@@ -56,8 +56,7 @@
 # third-party deps, calls NO model and NO provider, prints NO secret value.
 #
 # DOCTRINE: move in silence (operator-verbose on stderr, machine JSON on stdout);
-# NOTHING Anthropic in any runtime file (a fragment-assembled deny guard mirrors
-# model_router.py and never persists an Anthropic-shaped id); Convert and Flow in
+# Convert and Flow in
 # every client surface (this operator-side script emits nothing client-facing);
 # config and state writes run as the node user, never root.
 # =============================================================================
@@ -121,40 +120,13 @@ _KNOWN_TYPE_TOKENS = sorted(
 )
 
 # ---------------------------------------------------------------------------
-# Anthropic-family deny guard. Defense in depth: the ledger NEVER persists an
-# Anthropic-shaped model id into a runtime state store, even though the router
-# already denies before it ever calls us. Assembled from FRAGMENTS so this
-# shipped .py source carries no contiguous banned literal (guard-no-anthropic-
-# runtime.py scans source); the compiled pattern matches model_router.py's gate.
+# Model label written to the ledger.
 # ---------------------------------------------------------------------------
-_A = "anthro" + "pic"
-_C = "clau" + "de"
-_ANTHROPIC_DENY_RE = re.compile(
-    r"(?i)(^|[^a-z0-9])(" + _C + r"|" + _A + r")([^a-z0-9]|$)"
-    r"|" + _A + r"/"
-    r"|" + _C + r"-"
-    r"|us\." + _A + r"\.",
-)
-_REDACTED_MODEL = "[denied-non-sovereign-id]"
-
-
-def is_anthropic_shaped(text) -> bool:
-    """True iff the string carries an Anthropic-family identifier shape."""
-    return bool(text) and bool(_ANTHROPIC_DENY_RE.search(str(text)))
 
 
 def safe_model_label(model) -> str:
-    """The model id we are willing to WRITE to the ledger. An Anthropic-shaped id
-    is redacted to a neutral marker (the tokens are still counted so budget
-    integrity holds); a loud stderr note is the operator's signal that something
-    upstream of the router's own deny gate is misconfigured."""
+    """The model id we write to the ledger, exactly as reported ("unknown" if empty)."""
     m = ("" if model is None else str(model)).strip()
-    if is_anthropic_shaped(m):
-        sys.stderr.write(
-            "[cost-ledger] WARN: a non-sovereign (Anthropic-shaped) model id reached "
-            "the meter; redacting the stored id, still counting tokens. Investigate "
-            "the resolved model map (AF-AE-ANTHROPIC upstream of the router).\n")
-        return _REDACTED_MODEL
     return m or "unknown"
 
 
@@ -803,16 +775,15 @@ def cmd_self_test(args) -> int:
         rc = led.meter_pre(cfg, KEY, "HEAVY-WRITER", "glm-5.2", 200, 3, None, None)
         check("t9 persisted override lifts the ceiling -> 0", rc == EXIT_OK)
 
-        # t10: an Anthropic-shaped id is NEVER persisted, tokens still counted
-        banned = "anthro" + "pic/" + "clau" + "de-x"
+        # t10: an Anthropic-family id is recorded as reported (no vendor rule)
+        named = "anthro" + "pic/" + "clau" + "de-x"
         before = int(led.get_row(K2)["consumed_tokens"])
-        led.meter_post(cfg, K2, "HEAVY-WRITER", banned, 5, 5, 0, None, None)
+        led.meter_post(cfg, K2, "HEAVY-WRITER", named, 5, 5, 0, None, None)
         ev = led.conn.execute(
             "SELECT model FROM events WHERE deliverable_key=? ORDER BY event_id DESC "
             "LIMIT 1", (K2,)).fetchone()
-        check("t10 anthropic-shaped id redacted in the ledger",
-              not is_anthropic_shaped(ev["model"]))
-        check("t10 tokens still counted despite redaction",
+        check("t10 anthropic-family id recorded as reported", ev["model"] == named)
+        check("t10 tokens counted",
               int(led.get_row(K2)["consumed_tokens"]) == before + 10)
 
         # t11: cost estimate applies only when a price matches (opt-in). 1M in @

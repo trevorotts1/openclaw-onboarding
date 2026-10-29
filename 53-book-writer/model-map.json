@@ -1,5 +1,5 @@
 {
-  "$note": "CLIENT providers only. Fill each REQUIRED tier with the client's OWN model id. NEVER an Anthropic/claude-* id (AF-BK-ANTHROPIC hard-fails). A client's express choice is never substituted. preflight.sh probes capabilities + key NAMES only.",
+  "$note": "CLIENT providers only. Fill each REQUIRED tier with the client's OWN model id. A client's express choice is never substituted. preflight.sh probes capabilities + key NAMES only.",
   "tiers": {
     "HEAVY-WRITER": "ollama-cloud/gpt-oss-120b",
     "MID-WRITER": "openrouter/qwen-2.5-72b-instruct",
@@ -13,15 +13,21 @@
   },
   "probe": {
     "ollama_models": [
+      "deepseek-v4.1-flash:1017-cloud",
+      "embeddinggemma-2:740m",
       "ornith-1.5:9b",
       "deepseek-v4.1-flash:cloud",
-      "glm-5.1:cloud",
+      "glm-5.3:cloud",
+      "glm-5.3-flash:cloud",
       "minimax-m2.7:cloud",
-      "deepseek-v4.1-flash:cloud",
+      "glm-5.1:cloud",
+      "deepseek-v4-pro:cloud",
+      "deepseek-v4-flash:cloud",
+      "deepseek-v4-pro:0813-cloud",
       "gemma4:12b-mlx",
       "qwen3.8:27b-mlx",
       "muse-glimmer:30b-mlx",
-      "deepseek-v4.1-flash:cloud",
+      "deepseek-v4-flash:0731-cloud",
       "kimi-k3:cloud",
       "glm-ocr:latest",
       "minimax-m3:cloud",
@@ -37,9 +43,9 @@
       "GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND",
       "OLLAMA_MODELS"
     ],
-    "probed_at": "2026-08-25T11:02:07.607107+00:00"
+    "probed_at": "2026-10-29T17:56:14.033108+00:00"
   },
   "search_capability": "unknown",
   "image_capability": "unknown",
-  "resolved_at": "2026-08-25T11:02:07.607107+00:00"
+  "resolved_at": "2026-10-29T17:56:14.033108+00:00"
 }

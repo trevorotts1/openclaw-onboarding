@@ -3,7 +3,7 @@
 # ============================================================================
 # PROBES the CLIENT's actually-configured model providers (never assumes) and
 # resolves each capability tier (HEAVY-WRITER / MID-WRITER / FORMATTER /
-# RESEARCHER / IMAGE) to the client's OWN providers — NEVER Anthropic, NEVER
+# RESEARCHER / IMAGE) to the client's OWN providers — NEVER
 # operator keys. It writes model-map.json next to this script and FAILS LOUD when
 # a REQUIRED tier is unresolved (an unconfigured box must not silently ship empty
 # tiers). Re-running is safe: it preserves any operator-filled tier values and
@@ -20,13 +20,12 @@
 # OPTIONS
 #   --run-dir DIR   also cross-check the resolved tier->model map into
 #                   <DIR>/run/RUN-LEDGER.json (preflight_tier_map) so the
-#                   no-Anthropic gate (prove_bw_noanthropic) re-scans the resolved
-#                   tier model ids on the run.
+#                   run ledger records the resolved tier model ids.
 #
 # EXIT CODES
-#   0  probe complete; every REQUIRED tier resolved to a non-Anthropic client model
+#   0  probe complete; every REQUIRED tier resolved to a client model
 #   6  python3 missing (BW_DEPS_MISSING)
-#   7  a REQUIRED tier is unresolved OR resolves to an Anthropic/claude id
+#   7  a REQUIRED tier is unresolved
 #      (BW_PREFLIGHT_UNCONFIGURED — fix model-map.json and re-run)
 # ============================================================================
 set -uo pipefail
@@ -96,15 +95,13 @@ key_names = [k for k in os.environ.get("PROVIDER_KEY_NAMES", "").split(",") if k
 
 REQUIRED = ("HEAVY-WRITER", "MID-WRITER", "FORMATTER")
 OPTIONAL = ("RESEARCHER", "IMAGE")
-ANTH = re.compile(r"anthropic|claude", re.IGNORECASE)
 
 tiers = {t: (etiers.get(t) or "").strip() for t in (*REQUIRED, *OPTIONAL)}
 
 now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 model_map = {
     "$note": "CLIENT providers only. Fill each REQUIRED tier with the client's OWN model id. "
-             "NEVER an Anthropic/claude-* id (AF-BK-ANTHROPIC hard-fails). A client's express "
-             "choice is never substituted. preflight.sh probes capabilities + key NAMES only.",
+             "A client's express choice is never substituted. preflight.sh probes capabilities + key NAMES only.",
     "tiers": tiers,
     "provider_caps": {"slots": int(os.environ["SLOTS"]), "provider_cap": int(os.environ["PROVIDER_CAP"])},
     "probe": {
@@ -119,28 +116,21 @@ model_map = {
 json.dump(model_map, open(out, "w"), indent=2)
 print("wrote", out)
 
-# --- enforcement: REQUIRED tiers must resolve to a non-Anthropic client model ---
+# --- enforcement: REQUIRED tiers must resolve to a client model ---
 problems = []
 for t in REQUIRED:
     v = tiers.get(t, "")
     if not v:
         problems.append("REQUIRED tier %s is UNRESOLVED — fill model-map.json with the client's "
-                        "OWN model id (never Anthropic). Probed ollama models: %s; provider key "
+                        "OWN model id. Probed ollama models: %s; provider key "
                         "names: %s" % (t, ollama_models or "<none>", key_names or "<none>"))
-    elif ANTH.search(v):
-        problems.append("REQUIRED tier %s resolves to an Anthropic/claude id %r — client boxes "
-                        "NEVER run Anthropic (AF-BK-ANTHROPIC)" % (t, v))
-for t in OPTIONAL:
-    v = tiers.get(t, "")
-    if v and ANTH.search(v):
-        problems.append("tier %s resolves to an Anthropic/claude id %r — forbidden" % (t, v))
 
 if problems:
     print("PREFLIGHT FAIL — the box is not configured for a book run:", file=sys.stderr)
     for p in problems:
         print("  - %s" % p, file=sys.stderr)
     sys.exit(7)
-print("all REQUIRED tiers resolved to non-Anthropic client models.")
+print("all REQUIRED tiers resolved to client models.")
 
 # --- optional cross-check into the run ledger --------------------------------
 # Only after REQUIRED-tier enforcement PASSES (any `problems` above exits 7 before

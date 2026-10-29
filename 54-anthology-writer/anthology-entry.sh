@@ -11,8 +11,8 @@
 #
 #   1. DEPS CHECK       — python3 must be present (exit 6, AW_DEPS_MISSING).
 #   2. MODEL-MAP PRE-GATE — if a resolved model-map.json exists in the run dir,
-#                         it must carry NO <CLIENT_*> placeholder and no Anthropic
-#                         id (exit 8, AF-AW-UNRESOLVED-MODELMAP). preflight.sh is
+#                         it must carry NO <CLIENT_*> placeholder
+#                         (exit 8, AF-AW-UNRESOLVED-MODELMAP). preflight.sh is
 #                         the resolver; here it runs as a fail-closed pre-gate.
 #   3. BYPASS-SCAN      — refuse if any hand-rolled EXTERNAL uploader/notifier
 #                         exists in the run directory: a Google Drive upload, a
@@ -35,7 +35,7 @@
 #   5  — BYPASS-SCAN tripped (hand-rolled external uploader/notifier present)
 #   6  — DEPS CHECK failed (AW_DEPS_MISSING)
 #   7  — VERSION/HASH PIN failed (hash mismatch, no owner skip)
-#   8  — MODEL-MAP PRE-GATE failed (residual <CLIENT_*> placeholder / Anthropic id)
+#   8  — MODEL-MAP PRE-GATE failed (residual <CLIENT_*> placeholder)
 # ============================================================================
 
 set -uo pipefail
@@ -224,7 +224,7 @@ fi
 # GATE 2 — MODEL-MAP PRE-GATE (preflight.sh --check; AF-AW-UNRESOLVED-MODELMAP)
 # preflight.sh is the resolver AND (here) a fail-closed pre-gate: a resolved
 # run-dir model-map.json that still carries <CLIENT_*> placeholders (installer
-# not run) or a banned Anthropic id is refused BEFORE any authoring/QC. A missing
+# not run) is refused BEFORE any authoring/QC. A missing
 # map is a clean pass (the fleet installer resolves per box).
 # ===========================================================================
 note "GATE 2/4 — MODEL-MAP PRE-GATE (preflight.sh --check)"
@@ -243,7 +243,7 @@ if [ "$PLAN" -eq 0 ] && command -v python3 >/dev/null 2>&1 && [ -f "$SELF_DIR/pr
         if [ "$PF_RC" -eq 2 ]; then
             MODEL_MAP_PATH="$RUN_DIR/model-map.json"
             gate_fail "AF-AW-UNRESOLVED-MODELMAP" 8 "the run-dir $MODEL_MAP_PATH still carries \
-<CLIENT_PROVIDER_ID> or <CLIENT_MODEL> placeholders (or a banned Anthropic id). \
+<CLIENT_PROVIDER_ID> or <CLIENT_MODEL> placeholders. \
 Run: preflight.sh --resolve --interactive to configure your provider keys."
         else
             echo "  (preflight --check non-fatal rc=$PF_RC; continuing)"

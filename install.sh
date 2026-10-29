@@ -8741,7 +8741,7 @@ install_skill_48_facebook_ad_generator
 # REST call. A "signature funnel" request routes here through the shared STEP-0
 # funnel-engine selector in Skill 6 (06-ghl-install-pages/funnel-engines/registry.json
 # — this is the first registered engine). On a client box it uses the CLIENT's own
-# configured providers/keys — never the operator's, never Anthropic model ids. Skill
+# configured providers/keys — never the operator's. Skill
 # 6, Skill 47, and Skill 07 (Kie.ai setup) are prerequisites.
 install_skill_49_signature_funnel() {
     local SKILL_SRC="$ONBOARDING_DIR/49-signature-funnel"
@@ -8780,7 +8780,7 @@ install_skill_49_signature_funnel
 # and hands a DRAFT-ONLY deploy plan to the Convert & Flow (GoHighLevel) operator
 # (Skill 44) — nothing is ever sent without explicit human approval. It never forks
 # the sender. On a client box it uses the CLIENT's own configured providers/keys —
-# never the operator's, never Anthropic model ids. Skill 44 is the deploy prerequisite.
+# never the operator's. Skill 44 is the deploy prerequisite.
 install_skill_50_email_engine() {
     local SKILL_SRC="$ONBOARDING_DIR/50-email-engine"
     local SKILL_DEST="$SKILLS_DIR/50-email-engine"
@@ -8854,7 +8854,7 @@ install_skill_51_signature_presentation
 # a 13-set Facebook Ad system, Booking Bots, Landing/Hero) → 16 named deliverables
 # (37 documents), replacing the retired 233-node n8n / Airtable / Google Drive / Slack /
 # Gmail workflow with a LOCAL-ONLY pipeline on the CLIENT's own model providers — never
-# the operator's, never Anthropic model ids. A Book/Brand version selector runs FIRST
+# the operator's. A Book/Brand version selector runs FIRST
 # (version=brand runs the 40-stage pipeline; version=book routes to Skill 53 or parks
 # fail-closed "book-skill-not-available"). Every SACRED count/floor is MEASURED by a
 # model-free prover (self-reported counts are ignored). Delivery is a labeled ~/Downloads
@@ -8882,7 +8882,7 @@ install_skill_52_avatar_intelligence() {
 
     success "Skill 52 (Avatar Alchemist) installed -> $SKILL_DEST"
     note "Skill 52 is the methodology + enforcement layer for the Trevor fixture-client-e Avatar Alchemist brand-intelligence package: it turns ONE completed brand-intake interview into 40 generators across 7 subsystems (Avatar Core, Awareness, Bios, Tone, a 13-set Facebook Ad system, Booking Bots, Landing/Hero) -> 16 named deliverables (37 documents). A Book/Brand version selector runs FIRST (version=brand runs the 40-stage pipeline; version=book routes to Skill 53 or parks fail-closed 'book-skill-not-available', never the brand pipeline). Every SACRED count/floor is MEASURED by fail-closed, model-free provers (self-reported counts are ignored)."
-    note "It runs through the ONE sanctioned front door (entry.sh: deps -> bypass-scan -> hash-pin -> nonce) then the foreman scripts/aa_director.py, which schedules the 40 stages in dependency waves on the CLIENT's own model providers — never the operator's, never Anthropic model ids (G-NOANTHROPIC hard-fails any run whose resolved model id matches /anthropic|claude/i). Delivery is a labeled ~/Downloads bundle with a signed provenance certificate on a full 40/40 pass; it replaces the retired 233-node n8n / Airtable / Google Drive / Slack / Gmail workflow with a LOCAL-ONLY pipeline (no n8n / Airtable / Drive / Slack / Gmail at runtime). Cross-linked with (never merged into) Skill 55 Product Bio. Standalone — no prerequisite skill."
+    note "It runs through the ONE sanctioned front door (entry.sh: deps -> bypass-scan -> hash-pin -> nonce) then the foreman scripts/aa_director.py, which schedules the 40 stages in dependency waves on the CLIENT's own model providers — never the operator's — there is no vendor rule on model ids (Trevor order 2026-10-29). Delivery is a labeled ~/Downloads bundle with a signed provenance certificate on a full 40/40 pass; it replaces the retired 233-node n8n / Airtable / Google Drive / Slack / Gmail workflow with a LOCAL-ONLY pipeline (no n8n / Airtable / Drive / Slack / Gmail at runtime). Cross-linked with (never merged into) Skill 55 Product Bio. Standalone — no prerequisite skill."
     return 0
 }
 
@@ -8908,7 +8908,7 @@ install_skill_52_avatar_intelligence
 # extras handed to Skill 51), replacing the retired 8-workflow n8n ghostwriting
 # factory (the 153-node "Book Writer" + the 121-node "4x3x3 w Book Writer") with
 # a LOCAL-ONLY pipeline on the CLIENT's own model providers — never the
-# operator's, never Anthropic model ids. Every SACRED count/floor is MEASURED by
+# operator's. Every SACRED count/floor is MEASURED by
 # a model-free prover (self-reported counts are ignored); a run cannot claim
 # "done" without a signed PROCESS-CERTIFICATE. Cross-linked with (never merged
 # into) Skill 54 Anthology Writer; both bake a lockstep copy of the shared
@@ -8936,7 +8936,7 @@ install_skill_53_book_writer() {
 
     success "Skill 53 (Book Writer) installed -> $SKILL_DEST"
     note "Skill 53 is the BOOK version of the Avatar Alchemist (Skill 52 is the BRAND version): it turns ONE completed book-intake interview into a tone-matched 12-chapter nonfiction book plus companion assets — avatar dossier, the blended 'The {First} {Last} Tone', locked title/subtitle + approved outline, print-ready manuscript, a 30-Day Challenge, and an AI cover prompt — delivered as labeled files in ~/Downloads. Modes full (flagship 12-chapter book) and 4x3x3 (offer book: 30 titles / 4 Transformational Outcomes / KP doc / 433_Deck_Data.json handed to Skill 51). The shared Book/Brand selector (Q0) routes version=book here and version=brand to Skill 52 — an explicit, receipted hand-off, never a silent cross-version fallback."
-    note "It runs through the ONE sanctioned front door (book-writer-entry.sh: deps -> bypass-scan -> hash-pin -> nonce) then run_book_writer.py, the deterministic assembler/certifier, which walks phases P0->P8 in order with NO skips (intake -> avatar -> tone -> titles-gate -> outline-gate -> four STRICTLY-SEQUENTIAL chapter batches with proven continuity -> package -> QC -> deliver), with in-chat checkpoint approvals (GATE-1 titles / GATE-2 outline / GATE-3 approval / GATE-4 second revision). Twelve fail-closed provers MEASURE the stripped text (12 chapters exactly, 2000-3500 stripped words each, batch continuity, blended tone >= 3000 stripped words, 30-Day Challenge exactly 30 days, 4x3x3 counts, title lock byte-exact everywhere, no placeholders, no Anthropic model ids, anonymization); a full pass mints a signed PROCESS-CERTIFICATE ('done' is claimed only with the certificate path). Runs on the CLIENT's own model providers — never the operator's, never Anthropic model ids. Cross-linked with (never merged into) Skill 54 Anthology Writer; both share a lockstep copy of shared-utils/tone-writing-core/. Standalone — no prerequisite skill."
+    note "It runs through the ONE sanctioned front door (book-writer-entry.sh: deps -> bypass-scan -> hash-pin -> nonce) then run_book_writer.py, the deterministic assembler/certifier, which walks phases P0->P8 in order with NO skips (intake -> avatar -> tone -> titles-gate -> outline-gate -> four STRICTLY-SEQUENTIAL chapter batches with proven continuity -> package -> QC -> deliver), with in-chat checkpoint approvals (GATE-1 titles / GATE-2 outline / GATE-3 approval / GATE-4 second revision). Twelve fail-closed provers MEASURE the stripped text (12 chapters exactly, 2000-3500 stripped words each, batch continuity, blended tone >= 3000 stripped words, 30-Day Challenge exactly 30 days, 4x3x3 counts, title lock byte-exact everywhere, no placeholders, anonymization); a full pass mints a signed PROCESS-CERTIFICATE ('done' is claimed only with the certificate path). Runs on the CLIENT's own model providers — never the operator's. Cross-linked with (never merged into) Skill 54 Anthology Writer; both share a lockstep copy of shared-utils/tone-writing-core/. Standalone — no prerequisite skill."
     return 0
 }
 
@@ -8987,7 +8987,7 @@ install_skill_54_anthology_writer() {
 
     success "Skill 54 (Anthology Writer) installed -> $SKILL_DEST"
     note "Skill 54 is the methodology + enforcement layer for a multi-contributor anthology: one finished chapter per contributor, authored in that contributor's blended signature voice, gated so nothing ships that missed a SACRED floor. It turns ONE contributor intake (anthology title, contributor name, chapter premise, real personal stories) into a gated 2,000-3,500-word chapter plus its supporting tone doc, locked title/subtitle, blurb, and outline — delivered as a labeled LOCAL bundle in ~/Downloads. Skill 54 (Anthology Writer) and Skill 53 (Book Writer) are SEPARATE skills (Trevor's standing decision, never consolidated) that share the ONE shared-utils/tone-writing-core: the anthology is many contributors, one chapter each; the book is one author, many chapters."
-    note "It runs through the ONE sanctioned front door (anthology-entry.sh: deps -> bypass-scan -> hash-pin -> nonce) then run_anthology.py, the deterministic state machine, which walks phases P0 INTAKE -> P1 FIDELITY -> P2 TONE -> P3 TONE-QC -> P4 TITLE-LOCK -> P5 CHAPTER -> P6 CHAPTER-QC -> P7 DELIVER with NO phase skips, one contributor at a time. Fail-closed model-free provers MEASURE the stripped text (intake completeness + no credential-shaped fields, prompt-fidelity sha256 pins, tone-core lockstep, exactly 4 blended tone influences, tone floor >= 3,000 stripped words, chapter band 2,000-3,500 stripped words, completion-verification block, no placeholders, title lock + story placement byte-exact, no Anthropic model ids, a 2-rewrite budget per contributor); a full pass mints a signed PROCESS-CERTIFICATE ('done' is claimed only with the certificate path). Runs on the CLIENT's own model providers — never the operator's, never Anthropic model ids (aw_build_check.py / G-NOANTHROPIC hard-fails any run whose ledger shows an /anthropic|claude/i id). Cross-linked with (never merged into) Skill 53 Book Writer. Standalone — no prerequisite skill."
+    note "It runs through the ONE sanctioned front door (anthology-entry.sh: deps -> bypass-scan -> hash-pin -> nonce) then run_anthology.py, the deterministic state machine, which walks phases P0 INTAKE -> P1 FIDELITY -> P2 TONE -> P3 TONE-QC -> P4 TITLE-LOCK -> P5 CHAPTER -> P6 CHAPTER-QC -> P7 DELIVER with NO phase skips, one contributor at a time. Fail-closed model-free provers MEASURE the stripped text (intake completeness + no credential-shaped fields, prompt-fidelity sha256 pins, tone-core lockstep, exactly 4 blended tone influences, tone floor >= 3,000 stripped words, chapter band 2,000-3,500 stripped words, completion-verification block, no placeholders, title lock + story placement byte-exact, a 2-rewrite budget per contributor); a full pass mints a signed PROCESS-CERTIFICATE ('done' is claimed only with the certificate path). Runs on the CLIENT's own model providers — never the operator's — there is no vendor rule on model ids (Trevor order 2026-10-29). Cross-linked with (never merged into) Skill 53 Book Writer. Standalone — no prerequisite skill."
     return 0
 }
 
@@ -9004,7 +9004,7 @@ install_skill_54_anthology_writer
 # the 6,000-7,000-word, 10-section master-brain product bio + its Google-Docs-
 # importable HTML, replacing the retired 25-node n8n / Google Drive / Slack / Gmail
 # workflow with a LOCAL-ONLY pipeline on the CLIENT's own model providers — never
-# the operator's, never Anthropic model ids. Every SACRED count is MEASURED by a
+# the operator's. Every SACRED count is MEASURED by a
 # model-free prover (self-reported counts are ignored). Delivery is a labeled
 # ~/Downloads bundle; it touches no n8n / Drive / Slack / Gmail / Airtable at
 # runtime. Standalone — no prerequisite skill. Cross-linked with (never merged
@@ -9029,7 +9029,7 @@ install_skill_55_product_bio() {
 
     success "Skill 55 (Product Bio Engine) installed -> $SKILL_DEST"
     note "Skill 55 is the methodology + enforcement layer for the Trevor fixture-client-e master-brain product bio: a 6,000-7,000-word, 10-section sales knowledge base (10 intros, 15-20 power adjectives, ICP, description, positioning, 8-10 objections, 10-12 FAQs, 8-10 social proof, StoryBrand 2.0, 24 named signature closes + a completion-verification block) AND its Google-Docs-importable HTML, from a 4-field intake. It bakes two verbatim sha256-pinned IP prompts and gates every SACRED count with five fail-closed model-free provers that MEASURE the stripped text (self-reported counts are ignored)."
-    note "It runs P0 INTAKE -> P1 FIDELITY -> P2 BIO -> P3 BIO-QC -> P4 HTML -> P5 HTML-QC -> P6 DELIVER through one canonical entry (product-bio-entry.sh) with a deps/bypass-scan/hash-pin/nonce fail-closed gate, then delivers a labeled ~/Downloads bundle + a signed PROCESS-CERTIFICATE. It replaces the retired 25-node n8n / Google Drive / Slack / Gmail workflow with a LOCAL-ONLY pipeline on the CLIENT's own model providers — never the operator's, never Anthropic model ids; no n8n / Drive / Slack / Gmail / Airtable at runtime. Standalone — no prerequisite skill."
+    note "It runs P0 INTAKE -> P1 FIDELITY -> P2 BIO -> P3 BIO-QC -> P4 HTML -> P5 HTML-QC -> P6 DELIVER through one canonical entry (product-bio-entry.sh) with a deps/bypass-scan/hash-pin/nonce fail-closed gate, then delivers a labeled ~/Downloads bundle + a signed PROCESS-CERTIFICATE. It replaces the retired 25-node n8n / Google Drive / Slack / Gmail workflow with a LOCAL-ONLY pipeline on the CLIENT's own model providers — never the operator's; no n8n / Drive / Slack / Gmail / Airtable at runtime. Standalone — no prerequisite skill."
     return 0
 }
 
@@ -9054,7 +9054,7 @@ install_skill_55_product_bio
 # media + funnel/page build to Skill 6 (the ONE GHL delivery rail); the order-bump
 # routes to Skill 44. It OWNS the <client>__<funnel>__<stage>__<type>__vNN labeling
 # grammar (reciprocal with Skill 49). On a client box it uses the CLIENT's own model
-# providers — never the operator's, never Anthropic model ids. Skill 6, Skill 47,
+# providers — never the operator's. Skill 6, Skill 47,
 # and Skill 44 are prerequisites.
 install_skill_56_sales_page_assets() {
     local SKILL_SRC="$ONBOARDING_DIR/56-sales-page-assets"
@@ -9076,7 +9076,7 @@ install_skill_56_sales_page_assets() {
 
     success "Skill 56 (Sales Page Assets) installed -> $SKILL_DEST"
     note "Skill 56 is the methodology + enforcement layer for the Trevor fixture-client-e Direct-Response sales-page asset stack (the DR sibling of Skill 49): the 8-section main sales page (A/B + countdown timer), the Trevor fixture-client-e 9-section upsell (A/B personas), a downsell recovery page, the Sovereign Architect 6,500-7,100-word high-ticket long-form page, 40-80-word order-bump copy with a checkbox close, and a slice-covered image plan, from one 'Ultimate AI Sales Page Writer' survey. It bakes provider-agnostic copy/image prompts and gates every SACRED count/band with eight fail-closed model-free provers (prove_sp_intake / image_plan / main_structure / upsell_structure / highticket_band / bump_band / bundle / cert) that MEASURE the stripped text (self-reported counts are ignored)."
-    note "It runs P0 INTAKE -> P1 IMAGE-PLAN -> P2 IMAGES -> P3 COPY x7 -> P4 MEDIA -> P5 FRAGMENTS -> P6 DOCS -> P7 BUNDLE -> P8 DELIVER -> P9 HANDOFF through one canonical entry (sales-page-assets-entry.sh) with a deps/version/hash-pin/bypass-scan/0600-nonce fail-closed gate, then issues a signed PROCESS-CERTIFICATE only on all-phases-pass. It registers as the SECOND STEP-0 funnel engine in Skill 6's registry, delegates image generation to Skill 47 (or the client's OWN image provider) and ALL GHL media + funnel/page build to Skill 6 (the ONE GHL delivery rail), and routes the order-bump to Skill 44. It OWNS the <client>__<funnel>__<stage>__<type>__vNN labeling grammar (reciprocal with Skill 49). Client runtime uses the CLIENT's own model providers — never the operator's, never Anthropic model ids. Skill 6, Skill 47, and Skill 44 are prerequisites."
+    note "It runs P0 INTAKE -> P1 IMAGE-PLAN -> P2 IMAGES -> P3 COPY x7 -> P4 MEDIA -> P5 FRAGMENTS -> P6 DOCS -> P7 BUNDLE -> P8 DELIVER -> P9 HANDOFF through one canonical entry (sales-page-assets-entry.sh) with a deps/version/hash-pin/bypass-scan/0600-nonce fail-closed gate, then issues a signed PROCESS-CERTIFICATE only on all-phases-pass. It registers as the SECOND STEP-0 funnel engine in Skill 6's registry, delegates image generation to Skill 47 (or the client's OWN image provider) and ALL GHL media + funnel/page build to Skill 6 (the ONE GHL delivery rail), and routes the order-bump to Skill 44. It OWNS the <client>__<funnel>__<stage>__<type>__vNN labeling grammar (reciprocal with Skill 49). Client runtime uses the CLIENT's own model providers — never the operator's. Skill 6, Skill 47, and Skill 44 are prerequisites."
     return 0
 }
 

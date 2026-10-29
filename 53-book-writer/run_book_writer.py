@@ -199,7 +199,7 @@ def _gate_ok(approvals: dict, gate_id: str) -> bool:
 
 def _ledger_model_id_count(ledger) -> int:
     """Number of recorded string leaves anywhere in the ledger (uses the same walker
-    the no-Anthropic gate uses — a model id may hide under any alias key)."""
+    the run-env gate uses — a model id may hide under any alias key)."""
     return sum(1 for _jp, _mid in p_anth._iter_string_leaves(ledger))
 
 
@@ -719,12 +719,12 @@ def check_qc(bk: Book):
     }
     ledger = bk.rd / "RUN-LEDGER.json"
     # FAIL-CLOSED: a missing RUN-LEDGER (or one that records ZERO model ids) means
-    # the no-Anthropic / client-provider provenance was never established — the QC
+    # the client-provider model provenance was never established — the QC
     # gate cannot pass on an absent ledger. And the credential scan runs against the
     # LIVE process env by NAME only (masked), never a disabled env={}.
     if not ledger.is_file():
-        msg = ("no-anthropic FAIL: run/RUN-LEDGER.json is absent — the model "
-               "provenance (client's OWN providers, never Anthropic) is unproven "
+        msg = ("model-provenance FAIL: run/RUN-LEDGER.json is absent — the model "
+               "provenance (client's OWN providers) is unproven "
                "(fail-closed; the ledger must record each stage's resolved model id)")
         report["message"] = msg
         report["no_anthropic"]["violations"].append({"code": "AF-BK-ANTHROPIC", "message": msg})
@@ -733,14 +733,14 @@ def check_qc(bk: Book):
     try:
         ledger_obj = json.loads(ledger.read_text(encoding="utf-8"))
     except ValueError as exc:
-        msg = "no-anthropic FAIL: RUN-LEDGER.json is not valid JSON (%s)" % exc
+        msg = "model-provenance FAIL: RUN-LEDGER.json is not valid JSON (%s)" % exc
         report["message"] = msg
         report["no_anthropic"]["violations"].append({"code": "AF-BK-ANTHROPIC", "message": msg})
         _write_qc_report(bk, report)
         return False, msg, {}
     report["measured"]["model_id_count"] = _ledger_model_id_count(ledger_obj)
     if report["measured"]["model_id_count"] == 0:
-        msg = ("no-anthropic FAIL: RUN-LEDGER.json records ZERO model ids — the "
+        msg = ("model-provenance FAIL: RUN-LEDGER.json records ZERO model ids — the "
                "client-provider provenance is empty (fail-closed; a real run records "
                "each stage's resolved model id)")
         report["message"] = msg
@@ -749,7 +749,7 @@ def check_qc(bk: Book):
         return False, msg, {}
     res_anth = p_anth.evaluate(ledger_obj, env=dict(os.environ))
     ok = res_anth.passed
-    msg = "no-anthropic %s" % _phase_result(res_anth)[1]
+    msg = "model-provenance %s" % _phase_result(res_anth)[1]
     report["no_anthropic"]["passed"] = ok
     report["no_anthropic"]["violations"] = [{"code": cd, "message": m} for cd, m in res_anth.violations]
     report["no_anthropic"]["notes"] = res_anth.notes

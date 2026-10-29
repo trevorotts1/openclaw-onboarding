@@ -3,7 +3,7 @@
 """engine_script_drift_guard.py -- E10 drift guard for the four scripts that ship,
 independently, under the same basename in BOTH 58-podcast-production-engine/scripts
 and 59-anthology-engine/scripts (alert-dedup.py, guard-cron-inventory.py,
-guard-no-anthropic-runtime.py, delivery_report.py).
+delivery_report.py).
 
 See docs/E10-SHARED-SCRIPT-DRIFT-CLASSIFICATION.md for the full classification.
 Short version: these are NOT byte-drifted copies of one shared origin -- they are
@@ -11,7 +11,7 @@ independently-designed implementations of an analogous role, verified pair by pa
 Blind "extract a common core" unification is forbidden by the classification (it
 would either wrap nothing real, or risk a rewrite of safety-critical guard code for
 marginal benefit). Instead this script freezes today's classification as a
-sha256 + structural fingerprint BASELINE and fails (exit 2) if any of the eight
+sha256 + structural fingerprint BASELINE and fails (exit 2) if any of the six
 files drifts from that baseline WITHOUT a conscious `--update-baseline` re-run --
 turning silent, unreviewed rot into a reviewed, deliberate act.
 
@@ -34,7 +34,6 @@ BASELINE_PATH = Path(__file__).resolve().parent / "engine-script-drift-baseline.
 TRACKED_BASENAMES = (
     "alert-dedup.py",
     "guard-cron-inventory.py",
-    "guard-no-anthropic-runtime.py",
     "delivery_report.py",
 )
 TRACKED_ENGINES = {
@@ -261,8 +260,8 @@ def self_test() -> int:
     # over the real files does not crash, and every tracked file is present).
     try:
         real_fp = build_fingerprint()
-        check("real repo: all 8 tracked files present",
-              all(v.get("present") for v in real_fp.values()) and len(real_fp) == 8)
+        check("real repo: all 6 tracked files present",
+              all(v.get("present") for v in real_fp.values()) and len(real_fp) == 6)
     except Exception as exc:  # pragma: no cover - defensive
         check("real repo fingerprint buildable (%s)" % exc, False)
 

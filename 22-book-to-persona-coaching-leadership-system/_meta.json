@@ -15,8 +15,7 @@
     "phase2": "client-selected-or-configured-default",
     "phase3": "client-selected-or-configured-default",
     "phase3b": "client-selected-or-configured-default (playbook appendix - same resolution as phase3)",
-    "selector": "shared-utils/select_model.py",
-    "forbidden_prefixes": ["anthropic/", "claude-"]
+    "selector": "shared-utils/select_model.py"
   },
   "tags": ["personas", "coaching", "agent-governance", "pdf", "pipeline"]
 }

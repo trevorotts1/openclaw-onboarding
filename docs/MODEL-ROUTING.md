@@ -65,12 +65,12 @@ prescribes a specific model by name. A model id is always written with its
 provider prefix (for example `provider/model-id`) so the route is unambiguous;
 a bare, provider-less id is never a valid reference.
 
-**No Anthropic models anywhere in the client path — explicitly forbidden at two
-independent gates.** `assert_model_sovereignty` (`shared-utils/assert_model_sovereignty.py`,
-N35) blocks at dispatch-time; `model_router.py`'s `assert_no_anthropic()` blocks
-at build-time. Claude model ids and anthropic-namespaced paths are forbidden on any
-rung, any role, any box. Both gates must hold; AnthropicModelError is never caught
-and silenced.
+**No vendor rule.** There is NO rule against Anthropic / Claude models (Trevor order
+2026-10-29). `assert_model_sovereignty` (`shared-utils/assert_model_sovereignty.py`, N35)
+still blocks the free literal, a model missing from the client's inventory and a
+modality mismatch, but `FORBIDDEN_PREFIXES` is empty and `model_router.py` has no
+Anthropic guard. A client's own Anthropic model is routed like any other; nothing in
+the update or repair path adds, strips or refuses one.
 
 **`thinking=high` on every rung.** The `THINKING_EFFORT = "high"` constant in
 `model_router.py` is applied across all role ladders and is verified by offline
@@ -95,9 +95,8 @@ on a line that does NOT contain `banned`, `PURGED`, `purge`, `do not`, `never us
 `must not`, `supersede`, or `removed the stale`. Ban statements that name M2 are
 explicitly excluded so the ban assertion does not self-trip.
 
-**(c) Anthropic model identifier patterns.** Claude model ids and anthropic-namespaced
-provider paths used as active model ids, on lines that do not carry explicit
-`forbidden`, `rejected`, `never`, or `banned` phrasing.
+**(c) (retired)** The Anthropic model identifier scan was removed with the vendor rule
+(Trevor order 2026-10-29).
 
 **(d) Content-model slug without a provider prefix.** A `\bkimi\b` match
 (case-insensitive) on a line that contains none of: `ollama/kimi`, `openrouter/kimi`,
@@ -111,8 +110,8 @@ is authored to remain clean against all four checks.
 
 | Layer | File | What it enforces |
 |---|---|---|
-| Code (Skill 6) | `06-ghl-install-pages/tools/model_router.py` | Role-keyed resolution (client choice or configured default per role); `assert_no_anthropic()` at build-time; tool-call probe gate on execution and qc; `THINKING_EFFORT=high` |
-| Shared gate | `shared-utils/assert_model_sovereignty.py` | Per-slug block at dispatch-time — no Anthropic, no free literal, modality check (N35) |
+| Code (Skill 6) | `06-ghl-install-pages/tools/model_router.py` | Role-keyed resolution (client choice or configured default per role); tool-call probe gate on execution and qc; `THINKING_EFFORT=high` |
+| Shared gate | `shared-utils/assert_model_sovereignty.py` | Per-slug block at dispatch-time — no free literal, inventory and modality check (N35); no vendor is blocked |
 | CI | `.github/workflows/qc-static.yml` step "No banned model tokens..." | Banned token scan across code + markdown — checks (a)–(d) above; added in this branch |
-| Offline self-test | `06-ghl-install-pages/tests/test_model_router.py` | Assertions on the role resolution: client choice and configured-default resolution order, probe-gate flags, no Anthropic ids, M2 absent |
-| Fleet doctrine | `AGENTS.md` N35 (AF-MODEL-SOVEREIGNTY) | Universal cascade; Anthropic ban; modality gate; fleet-wide application |
+| Offline self-test | `06-ghl-install-pages/tests/test_model_router.py` | Assertions on the role resolution: client choice and configured-default resolution order, probe-gate flags, an Anthropic-family default routed as configured, M2 absent |
+| Fleet doctrine | `AGENTS.md` N35 (AF-MODEL-SOVEREIGNTY) | Universal cascade; modality gate; fleet-wide application |

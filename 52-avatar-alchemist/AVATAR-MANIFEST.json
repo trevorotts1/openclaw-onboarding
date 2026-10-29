@@ -130,13 +130,13 @@
       "desc": "no unresolved {{...}} / $('...') / Make.com tokens in any artifact (whitelist: {{contact.*}} merge tags in bot docs)."
     },
     {
-      "id": "P-AV-NOANTHROPIC",
-      "gate": "G-NOANTHROPIC",
+      "id": "P-AV-MODEL-RECORDED",
+      "gate": "G-MODEL-RECORDED",
       "prover": "aa_build_check.py",
       "af": [
-        "AF-AV-NOANTHROPIC"
+        "AF-AV-MODEL-UNRECORDED"
       ],
-      "desc": "every resolved model id in the run ledger fails /anthropic|claude/i; no operator credential names in the run env."
+      "desc": "every manifest stage records a resolved model id in the run ledger; no operator credential names in the run env."
     },
     {
       "id": "P-AV-PROVENANCE",
@@ -175,7 +175,7 @@
     "AF-AV-SECTION-RELEVANCE": "a section body does not answer its own header (generic on-topic prose standing in for a factual/named-list answer) — Avatar Q1-30's 13 questions or a 'Five Core Values'/'Five Personality Traits' list with <5 named items",
     "AF-AV-EGRESS": "an ungoverned egress path: a prover imports a networking module outside the narrow read-only allowlist, contains a POST-shaped call, references a known third-party webhook/API host (n8n/Airtable/Slack/Drive/Gmail), or shells out to curl/wget/nc",
     "AF-AV-PLACEHOLDER": "an unresolved template/Make.com token leaked into an artifact",
-    "AF-AV-NOANTHROPIC": "a resolved model id matches /anthropic|claude/i, OR a manifest stage has NO resolved model id at all (fail-closed on omission — a ledger cannot pass by leaving a stage's model id out), or an operator credential name is present",
+    "AF-AV-MODEL-UNRECORDED": "a manifest stage has NO resolved model id at all (fail-closed on omission — a ledger cannot pass by leaving a stage's model id out), or an operator credential name is present",
     "AF-AV-PROVENANCE": "a receipt sha256 (loaded from disk) does not match its artifact bytes (loaded from disk) — fabrication / tamper",
     "AF-AV-DELIVER-INCOMPLETE": "delivery attempted below 40/40 on-disk attested receipts, or the content prover (re-run by the gate) failed",
     "AF-AV-CERT-NO-FRONT-DOOR": "no valid front-door nonce for this run — a certificate cannot be minted outside a run entry.sh actually started",

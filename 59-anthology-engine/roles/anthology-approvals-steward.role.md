@@ -62,6 +62,4 @@ Client box → the client's OWN configured providers and keys, resolved per box
 into `model-map.json`. The JUDGE tier ALWAYS resolves to a DIFFERENT model
 tier/resolution/persona than the one that drafted the piece under review — this
 is the QC-independence rule, enforced in code, not by convention. Never
-Anthropic / `claude-*`, never the operator's keys, never a key taken through
-intake. `guard-no-anthropic-runtime.py` refuses Anthropic-family identifiers
-statically over every shipped file this role touches.
+the operator's keys, never a key taken through intake.

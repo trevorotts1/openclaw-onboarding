@@ -392,9 +392,6 @@ check "3.5" "persona-categories.json present + valid JSON (canonical: workspace/
 warn_check "3.6" "No stale Kimi 2.5 / DeepSeek 3.2 / GPT-5.3 hardwires in Skill 22" \
   "! grep -q 'moonshot/kimi-k2.6\\|deepseek/deepseek-v3.2\\|gpt-5.3-codex' $HOME/.openclaw/skills/22-book-to-persona-coaching-leadership-system/_meta.json 2>/dev/null" \
   "Re-apply v9.5.0+ skill 22 _meta.json"
-warn_check "3.7" "No Anthropic refs in Skill 22 active code" \
-  "! grep -rn 'anthropic/\\|claude-opus\\|claude-sonnet' $HOME/.openclaw/skills/22-book-to-persona-coaching-leadership-system/pipeline/*.py 2>/dev/null" \
-  "Manual review of orchestrator.py imports + calls"
 
 # ─── CHECK 4: Gemini Engine ──────────────────────────────────────────────────
 echo

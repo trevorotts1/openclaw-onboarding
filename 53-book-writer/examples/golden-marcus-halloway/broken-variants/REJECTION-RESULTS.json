@@ -19,6 +19,16 @@
     ],
     "out": "VIOLATION [AF-BK-VERSION] version must be explicitly 'book' or 'brand' (got ''); no default, no inference from other answers"
   },
+  "02b_avatar_under_floor": {
+    "prover": "prove_bw_avatar.py",
+    "expected_code": "AF-BK-AVATAR-MISSING",
+    "rc": 2,
+    "rejected": true,
+    "got_codes": [
+      "AF-BK-AVATAR-MISSING"
+    ],
+    "out": "VIOLATION [AF-BK-AVATAR-MISSING] avatar dossier measured 400 stripped words, below the 500 floor (self-reported counts ignored)"
+  },
   "03_title_lock": {
     "prover": "prove_bw_titlelock.py",
     "expected_code": "AF-BK-TITLE-LOCK",
@@ -118,16 +128,6 @@
       "AF-BK-PLACEHOLDER"
     ],
     "out": "VIOLATION [AF-BK-PLACEHOLDER] unresolved token '{{intake.first_name}}' in chapter/ch01.md"
-  },
-  "13_anthropic": {
-    "prover": "prove_bw_noanthropic.py",
-    "expected_code": "AF-BK-ANTHROPIC",
-    "rc": 2,
-    "rejected": true,
-    "got_codes": [
-      "AF-BK-ANTHROPIC"
-    ],
-    "out": "VIOLATION [AF-BK-ANTHROPIC] /anthropic|claude/i string 'anthropic/claude-opus-4' at ledger.stages[0].model (client boxes never run Anthropic)"
   },
   "14_anon": {
     "prover": "prove_bw_anon.py",

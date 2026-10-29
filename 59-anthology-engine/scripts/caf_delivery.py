@@ -40,7 +40,6 @@ DOCTRINE (binding, enforced in code):
   - NEVER print a secret value: the private integration token is resolved by label
     across the shared alias set and reported SET / NOT SET only.
   - Convert and Flow naming everywhere (white-label LeadConnector v2 under the hood).
-  - Zero Anthropic identifiers written to any field or certificate (deny gate).
   - Tenant check on every call: the operating location must equal the registry
     binding (payload location == registry binding), else exit 2, never a guess.
   - Runtime NEVER creates a custom field: a key missing on the location is a
@@ -94,7 +93,6 @@ from delivery_report import (  # noqa: E402  (sibling import after path bootstra
     resolve_cert_secret,
     persist_report,
     persist_certificate,
-    AnthropicIdentifierError,
 )
 # W0.6 (cover_render.py): services.leadconnectorhq.com is Cloudflare-fronted and
 # 403s urllib's default "Python-urllib/x.y" User-Agent at the WAF edge (CF error
@@ -141,14 +139,10 @@ ALLOWED_LOCATION_LABELS = (
 # sibling helper that owns the certificate) so the label set has a single source.
 
 # ---------------------------------------------------------------------------
-# Guards. A written value must never be Anthropic-shaped (mirrors
-# guard-no-anthropic-runtime.py / the ledger deny gate). A hosted URL legitimately
+# Guards. A written value must never be credential-shaped. A hosted URL legitimately
 # carries long opaque tokens, so the broad credential-shape gate is applied ONLY to
 # short scalar control values, never to URLs (which would false-positive).
 # ---------------------------------------------------------------------------
-_ANTHROPIC_DENY_RE = re.compile(
-    r"(?i)(^|[^a-z0-9])(claude|anthropic)([^a-z0-9]|$)|anthropic/|claude-|us\.anthropic\.",
-)
 _SECRET_SHAPE_RE = re.compile(
     r"(?i)(sk-[a-z0-9]{16,}|pit-[a-z0-9]{16,}|bearer\s+[a-z0-9._-]{16,}|key-[a-z0-9]{16,})",
 )
@@ -311,15 +305,12 @@ def _mask(value):
 
 
 def _guard_written_value(key, value):
-    """Refuse to write an Anthropic-shaped or raw-secret-shaped value into a field.
+    """Refuse to write a raw-secret-shaped value into a field.
     URLs pass (opaque path tokens are expected); the secret gate only rejects the
     unmistakable sk-/pit-/bearer/key- credential prefixes."""
     if value is None:
         return
     s = str(value)
-    if _ANTHROPIC_DENY_RE.search(s):
-        raise _tenant("refusing to write field %r: value matches an Anthropic-shaped "
-                      "deny pattern (no Anthropic identifier ships in any surface)" % key)
     if _SECRET_SHAPE_RE.search(s):
         raise _tenant("refusing to write field %r: value looks credential-shaped; "
                       "secrets live in the env stores by label, never in a contact field" % key)
@@ -735,7 +726,7 @@ class CafClient:
         """Idempotent add-tag with a byte read-back, keyed by contact_id (the §3
         board-approve -> release-tag primitive). Contract, mirroring
         write_and_verify:
-          1. GUARD the slug (never an Anthropic-shaped or credential-shaped value).
+          1. GUARD the slug (never a credential-shaped value).
           2. READ the contact's current tags. If `slug` is already present
              (case-insensitive; Convert and Flow lowercases stored tags) this is a
              NO-OP: no POST is sent, re-adding a present tag changes nothing.
@@ -914,7 +905,7 @@ def resolve_field_ids(keys, client, id_map_override=None, field_map=None):
 def write_and_verify(client, contact_id, key_value_pairs, id_map_override=None, field_map=None):
     """key_value_pairs: list of (key, value). Resolves ids, writes ALL in one PUT,
     reads the contact back once, compares byte-for-byte. Returns a per-field result
-    list. Raises exit 5 on any mismatch, exit 2 on a bad/anthropic value, exit 3 on
+    list. Raises exit 5 on any mismatch, exit 2 on a bad value, exit 3 on
     an unreachable API."""
     for key, value in key_value_pairs:
         _guard_written_value(key, value)
@@ -997,7 +988,7 @@ def update_pipeline_stage(client, contact_id, pipeline_id, stage_id, opportunity
 # from the sibling helper delivery_report.py (W1.24). The former inline copies
 # were removed to end the duplication; delivery_report.py's certificate
 # content_sha256 is idempotent over the process-identity core (Skill 54 P7),
-# its builders run a fail-closed Anthropic deny gate, and the report text is the
+# and the report text is the
 # same operator digest. caf_delivery.py calls them unchanged at S8 (cmd_deliver).
 # ---------------------------------------------------------------------------
 
@@ -1477,16 +1468,15 @@ def self_test():
     except DeliveryError as e:
         check("allowlist exclusion exit 2", e.code == EX_TENANT)
 
-    # anthropic / secret write guards. The offending tokens are ASSEMBLED at runtime
-    # (split across a concat) so this source carries no literal Anthropic-model id or
-    # sk-/pit- token shape for the merge-gate scanners to trip on, while the runtime
-    # value still exercises each deny branch.
-    denied_model = "cla" + "ude-3"          # runtime value matches the deny regex
+    # secret write guards. The offending token is ASSEMBLED at runtime so this source
+    # carries no sk-/pit- token shape for the merge-gate scanners to trip on.
+    # A value naming an Anthropic-family model is NOT refused (no vendor rule).
+    denied_model = "cla" + "ude-3"
     try:
         _guard_written_value("contact.x", "see %s output" % denied_model)
-        check("anthropic value refused", False)
-    except DeliveryError as e:
-        check("anthropic value exit 2", e.code == EX_TENANT)
+        check("anthropic-family text is written (no vendor rule)", True)
+    except DeliveryError:
+        check("anthropic-family text is written (no vendor rule)", False)
     fake_secret = "sk-" + ("abcdefghij" * 2)   # sk-<20 chars>, secret-shaped at runtime
     try:
         _guard_written_value("contact.x", fake_secret)
@@ -1741,13 +1731,7 @@ def self_test():
     except DeliveryError as e:
         check("tag not read back present -> read-back mismatch exit 5", e.code == EX_MISMATCH)
     stub.tag_write_swallow = False
-    # the write guard refuses an Anthropic-shaped or empty slug before any POST.
-    denied_tag = "cla" + "ude-3-release"
-    try:
-        tag_client.add_tag("contactTAG1", denied_tag)
-        check("anthropic-shaped slug refused", False)
-    except DeliveryError as e:
-        check("anthropic-shaped slug -> exit 2", e.code == EX_TENANT)
+    # the write guard refuses an empty slug before any POST.
     try:
         tag_client.add_tag("contactTAG1", "   ")
         check("blank slug refused", False)
@@ -1891,15 +1875,6 @@ def main(argv=None):
             sys.stderr.write("[caf_delivery] detail: %s\n"
                              % json.dumps(exc.detail, ensure_ascii=False))
         return exc.code
-    except AnthropicIdentifierError as exc:
-        # A caller-supplied deliverable value carried an Anthropic-family model-id
-        # shape; the sibling deny gate refused it. Surface it as a guard refusal
-        # (caf exit 2) instead of a generic unexpected error. The short value repr is
-        # operator-only (a url/key is safe to echo; a secret never reaches here).
-        sys.stderr.write("[caf_delivery] REFUSED: Anthropic-family identifier shape in "
-                         "%s (no Anthropic identifier ships in any delivered value)\n"
-                         % exc.where)
-        return EX_TENANT
     except BrokenPipeError:
         return EX_OK
     except Exception as exc:  # noqa: BLE001 -- house convention: unexpected -> exit 1

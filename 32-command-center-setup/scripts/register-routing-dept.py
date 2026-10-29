@@ -284,10 +284,6 @@ def main() -> None:
     # department's model resolves from the client's choice or configured
     # default when it first runs, and that run stops and asks the client if
     # neither exists by then. Never invent a model.
-    _banned = ("anthropic", "claude")
-    def _is_banned(mid: str) -> bool:
-        low = str(mid).lower()
-        return any(b in low for b in _banned)
     _fallbacks: list = []
     if args.model_primary:
         _primary = args.model_primary.strip()
@@ -311,14 +307,6 @@ def main() -> None:
              "empty model primary; the model resolves from the client's choice "
              "or configured default when the department first runs, and that "
              "run stops and asks the client if neither exists by then.")
-    if _is_banned(_primary):
-        die(f"Resolved primary model '{_primary}' is an Anthropic or Claude model, "
-            "which the fleet never uses for pipeline agents. Ask the client to "
-            "choose a different model.")
-    _kept_fallbacks = [f for f in _fallbacks if not _is_banned(f)]
-    if len(_kept_fallbacks) != len(_fallbacks):
-        info("Dropped Anthropic/Claude fallback id(s); the fleet never uses them.")
-    _fallbacks = _kept_fallbacks
 
 
     # ── Build routing entry ──────────────────────────────────────────────────

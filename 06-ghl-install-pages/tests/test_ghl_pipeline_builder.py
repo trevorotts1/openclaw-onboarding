@@ -411,17 +411,15 @@ class TestSourceLocks:
         assert _re.search(r'_ab\(session,\s*"fill",', src) is None
         assert _re.search(r'"wait",\s*"--",', src) is None
 
-    def test_no_anthropic_or_banned_models_in_ladders(self, tmp_path):
+    def test_no_banned_models_in_ladders(self, tmp_path):
         """The plan's model ladders (shared with the form builder) must carry no
-        Anthropic slug and no banned model — same check the form builder's own
-        selftest enforces (a doctrine COMMENT saying 'never Anthropic' is fine;
-        a routable slug is not)."""
+        banned model (MiniMax M2) — same check the form builder's own selftest
+        enforces."""
         res = pb.build_pipeline({"pipeline_name": "P", "location_id": "L"},
                                 str(tmp_path))
         plan = json.loads((tmp_path / "routing" / "pipeline-plan.json").read_text())
         lad = json.dumps(plan["model_ladders"]).lower()
-        for banned in ("anthropic", "claude", "opus", "sonnet", "haiku",
-                       "minimax-m2", "minimax_m2"):
+        for banned in ("minimax-m2", "minimax_m2"):
             assert banned not in lad, f"banned model token in ladders: {banned}"
         assert res["location_gate_ok"] is True
 

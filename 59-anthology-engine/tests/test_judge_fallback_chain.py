@@ -183,7 +183,6 @@ def test_fallback_map_still_passes_deny_placeholder_and_pregate():
     assert rc == 0, proc.stderr
     blob = json.dumps(mm)
     assert not PLACEHOLDER.findall(blob), "resolved map still carries placeholders"
-    assert not BANNED.search(blob), "resolved map carries an Anthropic-family id"
     r = subprocess.run(["bash", str(PREFLIGHT), "--run-dir", str(Path(td) / "run"), "--check"],
                        capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, "fallback map fails the entry pre-gate:\n%s\n%s" % (r.stdout, r.stderr)

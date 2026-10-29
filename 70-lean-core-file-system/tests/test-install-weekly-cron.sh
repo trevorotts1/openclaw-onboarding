@@ -3,7 +3,7 @@
 # fake `openclaw` (tests/fake-openclaw.py). No gateway, no real cron store.
 #
 # Cases: model discovery picks Ollama Cloud primary + OpenRouter fallback;
-# refuses (exit 4) when a model id is missing or an Anthropic id is forced;
+# refuses (exit 4) when a model id is missing or off-list;
 # refuses (exit 5) when the command line lacks a flag; dry run changes nothing;
 # apply creates exactly one job with the right shape; re-apply is a no-op
 # (idempotent); a drifted job is edited in place, never duplicated; duplicates
@@ -98,12 +98,13 @@ grep -q -- '--fallbacks' "$FAKE_CALLS_FILE" && bad "--fallbacks was passed" || o
 expect "fallback id forced but absent still refuses" 4 "MISSING_FALLBACK" -- --apply --fallback openrouter/deepseek/made-up
 
 # D20: no OpenRouter twin, but the box has its own default fallbacks -> use them
-# (listed ids only; the Claude id, the primary itself and an unlisted id are dropped).
+# (listed ids only, in order; the primary itself and an unlisted id are dropped; an
+# Anthropic-family id on the list is kept like any other: no vendor rule).
 reset; models '{"models":[{"key":"ollama/deepseek-v4.1-flash:cloud"},{"key":"agnes/agnes-2.5"},{"key":"zai/glm-5.3"},{"key":"anthropic/claude-opus-4"}]}'
 mkdir -p "$ROOT/oc"
 echo '{"agents":{"defaults":{"model":{"primary":"ollama/deepseek-v4.1-flash:cloud","fallbacks":["anthropic/claude-opus-4","ollama/deepseek-v4.1-flash:cloud","agnes/agnes-2.5","not/on-the-list","zai/glm-5.3"]}}}}' > "$ROOT/oc/openclaw.json"
-expect "missing twin uses the box default fallbacks (D20)" 0 "fallback model: agnes/agnes-2.5,zai/glm-5.3" -- --apply
-[ "$(job_field payload.fallbacks)" = "['agnes/agnes-2.5', 'zai/glm-5.3']" ] && ok "box default fallbacks stored on the job" || bad "fallbacks wrong: $(job_field payload.fallbacks)"
+expect "missing twin uses the box default fallbacks (D20)" 0 "fallback model: anthropic/claude-opus-4,agnes/agnes-2.5,zai/glm-5.3" -- --apply
+[ "$(job_field payload.fallbacks)" = "['anthropic/claude-opus-4', 'agnes/agnes-2.5', 'zai/glm-5.3']" ] && ok "box default fallbacks stored on the job" || bad "fallbacks wrong: $(job_field payload.fallbacks)"
 expect "re-apply with box fallbacks is a no-op (D20)" 0 "job is current; nothing changed" -- --apply
 rm -f "$ROOT/oc/openclaw.json"
 
@@ -111,7 +112,7 @@ reset; models '{"models":[{"key":"agnes/agnes-2.5","tags":["default","configured
 expect "non-DeepSeek box uses its default model (UPF002/U3)" 0 "primary model:  agnes/agnes-2.5" -- --apply
 [ "$(job_field count)" = "1" ] && ok "job created on a non-DeepSeek box" || bad "no job on non-DeepSeek box"
 reset; models '{"models":[{"key":"anthropic/claude-opus-4","tags":["default"]}]}'
-expect "Anthropic-only default is never used" 4 "MISSING_PRIMARY" -- --apply
+expect "an Anthropic-family default is used like any other" 0 "primary model:  anthropic/claude-opus-4" -- --apply
 
 reset; models '{"models":[{"key":"openrouter/deepseek/deepseek-v4.1-flash"}]}'
 expect "missing Ollama primary refuses" 4 "MISSING_PRIMARY" -- --apply
@@ -127,7 +128,7 @@ expect "ambiguous primary refuses" 4 "MISSING_PRIMARY" -- --apply
 expect "explicit --primary resolves the ambiguity" 0 "primary model:  ollama-cloud/deepseek-v4.1-flash:cloud" -- --dry-run --primary ollama-cloud/deepseek-v4.1-flash:cloud
 
 reset; models "$GOOD_MODELS"
-expect "forcing an Anthropic model refuses" 4 "REFUSED_PRIMARY" -- --apply --primary anthropic/claude-opus-4
+expect "forcing an Anthropic-family model that is on the list is accepted" 0 "primary model:  anthropic/claude-opus-4" -- --dry-run --primary anthropic/claude-opus-4
 expect "forcing an id not on the list refuses" 4 "not on this box's configured model list" -- --apply --fallback openrouter/deepseek/made-up
 
 reset; models "$GOOD_MODELS"; export FAKE_DROP_FLAG=--fallbacks

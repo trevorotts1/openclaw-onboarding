@@ -1021,13 +1021,11 @@ echo ""
 echo "[apply-fleet-standards] config standards applied"
 
 # ─── 4a-SOVEREIGNTY. Model-sovereignty strip/repair (FAIL-OPEN) ───────────────
-# v16.2.17: the onboarding GENERATOR is Anthropic-free/preview-free/Ollama-first,
-# but LEGACY boxes remediated earlier can still carry a lingering Anthropic
-# provider/plugin block, `-preview`/free slugs in fallback[] chains, or runaway
-# cascades. scripts/repair-model-sovereignty.sh is an idempotent, backup-before-
-# edit, box-user, no-restart remediation that strips exactly those (keying ONLY
-# off FORBIDDEN_PREFIXES + `-preview` + free-sentinels — it never touches a
-# client's own OpenAI/OpenRouter/Gemini providers/chains). It was never invoked
+# LEGACY boxes remediated earlier can still carry `-preview`/free slugs in
+# fallback[] chains, or runaway cascades. scripts/repair-model-sovereignty.sh is
+# an idempotent, backup-before-edit, box-user, no-restart remediation that strips
+# exactly those (keying ONLY off `-preview` + free-sentinels — it never touches a
+# client's own Anthropic/OpenAI/OpenRouter/Gemini providers/chains). It was never invoked
 # by install/update; wire it here so BOTH install.sh and update-skills.sh run it
 # on every pass. FAIL-OPEN: any non-zero (offenders remain / needs owner input /
 # missing tool) logs a warning and CONTINUES — it must NEVER abort the run. NO

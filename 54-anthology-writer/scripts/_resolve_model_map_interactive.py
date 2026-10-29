@@ -15,14 +15,12 @@ WHY THIS IS A REAL FILE AND NOT A preflight.sh HEREDOC:
 Usage:
     _resolve_model_map_interactive.py <path/to/model-map.json>
 
-Guarantees: NEVER writes an Anthropic id; NEVER writes an operator key.
+Guarantees: NEVER writes an operator key.
 """
 import json
 import os
 import re
 import sys
-
-BANNED = re.compile(r"claude-|anthropic/|us\.anthropic\.")
 
 
 def main(argv):
@@ -43,8 +41,6 @@ def main(argv):
     print("\n  === Interactive Model-Map Configuration ===", file=sys.stderr)
     print("  For each tier, enter the provider ID and model ID for your box.", file=sys.stderr)
     print("  Press Enter to accept the default shown in [brackets].", file=sys.stderr)
-    print("  No provider/model may start with 'claude-', 'anthropic/', or 'us.anthropic.'.",
-          file=sys.stderr)
 
     resolved = {}
     for name in sorted(tiers):
@@ -63,11 +59,6 @@ def main(argv):
             return 2
         provider = provider or def_provider
         model = model or def_model
-        for k, v in (("provider", provider), ("model", model)):
-            if BANNED.search(v):
-                print("AF-AW-ANTHROPIC: tier %s.%s carries a banned id %r" % (name, k, v),
-                      file=sys.stderr)
-                return 2
         entry = {"role": t.get("role", ""), "provider": provider, "model": model}
         if t.get("maxTokens") is not None:
             entry["maxTokens"] = t.get("maxTokens")
@@ -76,7 +67,7 @@ def main(argv):
     current["tiers"] = resolved
     current["resolved_per_box"] = True
     current["note"] = ("Resolved interactively — provider/model values entered by operator. "
-                       "NEVER Anthropic, NEVER operator keys.")
+                       "NEVER operator keys.")
     json.dump(current, open(path, "w", encoding="utf-8"), indent=2)
     print("  resolved model-map.json ->", path)
     for name in sorted(resolved):

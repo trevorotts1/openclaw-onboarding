@@ -548,14 +548,8 @@ test("selfTest reports zero failures", () => {
   assert.deepEqual(selfTest(), []);
 });
 
-test("no Anthropic ids, no {{...}}, no real ids, no hardcoded client/location", () => {
+test("no {{...}}, no real ids, no hardcoded client/location", () => {
   const src = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "job.js"), "utf8");
-  // The module may mention "Anthropic" in a fail-closed prose/comment (the same
-  // convention every sibling unit uses). What must NEVER appear is a bare model
-  // or provider id — the exact pattern the QC bare-key grep checks both ways.
-  const bareAnthropic = /(^|[^A-Za-z])anthropic([^A-Za-z-]|$)/.test(src);
-  const bareClaude = /\bclaude[\w.-]*\b/i.test(src);
-  assert.ok(!bareAnthropic && !bareClaude, "no bare Anthropic/Claude provider or model id");
   // Handlebars-style {{...}} template interpolation (the constraint's
   // "no {{...}}"): `{{name}}`, `{{#block}}`, `{{/block}}`, `{{>partial}}`,
   // `{{!comment}}`, `{{expression.path}}`. JSDoc type annotations like

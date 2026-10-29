@@ -138,14 +138,11 @@ two-way, so a fleet update to one can never silently strand the other.
 ## Client-provider rule (binding)
 
 On a client box this skill uses the **client's own configured providers and
-keys** — never the operator's, never Anthropic / `claude-*` model ids. The source
-workflow pinned both chains to `google/gemini-2.5-pro` (via OpenRouter) — already
-non-Anthropic; kept only if the client configured that provider, else the
+keys** — never the operator's. The source
+workflow pinned both chains to `google/gemini-2.5-pro` (via OpenRouter); kept only if the client configured that provider, else the
 client's own capability-tested tier (long-output for the bio, cheaper for the
 HTML). The deterministic gates are model-free Python that run identically
-everywhere. `verify.sh` includes a no-Anthropic scan (`AF-PB-ANTHROPIC`) over the
-shipped skill + the resolved model map. This skill is provider-neutral by
-construction.
+everywhere. This skill is provider-neutral by construction.
 
 ## Verify
 
