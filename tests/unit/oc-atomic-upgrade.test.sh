@@ -315,6 +315,15 @@ if [ "\${1:-}" = "install" ]; then
     [ "\$prev" = "--prefix" ] && PFX="\$a"
     prev="\$a"
   done
+  # v1.2.3: \`#!/usr/bin/env node\` makes real npm run under the FIRST node on PATH; record that one.
+  command -v node >> "\$STATE/npm_node" 2>/dev/null
+  # v1.2.3: a real preinstall failure: 100 lines of chatter, a token-looking line, then the reason
+  if [ "\$VER" = "$NEW_V" ] && [ -f "\$STATE/npm_noisy_fail" ]; then
+    i=0; while [ "\$i" -lt 100 ]; do i=\$((i+1)); echo "npmline \$i" >&2; done
+    echo '//registry.npmjs.org/:_authToken=SECRETVALUE123' >&2
+    echo '[openclaw] error: this OpenClaw release requires Node >=26.12.1.' >&2
+    exit 1
+  fi
   if [ -n "\$PFX" ]; then
     mkdir -p "\$PFX/lib/node_modules/openclaw"
     printf '{"name":"openclaw","version":"%s"}\n' "\$VER" > "\$PFX/lib/node_modules/openclaw/package.json"
@@ -1999,6 +2008,82 @@ if [ "$RC18G" -eq 0 ] && grep -q '"doctorWasHere": true' "$H18G/.openclaw/opencl
   pass "18m: CONTROL — doctor changed only an unrelated key, model names identical -> the upgrade completed (rc=0); the model check is not over-sensitive"
 else
   fail "18m: rc=$RC18G. Output: $OUT18G"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (B-node) v1.2.3, Big Fleet Roll 20261029: npm runs under the SUPERVISOR's node, and a failed install says why ---"
+# Four Macs rolled back with exit 78 and no reason in the log. npm is a \`#!/usr/bin/env node\` script, so it
+# runs under the FIRST node on PATH. The script put the supervisor's prefix bin (/opt/homebrew/bin, holding the
+# stale Homebrew node the node-floor step had just replaced) IN FRONT of the supervisor's own node dir, so
+# openclaw's preinstall guard saw Node 26.8.1 and exited 1. Fixture: the plist's node+npm live in
+# supnode/node/bin; the prefix's own bin holds a DECOY node (the stale one). The stub npm records the first
+# node on PATH when it runs.
+make_node_box() {   # <tag> -> sets HN SN STN SUPN
+  local tag="$1"
+  HN="$(make_box "bn$tag" clean)"; SN="$SANDBOX/stubsbn$tag"; STN="$SANDBOX/statebn$tag"
+  make_stubs "$SN" "$STN" versioned
+  SUPN="$SANDBOX/supbn$tag"; mkdir -p "$SUPN/node/bin" "$SUPN/npm-global/bin"
+  cp "$SN/node" "$SN/npm" "$SUPN/node/bin/"
+  cp "$SN/node" "$SUPN/npm-global/bin/node"
+  write_supervisor "$HN" "$SUPN/node/bin/node" "$SUPN/npm-global" "$OLD_V"
+  printf 'node %s/npm-global/lib/node_modules/openclaw/dist/index.js gateway\n' "$SUPN" > "$STN/ps_args"
+}
+make_node_box a
+OUTBN="$(run_atomic "$HN" "$SN" "$STN")"; RCBN=$?
+if [ "$RCBN" -eq 0 ] && [ -s "$STN/npm_node" ] && ! grep -qvxF "$SUPN/node/bin/node" "$STN/npm_node"; then
+  pass "Bn1: CONTROL — every npm install ran under the supervisor's node ($SUPN/node/bin/node), not the prefix bin's decoy; upgrade rc=0"
+else
+  fail "Bn1: rc=$RCBN, node npm ran under: $(tr '\n' '|' < "$STN/npm_node" 2>/dev/null). Output: $OUTBN"
+fi
+if ! grep -q 'npm| ' <<<"$OUTBN"; then
+  pass "Bn2: a SUCCESSFUL install prints no npm output block (no noise)"
+else
+  fail "Bn2: npm output was printed for a successful install. Output: $OUTBN"
+fi
+
+# MUTATION: put the two PATH prepends back in the OLD order. The same box must now run npm under the decoy.
+MUTBN="$(mutate_copy bnode-mut '  [ -d "$SUP_PREFIX/bin" ] && PATH="$SUP_PREFIX/bin:$PATH"
+  [ -n "$node_dir" ] && [ -d "$node_dir" ] && PATH="$node_dir:$PATH"
+' '  [ -n "$node_dir" ] && [ -d "$node_dir" ] && PATH="$node_dir:$PATH"
+  [ -d "$SUP_PREFIX/bin" ] && PATH="$SUP_PREFIX/bin:$PATH"
+')"
+make_node_box m
+OUTBNM="$(run_atomic "$HN" "$SN" "$STN" "$MUTBN")"; RCBNM=$?
+if [ -n "$MUTBN" ] && grep -qxF "$SUPN/npm-global/bin/node" "$STN/npm_node" 2>/dev/null; then
+  pass "Bn3: MUTATION PROOF — with only the PATH order reverted, npm ran under the prefix bin's (stale) node: the defect reproduces"
+else
+  fail "Bn3: the mutant did not reproduce the defect (mutant=${MUTBN:-none}, rc=$RCBNM, node: $(tr '\n' '|' < "$STN/npm_node" 2>/dev/null)), so Bn1 measures nothing"
+fi
+
+# FAILURE OUTPUT: npm dies with 100 lines, a token-looking line and the reason. The job log must carry the last
+# 40 lines (the reason included), not the earlier ones, not the token, and say which node npm ran under.
+make_node_box f; touch "$STN/npm_noisy_fail"
+OUTBNF="$(run_atomic "$HN" "$SN" "$STN")"; RCBNF=$?
+if [ "$RCBNF" -eq 78 ] && [ "$(cat "$STN/version")" = "$OLD_V" ]; then
+  pass "Bn4: a failing npm install still rolls back cleanly (rc=78, binary $OLD_V)"
+else
+  fail "Bn4: rc=$RCBNF version=$(cat "$STN/version"). Output: $OUTBNF"
+fi
+if grep -q 'requires Node >=26.12.1' <<<"$OUTBNF" && grep -q 'npm| npmline 100$' <<<"$OUTBNF" && grep -q 'npm| npmline 63$' <<<"$OUTBNF"; then
+  pass "Bn5: the failure reason and the tail of npm's output are in the job log"
+else
+  fail "Bn5: npm's error output is missing from the log. Output: $OUTBNF"
+fi
+if ! grep -q 'npmline 62$' <<<"$OUTBNF" && ! grep -q 'npmline 1$' <<<"$OUTBNF"; then
+  pass "Bn6: only the LAST 40 lines are shown (line 62 and earlier are not)"
+else
+  fail "Bn6: more than the last 40 lines were printed. Output: $OUTBNF"
+fi
+if ! grep -q 'SECRETVALUE123' <<<"$OUTBNF"; then
+  pass "Bn7: a token-looking line in npm's output is not copied into the log"
+else
+  fail "Bn7: a secret-looking line reached the log"
+fi
+if grep -qF "ran under $SUPN/node/bin/node" <<<"$OUTBNF"; then
+  pass "Bn8: the log names the node npm ran under ($SUPN/node/bin/node)"
+else
+  fail "Bn8: the log does not say which node npm ran under. Output: $OUTBNF"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════
