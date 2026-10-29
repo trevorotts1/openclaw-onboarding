@@ -6,5 +6,7 @@ cd "$GITHUB_WORKSPACE"
 set -e -o pipefail
 set -euo pipefail
 bash tests/unit/fleet-standing-gate.test.sh
+python3 tests/unit/fleet-preflight.test.py
+bash tests/unit/client-skills-untouched.test.sh
 echo "fleet-standing-fail-open-guard: PASS"
 )
