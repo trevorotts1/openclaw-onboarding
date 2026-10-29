@@ -35,8 +35,10 @@ for c in 58-ghl-page-rebuild 44-video-overlay-playbook; do
   echo secret-ish > "$SK/$c/.hidden"; echo deep > "$SK/$c/scripts/deep/x.py"
 done
 echo 1.0 > "$SK/.onboarding-version"
+# Portable mode+size probe: GNU stat -c first, BSD stat -f fallback (decided by running it, not by uname).
+if stat -c '%A %s' / >/dev/null 2>&1; then STAT_MS=(stat -c '%A %s'); else STAT_MS=(stat -f '%Sp %z'); fi
 chash(){ (cd "$SK" && find 58-ghl-page-rebuild 44-video-overlay-playbook -print0 | sort -z | xargs -0 shasum 2>/dev/null | shasum | cut -d' ' -f1; \
-          find 58-ghl-page-rebuild 44-video-overlay-playbook -type f -exec stat -f '%Sp %z' {} + 2>/dev/null | sort | shasum | cut -d' ' -f1); }
+          find 58-ghl-page-rebuild 44-video-overlay-playbook -type f -exec "${STAT_MS[@]}" {} + 2>/dev/null | sort | shasum | cut -d' ' -f1); }
 BEFORE="$(chash)"; [ -n "$BEFORE" ] || { bad "could not hash the fixture"; exit 1; }
 
 # ---- 1. the client-made test and the count --------------------------------------------------
