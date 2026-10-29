@@ -93,14 +93,28 @@ if bad:
 sys.exit(1 if bad else 0)
 PY
 
-python3 - "$GUARD_PY" "$CANONICAL_OWNER_CHAT" <<'PY' && pass "2a2: operator chat ids match the canonical list (shared-utils/resolve-owner-chat.sh)" || fail "2a2: operator chat id list drifted from the canonical copy"
-import re, sys
-mine = re.search(r'^OPERATOR_CHAT_IDS = \{([^}]*)\}', open(sys.argv[1]).read(), re.M)
-canon = re.search(r'^OPERATOR_CHAT_IDS_SH="([^"]*)"', open(sys.argv[2]).read(), re.M)
-a = set(re.findall(r'\d+', mine.group(1))) if mine else set()
-b = set(canon.group(1).split()) if canon else set()
-print("    memory-guard.py: %s\n    canonical:       %s" % (sorted(a), sorted(b))) if a != b or not a else None
-sys.exit(0 if a and a == b else 1)
+python3 - "$GUARD_PY" "$CANONICAL_OWNER_CHAT" <<'PY' && pass "2a2: memory-guard.py carries no operator chat id literal (scrub-operator-chat-id rule); it reads the canonical list at run time" || fail "2a2: an operator chat id literal is in memory-guard.py, or the run-time loader does not return the canonical list"
+import importlib.util, os, re, shutil, sys, tempfile
+guard, canon = sys.argv[1], sys.argv[2]
+ids = set(re.search(r'^OPERATOR_CHAT_IDS_SH="([^"]*)"', open(canon).read(), re.M).group(1).split())
+src = open(guard).read()
+leaked = sorted(i for i in ids if i in src)
+if leaked or not ids:
+    print("    literal operator id(s) in memory-guard.py: %d (canonical list size %d)" % (len(leaked), len(ids)))
+    sys.exit(1)
+root = tempfile.mkdtemp()
+try:
+    os.makedirs(os.path.join(root, "skills", "shared-utils"))
+    shutil.copy(canon, os.path.join(root, "skills", "shared-utils", "resolve-owner-chat.sh"))
+    os.environ.pop("OPERATOR_CHAT_IDS_SH", None)
+    spec = importlib.util.spec_from_file_location("mg", guard); mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+    got = mod.operator_chat_ids(root)
+    ok = got == ids and mod.operator_chat_ids(os.path.join(root, "missing")) == set()
+    if not ok:
+        print("    loader returned %d ids, canonical has %d" % (len(got), len(ids)))
+    sys.exit(0 if ok else 1)
+finally:
+    shutil.rmtree(root, ignore_errors=True)
 PY
 
 python3 - "$REPO_ROOT/CHANGELOG.md" <<'PY' && pass "2a3: CHANGELOG states the real backup/state facts (OpenClaw's own .bak.1 and .last-good; state.json 0600 keeps the original remote)" || fail "2a3: CHANGELOG entry is wrong about backups or the state file"

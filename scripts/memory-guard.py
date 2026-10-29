@@ -85,10 +85,26 @@ WRITE_RESERVE_S = PATCH_TIMEOUT_S + MESSAGE_TIMEOUT_S
 MIN_OPENCLAW = (2026, 10, 5)
 ALWAYS_ON_IDS = {"main"}
 ALWAYS_ON_PATTERNS = ("master-orchestrator",)
-# Canonical list: shared-utils/resolve-owner-chat.sh (OPERATOR_CHAT_IDS_SH). Every reader in
-# the repo keeps its own copy (install.sh, ensure-pipeline-crons.sh, ...); tests/unit/memory-guard.test.sh
-# fails if this copy drifts from the canonical one.
-OPERATOR_CHAT_IDS = {"5252140759", "6663821679", "6771245262"}
+# The operator's personal chat ids are NEVER written into this (client-installed) file: the repo rule
+# (scripts/scrub-operator-chat-id.py) is that the one canonical list lives in
+# shared-utils/resolve-owner-chat.sh (OPERATOR_CHAT_IDS_SH) and is read at run time.
+RESOLVER_REL = os.path.join("skills", "shared-utils", "resolve-owner-chat.sh")
+
+
+def operator_chat_ids(root):
+    """Operator chat ids the client notice must never go to: the canonical list, read from the
+    resolver file the roll installs on every box (plus OPERATOR_CHAT_IDS_SH when the caller exports
+    it). An empty set means the list could not be read; the caller then sends nothing."""
+    ids = set(os.environ.get("OPERATOR_CHAT_IDS_SH", "").split())
+    try:
+        with open(os.path.join(root, RESOLVER_REL)) as f:
+            m = re.search(r'^OPERATOR_CHAT_IDS_SH="([^"]*)"', f.read(), re.M)
+        if m:
+            ids |= set(m.group(1).split())
+    except OSError:
+        pass
+    return {i for i in ids if i.lstrip("-").isdigit()}
+
 
 VERSION_RE = re.compile(r"\b(20\d\d)\.(\d{1,2})\.(\d{1,2})\b")
 
@@ -573,9 +589,12 @@ def survey(box, cfg, orig, chain, cur, mm_off, agent, sleep):
     return res
 
 
-def owner_chat(cfg):
+def owner_chat(cfg, operator_ids):
     """Non-operator owner Telegram chat (mirrors ensure-pipeline-crons.sh
-    _resolve_owner_chat: env override, allowFrom, then ownerAllowFrom)."""
+    _resolve_owner_chat: env override, allowFrom, then ownerAllowFrom). With no operator list
+    it returns "" (fail closed): better no message tonight than one to the operator's own chat."""
+    if not operator_ids:
+        return ""
     def tg_token(cfg, acct="default"):
         tg = (cfg.get("channels") or {}).get("telegram") or {}
         acc = (tg.get("accounts") or {}).get(acct) or {}
@@ -603,7 +622,7 @@ def owner_chat(cfg):
         digits = s.lstrip("-")
         if not (digits.isdigit() and 6 <= len(digits) <= 20):
             return ""
-        if (bot_id and s == bot_id) or s in OPERATOR_CHAT_IDS:
+        if (bot_id and s == bot_id) or s in operator_ids:
             return ""
         return s
 
@@ -623,7 +642,8 @@ def tell_client(box, cfg, chain, res, st):
     """ONE plain-English notice to the client's own Telegram chat per dead-key episode: a send
     that fails (or no chat to send to) is retried on later nights until one succeeds.
     Returns True once a message has gone out."""
-    chat = owner_chat(cfg)
+    ops = operator_chat_ids(box.root)
+    chat = owner_chat(cfg, ops)
     bills = lambda cs: [x for x in dict.fromkeys(c.get("name") or c["provider"] for c in cs) if x in BILLING_HINT]
     provs = bills([c for c, r in zip(chain, res) if r[0] == "dead"]) or bills(chain)
     names = [PROVIDER_NAME[p] for p in provs]
@@ -635,7 +655,8 @@ def tell_client(box, cfg, chain, res, st):
            % (", ".join(names[:-1]) + " and " + names[-1] if len(names) > 1 else "".join(names),
               "; ".join(BILLING_HINT[p] for p in provs)))
     if not chat:
-        box.log("NOTICE no client Telegram chat found; client message not sent (retried next night)")
+        box.log("NOTICE no client Telegram chat found%s; client message not sent (retried next night)"
+                % ("" if ops else " (the operator chat list could not be read, so nothing is sent rather than risk the operator's own chat)"))
         return False
     if box.dry_run:
         box.log("DRY-RUN would message the client's Telegram chat: %s" % msg)
@@ -952,6 +973,11 @@ def _self_test():
     d = tempfile.mkdtemp(prefix="memory-guard-test-")
     try:
         root = os.path.join(d, "root")
+        os.environ.pop("OPERATOR_CHAT_IDS_SH", None)
+        FAKE_OP = "900000001"  # fixture operator chat id (never a real one)
+        os.makedirs(os.path.join(root, os.path.dirname(RESOLVER_REL)), exist_ok=True)
+        with open(os.path.join(root, RESOLVER_REL), "w") as f:
+            f.write('OPERATOR_CHAT_IDS_SH="%s 900000002"\n' % FAKE_OP)
         os.makedirs(os.path.join(root, "state"))
         cli = os.path.join(d, "openclaw")
         with open(cli, "w") as f:
@@ -996,7 +1022,7 @@ def _self_test():
             ents = {"main": {}}
             ents.update(extra or {})
             return {"memory": {"search": copy.deepcopy(ms)},
-                    "channels": {"telegram": {"allowFrom": ["5252140759", "123456789"]}},
+                    "channels": {"telegram": {"allowFrom": [FAKE_OP, "123456789"]}},
                     "agents": {"defaults": {}, "entries": ents}}
 
         def run_key(dry=False):
@@ -1309,7 +1335,7 @@ def _self_test():
         check("a later night's send succeeds and is recorded", len(kinds(cs, "message", "send")) == 1 and box().state()["key"].get("notified"))
         cs = run_key()
         check("... and then never again for the same episode", not kinds(cs, "message", "send"))
-        c = mkcfg(gem); c["channels"] = {"telegram": {"allowFrom": ["5252140759"]}}  # operator chat only = no client chat
+        c = mkcfg(gem); c["channels"] = {"telegram": {"allowFrom": [FAKE_OP]}}  # operator chat only = no client chat
         reset(c, default=DEAD)
         cs = run_key()
         check("no client chat: nothing sent, not recorded", not kinds(cs, "message", "send") and "notified" not in box().state()["key"])
@@ -1317,6 +1343,19 @@ def _self_test():
         json.dump(c, open(os.path.join(root, "openclaw.json"), "w"))
         cs = run_key()
         check("chat appears later: sent exactly once", len(kinds(cs, "message", "send")) == 1 and box().state()["key"].get("notified"))
+        # fail closed: with the canonical operator list unreadable, nothing is sent (never risk the operator's chat)
+        rp = os.path.join(root, RESOLVER_REL)
+        reset(mkcfg(gem), default=DEAD)
+        os.rename(rp, rp + ".off")
+        cs = run_key()
+        check("operator list unreadable: nothing sent, not recorded (fail closed)",
+              not kinds(cs, "message", "send") and "notified" not in box().state()["key"])
+        os.rename(rp + ".off", rp)
+        cs = run_key()
+        check("operator list readable again: the notice goes out once, to the client chat",
+              len(kinds(cs, "message", "send")) == 1 and box().state()["key"].get("notified"))
+        check("operator_chat_ids reads the canonical list from the installed resolver",
+              operator_chat_ids(root) == {FAKE_OP, "900000002"} and operator_chat_ids(os.path.join(d, "nowhere")) == set())
 
         # ---- 6e. provider error text never stores or prints key-like strings
         MASK = ("Incorrect API key provided: sk-abcd1234efgh***wxyz1234. AIzaSyA1234567890abcdefghijklmnopqrstuv "
