@@ -36,6 +36,9 @@ Carry of PBB-2314 (88e9684ab) onto live main: the BookkeepingTests in `test_inte
 ## [2.0.221] - 2026-10-28
 
 Carries the PBB-1710 T-05 registration evidence rebuild onto live main, keeping main's six corpus_status values and adding proof-artifacts/document scopes with repo-relative paths.
+## [2.0.221] - 2026-10-28 - rebase PBB-1710 evidence rebuild onto live main (lane batch1)
+
+Carries the PBB-1710 T-05 registration evidence rebuild: richer corpus_status (counting method, proof-artifacts and document scopes, prior observation) onto live main, keeping main's sha lines, correction narrative, and plist redaction.
 
 ## [2.0.220] - 2026-10-28 - chore(train20): batch landing of the PBB-1708 interactive-owner tests
 
