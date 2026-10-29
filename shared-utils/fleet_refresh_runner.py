@@ -2612,6 +2612,11 @@ R="$1"; S="$R/.claude/skills/nine-router-setup/scripts/setup-macos.sh"
 [ "$(tail -n 1 "$S")" = 'main "$@"' ] || { echo "installer entrypoint changed: last line of $S is not main \"\$@\"" >&2; exit 3; }
 T="$(mktemp)"; trap 'rm -f "$T"' EXIT
 sed '$d' "$S" > "$T"
+# The installer derives SKILL_DIR/COMMON from NINE_SETUP_SCRIPT_DIR, else from the path of the file being
+# sourced. Sourced from this mktemp copy that path is the temp dir, SKILL_DIR lands one level above it, and the
+# installer's own `. "$COMMON/settings-lock.sh"` fails (update-999 exit 1). Name the real scripts dir
+# (shared-utils/lib-frontdoor.sh does the same for its per-skill link).
+export NINE_SETUP_SCRIPT_DIR="$R/.claude/skills/nine-router-setup/scripts"
 . "$T"
 declare -F link_skills_into_root >/dev/null || { echo "installer has no link_skills_into_root" >&2; exit 3; }
 REPO_ROOT="$R"; REPO_SKILL_DIR="$R/.claude/skills/nine-router-setup"

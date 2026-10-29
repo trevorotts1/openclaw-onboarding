@@ -633,21 +633,22 @@ class Update999(unittest.TestCase):
     def tearDown(self):
         self._td.cleanup()
 
-    def make_999(self, where):
+    def make_999(self, where, installer=None, extra=None):
         origin = self.tmp / "gh" / "trevorotts1" / "999-setup.git"
         origin.mkdir(parents=True)
         git(origin, "init", "-q", "--bare", "-b", "main")
         seed = new_repo(self.tmp / "seed")
         marker = self.tmp / "linked.txt"
-        installer = (
+        installer = (installer or (
             "#!/usr/bin/env bash\nset -euo pipefail\n"
             f'link_skills_into_root() {{ echo "linked $1 from $REPO_ROOT" >> "{marker}"; }}\n'
             'bundled_skills() { sed -e "/^$/d" "$REPO_ROOT/CONTROL/bundled-skills.txt"; }\n'
             f'main() {{ echo FULL-ORCHESTRATOR-RAN >> "{marker}"; }}\n'
             'main "$@"\n'
-        )
+        )).replace("@MARKER@", str(marker))   # a custom installer names the marker file as @MARKER@
         commit(seed, {".claude/skills/nine-router-setup/scripts/setup-macos.sh": installer,
-                      "AGENT_INSTALL.md": "x", "CONTROL/bundled-skills.txt": "nine-router-setup\n"}, "one")
+                      "AGENT_INSTALL.md": "x", "CONTROL/bundled-skills.txt": "nine-router-setup\n",
+                      **(extra or {})}, "one")
         git(seed, "remote", "add", "origin", str(origin))
         git(seed, "push", "-q", "origin", "main")
         subprocess.run(["git", "clone", "-q", str(origin), str(self.home / where)], check=True, env=GIT_ENV)
@@ -687,6 +688,33 @@ class Update999(unittest.TestCase):
         ran = marker.read_text()
         self.assertIn(f"linked {self.home}/.claude from {repo}", ran)
         self.assertNotIn("FULL-ORCHESTRATOR-RAN", ran)   # no model call, no provider rewiring
+
+    def test_link_step_gives_the_sourced_installer_its_real_scripts_dir(self):
+        # The link step sources a mktemp copy of the installer. The real setup-macos.sh derives
+        # SKILL_DIR/COMMON from NINE_SETUP_SCRIPT_DIR, else from the path of the file being sourced
+        # (the temp dir), then sources $COMMON/settings-lock.sh. Without the export that lookup
+        # lands outside the checkout and update-999 fails (measured on a client Mac, 20261029 roll).
+        # The default stub installer never derives a dir, which is why nothing caught it.
+        header = (
+            "#!/usr/bin/env bash\nset -euo pipefail\n"
+            '_SELF_DIR="${NINE_SETUP_SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)}"\n'
+            'SKILL_DIR="$(cd "$_SELF_DIR/.." && pwd)"\n'
+            'COMMON="$SKILL_DIR/scripts/common"\n'
+            '. "$COMMON/settings-lock.sh"\n'
+            'link_skills_into_root() { echo "linked $1 settings-lock=$SETTINGS_LOCK_LOADED" >> "@MARKER@"; }\n'
+            'bundled_skills() { echo nine-router-setup; }\n'
+            'main() { echo FULL-ORCHESTRATOR-RAN >> "@MARKER@"; }\n'
+            'main "$@"\n'
+        )
+        repo, marker, _sha = self.make_999(
+            "Downloads/999-setup", installer=header,
+            extra={".claude/skills/nine-router-setup/scripts/common/settings-lock.sh": "SETTINGS_LOCK_LOADED=yes\n"})
+        res = fr.BoxResult("t", dry_run=False)
+        fr.step_update_999(res, dry_run=False)
+        self.assertEqual(res.steps["update-999"], "ok", (res.steps, res.errors, res.update_999))
+        ran = marker.read_text()
+        self.assertIn(f"linked {self.home}/.claude settings-lock=yes", ran)
+        self.assertNotIn("FULL-ORCHESTRATOR-RAN", ran)
 
     def test_local_changes_are_skipped_never_pulled_over(self):
         repo, marker, new_sha = self.make_999("Downloads/999-setup")
