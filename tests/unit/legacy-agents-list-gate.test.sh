@@ -60,6 +60,9 @@
 # Exit 0 = all checks pass. Exit 1 = one or more checks failed.
 
 set -uo pipefail
+# The weekly pre-flight (shared-utils/fleet_preflight.py) reads this machine's memory pressure; a
+# loaded machine must not decide this test, which is covered by tests/unit/fleet-preflight.test.py.
+export FLEET_PREFLIGHT_BYPASS=1
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 GATE="$REPO_ROOT/scripts/qc-assert-legacy-agents-list.sh"
