@@ -342,8 +342,15 @@ _resolve_supervisor_install() {
   node_dir="$(printf '%s\n' "$out" | sed -n 's/^node=//p' | head -1)"
   [ -n "$node_dir" ] && node_dir="$(dirname "$node_dir")"
   [ -n "$SUP_PKG_ROOT" ] && [ -n "$SUP_PREFIX" ] || return 1
-  [ -n "$node_dir" ] && [ -d "$node_dir" ] && PATH="$node_dir:$PATH"
+  # ORDER MATTERS (v1.2.3): the supervisor's node dir must END UP FIRST. npm is a
+  # `#!/usr/bin/env node` script, so it runs under the first `node` on PATH, and so do
+  # the package's own lifecycle scripts (openclaw's preinstall refuses a node below its
+  # engines floor). On a Homebrew Mac $SUP_PREFIX/bin is /opt/homebrew/bin, whose `node`
+  # is the stale one the node-floor step just replaced; prepended AFTER the private node
+  # it won, npm ran on Node 26.8.1, the preinstall guard exited 1 and every box rolled
+  # back with exit 78 (Big Fleet Roll 20261029).
   [ -d "$SUP_PREFIX/bin" ] && PATH="$SUP_PREFIX/bin:$PATH"
+  [ -n "$node_dir" ] && [ -d "$node_dir" ] && PATH="$node_dir:$PATH"
   export PATH
   # THAT node's npm, unless the operator pinned one.
   [ -z "${OC_ATOMIC_NPM:-}" ] && [ -n "$node_dir" ] && [ -x "$node_dir/npm" ] && NPM_BIN="$node_dir/npm"
@@ -853,10 +860,19 @@ _gateway_stop_for_npm() {
 # npm install of $1 with the gateway held stopped on BOTH sides of it. rc 2 = the gateway
 # could not be held stopped, so npm never ran; otherwise npm's own rc.
 _npm_install_held() {
-  local rc
+  local rc out
   _gateway_stop_for_npm || return 2
-  _npm_install "$1" >/dev/null 2>&1; rc=$?
+  out="$(mktemp "${TMPDIR:-/tmp}/oc-atomic-npm.XXXXXX" 2>/dev/null)" || out=/dev/null
+  _npm_install "$1" >"$out" 2>&1; rc=$?
   [ "$rc" -eq 2 ] && rc=1      # 2 is this function's own "never ran" code
+  # v1.2.3: a failed install used to say only "FAILED" (its output went to /dev/null), so four
+  # boxes rolled back with no reason in the job log. Show npm's last 40 lines (secret-looking
+  # lines dropped: a registry auth error can echo a token) and the node npm ran under.
+  if [ "$rc" -ne 0 ]; then
+    _err "npm exited $rc (ran under $(command -v node 2>/dev/null || echo 'no node on PATH') $(node -v 2>/dev/null)); its last 40 lines follow"
+    tail -n 40 "$out" 2>/dev/null | grep -viE 'token|secret|apikey|password|bearer|_auth' | sed 's/^/[oc-atomic-upgrade]   npm| /' >&2
+  fi
+  [ "$out" = /dev/null ] || rm -f "$out"
   # Something (a remediator that ignored the lock, a stray bootstrap) loaded the job DURING
   # the window: it may have imported a half-written tree. Stop it again so the start that
   # follows the install is a fresh process on the complete package.
