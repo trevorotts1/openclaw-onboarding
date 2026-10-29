@@ -89,6 +89,26 @@ export SMIB_DELIVER_DEST="$WORK/deliverables"
 SMIB_DEMO_SCRUB_NAMES="${SMIB_SCRUB_NAMES:-Zzq Private Holdings LLC}"
 unset SMIB_SCRUB_NAMES SMIB_SCRUB_NAMES_FILE
 
+# F08 TEST POSTURE: every committed golden carries a config.json `probes` block
+# (offline fixture data). The PRODUCTION entry refuses that by design
+# (AF-SM-EXEC-MODE: probes present in a production configuration), and the only
+# sanctioned way to run fixtures is the trusted TEST entry: SMIB_TEST_ENTRY=1 plus
+# a logged owner offline token in the run dir (working/copy/preflight-offline-token.json;
+# see social-media-entry.sh and run_social_media.py _chk_preflight). This helper is the
+# ONE place verify.sh invokes the entry for a golden: it stages the token into the
+# throwaway temp COPY (the committed fixtures stay byte-for-byte untouched), sets
+# SMIB_TEST_ENTRY inline for that single call (never exported), and forwards the demo
+# scrub names. Production posture is not weakened: the stamp is still written by the
+# entry, simulated receipts are still refused for live claims.
+entry_test() {
+    local run="$1" mode="$2"
+    mkdir -p "$run/working/copy"
+    printf '%s\n' '{"owner_approved": true, "reason": "verify.sh self-test: committed golden fixtures run offline (no network, no provider)"}' \
+        > "$run/working/copy/preflight-offline-token.json"
+    SMIB_TEST_ENTRY=1 SMIB_SCRUB_NAMES="$SMIB_DEMO_SCRUB_NAMES" \
+        bash social-media-entry.sh --run-dir "$run" --mode "$mode"
+}
+
 GOLD_SRC="examples/golden-week"
 
 # assert a prover REJECTS: exit code == $2 and (if $3 given) $3 is among the --json codes
@@ -115,7 +135,7 @@ golden_cert() {
     local run="$WORK/gc-$label"
     cp -R "$src" "$run"
     rm -f "$run/working/checkpoints/gates.json" "$run/delivery/PROCESS-CERTIFICATE."* 2>/dev/null || true
-    if ! SMIB_SCRUB_NAMES="$SMIB_DEMO_SCRUB_NAMES" bash social-media-entry.sh --run-dir "$run" --mode "$mode" >/dev/null 2>&1; then
+    if ! entry_test "$run" "$mode" >/dev/null 2>&1; then
         bad "$label ($mode): run did not pass through the entry"; return; fi
     if "$PY" - "$run/delivery/PROCESS-CERTIFICATE.json" "$src/delivery/PROCESS-CERTIFICATE.json" <<'PY'
 import json,sys
@@ -135,7 +155,7 @@ golden_report() {
     local run="$WORK/gr-$label"
     cp -R "$src" "$run"
     rm -f "$run/working/checkpoints/gates.json" 2>/dev/null || true
-    if SMIB_SCRUB_NAMES="$SMIB_DEMO_SCRUB_NAMES" bash social-media-entry.sh --run-dir "$run" --mode "$mode" >/dev/null 2>&1 && [ -f "$run/$artifact" ]; then
+    if entry_test "$run" "$mode" >/dev/null 2>&1 && [ -f "$run/$artifact" ]; then
         ok "$label ($mode) -> read-only PASS, $artifact present (no certificate, by design)"
     else bad "$label ($mode): read-only run failed or the report artifact is missing"; fi
 }
@@ -151,7 +171,7 @@ step "2/7 golden-week reproduces PASS in a read-only temp copy (mode week, via e
 GOLD_RUN="$WORK/golden"
 cp -R "$GOLD_SRC" "$GOLD_RUN"
 rm -f "$GOLD_RUN/working/checkpoints/gates.json" "$GOLD_RUN/delivery/PROCESS-CERTIFICATE."* 2>/dev/null || true
-if SMIB_SCRUB_NAMES="$SMIB_DEMO_SCRUB_NAMES" bash social-media-entry.sh --run-dir "$GOLD_RUN" --mode week >/dev/null 2>&1; then
+if entry_test "$GOLD_RUN" week >/dev/null 2>&1; then
     CERT="$GOLD_RUN/delivery/PROCESS-CERTIFICATE.json"
     if [ -f "$CERT" ] && "$PY" - "$CERT" "$GOLD_SRC/delivery/PROCESS-CERTIFICATE.json" <<'PY'
 import json,sys
@@ -185,7 +205,7 @@ golden_report "engage"     examples/golden-modes/engage         engage working/q
 step "2c/7 golden-creative brief (wildcard theme + logged overrides + verbatim client copy)"
 GC="$WORK/golden-creative"; cp -R examples/golden-creative/run "$GC"
 rm -f "$GC/working/checkpoints/gates.json" "$GC/delivery/PROCESS-CERTIFICATE."* 2>/dev/null || true
-if SMIB_SCRUB_NAMES="$SMIB_DEMO_SCRUB_NAMES" bash social-media-entry.sh --run-dir "$GC" --mode brief >/dev/null 2>&1 \
+if entry_test "$GC" brief >/dev/null 2>&1 \
    && "$PY" - "$GC/delivery/PROCESS-CERTIFICATE.json" examples/golden-creative/run/delivery/PROCESS-CERTIFICATE.json <<'PY'
 import json,sys
 c=json.load(open(sys.argv[1])); ref=json.load(open(sys.argv[2]))
@@ -215,8 +235,26 @@ assert_reject "out-of-band-caption  " 2 AF-SM-CAPTION-BAND     scripts/prove_ban
 assert_reject "bad-hashtag-count    " 2 AF-SM-HASHTAG-COUNT    scripts/prove_bands.py "$BV/bad-hashtag-count/fb-carousel.json"
 # -- C7 content-completeness fold: a FB/IG Stories caption over the 250-char band (only this trips) --
 assert_reject "stories-caption-long " 2 AF-SM-STORIES-CAPTION  scripts/prove_bands.py "$BV/stories-caption/reformat.json"
-# -- v0.2.0 C2 discovery drift: a live-connected channel missing from the enum (the BANNED silent-miss) --
-assert_reject "discovery-drift      " 2 AF-SM-DISCOVERY-DRIFT  scripts/preflight_gate.py "$BV/discovery-drift/config.json"
+# -- v0.2.0 C2 discovery drift, F06 contract: a live-connected channel missing from the enum is never
+#    silently missed, and (F06) never a run-wide BLOCK either — preflight stays green and the persisted
+#    account plan carries it as an explicit skipped / connected-but-unconfigured row. The fail-closed
+#    AF-SM-DISCOVERY-DRIFT trip is an UNCONFIRMABLE discovery (probes.connectedAccounts is not a list),
+#    materialized to temp from the same fixture so only the discovery changes. --
+"$PY" scripts/preflight_gate.py "$BV/discovery-drift/config.json" --report "$WORK/dd-report.json" >/dev/null 2>&1; rc=$?
+if [ "$rc" -eq 0 ] && "$PY" - "$WORK/dd-report.json" <<'PY'
+import json,sys
+rows=json.load(open(sys.argv[1])).get("account_plan",{}).get("accounts",[])
+sys.exit(0 if any(r.get("platform")=="twitter" and r.get("health")=="skipped"
+                  and "connected-but-unconfigured" in str(r.get("exclusion_reason")) for r in rows) else 1)
+PY
+then ok "discovery-drift (F06)   -> exit 0, twitter surfaced as skipped / connected-but-unconfigured (never silent)"
+else bad "discovery-drift (F06): exit $rc, or the connected twitter channel is not surfaced in the account plan"; fi
+"$PY" - "$BV/discovery-drift/config.json" "$WORK/dd-unconfirmable.json" <<'PY'
+import json,sys
+c=json.load(open(sys.argv[1])); c["probes"]["connectedAccounts"]="twitter"
+json.dump(c,open(sys.argv[2],"w"))
+PY
+assert_reject "discovery-unconfirmable" 2 AF-SM-DISCOVERY-DRIFT scripts/preflight_gate.py "$WORK/dd-unconfirmable.json"
 # -- v0.2.0 de-dup fixture (ledger reads only; read-only on the committed fixture) --
 assert_reject "duplicate-post       " 2 AF-SM-DOUBLE-POST      scripts/ledger.py dedup-snapshot --input "$BV/duplicate-post/dedup.json"
 # -- shipped run-dir fixtures, copied to temp for build_manifest --

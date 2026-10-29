@@ -10,6 +10,7 @@ import hashlib
 import importlib.util
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -108,9 +109,9 @@ def _replay_checkout(request: Dict[str, Any]) -> Tuple[str, str]:
     try:
         module = _load_checkout_validator()
     except Exception as exc:  # import failure is a recorded fact
-        return "unavailable", str(exc)
+        return "unavailable", f"{exc} (replay interpreter {sys.executable})"
     if module is None or not callable(getattr(module, "validate_request", None)):
-        return "unavailable", "validate_request is absent"
+        return "unavailable", f"validate_request is absent (replay interpreter {sys.executable})"
     try:
         module.validate_request(request)
     except Exception as exc:  # the contract's own typed validation error
@@ -149,7 +150,8 @@ def _checkout_probe_violations(checkout: Dict[str, Any],
         # cannot load now leaves the binding unproved, so the build fails: an
         # interpreter without jsonschema must never print PASS.
         return [f"AF-LAUNCH-CHECKOUT-VALIDATOR: the S79 validator is unavailable "
-                f"at replay time ({detail})"]
+                f"at replay time ({detail}); the probe was recorded under "
+                f"{validator.get('interpreter') or 'an unrecorded interpreter'}"]
     if outcome == "shape":
         return [f"AF-LAUNCH-CHECKOUT-VALIDATOR: the S79 request envelope is malformed "
                 f"({detail})"]
