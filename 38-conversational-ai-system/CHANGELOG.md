@@ -39,6 +39,9 @@ Carries the PBB-1710 T-05 registration evidence rebuild onto live main, keeping 
 ## [2.0.221] - 2026-10-28 - rebase PBB-1710 evidence rebuild onto live main (lane batch1)
 
 Carries the PBB-1710 T-05 registration evidence rebuild: richer corpus_status (counting method, proof-artifacts and document scopes, prior observation) onto live main, keeping main's sha lines, correction narrative, and plist redaction.
+## [2.0.222] - 2026-10-28 - rebase PBB-177 T-04 path redaction onto live main (lane batch1)
+
+Carries the PBB-177 T-04 operator-path redaction onto live main: every `/Volumes/mac mini m4` root in `evidence/storage-and-resource-receipt.json` becomes the `<PATH>` placeholder (118 sites), matching the unit's second commit. Changelog lines on main already carried the redacted text, so no changelog replay was needed beyond this stamp. Verifies clean against the skill-38 suite.
 
 ## [2.0.220] - 2026-10-28 - chore(train20): batch landing of the PBB-1708 interactive-owner tests
 
