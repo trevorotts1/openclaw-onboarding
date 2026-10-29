@@ -4,5 +4,17 @@
   "themeQueueIndexPicked": 1,
   "wildcardSeed": "2026-W28",
   "plannerSheetId": "sheet-northwind-planner",
-  "weekOf": "2026-07-06"
+  "weekOf": "2026-07-06",
+  "producerId": "producer-content-1",
+  "platforms": [
+    "facebook",
+    "linkedin"
+  ],
+  "plannedItems": [
+    {
+      "artifact_id": "fb-carousel",
+      "revision": 1,
+      "path": "working/content/bands/fb-carousel.json"
+    }
+  ]
 }

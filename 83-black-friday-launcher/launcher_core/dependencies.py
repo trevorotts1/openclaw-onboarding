@@ -12,9 +12,10 @@ manifest itself is readable, so the report can be run at any time.
 
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -159,13 +160,17 @@ def _present(entry: Dict[str, Any], root: Path) -> Dict[str, Any]:
                 "evidence": f"SKILL_NUMBER={SKILL_NUMBER!r} number_final={final} "
                             f"registry={registry}"}
     if kind == "runtime_package":
+        # A real import, not find_spec: find_spec only proves the package's files
+        # are on the path, so jsonschema with its own dependency (attrs) missing
+        # read as present and then failed inside the Skill 79 validator.
         try:
-            found = importlib.util.find_spec(ref) is not None
-        except (ImportError, ValueError):
-            found = False
-        isolated = bool(getattr(__import__("sys").flags, "isolated", 0))
+            importlib.import_module(ref)
+            found, failure = True, ""
+        except Exception as exc:  # a dependency of the package failing counts
+            found, failure = False, f"; import failed: {type(exc).__name__}: {exc}"
+        isolated = bool(getattr(sys.flags, "isolated", 0))
         return {"status": "present" if found else "missing",
-                "evidence": f"importlib.util.find_spec({ref!r}) -> {found}; "
+                "evidence": f"import {ref!r} under {sys.executable} -> {found}{failure}; "
                             f"isolated_interpreter={isolated}"}
     return {"status": "unverifiable", "evidence": f"unknown kind {kind!r}"}
 

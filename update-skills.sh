@@ -631,12 +631,40 @@ EOF
 # configure-operator-telegram.sh) → operator account/session. If unset, we
 # LOG-ONLY (no send) rather than fall back to any owner/allowFrom chat.
 TELEGRAM_LAST_RESULT=""
+
+# BIG FLEET ROLL 2026-10 (open item 10): under a roll the roll's WATCHER fixes a broken
+# box and Rescue Rangers is not involved, yet OPERATOR_ESCALATION_CHAT_ID can be the
+# Rescue Rangers group, so this note would wake a paid agent. scripts/self-update.sh
+# exports SELF_UPDATE_ROLL_ID and SELF_UPDATE_RUN_ID (ap-*) to everything it runs; when
+# either is set the note is HELD, never sent.
+_oc_under_roll() {
+  [ -n "${SELF_UPDATE_ROLL_ID:-}" ] && return 0
+  case "${SELF_UPDATE_RUN_ID:-}" in ap-*) return 0 ;; esac
+  return 1
+}
+
 send_telegram_progress() {
   local message="$1"
   local OCJSON="$HOME/.openclaw/openclaw.json"
   [ -d "/data/.openclaw" ] && OCJSON="/data/.openclaw/openclaw.json"
   local OPERATOR_CHAT=""
   TELEGRAM_LAST_RESULT="skipped"
+
+  # Under a roll: send NOTHING to any chat. Write the note where self-update.sh
+  # surfaces it (the status file's error_tail / stuck_reason) and to the log, so the
+  # watcher sees it instead.
+  if _oc_under_roll; then
+    local _held="${SELF_UPDATE_ESCALATION_FILE:-}"
+    if [ -n "$_held" ]; then
+      ( umask 077; printf '%s\n' "$message" > "$_held" ) 2>/dev/null || _held=""
+    fi
+    {
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] update-result notification HELD under roll ${SELF_UPDATE_ROLL_ID:-$SELF_UPDATE_RUN_ID} -- NOT sent to the operator escalation chat or any other chat; the roll watcher reads it from the status file${_held:+ ($_held)}:"
+      printf '%s\n' "$message"
+    } >> "$LOG_FILE" 2>&1
+    TELEGRAM_LAST_RESULT="held-for-roll-watcher"
+    return 0
+  fi
 
   if ! command -v openclaw >/dev/null 2>&1; then
     TELEGRAM_LAST_RESULT="no-openclaw-cli"
@@ -2083,7 +2111,45 @@ reap_dead_skill_manifest() {
 # GHL MCP wiring uses `openclaw mcp set` which validates its own
 # input. This helper is provided here as a forward-defense guard
 # so future changes are forced to go through validation + rollback.
+#
+# The validation NEVER touches the live state dir (Big Fleet Roll error #25,
+# same family as #18): see oc_validate_isolated() just below.
 # ----------------------------------------------------------
+
+# Validate a candidate openclaw.json WITHOUT contending with a live gateway.
+#
+# Big Fleet Roll error #25: on OpenClaw 2026.10.x `openclaw config validate`
+# takes the sqlite maintenance lease on the state database even though it only
+# reads. Run against a box whose gateway is serving, it left the gateway alive
+# (pid up) but unanswering (healthz 000) until a restart; run while launchd
+# KeepAlive is about to respawn the gateway, it produces the #18 crash loop
+# ("state ... is undergoing offline maintenance; retry when it finishes"). So
+# "the gateway is not serving right now" is NOT a safe moment either -- the
+# check is ALWAYS isolated: a throwaway COPY of the config, with home, state
+# and config path all pointed at a scratch dir, so the lease it takes is on a
+# database nobody else owns. The schema check itself is unchanged.
+#
+# ponytail: a plugin installed only under the live state dir is invisible to
+# the scratch dir, so a config that references one can validate stricter than
+# it would live. That fails in the safe direction (the edit is rolled back),
+# never as a gateway outage. Revisit only if a real edit is wrongly rolled back.
+#
+# rc 0 = valid; non-zero = invalid OR the isolated check could not be set up
+# (fail closed: an unvalidated edit is never kept).
+oc_validate_isolated() {
+  local cfg="$1" scratch rc=0
+  scratch="$(mktemp -d "${TMPDIR:-/tmp}/oc-validate.XXXXXX")" || return 1
+  if ! cp -f "$cfg" "$scratch/openclaw.json"; then
+    rm -rf "$scratch"
+    return 1
+  fi
+  OPENCLAW_HOME="$scratch" OPENCLAW_STATE_DIR="$scratch" \
+    OPENCLAW_CONFIG_PATH="$scratch/openclaw.json" OPENCLAW_SKIP_UPDATE_CHECK=1 \
+    openclaw config validate >> "$LOG_FILE" 2>&1 || rc=$?
+  rm -rf "$scratch"
+  return "$rc"
+}
+
 safe_json_edit() {
   local OCJSON="$1"
   local DESCRIPTION="${2:-openclaw.json edit}"
@@ -2108,9 +2174,10 @@ safe_json_edit() {
     return 0
   fi
 
-  # Validate with the CLI if available
+  # Validate with the CLI if available -- isolated, never against the live
+  # state dir (see oc_validate_isolated).
   if command -v openclaw >/dev/null 2>&1; then
-    if ! openclaw config validate >> "$LOG_FILE" 2>&1; then
+    if ! oc_validate_isolated "$OCJSON"; then
       echo "  [safe_json_edit] WARN: openclaw config validate FAILED after $DESCRIPTION -- rolling back"
       cp -f "$BACKUP" "$OCJSON" 2>/dev/null || true
       rm -f "$BACKUP" 2>/dev/null || true
@@ -12882,6 +12949,7 @@ Paste this to your agent:
   case "$TELEGRAM_LAST_RESULT" in
     sent-operator:*)        echo "  ✓ Update-result note sent to OPERATOR chat ${TELEGRAM_LAST_RESULT#sent-operator:} (not the client)" ;;
     logged-no-operator-chat) echo "  ℹ Update-result note LOG-ONLY (no operator escalation chat configured) — agent picks up the AGENTS.md UPDATE PENDING flag; client is NOT auto-notified" ;;
+    held-for-roll-watcher)  echo "  ℹ Update-result note HELD (running under a roll) — NOT sent to any chat; the roll watcher reads it from the status file; agent picks up the AGENTS.md UPDATE PENDING flag" ;;
     no-openclaw-cli)        echo "  ⚠ Update-result note skipped -- openclaw CLI not on PATH (Terminal backup block below)" ;;
     failed-operator:*)      echo "  ⚠ Update-result operator send FAILED -- see $LOG_FILE (NOT routed to client; Terminal backup block below)" ;;
   esac

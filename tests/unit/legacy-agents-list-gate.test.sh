@@ -41,10 +41,13 @@
 #                                     migration that MOVES THE WORKSPACE -> 3
 #                                     AND rolled back
 #   (6) THE WEEKLY CRON, END TO END   the generated ~/.openclaw/skills/
-#                                     .openclaw-self-update script:
-#                                     (a) CLEAN  -> `npm update -g openclaw` RUNS
-#                                     (b) LEGACY -> it DOES NOT RUN, exit 78
-#                                     (c) LEGACY + working doctor -> it RUNS
+#                                     .openclaw-self-update script (BFR #21: it
+#                                     NEVER runs a bare `npm update -g openclaw`):
+#                                     (a) CLEAN + atomic tool -> atomic RUNS, npm never
+#                                     (a2) CLEAN, no tool / no config -> NO upgrade
+#                                          this run, npm never, exit 0
+#                                     (b) LEGACY, no tool -> blocked, exit 78
+#                                     (e) LEGACY + atomic tool -> atomic RUNS, npm never
 #   (7) MUTATION PROOF                detection neutered -> the legacy config is
 #                                     no longer blocked. Proves (2)/(6b) are
 #                                     caused by the detector, not by luck.
@@ -521,8 +524,15 @@ if start is None or end is None:
     sys.stderr.write("could not locate the OCUPDATE_EOF heredoc\n")
     sys.exit(1)
 body = "\n".join(src[start:end])
-if "npm update -g openclaw" not in body:
-    sys.stderr.write("the generated script no longer contains the npm upgrade\n")
+# BFR #21: the generated script must carry NO executable bare npm upgrade.
+# Mentions in comments/echo text are fine; a COMMAND is the defect.
+for ln in body.splitlines():
+    t = ln.strip()
+    if t.startswith(("npm update", "npm install", "npm i ", "sudo npm")):
+        sys.stderr.write("the generated script RUNS a bare npm command: %s\n" % t)
+        sys.exit(1)
+if "oc-atomic-upgrade.sh" not in body:
+    sys.stderr.write("the generated script no longer delegates to the atomic procedure\n")
     sys.exit(1)
 open(os.environ["CRON_OUT"], "w").write(body + "\n")
 PY
@@ -576,19 +586,54 @@ run_cron() {
     bash "$CRON_SCRIPT" 2>&1
 }
 
-# (6a) CONTROL: a CLEAN box must still upgrade. Without this, "npm never ran"
-# below would be evidence of a broken harness, not a working gate.
+# (6a) CONTROL: a CLEAN box WITH the atomic tool must still upgrade -- through
+# the tool, never through npm. Without this, "npm never ran" below would be
+# evidence of a broken harness, not a working gate.
 H_CRON_CLEAN="$SANDBOX/cron-clean"
 mkdir -p "$H_CRON_CLEAN/.openclaw/skills"
 write_config "$H_CRON_CLEAN/.openclaw/openclaw.json" clean
+install_atomic_stub "$H_CRON_CLEAN"
 S_CRON_CLEAN="$SANDBOX/cron-stubs-clean"
 make_cron_stubs "$S_CRON_CLEAN"
 out6a="$(run_cron "$H_CRON_CLEAN" "$S_CRON_CLEAN")"; rc6a=$?
-if [ -f "$H_CRON_CLEAN/npm-witness.txt" ]; then
-  pass "6a: CONTROL — on a CLEAN box \`npm update -g openclaw\` DID run (the harness works)"
+if [ -f "$H_CRON_CLEAN/atomic-witness.txt" ] && grep -q -- '--upgrade' "$H_CRON_CLEAN/atomic-witness.txt"; then
+  pass "6a: CONTROL -- a CLEAN box with the atomic tool DID upgrade, through \`oc-atomic-upgrade.sh --upgrade\` (the harness works)"
 else
-  fail "6a: CONTROL FAILED — npm never ran even on a clean box, so case 6b proves nothing. Output: $out6a (rc=$rc6a)"
+  fail "6a: CONTROL FAILED -- the atomic tool was never invoked on a clean box, so 6a2/6b prove nothing. Output: $out6a (rc=$rc6a)"
 fi
+if [ ! -f "$H_CRON_CLEAN/npm-witness.txt" ]; then
+  pass "6a-npm: and no bare \`npm update -g openclaw\` ran alongside it"
+else
+  fail "6a-npm: a bare npm command ran on a clean box: $(cat "$H_CRON_CLEAN/npm-witness.txt")"
+fi
+
+# (6a2) BFR #21: a box WITHOUT the atomic tool must NOT fall back to a bare npm
+# update -- not on a clean config, not on a box with no config at all. It makes
+# no upgrade this run, says so in the log, and exits 0 (a deferral is not a
+# block: no 78, no block marker). The Sunday content update delivers the tool.
+for variant in clean noconfig; do
+  H_CRON_NT="$SANDBOX/cron-notool-$variant"
+  mkdir -p "$H_CRON_NT/.openclaw/skills"
+  [ "$variant" = "clean" ] && write_config "$H_CRON_NT/.openclaw/openclaw.json" clean
+  S_CRON_NT="$SANDBOX/cron-stubs-notool-$variant"
+  make_cron_stubs "$S_CRON_NT"
+  out6a2="$(run_cron "$H_CRON_NT" "$S_CRON_NT")"; rc6a2=$?
+  if [ ! -f "$H_CRON_NT/npm-witness.txt" ] && [ ! -f "$H_CRON_NT/atomic-witness.txt" ]; then
+    pass "6a2-$variant: no atomic tool -> NO bare npm update and nothing else upgraded the box"
+  else
+    fail "6a2-$variant: an upgrade ran without the atomic procedure: npm=[$(cat "$H_CRON_NT/npm-witness.txt" 2>/dev/null)] atomic=[$(cat "$H_CRON_NT/atomic-witness.txt" 2>/dev/null)]"
+  fi
+  if [ "$rc6a2" -eq 0 ] && [ ! -f "$H_CRON_NT/.openclaw/skills/.openclaw-upgrade-blocked" ]; then
+    pass "6a2-$variant: a deferral exits 0 and leaves no block marker (it is not a block)"
+  else
+    fail "6a2-$variant: deferral exited $rc6a2 or left a block marker. Output: $out6a2"
+  fi
+  if grep -q 'No OpenClaw upgrade this run' "$H_CRON_NT/.openclaw/skills/.update-log" 2>/dev/null; then
+    pass "6a2-$variant: the deferral is written to the update log (not silent)"
+  else
+    fail "6a2-$variant: no deferral line in the update log: $(cat "$H_CRON_NT/.openclaw/skills/.update-log" 2>/dev/null)"
+  fi
+done
 
 # (6b) THE ASSERTION THAT MATTERS: a LEGACY box must NOT be upgraded.
 H_CRON_LEG="$SANDBOX/cron-legacy"
@@ -680,10 +725,19 @@ S_MUT="$SANDBOX/cron-stubs-mut"
 make_cron_stubs "$S_MUT"
 NPM_WITNESS="$H_MUT/npm-witness.txt" HOME="$H_MUT" PATH="$S_MUT:/usr/bin:/bin" \
   bash "$MUT_SCRIPT" >/dev/null 2>&1
-if [ -f "$H_MUT/npm-witness.txt" ]; then
-  pass "7b: with detection neutered the SAME legacy box IS upgraded — so the block in (6b) is caused by the detector, not by luck"
+rc_mut=$?
+# The legacy-config block is exit 78 + the .openclaw-upgrade-blocked marker
+# (observed in 6b/6c/6d). With detection neutered the SAME box must no longer
+# be blocked. (It still must not run npm -- that is 6a2's separate invariant.)
+if [ "$rc_mut" -ne 78 ] && [ ! -f "$H_MUT/.openclaw/skills/.openclaw-upgrade-blocked" ]; then
+  pass "7b: with detection neutered the SAME legacy box is no longer blocked (rc=$rc_mut, no marker) -- so the block in (6b) is caused by the detector, not by luck"
 else
-  fail "7b: the mutated script still blocked the upgrade — case (6b) is not measuring the detector, and this test proves nothing"
+  fail "7b: the mutated script still blocked the legacy box (rc=$rc_mut) -- case (6b) is not measuring the detector, and this test proves nothing"
+fi
+if [ ! -f "$H_MUT/npm-witness.txt" ]; then
+  pass "7c: even with detection neutered, no bare npm update runs (BFR #21 holds independently of the detector)"
+else
+  fail "7c: the neutered script ran a bare npm command: $(cat "$H_MUT/npm-witness.txt")"
 fi
 
 # ---------------------------------------------------------------------------

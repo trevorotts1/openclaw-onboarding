@@ -53,7 +53,7 @@ run_update() { # run_update <update.sh body> -> prints the FINAL degraded list
   # Every OTHER required phase already true: only the update path's own keys vary.
   printf '%s' '{"commandCenterWorkspacesSeeded":true,"commandCenterDepartmentsSynced":true,"commandCenterMdContentSynced":true,"commandCenterDashboardContentSeeded":true,"commandCenterDeptRuntimeParity":true,"commandCenterTenantReady":true}' > "$TMP/state.json"
   PATH="$TMP/bin:$PATH" DASHBOARD_DIR="$TMP/app" DASHBOARD_PORT=1 STATE_FILE="$TMP/state.json" \
-    LOG_FILE="$TMP/log" CC_PM2_NAME=x bash -c '
+    LOG_FILE="$TMP/log" CC_PM2_NAME=x CC_AT_PIN="${RUN_AT_PIN:-0}" bash -c '
       log() { :; }
       state_set() { local t; t="$(mktemp)"; jq "$1" "$STATE_FILE" > "$t" && mv "$t" "$STATE_FILE"; }
       source "$1"; cc_route_update_through_canonical_path' _ "$TMP/fn.sh" >/dev/null 2>&1
@@ -80,6 +80,23 @@ printf '#!/bin/sh\nexit "${STUB_INV_RC:-1}"\n' > "$old_stub"   # mismatch by def
 out="$(run_update 'cd "$CC_APP_DIR"; sleep 1; mkdir -p .next; touch .next/BUILD_ID')"
 [[ "$out" == *"ccBuildFresh(6)"* ]] && pass "fresh BUILD_ID + content MISMATCH -> still degraded ($out)" \
   || fail "content mismatch was masked by a fresh timestamp: '$out'"
+printf '#!/bin/sh\nexit "${STUB_INV_RC:-0}"\n' > "$old_stub"   # restore VERIFIED default
+
+# #13: a pin-current box (CC_AT_PIN=1) deploys nothing and used to return before
+# stamping commandCenterBuildFresh, so a successful run ended done-degraded. It
+# must stamp the key from the same content oracle, without running update.sh.
+rm -f "$TMP/app/update-ran"
+out="$(RUN_AT_PIN=1 run_update 'touch "$CC_APP_DIR/update-ran"')"
+[[ -z "$out" && "$(jq -r '.commandCenterBuildFresh' "$TMP/state.json")" == "true" ]] \
+  && pass "AT_PIN + served build VERIFIED -> commandCenterBuildFresh=true, run is done" \
+  || fail "AT_PIN did not stamp commandCenterBuildFresh=true: '$out' $(jq -c . "$TMP/state.json")"
+[[ ! -e "$TMP/app/update-ran" ]] && pass "AT_PIN deploys nothing (update.sh not run)" \
+  || fail "AT_PIN ran update.sh"
+printf '#!/bin/sh\nexit "${STUB_INV_RC:-1}"\n' > "$old_stub"   # mismatch
+out="$(RUN_AT_PIN=1 run_update 'touch "$CC_APP_DIR/update-ran"')"
+[[ "$(jq -r '.commandCenterBuildFresh' "$TMP/state.json")" == "false" && "$out" == *"ccBuildFresh(6)"* ]] \
+  && pass "AT_PIN + content MISMATCH -> commandCenterBuildFresh=false, stays degraded ($out)" \
+  || fail "AT_PIN masked a content mismatch: '$out' $(jq -c . "$TMP/state.json")"
 printf '#!/bin/sh\nexit "${STUB_INV_RC:-0}"\n' > "$old_stub"   # restore VERIFIED default
 
 echo "$P Results: $PASS passed, $FAIL failed"
