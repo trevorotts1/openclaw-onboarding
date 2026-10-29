@@ -2742,13 +2742,18 @@ except Exception:
   [ -d "/data/.openclaw" ] && OC_ROOT="/data/.openclaw"
   local _LSC_OCJSON="$_OCJSON"
   # >>> LSC-CANDIDATES-BEGIN (byte-identical in install.sh and update-skills.sh;
-  # tests/unit/shared-core-entries-sync.test.sh compares the two copies)
+  # tests/unit/shared-core-entries-sync.test.sh compares the two copies, and the
+  # python function inside against QC check 9.9)
   # Candidate workspaces = (a) every REGISTERED workspace: agents.entries{}
   # (current config shape, keyed by agent id), agents.list[] (legacy shape) and
-  # agents.defaults.workspace, plus (b) a scan for agent-shaped folders. A
-  # registered workspace is a real agent: it is refreshed like any other AND a
-  # missing core file is created for it. A folder found only by the scan is
-  # refreshed when it already holds a core file; it never gains one.
+  # agents.defaults.workspace, plus (b) a scan for agent-shaped folders under
+  # <oc-root>/workspaces, <workspace>/agents, <workspace>/departments and THIS
+  # box's own company tree. A registered workspace is a real agent: it is
+  # refreshed like any other AND a missing core file is created for it. A folder
+  # found only by the scan is refreshed when it already holds a core file; it
+  # never gains one. The scan is python (os.walk), so a symlinked scan root is
+  # walked and the skip rules can look at the parent folder; QC check 9.9 runs
+  # the identical function.
   local WS_LIST_FILE REG_LIST_FILE REG_REAL_FILE
   WS_LIST_FILE="$(mktemp 2>/dev/null || echo "/tmp/link-shared-ws-$$.txt")"
   : > "$WS_LIST_FILE"
@@ -2756,24 +2761,119 @@ except Exception:
   : > "$REG_LIST_FILE"
   REG_REAL_FILE="$(mktemp 2>/dev/null || echo "/tmp/link-shared-regreal-$$.txt")"
   : > "$REG_REAL_FILE"
-  if [ -f "$_LSC_OCJSON" ] && command -v python3 >/dev/null 2>&1; then
-    OC_JSON="$_LSC_OCJSON" python3 - >> "$REG_LIST_FILE" 2>/dev/null <<'PYEOF' || true
-import json, os
+  if command -v python3 >/dev/null 2>&1; then
+    OC_JSON="$_LSC_OCJSON" LSC_CANON="$CANON_REAL" LSC_OC_ROOT="$OC_ROOT" \
+      LSC_REG_OUT="$REG_LIST_FILE" LSC_WS_OUT="$WS_LIST_FILE" \
+      python3 -I - <<'PYEOF' || echo "  WARN: [link-shared] the candidate scan failed (python error above); no workspace is synced this run" >&2
+import fnmatch, json, os, re
+# >>> LSC-PY-BEGIN (identical in install.sh, update-skills.sh and QC check 9.9;
+# tests/unit/shared-core-entries-sync.test.sh compares the three copies)
+# Skipped while scanning, at any depth: backup trees, hidden dirs, archives, vendored packages.
+SKIP_ANY = (".*", "*.bak*", "*.backup*", "node_modules", "departments-archive")
+# Skipped only INSIDE an agent workspace (the parent holds IDENTITY.md or SOUL.md):
+# its own vendored skills, templates and tool checkouts. A real department that is
+# merely NAMED like one of these (workspaces/command-center/templates) is kept.
+SKIP_IN_AGENT = ("skills", "templates", "onboarding", "fleet-refresh", "codex-home")
+# Skipped at depth 1 of <oc-root>/workspaces, where the roll keeps its own trees.
+SKIP_TOP = ("onboarding", "fleet-refresh", "codex-home")
+
+
+def _lsc_match(name, globs):
+    return any(fnmatch.fnmatchcase(name, g) for g in globs)
+
+
+def _lsc_is_agent(d):
+    return os.path.exists(os.path.join(d, "IDENTITY.md")) or os.path.exists(os.path.join(d, "SOUL.md"))
+
+
+def lsc_scan(root, workspaces_root=False):
+    """Agent-shaped folders (they hold AGENTS.md, IDENTITY.md or SOUL.md) under root.
+    os.walk starts from root even when root is itself a symlink."""
+    found = []
+    if not os.path.isdir(root):
+        return found
+    for cur, dirs, files in os.walk(root):
+        agent = _lsc_is_agent(cur)
+        keep = []
+        for d in dirs:
+            if _lsc_match(d, SKIP_ANY):
+                continue
+            if agent and _lsc_match(d, SKIP_IN_AGENT):
+                continue
+            if workspaces_root and cur == root and _lsc_match(d, SKIP_TOP):
+                continue
+            keep.append(d)
+        dirs[:] = keep
+        if not os.path.islink(cur) and any(os.path.exists(os.path.join(cur, f)) for f in ("AGENTS.md", "IDENTITY.md", "SOUL.md")):
+            found.append(cur)
+    return found
+
+
+def lsc_candidates(cfg, canon_real, oc_root, env):
+    """-> (registered workspaces, scan-found folders) for THIS box only.
+    Registered = agents.entries{} (current shape), agents.list[] (legacy), agents.defaults.workspace.
+    Scanned = <oc-root>/workspaces (incl. command-center/<dept>), <canon>/agents, <canon>/departments,
+    and THIS box's own company tree(s) <company>/departments/<dept>/<role>, found the way
+    materialize-dept-agents.sh finds them: the build state's companyRoot, then
+    <master-files>/zero-human-company/<this box's slug>/departments. A company tree is scanned only
+    when the box's own slug is known; another company's tree is never read (co-mingling guard)."""
+    ag = cfg.get("agents") if isinstance(cfg.get("agents"), dict) else {}
+    ent = ag.get("entries") if isinstance(ag.get("entries"), dict) else {}
+    lst = ag.get("list") if isinstance(ag.get("list"), list) else []
+    dfl = ag.get("defaults") if isinstance(ag.get("defaults"), dict) else {}
+    reg = []
+    for e in list(ent.values()) + lst + [dfl]:
+        ws = e.get("workspace") if isinstance(e, dict) else None
+        if isinstance(ws, str) and ws.strip():
+            reg.append(os.path.expanduser(ws.strip()))
+    state = {}
+    for d in (canon_real, env.get("OPENCLAW_WORKSPACE_PATH", ""), os.path.join(oc_root, "workspace"),
+              os.path.expanduser("~/.openclaw/workspace"), "/data/.openclaw/workspace"):
+        p = os.path.join(d, ".workforce-build-state.json") if d else ""
+        if p and os.path.isfile(p):
+            try:
+                state = json.load(open(p))
+            except (OSError, ValueError):
+                state = {}
+            break
+    if not isinstance(state, dict):
+        state = {}
+    slug = env.get("COMPANY_SLUG") or state.get("companySlug") or state.get("clientSlug") or ""
+    slug = slug.strip() if isinstance(slug, str) else ""
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", slug):
+        slug = ""
+    roots = [(os.path.join(oc_root, "workspaces"), True),
+             (os.path.join(canon_real, "agents"), False),
+             (os.path.join(canon_real, "departments"), False)]
+    croot = state.get("companyRoot")
+    if isinstance(croot, str) and os.path.isabs(croot) and (not slug or os.path.basename(croot.rstrip("/")) == slug):
+        roots.append((os.path.join(croot, "departments"), False))
+    if slug:
+        for mf in (env.get("MASTER_FILES_DIR", ""), env.get("OPENCLAW_MASTER_FILES_DIR", ""),
+                   os.path.expanduser("~/Downloads/openclaw-master-files"), "/data/openclaw-master-files",
+                   os.path.join(oc_root, "workspace"), canon_real):
+            if mf:
+                roots.append((os.path.join(mf, "zero-human-company", slug, "departments"), False))
+    found, seen = [], set()
+    for root, top in roots:
+        key = os.path.realpath(root)
+        if key not in seen:
+            seen.add(key)
+            found.extend(lsc_scan(root, top))
+    return reg, found
+# <<< LSC-PY-END
 try:
     cfg = json.load(open(os.environ["OC_JSON"]))
 except Exception:
-    raise SystemExit(0)
-ag = cfg.get("agents") if isinstance(cfg.get("agents"), dict) else {}
-ent = ag.get("entries") if isinstance(ag.get("entries"), dict) else {}
-lst = ag.get("list") if isinstance(ag.get("list"), list) else []
-dfl = ag.get("defaults") if isinstance(ag.get("defaults"), dict) else {}
-for e in list(ent.values()) + lst + [dfl]:
-    ws = e.get("workspace") if isinstance(e, dict) else None
-    if isinstance(ws, str) and ws.strip():
-        print(os.path.expanduser(ws.strip()))
+    cfg = {}
+reg, found = lsc_candidates(cfg if isinstance(cfg, dict) else {}, os.environ["LSC_CANON"],
+                            os.environ["LSC_OC_ROOT"], os.environ)
+with open(os.environ["LSC_REG_OUT"], "a") as fh:
+    fh.write("".join(p + "\n" for p in reg))
+with open(os.environ["LSC_WS_OUT"], "a") as fh:
+    fh.write("".join(p + "\n" for p in reg + found))
 PYEOF
   fi
-  cat "$REG_LIST_FILE" >> "$WS_LIST_FILE"
   # The registered set as real paths: the loop below tests membership against it.
   local _rw
   while IFS= read -r _rw; do
@@ -2782,30 +2882,9 @@ PYEOF
       (cd "$_rw" 2>/dev/null && pwd -P) >> "$REG_REAL_FILE" || true
     fi
   done < "$REG_LIST_FILE"
-
-  # The scan reaches $OC_ROOT/workspaces (incl. command-center/<dept>) plus the
-  # canonical workspace's agents/ and departments/ (departments/<dept>/<role>).
-  # It NEVER descends into a backup tree (*.bak*, *.backup*, .floor-backups and
-  # every other hidden dir), departments-archive, node_modules, or a vendored
-  # skill / onboarding / template tree: an AGENTS.md there belongs to something
-  # else and must not be rewritten to the box's master copy.
-  local -a _LSC_SKIP=( -name '.*' -o -name '*.bak*' -o -name '*.backup*' -o -name 'node_modules' -o -name 'departments-archive' -o -name 'onboarding' -o -name 'fleet-refresh' -o -name 'skills' -o -name 'templates' -o -name 'codex-home' )
-  local _scan
-  for _scan in \
-      "$OC_ROOT/workspaces" \
-      "$CANON_REAL/agents" \
-      "$CANON_REAL/departments"; do
-    [ -d "$_scan" ] || continue
-    find "$_scan" -type d \( "${_LSC_SKIP[@]}" \) -prune -o -type d -print 2>/dev/null \
-      | while IFS= read -r d; do
-          if [ -e "$d/AGENTS.md" ] || [ -e "$d/IDENTITY.md" ] || [ -e "$d/SOUL.md" ]; then
-            echo "$d"
-          fi
-        done >> "$WS_LIST_FILE" 2>/dev/null || true
-  done
   # <<< LSC-CANDIDATES-END
 
-  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0 PRUNED=0 CREATED=0
+  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0 PRUNED=0 CREATED=0 CREATE_FAILED=0
 
   local W
   while IFS= read -r W; do
@@ -2833,6 +2912,7 @@ PYEOF
     # follows the U053 disposition: no AGENTS.md there, ever.
     local W_IS_REG="no" W_IS_ROLE="no"
     if grep -Fxq -- "$W_REAL" "$REG_REAL_FILE" 2>/dev/null; then W_IS_REG="yes"; fi
+    case "$W" in */departments/*/*) W_IS_ROLE="yes" ;; esac
     case "$W_REAL" in */departments/*/*) W_IS_ROLE="yes" ;; esac
 
     for f in AGENTS.md TOOLS.md USER.md; do
@@ -2917,19 +2997,24 @@ PYEOF
           continue
         fi
 
+        # Best-effort PRESERVE: append any content NOT already in CANON/<f> to
+        # this agent's OWN IDENTITY.md (only ADD; create IDENTITY.md if absent).
+        # Each unique block is keyed by its own hash, recorded in the marker
+        # line, so a LATER and different drift is appended too while a block
+        # already preserved (by hash, or by its text) is never appended twice.
         local AGENT_NAME
         AGENT_NAME="$(basename "$W_REAL")"
         local IDFILE="$W_REAL/IDENTITY.md"
-        local PMARK="<!-- PRESERVED FROM ${AGENT_NAME} ${f} (unification ${TS}) -->"
-        local PMARK_PREFIX="<!-- PRESERVED FROM ${AGENT_NAME} ${f} (unification "
-        if ! grep -qF "$PMARK_PREFIX" "$IDFILE" 2>/dev/null; then
-          AGENT_F="$LINKPATH" CANON_F="$TARGET" ID_F="$IDFILE" PMARK="$PMARK" \
-            python3 - <<'PYEOF' 2>/dev/null || true
-import os
+        local PMARK="PRESERVED FROM ${AGENT_NAME} ${f} (unification ${TS}) blocks="
+        AGENT_F="$LINKPATH" CANON_F="$TARGET" ID_F="$IDFILE" AGENT_NAME="$AGENT_NAME" FNAME="$f" TS="$TS" \
+          python3 -I - <<'PYEOF' 2>/dev/null || true
+import hashlib, os, re
 src   = os.environ["AGENT_F"]
 canon = os.environ["CANON_F"]
 idf   = os.environ["ID_F"]
-mark  = os.environ["PMARK"]
+agent = os.environ["AGENT_NAME"]
+fname = os.environ["FNAME"]
+ts    = os.environ["TS"]
 try:
     src_text = open(src, encoding="utf-8", errors="replace").read()
 except Exception:
@@ -2938,6 +3023,12 @@ try:
     canon_text = open(canon, encoding="utf-8", errors="replace").read()
 except Exception:
     canon_text = ""
+try:
+    id_text = open(idf, encoding="utf-8", errors="replace").read()
+except Exception:
+    id_text = ""
+# Split the agent's file into blank-line-delimited blocks; keep only blocks
+# whose stripped text is non-empty AND not already present in the canonical file.
 blocks, cur = [], []
 for line in src_text.splitlines():
     if line.strip() == "":
@@ -2953,17 +3044,29 @@ unique = [b for b in blocks if b.strip() and b.strip() not in canon_text]
 # the identity text that is already there.
 if "rr-operator-support:v1" in src_text:
     unique = []
-if unique:
+# Hashes of the blocks this agent's earlier syncs already preserved from this file.
+done = set()
+for m in re.finditer(r"<!-- PRESERVED FROM " + re.escape(agent) + " " + re.escape(fname)
+                     + r" \(unification [^)]*\)(?: blocks=([0-9a-f,]+))? -->", id_text):
+    if m.group(1):
+        done.update(m.group(1).split(","))
+fresh = []
+for b in unique:
+    h = hashlib.sha256(b.strip().encode("utf-8")).hexdigest()[:16]
+    if h in done or b in id_text:
+        continue
+    fresh.append((h, b))
+if fresh:
     with open(idf, "a", encoding="utf-8") as fh:
-        fh.write("\n\n" + mark + "\n")
-        fh.write("\n\n".join(unique))
+        fh.write("\n\n<!-- PRESERVED FROM %s %s (unification %s) blocks=%s -->\n"
+                 % (agent, fname, ts, ",".join(h for h, _ in fresh)))
+        fh.write("\n\n".join(b for _, b in fresh))
         fh.write("\n")
     print("PRESERVED")
 PYEOF
-          if grep -qF "$PMARK" "$IDFILE" 2>/dev/null; then
-            note "[link-shared] PRESERVE unique $f content -> $IDFILE"
-            PRESERVED=$((PRESERVED + 1))
-          fi
+        if grep -qF "$PMARK" "$IDFILE" 2>/dev/null; then
+          note "[link-shared] PRESERVE unique $f content -> $IDFILE"
+          PRESERVED=$((PRESERVED + 1))
         fi
 
         # Overwrite with a verified real copy of canonical content, preserving
@@ -2992,8 +3095,8 @@ PYEOF
             note "[link-shared] CREATE $LINKPATH <- $TARGET (registered agent had none)"
             CREATED=$((CREATED + 1))
           else
-            echo "  ⚠️  [link-shared] WARN: verified create FAILED for $LINKPATH" >&2
-            FAILED=$((FAILED + 1))
+            echo "  ⚠️  [link-shared] WARN: verified create FAILED for $LINKPATH (this workspace never had the file, so the install is not blocked; fix its permissions and re-run)" >&2
+            CREATE_FAILED=$((CREATE_FAILED + 1))
           fi
         fi
       fi
@@ -3002,7 +3105,7 @@ PYEOF
 
   rm -f "$WS_LIST_FILE" "$REG_LIST_FILE" "$REG_REAL_FILE" 2>/dev/null || true
 
-  note "[link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT pruned=$PRUNED created=$CREATED already-ok=$NOOP failed=$FAILED"
+  note "[link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT pruned=$PRUNED created=$CREATED create-failed=$CREATE_FAILED already-ok=$NOOP failed=$FAILED"
   note "[link-shared] IDENTITY/SOUL/MEMORY/HEARTBEAT left as each agent's OWN files (per-agent, not shared)."
 
   if [ "$FAILED" -gt 0 ]; then

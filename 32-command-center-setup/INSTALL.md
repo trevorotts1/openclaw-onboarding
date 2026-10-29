@@ -729,9 +729,9 @@ cat ~/.openclaw/workspace/memory/$(date +%Y-%m-%d).md | grep -i "selected.*perso
 
 **FAIL if:** No matching line exists in today's memory file. The Persona Operating Protocol requires a reason log entry for every task.
 
-**Why this matters:** Department agents have `governing-personas.md` files and a Persona Operating Protocol in their AGENTS.md. But if the runtime wiring is broken, agents will skip the search, skip the alignment, skip the log, and just default to the same persona every time. This test catches all three failure modes before go-live.
+**Why this matters:** Department agents have `governing-personas.md` files and a Persona Operating Protocol in their IDENTITY.md. But if the runtime wiring is broken, agents will skip the search, skip the alignment, skip the log, and just default to the same persona every time. This test catches all three failure modes before go-live.
 
-**If an agent fails:** Check that their department AGENTS.md contains the `## 🔴🔴🔴 Persona Operating Protocol` section. If missing, the box's MASTER AGENTS.md is missing it: append it to the master (never to a department copy), run `update-skills.sh` so the roll copies the master to every department, and re-test. Also verify BOTH `scripts/gemini-search.py` AND `~/.openclaw/skills/23-ai-workforce-blueprint/scripts/persona-selector-v2.py` exist and are executable. The agent calls `persona-selector-v2.py` for every task; it internally calls `gemini-search.py` (Stage C of the funnel) for semantic candidate retrieval. `select-persona-for-task.py` is a deprecated shim that delegates to v2.
+**If an agent fails:** Check that their department IDENTITY.md contains the `## 🔴🔴🔴 Persona Operating Protocol` section. If missing, append it to the BOTTOM of that department's IDENTITY.md (never to AGENTS.md: that file is the box's one master copy, copied to every agent on each roll) and re-test. Also verify BOTH `scripts/gemini-search.py` AND `~/.openclaw/skills/23-ai-workforce-blueprint/scripts/persona-selector-v2.py` exist and are executable. The agent calls `persona-selector-v2.py` for every task; it internally calls `gemini-search.py` (Stage C of the funnel) for semantic candidate retrieval. `select-persona-for-task.py` is a deprecated shim that delegates to v2.
 
 ### 7.6 Report Results
 The agent sends you a summary in Telegram:

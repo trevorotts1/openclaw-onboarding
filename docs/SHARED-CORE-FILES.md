@@ -119,6 +119,7 @@ candidate set (the `LSC-CANDIDATES-BEGIN` block, kept byte-identical by
 | `agents.defaults.workspace` | the workspace of every agent that declares none | **created** from the master |
 | scan of `<oc-root>/workspaces` (includes `workspaces/command-center/<dept>`) | agent-shaped folders (they hold an `AGENTS.md`, `IDENTITY.md` or `SOUL.md`) | stays absent |
 | scan of `<canon>/agents` and `<canon>/departments` (includes `departments/<dept>/<role>`) | same | stays absent |
+| scan of THIS box's own company tree: `<companyRoot>/departments` from `.workforce-build-state.json`, and `<master-files>/zero-human-company/<this box's slug>/departments` (master-files = `$MASTER_FILES_DIR`, the Downloads and `/data` master-files folders, the OpenClaw workspace, the canonical workspace) | where Skill 23 builds `<dept>/<role>` folders | stays absent |
 
 A *registered* workspace is a real agent, so a missing core file is created for
 it. A folder found only by the scan is kept in step when it already holds a
@@ -133,12 +134,43 @@ registered as its own agent and must load an `AGENTS.md`, that is a U053
 decision for the owner, not something this sync overrides.
 
 **The scan never rewrites a file that belongs to something else.** It does not
-descend into a directory whose name matches any of: a hidden name (`.*`, which
-covers `.floor-backups` and `codex-home/.tmp`), `*.bak*`, `*.backup*`,
-`departments-archive`, `node_modules`, `onboarding`, `fleet-refresh`, `skills`,
-`templates`, `codex-home`. Backup copies, vendored skill folders and template
-trees keep their own `AGENTS.md`. Registered workspaces are the owner's
-explicit list and are not filtered by name.
+descend into:
+
+| Skipped | Where |
+|---------|-------|
+| a hidden folder (`.*`, which covers `.floor-backups` and `codex-home/.tmp`), `*.bak*`, `*.backup*`, `departments-archive`, `node_modules` | at any depth |
+| `skills`, `templates`, `onboarding`, `fleet-refresh`, `codex-home` | only INSIDE an agent workspace, meaning the parent folder holds `IDENTITY.md` or `SOUL.md` |
+| `onboarding`, `fleet-refresh`, `codex-home` | at depth 1 of `<oc-root>/workspaces`, where the roll keeps its own trees |
+
+So a backup copy, an agent's vendored skill folder and a template tree keep
+their own `AGENTS.md`, while a real department that is merely NAMED `templates`,
+`onboarding` or `skills` under `workspaces/command-center/` is kept in step.
+Registered workspaces are the owner's explicit list and are not filtered by
+name at all. The walk is python `os.walk`, so a scan root that is itself a
+symlink (a symlinked `departments/`, `agents/` or `workspaces/`) is walked.
+QC check 9.9 runs the byte-identical function (kept equal by
+`tests/unit/shared-core-entries-sync.test.sh`).
+
+**Company tree, this box only (co-mingling guard N0).** The scan reaches the
+role folders Skill 23 writes under the company tree, found the way
+`materialize-dept-agents.sh` finds them: the build state's `companyRoot`
+(`.workforce-build-state.json`) and
+`<master-files>/zero-human-company/<slug>/departments`, where `<slug>` is
+`$COMPANY_SLUG` or the build state's `companySlug` / `clientSlug`. When the box's
+own slug is not known, no master-files company tree is read at all (fail
+closed; `materialize-dept-agents.sh` falls back to every company with a warning,
+this sync does not). Another company's folder on the same disk is never
+touched.
+
+**A create failure does not block the roll.** If a registered workspace that
+never had a core file cannot be written (for example a read-only folder), the
+sync warns loudly (`verified create FAILED`, counted as `create-failed=N` in the
+summary line) and carries on; the updater still stamps the version. A failure to
+replace an EXISTING drifted file still fails the step, as before.
+
+**One rulebook includes the remote-rescue agent.** The `remote-rescue` agent's
+workspace gets the box's `USER.md` like every other registered agent. That is
+the owner's rule (one rulebook for every agent); it is not an oversight.
 
 **Department-specific content goes in that department's `IDENTITY.md`, never in
 `AGENTS.md`, `TOOLS.md` or `USER.md`.** Hand edits to a department copy are
@@ -153,8 +185,10 @@ with the master and the whole of its unique content is preserved in the
 department's `IDENTITY.md` (41 and 18 unique blocks; proven by
 `tests/unit/shared-core-entries-sync.test.sh` case S9). The owner wants ONE
 rulebook, so the template stays as the starting point and the master wins on
-the roll. Shared text that every department needs (for example the Persona
-Operating Protocol) is added once to the master `AGENTS.md`.
+the roll. Text that names a department (for example the Persona Operating
+Protocol, which carries the department's folder name) belongs in that
+department's `IDENTITY.md`, never in the master `AGENTS.md`, which reaches every
+agent on the box.
 
 ## Nested workflow agent exemption
 
@@ -255,12 +289,15 @@ whose content **differs** from canonical, the unifier:
    that agent's **own `IDENTITY.md`**, under a guarded marker:
 
    ```
-   <!-- PRESERVED FROM <agent> <file> (unification <timestamp>) -->
+   <!-- PRESERVED FROM <agent> <file> (unification <timestamp>) blocks=<hashes> -->
    ```
 
    (If the agent has no `IDENTITY.md`, one is created.) This guarantees no
    agent-specific notes are lost when its file is overwritten with the shared
-   content.
+   content. Each block is keyed by its own hash, listed in the marker's
+   `blocks=` field: a LATER, different drift of the same file is appended too,
+   and a block already preserved (by hash or by its text) is never appended
+   twice, so repeat runs add nothing.
 3. **Overwrites** the file with a real-file copy of `CANON_DIR/<file>` — never
    a symlink — and **verifies the write by content hash** before counting it
    as a success.
@@ -293,7 +330,7 @@ The unifier is fully idempotent:
 - An absent file in a registered workspace → created; elsewhere → left absent.
 
 A **second run produces no new backups and no churn** — the preservation
-marker prevents re-appending, and already-correct copies are skipped by their
+per-block hash guard prevents re-appending, and already-correct copies are skipped by their
 content hash. Every action is logged with the `[link-shared]` prefix.
 
 ## Where it runs
@@ -308,7 +345,8 @@ content hash. Every action is logged with the `[link-shared]` prefix.
 `scripts/qc-system-integrity.sh` check **9.9** asserts that, for **every
 non-workflow-agent workspace in the same candidate set the sync uses**
 (`agents.entries`, `agents.list`, `agents.defaults.workspace`, plus the scan of
-`workspaces/`, `agents/` and `departments/` with the same skip list),
+`workspaces/`, `agents/`, `departments/` and this box's own company tree, with
+the same skip rules, run by the identical python function),
 `AGENTS.md` / `TOOLS.md` / `USER.md` **exist as real files and are
 byte-identical (content hash) to `CANON_DIR`**. A
 **symlink is itself a FAIL** now, regardless of what it resolves to — a

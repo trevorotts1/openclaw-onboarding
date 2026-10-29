@@ -30,7 +30,7 @@ Agent management:
 
 Persona integration:
 - Each department gets governing-personas.md as a REFERENCE GUIDE (not a static assignment)
-- Every department AGENTS.md includes the Persona Operating Protocol (Dynamic Selection Engine). It lives ONCE in the box's master AGENTS.md and reaches every department by the roll's real-file copy; do not edit a department copy (department-specific content goes in that department's IDENTITY.md)
+- Every department's IDENTITY.md includes the Persona Operating Protocol (Dynamic Selection Engine). It names the department, so it lives in that department's own IDENTITY.md (a per-agent file the roll never overwrites), never in the shared AGENTS.md, which is one master copy for the whole box
 - Dynamic selection (v11.4.0+): every dept director calls `persona-selector-v2.py --department X --task "..." --format json` for every task. This is the CANONICAL selector. It runs a four-stage funnel: (A) governing-personas.md pool, (B) DEPT_DOMAIN_TAGS keyword filter, (C) Gemini semantic search via gemini-search.py, (D) 5-layer alignment scoring on funnel survivors. Output JSON includes "funnel" counts for QC observability. `select-persona-for-task.py` is a deprecated shim that delegates to v2; update any callers. The director does NOT separately invoke gemini-search.py.
 - 5-layer scoring: Owner Values (25%), Company Mission (25%), Business KPIs (20%), Dept KPIs (15%), Task Fit (15%)
 - Fallback: if Gemini unavailable, selector falls back to keyword + 5-layer only (exits 2 instead of 0, but still returns a winner). NEVER returns "no persona selected".
