@@ -28,7 +28,8 @@ GUARD_SH="$REPO_ROOT/scripts/memory-guard.sh"
 ENSURE="$REPO_ROOT/scripts/ensure-pipeline-crons.sh"
 INSTALL="$REPO_ROOT/install.sh"
 FIXTURE="$REPO_ROOT/tests/fixtures/fake-openclaw-cron.py"
-MIN_SELFTEST_PASSES=60
+MIN_SELFTEST_PASSES=110
+CANONICAL_OWNER_CHAT="$REPO_ROOT/shared-utils/resolve-owner-chat.sh"
 
 PASS=0; FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS+1)); }
@@ -51,7 +52,17 @@ if [ "$RC" -eq 0 ] && [ "$FAILS" -eq 0 ]; then pass "1a: self-test exits 0, no F
 if [ "$PASSES" -ge "$MIN_SELFTEST_PASSES" ]; then pass "1b: self-test ran $PASSES cases (floor $MIN_SELFTEST_PASSES)"; else fail "1b: self-test ran only $PASSES cases (floor $MIN_SELFTEST_PASSES)"; fi
 for want in "original dead -> nemotron chosen" "original + nemotron dead -> gemini chosen" \
             "all three dead -> memory search off, one client message" "original recovers -> moved back up, one patch" \
-            "original transient (a lower option works): nothing changes"; do
+            "original transient (a lower option works): nothing changes" \
+            "nemotron slot is exactly the OpenRouter endpoint + env SecretRef, no literal key anywhere" \
+            "dead primary + unconfigured backup: memory search goes off (it used to keep hammering the dead key)" \
+            "corrupt activity database: the worker is left on" \
+            "a patch that exits 0 but changes nothing is a FAIL: config, state and 'original' untouched" \
+            "every CLI call carries OPENCLAW_STATE_DIR = the box root" \
+            "a later night's send succeeds and is recorded" \
+            "state.json and \`status\` hold no key-like text" \
+            "probe runs for the configured default agent, not the first entry or main" \
+            "a CLI call is cut off at the time budget, not at its own timeout" \
+            "run as root: exit 2, REFUSED, no CLI call at all"; do
   if grep -qF "PASS $want" "$SANDBOX/self.log"; then pass "1c: case ran: $want"; else fail "1c: case missing or failing: $want"; fi
 done
 
@@ -75,6 +86,16 @@ for f in ("memory-guard.sh", "memory-guard.py"):
 if bad:
     print("\n".join("    " + b for b in bad))
 sys.exit(1 if bad else 0)
+PY
+
+python3 - "$GUARD_PY" "$CANONICAL_OWNER_CHAT" <<'PY' && pass "2a2: operator chat ids match the canonical list (shared-utils/resolve-owner-chat.sh)" || fail "2a2: operator chat id list drifted from the canonical copy"
+import re, sys
+mine = re.search(r'^OPERATOR_CHAT_IDS = \{([^}]*)\}', open(sys.argv[1]).read(), re.M)
+canon = re.search(r'^OPERATOR_CHAT_IDS_SH="([^"]*)"', open(sys.argv[2]).read(), re.M)
+a = set(re.findall(r'\d+', mine.group(1))) if mine else set()
+b = set(canon.group(1).split()) if canon else set()
+print("    memory-guard.py: %s\n    canonical:       %s" % (sorted(a), sorted(b))) if a != b or not a else None
+sys.exit(0 if a and a == b else 1)
 PY
 
 mk_box() { # <tag> <with-script 0|1> -> sets H B J C

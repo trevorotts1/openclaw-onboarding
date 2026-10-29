@@ -110,12 +110,12 @@
 #   not reliably after "03:00 New York" on a box set to another zone. A CLI that
 #   rejects --tz is retried without it, because a cron in the wrong zone still
 #   beats no cron at all.
-# Unreleased - MEMORY GUARD: registers `memory-guard` (02:15 America/New_York, COMMAND
+# v14.3.0 - MEMORY GUARD: registers `memory-guard` (02:15 America/New_York, COMMAND
 #   kind, zero LLM tokens, no delivery). Nightly memory-search key check with the
 #   backup chain, plus the idle-worker check (scripts/memory-guard.py). It sits
 #   ahead of the 03:00 New York dreaming run, so the day's embeddings use a working
 #   key. Added to MANAGED_RECONCILE_CRONS and the main() audit list in lockstep.
-ENSURE_PIPELINE_CRONS_VERSION="v14.2.1"
+ENSURE_PIPELINE_CRONS_VERSION="v14.3.0"
 
 set -u
 

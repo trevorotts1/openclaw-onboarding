@@ -5,19 +5,22 @@ Two jobs, both deterministic (no model turn, no tokens):
 
   key   - Tests the box's memory-search embedding key with OpenClaw's own probe
           (`openclaw memory status --deep --json` -> embeddingProbe). When the
-          provider memory search is using is DEAD (key rejected, out of credit,
-          out of quota; confirmed by a second probe 90 s later) the guard walks a
-          fixed backup chain and uses the first option whose probe passes:
+          provider memory search is using is unusable - DEAD (key rejected, out of
+          credit, out of quota; confirmed by a second probe 90 s later) or
+          UNCONFIGURED (no key, unknown provider) - the guard walks a fixed backup
+          chain and uses the first option whose probe passes:
             1. the box's original provider/model (whatever it had before the
                guard first touched it; on a Mac, the Skill 76 local Ollama model)
-            2. OpenRouter nvidia/nemotron-3.5-embed-1b:free
+            2. OpenRouter nvidia/nemotron-3.5-embed-1b:free, expressed purely
+               inside memory.search (see NEMOTRON below; nothing under models.*)
             3. Gemini gemini-embedding-2
-          One `config patch` switches provider + model. If all of them are dead,
-          memory search goes OFF for the whole box (so it stops retrying a dead
-          key in a loop) and the box's own Telegram bot tells the client to add
-          funds. Every night the guard also tries to climb back UP the chain, and
-          turns memory search back on when something works again. A transient
-          failure (network, timeout, 5xx, local Ollama down) changes nothing.
+          One `config patch` switches provider + model (+ the endpoint that goes
+          with it). If none is usable, memory search goes OFF for the whole box (so
+          it stops retrying a dead key in a loop) and the box's own Telegram bot
+          tells the client to add funds (retried nightly until a send succeeds).
+          Every night the guard also tries to climb back UP the chain, and turns
+          memory search back on when something works again. A transient failure
+          (network, timeout, 5xx, local Ollama down) changes nothing.
           OpenClaw allows only one `memory.search.fallback` string with no model
           choice, which is why the chain lives here; that key is never edited.
 
@@ -52,8 +55,10 @@ Usage:
 Exit: 0 done / nothing to do / skipped; 1 unexpected error; 2 usage or refused.
 """
 import argparse
+import contextlib
 import copy
 import glob
+import io
 import json
 import os
 import re
@@ -66,18 +71,43 @@ import time
 
 IDLE_DAYS_DEFAULT = 30
 CONFIRM_DELAY_S = 90
-PROBE_TIMEOUT_S = 180
+# Time budget. The cron command times out at 600 s; the whole run (version check, key
+# check, idle check) stops itself at TOTAL_BUDGET_S and every CLI call is clamped to
+# what is left, so a run always ends first. A dead verdict is only re-confirmed when
+# the confirmation (sleep + re-probes) and the write after it still fit.
+TOTAL_BUDGET_S = 540
+PROBE_TIMEOUT_S = 60
+VERSION_TIMEOUT_S = 30
+PATCH_TIMEOUT_S = 60
+MESSAGE_TIMEOUT_S = 45
+WRITE_RESERVE_S = PATCH_TIMEOUT_S + MESSAGE_TIMEOUT_S
 # 2026.10.4 and older restart the serving Gateway on any memory.search provider/model/enabled change; 2026.10.5+ hot-reload it.
 MIN_OPENCLAW = (2026, 10, 5)
 ALWAYS_ON_IDS = {"main"}
 ALWAYS_ON_PATTERNS = ("master-orchestrator",)
+# Canonical list: shared-utils/resolve-owner-chat.sh (OPERATOR_CHAT_IDS_SH). Every reader in
+# the repo keeps its own copy (install.sh, ensure-pipeline-crons.sh, ...); tests/unit/memory-guard.test.sh
+# fails if this copy drifts from the canonical one.
 OPERATOR_CHAT_IDS = {"5252140759", "6663821679", "6771245262"}
 
 VERSION_RE = re.compile(r"\b(20\d\d)\.(\d{1,2})\.(\d{1,2})\b")
 
 # The backup chain after the box's own (original) provider/model, in the owner-approved order.
-NEMOTRON = {"provider": "openrouter", "model": "nvidia/nemotron-3.5-embed-1b:free"}
-GEMINI = {"provider": "gemini", "model": "gemini-embedding-2"}
+#
+# OpenRouter: OpenClaw only knows "openrouter" as a memory provider when models.providers.openrouter
+# exists, and that is chat-model config the guard never touches. So the slot is expressed purely
+# inside memory.search: the OpenAI-compatible provider pointed at OpenRouter's embeddings endpoint,
+# with the key as an env SecretRef to the box's own OPENROUTER_API_KEY (never a literal key).
+# Verified with `openclaw memory status --deep --json` on 2026.10.8 against a temp config copy that
+# had neither models.providers.openrouter nor models.providers.openai: embeddingProbe ok:true; the
+# same shape with a missing variable, an unreachable baseUrl, or an unknown model all fail.
+# A box with no OPENROUTER_API_KEY simply gets an "unconfigured" verdict for this slot.
+NEMOTRON = {"name": "openrouter", "provider": "openai", "model": "nvidia/nemotron-3.5-embed-1b:free",
+            "remote": {"baseUrl": "https://openrouter.ai/api/v1",
+                       "apiKey": {"source": "env", "provider": "default", "id": "OPENROUTER_API_KEY"}}}
+# Gemini needs nothing but provider + model: OpenClaw finds the key itself (models.providers.google
+# or GEMINI_API_KEY / GOOGLE_API_KEY). No key = "unconfigured".
+GEMINI = {"name": "gemini", "provider": "gemini", "model": "gemini-embedding-2"}
 # memory.search keys that move with the provider; OWNED[2:] (endpoint+credential override,
 # provider-specific vector size) belong to the original provider and are dropped on a
 # switch, restored on return. (`dimensions` is not a memory.search key on 2026.10.8.)
@@ -93,6 +123,22 @@ DEAD_KEY_RE = re.compile(
     r"resource_exhausted|billing|payment required|token status is unavailable|"
     r"account (is )?(suspended|disabled|deactivated)",
     re.IGNORECASE,
+)
+# A provider that cannot be used on this box at all: no key, an env variable that is not set, or a
+# provider OpenClaw does not know. Real CLI texts (2026.10.8): `No API key found for provider "google"`,
+# `Unknown memory embedding provider: openrouter`, `openai embedding credentials are not configured
+# for <url>`, `Environment variable "X" is missing or empty`. Deterministic, so no second probe.
+UNCONFIGURED_RE = re.compile(
+    r"No API key found for provider|Unknown memory embedding provider|"
+    r"embedding credentials are not configured|Environment variable \"[A-Z0-9_]+\" is missing or empty",
+)
+UNUSABLE = ("dead", "unconfigured")
+# Anything key-shaped in provider error text (vendor-prefixed, masked "sk-ab***yz", long tokens).
+KEYLIKE_RE = re.compile(
+    r"\b(?:sk|rk|pk|nvapi|ghp|xox[abp])[-_][A-Za-z0-9_\-\*\.]{6,}"
+    r"|\bAIza[0-9A-Za-z_\-]{10,}"
+    r"|\b[A-Za-z0-9]{2,}\*{3,}[A-Za-z0-9]{2,}"
+    r"|\b[A-Za-z0-9_\-]{32,}\b"
 )
 
 BILLING_HINT = {
@@ -118,14 +164,51 @@ def oc_root():
     return os.path.expanduser("~/.openclaw")
 
 
+def redact(text):
+    """Provider error text can echo a (masked) key; nothing key-shaped is stored or printed."""
+    return KEYLIKE_RE.sub("<redacted>", str(text))
+
+
 def scrub(o):
     if isinstance(o, dict):
         return {k: ("<redacted>" if k in SECRET_KEYS and v is not None else scrub(v)) for k, v in o.items()}
-    return [scrub(x) for x in o] if isinstance(o, list) else o
+    if isinstance(o, list):
+        return [scrub(x) for x in o]
+    return redact(o) if isinstance(o, str) else o
+
+
+def merge_patch(doc, patch):
+    """Apply a patch the way `openclaw config patch` does: objects merge, null deletes, the rest replaces."""
+    for k, v in patch.items():
+        if v is None:
+            doc.pop(k, None)
+        elif isinstance(v, dict):
+            if not isinstance(doc.get(k), dict):
+                doc[k] = {}
+            merge_patch(doc[k], v)
+        else:
+            doc[k] = v
+    return doc
+
+
+def unlanded(doc, patch, path=""):
+    """Paths in `patch` whose value is not what the config file (`doc`) holds now."""
+    bad = []
+    for k, v in patch.items():
+        here = "%s.%s" % (path, k) if path else k
+        have = doc.get(k) if isinstance(doc, dict) else None
+        if v is None:
+            if isinstance(doc, dict) and k in doc:
+                bad.append(here)
+        elif isinstance(v, dict):
+            bad += unlanded(have if isinstance(have, dict) else {}, v, here)
+        elif have != v:
+            bad.append(here)
+    return bad
 
 
 class Box:
-    def __init__(self, root, cli="openclaw", now=None, dry_run=False, log=None):
+    def __init__(self, root, cli="openclaw", now=None, dry_run=False, log=None, deadline=None):
         self.root = root
         self.cfg_path = os.environ.get("OPENCLAW_CONFIG_PATH") or os.path.join(root, "openclaw.json")
         self.state_dir = os.path.join(root, "memory-guard")
@@ -135,6 +218,10 @@ class Box:
         self.now = now or time.time()
         self.dry_run = dry_run
         self._log = log
+        self.deadline = deadline or time.time() + TOTAL_BUDGET_S
+
+    def remaining(self):
+        return max(0.0, self.deadline - time.time())
 
     def log(self, msg):
         line = "%s [memory-guard] %s" % (time.strftime("%Y-%m-%dT%H:%M:%S%z"), msg)
@@ -171,28 +258,46 @@ class Box:
         os.replace(tmp, self.state_path)
 
     def run_cli(self, args, env=None, stdin=None, timeout=PROBE_TIMEOUT_S):
-        e = dict(os.environ)
+        """Every call names the box's state dir and config file explicitly (so a stray
+        environment can never make the CLI create or edit a different one) and is clamped
+        to the time budget that is left."""
+        left = self.remaining()
+        if left < 3:
+            return 124, "", "time budget exhausted"
+        e = dict(os.environ, OPENCLAW_STATE_DIR=self.root, OPENCLAW_CONFIG_PATH=self.cfg_path)
         if env:
             e.update(env)
+        timeout = min(timeout, left)
         try:
             p = subprocess.run([self.cli] + args, input=stdin, capture_output=True,
                                text=True, timeout=timeout, env=e)
             return p.returncode, p.stdout, p.stderr
         except subprocess.TimeoutExpired:
-            return 124, "", "timeout after %ss" % timeout
+            return 124, "", "timeout after %ds" % timeout
         except OSError as exc:
             return 127, "", str(exc)
 
     def patch(self, obj, why):
-        """One validated config write. Returns True on success (or dry run)."""
+        """One validated config write. True only if the CLI succeeded AND the value is in the
+        real config file afterwards (a CLI pointed at the wrong place exits 0 and writes
+        nothing here). A dry run reports success."""
         body = json.dumps(obj)
         shown = json.dumps(scrub(obj))
         if self.dry_run:
             self.log("DRY-RUN would patch config (%s): %s" % (why, shown))
             return True
-        rc, out, err = self.run_cli(["config", "patch", "--stdin"], stdin=body, timeout=120)
+        rc, out, err = self.run_cli(["config", "patch", "--stdin"], stdin=body, timeout=PATCH_TIMEOUT_S)
         if rc != 0:
-            self.log("FAIL config patch (%s) rc=%s: %s" % (why, rc, (err or out).strip()[:300]))
+            self.log("FAIL config patch (%s) rc=%s: %s" % (why, rc, redact((err or out).strip()[:300])))
+            return False
+        try:
+            missing = unlanded(self.config(), obj)
+        except (OSError, ValueError) as exc:
+            self.log("FAIL config patch (%s): cannot re-read %s to verify it: %s" % (why, self.cfg_path, exc))
+            return False
+        if missing:
+            self.log("FAIL config patch (%s): the CLI said OK but %s did not change in %s; nothing recorded"
+                     % (why, ", ".join(missing[:4]), self.cfg_path))
             return False
         self.log("OK config patch (%s): %s" % (why, shown))
         return True
@@ -222,46 +327,51 @@ def agent_search(entry):
 
 
 def default_agent_id(cfg):
-    ents = entries(cfg)
-    for aid, e in ents.items():
-        if isinstance(e, dict) and e.get("default") is True:
-            return aid
-    if "main" in ents or not ents:
+    """The agent OpenClaw itself treats as the default (2026.10.x resolveAmbientOwnerAgentId):
+    agents.defaults.systemAgent.agentId, else the single `default: true` marker (not under
+    explicit ownership), else the only agent. Beyond that, `main` if it exists. None when it
+    cannot be told (several agents, no marker, no main): callers then leave the box alone."""
+    ents, agents = entries(cfg), cfg.get("agents") or {}
+    low = {k.lower(): k for k in ents}
+    sysid = str(((agents.get("defaults") or {}).get("systemAgent") or {}).get("agentId") or "").strip().lower()
+    if sysid in low:
+        return low[sysid]
+    if agents.get("ownership") != "explicit":
+        marked = [a for a, e in ents.items() if isinstance(e, dict) and e.get("default") is True]
+        if len(marked) == 1:
+            return marked[0]
+    if len(ents) == 1:
+        return next(iter(ents))
+    if not ents or "main" in ents:
         return "main"
-    return next(iter(ents))
+    return None
 
 
 # ---------------------------------------------------------------- key guard
-def merge_patch(doc, patch):
-    """Apply a patch the way `openclaw config patch` does: objects merge, null deletes, the rest replaces."""
-    for k, v in patch.items():
-        if v is None:
-            doc.pop(k, None)
-        elif isinstance(v, dict):
-            if not isinstance(doc.get(k), dict):
-                doc[k] = {}
-            merge_patch(doc[k], v)
-        else:
-            doc[k] = v
-    return doc
-
-
 def snapshot(ms):
     return {k: copy.deepcopy(ms[k]) for k in OWNED if k in ms}
 
 
+def ident(c):
+    """What makes two memory-search setups the same slot: provider, model, endpoint."""
+    return (c.get("provider"), c.get("model"), (c.get("remote") or {}).get("baseUrl"))
+
+
 def chain_of(orig):
     """Backup chain, best first: the box's original, then the two backups. A backup that
-    is the same provider+model as an earlier slot is dropped."""
+    is the same setup as an earlier slot is dropped."""
+    first = {"provider": orig.get("provider"), "model": orig.get("model")}
+    if orig.get("remote"):
+        first["remote"] = orig["remote"]
     out = []
-    for c in ({"provider": orig.get("provider"), "model": orig.get("model")}, NEMOTRON, GEMINI):
-        if all((c["provider"], c["model"]) != (o["provider"], o["model"]) for o in out):
-            out.append(dict(c))
+    for c in (first, NEMOTRON, GEMINI):
+        if all(ident(c) != ident(o) for o in out):
+            out.append(c)
     return out
 
 
 def label(c):
-    return "%s/%s" % (c["provider"] or "auto", c["model"] or "default")
+    return "%s/%s" % (c.get("name") or c.get("provider") or "auto", c.get("model") or "default")
 
 
 def mm_flags(cfg):
@@ -274,26 +384,39 @@ def mm_flags(cfg):
     return out
 
 
+def remote_patch(cur, new):
+    """Patch fragment that turns memory.search.remote into exactly `new`. A merge patch only
+    adds and overwrites, so every key of the current object that `new` lacks is nulled; a
+    stale header or key of the previous provider must not survive."""
+    cur, new = cur if isinstance(cur, dict) else {}, new or {}
+    if not cur and not new:
+        return {}
+    if not new:
+        return {"remote": None}
+    return {"remote": dict({k: None for k in cur if k not in new}, **new)}
+
+
 def slot_patch(cfg, orig, chain, i, cur, mm_off):
-    """The one config patch that makes chain slot i the memory-search provider ({} if it
-    already is). Returns (patch, multimodal switches the guard now holds off).
+    """The one config patch that makes chain slot i the memory-search setup ({} if it already
+    is). Returns (patch, multimodal switches the guard now holds off).
 
     Why more than provider+model:
       * remote / outputDimensionality are the ORIGINAL provider's endpoint, credential
-        and vector size. Left in place they would send that endpoint (a local
-        Ollama URL) or credential to a different vendor, so they are removed whenever
-        the provider changes and put back verbatim on the way home to the original.
+        and vector size. Left in place they would send that endpoint (a local Ollama URL)
+        or credential to a different vendor, so a slot REPLACES them (the OpenRouter slot
+        brings its own remote; Gemini brings none) and the original gets its own back
+        verbatim on the way home.
       * multimodal indexing needs the Gemini adapter; on a text-only provider every
         agent that has it on fails to re-index, so it is held off there and put back
         when the box is on Gemini again."""
     ms, slot, p = top_search(cfg), chain[i], {}
     if i != cur:
-        if i == 0:
-            p = {k: orig.get(k) for k in OWNED}
-        else:
-            p = {"provider": slot["provider"], "model": slot["model"]}
-            if slot["provider"] != orig.get("provider"):
-                p.update({k: None for k in OWNED[2:] if k in ms})
+        src = orig if i == 0 else slot
+        p = {"provider": src.get("provider"), "model": src.get("model"),
+             "outputDimensionality": src.get("outputDimensionality")}
+        p.update(remote_patch(ms.get("remote"), src.get("remote")))
+        if p["outputDimensionality"] is None and "outputDimensionality" not in ms:
+            del p["outputDimensionality"]
     out = {"memory": {"search": p}} if p else {}
     gemini = slot["provider"] == "gemini"
     ids = mm_off if gemini else (mm_flags(cfg) if i != cur else [])
@@ -329,7 +452,7 @@ def parse_json(text):
 def probe(box, agent_id, cfg):
     """Run OpenClaw's own embedding probe against a read-only temp copy of cfg.
 
-    Returns (state, detail); state: ok | dead | transient | none (no probe to read)."""
+    Returns (state, detail); state: ok | dead | unconfigured | transient | none."""
     os.makedirs(box.state_dir, mode=0o700, exist_ok=True)
     for old in glob.glob(os.path.join(box.state_dir, ".probe-*.json")):  # left by a killed run
         try:
@@ -341,31 +464,39 @@ def probe(box, agent_id, cfg):
     with os.fdopen(fd, "w") as f:
         json.dump(cfg, f)
     os.chmod(tmp, 0o600)
-    env = {"OPENCLAW_CONFIG_PATH": tmp, "OPENCLAW_CONFIG_READONLY": "1", "OPENCLAW_STATE_DIR": box.root}
+    env = {"OPENCLAW_CONFIG_PATH": tmp, "OPENCLAW_CONFIG_READONLY": "1"}
     try:
-        rc, out, err = box.run_cli(["memory", "status", "--deep", "--agent", agent_id, "--json"], env=env)
+        rc, out, err = box.run_cli(["memory", "status", "--deep", "--agent", agent_id, "--json"],
+                                   env=env, timeout=PROBE_TIMEOUT_S)
     finally:
         try:
             os.remove(tmp)
         except OSError:
             pass
     data = parse_json(out)
-    if data is None:
-        return "transient", "no JSON from memory status (rc=%s): %s" % (rc, (err or out).strip()[:200])
-    rows = data if isinstance(data, list) else [data]
-    pr = ((rows[0] if rows else None) or {}).get("embeddingProbe")
-    if not isinstance(pr, dict):
-        return "none", "no embedding probe in status output"
-    if pr.get("ok") is True:
-        return "ok", ""
-    detail = str(pr.get("error") or "probe failed")
-    return ("dead" if DEAD_KEY_RE.search(detail) else "transient"), detail
+    row = (data[0] if isinstance(data, list) and data else data) if data is not None else None
+    row = row if isinstance(row, dict) else {}
+    pr = row.get("embeddingProbe")
+    if isinstance(pr, dict):
+        if pr.get("ok") is True:
+            return "ok", ""
+        raw = str(pr.get("error") or "probe failed")
+        return ("dead" if DEAD_KEY_RE.search(raw) else "transient"), redact(raw)[:200]
+    e = row.get("error")
+    msg = str(e.get("message") if isinstance(e, dict) else e or "")
+    if UNCONFIGURED_RE.search(msg + "\n" + err):
+        return "unconfigured", redact(msg or err.strip())[:200]
+    if not row:
+        return "transient", "no JSON from memory status (rc=%s): %s" % (rc, redact((err or out).strip())[:200])
+    return "none", redact(msg)[:200] if msg else "no embedding probe in status output"
 
 
 def survey(box, cfg, orig, chain, cur, mm_off, agent, sleep):
-    """Probe the chain top-down, stopping at the first slot that works. Dead verdicts are
-    re-checked once, CONFIRM_DELAY_S later, but only when something could act on them
-    (a dead slot at or below the current one)."""
+    """Probe the chain top-down, stopping at the first slot that works. A dead verdict is
+    re-checked once, CONFIRM_DELAY_S later, but only when something could act on it (a
+    dead slot at or below the current one) and only if the wait, the re-probes and the
+    write after them still fit in the time budget; otherwise it stays unconfirmed and
+    nothing changes this run. Unconfigured slots are deterministic: no re-check."""
     def one(i):
         patch, _ = slot_patch(cfg, orig, chain, i, cur, mm_off)
         return probe(box, agent, probe_cfg(cfg, patch, agent))
@@ -377,6 +508,12 @@ def survey(box, cfg, orig, chain, cur, mm_off, agent, sleep):
             break
     dead = [i for i, r in enumerate(res) if r[0] == "dead"]
     if dead and dead[-1] >= cur:
+        if box.remaining() < CONFIRM_DELAY_S + len(dead) * PROBE_TIMEOUT_S + WRITE_RESERVE_S:
+            box.log("dead verdict on %s but too little of the time budget is left to confirm it; changing nothing"
+                    % ", ".join(label(chain[i]) for i in dead))
+            for i in dead:
+                res[i] = ("transient", "dead verdict unconfirmed (time budget)")
+            return res
         box.log("dead verdict on %s; confirming in %ss" % (", ".join(label(chain[i]) for i in dead), CONFIRM_DELAY_S))
         sleep(CONFIRM_DELAY_S)
         for i in dead:
@@ -430,34 +567,36 @@ def owner_chat(cfg):
     return ""
 
 
-def tell_client(box, cfg, chain, st):
+def tell_client(box, cfg, chain, res, st):
+    """ONE plain-English notice to the client's own Telegram chat per dead-key episode: a send
+    that fails (or no chat to send to) is retried on later nights until one succeeds.
+    Returns True once a message has gone out."""
     chat = owner_chat(cfg)
-    provs = []
-    for c in chain:
-        if c["provider"] in BILLING_HINT and c["provider"] not in provs:
-            provs.append(c["provider"])
+    bills = lambda cs: [x for x in dict.fromkeys(c.get("name") or c["provider"] for c in cs) if x in BILLING_HINT]
+    provs = bills([c for c, r in zip(chain, res) if r[0] == "dead"]) or bills(chain)
     names = [PROVIDER_NAME[p] for p in provs]
-    msg = ("Heads up from your AI team: the keys your agents use for memory search (%s) have all "
-           "stopped working. It looks like the accounts are out of money or were switched off. "
-           "To keep your box running smoothly, memory search is paused for now. Your agents keep "
-           "doing their jobs; they just can't search their notes until a key works again. Please "
-           "add funds or check the keys at: %s. Memory search turns back on by itself once a key "
-           "works." % (", ".join(names[:-1]) + " and " + names[-1] if len(names) > 1 else "".join(names),
-                       "; ".join(BILLING_HINT[p] for p in provs)))
+    msg = ("Heads up from your AI team: memory search has no working key right now (%s). It looks like "
+           "the accounts are out of money, were switched off, or have no key set up. To keep your box "
+           "running smoothly, memory search is paused for now. Your agents keep doing their jobs; they "
+           "just can't search their notes until a key works again. Please add funds or check the keys "
+           "at: %s. Memory search turns back on by itself once a key works."
+           % (", ".join(names[:-1]) + " and " + names[-1] if len(names) > 1 else "".join(names),
+              "; ".join(BILLING_HINT[p] for p in provs)))
     if not chat:
-        box.log("NOTICE no client Telegram chat found; client message not sent")
-        st["key"]["notified"] = "no-chat"
-        return
+        box.log("NOTICE no client Telegram chat found; client message not sent (retried next night)")
+        return False
     if box.dry_run:
         box.log("DRY-RUN would message the client's Telegram chat: %s" % msg)
-        return
+        return False
     rc, out, err = box.run_cli(["message", "send", "--channel", "telegram", "--target", chat,
-                                "--message", msg], timeout=60)
-    if rc == 0:
-        box.log("OK told the client (Telegram) that the memory keys are dead")
-        st["key"]["notified"] = int(box.now)
-    else:
-        box.log("FAIL client message rc=%s: %s" % (rc, (err or out).strip()[:200]))
+                                "--message", msg], timeout=MESSAGE_TIMEOUT_S)
+    if rc != 0:
+        box.log("FAIL client message rc=%s: %s (retried next night)" % (rc, redact((err or out).strip())[:200]))
+        return False
+    st["key"]["notified"] = int(box.now)
+    box.save_state(st)
+    box.log("OK told the client (Telegram) that the memory keys are not working")
+    return True
 
 
 def key_pass(box, sleep=time.sleep):
@@ -470,18 +609,22 @@ def key_pass(box, sleep=time.sleep):
     kst = st.setdefault("key", {})
     ms = top_search(cfg)
     enabled = ms.get("enabled", True) is not False
-    agent = default_agent_id(cfg)
-    own = agent_search(entries(cfg).get(agent))
     if not enabled and not kst.get("disabled_by_guard"):
         box.log("SKIPPED key check: memory search was switched off by someone else; leaving it alone")
         return 0
+    agent = default_agent_id(cfg)
+    if agent is None:
+        box.log("SKIPPED key check: cannot tell which agent is the default (several agents, no default marker, no main)")
+        return 0
+    own = agent_search(entries(cfg).get(agent))
     if own.get("provider") or own.get("model"):
         box.log("SKIPPED key check: the default agent (%s) has its own memory.search provider" % agent)
         return 0
 
     orig = kst.get("original") or snapshot(ms)
     chain = chain_of(orig)
-    cur = next((i for i, c in enumerate(chain) if (c["provider"], c["model"]) == (ms.get("provider"), ms.get("model"))), None)
+    me = ident({"provider": ms.get("provider"), "model": ms.get("model"), "remote": ms.get("remote")})
+    cur = next((i for i, c in enumerate(chain) if ident(c) == me), None)
     if cur is None:  # somebody changed the provider by hand since the guard recorded the original
         box.log("memory.search provider changed by someone else; treating %s as the original"
                 % label({"provider": ms.get("provider"), "model": ms.get("model")}))
@@ -496,19 +639,22 @@ def key_pass(box, sleep=time.sleep):
     res = survey(box, cfg, orig, chain, cur, mm_off, agent, sleep)
     states = [r[0] for r in res]
     kst["last_probe"] = {"at": int(box.now), "slots": [
-        {"slot": label(chain[i]), "state": r[0], "detail": r[1][:200]} for i, r in enumerate(res)]}
+        {"slot": label(chain[i]), "state": r[0], "detail": r[1]} for i, r in enumerate(res)]}
+    unusable = [s in UNUSABLE for s in states]
     best = next((i for i, s in enumerate(states) if s == "ok"), None)
 
-    if best is None and all(s == "dead" for s in states):
+    if best is None and all(unusable):
         if enabled:
-            box.log("every memory option is dead (%s): turning memory search OFF"
-                    % ", ".join(label(c) for c in chain))
-            if box.patch({"memory": {"search": {"enabled": False}}}, "all memory keys dead"):
+            box.log("no memory option is usable (%s): turning memory search OFF"
+                    % ", ".join("%s %s" % (label(c), s) for c, s in zip(chain, states)))
+            if box.patch({"memory": {"search": {"enabled": False}}}, "no usable memory key"):
                 kst.update({"disabled_by_guard": True, "since": int(box.now)})
-                tell_client(box, cfg, chain, st)
+                box.save_state(st)
         else:
-            box.log("key check: still dead, memory search stays off")
-    elif best is not None and (best <= cur or states[cur] == "dead" or not enabled):
+            box.log("key check: still nothing usable, memory search stays off")
+        if kst.get("disabled_by_guard") and not kst.get("notified"):
+            tell_client(box, cfg, chain, res, st)
+    elif best is not None and (best <= cur or unusable[cur] or not enabled):
         patch, mm = slot_patch(cfg, orig, chain, best, cur, mm_off)
         if not enabled:
             patch.setdefault("memory", {}).setdefault("search", {})["enabled"] = True
@@ -518,7 +664,6 @@ def key_pass(box, sleep=time.sleep):
             box.log("%s %s -> %s" % ("moving up:" if best < cur else "backup chain:", label(chain[cur]), label(chain[best])))
             if box.patch(patch, "memory search -> %s" % label(chain[best])):
                 if best != cur:
-                    box.log("provider changed: every agent re-indexes once on its next memory use")
                     if best == 0:
                         kst.pop("original", None)
                     else:
@@ -529,6 +674,9 @@ def key_pass(box, sleep=time.sleep):
                     kst.pop("mm_off", None)
                 for k in ("disabled_by_guard", "since", "notified"):
                     kst.pop(k, None)
+                box.save_state(st)  # recorded the moment the write has landed
+                if best != cur:
+                    box.log("provider changed: every agent re-indexes once on its next memory use")
     else:
         box.log("key check: %s - no change (memory search %s)"
                 % (", ".join("%s %s" % (label(chain[i]), s) for i, s in enumerate(states)), "on" if enabled else "off"))
@@ -537,38 +685,42 @@ def key_pass(box, sleep=time.sleep):
 
 
 # ---------------------------------------------------------------- idle guard
+class Unreadable(Exception):
+    """A worker's activity records could not be read; its switch must not be touched."""
+
+
 def _ro(path):
-    return sqlite3.connect("file:%s?mode=ro" % path, uri=True, timeout=10)
+    return sqlite3.connect("file:%s?mode=ro" % path, uri=True, timeout=5)
 
 
 def activity(box, aid):
     """(last_activity_epoch, first_seen_epoch) for one agent, from the box's own
-    records: transcripts, task runs, cron runs, legacy session files."""
+    records: transcripts, task runs, cron runs, legacy session files.
+
+    Raises Unreadable on any read error. An error must never look like "no activity":
+    that would switch off a worker that is busy."""
     last, first = 0.0, 0.0
     adb = os.path.join(box.root, "agents", aid, "agent", "openclaw-agent.sqlite")
     if os.path.exists(adb):
         try:
-            with _ro(adb) as c:
+            with contextlib.closing(_ro(adb)) as c:
                 row = c.execute("select max(created_at), min(created_at) from transcript_events").fetchone()
-            if row and row[0]:
-                last = max(last, row[0] / 1000.0)
-                first = row[1] / 1000.0
-        except sqlite3.Error:
-            pass
+        except sqlite3.Error as exc:
+            raise Unreadable("agent database: %s" % exc)
+        if row and row[0]:
+            last = max(last, row[0] / 1000.0)
+            first = row[1] / 1000.0
     sdb = os.path.join(box.root, "state", "openclaw.sqlite")
     if os.path.exists(sdb):
         try:
-            with _ro(sdb) as c:
+            with contextlib.closing(_ro(sdb)) as c:
                 for sql in ("select max(created_at) from task_runs where agent_id=?",
                             "select max(started_at_ms) from cron_run_receipts where agent_id=?"):
-                    try:
-                        v = c.execute(sql, (aid,)).fetchone()[0]
-                        if v:
-                            last = max(last, v / 1000.0)
-                    except sqlite3.Error:
-                        pass
-        except sqlite3.Error:
-            pass
+                    v = c.execute(sql, (aid,)).fetchone()[0]
+                    if v:
+                        last = max(last, v / 1000.0)
+        except sqlite3.Error as exc:
+            raise Unreadable("state database: %s" % exc)
     for f in glob.glob(os.path.join(box.root, "agents", aid, "sessions", "*.jsonl")):
         try:
             last = max(last, os.path.getmtime(f))
@@ -582,8 +734,8 @@ def activity(box, aid):
     return last, first
 
 
-def always_on(aid, cfg):
-    return aid in ALWAYS_ON_IDS or aid == default_agent_id(cfg) or any(p in aid for p in ALWAYS_ON_PATTERNS)
+def always_on(aid, default_id):
+    return aid in ALWAYS_ON_IDS or aid == default_id or any(p in aid for p in ALWAYS_ON_PATTERNS)
 
 
 def idle_pass(box, days=IDLE_DAYS_DEFAULT):
@@ -596,7 +748,8 @@ def idle_pass(box, days=IDLE_DAYS_DEFAULT):
     ist = st.setdefault("idle", {})
     owned = ist.setdefault("disabled", {})
     cutoff = box.now - days * 86400
-    off, on, kept, report = {}, {}, 0, []
+    dflt = default_agent_id(cfg)
+    off, on, kept, report, unread = {}, {}, 0, [], []
 
     for aid, ent in sorted(entries(cfg).items()):
         if not isinstance(ent, dict):
@@ -606,11 +759,19 @@ def idle_pass(box, days=IDLE_DAYS_DEFAULT):
         if aid in owned and cur is not False:
             owned.pop(aid)  # someone else turned it back on; it is theirs now
             continue
-        if always_on(aid, cfg):
+        if always_on(aid, dflt):
             continue
         if aid not in owned and (cur is False or ms.get("provider") or ms.get("model")):
             continue  # someone else's choice: leave it alone
-        last, first = activity(box, aid)
+        if box.remaining() < WRITE_RESERVE_S:
+            box.log("idle check: time budget nearly used up; the remaining workers are left unchanged this run")
+            break
+        try:
+            last, first = activity(box, aid)
+        except Unreadable as exc:
+            unread.append(aid)
+            box.log("idle check: %s left unchanged this run, cannot read its activity (%s)" % (aid, exc))
+            continue
         busy = last >= cutoff or first >= cutoff
         if busy and aid in owned:
             on[aid] = owned[aid].get("before")
@@ -622,7 +783,7 @@ def idle_pass(box, days=IDLE_DAYS_DEFAULT):
             kept += 1
 
     if not off and not on:
-        box.log("idle check: no change (%d workers checked)" % kept)
+        box.log("idle check: no change (%d workers checked, %d unreadable)" % (kept, len(unread)))
         box.save_state(st)
         return 0
 
@@ -636,6 +797,7 @@ def idle_pass(box, days=IDLE_DAYS_DEFAULT):
             owned[aid] = {"at": int(box.now), "before": before}
         for aid in on:
             owned.pop(aid, None)
+        box.save_state(st)  # recorded the moment the write has landed
         for r in report:
             box.log("idle check: " + r)
     box.save_state(st)
@@ -644,7 +806,7 @@ def idle_pass(box, days=IDLE_DAYS_DEFAULT):
 
 def openclaw_ok(box):
     """True when the installed OpenClaw is MIN_OPENCLAW or newer (logs why not)."""
-    rc, out, err = box.run_cli(["--version"], timeout=60)
+    rc, out, err = box.run_cli(["--version"], timeout=VERSION_TIMEOUT_S)
     m = VERSION_RE.search(out) or VERSION_RE.search(err)
     if not m:
         box.log("SKIPPED: cannot read the OpenClaw version (rc=%s)" % rc)
@@ -662,13 +824,20 @@ def status(box):
 
 # ---------------------------------------------------------------- self-test
 FAKE_CLI = r'''#!/usr/bin/env python3
-import json, os, sys
+import json, os, sys, time
 d = os.environ["MG_FAKE_DIR"]
 args = sys.argv[1:]
+def mode_of(name, default=""):
+    f = os.path.join(d, name)
+    return open(f).read().strip() if os.path.exists(f) else default
 open(os.path.join(d, "calls.log"), "a").write(json.dumps(args) + "\n")
+open(os.path.join(d, "envs.log"), "a").write(json.dumps({
+    "state": os.environ.get("OPENCLAW_STATE_DIR"), "cfg": os.environ.get("OPENCLAW_CONFIG_PATH")}) + "\n")
 if args[:1] == ["--version"]:
-    print("OpenClaw " + open(os.path.join(d, "version")).read().strip() + " (test)"); sys.exit(0)
+    print("OpenClaw " + mode_of("version", "2026.10.8") + " (test)"); sys.exit(0)
 if args[:2] == ["memory", "status"]:
+    if mode_of("hang"):
+        time.sleep(float(mode_of("hang")))
     cfgp = os.environ.get("OPENCLAW_CONFIG_PATH") or os.path.join(d, "root", "openclaw.json")
     ms = (json.load(open(cfgp)).get("memory") or {}).get("search", {})
     open(os.path.join(d, "seen.log"), "a").write(json.dumps(ms) + "\n")
@@ -676,13 +845,25 @@ if args[:2] == ["memory", "status"]:
         print("[plugins] 3 loaded"); print("Config warnings: one plugin is disabled")
     if ms.get("enabled") is False:
         print("[]"); sys.exit(0)
-    f = os.path.join(d, "probe-" + str(ms.get("provider")))
+    # the OpenRouter slot is provider "openai" + an openrouter.ai endpoint: answer by endpoint
+    key = "openrouter" if "openrouter.ai" in str((ms.get("remote") or {}).get("baseUrl")) else str(ms.get("provider"))
+    f = os.path.join(d, "probe-" + key)
     mode = open(f if os.path.exists(f) else os.path.join(d, "probe")).read().strip()
+    if mode.startswith("UNCONF:"):
+        print(json.dumps({"ok": False, "error": {"type": "cli_error", "message": mode[7:]}})); sys.exit(1)
+    if mode.startswith("UNCONF-STDERR:"):
+        print(json.dumps({"ok": False, "error": {"type": "cli_error", "message": "memory status failed"}}))
+        print(mode[14:], file=sys.stderr); sys.exit(1)
     pr = {"ok": True} if mode == "ok" else {"ok": False, "error": mode}
     print(json.dumps([{"agentId": "main", "embeddingProbe": pr}])); sys.exit(0)
 if args[:2] == ["config", "patch"]:
-    p = os.path.join(d, "root", "openclaw.json")
-    cfg = json.load(open(p))
+    # like the real CLI: with no OPENCLAW_CONFIG_PATH it writes a NEW config somewhere else and exits 0
+    target = os.environ.get("OPENCLAW_CONFIG_PATH") or os.path.join(d, "stray", "openclaw.json")
+    body = json.loads(sys.stdin.read())
+    if mode_of("patchmode") == "swallow":
+        sys.exit(0)
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    cfg = json.load(open(target)) if os.path.exists(target) else {}
     def merge(a, b):
         for k, v in b.items():
             if v is None: a.pop(k, None)
@@ -690,9 +871,11 @@ if args[:2] == ["config", "patch"]:
                 if not isinstance(a.get(k), dict): a[k] = {}
                 merge(a[k], v)
             else: a[k] = v
-    merge(cfg, json.loads(sys.stdin.read()))
-    json.dump(cfg, open(p, "w")); sys.exit(0)
+    merge(cfg, body)
+    json.dump(cfg, open(target, "w")); sys.exit(0)
 if args[:2] == ["message", "send"]:
+    if mode_of("msgmode") == "fail":
+        print("telegram: chat not found", file=sys.stderr); sys.exit(1)
     sys.exit(0)
 sys.exit(3)
 '''
@@ -700,7 +883,8 @@ sys.exit(3)
 DEAD = "gemini embeddings failed (429): You exceeded your current quota [code=RESOURCE_EXHAUSTED]"
 BLIP = "fetch failed: connect ECONNREFUSED 127.0.0.1:11434"
 OPENAI_MS = {"provider": "openai", "model": "text-embedding-3-small", "outputDimensionality": 1536,
-             "remote": {"baseUrl": "https://example.invalid/v1", "apiKey": "SECRET-REMOTE-KEY"},
+             "remote": {"baseUrl": "https://example.invalid/v1", "apiKey": "SECRET-REMOTE-KEY",
+                        "headers": {"X-Tenant": "stale-header"}},
              "fallback": "gemini"}
 
 
@@ -741,11 +925,10 @@ def _self_test():
             """Fresh box: this config, no guard state, no call history, these probe answers."""
             json.dump(cfg, open(os.path.join(root, "openclaw.json"), "w"))
             shutil.rmtree(os.path.join(root, "memory-guard"), ignore_errors=True)
-            for n in ("calls.log", "seen.log"):
+            for n in ("calls.log", "seen.log", "envs.log", "banner", "hang", "patchmode", "msgmode", "version"):
                 if os.path.exists(os.path.join(d, n)):
                     os.remove(os.path.join(d, n))
-            if os.path.exists(os.path.join(d, "banner")):
-                os.remove(os.path.join(d, "banner"))
+            shutil.rmtree(os.path.join(d, "stray"), ignore_errors=True)
             open(os.path.join(d, "probe"), "w").write(default)
             for f in glob.glob(os.path.join(d, "probe-*")):
                 os.remove(f)
@@ -786,13 +969,16 @@ def _self_test():
         names = lambda o: [(c["provider"], c["model"]) for c in chain_of(o)]
         check("chain = original, nemotron, gemini",
               names({"provider": "ollama", "model": "embeddinggemma-2:740m"}) ==
-              [("ollama", "embeddinggemma-2:740m"), ("openrouter", NEMOTRON["model"]), ("gemini", "gemini-embedding-2")])
+              [("ollama", "embeddinggemma-2:740m"), ("openai", NEMOTRON["model"]), ("gemini", "gemini-embedding-2")])
         check("an original that is already gemini-embedding-2 is not tried twice",
               names({"provider": "gemini", "model": "gemini-embedding-2"}) ==
-              [("gemini", "gemini-embedding-2"), ("openrouter", NEMOTRON["model"])])
+              [("gemini", "gemini-embedding-2"), ("openai", NEMOTRON["model"])])
         check("an original that is already the nemotron option is not tried twice",
-              names({"provider": "openrouter", "model": NEMOTRON["model"]}) ==
-              [("openrouter", NEMOTRON["model"]), ("gemini", "gemini-embedding-2")])
+              names({"provider": "openai", "model": NEMOTRON["model"], "remote": NEMOTRON["remote"]}) ==
+              [("openai", NEMOTRON["model"]), ("gemini", "gemini-embedding-2")])
+        check("the OpenRouter slot lives purely in memory.search: OpenAI-compatible provider, OpenRouter endpoint, env SecretRef",
+              NEMOTRON["provider"] == "openai" and NEMOTRON["remote"]["baseUrl"] == "https://openrouter.ai/api/v1"
+              and NEMOTRON["remote"]["apiKey"] == {"source": "env", "provider": "default", "id": "OPENROUTER_API_KEY"})
 
         # ---- 2. two-slot box (original gemini-embedding-2): the simple key story
         gem = {"provider": "gemini", "model": "gemini-embedding-2"}
@@ -835,24 +1021,27 @@ def _self_test():
         reset(mkcfg(OPENAI_MS), default="ok", openai=DEAD, openrouter="ok")
         cs = run_key()
         m = ms_now()
-        check("original dead -> nemotron chosen", (m["provider"], m["model"]) == ("openrouter", NEMOTRON["model"]))
+        check("original dead -> nemotron chosen", (m["provider"], m["model"]) == ("openai", NEMOTRON["model"]))
+        check("nemotron slot is exactly the OpenRouter endpoint + env SecretRef, no literal key anywhere",
+              m["remote"] == NEMOTRON["remote"] and "SECRET-REMOTE-KEY" not in json.dumps(cfg_now()))
         check("switch is ONE config patch and no client message",
               len(kinds(cs, "config", "patch")) == 1 and not kinds(cs, "message", "send"))
-        check("the old provider's endpoint, credential and vector size are removed",
-              all(k not in m for k in ("remote", "outputDimensionality")))
+        check("the old provider's credential, headers and vector size do not survive the switch",
+              "outputDimensionality" not in m and "headers" not in m["remote"] and "stale-header" not in json.dumps(m))
         check("memory.search.fallback is never edited", m.get("fallback") == "gemini")
         check("memory search stays on", on())
         check("the original is remembered, extras included",
               box().state()["key"]["original"] == {k: OPENAI_MS[k] for k in ("provider", "model", "remote", "outputDimensionality")})
         seen = [json.loads(l) for l in open(os.path.join(d, "seen.log"))]
-        check("the nemotron probe ran with no stale remote and no fallback",
-              any(s.get("provider") == "openrouter" and "remote" not in s and s.get("fallback") == "none" for s in seen))
+        check("the nemotron probe ran on the OpenRouter endpoint with no stale remote key and no fallback",
+              any(s.get("remote") == NEMOTRON["remote"] and s.get("fallback") == "none" and "outputDimensionality" not in s
+                  for s in seen))
         check("the provider switch is logged as a one-time re-index", any("re-indexes once" in l for l in LOG))
 
         cs = run_key()
         check("settled on the backup: no write, no wait", not kinds(cs, "config", "patch") and not slept)
         check("settled on the backup: original is re-tried each night, backup stays",
-              len(kinds(cs, "memory", "status")) == 2 and ms_now()["provider"] == "openrouter")
+              len(kinds(cs, "memory", "status")) == 2 and ms_now()["model"] == NEMOTRON["model"])
 
         answer(openai="ok")
         cs = run_key()
@@ -870,7 +1059,8 @@ def _self_test():
         check("gemini gets no stale remote", "remote" not in m and "outputDimensionality" not in m and on())
         answer(openrouter="ok")
         run_key()
-        check("nemotron recovers -> moved up from gemini", ms_now()["provider"] == "openrouter")
+        check("nemotron recovers -> moved up from gemini",
+              ms_now()["model"] == NEMOTRON["model"] and ms_now()["remote"] == NEMOTRON["remote"])
 
         reset(mkcfg(OPENAI_MS), default=DEAD)
         cs = run_key()
@@ -900,7 +1090,7 @@ def _self_test():
         reset(mkcfg(OPENAI_MS), default="ok", openai=DEAD, openrouter="ok")
         open(os.path.join(d, "banner"), "w").write("1")
         run_key()
-        check("banner lines before the JSON do not hide the verdict", ms_now()["provider"] == "openrouter")
+        check("banner lines before the JSON do not hide the verdict", ms_now()["model"] == NEMOTRON["model"])
 
         # ---- 5. someone else changes the provider, or the default agent has its own
         reset(mkcfg(OPENAI_MS), default="ok", openai=DEAD, openrouter="ok")
@@ -931,6 +1121,125 @@ def _self_test():
         check("back on gemini: multimodal put back, record cleared",
               ms_now()["provider"] == "gemini" and ms_now()["multimodal"]["enabled"] is True
               and mm(c["agents"]["entries"]["dept-a"]) is True and "mm_off" not in box().state()["key"])
+
+        # ---- 6b. a backup that cannot be used at all (no key, unknown provider) is unusable, not "no answer"
+        reset(mkcfg(OPENAI_MS))
+        for text in ('No API key found for provider "google". Auth store: /x/agent.sqlite',
+                     "Unknown memory embedding provider: openrouter",
+                     "openai embedding credentials are not configured for https://openrouter.ai/api/v1. "
+                     "Set memory.search.remote.apiKey or an Authorization header for this destination."):
+            answer(openai="UNCONF:" + text)
+            check("unconfigured: %s" % text[:46], probe(box(), "main", mkcfg(OPENAI_MS))[0] == "unconfigured")
+        answer(openai='UNCONF-STDERR:[secrets] failed to resolve memory.search.remote.apiKey locally '
+                      '(Environment variable "OPENROUTER_API_KEY" is missing or empty.)')
+        check("unconfigured: env variable missing (stderr only)", probe(box(), "main", mkcfg(OPENAI_MS))[0] == "unconfigured")
+        answer(openai="UNCONF:Config invalid: agents.ownership must be explicit")
+        check("a CLI error that is not about keys is not 'unconfigured'", probe(box(), "main", mkcfg(OPENAI_MS))[0] == "transient" or probe(box(), "main", mkcfg(OPENAI_MS))[0] == "none")
+
+        NOKEY = ("openai embedding credentials are not configured for https://openrouter.ai/api/v1. "
+                 "Set memory.search.remote.apiKey or an Authorization header for this destination.")
+        reset(mkcfg(gem), default=DEAD, openrouter="UNCONF:" + NOKEY)
+        cs = run_key()
+        sends = kinds(cs, "message", "send")
+        check("dead primary + unconfigured backup: memory search goes off (it used to keep hammering the dead key)",
+              ms_now().get("enabled") is False and len(kinds(cs, "config", "patch")) == 1)
+        check("... and the client is told once, naming only the key that is really dead",
+              len(sends) == 1 and "(Gemini)" in sends[0][-1] and "OpenRouter" not in sends[0][-1])
+        check("an unconfigured option is not re-probed or waited for (3 probes, one 90 s wait)",
+              len(kinds(cs, "memory", "status")) == 3 and slept == [CONFIRM_DELAY_S])
+
+        reset(mkcfg(gem), default='UNCONF:No API key found for provider "google".')
+        cs = run_key()
+        sends = kinds(cs, "message", "send")
+        check("no usable key anywhere: off, one notice, no waiting (nothing is 'dead', nothing to confirm)",
+              ms_now().get("enabled") is False and len(sends) == 1 and not slept and "no working key" in sends[0][-1])
+
+        reset(mkcfg(OPENAI_MS), default="ok", openai=DEAD, openrouter="UNCONF:" + NOKEY, gemini="ok")
+        run_key()
+        check("dead primary, unconfigured OpenRouter, working Gemini: Gemini is chosen", ms_now()["provider"] == "gemini")
+        reset(mkcfg(OPENAI_MS), default="ok", openai="UNCONF:No API key found for provider \"openai\".", openrouter="ok")
+        run_key()
+        check("a primary that has no key at all falls through to the backup", ms_now()["model"] == NEMOTRON["model"])
+        reset(mkcfg(OPENAI_MS), default="UNCONF:" + NOKEY, openai=BLIP)
+        cs = run_key()
+        check("a transient outage on the primary is not turned into 'all dead' by unconfigured backups",
+              not kinds(cs, "config", "patch") and on() and not kinds(cs, "message", "send"))
+
+        # ---- 6c. every CLI call names the box's state dir and config; a write must land
+        reset(mkcfg(OPENAI_MS), default="ok", openai=DEAD, openrouter="ok")
+        cs = run_key()
+        envs = [json.loads(l) for l in open(os.path.join(d, "envs.log"))]
+        real_cfg = os.path.join(root, "openclaw.json")
+        check("every CLI call carries OPENCLAW_STATE_DIR = the box root", envs and all(e["state"] == root for e in envs))
+        check("the write targets the real config; probes a read-only copy",
+              all((e["cfg"] == real_cfg) == (c[:2] != ["memory", "status"]) for c, e in zip(cs, envs)))
+        check("nothing was created outside the box (the sandbox bug)", not os.path.exists(os.path.join(d, "stray")))
+        reset(mkcfg(OPENAI_MS), default="ok", openai=DEAD, openrouter="ok")
+        open(os.path.join(d, "patchmode"), "w").write("swallow")
+        before = cfg_now()
+        run_key()
+        check("a patch that exits 0 but changes nothing is a FAIL: config, state and 'original' untouched",
+              cfg_now() == before and "original" not in box().state().get("key", {})
+              and any("did not change" in l for l in LOG))
+        os.remove(os.path.join(d, "patchmode"))
+        run_key()
+        check("... and the next night's run does the switch", ms_now()["model"] == NEMOTRON["model"])
+
+        # ---- 6d. the client notice is retried until one send succeeds
+        reset(mkcfg(gem), default=DEAD)
+        open(os.path.join(d, "msgmode"), "w").write("fail")
+        cs = run_key()
+        check("send failed: memory search is off, notice not recorded",
+              ms_now().get("enabled") is False and "notified" not in box().state()["key"] and len(kinds(cs, "message", "send")) == 1)
+        cs = run_key()
+        check("still failing next night: tried again", len(kinds(cs, "message", "send")) == 1 and "notified" not in box().state()["key"])
+        os.remove(os.path.join(d, "msgmode"))
+        cs = run_key()
+        check("a later night's send succeeds and is recorded", len(kinds(cs, "message", "send")) == 1 and box().state()["key"].get("notified"))
+        cs = run_key()
+        check("... and then never again for the same episode", not kinds(cs, "message", "send"))
+        c = mkcfg(gem); c["channels"] = {"telegram": {"allowFrom": ["5252140759"]}}  # operator chat only = no client chat
+        reset(c, default=DEAD)
+        cs = run_key()
+        check("no client chat: nothing sent, not recorded", not kinds(cs, "message", "send") and "notified" not in box().state()["key"])
+        c = cfg_now(); c["channels"] = {"telegram": {"allowFrom": ["123456789"]}}
+        json.dump(c, open(os.path.join(root, "openclaw.json"), "w"))
+        cs = run_key()
+        check("chat appears later: sent exactly once", len(kinds(cs, "message", "send")) == 1 and box().state()["key"].get("notified"))
+
+        # ---- 6e. provider error text never stores or prints key-like strings
+        MASK = ("Incorrect API key provided: sk-abcd1234efgh***wxyz1234. AIzaSyA1234567890abcdefghijklmnopqrstuv "
+                "is not valid (401)")
+        reset(mkcfg(gem), default=MASK)
+        run_key()
+        stored = open(os.path.join(root, "memory-guard", "state.json")).read()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            status(box())
+        check("state.json and `status` hold no key-like text",
+              all(x not in stored + buf.getvalue() for x in ("sk-abcd", "AIzaSyA", "wxyz1234")))
+        check("... but the verdict text is still readable", "Incorrect API key provided" in stored)
+
+        # ---- 6f. the default agent is the one OpenClaw would pick
+        mk = lambda ents, **ag: {"agents": dict(ag, entries=ents)}
+        check("default: agents.defaults.systemAgent.agentId wins",
+              default_agent_id(mk({"a": {}, "ceo": {}}, defaults={"systemAgent": {"agentId": "CEO"}})) == "ceo")
+        check("default: the single default:true marker", default_agent_id(mk({"a": {}, "b": {"default": True}})) == "b")
+        check("default: explicit ownership ignores markers", default_agent_id(mk({"b": {"default": True}, "main": {}, "c": {}}, ownership="explicit")) == "main")
+        check("default: the only agent", default_agent_id(mk({"solo": {}})) == "solo")
+        check("default: no entries -> main", default_agent_id(mk({})) == "main")
+        check("default: two markers and no main cannot be told", default_agent_id(mk({"a": {"default": True}, "b": {"default": True}})) is None)
+        check("default: several agents, no main, no marker cannot be told", default_agent_id(mk({"a": {}, "b": {}})) is None)
+        c = mk({"ceo": {"default": True}, "w1": {}}); c["memory"] = {"search": dict(gem)}
+        reset(c, default="ok")
+        cs = run_key()
+        probes_ = kinds(cs, "memory", "status")
+        check("probe runs for the configured default agent, not the first entry or main",
+              probes_ and probes_[0][probes_[0].index("--agent") + 1] == "ceo")
+        c = mk({"a": {}, "b": {}}); c["memory"] = {"search": dict(gem)}
+        reset(c, default=DEAD)
+        cs = run_key()
+        check("default agent cannot be told: key check skipped, no call", not cs and any("cannot tell which agent" in l for l in LOG))
 
         # ---- 7. idle pass
         idle_cfg = {
@@ -967,6 +1276,121 @@ def _self_test():
         check("worker back on after new activity", "enabled" not in agent_search(e["dept-sleepy"]))
         check("guard state cleared after re-enable", not box().state()["idle"]["disabled"])
 
+        # ---- 7b. unreadable activity records must never read as "idle"
+        def mkdb(aid, created, valid=True, table="transcript_events"):
+            p = os.path.join(root, "agents", aid, "agent")
+            os.makedirs(p, exist_ok=True)
+            dbp = os.path.join(p, "openclaw-agent.sqlite")
+            if os.path.exists(dbp):
+                os.remove(dbp)
+            if valid:
+                with sqlite3.connect(dbp) as c:
+                    c.execute("create table %s(created_at integer)" % table)
+                    c.execute("insert into %s values (?)" % table, (int(created * 1000),))
+            else:
+                open(dbp, "wb").write(b"this is not a sqlite database" * 20)
+            os.utime(os.path.join(root, "agents", aid), (created, created))  # directory looks old too
+            os.utime(p, (created, created))
+
+        sick_cfg = {"memory": {"search": {"provider": "gemini", "model": "gemini-embedding-2"}},
+                    "agents": {"defaults": {}, "entries": {"main": {}, "dept-corrupt": {}, "dept-notable": {},
+                                                          "dept-fine-old": {}, "dept-owned": {}}}}
+        reset(sick_cfg)
+        mkdb("dept-corrupt", old, valid=False)  # busy, but its records are unreadable and its folder looks old
+        mkdb("dept-notable", old, table="something_else")
+        mkdb("dept-fine-old", old)
+        mkdb("dept-owned", old)
+        idle_pass(box())
+        e = entries(cfg_now())
+        check("corrupt activity database: the worker is left on", agent_search(e["dept-corrupt"]).get("enabled") is not False)
+        check("database without the transcript table: the worker is left on", agent_search(e["dept-notable"]).get("enabled") is not False)
+        check("a healthy idle worker is still turned off in the same run", agent_search(e["dept-fine-old"]).get("enabled") is False)
+        check("each skipped worker is logged", sum("left unchanged this run, cannot read" in l for l in LOG) == 2)
+        check("skipped workers are not recorded as guard-disabled", set(box().state()["idle"]["disabled"]) == {"dept-fine-old", "dept-owned"})
+        mkdb("dept-owned", old, valid=False)
+        idle_pass(box())
+        e = entries(cfg_now())
+        check("a worker the guard already turned off stays off (and recorded) when its records cannot be read",
+              agent_search(e["dept-owned"]).get("enabled") is False and "dept-owned" in box().state()["idle"]["disabled"])
+        mkdb("dept-owned", recent)
+        idle_pass(box())
+        check("... and comes back when its records are readable and show activity",
+              "enabled" not in agent_search(entries(cfg_now())["dept-owned"]))
+
+        # the state database: cron runs and task runs count as activity; a read error there is still not "idle"
+        sdb = os.path.join(root, "state", "openclaw.sqlite")
+        state_cfg = {"memory": {"search": {"provider": "gemini", "model": "gemini-embedding-2"}},
+                     "agents": {"defaults": {}, "entries": {"main": {}, "dept-cron": {}, "dept-quiet": {}}}}
+        mkdb("dept-cron", old)
+        mkdb("dept-quiet", old)
+        reset(state_cfg)
+        with sqlite3.connect(sdb) as c:
+            c.execute("create table task_runs(agent_id text, created_at integer)")
+            c.execute("create table cron_run_receipts(agent_id text, started_at_ms integer)")
+            c.execute("insert into cron_run_receipts values (?, ?)", ("dept-cron", int((now - 3600) * 1000)))
+        idle_pass(box())
+        e = entries(cfg_now())
+        check("a worker with old transcripts but a recent cron run stays on", agent_search(e["dept-cron"]).get("enabled") is not False)
+        check("a worker with nothing anywhere is turned off", agent_search(e["dept-quiet"]).get("enabled") is False)
+        os.remove(sdb)
+        open(sdb, "wb").write(b"this is not a sqlite database" * 20)
+        reset(state_cfg)
+        idle_pass(box())
+        e = entries(cfg_now())
+        check("state database unreadable: no worker is switched off on a guess",
+              all(agent_search(e[a]).get("enabled") is not False for a in ("dept-cron", "dept-quiet"))
+              and sum("cannot read its activity" in l for l in LOG) == 2)
+        os.remove(sdb)
+
+        class Boom(Box):
+            def log(self, msg):
+                if "re-indexes once" in msg or " off (last activity" in msg:
+                    raise RuntimeError("killed right after the write")
+                Box.log(self, msg)
+
+        reset(mkcfg(OPENAI_MS), default="ok", openai=DEAD, openrouter="ok")
+        try:
+            key_pass(Boom(root, cli=cli, now=now, log=LOG), sleep=slept.append)
+        except RuntimeError:
+            pass
+        check("key check: state is on disk the moment the write lands (a kill right after loses nothing)",
+              box().state().get("key", {}).get("original", {}).get("model") == "text-embedding-3-small")
+        reset(sick_cfg)
+        try:
+            idle_pass(Boom(root, cli=cli, now=now, log=LOG))
+        except RuntimeError:
+            pass
+        check("idle check: state is on disk the moment the write lands", "dept-fine-old" in box().state().get("idle", {}).get("disabled", {}))
+
+        # ---- 7c. a run always ends inside the cron's timeout
+        check("budget is under the 600 s cron command timeout", TOTAL_BUDGET_S <= 560 and PROBE_TIMEOUT_S * 2 + CONFIRM_DELAY_S < TOTAL_BUDGET_S)
+        reset(mkcfg(gem))
+        open(os.path.join(d, "hang"), "w").write("30")
+        t0 = time.time()
+        rc_, _, err_ = Box(root, cli=cli, now=now, log=LOG, deadline=time.time() + 4).run_cli(["memory", "status"], timeout=60)
+        check("a CLI call is cut off at the time budget, not at its own timeout", rc_ == 124 and time.time() - t0 < 15)
+        os.remove(os.path.join(d, "hang"))
+        reset(mkcfg(gem), default=DEAD)
+        del slept[:]
+        key_pass(Box(root, cli=cli, now=now, log=LOG, deadline=time.time() - 1), sleep=slept.append)
+        check("budget used up: nothing changes, no message", not kinds(calls(), "config", "patch") and not kinds(calls(), "message", "send") and on())
+        reset(mkcfg(gem), default=DEAD)
+        del slept[:]
+        key_pass(Box(root, cli=cli, now=now, log=LOG, deadline=time.time() + 120), sleep=slept.append)
+        check("a dead verdict is not acted on when its confirmation would not fit the budget",
+              not slept and on() and not kinds(calls(), "config", "patch") and any("too little of the time budget" in l for l in LOG))
+
+        # ---- 7d. root is refused
+        reset(mkcfg(gem), default=DEAD)
+        real_euid, buf = os.geteuid, io.StringIO()
+        os.geteuid = lambda: 0
+        try:
+            with contextlib.redirect_stdout(buf):
+                rc_ = main(["run"])
+        finally:
+            os.geteuid = real_euid
+        check("run as root: exit 2, REFUSED, no CLI call at all", rc_ == 2 and "REFUSED" in buf.getvalue() and not calls())
+
         # ---- 8. older config shape and older OpenClaw: skipped, untouched
         legacy = {"agents": {"list": [{"id": "main"}], "defaults": {"memorySearch": {"enabled": True}}}}
         reset(legacy)
@@ -998,7 +1422,8 @@ def main(argv):
     if not os.path.exists(os.path.join(root, "openclaw.json")) and not os.environ.get("OPENCLAW_CONFIG_PATH"):
         print("[memory-guard] SKIPPED: no openclaw.json under %s" % root)
         return 0
-    box = Box(root, cli=os.environ.get("OPENCLAW_BIN", "openclaw"), dry_run=a.dry_run)
+    deadline = time.time() + TOTAL_BUDGET_S  # one budget for the whole run, shared by both checks
+    box = Box(root, cli=os.environ.get("OPENCLAW_BIN", "openclaw"), dry_run=a.dry_run, deadline=deadline)
     try:
         if a.cmd == "status":
             return status(box)
@@ -1008,7 +1433,7 @@ def main(argv):
         if a.cmd in ("run", "key"):
             rc |= key_pass(box)
         if a.cmd in ("run", "idle"):
-            box = Box(root, cli=box.cli, dry_run=a.dry_run)  # re-read config after any key write
+            box = Box(root, cli=box.cli, dry_run=a.dry_run, deadline=deadline)  # re-read config after any key write
             rc |= idle_pass(box, a.days)
         return rc
     except Exception as exc:  # report, never crash silently
