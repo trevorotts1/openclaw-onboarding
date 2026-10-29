@@ -1023,6 +1023,7 @@ Evidence only. No runtime, installer, schema or provider behaviour changes; the 
 
 - `evidence/storage-and-resource-receipt.json` (new, repo root): 11 clauses and 8 explicit unknowns, each clause carrying the exact command, exit code and raw output that produced it.
 - Mount identity: `<PATH>` is a live external APFS USB mount on `/dev/disk7s1`, `st_dev 16777244`, and its IOMedia UUID `9584F366-F6FB-4A40-AA75-DB2EA0FA01EA` equals the pinned value.
+- Mount identity: `/Volumes/mac mini m4` is a live external APFS USB mount on `/dev/disk7s1`, `st_dev 16777244`, and its IOMedia UUID `9584F366-F6FB-4A40-AA75-DB2EA0FA01EA` equals the pinned value.
 - Recorded device pin is stale: `config/storage.json` still says `/dev/disk5s1` / `16777240`, and `tools/control.py` never reads either key (0 matches, control `minimum_free_bytes` = 1). Identity is anchored by UUID, so this is a stale record, not a wrong volume.
 - Destinations: all configured worktree, scratch, temp, cache and output parents resolve with no symlink component on the mount device.
 - Child propagation: `TMPDIR`/`TMP`/`TEMP` reach a distinct child shell (PID 86707), a Python child and its grandchild, and Node; the real temp file's parent and device match the mount.
