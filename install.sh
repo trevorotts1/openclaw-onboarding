@@ -875,7 +875,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 6 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/83-... (78 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/83-... (78 skills; numbers 11, 13, 21, 33 and 34 were retired and are not installed).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -3970,6 +3970,14 @@ send_telegram_progress "📦 Extracted onboarding package. ${SKILL_COUNT} skills
 step "Step 5: Installing Skills"
 
 mkdir -p "$SKILLS_DIR"
+
+# Retired NN-name-ARCHIVED skill folders are never installed (the repo no longer ships
+# them). A re-install over an older box also moves any copy an earlier roll left behind to
+# <root>/retired-skills/, because OpenClaw logs an error on every skills rescan for each folder it cannot load.
+if [ -f "$ONBOARDING_DIR/scripts/remove-archived-skills.sh" ]; then
+    bash "$ONBOARDING_DIR/scripts/remove-archived-skills.sh" "$SKILLS_DIR" \
+        || warn "Could not move every retired skill folder out of $SKILLS_DIR (non-fatal; update-skills.sh retries on each roll)"
+fi
 
 for SKILL_DIR in "$ONBOARDING_DIR"/[0-9]*/; do
     [ -d "$SKILL_DIR" ] || continue

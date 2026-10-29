@@ -494,7 +494,7 @@ Reference: https://docs.openclaw.ai and https://github.com/openclaw/openclaw
 This skill consolidates what were previously three separate skills:
 - **Former Skill 33 (Department Heads)** - workspace creation, SOUL.md generation, agents.list entries
 - **Former Skill 34 (Intelligent Staffing)** - specialist determination (permanent vs on-call)
-- Both are now archived as 33-department-heads-ARCHIVED and 34-intelligent-staffing-ARCHIVED
+- Both are retired and no longer shipped or installed (they are listed in docs/archived-skill-tombstones.json)
 
 ## Connection to Skill 22 (Book-to-Persona Coaching Leadership System)
 

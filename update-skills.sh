@@ -5440,6 +5440,25 @@ main() {
   ONBOARDING_DIR="$EXTRACTED_DIR"
   export ONBOARDING_DIR
 
+  # MOVE RETIRED "NN-name-ARCHIVED" SKILL FOLDERS OUT OF THIS BOX'S SKILLS FOLDER, ON EVERY ROLL.
+  # OpenClaw rescans the skills folder constantly and logs an error for each folder
+  # it cannot load (a retired skill's SKILL.md has no description: 234 errors per
+  # folder in 13 hours on one client box). The repo no longer ships them; this
+  # moves the copies older rolls left behind to <root>/retired-skills/ (the same
+  # destination and naming as the retire block below; never deleted, never
+  # overwritten). It sits HERE, before the CONTENT RECHECK early exit and outside
+  # the per-version .wired-<version> sentinel, so a content-current re-roll moves
+  # them too. Only exact ^[0-9]+-.*-ARCHIVED$ directories inside $SKILLS_DIR are
+  # touched; non-fatal; idempotent.
+  # Mac ~/.openclaw/skills, VPS /data/.openclaw/skills, Contabo /home/node/.openclaw/skills
+  # all arrive here through discover_skills_dir -> $SKILLS_DIR.
+  if [ -f "$EXTRACTED_DIR/scripts/remove-archived-skills.sh" ]; then
+    bash "$EXTRACTED_DIR/scripts/remove-archived-skills.sh" "$SKILLS_DIR" \
+      || echo "  ⚠ retired-skill folder cleanup incomplete (non-fatal); see the lines above" >&2
+  else
+    echo "  ⚠ scripts/remove-archived-skills.sh not in this bundle; retired skill folders not cleaned (non-fatal)" >&2
+  fi
+
   # Skill 75 lip-sync prerequisites (mediapipe/opencv/numpy + face_landmarker.task).
   # Same shared module install.sh sources, so a fresh box and every fleet roll
   # run IDENTICAL ensure logic. Sourced here (inside main, after the extracted
