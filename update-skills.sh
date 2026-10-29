@@ -631,12 +631,40 @@ EOF
 # configure-operator-telegram.sh) → operator account/session. If unset, we
 # LOG-ONLY (no send) rather than fall back to any owner/allowFrom chat.
 TELEGRAM_LAST_RESULT=""
+
+# BIG FLEET ROLL 2026-10 (open item 10): under a roll the roll's WATCHER fixes a broken
+# box and Rescue Rangers is not involved, yet OPERATOR_ESCALATION_CHAT_ID can be the
+# Rescue Rangers group, so this note would wake a paid agent. scripts/self-update.sh
+# exports SELF_UPDATE_ROLL_ID and SELF_UPDATE_RUN_ID (ap-*) to everything it runs; when
+# either is set the note is HELD, never sent.
+_oc_under_roll() {
+  [ -n "${SELF_UPDATE_ROLL_ID:-}" ] && return 0
+  case "${SELF_UPDATE_RUN_ID:-}" in ap-*) return 0 ;; esac
+  return 1
+}
+
 send_telegram_progress() {
   local message="$1"
   local OCJSON="$HOME/.openclaw/openclaw.json"
   [ -d "/data/.openclaw" ] && OCJSON="/data/.openclaw/openclaw.json"
   local OPERATOR_CHAT=""
   TELEGRAM_LAST_RESULT="skipped"
+
+  # Under a roll: send NOTHING to any chat. Write the note where self-update.sh
+  # surfaces it (the status file's error_tail / stuck_reason) and to the log, so the
+  # watcher sees it instead.
+  if _oc_under_roll; then
+    local _held="${SELF_UPDATE_ESCALATION_FILE:-}"
+    if [ -n "$_held" ]; then
+      ( umask 077; printf '%s\n' "$message" > "$_held" ) 2>/dev/null || _held=""
+    fi
+    {
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] update-result notification HELD under roll ${SELF_UPDATE_ROLL_ID:-$SELF_UPDATE_RUN_ID} -- NOT sent to the operator escalation chat or any other chat; the roll watcher reads it from the status file${_held:+ ($_held)}:"
+      printf '%s\n' "$message"
+    } >> "$LOG_FILE" 2>&1
+    TELEGRAM_LAST_RESULT="held-for-roll-watcher"
+    return 0
+  fi
 
   if ! command -v openclaw >/dev/null 2>&1; then
     TELEGRAM_LAST_RESULT="no-openclaw-cli"
@@ -12921,6 +12949,7 @@ Paste this to your agent:
   case "$TELEGRAM_LAST_RESULT" in
     sent-operator:*)        echo "  ✓ Update-result note sent to OPERATOR chat ${TELEGRAM_LAST_RESULT#sent-operator:} (not the client)" ;;
     logged-no-operator-chat) echo "  ℹ Update-result note LOG-ONLY (no operator escalation chat configured) — agent picks up the AGENTS.md UPDATE PENDING flag; client is NOT auto-notified" ;;
+    held-for-roll-watcher)  echo "  ℹ Update-result note HELD (running under a roll) — NOT sent to any chat; the roll watcher reads it from the status file; agent picks up the AGENTS.md UPDATE PENDING flag" ;;
     no-openclaw-cli)        echo "  ⚠ Update-result note skipped -- openclaw CLI not on PATH (Terminal backup block below)" ;;
     failed-operator:*)      echo "  ⚠ Update-result operator send FAILED -- see $LOG_FILE (NOT routed to client; Terminal backup block below)" ;;
   esac
