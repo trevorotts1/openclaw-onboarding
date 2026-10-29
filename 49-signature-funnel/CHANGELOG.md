@@ -1,5 +1,12 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## v2.1.27 - 2026-10-26 - oct-25 fix batch: l09-l12 launch-plan, dispatch and role-wrapper hardening
+
+- `scripts/launch_plan.py` (l09): launch plans reject non-web access URLs, honour no-delivery plans, and reject parse-mismatch access URLs; `check()` tests tightened to the same contract.
+- `scripts/dispatch_launch.py`, `scripts/page_swarm.py` (l10): adapters carried in the launch request are executed (a build can emit without Skill 71), and the adapter config fails closed on a bad shape with entry negative tests.
+- `role_wrappers.py` (l11): the consumed delivery node is bound to the request's page, and the declared instance is keyed on the node's page_type (QC on finding 11).
+- `LAUNCH_MODE.md`, `prompt-policy-adoption.json` (l12): launcher docs regenerated from the real pin list and adoption state; the pin-paragraph test tracks the shell chain exactly and the adoption evidence carries ratification status.
+
 ## v2.1.18 - 2026-10-20 - batch: a zero-image run is FAILED (Skill 71 1.3.4)
 
 - `scripts/checkout_wrapper.py` passes `--validation-only` to Skill 71 `shared_page_service.py`: that call is the admission seam only, and the stages that follow generate. Skill 71 now FAILS a generation run that produced no images.

@@ -30,6 +30,14 @@
 - In plain English: installs on boxes that sit behind Cloudflare sign-in stop being marked "degraded" for a check that could never pass from the box itself, and a box that really is missing its registration or persona setup still fails, now with the exact missing items named.
 - Risk level: LOW. The only new network call is to this box's own loopback port, and only after the public host has answered with its own Access login redirect.
 
+## [Unreleased]  -  2026-10-26  -  oct-25 release-hygiene batch: pins, stamps, README and changelog for l01-l19, l25-l27 + the KIE prompt gate fix
+
+- Release-hygiene closing entry for the oct-25 fix batch already merged through the lane trains and PR #2592: l01-l08 (Skill 71 install/preflight/handoff/intake), l09-l12 (Skill 49 launch plan/dispatch/role wrappers), l13-l19 (Skill 06 maintenance crons and QC gates), l25-l27 (Skill 83 verify, packaging and docs), plus the KIE prompt gate fix 7908c5472 (script_writer raw-retention declared as a rule-12 gate). Each unit's own behavior is recorded in its skill CHANGELOG; this entry closes the batch bookkeeping.
+- In plain English: the work from the oct-25 fix batch is now fully recorded - the repo version, the four skill changelogs (71, 49, 06, 75), and Skill 06's README/INSTALL now document the maintenance-cron subsystem (aggregate installer, lib-cron-presence.sh, four cron installers, reaper-schedule check) that l13-l19 shipped without docs.
+- Skill stamps reconciled: 06 SKILL.md `metadata.version` v27.1.74 -> v27.1.77 to rejoin the repo-locked pair (06's own check-version-drift.py exits 0 again; the oct-25 batch bumped only `skill-version.txt` to v27.1.76). Changelog-entry bumps by the batch-prep lockstep: 71 1.3.11, 49 v2.1.27, 75 v2.9.118, 06 v27.1.77; 83 stays 0.2.11 (untouched here).
+- Batch note (2026-10-29): Skill 75's v2.9.119 entry (the KIE prompt gate fix, already on main as 7908c5472) is not re-added to Skill 75's CHANGELOG. Main's Skill 75 is at v2.9.134, and a changelog-only edit there would need a G3 skill-version bump for no behavior change.
+- Risk level: LOW - release-hygiene bookkeeping and docs only; no behavior change beyond the already-merged lanes.
+
 ## [Unreleased]  -  2026-10-26  -  Skill 75 batch merge: 13 units from wave-2 and wave-3 consolidated into one branch
 
 - Lands the 13 accepted S75 units on one branch, `batch/s75-all-13`, instead of two separately-refreshing wave branches, because each wave refresh restarted the 18-22 minute gate suite while `main` moved and neither wave could land.
