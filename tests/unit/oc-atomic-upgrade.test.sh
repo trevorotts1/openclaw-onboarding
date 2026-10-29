@@ -470,7 +470,16 @@ cfg = json.load(open(sys.argv[1], encoding="utf-8"))
 e = ((cfg.get("plugins") or {}).get("entries") or {}).get(sys.argv[2])
 sys.exit(0 if isinstance(e, dict) and e.get("enabled") is not False else 1)
 PYEOF
-  chmod +x "$dir/openclaw" "$dir/npm" "$dir/launchctl" "$dir/docker" "$dir/hostname" "$dir/curl" "$dir/node" "$dir/ps" "$dir/lsof"
+  # flock: a Linux host has it and macOS does not, so the script's lease takes a different branch on each (`exec 9<>lease`
+  # plus `flock -n 9`). Every box here gets a flock that grants (refuses `-n` while $state/flock_busy exists), so the suite
+  # runs the LINUX lease path on a Mac too. Calls go to $state/flock_calls, not events (several cases count and order events).
+  cat > "$dir/flock" <<EOF
+#!/bin/bash
+echo "flock \$*" >> "$state/flock_calls"
+[ "\${1:-}" = "-n" ] && [ -f "$state/flock_busy" ] && exit 1     # another process holds the lock
+exit 0
+EOF
+  chmod +x "$dir/openclaw" "$dir/npm" "$dir/launchctl" "$dir/docker" "$dir/hostname" "$dir/curl" "$dir/node" "$dir/ps" "$dir/lsof" "$dir/flock"
 }
 
 # write_supervisor <home> <node> <prefix> <version>
@@ -1689,6 +1698,98 @@ if [ "$RCPL" -eq 0 ] && grep -q 'ORPHAN\|orphan gateway' <<<"$OUTPL" && grep -q 
   pass "Bplan: --dry-run lists the orphan reap, the plugin quarantine, the held npm window and the isolated validate, and ran no stop/install/doctor"
 else
   fail "Bplan: rc=$RCPL. Output: $OUTPL"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (B-lease) on a host WITH flock the lease must not silence stderr for the rest of the run ---"
+# A bare `exec 9<>"$OC_LEASE_PATH" 2>/dev/null` applies its 2>/dev/null to the WHOLE script (an exec with only redirections is
+# permanent), so on Linux every later _err line and refusal banner - each rollback reason - vanished from the log, and B24j
+# failed in CI only. make_stubs puts a flock on PATH so a Mac takes the same branch. The real script finds
+# scripts/box-update-lock.sh beside it and uses that lease instead, so these cases run copies that sit beside the engine files
+# only (mutate_copy), which take the inline flock branch. CONTROL = the shipped lease lines; each MUTANT puts back ONE old line.
+LF1='{ exec 9<>"$OC_LEASE_PATH"; } 2>/dev/null || return 1'
+LO1='exec 9<>"$OC_LEASE_PATH" 2>/dev/null || return 1'
+LF2='if ! flock -n 9 2>/dev/null; then
+      { exec 9>&-; } 2>/dev/null || true'
+LO2='if ! flock -n 9 2>/dev/null; then
+      exec 9>&- 2>/dev/null || true'
+LF3='flock -u 9 2>/dev/null || true
+      { exec 9>&-; } 2>/dev/null || true'
+LO3='flock -u 9 2>/dev/null || true
+      exec 9>&- 2>/dev/null || true'
+LCTL="$(mutate_copy bfl-ctl "$LF1" "$LF1")"
+LMU1="$(mutate_copy bfl-mut1 "$LF1" "$LO1")"
+LMU2="$(mutate_copy bfl-mut2 "$LF2" "$LO2")"
+LMU3="$(mutate_copy bfl-mut3 "$LF3" "$LO3")"
+
+# lease_case <tag> <script> [busy] -> output; rc in RCL. The schema probe fails, so the run is refused AFTER the lease is
+# taken and the only thing that says why is an _err line (the case-6 scenario). With "busy" the flock stub refuses -n.
+lease_case() {
+  local tag="$1" script="$2" busy="${3:-}" h s st
+  h="$(make_box "bl$tag" clean)"; s="$SANDBOX/stubsbl$tag"; st="$SANDBOX/statebl$tag"
+  make_stubs "$s" "$st" versioned 1
+  [ -z "$busy" ] || touch "$st/flock_busy"
+  run_atomic "$h" "$s" "$st" "$script"
+}
+
+OUTLA="$(lease_case a "$LCTL")"; RCLA=$?
+if [ -n "$LCTL" ] && [ "$RCLA" -eq 78 ] && grep -qx 'flock -n 9' "$SANDBOX/statebla/flock_calls" 2>/dev/null \
+   && grep -q 'flock + record' <<<"$OUTLA" && grep -q 'ERROR ROLLING BACK: `openclaw config schema` FAILED' <<<"$OUTLA" \
+   && [ "$(grep -n 'flock + record' <<<"$OUTLA" | head -1 | cut -d: -f1)" -lt "$(grep -n 'ERROR ROLLING BACK' <<<"$OUTLA" | head -1 | cut -d: -f1)" ]; then
+  pass "B-lease a: flock was used (flock -n 9) and the rollback reason logged AFTER the lease was taken reached the output (rc=78)"
+else
+  fail "B-lease a: rc=$RCLA flock_calls=$(tr '\n' '|' < "$SANDBOX/statebla/flock_calls" 2>/dev/null). Output: $OUTLA"
+fi
+OUTLB="$(lease_case b "$LMU1")"; RCLB=$?
+if [ -n "$LMU1" ] && [ "$RCLB" -eq 78 ] && grep -q 'flock + record' <<<"$OUTLB" && grep -q 'rollback complete and VERIFIED' <<<"$OUTLB" \
+   && ! grep -q 'ERROR ROLLING BACK' <<<"$OUTLB"; then
+  pass "B-lease b: MUTATION PROOF - with the old 'exec 9<>lease 2>/dev/null' the same run rolls back (stdout) but the reason is GONE from the log"
+else
+  fail "B-lease b: the mutant did not reproduce the defect (mutant=${LMU1:-none}, rc=$RCLB). Output: $OUTLB"
+fi
+
+OUTLC="$(lease_case c "$LCTL" busy)"; RCLC=$?
+if [ "$RCLC" -eq 78 ] && grep -q 'UPGRADE REFUSED' <<<"$OUTLC" && grep -q 'SHARED INSTALLATION LEASE is held' <<<"$OUTLC" \
+   && ! grep -q 'installing openclaw@' <<<"$OUTLC"; then
+  pass "B-lease c: a busy flock refuses (rc=78) and the refusal banner reaches the output; nothing was installed"
+else
+  fail "B-lease c: rc=$RCLC. Output: $OUTLC"
+fi
+OUTLD="$(lease_case d "$LMU2" busy)"; RCLD=$?
+if [ -n "$LMU2" ] && [ "$RCLD" -eq 78 ] && ! grep -q 'UPGRADE REFUSED' <<<"$OUTLD"; then
+  pass "B-lease d: MUTATION PROOF - with the old 'exec 9>&- 2>/dev/null' on the busy path the refusal banner is swallowed"
+else
+  fail "B-lease d: the mutant did not reproduce the defect (mutant=${LMU2:-none}, rc=$RCLD). Output: $OUTLD"
+fi
+
+# A live foreign updater already named in the lease: flock grants, the record says someone else owns it -> refuse. Pinned, because
+# an unpinned run stands down earlier (the cron guard) and never reaches the acquire.
+lease_foreign_case() {
+  local tag="$1" script="$2" h s st sp
+  h="$(make_box "bl$tag" clean)"; s="$SANDBOX/stubsbl$tag"; st="$SANDBOX/statebl$tag"
+  make_stubs "$s" "$st" versioned 1
+  sleep 300 >/dev/null 2>&1 & sp=$!; echo "$sp" >> "$st/spawned.pids"
+  printf 'pid=%s\nrole=oc-atomic-upgrade\n' "$sp" > "$SANDBOX/lease-foreign-$tag"
+  touch "$st/loaded_ai.openclaw.gateway"
+  HOME="$h" PATH="$s:/usr/bin:/bin:/usr/sbin:/sbin" OPENCLAW_UPDATE_LEASE="$SANDBOX/lease-foreign-$tag" \
+    OC_ATOMIC_QUIESCE_PROOF_SECONDS=1 OC_ATOMIC_STABILITY_SECONDS=1 \
+    bash "$script" --upgrade --target-version "$NEW_V" 2>&1
+  local rc=$?
+  kill "$sp" 2>/dev/null
+  return $rc
+}
+OUTLE="$(lease_foreign_case e "$LCTL")"; RCLE=$?
+if [ "$RCLE" -eq 78 ] && grep -q 'UPGRADE REFUSED' <<<"$OUTLE" && grep -q 'SHARED INSTALLATION LEASE is held' <<<"$OUTLE"; then
+  pass "B-lease e: a live foreign owner in the lease refuses the run (rc=78) and the banner reaches the output"
+else
+  fail "B-lease e: rc=$RCLE. Output: $OUTLE"
+fi
+OUTLF="$(lease_foreign_case f "$LMU3")"; RCLF=$?
+if [ -n "$LMU3" ] && [ "$RCLF" -eq 78 ] && ! grep -q 'UPGRADE REFUSED' <<<"$OUTLF"; then
+  pass "B-lease f: MUTATION PROOF - with the old 'exec 9>&- 2>/dev/null' on the foreign-owner path the refusal banner is swallowed"
+else
+  fail "B-lease f: the mutant did not reproduce the defect (mutant=${LMU3:-none}, rc=$RCLF). Output: $OUTLF"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oc-atomic-upgrade.sh — v1.2.0
+# oc-atomic-upgrade.sh — v1.2.1
 #
 # THE ONLY SAFE WAY TO MOVE A BOX ONTO A NEW OPENCLAW BUILD.
 #
@@ -198,7 +198,7 @@
 
 set -uo pipefail
 
-VERSION="1.2.0"
+VERSION="1.2.1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIGRATOR="$SCRIPT_DIR/oc-schema-migrate.py"
 SUP_HELPER="$SCRIPT_DIR/oc-supervisor-install.py"
@@ -654,14 +654,17 @@ _lease_acquire() {
   fi
 
   if command -v flock >/dev/null 2>&1; then
-    exec 9<>"$OC_LEASE_PATH" 2>/dev/null || return 1
+    # `exec` with ONLY redirections applies every one of them to the whole script, so a bare `exec 9<>f 2>/dev/null`
+    # sends stderr to /dev/null for the rest of the run and every later _err line (each rollback reason) vanishes.
+    # Group the exec so the 2>/dev/null covers only its own failure message; fd 9 still stays open.
+    { exec 9<>"$OC_LEASE_PATH"; } 2>/dev/null || return 1
     if ! flock -n 9 2>/dev/null; then
-      exec 9>&- 2>/dev/null || true
+      { exec 9>&-; } 2>/dev/null || true
       return 3
     fi
     if _lease_owner_live; then
       flock -u 9 2>/dev/null || true
-      exec 9>&- 2>/dev/null || true
+      { exec 9>&-; } 2>/dev/null || true
       return 3
     fi
     _lease_write_own "${RUN_ID:-oc-atomic-$$}" || return 1
