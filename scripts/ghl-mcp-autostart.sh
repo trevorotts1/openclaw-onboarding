@@ -659,6 +659,12 @@ _ghl_ret_archive_secret_scan() {
        2>/dev/null | grep -q .; then
     return 1
   fi
+  # 1b. No env-file shape may survive the tar excludes into the tree. Scoped to
+  #     tree/: supervisor/ legitimately carries the delivered ghl-mcp-pin.env.
+  if find "$d/tree" -type f \( -name '.env' -o -name '.env.*' -o -name '*.env' \
+       -o -name '*.env.bak*' -o -name '.env.bak-*' \) 2>/dev/null | grep -q .; then
+    return 1
+  fi
   # 2. No live secret VALUE may appear anywhere in the archived bytes.
   while IFS= read -r val; do
     [ -n "$val" ] || continue
@@ -684,11 +690,18 @@ _ghl_ret_archive() {
 
   if [ -d "$src" ]; then
     command -v tar >/dev/null 2>&1 || return 1
+    # Every env-file SHAPE stays out of the archive, not just the two exact
+    # names: a client's own backup (.env.bak-<ts>, .env.production, prod.env,
+    # x.env.bak2) holds the live key, and archiving it made the secret scan
+    # below refuse every retirement (Big Fleet Roll 20261029). tar only reads:
+    # the files stay exactly where the client put them. The scan keeps these
+    # five shapes in step (check 1b) and still guards every other byte.
     payload="$dest/community-mcp.tar"
     ( cd "$src" && tar -cf "$payload" \
         --exclude 'node_modules' --exclude '*/node_modules' --exclude './node_modules' \
         --exclude '*node_modules*' \
         --exclude '.env' --exclude './.env' --exclude '.ghl-mcp.env' --exclude './.ghl-mcp.env' \
+        --exclude '.env.*' --exclude '*.env' --exclude '*.env.bak*' --exclude '.env.bak-*' \
         --exclude '.git' --exclude './.git' \
         --exclude '*.log' --exclude 'logs' --exclude './logs' \
         --exclude '*.db' --exclude '*.sqlite' --exclude '*.sqlite3' \
