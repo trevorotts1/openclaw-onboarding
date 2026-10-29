@@ -26,7 +26,15 @@
 # --onboarding-only: run ONLY the onboarding stage (the rare narrow case);
 # passed through to both the fleet-refresh path and the fallback updater.
 #
-# Never restarts the gateway, never sends a chat message.
+# PRE-FLIGHT (docs/FLEET-ROLL-RUNBOOK.md section 11): before any install step the updater
+# checks account standing, provider standing, free storage and memory pressure. An enforced
+# failure ends the run with the documented status "paused-preflight" (the updater prints
+# "FLEET-PREFLIGHT-PAUSED: <reasons>"; this script's exit code is fleet-refresh.sh's, and the
+# roll records outcome SKIPPED). Nothing is changed on a paused box. At most one plain note per
+# issue per week goes to the client through their own Telegram agent.
+#
+# Never restarts the gateway, never sends a chat message. (The pre-flight note above is the one
+# deliberate exception, sent by shared-utils/fleet_preflight.py, capped and recorded weekly.)
 # Exit: fleet-refresh.sh's exit code (0 ok, 2 rolled back / partial, 3 unknown),
 #       75 DEFERRED — another updater legitimately owns this box, nothing was
 #       changed (critic.C13). 75 is never reported as success.

@@ -218,6 +218,8 @@ class BoxResult:
         self.update_999: dict = {}
         self.nine_router_guard_failed: str = ""   # set when the checksum guard saw a 9Router file change
         self.heal: dict = {}
+        self.preflight: dict = {}                 # fleet_preflight status.json, when it ran
+        self.skills_client_extra: Optional[list] = None   # client-made skill folders (not shipped by the repo)
         # One-word verdict for the fleet summary:
         # UPDATED | ROLLED_BACK | FAILED | SKIPPED  (+ outcome_detail).
         self.outcome: str = "SKIPPED" if dry_run else "FAILED"
@@ -255,6 +257,8 @@ class BoxResult:
             "rollback":            self.rollback,
             "update_999":          self.update_999,
             "heal":                self.heal,
+            "preflight":           self.preflight,
+            "skills_client_extra": self.skills_client_extra,
             "outcome":             self.outcome,
             "outcome_detail":      self.outcome_detail,
         }
@@ -1102,6 +1106,49 @@ UPDATE_SKILLS_TIMEOUT = 5400
 # update-skills.sh's fleet standing gate: "Update held -- account not current".
 UPDATE_HELD_MARK = "Update held -- account not current"
 UPDATE_HELD = "update held -- account not current on payments (fleet standing gate); nothing changed"
+# The weekly pre-flight (shared-utils/fleet_preflight.py) paused the update: documented status
+# "paused-preflight", outcome SKIPPED, nothing changed. update-skills.sh prints
+# "FLEET-PREFLIGHT-PAUSED: <reasons>" and exits 0 (same shape as the standing hold).
+PREFLIGHT_PAUSED_MARK = "FLEET-PREFLIGHT-PAUSED"
+PREFLIGHT_PAUSED = "paused-preflight"
+_SKILL_BACKUP_RE = re.compile(r"\.(bak|pre|rollback|orig)([-_.]|$)", re.I)
+
+
+def _preflight_reasons(text: str) -> str:
+    m = re.search(rf"^{PREFLIGHT_PAUSED_MARK}:\s*(.+)$", text or "", re.M)
+    return m.group(1).strip()[:200] if m else ""
+
+
+def step_preflight_early(paths: dict, shared_utils: Path, res: "BoxResult") -> str:
+    """Storage and memory pressure, BEFORE the snapshot (the snapshot and the doctor
+    captures are what fill a disk). Returns the pause reasons, or "" to go on.
+    Fail open: a missing helper or any error never stops a box."""
+    helper = shared_utils / "fleet_preflight.py"
+    if os.environ.get("FLEET_PREFLIGHT_BYPASS") == "1" or not helper.is_file():   # BYPASS: operator / hermetic tests
+        return ""
+    os.environ.setdefault("FLEET_PREFLIGHT_RUN_ID", f"roll-{os.getpid()}-{int(time.time())}")
+    try:
+        r = subprocess.run([sys.executable, str(helper), "--phase", "early", "--root", str(paths["root"])],
+                           capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    try:
+        res.preflight = json.loads((Path(paths["root"]) / "fleet-preflight" / "status.json").read_text())
+    except (OSError, ValueError):
+        pass
+    return _preflight_reasons(r.stdout) if r.returncode == 10 else ""
+
+
+def _client_extra_skills(skills_dir: Path, repo_root: Path) -> list[str]:
+    """Numbered skill folders the repo does not ship (the client's own). Counted apart
+    as skills_client_extra; never touched by any update step."""
+    try:
+        shipped = {p.name for p in repo_root.iterdir()}
+        return sorted(p.name for p in skills_dir.iterdir()
+                      if p.is_dir() and p.name[:1].isdigit() and p.name not in shipped
+                      and p.name + "-ARCHIVED" not in shipped and not _SKILL_BACKUP_RE.search(p.name))
+    except OSError:
+        return []
 
 
 def _run_tree(cmd: list[str], timeout: int, **kw) -> subprocess.CompletedProcess:
@@ -1187,7 +1234,11 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
             pinned_tag = load_cc_compat(repo_root).get("onboardingVersion", pinned_tag)
         except Exception:
             pass
-        if result.returncode == 0 and UPDATE_HELD_MARK in result.stdout:
+        if result.returncode == 0 and PREFLIGHT_PAUSED_MARK in result.stdout:
+            # The pre-flight paused this box (provider standing, storage or memory
+            # pressure): nothing was changed, by design. Not a failure to fix.
+            res.step_skip("pull-onboarding", f"{PREFLIGHT_PAUSED}: {_preflight_reasons(result.stdout)}")
+        elif result.returncode == 0 and UPDATE_HELD_MARK in result.stdout:
             # The fleet standing gate held this box (account not current on
             # payments): nothing was changed, by design. Not a failure to fix.
             res.step_skip("pull-onboarding", UPDATE_HELD)
@@ -4364,7 +4415,16 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
     # alerted, never blamed on -- or rolled back by -- this update.
     res.health["integrity_baseline"] = probe_integrity(paths, repo_root, 0, res.onboarding_version)
 
+    res.skills_client_extra = _client_extra_skills(_skills_dir(paths), repo_root)
+
     if not verify_only:
+        # Pre-flight (storage, memory pressure) before anything is captured or changed.
+        if not dry_run:
+            _why = step_preflight_early(paths, shared_utils, res)
+            if _why:
+                res.result, res.outcome = "skipped", "SKIPPED"
+                res.outcome_detail = f"{PREFLIGHT_PAUSED}: {_why}; nothing was changed"
+                return res
         # The Wave-5 gate would otherwise sys.exit() from inside build-cc, AFTER
         # onboarding was already applied (a half-updated box, no result JSON).
         # Check it before the first change instead: blocked = box untouched.
@@ -4399,6 +4459,12 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
             for step in ("update-999", "pull-cc", "build-cc", "restart-cc", "sessions-reset-CEO"):
                 res.step_skip(step, "update held")
             res.result, res.outcome, res.outcome_detail = "skipped", "SKIPPED", UPDATE_HELD
+            return res
+        if str(res.steps.get("pull-onboarding", "")).startswith(f"skip:{PREFLIGHT_PAUSED}"):
+            for step in ("update-999", "pull-cc", "build-cc", "restart-cc", "sessions-reset-CEO"):
+                res.step_skip(step, PREFLIGHT_PAUSED)
+            res.result, res.outcome = "skipped", "SKIPPED"
+            res.outcome_detail = f"{PREFLIGHT_PAUSED}: {res.steps['pull-onboarding'].split(': ', 1)[-1]}; nothing was changed"
             return res
 
         # The updater's own front door also runs a 999 step; a 9Router checksum
