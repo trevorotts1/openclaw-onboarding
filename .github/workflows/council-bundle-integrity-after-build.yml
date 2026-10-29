@@ -22,6 +22,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+      # Runs BEFORE any regeneration. The step below rewrites manifest.json and
+      # the .skill archive and then verifies its own output, which can never
+      # fail; skill 77 shipped v1.0.64 to v1.0.68 with the manifest still at
+      # v1.0.63 (wire.sh TREE_GATE, QC hash drift) because nothing checked the
+      # COMMITTED manifest against the committed tree. The doctor does: tree
+      # hash, file count, archive SHA-256 and all four version carriers.
+      - name: Committed manifest and archive describe the committed tree
+        working-directory: 77-council-of-wise-elders
+        run: node scripts/doctor.mjs
       - name: Regenerate deterministic package and verify clean source
         working-directory: 77-council-of-wise-elders
         run: |

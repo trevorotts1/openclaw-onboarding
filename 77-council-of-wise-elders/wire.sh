@@ -20,7 +20,9 @@
 #   5. verifies the copy the runtime RESOLVER selects
 #      (scripts/selected-tree-gate.mjs): competing copies are reported loudly
 #      and a stale, contract-drifted or executable-less selected copy exits 1,
-#      so no roll reports success after updating only an unused directory.
+#      so no roll reports success after updating only an unused directory. On a
+#      box with several copies the gate is given the folder the OpenClaw agent
+#      resolver serves (COUNCIL_AGENT_SKILL_DIR, else asked of the resolver).
 # It writes nothing inside the skill folder and touches no credential, model,
 # openclaw.json, AGENTS.md, gateway or Command Center.
 #
@@ -36,6 +38,8 @@
 #      COUNCIL_SERVICE_PORT (8787) COUNCIL_SERVICE_LABEL (ai.blackceo.council-service)
 #      COUNCIL_PM2_APP (council-of-wise-elders) OPENCLAW_ROOT CC_PUBLIC_URL
 #      MC_TENANT_PUBLIC_URL COUNCIL_CLOUDFLARED (absolute cloudflared path)
+#      COUNCIL_AGENT_SKILL_DIR (skill folder the agent resolves) COUNCIL_OPENCLAW
+#      (openclaw CLI path) OPENCLAW_AGENT_ID (agent the resolver is asked for)
 #
 # bash 3.2 safe (macOS system bash): no bash-4-only features.
 
@@ -336,15 +340,30 @@ CHANGED=0
 # here and exits 1, so update-skills.sh withholds the .wired sentinel and no
 # roll reports success after updating only an unused directory.
 # On a box with more than one copy the gate needs agent-resolver evidence:
-# export COUNCIL_AGENT_SKILL_DIR=<the path the agent resolves> (for OpenClaw the
-# shadowing root, e.g. ~/.agents/skills/council-of-wise-elders). Without it the
-# gate reports the selection as unproven and this step refuses — by design.
+# COUNCIL_AGENT_SKILL_DIR=<the path the agent resolves> (for OpenClaw the
+# shadowing root, e.g. ~/.agents/skills/council-of-wise-elders) when the caller
+# sets it. A roll has no caller to set it, so when the gate answers "agent
+# selection unproven" and no variable was given, ask the real OpenClaw resolver
+# (scripts/agent-resolver-evidence.mjs: `openclaw skills info ... --json`) and
+# run the SAME gate again with that answer. The gate is not relaxed: it still
+# verifies the named copy and still rejects evidence that contradicts the live
+# install-record. No resolver answer leaves the selection unproven and this
+# step refuses - by design.
 GT_RC=0
 GT_ARGS=(--skill-dir "$SKILL_DIR" --prefix "$P" --home "$HOME")
 if [ -n "${COUNCIL_AGENT_SKILL_DIR:-}" ]; then
   GT_ARGS+=(--agent-selected "$COUNCIL_AGENT_SKILL_DIR" --agent-source "COUNCIL_AGENT_SKILL_DIR")
 fi
 GT_OUT="$( "$NODE" "$SKILL_DIR/scripts/selected-tree-gate.mjs" "${GT_ARGS[@]}" 2>&1 )" || GT_RC=$?
+if [ "$GT_RC" -ne 0 ] && [ -z "${COUNCIL_AGENT_SKILL_DIR:-}" ] \
+   && printf '%s\n' "$GT_OUT" | grep -q 'agent selection unproven'; then
+  AG_DIR="$( "$NODE" "$SKILL_DIR/scripts/agent-resolver-evidence.mjs" --config "$OC/openclaw.json" 2>/dev/null )" || AG_DIR=""
+  if [ -n "$AG_DIR" ]; then
+    GT_RC=0
+    GT_OUT="$( "$NODE" "$SKILL_DIR/scripts/selected-tree-gate.mjs" "${GT_ARGS[@]}" \
+      --agent-selected "$AG_DIR" --agent-source "openclaw skills info council-of-wise-elders" 2>&1 )" || GT_RC=$?
+  fi
+fi
 [ -n "$GT_OUT" ] && printf '%s\n' "$GT_OUT"
 if [ "$GT_RC" -ne 0 ]; then
   say "NOT_READY TREE_GATE the copy the resolver selects failed verification (lines above); success is withheld"
