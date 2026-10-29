@@ -754,6 +754,11 @@
      "docs/archived-skill-tombstones.json",
      "tests/unit/documented-entrypoint-paths.test.py",
      "tests/unit/archived-skill-tombstones.test.py",
+     "tests/unit/archived-skills-removed.test.sh",
+     "tests/unit/archived-skill-retirement.test.sh",
+     "scripts/remove-archived-skills.sh",
+     "update-skills.sh",
+     "install.sh",
      ".github/workflows/documented-entrypoints-and-archived-tombstones-guard.yml"
     ]
    },
@@ -768,6 +773,11 @@
      "docs/archived-skill-tombstones.json",
      "tests/unit/documented-entrypoint-paths.test.py",
      "tests/unit/archived-skill-tombstones.test.py",
+     "tests/unit/archived-skills-removed.test.sh",
+     "tests/unit/archived-skill-retirement.test.sh",
+     "scripts/remove-archived-skills.sh",
+     "update-skills.sh",
+     "install.sh",
      ".github/workflows/documented-entrypoints-and-archived-tombstones-guard.yml"
     ]
    }
@@ -1222,6 +1232,42 @@
      "install.sh",
      "tests/unit/memory-corpus-no-defaults-extrapaths.test.sh",
      ".github/workflows/memory-corpus-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "memory-guard",
+  "was": "(new, memory-guard)",
+  "script": "scripts/ci/fast-guards.d/memory-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "scripts/memory-guard.py",
+     "scripts/memory-guard.sh",
+     "scripts/ensure-pipeline-crons.sh",
+     "install.sh",
+     "tests/fixtures/fake-openclaw-cron.py",
+     "tests/unit/memory-guard.test.sh",
+     "scripts/ci/fast-guards.d/memory-guard.sh"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "scripts/memory-guard.py",
+     "scripts/memory-guard.sh",
+     "scripts/ensure-pipeline-crons.sh",
+     "install.sh",
+     "tests/fixtures/fake-openclaw-cron.py",
+     "tests/unit/memory-guard.test.sh",
+     "scripts/ci/fast-guards.d/memory-guard.sh"
     ]
    }
   }
@@ -3144,6 +3190,52 @@
   }
  },
  {
+  "name": "shared-core-entries-sync-guard",
+  "was": "(new, one shared rulebook sync)",
+  "script": "scripts/ci/fast-guards.d/shared-core-entries-sync-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "install.sh",
+     "update-skills.sh",
+     "scripts/qc-system-integrity.sh",
+     "docs/SHARED-CORE-FILES.md",
+     "23-ai-workforce-blueprint/scripts/shared_core_copy.py",
+     "23-ai-workforce-blueprint/scripts/create_role_workspaces.py",
+     "23-ai-workforce-blueprint/scripts/test_role_workspace_symlinks.py",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/TOOLS.md",
+     "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/TOOLS.md",
+     "tests/unit/shared-core-entries-sync.test.sh",
+     "tests/unit/link-shared-tools-create.test.sh",
+     "scripts/ci/fast-guards.d/shared-core-entries-sync-guard.sh"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "install.sh",
+     "update-skills.sh",
+     "scripts/qc-system-integrity.sh",
+     "docs/SHARED-CORE-FILES.md",
+     "23-ai-workforce-blueprint/scripts/shared_core_copy.py",
+     "23-ai-workforce-blueprint/scripts/create_role_workspaces.py",
+     "23-ai-workforce-blueprint/scripts/test_role_workspace_symlinks.py",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/TOOLS.md",
+     "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/TOOLS.md",
+     "tests/unit/shared-core-entries-sync.test.sh",
+     "tests/unit/link-shared-tools-create.test.sh",
+     "scripts/ci/fast-guards.d/shared-core-entries-sync-guard.sh"
+    ]
+   }
+  }
+ },
+ {
   "name": "updater-skill-box-state-guard",
   "was": "updater-skill-box-state-guard.yml",
   "script": "scripts/ci/fast-guards.d/updater-skill-box-state-guard.sh",
@@ -3453,6 +3545,38 @@
      "scripts/ci/fast-guards.d/can004-frontdoor-gate-guard.sh",
      "tests/unit/frontdoor-gate-fail-not-module-error.test.sh",
      "tests/unit/gate-repair-empty-department.test.sh"
+    ]
+   }
+  }
+ },
+ {
+  "name": "backups-out-of-departments-guard",
+  "was": "(new, backups-out-of-departments 2026-10-29)",
+  "script": "scripts/ci/fast-guards.d/backups-out-of-departments-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "update-skills.sh",
+     "shared-utils/central_backup.py",
+     "scripts/apply-u004-phase2.sh",
+     "32-command-center-setup/scripts/backfill-dept-agent-personalization.sh",
+     "23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py",
+     "23-ai-workforce-blueprint/scripts/test-phantom-dept-collision-gate.sh",
+     "tests/unit/backups-out-of-departments.test.sh"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "update-skills.sh",
+     "shared-utils/central_backup.py",
+     "scripts/apply-u004-phase2.sh",
+     "32-command-center-setup/scripts/backfill-dept-agent-personalization.sh",
+     "23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py",
+     "23-ai-workforce-blueprint/scripts/test-phantom-dept-collision-gate.sh",
+     "tests/unit/backups-out-of-departments.test.sh"
     ]
    }
   }

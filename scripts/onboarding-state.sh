@@ -225,10 +225,18 @@ purged = [k for k in list(skills) if rollback_re.search(k)]
 for k in purged:
     del skills[k]
 
-# A skill archived on main ("NN-x-ARCHIVED" in the source) is retired: drop the
-# stale key an earlier seed wrote for its old live name "NN-x".
+# A retired skill is dropped: remove the stale key an earlier seed wrote for its old
+# live name "NN-x". Retired means the source lists "NN-x-ARCHIVED" in
+# docs/archived-skill-tombstones.json (the repo no longer ships the folder itself) or,
+# for an older source tree, still carries the "NN-x-ARCHIVED" folder.
+retired = set()
+try:
+    tomb = json.load(open(os.path.join(src_dir, "docs", "archived-skill-tombstones.json")))
+    retired = {k[:-len("-ARCHIVED")] for k in tomb.get("archived", {}) if k.endswith("-ARCHIVED")}
+except Exception:
+    pass
 for k in list(skills):
-    if os.path.isdir(os.path.join(src_dir, k + "-ARCHIVED")):
+    if k in retired or os.path.isdir(os.path.join(src_dir, k + "-ARCHIVED")):
         del skills[k]
 
 # Discover non-archived numbered skill folders in the source.

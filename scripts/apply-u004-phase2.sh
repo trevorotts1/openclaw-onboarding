@@ -55,6 +55,19 @@ if ! (cd "$BK" && shasum -a 256 -c "$(basename "$BACKUP_CHECKSUM")") >/dev/null 
 fi
 echo "[Phase2] backup checksum verified OK"
 
+# ---- Where this script's own backups go ------------------------
+# Never into the department tree: the box has ONE central backup folder outside every
+# workspace (shared-utils/central_backup.py picks it and keeps the newest 3 runs).
+# The path is only computed here (--dry-run creates nothing); _mv / mkdir -p create it.
+_CB="$SKILLS_DIR/shared-utils/central_backup.py"
+[ -f "$_CB" ] || _CB="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/shared-utils/central_backup.py"
+if [ ! -f "$_CB" ]; then
+  echo "FATAL: shared-utils/central_backup.py not found (looked in $SKILLS_DIR/shared-utils and the repo)." >&2
+  echo "Run the weekly update first so the central backup tool is installed. Nothing was written." >&2
+  exit 1
+fi
+CENTRAL_RUN="$(python3 "$_CB" run-dir --tool apply-u004-phase2 --dry-run)"
+
 # ---- Helpers -------------------------------------------------
 _cp() {
   if [ "$DRY_RUN" -eq 1 ]; then echo "cp  $1  ->  $2"; else cp "$1" "$2"; fi
@@ -166,8 +179,7 @@ echo "[Phase2] Step 6 complete: contract files installed"
 # ---- Step 7: Move misfiled scaffold files --------------------
 echo "[Phase2] Step 7: Moving misfiled scaffold files..."
 
-SCAFFOLD_STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-SCAFFOLD_DEST="$DEPT_DIR/working/misfiled-scaffold-$SCAFFOLD_STAMP"
+SCAFFOLD_DEST="$CENTRAL_RUN/misfiled-scaffold"
 SCAFFOLD_MOVE="AGENTS.md HEARTBEAT.md how-to.md IDENTITY.md MEMORY.md SOUL.md"
 
 for _dir in sops scripts; do
@@ -188,8 +200,7 @@ echo "[Phase2] Step 7 complete: scaffold files relocated to $SCAFFOLD_DEST"
 # ---- Step 8: Archive the 13 .bak files -----------------------
 echo "[Phase2] Step 8: Archiving .bak files..."
 
-BAK_STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-BAK_DEST="$DEPT_DIR/working/bak-archive-$BAK_STAMP"
+BAK_DEST="$CENTRAL_RUN/bak-archive"
 
 # 13 literal names, never a glob
 BAK_NAMES=(
@@ -231,6 +242,9 @@ for _bak_name in "${BAK_NAMES[@]}"; do
 done
 
 echo "[Phase2] Step 8 complete: .bak files archived to $BAK_DEST"
+if [ "$DRY_RUN" -eq 0 ]; then
+  python3 "$_CB" prune --tool apply-u004-phase2 || echo "[Phase2] WARN: backup prune did not finish (backups are all kept)" >&2
+fi
 
 # ---- Step 9: Clear the 84 broken symlinks --------------------
 echo "[Phase2] Step 9: Clearing broken symlinks..."

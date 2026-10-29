@@ -8,10 +8,8 @@ set -euo pipefail
 python3 -m py_compile docs/tools/check_documented_entrypoints.py
 python3 -m py_compile tests/unit/documented-entrypoint-paths.test.py
 python3 -m py_compile tests/unit/archived-skill-tombstones.test.py
-for f in ./*-ARCHIVED/install.sh; do
-  [ -f "$f" ] || continue
-  bash -n "$f"
-done
+bash -n scripts/remove-archived-skills.sh
+bash -n tests/unit/archived-skills-removed.test.sh
 python3 -c 'import json,sys; json.load(open("docs/archived-skill-tombstones.json"))'
 echo "syntax OK"
 )
@@ -21,9 +19,11 @@ set -euo pipefail
 python3 docs/tools/check_documented_entrypoints.py --repo-root .
 python3 tests/unit/documented-entrypoint-paths.test.py
 )
-( # step: T2-12 — archived skills are tombstones and their installers refuse
+( # step: retired skills — registry is well formed, no *-ARCHIVED folder ships, and every roll moves the copies older rolls left on a box out of the skills folder
 set -e -o pipefail
 python3 tests/unit/archived-skill-tombstones.test.py
+bash tests/unit/archived-skills-removed.test.sh
+bash tests/unit/archived-skill-retirement.test.sh
 )
 ( # step: Assert the guards themselves can still go red
 set -e -o pipefail

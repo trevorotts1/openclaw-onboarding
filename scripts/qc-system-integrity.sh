@@ -558,8 +558,15 @@ check "9.8" "Master AGENTS.md / TOOLS.md / USER.md exist at workspace root" \
 # foreign/hardcoded path. FAIL-OPEN mirrors link_shared_core_files(): if
 # canonical itself is missing/unreadable/empty, that filename is skipped
 # (not measurable) rather than false-failing every workspace.
+# ONE RULEBOOK (2026-10-29): the candidate set is the SAME one the updater
+# syncs -- every registered workspace (agents.entries{}, agents.list[],
+# agents.defaults.workspace) plus the scan of <oc-root>/workspaces (incl.
+# command-center/<dept>), <canon>/agents and <canon>/departments, with backup,
+# vendored and template trees skipped. A REGISTERED workspace that is MISSING a
+# core file is a FAIL too (the updater creates it); a department role folder
+# (departments/<dept>/<role>) is allowed to have no AGENTS.md (U053).
 UNIFY_BAD=$(OCJSON="$OCJSON" python3 - <<'PYEOF' 2>/dev/null || echo "ERR"
-import hashlib, json, os
+import fnmatch, hashlib, json, os, re
 ocjson = os.environ["OCJSON"]
 try:
     cfg = json.load(open(ocjson))
@@ -598,29 +605,132 @@ for f in ("AGENTS.md", "TOOLS.md", "USER.md"):
     except Exception:
         pass
 
-# Enumerate candidate agent workspaces: openclaw.json agents[].workspace plus a
-# scan of the workspace's agents/ + departments/ trees.
-cands = set()
-for ag in agents.get("list", []) or []:
-    if isinstance(ag, dict) and ag.get("workspace"):
-        cands.add(os.path.expanduser(ag["workspace"]))
-for sub in ("agents", "departments"):
-    base = os.path.join(canon_real, sub)
-    if os.path.isdir(base):
-        for root, dirs, files in os.walk(base):
-            if os.path.exists(os.path.join(root, "AGENTS.md")) \
-               or os.path.exists(os.path.join(root, "IDENTITY.md")) \
-               or os.path.exists(os.path.join(root, "SOUL.md")):
-                cands.add(root)
+# Enumerate candidate agent workspaces with the SAME function link_shared_core_files()
+# uses (the text between LSC-PY-BEGIN and LSC-PY-END is byte-identical in install.sh,
+# update-skills.sh and here; tests/unit/shared-core-entries-sync.test.sh enforces it).
+# REGISTERED: agents.entries{} (current shape), agents.list[] (legacy), agents.defaults.workspace.
+# SCANNED: <oc-root>/workspaces (command-center/<dept> ...), <canon>/agents, <canon>/departments
+# and THIS box's own company tree (<company>/departments/<dept>/<role>); backup, hidden,
+# archive, node_modules and (inside an agent workspace) skill / template trees are skipped.
+oc_root = os.path.dirname(os.path.abspath(ocjson))
+# >>> LSC-PY-BEGIN (identical in install.sh, update-skills.sh and QC check 9.9;
+# tests/unit/shared-core-entries-sync.test.sh compares the three copies)
+# Skipped while scanning, at any depth: backup trees, hidden dirs, archives, vendored packages.
+SKIP_ANY = (".*", "*.bak*", "*.backup*", "node_modules", "departments-archive")
+# Skipped only INSIDE an agent workspace (the parent holds IDENTITY.md or SOUL.md):
+# its own vendored skills, templates and tool checkouts. A real department that is
+# merely NAMED like one of these (workspaces/command-center/templates) is kept.
+SKIP_IN_AGENT = ("skills", "templates", "onboarding", "fleet-refresh", "codex-home")
+# Skipped at depth 1 of <oc-root>/workspaces, where the roll keeps its own trees.
+SKIP_TOP = ("onboarding", "fleet-refresh", "codex-home")
+
+
+def _lsc_match(name, globs):
+    return any(fnmatch.fnmatchcase(name, g) for g in globs)
+
+
+def _lsc_is_agent(d):
+    return os.path.exists(os.path.join(d, "IDENTITY.md")) or os.path.exists(os.path.join(d, "SOUL.md"))
+
+
+def lsc_scan(root, workspaces_root=False):
+    """Agent-shaped folders (they hold AGENTS.md, IDENTITY.md or SOUL.md) under root.
+    os.walk starts from root even when root is itself a symlink."""
+    found = []
+    if not os.path.isdir(root):
+        return found
+    for cur, dirs, files in os.walk(root):
+        agent = _lsc_is_agent(cur)
+        keep = []
+        for d in dirs:
+            if _lsc_match(d, SKIP_ANY):
+                continue
+            if agent and _lsc_match(d, SKIP_IN_AGENT):
+                continue
+            if workspaces_root and cur == root and _lsc_match(d, SKIP_TOP):
+                continue
+            keep.append(d)
+        dirs[:] = keep
+        if not os.path.islink(cur) and any(os.path.exists(os.path.join(cur, f)) for f in ("AGENTS.md", "IDENTITY.md", "SOUL.md")):
+            found.append(cur)
+    return found
+
+
+def lsc_candidates(cfg, canon_real, oc_root, env):
+    """-> (registered workspaces, scan-found folders) for THIS box only.
+    Registered = agents.entries{} (current shape), agents.list[] (legacy), agents.defaults.workspace.
+    Scanned = <oc-root>/workspaces (incl. command-center/<dept>), <canon>/agents, <canon>/departments,
+    and THIS box's own company tree(s) <company>/departments/<dept>/<role>, found the way
+    materialize-dept-agents.sh finds them: the build state's companyRoot, then
+    <master-files>/zero-human-company/<this box's slug>/departments. A company tree is scanned only
+    when the box's own slug is known; another company's tree is never read (co-mingling guard)."""
+    ag = cfg.get("agents") if isinstance(cfg.get("agents"), dict) else {}
+    ent = ag.get("entries") if isinstance(ag.get("entries"), dict) else {}
+    lst = ag.get("list") if isinstance(ag.get("list"), list) else []
+    dfl = ag.get("defaults") if isinstance(ag.get("defaults"), dict) else {}
+    reg = []
+    for e in list(ent.values()) + lst + [dfl]:
+        ws = e.get("workspace") if isinstance(e, dict) else None
+        if isinstance(ws, str) and ws.strip():
+            reg.append(os.path.expanduser(ws.strip()))
+    state = {}
+    for d in (canon_real, env.get("OPENCLAW_WORKSPACE_PATH", ""), os.path.join(oc_root, "workspace"),
+              os.path.expanduser("~/.openclaw/workspace"), "/data/.openclaw/workspace"):
+        p = os.path.join(d, ".workforce-build-state.json") if d else ""
+        if p and os.path.isfile(p):
+            try:
+                state = json.load(open(p))
+            except (OSError, ValueError):
+                state = {}
+            break
+    if not isinstance(state, dict):
+        state = {}
+    slug = env.get("COMPANY_SLUG") or state.get("companySlug") or state.get("clientSlug") or ""
+    slug = slug.strip() if isinstance(slug, str) else ""
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", slug):
+        slug = ""
+    roots = [(os.path.join(oc_root, "workspaces"), True),
+             (os.path.join(canon_real, "agents"), False),
+             (os.path.join(canon_real, "departments"), False)]
+    croot = state.get("companyRoot")
+    if isinstance(croot, str) and os.path.isabs(croot) and (not slug or os.path.basename(croot.rstrip("/")) == slug):
+        roots.append((os.path.join(croot, "departments"), False))
+    if slug:
+        for mf in (env.get("MASTER_FILES_DIR", ""), env.get("OPENCLAW_MASTER_FILES_DIR", ""),
+                   os.path.expanduser("~/Downloads/openclaw-master-files"), "/data/openclaw-master-files",
+                   os.path.join(oc_root, "workspace"), canon_real):
+            if mf:
+                roots.append((os.path.join(mf, "zero-human-company", slug, "departments"), False))
+    found, seen = [], set()
+    for root, top in roots:
+        key = os.path.realpath(root)
+        if key not in seen:
+            seen.add(key)
+            found.extend(lsc_scan(root, top))
+    return reg, found
+# <<< LSC-PY-END
+reg_paths, scan_paths = lsc_candidates(cfg, canon_real, oc_root, os.environ)
+registered = set(os.path.realpath(p) for p in reg_paths)
+logical = {}
+for p in reg_paths + scan_paths:
+    logical.setdefault(os.path.realpath(p), set()).add(p)
+cands = set(logical)
 
 bad = []
-for w in cands:
-    wr = os.path.realpath(w)
+for w in sorted(cands):
+    wr = w
     if wr == canon_real:
+        continue
+    if not os.path.isdir(wr):
         continue
     # NESTED WORKFLOW AGENT EXEMPTION.
     if "/workflows/" in (wr + "/") and "/agents/" in (wr + "/").split("/workflows/", 1)[1]:
         continue
+    is_reg = wr in registered
+    # departments/<dept>/<role> never carries an AGENTS.md (U053 disposition); judged on the
+    # path as listed AND its real path, so a symlinked departments/ root changes nothing.
+    is_role = any("/departments/" in q and "/" in q.split("/departments/", 1)[1]
+                  for q in (logical.get(wr, set()) | {wr}))
     for f in ("AGENTS.md", "TOOLS.md", "USER.md"):
         p = os.path.join(wr, f)
         if f not in canon_hash:
@@ -629,7 +739,9 @@ for w in cands:
             bad.append("%s/%s is a SYMLINK (N29 amended: the runtime rejects cross-workspace symlinks -- must be a real file copy)" % (wr, f))
             continue
         if not os.path.isfile(p):
-            continue  # absent is allowed (left absent by the unifier)
+            if is_reg and not (f == "AGENTS.md" and is_role):
+                bad.append("%s/%s is MISSING from a registered agent workspace (the updater creates it from canonical)" % (wr, f))
+            continue  # an unregistered folder may have none (left absent by the unifier)
         try:
             with open(p, "rb") as fh:
                 p_bytes = fh.read()
