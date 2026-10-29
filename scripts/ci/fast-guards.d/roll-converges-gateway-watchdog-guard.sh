@@ -8,13 +8,20 @@ bash -n update-skills.sh
 bash -n platform/mac/service-selfheal/install-service-remediate.sh
 bash -n tests/unit/roll-converges-gateway-watchdog.test.sh
 bash -n tests/unit/full-update-path-contract.test.sh
-# These two are /bin/sh files. Check them with sh, not bash.
+bash -n tests/unit/gateway-tls-probe-family.test.sh
+bash -n platform/vps/service-selfheal/install-host-watchdog-cron.sh
+# These are /bin/sh files. Check them with sh, not bash.
 sh -n platform/mac/service-selfheal/gateway-health-watchdog.sh
 sh -n platform/mac/service-selfheal/remediate.sh
+sh -n scripts/self-update.sh
 )
 ( # step: The roll converges the watchdog, and the watchdog heals both dead states
 set -e
 bash tests/unit/roll-converges-gateway-watchdog.test.sh
+)
+( # step: Every gateway liveness probe follows gateway.tls.enabled (https + curl -k), a dead gateway still reads dead
+set -e
+bash tests/unit/gateway-tls-probe-family.test.sh
 )
 ( # step: The update-path contract still holds
 set -e
@@ -74,4 +81,40 @@ if bash tests/unit/roll-converges-gateway-watchdog.test.sh >/dev/null 2>&1; then
 fi
 echo "OK: the suite goes RED when the migration-gate clear is removed."
 cp /tmp/wd2.orig platform/mac/service-selfheal/gateway-health-watchdog.sh
+)
+( # step: Meta-check 4 - a probe that ignores gateway.tls.enabled must go RED
+set -e
+cp scripts/oc-atomic-upgrade.sh /tmp/oca.orig
+python3 - <<'PY'
+p = "scripts/oc-atomic-upgrade.sh"
+s = open(p, encoding="utf-8").read()
+needle = 'if [ "$(_gateway_tls)" = "1" ]; then s=https; k="-k"; fi'
+assert s.count(needle) == 1, "TLS branch not found - update this meta-check"
+open(p, "w", encoding="utf-8").write(s.replace(needle, ":", 1))
+PY
+if bash tests/unit/gateway-tls-probe-family.test.sh >/dev/null 2>&1; then
+  echo "::error::VACUOUS TEST - the suite still passes with the upgrade health probe ignoring gateway.tls.enabled."
+  cp /tmp/oca.orig scripts/oc-atomic-upgrade.sh
+  exit 1
+fi
+echo "OK: the suite goes RED when a probe stops following gateway.tls.enabled."
+cp /tmp/oca.orig scripts/oc-atomic-upgrade.sh
+)
+( # step: Meta-check 5 - the watchdog reading the TLS flag but probing http anyway must go RED
+set -e
+cp platform/mac/service-selfheal/gateway-health-watchdog.sh /tmp/wd3.orig
+python3 - <<'PY'
+p = "platform/mac/service-selfheal/gateway-health-watchdog.sh"
+s = open(p, encoding="utf-8").read()
+needle = 'if [ "$CFG_TLS" = "1" ]; then'
+assert s.count(needle) == 1, "TLS branch not found - update this meta-check"
+open(p, "w", encoding="utf-8").write(s.replace(needle, "if false; then", 1))
+PY
+if bash tests/unit/roll-converges-gateway-watchdog.test.sh >/dev/null 2>&1; then
+  echo "::error::VACUOUS TEST - the suite still passes with the watchdog probing http only."
+  cp /tmp/wd3.orig platform/mac/service-selfheal/gateway-health-watchdog.sh
+  exit 1
+fi
+echo "OK: the suite goes RED when the watchdog stops probing https."
+cp /tmp/wd3.orig platform/mac/service-selfheal/gateway-health-watchdog.sh
 )
