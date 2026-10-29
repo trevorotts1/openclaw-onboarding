@@ -3972,11 +3972,11 @@ step "Step 5: Installing Skills"
 mkdir -p "$SKILLS_DIR"
 
 # Retired NN-name-ARCHIVED skill folders are never installed (the repo no longer ships
-# them). A re-install over an older box also clears any copy an earlier roll left behind,
-# because OpenClaw logs an error on every skills rescan for each folder it cannot load.
+# them). A re-install over an older box also moves any copy an earlier roll left behind to
+# <root>/retired-skills/, because OpenClaw logs an error on every skills rescan for each folder it cannot load.
 if [ -f "$ONBOARDING_DIR/scripts/remove-archived-skills.sh" ]; then
     bash "$ONBOARDING_DIR/scripts/remove-archived-skills.sh" "$SKILLS_DIR" \
-        || warn "Could not remove every retired skill folder from $SKILLS_DIR (non-fatal; update-skills.sh retries on each roll)"
+        || warn "Could not move every retired skill folder out of $SKILLS_DIR (non-fatal; update-skills.sh retries on each roll)"
 fi
 
 for SKILL_DIR in "$ONBOARDING_DIR"/[0-9]*/; do

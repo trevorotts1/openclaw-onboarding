@@ -1144,7 +1144,7 @@ def evaluate_artifact_coverage(skill_dir):
 
         skill_problems = []
         # Retired skills are not shipped: OpenClaw logs an error on every skills rescan for each
-        # folder it cannot load, and update-skills.sh deletes the copies older rolls left on boxes.
+        # folder it cannot load, and update-skills.sh moves the copies older rolls left on boxes out of the skills folder.
         if archived_dirs:
             skill_problems.append(f"tree ships retired *-ARCHIVED folder(s) {archived_dirs}; "
                                   f"delete them and list them in docs/archived-skill-tombstones.json")

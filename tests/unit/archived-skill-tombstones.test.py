@@ -5,8 +5,8 @@ History. T2-12 first made the retired `*-ARCHIVED` folders harmless tombstones. 
 not enough: OpenClaw rescans the skills folder constantly and logs an error for every
 folder it cannot load, and a retired folder carries no description, so each one logged
 234 errors in 13 hours on a real client box. The repository therefore no longer ships any
-`*-ARCHIVED` folder, and update-skills.sh / scripts/remove-archived-skills.sh delete the
-copies older rolls left on boxes.
+`*-ARCHIVED` folder, and update-skills.sh / scripts/remove-archived-skills.sh move the
+copies older rolls left on boxes out of the skills folder.
 
 The registry stays, because two live mechanisms read it: update-skills.sh moves the old
 LIVE copy of each retired skill aside, and scripts/onboarding-state.sh drops the stale

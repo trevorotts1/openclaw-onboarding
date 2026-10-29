@@ -5440,14 +5440,16 @@ main() {
   ONBOARDING_DIR="$EXTRACTED_DIR"
   export ONBOARDING_DIR
 
-  # REMOVE RETIRED "NN-name-ARCHIVED" SKILL FOLDERS FROM THIS BOX, ON EVERY ROLL.
+  # MOVE RETIRED "NN-name-ARCHIVED" SKILL FOLDERS OUT OF THIS BOX'S SKILLS FOLDER, ON EVERY ROLL.
   # OpenClaw rescans the skills folder constantly and logs an error for each folder
   # it cannot load (a retired skill's SKILL.md has no description: 234 errors per
   # folder in 13 hours on one client box). The repo no longer ships them; this
-  # clears the copies older rolls left behind. It sits HERE, before the CONTENT
-  # RECHECK early exit and outside the per-version .wired-<version> sentinel, so a
-  # content-current re-roll removes them too. Only exact ^[0-9]+-.*-ARCHIVED$
-  # directories inside $SKILLS_DIR are touched; non-fatal; idempotent.
+  # moves the copies older rolls left behind to <root>/retired-skills/ (the same
+  # destination and naming as the retire block below; never deleted, never
+  # overwritten). It sits HERE, before the CONTENT RECHECK early exit and outside
+  # the per-version .wired-<version> sentinel, so a content-current re-roll moves
+  # them too. Only exact ^[0-9]+-.*-ARCHIVED$ directories inside $SKILLS_DIR are
+  # touched; non-fatal; idempotent.
   # Mac ~/.openclaw/skills, VPS /data/.openclaw/skills, Contabo /home/node/.openclaw/skills
   # all arrive here through discover_skills_dir -> $SKILLS_DIR.
   if [ -f "$EXTRACTED_DIR/scripts/remove-archived-skills.sh" ]; then

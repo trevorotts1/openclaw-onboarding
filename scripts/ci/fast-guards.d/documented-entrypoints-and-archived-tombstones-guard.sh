@@ -19,7 +19,7 @@ set -euo pipefail
 python3 docs/tools/check_documented_entrypoints.py --repo-root .
 python3 tests/unit/documented-entrypoint-paths.test.py
 )
-( # step: retired skills — registry is well formed, no *-ARCHIVED folder ships, and every roll deletes the copies older rolls left on a box
+( # step: retired skills — registry is well formed, no *-ARCHIVED folder ships, and every roll moves the copies older rolls left on a box out of the skills folder
 set -e -o pipefail
 python3 tests/unit/archived-skill-tombstones.test.py
 bash tests/unit/archived-skills-removed.test.sh

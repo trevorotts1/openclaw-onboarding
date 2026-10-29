@@ -5,13 +5,15 @@
     "cannot load, so a retired folder on a box is noise forever. Two things read this file:",
     "update-skills.sh moves the old LIVE copy of each key's skill (key minus the -ARCHIVED",
     "suffix) out of the skills folder into <root>/retired-skills/, and scripts/onboarding-state.sh",
-    "drops that skill's stale onboarding-state key. scripts/remove-archived-skills.sh deletes any",
-    "leftover NN-name-ARCHIVED folder from a box on every roll.",
+    "drops that skill's stale onboarding-state key. scripts/remove-archived-skills.sh moves any",
+    "leftover NN-name-ARCHIVED folder from a box's skills folder into <root>/retired-skills/ on every roll.",
     "tests/unit/archived-skill-tombstones.test.py enforces this file: every key ends in",
     "-ARCHIVED, names a successor that exists at the repository root, and carries the commit",
     "that last shipped the folder; no *-ARCHIVED folder may exist at the repository root.",
     "To restore a retired skill, read it back from that commit, for example:",
-    "git archive <last_commit> <key> | tar -x"
+    "git archive <last_commit> <key> | tar -x",
+    "A folder that never came from the repo (for example one made by hand on a box) is not in this",
+    "registry; it is restored by moving it back from <root>/retired-skills/ into the skills folder."
   ],
   "archived": {
     "11-superdesign-ARCHIVED": {
