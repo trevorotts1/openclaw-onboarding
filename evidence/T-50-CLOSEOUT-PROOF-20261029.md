@@ -21,7 +21,7 @@ Every number below was produced by a command run by this lane. Nothing inherited
 
 Control RESUME.md line 1: `LOOP RUNNING Purple-Billboard-Client-System-Build last tick 2026-10-28T21:01:02-04:00`.
 Note: reconciling inputs live in two places — ledger/control on the internal disk
-(`<control>` = `/Users/blackceomacmini/loop-control/Purple-Billboard-Client-System-Build`),
+(`<control>` = <PATH:control-root>),
 evidence/worktrees on the portable drive (`$LOOP_ROOT`). No `RESULTS-20261029.json`,
 `LEDGER-RECONCILE-20261029.json`, or `T-50-CLOSEOUT*` file exists under either loop root
 outside the paths cited here; they live in `batch-merge-room/outbox/` and the repos.
@@ -110,7 +110,7 @@ TODO_CLOSEOUT 1 (T-50), BUILT_NO_CODE 1 (T-51). Recon mains note:
 
 Non-terminal rows (2): T-50 READY (this closeout; branch/head null until this lane) and
 T-51 BUILT (review unit, no repo head by design; verdict BUILT_NO_CODE "no commit
-expected"). T-51 delivery verified: `/Users/blackceomacmini/Downloads/Purple-Billboard-System-Review-2026-10-26.md`,
+expected"). T-51 delivery verified: <PATH:delivery-review-doc>,
 115335 bytes, sha256 `562b51e49b815c04c847acad1b4cf2913c3ab119ec3c1d0dbe92ff2198395ad4`
 matches ledger `delivery_sha`. So: T-50 is the only non-terminal *build* unit; T-51 is a
 delivered review artefact, terminal by design. No other unit is open.
