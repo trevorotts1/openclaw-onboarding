@@ -11,6 +11,9 @@
 #                        step_rollbacks / needs_host_restart
 #   critic.C12  config backup restored on a non-zero content step (not only rc 2)
 #   hostinger.H11  config backup deleted after a clean run
+#   own-backups    (v1.5.0) the config copy AND the skills snapshot the content step wrote are
+#                  deleted only when the final status says success; kept on a failed step, a
+#                  rollback, a pending host restart and a deferral; nothing else is touched
 #   hostinger.H7 / critic.C8  Docker writes needs_host_restart, never "rolled back"
 #   critic.C9  the detached child is wrapped in caffeinate -dimsu on macOS
 #   neverBroken.NB12  the no-snapshot fallback transport is a FAILED step
@@ -272,6 +275,85 @@ ls "$D/root/fleet-refresh"/openclaw.json.pre-* >/dev/null 2>&1 \
   || ok "H11: config copy deleted after a clean run"
 [ "$(json "$(ST "$D")" needs_host_restart)" = "false" ] && ok "happy path: needs_host_restart false" \
   || bad "happy path: needs_host_restart true on a clean run"
+
+# ══ own-backups (v1.5.0): delete this run's backups only on a fully successful run ═══
+# The content step (the weekly stub) writes a skills-rollback snapshot under ~/Downloads/openclaw-backups and
+# a one-time skills-backup copy under <root>/backups, one second after self-update.sh marked the step. Also
+# created AFTER the mark but NOT snapshots: a differently named dir and a symlink wearing a snapshot name
+# that points at a real dir. Created BEFORE the run: an older snapshot. None of those three may ever go.
+SNAPSTUB='sleep 1; B="$HOME/Downloads/openclaw-backups"; mkdir -p "$B/skills-rollback-20261029-120000" "$OPENCLAW_ROOT/backups/skills-backup-20261029-120001" "$B/client-notes-20261029-120002" "$HOME/real-dir"; echo p > "$B/skills-rollback-20261029-120000/local-changes.patch"; ln -s "$HOME/real-dir" "$B/skills-rollback-20261029-120003"'
+seed_snaps() {  # case_dir
+  mkdir -p "$1/home/Downloads/openclaw-backups/skills-rollback-20251001-000000"
+  touch -t 202510010000 "$1/home/Downloads/openclaw-backups/skills-rollback-20251001-000000"
+}
+snap_state() {  # case_dir -> "new=<n> backupcopy=<n> old=<n> notes=<n> link=<n> target=<n> cfg=<n>"
+  _s="$1"; _b="$_s/home/Downloads/openclaw-backups"
+  _n=0; [ -e "$_b/skills-rollback-20261029-120000" ] && _n=1
+  _c=0; [ -e "$_s/root/backups/skills-backup-20261029-120001" ] && _c=1
+  _o=0; [ -e "$_b/skills-rollback-20251001-000000" ] && _o=1
+  _k=0; [ -e "$_b/client-notes-20261029-120002" ] && _k=1
+  _l=0; [ -L "$_b/skills-rollback-20261029-120003" ] && _l=1
+  _t=0; [ -d "$_s/home/real-dir" ] && _t=1
+  _f=$(ls "$_s/root/fleet-refresh"/openclaw.json.pre-* 2>/dev/null | wc -l | tr -d ' ')
+  echo "new=$_n backupcopy=$_c old=$_o notes=$_k link=$_l target=$_t cfg=$_f"
+}
+
+# success: both deleted, everything else untouched, every deletion logged by path
+mkfx 0 0 "$SNAPSTUB"
+OB1="$T/ob-ok"; seed_root "$OB1"; seed_snaps "$OB1"
+ROB1="$(HEALTHZ_CODE=200 run_fg "$OB1")"
+[ "$ROB1" = "0" ] && ok "own-backups: clean run exits 0" || bad "own-backups: clean run exit $ROB1 (want 0)"
+[ "$(snap_state "$OB1")" = "new=0 backupcopy=0 old=1 notes=1 link=1 target=1 cfg=0" ] \
+  && ok "own-backups: success deletes the config copy and both run snapshots; the older snapshot, the other dir and the symlink survive" \
+  || bad "own-backups: success state was '$(snap_state "$OB1")'"
+[ "$(json "$(ST "$OB1")" phase)" = "done" ] && [ -n "$(json "$(ST "$OB1")" finished_utc)" ] \
+  && ok "own-backups: the final status (phase done, finished) is on disk" || bad "own-backups: final status missing"
+[ "$(grep -c 'backup: deleted ' "$OB1/out.txt")" = "3" ] \
+  && grep -q "backup: deleted .*openclaw.json.pre-ap-" "$OB1/out.txt" \
+  && grep -q "backup: deleted $OB1/home/Downloads/openclaw-backups/skills-rollback-20261029-120000" "$OB1/out.txt" \
+  && grep -q "backup: deleted $OB1/root/backups/skills-backup-20261029-120001" "$OB1/out.txt" \
+  && ok "own-backups: each of the 3 deletions is logged by path" || bad "own-backups: deletion log lines: $(grep 'backup: ' "$OB1/out.txt")"
+grep 'backup: ' "$OB1/out.txt" | grep -q 'test-ollama-value\|test-deepseek-value' \
+  && bad "own-backups: a key value reached the log" || ok "own-backups: no key value in the deletion log"
+
+# a failed step (OpenClaw upgrade rc 1, content ok, gateway healthy): kept
+mkfx 1 0 "$SNAPSTUB"
+OB2="$T/ob-failstep"; seed_root "$OB2"; seed_snaps "$OB2"
+ROB2="$(HEALTHZ_CODE=200 run_fg "$OB2")"
+[ "$ROB2" = "1" ] && ok "own-backups: a failed upgrade step exits with its code (1)" || bad "own-backups: failed-step exit $ROB2 (want 1)"
+[ "$(snap_state "$OB2")" = "new=1 backupcopy=1 old=1 notes=1 link=1 target=1 cfg=1" ] \
+  && ok "own-backups: any failed step keeps the config copy and the snapshots" \
+  || bad "own-backups: failed-step state was '$(snap_state "$OB2")'"
+grep -q 'backup: deleted' "$OB2/out.txt" && bad "own-backups: a deletion was logged on a failed run" || ok "own-backups: no deletion logged on a failed run"
+
+# a rollback (content rc 2 while the gateway is live): rolled_back + needs_host_restart, kept
+mkfx 0 2 "$SNAPSTUB"
+OB3="$T/ob-rolled"; seed_root "$OB3"; seed_snaps "$OB3"
+HEALTHZ_CODE=200 run_fg "$OB3" >/dev/null
+[ "$(json "$(ST "$OB3")" rolled_back)" = "true" ] && ok "own-backups: control: this run reports rolled_back" || bad "own-backups: control: rolled_back not true"
+[ "$(snap_state "$OB3")" = "new=1 backupcopy=1 old=1 notes=1 link=1 target=1 cfg=1" ] \
+  && ok "own-backups: rolled_back keeps the config copy and the snapshots" \
+  || bad "own-backups: rolled-back state was '$(snap_state "$OB3")'"
+
+# a host restart still owed, though every step passed (exit 0): kept
+mkfx 0 0 "$SNAPSTUB"
+OB4="$T/ob-restart"; seed_root "$OB4"; seed_snaps "$OB4"
+mkdir -p "$OB4/root/fleet-refresh"; echo "owed by an earlier run" > "$OB4/root/fleet-refresh/needs_host_restart"
+ROB4="$(HEALTHZ_CODE=200 run_fg "$OB4")"
+[ "$ROB4" = "0" ] && [ "$(json "$(ST "$OB4")" needs_host_restart)" = "true" ] \
+  && ok "own-backups: control: exit 0 with needs_host_restart true" || bad "own-backups: control: exit $ROB4, needs_host_restart '$(json "$(ST "$OB4")" needs_host_restart)'"
+[ "$(snap_state "$OB4")" = "new=1 backupcopy=1 old=1 notes=1 link=1 target=1 cfg=1" ] \
+  && ok "own-backups: needs_host_restart keeps the config copy and the snapshots" \
+  || bad "own-backups: needs-restart state was '$(snap_state "$OB4")'"
+
+# the content step deferred (exit 75): nothing proven, kept
+mkfx 0 75 "$SNAPSTUB"
+OB5="$T/ob-deferred"; seed_root "$OB5"; seed_snaps "$OB5"
+ROB5="$(HEALTHZ_CODE=200 run_fg "$OB5")"
+[ "$ROB5" = "75" ] && ok "own-backups: control: a deferred content step exits 75" || bad "own-backups: deferred exit $ROB5 (want 75)"
+[ "$(snap_state "$OB5")" = "new=1 backupcopy=1 old=1 notes=1 link=1 target=1 cfg=1" ] \
+  && ok "own-backups: a deferred run keeps the config copy and the snapshots" \
+  || bad "own-backups: deferred state was '$(snap_state "$OB5")'"
 
 # ══ hostinger.H7 / critic.C8: Docker defers to the host, never claims a rollback ══
 mkfx 0 2

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oc-atomic-upgrade.sh — v1.2.2
+# oc-atomic-upgrade.sh — v1.3.0
 #
 # THE ONLY SAFE WAY TO MOVE A BOX ONTO A NEW OPENCLAW BUILD.
 #
@@ -191,6 +191,15 @@
 # it and answers /healthz. A disagreeing PATH copy is logged and ignored. A
 # supervisor definition that names no openclaw package REFUSES (never guesses).
 #
+# THE BACKUP DOES NOT OUTLIVE THE INSTALL (v1.3.0; Trevor's order of 2026-10-29: a backup made of
+# somebody's OpenClaw is deleted as soon as the install is completed).
+# Step 4 writes <root>/openclaw.json.bak-pre-atomic-upgrade-<ts> so a rollback can restore the config.
+# Once the upgrade is PROVEN complete (the doctor model/provider check and `config validate` passed,
+# the gateway held its stability window, answered /healthz 200 and runs the target build) this run
+# deletes that file and logs its path (_drop_config_backup). Every failure before that point returns
+# through _rollback, which leaves the file where it is: a rollback that cannot finish needs it.
+# Only the copy THIS run wrote is ever removed; copies from earlier runs are not touched here.
+#
 # ⚠️ INTERPRETER: written for stock /bin/bash 3.2.57, which is what the fleet's
 # Macs run. No associative arrays, no `mapfile`, no `${x^^}`, and never a
 # heredoc nested inside `$( )` — that last one aborts at PARSE time on 3.2 and
@@ -198,7 +207,7 @@
 
 set -uo pipefail
 
-VERSION="1.2.2"
+VERSION="1.3.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIGRATOR="$SCRIPT_DIR/oc-schema-migrate.py"
 SUP_HELPER="$SCRIPT_DIR/oc-supervisor-install.py"
@@ -232,6 +241,7 @@ STATE_SELFHEAL_BOOTED_OUT=0
 GATEWAY_LOADED_AT_START=0   # the job/container the rollback must put back
 OLD_VERSION=""
 CONFIG_BACKUP=""
+CONFIG_BACKUP_GONE=""   # the path _drop_config_backup deleted (for the closing summary)
 OC_CONFIG=""
 OC_ROOT_DIR=""
 LOCK_FILE=""
@@ -1536,7 +1546,7 @@ ev, plugin, imp, was = (sys.argv[1:5] + ["", "", "", ""])[:4]
 rec = {"utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "event": ev, "plugin": plugin,
        "failing_import": imp, "was_enabled": was, "config": os.environ["OC_CFG"],
        "config_backup": os.environ["OC_BAK"], "oc_atomic_upgrade": os.environ["OC_VER"],
-       "restore": "set plugins.entries.%s.enabled back to %s in %s (or: cat the config_backup over it); then re-run openclaw doctor" % (plugin, was, os.environ["OC_CFG"])}
+       "restore": "set plugins.entries.%s.enabled back to %s in %s; then re-run openclaw doctor (config_backup names the pre-upgrade copy, which a successful upgrade deletes)" % (plugin, was, os.environ["OC_CFG"])}
 fd = os.open(os.environ["OC_REC"], os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
 with os.fdopen(fd, "a") as fh:
     fh.write(json.dumps(rec, sort_keys=True) + "\n")
@@ -1577,6 +1587,19 @@ _quarantine_from_output() {
   fi
   PLUGIN_QUARANTINE_COUNT=$((PLUGIN_QUARANTINE_COUNT+1))
   _ok "QUARANTINED plugin '$id' (module fails to load: $imp): plugins.entries.$id.enabled set to false, nothing else changed; recorded in $PLUGIN_RECORD"
+  return 0
+}
+
+# Delete the config copy THIS run wrote (step 4). Called only after the upgrade is proven complete.
+# A failed delete is a warning, never a failed upgrade: the box is already on the target.
+_drop_config_backup() {
+  [ -n "$CONFIG_BACKUP" ] && [ -f "$CONFIG_BACKUP" ] || return 0
+  if rm -f "$CONFIG_BACKUP" 2>/dev/null && [ ! -e "$CONFIG_BACKUP" ]; then
+    _ok "config backup deleted: $CONFIG_BACKUP"
+    CONFIG_BACKUP_GONE="$CONFIG_BACKUP"; CONFIG_BACKUP=""
+  else
+    _warn "config backup could NOT be deleted: $CONFIG_BACKUP"
+  fi
   return 0
 }
 
@@ -1928,6 +1951,7 @@ do_upgrade() {
     echo "    7a1. (launchd) doctor spinning on a plugin whose module cannot load (the same ERR_MODULE_NOT_FOUND ${DOCTOR_LOOP_LINES} times, or the bound) is killed; the plugin is named from its output, ONLY plugins.entries.<id>.enabled is set to false (recorded; never the allow list, never install/enable/update), and doctor runs again"
     echo "    7b. map retired values (skills.workshop.autonomous.mode propose -> off) then \`openclaw config validate\` with the NEW binary (job is out, so no gateway to contend with; against a SERVING gateway the check runs on a private copy in a private state dir under known-good/known-bad controls); rejected = roll back"
     echo "    8. stop any orphan gateway again, reap stale state-database holders again; bootstrap $GATEWAY_LABEL; require a STABLE pid for ${STABILITY_SECONDS}s, /healthz 200, and the launched package at $TARGET_VERSION"
+    echo "    8b. upgrade proven complete: delete the config backup this run wrote (any rollback keeps it)"
     echo "    9. release the lock, re-arm $SELFHEAL_LABEL"
     echo "    Any failure from step 3 onward: restore config AND binary, start the gateway."
     return 0
@@ -2145,6 +2169,11 @@ do_upgrade() {
     return $?
   fi
 
+  # ── 8b. THE UPGRADE IS PROVEN COMPLETE: DELETE THE BACKUP THIS RUN MADE ────
+  # Reached only after the model/provider check (7a), `config validate` (7b), the stability window,
+  # /healthz 200 and the launched package at the target (8). Any failure above went through _rollback.
+  _drop_config_backup
+
   # ── 9. RELEASE ─────────────────────────────────────────────────────────────
   STATE_QUIESCED=0
   _restore_selfheal
@@ -2153,7 +2182,7 @@ do_upgrade() {
   echo ""
   _ok "ATOMIC UPGRADE COMPLETE"
   _say "  binary : $OLD_VERSION -> $(_measured_version) (measured)"
-  _say "  config : ${CONFIG_BACKUP:+backup retained at $CONFIG_BACKUP}"
+  _say "  config : ${CONFIG_BACKUP:+backup retained at $CONFIG_BACKUP (could not be deleted)}${CONFIG_BACKUP_GONE:+backup deleted: $CONFIG_BACKUP_GONE}"
   [ -z "$PLUGIN_QUARANTINED" ] || _say "  plugins: entry DISABLED because its module fails to load:$PLUGIN_QUARANTINED  (restore steps in $PLUGIN_RECORD)"
   return 0
 }
