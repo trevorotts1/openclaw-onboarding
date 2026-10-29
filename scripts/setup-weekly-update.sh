@@ -214,9 +214,10 @@ fi
 # ---------------------------------------------------------------------------
 # PRE-UPGRADE GATE: legacy `agents.list` schema
 # ---------------------------------------------------------------------------
-# THIS IS THE MOST DANGEROUS LINE IN THE FLEET. `npm update -g openclaw` runs
-# here UNATTENDED, every Saturday at 23:59, and it is the thing that actually
-# moves a box onto a new OpenClaw build.
+# THIS IS THE MOST DANGEROUS STEP IN THE FLEET. An OpenClaw upgrade runs here
+# UNATTENDED, every Saturday at 23:59, and it is the thing that actually moves
+# a box onto a new OpenClaw build. (It used to be a bare `npm update -g
+# openclaw`; since BFR error #21 it is ONLY the atomic procedure, below.)
 #
 # The 2026.7.2-beta line REJECTS the legacy `agents.list` key:
 #     Gateway failed to start: Invalid config at ~/.openclaw/openclaw.json:
@@ -260,9 +261,15 @@ fi
 #   1. the atomic tool is on this box  -> it performs the ENTIRE upgrade
 #      (quiesce and prove it, install, migrate, verify, restart, prove stable,
 #      roll back binary AND config on any failure).
-#   2. the tool is absent BUT the config is PROVEN CLEAN -> the plain
-#      `npm update -g openclaw` still runs. A clean box cannot hit this
-#      landmine, so blocking it would be a regression for no safety gain.
+#   2. the tool is absent (config clean, or no config to inspect) -> NO
+#      UPGRADE THIS RUN. The bare `npm update -g openclaw` is gone: a clean
+#      config does not make it safe. Big Fleet Roll error #21 -- npm rewrites
+#      the package tree under a gateway that launchd KeepAlive keeps
+#      respawning, the respawn imports a half-written tree ("Cannot find module
+#      .../openclaw/dist/index.js"), dies, respawns, and the box never settles
+#      (Sonatta: rolled back, then dark). The Sunday content update delivers
+#      the atomic tool (update-skills.sh); the next Saturday then upgrades
+#      through it. A box left one build stale is recoverable.
 #   3. anything else -- legacy key present, unreadable config, no python3,
 #      detector error -> BLOCK. An absence that cannot be proven is not an
 #      absence, and a box left one build stale is recoverable.
@@ -413,7 +420,7 @@ if [ "$OC_REG_RC" -ne 0 ] && [ -n "$OC_GATE_BLOCK" ]; then
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] ############################################################"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] OPENCLAW UPGRADE BLOCKED (registry-parity, pre) on $(hostname 2>/dev/null || uname -n)"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')]   Reason: $OC_GATE_BLOCK"
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   'npm update -g openclaw' was NOT run. \`openclaw config validate\`"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   The OpenClaw upgrade was NOT run. \`openclaw config validate\`"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')]   would PASS on this box right now -- validity is not health."
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] ############################################################"
     } >> "$OC_LOG"
@@ -471,7 +478,7 @@ PYDETECT
                         *)  OC_GATE_BLOCK="the atomic upgrade exited $OC_ATOMIC_RC (undetermined) on a CLEAN box." ;;
                     esac
                 else
-                    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [agents-list] atomic tool not on this box; a clean config cannot hit the landmine, so the plain npm upgrade may proceed" >> "$OC_LOG"
+                    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [agents-list] clean config, but the atomic tool is not on this box (looked for $OC_ATOMIC) -- NOT upgrading with a bare npm update (BFR error #21); the Sunday content update delivers the tool" >> "$OC_LOG"
                 fi
                 ;;
             PRESENT)
@@ -516,7 +523,7 @@ if [ -n "$OC_GATE_BLOCK" ]; then
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] OPENCLAW UPGRADE BLOCKED on $(hostname 2>/dev/null || uname -n)"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')]   Reason: $OC_GATE_BLOCK"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')]   Config: $OC_CFG"
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   'npm update -g openclaw' was NOT run. This box stays on its"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   The OpenClaw upgrade was NOT run. This box stays on its"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')]   current build ON PURPOSE: upgrading it with a legacy"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')]   'agents.list' config makes the gateway exit 78 every ~11s"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')]   until the crash-loop breaker latches channels OFF and the"
@@ -538,19 +545,20 @@ fi
 rm -f "$HOME/.openclaw/skills/.openclaw-upgrade-blocked" 2>/dev/null
 
 
-# Update OpenClaw CLI.
-# SKIPPED when the atomic procedure already performed the upgrade: it installs
-# the binary itself (`npm install -g openclaw@<target>`) with the gateway down,
-# so running `npm update -g openclaw` again here would swap the binary a second
-# time UNDER THE RUNNING GATEWAY it just proved stable -- undoing the one
-# property that makes the atomic path worth taking.
+# The OpenClaw CLI is upgraded ONLY by the atomic procedure above
+# (<oc-root>/scripts/oc-atomic-upgrade.sh --upgrade): it boots the gateway job
+# out of launchd and proves it stopped (so KeepAlive cannot respawn it into a
+# half-written tree), installs the binary, proves the gateway came back and
+# STAYED up, and rolls the binary back otherwise. A bare `npm update -g openclaw` does none of that
+# and is never run from here (BFR error #21). When the atomic procedure did not
+# run (tool absent, or no config to inspect) nothing is installed this run.
 if [ "$OC_UPGRADE_DONE" = "1" ]; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] OpenClaw already upgraded by the atomic procedure -- skipping 'npm update -g openclaw'" >> "$OC_LOG"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] OpenClaw upgraded by the atomic procedure" >> "$OC_LOG"
 else
-    npm update -g openclaw >> "$OC_LOG" 2>&1
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] No OpenClaw upgrade this run: the atomic procedure did not run (tool absent or no config), and a bare npm update is never used" >> "$OC_LOG"
 fi
 OC_VERSION=$(openclaw --version 2>/dev/null)
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] OpenClaw updated to: $OC_VERSION" >> "$OC_LOG"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] OpenClaw is at: $OC_VERSION" >> "$OC_LOG"
 
 # R0 REGISTRY-PARITY GATE -- 'post' snapshot, after the binary has changed and
 # the gateway has had a chance to touch the config. A violation here fires
@@ -583,7 +591,7 @@ chmod +x "$OPENCLAW_UPDATE_SCRIPT"
 echo "[OK] Weekly update crons installed."
 echo ""
 echo "Schedule 1: Every Saturday at 11:59 PM"
-echo "  -> Updates OpenClaw CLI to latest version"
+echo "  -> Upgrades the OpenClaw CLI through the atomic procedure"
 echo ""
 echo "Schedule 2: Every Sunday at 3:00 AM"
 echo "  -> Runs the complete content-aware fleet update without restarting the gateway"
@@ -599,13 +607,13 @@ echo "         the box -> it performs the WHOLE upgrade: stop the gateway and pr
 echo "         it stopped, install the new build, migrate the config to"
 echo "         'agents.entries', verify the rewrite is lossless, restart, and prove"
 echo "         the gateway STAYS up -- rolling back binary AND config on any failure"
-echo "       - the tool is absent but the config is PROVEN CLEAN -> plain npm upgrade"
+echo "       - the tool is absent -> NO upgrade this run (never a bare npm update);"
+echo "         the Sunday content update delivers the tool, the next Saturday uses it"
 echo "       - anything else (legacy key, unreadable config, no python3) -> BLOCKED:"
 echo "         exit 78 and ~/.openclaw/skills/.openclaw-upgrade-blocked is written."
 echo "         A box left one build stale is recoverable; a dark box is not."
 echo "       NOTE: 'openclaw doctor --fix' does NOT perform this migration."
-echo "    2. Updates OpenClaw CLI (npm update -g openclaw) unless step 1 already did"
-echo "    3. Logs the new version"
+echo "    2. Logs the version the box is on (the CLI is only ever upgraded by step 1)"
 echo ""
 echo "  Sunday 3:00 AM (same steps as the operator's fleet roll):"
 echo "    1. Downloads the latest weekly-full-update.sh from GitHub"
