@@ -5,8 +5,8 @@
   "schema_version": 1,
   "sovereignty": "The chain is the CLIENT's own accounts under the CLIENT's own labels. Operator keys never land on a client box. The engine never substitutes a client's expressed model choice. Provider-state alarms NOTIFY, they never modify.",
   "deny_policy": {
-    "rule": "Anthropic-family model identifiers are DENIED at resolution time and again at call time by model_router.py deny patterns, and statically over every shipped file by guard-no-anthropic-runtime.py. A resolved tier whose provider or model matches an Anthropic-family shape fails closed (AF-AE-ANTHROPIC).",
-    "enforced_by": ["preflight.sh --check", "model_router.py", "guard-no-anthropic-runtime.py"]
+    "rule": "No model vendor is denied (Trevor order 2026-10-29). A tier resolves to whatever the client configured; an Anthropic-family model is routed like any other.",
+    "enforced_by": ["preflight.sh --check"]
   },
   "tiers": {
     "HEAVY-WRITER": {

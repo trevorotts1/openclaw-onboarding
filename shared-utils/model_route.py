@@ -4,9 +4,8 @@
 Used ONLY when the rules (JEV, then the lexical/rule fallback) could not place a
 task and the box's mode is `model`. Sovereignty: the model id is read from THIS
 box's openclaw.json (agents.defaults.model.primary, then the main agent, then the
-defaults' fallbacks) and is NEVER hardcoded here. Anthropic ids and free-tier ids
-are not valid defaults for a client box (same rule as the Command Center
-installer's cc_resolve_sovereign_model), so they do not count as "resolved".
+defaults' fallbacks) and is NEVER hardcoded here. Free-tier ids are not valid
+defaults for a client box, so they do not count as "resolved".
 
 No default resolves -> pick() answers {"status": "no_default_model"} and the
 caller falls back to legacy and logs it. Anything the model says that is not
@@ -41,7 +40,7 @@ def model_is_sovereign(model_id) -> bool:
     m = str(model_id or "").strip().lower()
     if not m or m == "openrouter/free" or m.endswith(":free"):
         return False
-    return "anthropic" not in m and "claude" not in m
+    return True
 
 
 def _primary(node):

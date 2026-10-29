@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # entry.sh — the ONLY sanctioned front door for an Avatar-Alchemist run (Skill 52).
-# Fail-closed sequence:  deps -> bypass-scan (imports+egress+anthropic ids+env
+# Fail-closed sequence:  deps -> bypass-scan (imports+egress+env
 # credential names) -> hash-pin -> nonce + foreman-key.
 # Nothing dispatches an LLM until every leg passes and a one-time nonce +
 # per-run signing key are minted. aa_director.py does NOT trust that this
@@ -24,33 +24,22 @@ if grep -REl 'import[[:space:]]+(requests|openai|anthropic|httpx|aiohttp)\b' "$H
 fi
 log "    python3 present; provers stdlib-only"
 
-# --- 2) bypass-scan: no Anthropic model ids, no ungoverned egress -------------
+# --- 2) bypass-scan: no ungoverned egress -------------------------------------
 log "2/5 bypass-scan"
-# The positive pattern is scoped to REAL, usable Anthropic model ids
-# (`anthropic/<model>`, `claude-sonnet-N`, `claude-opus`, `claude-haiku`,
-# `claude-N`) — the tightened pattern shared with qc-avatar-alchemist.sh. It
-# deliberately does NOT match the documentation literal `/anthropic|claude/i`
-# (the regex the provers apply), so the old `grep -v '/anthropic|claude/i'`
-# doc-literal exclusion is dropped: excluding whole lines by that literal could
-# have hidden a real baked id sitting on the same line as the doc string.
-if grep -REn 'anthropic/[a-z]|claude-sonnet-[0-9]|claude-opus|claude-haiku|claude-[0-9]' \
-     "$HERE/prompts" "$HERE"/*.json >/dev/null 2>&1; then
-  die "an Anthropic/claude model id is baked into a prompt or manifest (client-path ban, G-NOANTHROPIC)"
-fi
 python3 "$HERE/scripts/aa_egress_gate.py" --scripts-dir "$HERE/scripts" >/dev/null \
   || die "AF-AV-EGRESS: an ungoverned egress path (n8n/Airtable/Slack/Gmail/urllib/requests POST) was found"
-log "    zero Anthropic model ids in prompts/manifests; egress-clean (AF-AV-EGRESS)"
+log "    egress-clean (AF-AV-EGRESS)"
 
-# --- 2b) env-credential-name scan: no operator/anthropic credential NAMES in
+# --- 2b) env-credential-name scan: no operator credential NAMES in
 #     the live process env (NAMES only, never values — this is the LIVE half
-#     of G-NOANTHROPIC's credential-name ban; aa_build_check.py's env_names
+#     of the credential-name ban; aa_build_check.py's env_names
 #     loop can only see what a caller reports, so this is the real enforcement
 #     point where the process env is actually visible). ------------------------
 log "    2b/5 env credential-name scan"
-if env | cut -d= -f1 | grep -iE 'anthropic|operator|blackceo' >/dev/null 2>&1; then
-  die "AF-AV-NOANTHROPIC: an operator/anthropic-named credential env var is present in this process env"
+if env | cut -d= -f1 | grep -iE 'operator|blackceo' >/dev/null 2>&1; then
+  die "AF-AV-OPERATOR-CRED: an operator-named credential env var is present in this process env"
 fi
-log "    no operator/anthropic credential NAMES in env"
+log "    no operator credential NAMES in env"
 
 # --- 3) hash-pin: gates match their pinned sha256 (anti-lie LIVE-gate) --------
 log "3/5 hash-pin"

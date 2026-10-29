@@ -9,7 +9,6 @@ name: QC static checks
 #   • DEFAULT_WEIGHTS in adaptive_weights.py sums to 1.0
 #   • company-config.template.json is valid JSON (schema v2.0)
 #   • persona-categories.json is valid JSON
-#   • No Anthropic model strings in Skill 22/23 scripts
 #   • No flat-constant scoring (0.7/0.7/0.8/0.8) lingering in persona-selector-v2.py
 #
 # Triggers on every push to main and every PR targeting main.
@@ -126,15 +125,6 @@ jobs:
               print(f'✗ schema_version is {d[\"schema_version\"]}, expected 2.0'); sys.exit(1)
           print('✓ company-config template valid (schema v2.0)')
           "
-
-      - name: No Anthropic model strings in Skill 22/23 scripts
-        shell: bash
-        run: |
-          set -uo pipefail
-          if grep -rEn "'(claude-[a-z0-9-]+|anthropic/[a-z0-9-]+)'" 22-book-to-persona-coaching-leadership-system/scripts 23-ai-workforce-blueprint/scripts shared-utils/ 2>&1; then
-            echo "✗ Found Anthropic model string(s) above"; exit 1
-          fi
-          echo "✓ No Anthropic model strings in pipeline scripts"
 
       - name: persona-selector-v2 no longer uses flat scoring constants
         shell: bash
@@ -2941,18 +2931,7 @@ jobs:
           [ $fail -eq 0 ] && echo "✓ chmod-600 coverage: all .sh scripts that write secrets/.env also call chmod 600"
           exit $fail
 
-      - name: Vendor-URL exemption holds both directions (mutation proof)
-        shell: bash
-        run: |
-          set -uo pipefail
-          # Proves the `(?<!/mcp/)` carve-out in the NEXT step is correct in BOTH
-          # directions: HighLevel's MCP orchestrator URL (.../mcp/anthropic/v2) passes,
-          # while real Anthropic model slugs — including one sharing a line with that
-          # URL — still fail. Re-derives the pattern from this very file, so widening
-          # the exemption to a blanket `anthropic` allow turns this step red.
-          bash tests/unit/ghl-mcp-vendor-url-exemption.test.sh
-
-      - name: No banned model tokens in GHL skill markdown prose (M2 / Anthropic / non-Ollama Kimi)
+      - name: No banned model tokens in GHL skill markdown prose (M2 / non-Ollama Kimi)
         shell: bash
         run: |
           set -uo pipefail
@@ -2962,10 +2941,9 @@ jobs:
           # in the automated build so a regression that introduces a banned model token
           # into markdown prose fails the build without any manual pre-merge step.
           #
-          # Four violation classes — all fail the build:
+          # Three violation classes — all fail the build:
           #   (a) minimax-m2 / minimax_m2 / minimax/minimax-m2 as model id slugs
           #   (b) Bare M2 used as a live model id in a rung/ladder context
-          #   (c) Anthropic model slugs (claude-*, anthropic/*, us.anthropic.*) as usable models
           #   (d) Kimi referenced without the required ollama/ or openrouter/ prefix
           #
           # False-positive guards for (c)/(d) are SHAPE-based, not word-based: a match is
@@ -3031,36 +3009,6 @@ jobs:
             echo "✗ Found M2 used as a live model id (rung/ladder context) in GHL skill/shared markdown"; fail=1
           fi
 
-          # (c) Anthropic model slugs (claude-*, anthropic/*, us.anthropic.*) as usable
-          #     models. SHAPE-based exclusion (not word-based): the ONLY spared
-          #     occurrences are the exact literal non-model tokens `claude-desktop`
-          #     (mcporter import source) and `claude-code` (Anthropic CLI product name
-          #     when hyphenated) — matched via negative lookahead directly on the
-          #     "claude-" token, so a real slug (e.g. claude-opus-4) co-located on the
-          #     same line as ban/forbidden/rejected prose is still caught. Plain-English
-          #     "Claude"/"Anthropic" mentions without a hyphen/slash never match the
-          #     positive pattern at all, so doctrine prose naming the ban is unaffected.
-          #
-          #     VENDOR URL PATH EXEMPTION (added 2026-08-03): HighLevel's official MCP
-          #     orchestrator lives at `services.leadconnectorhq.com/mcp/anthropic/v2`.
-          #     There, `anthropic` is a PATH SEGMENT naming the MCP client the endpoint
-          #     serves — it is a vendor's URL, not a model slug, and Trevor needs it
-          #     documented in skill 36. The `(?<!/mcp/)` negative lookbehind spares
-          #     `anthropic/...` ONLY when immediately preceded by the literal `/mcp/`.
-          #     This is deliberately the narrowest possible carve-out: it is anchored to
-          #     that exact token position, so a genuine model slug (`anthropic/claude-*`,
-          #     `anthropic/claude-opus-4`) anywhere else — including elsewhere on the very
-          #     same line — is still caught. It is NOT a blanket `anthropic` allow.
-          #     Mutation proof both directions: tests/unit/ghl-mcp-vendor-url-exemption.test.sh
-          anthropic_hits=$(grep -rinP \
-              'claude-(?!desktop\b)(?!code\b)[a-z0-9-]+|(?<!/mcp/)anthropic/[a-z0-9-]+|us\.anthropic\.[a-z0-9.-]*' \
-              $ALL_DIRS --include="*.md" 2>/dev/null \
-              | grep -v "^Binary" || true)
-          if [ -n "$anthropic_hits" ]; then
-            echo "$anthropic_hits"
-            echo "✗ Found Anthropic model slug as a usable model in GHL skill/shared markdown"; fail=1
-          fi
-
           # (d) Kimi referenced without the required ollama/ or openrouter/ prefix.
           #     SHAPE-based exclusion (not word-based): only a genuine `kimi-<slug>`
           #     token is a candidate at all (plain-English "Kimi 2.6" prose with no
@@ -3083,7 +3031,7 @@ jobs:
             echo "✗ Found Kimi referenced without ollama/ or openrouter/ prefix in GHL skill/shared markdown"; fail=1
           fi
 
-          [ $fail -eq 0 ] && echo "✓ No banned model tokens in GHL skill/shared markdown (minimax-m2 / Anthropic / bare Kimi)"
+          [ $fail -eq 0 ] && echo "✓ No banned model tokens in GHL skill/shared markdown (minimax-m2 / bare Kimi)"
           exit $fail
 
       - name: No secret-printing greps in 36/38 shipped SOPs (FIX-XC-07)

@@ -40,10 +40,10 @@ the OpenClaw box owner; there is NO producer role in any Command Center code.
    anthologies is two participant rows sharing one contact_id, separated by
    anthology_id. Unroutable submissions land in the exceptions queue with the raw
    payload and a typed reason, never dropped or guessed.
-9. NON-ANTHROPIC CLIENT SOVEREIGNTY: every resolved model id is the client's OWN
-   strongest NON-Anthropic model, from the client's own keys, never the operator's.
-   No Anthropic-family id, no operator key, no key taken through intake. Enforced by
-   `model_router.py` deny patterns and `guard-no-anthropic-runtime.py`.
+9. CLIENT SOVEREIGNTY: every resolved model id is a model the client configured, from
+   the client's own keys, never the operator's. No operator key, no key taken through
+   intake. No vendor is refused: an Anthropic-family model the client configured is
+   routed like any other.
 10. PER-CLIENT DELIVERY ROOT (BlackCEO hosts one Shared Drive per client). Google
     delivery uses the BlackCEO-owned service account (label `GOOGLE_SA_KEY_FILE`)
     impersonating the BlackCEO Workspace user (`GOOGLE_IMPERSONATE_USER`), and lands

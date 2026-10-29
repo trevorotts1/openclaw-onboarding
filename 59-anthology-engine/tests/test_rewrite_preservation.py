@@ -366,22 +366,6 @@ def test_third_rewrite_refused_and_count_surfaced_real_ledger():
             "at budget the gate must NOT offer request_rewrite; got %s" % dec["gate_actions"]
 
 
-# ---------------------------------------------------------------------------
-# Doctrine guard: this unit introduced no Anthropic-family runtime id. Delegates
-# to the repo's OWN authoritative scanner (which correctly skips guard-definition
-# regexes and negative fixtures), not a naive substring match.
-# ---------------------------------------------------------------------------
-def test_unit_introduced_no_anthropic_runtime_id():
-    guard = SCRIPTS / "guard-no-anthropic-runtime.py"
-    if not guard.exists():
-        return  # scanner absent on this checkout; verify.sh owns the fleet gate
-    for target in ("caf_delivery.py", "stage_s6_rewrite.py", "stage_s8_deliver.py",
-                   "anthology_registry.py"):
-        r = subprocess.run([sys.executable, str(guard), str(SCRIPTS / target)],
-                           capture_output=True, text=True)
-        assert r.returncode == 0, "%s failed the anthropic-runtime guard: %s" % (target, r.stdout[-300:])
-
-
 class _Sink:
     def write(self, *_a, **_k):
         pass

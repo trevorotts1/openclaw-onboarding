@@ -118,12 +118,6 @@ test('upload body matches the U04 worker POST contract and carries no id fields'
   });
 });
 
-test('verifyNoAnthropic hard-fails any anthropic/claude model id', () => {
-  assert.equal(BW.verifyNoAnthropic({ model: 'anthropic/claude-sonnet-4' }).ok, false);
-  assert.equal(BW.verifyNoAnthropic({ transcript_json: { model: 'claude-3' } }).ok, false);
-  assert.equal(BW.verifyNoAnthropic({ model: 'whisper-small' }).ok, true);
-});
-
 test('module copy never renders a banned anti-anxiety word', () => {
   const copy = Object.keys(BW.COPY).map((k) => BW.COPY[k]);
   assert.equal(BW.scanBannedCopy(copy).length, 0);

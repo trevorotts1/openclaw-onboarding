@@ -27,9 +27,9 @@ single choke point through which every billable text turn flows. It:
     (credit_queue.py) with exactly ONE deduped founder alert through the
     OpenClaw gateway (alert-dedup.py),
   * refuses at call time any resolved model / provider / family matching the
-    config deny_patterns (claude, anthropic, us.anthropic, opus, sonnet, haiku)
-    OR an Anthropic-family shape -- a deny match is a HARD ERROR, never a silent
-    fallback (furnace-design Guardrail 5; mirrors guard-no-anthropic-runtime.py),
+    config deny_patterns, if a client lists any (the shipped list is EMPTY: there
+    is no rule against Anthropic / Claude models) -- a deny match is a HARD
+    ERROR, never a silent fallback,
   * records the model ACTUALLY used honestly, and marks a SUBSTITUTION whenever a
     non-primary link served the turn so the delivery report can name it.
 
@@ -41,7 +41,7 @@ value is used solely to build an Authorization header, never logged or stored.
 
 Exit codes (house convention; 1 = unexpected error):
   0  completion
-  2  deny-pattern refusal (a denied / Anthropic-shaped id reached the router)
+  2  deny-pattern refusal (an id matching a client-listed deny pattern reached the router)
   3  chain exhausted, job held (durable HOLD + ONE deduped founder alert)
   4  budget ceiling block (podcast-cost-ledger.py refused the call before it billed)
   5  no model resolved (no client choice, no client configured default):
@@ -106,21 +106,6 @@ _LEDGER_HARD_CEILING_CODES = frozenset((10, 11, 13, 15))
 # Default OpenAI-compatible chat path appended to a link base_url.
 _CHAT_PATH = "/chat/completions"
 
-# ---------------------------------------------------------------------------
-# Anthropic-family shape backstop. Assembled from FRAGMENTS so this shipped
-# runtime file carries no contiguous banned literal (guard-no-anthropic-runtime
-# scans .py source). This is defense in depth BESIDE the config deny_patterns:
-# even if the config list were emptied, an Anthropic-shaped id is still refused.
-# ---------------------------------------------------------------------------
-_A = "anthro" + "pic"
-_C = "clau" + "de"
-_ANTHROPIC_SHAPE_RE = re.compile(
-    r"(?i)(^|[^a-z0-9])(" + _C + r"|" + _A + r")([^a-z0-9]|$)"
-    r"|" + _A + r"/"
-    r"|" + _C + r"-"
-    r"|us\." + _A + r"\.",
-)
-
 _CREDIT_TERMS = (
     "insufficient", "credit", "quota", "billing", "balance", "payment required",
     "exceeded your current", "out of funds", "top up", "top-up",
@@ -133,14 +118,14 @@ _REFUSAL_TERMS = (
 
 def is_denied(text: str, deny_patterns: List[str]) -> bool:
     """True iff `text` matches any config deny pattern (case-insensitive
-    substring, mirroring deny_match) OR an Anthropic-family shape."""
+    substring, mirroring deny_match). The shipped list is empty."""
     if not text:
         return False
     low = str(text).lower()
     for pat in (deny_patterns or []):
         if pat and str(pat).lower() in low:
             return True
-    return bool(_ANTHROPIC_SHAPE_RE.search(str(text)))
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -469,8 +454,6 @@ def validate_config(block: dict) -> None:
     if not isinstance(models, dict):
         raise ConfigError("podcast_engine.models missing")
     deny = deny_patterns_of(block)
-    if not deny:
-        raise ConfigError("podcast_engine.deny_patterns missing or empty")
     sel = selection_of(block)
     if sel:
         order = sel.get("order")
@@ -855,7 +838,7 @@ class ModelRouter:
                                          "class": pe.error_class.value,
                                          "status": resp.status, "detail": pe.detail})
                     continue
-                # Honest record: refuse if the provider echoed a denied id.
+                # Honest record: refuse if the provider echoed an id on the client's deny list.
                 self._guard(parsed["model_used"])
                 substituted = priority != primary_priority
                 self.post_meter(context, tier, parsed["model_used"], parsed["usage"])
@@ -932,7 +915,7 @@ def _cli_deny_check(args) -> int:
     block, _ = load_models_config(args.path)
     deny = deny_patterns_of(block)
     if is_denied(args.model, deny):
-        print("DENY: %r matches the runtime deny list / Anthropic shape" % args.model)
+        print("DENY: %r matches the runtime deny list" % args.model)
         return EX_DENY
     print("OK: %r is not denied" % args.model)
     return EX_OK
@@ -1112,10 +1095,10 @@ def self_test() -> int:
 
     deny = deny_patterns_of(block)
 
-    # t1: deny list catches denied family tokens and an Anthropic shape; passes real ids.
-    check("deny catches an 'opus' family token", is_denied("vendor-opus-preview", deny))
-    check("deny catches a 'sonnet' family token", is_denied("some-sonnet-3", deny))
-    check("deny catches an Anthropic-family shape", is_denied(_C + "-x1", deny))
+    # t1: the shipped deny list is empty, so an Anthropic-family id is NOT denied; real ids pass.
+    check("shipped deny list is empty", not deny)
+    check("deny does not refuse an 'opus' family token", not is_denied("vendor-opus-preview", deny))
+    check("deny does not refuse an Anthropic-family shape", not is_denied("cl" + "aude-x1", deny))
     check("deny passes the real content primary id", not is_denied(content_first, deny))
     check("deny passes a plain client-configured id", not is_denied("example-writer-1:cloud", deny))
 
@@ -1197,14 +1180,23 @@ def self_test() -> int:
     check("judge routes and records a non-denied honest model",
           jres.model_used == judge[0]["model"] and not is_denied(jres.model_used, deny))
 
-    # t9: a config carrying a denied id fails closed at construction.
+    # t9: a client-listed deny pattern still fails closed at construction; an
+    # Anthropic-family id is NOT denied (no vendor rule).
     poisoned = json.loads(json.dumps(client_block))
     poisoned["models"]["client_defaults"][CONTENT_TIER][0]["model"] = "vendor-opus-9"
     try:
         ModelRouter(config_block=poisoned)
-        check("denied-id config fails closed", False)
+        check("Anthropic-family id in config is accepted", True)
     except DenyPatternRefusal:
-        check("denied-id config fails closed (DenyPatternRefusal, exit 2)", True)
+        check("Anthropic-family id in config is accepted", False)
+    listed = json.loads(json.dumps(client_block))
+    listed["models"]["deny_patterns"] = ["vendor-foo"]
+    listed["models"]["client_defaults"][CONTENT_TIER][0]["model"] = "vendor-foo-9"
+    try:
+        ModelRouter(config_block=listed)
+        check("client-listed deny pattern fails closed", False)
+    except DenyPatternRefusal:
+        check("client-listed deny pattern fails closed (DenyPatternRefusal, exit 2)", True)
 
     # t10: hold-immediately-on-credit-out short-circuits on the FIRST 402.
     holds = []

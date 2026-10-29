@@ -137,7 +137,6 @@ CAF_VERSION_HEADER = reg.CAF_VERSION_HEADER
 # table below is a literal mirror and a reordered manifest trips the
 # self-test first (fail-closed: the mirror never silently re-sorts).
 AF_SLOT_UNRESOLVED = "AF-AE-SLOT-UNRESOLVED"
-AF_ANTHROPIC = "AF-AE-ANTHROPIC"
 AF_PROMPT_PIN = "AF-AE-PROMPT-PIN"
 AF_FONT_FLOOR = "AF-AE-FONT-FLOOR"
 AF_TENANT_MISMATCH = "AF-AE-TENANT-MISMATCH"
@@ -217,7 +216,6 @@ AF_ARCHSTMT_READBACK = "AF-AE-ARCHSTMT-READBACK"
 # above so a code can never be entered twice or misspelled.
 _AF_TABLE = (
     AF_SLOT_UNRESOLVED,
-    AF_ANTHROPIC,
     AF_PROMPT_PIN,
     AF_FONT_FLOOR,
     AF_TENANT_MISMATCH,

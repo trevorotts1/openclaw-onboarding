@@ -21,7 +21,6 @@
 #                        agents.defaults.model.fallbacks entries that are on
 #                        the box's list (used only when the primary fails:
 #                        full, rate-limited or unavailable)
-#             Never an Anthropic or Claude model.
 #             Recommendation: a low-cost or subscription-billed model, because
 #             this is a weekly maintenance audit, not a reasoning showcase;
 #             the client's configured default normally fits.
@@ -150,13 +149,9 @@ def walk(o):
     elif isinstance(o, str) and ID_RE.match(o.strip()):
         ids.add(o.strip())
 walk(data)
-banned = re.compile(r"anthropic|claude", re.I)
 def pick_override(override, label):
     # The explicit client choice (--primary / --fallback). Still validated:
-    # never an Anthropic or Claude model, and it must be on the configured
-    # model list of this box.
-    if banned.search(override):
-        return "REFUSED_%s=%s is an Anthropic or Claude model, which this job must never use" % (label, override)
+    # it must be on the configured model list of this box.
     if override not in ids:
         return "MISSING_%s=%s (not on this box's configured model list)" % (label, override)
     return "%s=%s" % (label, override)
@@ -180,17 +175,12 @@ configured = cfg_default_model()
 if primary_override:
     print(pick_override(primary_override, "PRIMARY"))
 elif configured:
-    if banned.search(configured):
-        print("MISSING_PRIMARY=the configured default model of this box (%s) is an Anthropic or Claude model, which this job must never use; pass --primary with a non-Anthropic id on the list, or configure a different default model" % configured)
-    elif configured not in ids:
+    if configured not in ids:
         print("MISSING_PRIMARY=the configured default model of this box (%s) is not on its configured model list; pass --primary with an id on the list, or configure a default model that is on the list" % configured)
     else:
         print("PRIMARY=" + configured)
 elif default_id[0]:
-    if banned.search(default_id[0]):
-        print("MISSING_PRIMARY=the configured default model of this box (%s) is an Anthropic or Claude model, which this job must never use; pass --primary with a non-Anthropic id on the list, or configure a different default model" % default_id[0])
-    else:
-        print("PRIMARY=" + default_id[0])
+    print("PRIMARY=" + default_id[0])
 else:
     print("MISSING_PRIMARY=no configured default model on this box (no agents.defaults.model.primary in openclaw.json and no model tagged as default in its configured model list); pass --primary with an id on the list, or configure a default model")
 if fallback_override:
@@ -202,7 +192,7 @@ PY
 PRIMARY="$(printf '%s\n' "$SEL" | sed -n 's/^PRIMARY=//p')"
 FALLBACK="$(printf '%s\n' "$SEL" | sed -n 's/^FALLBACK=//p')"
 # D20: with no --fallback override, use the box's own agents.defaults.model.fallbacks
-# (only ids that are on this box's model list, never Anthropic/Claude, never the
+# (only ids that are on this box's model list, never the
 # primary) instead of leaving the job with no fallback at all.
 if [ -z "$FALLBACK" ] && [ -z "$FALLBACK_OVERRIDE" ] && [ -n "$PRIMARY" ]; then
   FALLBACK="$(OC_JSON="$(pr_ocroot)/openclaw.json" PRIMARY="$PRIMARY" python3 - "$TMP/models.json" <<'PY' 2>/dev/null || true
@@ -213,7 +203,7 @@ try:
     keep = []
     for f in fb if isinstance(fb, list) else []:
         if (isinstance(f, str) and f != os.environ["PRIMARY"] and f not in keep
-                and "," not in f and not re.search(r"anthropic|claude", f, re.I) and f in listed):
+                and "," not in f and f in listed):
             keep.append(f)
     print(",".join(keep))
 except Exception:

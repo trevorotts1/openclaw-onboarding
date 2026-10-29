@@ -28,8 +28,6 @@
  *     `prefers-reduced-motion` when they need to.
  *
  * PROVIDER-NEUTRAL / CONSTRAINTS (fail-closed):
- *   - NO Anthropic id anywhere (AF-BW-MA-ANTHROPIC). `verifyNoAnthropic`
- *     re-checks any resolved transcription job view, exactly as U10 does.
  *   - NO {{...}} template placeholders in shipped code.
  *   - NO real zone/account id. The upload POST body carries only the channel,
  *     answer_id, filename, size, content-type, header bytes, and session.
@@ -48,10 +46,6 @@
   // Banned anti-anxiety words — must never render (T5 warmth guard). Matches
   // the U08 lint word set exactly.
   var BANNED_COPY = ['submit', 'required', 'final', 'deadline', 'you must', ' error'];
-
-  // AF-BW-MA-ANTHROPIC: provider-neutral — any resolved transcription model id
-  // containing anthropic/claude is a HARD FAIL (never a silent fallback).
-  var ANTHROPIC_RE = /anthropic|claude/i;
 
   // MediaRecorder MIME hints (preferred first; isTypeSupported falls back).
   var MIME_HINTS = {
@@ -328,19 +322,6 @@
   }
 
   /**
-   * AF-BW-MA-ANTHROPIC re-check on a resolved transcription job view. Any
-   * model id matching /anthropic|claude/i is a HARD FAIL. Returns
-   * { ok:true } or { ok:false, code, model }.
-   */
-  function verifyNoAnthropic(job) {
-    var model = job && (job.model || (job.transcript_json && job.transcript_json.model));
-    if (typeof model === 'string' && ANTHROPIC_RE.test(model)) {
-      return { ok: false, code: 'AF-BW-MA-ANTHROPIC', model: model };
-    }
-    return { ok: true, code: null, model: null };
-  }
-
-  /**
    * Scan copy strings for banned anti-anxiety words (mirrors U10). Returns
    * the offending strings; empty when clean.
    */
@@ -490,7 +471,6 @@
     uploadBody: uploadBody,
     readTxt: readTxt,
     extractPdfText: extractPdfText,
-    verifyNoAnthropic: verifyNoAnthropic,
     scanBannedCopy: scanBannedCopy,
     // DOM render
     renderRecorder: renderRecorder,
@@ -609,14 +589,6 @@
       check('upload body session', body.session === 'run-A');
       check('upload body has no zone/account id field',
         Object.keys(body).every(function (k) { return ['channel', 'answer_id', 'filename', 'size_bytes', 'content_type', 'header_bytes', 'session'].indexOf(k) !== -1; }));
-
-      // ---- verifyNoAnthropic (AF-BW-MA-ANTHROPIC) ---------------------------
-      var bad = verifyNoAnthropic({ model: 'anthropic/claude-sonnet-4' });
-      check('anthropic/claude model id hard-fails', bad.ok === false && bad.code === 'AF-BW-MA-ANTHROPIC');
-      var bad2 = verifyNoAnthropic({ transcript_json: { model: 'claude-3' } });
-      check('anthropic id inside transcript_json hard-fails', bad2.ok === false);
-      var good = verifyNoAnthropic({ model: 'whisper-small' });
-      check('provider-neutral model passes', good.ok === true);
 
       // ---- module copy is banned-word-free -----------------------------------
       var copy = Object.keys(COPY).map(function (k) { return COPY[k]; });

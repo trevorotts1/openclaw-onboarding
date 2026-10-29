@@ -1,7 +1,7 @@
 ---
 name: anthology-engine
 description: |
-  The Anthology Engine, the per-client orchestrator that turns ONE participant's universal Convert and Flow form submission into ONE gated, quality-controlled 2,000 to 3,500 word anthology chapter (never twelve), delivered as BOTH a Google Doc and a designed PDF with no font below 14 point, links pushed to standardized Convert and Flow contact custom fields keyed by contact_id. It owns ALL external input and output and CALLS Skill 54 (Anthology Writer) as its authoring core; it never re-authors the chapter pipeline. Four layers: a deterministic intake router; an Airtable-backed durable multi-participant ledger (contact_id plus anthology_id); the Skill 54 authoring core extended with the Skill 52 avatar handoff and the newly pinned prompts; Google Drive plus PDF plus Convert and Flow delivery; and the producer and participant surfaces INSIDE the client's own Command Center (a seeded Anthology department board, home-screen tiles, and a token-scoped participant page). Every stage is an idempotent, resumable job against the ledger; a crash, a credit outage, or a six-month pause costs nothing. Runs S0 intake to S9 anthology assembly through one sanctioned entry (anthology-engine-entry.sh). The producer is the OpenClaw box owner; participants are external co-authors with no login. Runtime is NEVER an Anthropic-family model: the client's own NON-Anthropic provider chain only. Move in silence: operator-verbose, client-silent, only three sanctioned nudge templates ever reach a client. Sibling of Skill 53 (Book Writer) and Skill 54 (Anthology Writer); it deprecates neither. Trigger with "run the anthology engine", "start an anthology", "onboard an anthology producer", "assemble the anthology", or an inbound anthology intake webhook.
+  The Anthology Engine, the per-client orchestrator that turns ONE participant's universal Convert and Flow form submission into ONE gated, quality-controlled 2,000 to 3,500 word anthology chapter (never twelve), delivered as BOTH a Google Doc and a designed PDF with no font below 14 point, links pushed to standardized Convert and Flow contact custom fields keyed by contact_id. It owns ALL external input and output and CALLS Skill 54 (Anthology Writer) as its authoring core; it never re-authors the chapter pipeline. Four layers: a deterministic intake router; an Airtable-backed durable multi-participant ledger (contact_id plus anthology_id); the Skill 54 authoring core extended with the Skill 52 avatar handoff and the newly pinned prompts; Google Drive plus PDF plus Convert and Flow delivery; and the producer and participant surfaces INSIDE the client's own Command Center (a seeded Anthology department board, home-screen tiles, and a token-scoped participant page). Every stage is an idempotent, resumable job against the ledger; a crash, a credit outage, or a six-month pause costs nothing. Runs S0 intake to S9 anthology assembly through one sanctioned entry (anthology-engine-entry.sh). The producer is the OpenClaw box owner; participants are external co-authors with no login. Runtime uses the client's own configured provider chain only. Move in silence: operator-verbose, client-silent, only three sanctioned nudge templates ever reach a client. Sibling of Skill 53 (Book Writer) and Skill 54 (Anthology Writer); it deprecates neither. Trigger with "run the anthology engine", "start an anthology", "onboard an anthology producer", "assemble the anthology", or an inbound anthology intake webhook.
 trigger: anthology engine
 version: 1.0.17
 ---
@@ -40,10 +40,10 @@ Move in silence. Every code path honors these:
 5. CONFIG WRITES RUN AS THE NODE USER, never root. A root-owned config freezes the
    gateway.
 6. The client-facing platform name is Convert and Flow, on every surface.
-7. NOTHING Anthropic-family ships at runtime: the client's own NON-Anthropic chain
-   only. `model_router.py` deny patterns refuse Anthropic-family ids at call time
-   and `guard-no-anthropic-runtime.py` refuses them statically over every shipped
-   file including every Command Center edit.
+7. The client's own model chain only: every tier resolves to a model the client
+   configured. There is NO rule against Anthropic-family models (Trevor order
+   2026-10-29): `preflight.sh` and `model_router.py` never refuse one, and no
+   static scan of the shipped files checks for one.
 8. CANARY, THEN HOLD. The engine is proven on the operator box first; fleet rollout
    is HELD at repo-only until the operator gives the explicit OK. No client box is
    touched by the build.
@@ -93,7 +93,7 @@ across clients.
    keys (OLLAMA_CLOUD_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY, etc.) are
    resolved per-box by `preflight.sh` against the CLIENT's own `openclaw.json`.
    These are also authenticated per-client and never shared. Model id resolution
-   is fail-closed (AF-AE-UNRESOLVED-MODELMAP, AF-AE-ANTHROPIC).
+   is fail-closed (AF-AE-UNRESOLVED-MODELMAP).
 
 5. **CREDENTIALS NEVER COMMITTED.** No key value, no PIT, no Location ID, no model
    provider key ever lives in a committed file. Credentials are referenced by LABEL
@@ -252,7 +252,6 @@ forking the tone core is a build failure.
     bash 59-anthology-engine/verify-deps.sh  # dependency check (python3)
 
 `verify.sh` proves the house layout and the interface contracts this skill
-establishes (the stage machine, the field-map keys, the model-map tiers with no
-Anthropic-family id, the em-dash-free and fence-free nudge templates, the 14-point
+establishes (the stage machine, the field-map keys, the model-map tiers, the em-dash-free and fence-free nudge templates, the 14-point
 PDF floor, every stage runner byte-compiling and passing its self-test). It is
 scoped so it stays green as the sibling modules land.

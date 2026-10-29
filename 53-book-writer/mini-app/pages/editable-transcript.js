@@ -20,9 +20,7 @@
  *      tab wall, AF-BK-VERSION).
  *
  * PROVIDER-NEUTRAL: this module performs NO transcription and names NO model
- * provider. It includes `verifyNoAnthropic` as the AF-BW-MA-ANTHROPIC re-check
- * on any resolved transcription job: a model id matching /anthropic|claude/i
- * hard-fails the label path — never a silent fallback, never an Anthropic id.
+ * provider.
  *
  * WARM LOW-OVERWHELM: every screen ends with "Save & come back later — your
  * answers are safe." The banned anti-anxiety words (Submit / Required / Final /
@@ -46,10 +44,6 @@
   // guard, MASTER-PLAN section 5). The module's own copy is linted against
   // them on every self-test run.
   var BANNED_COPY = ['submit', 'required', 'final', 'deadline', 'you must', ' error'];
-
-  // AF-BW-MA-ANTHROPIC: provider-neutral. Any resolved transcription model id
-  // containing anthropic/claude is a HARD FAIL — never a silent fallback.
-  var ANTHROPIC_RE = /anthropic|claude/i;
 
   // The answer-your-way tab set, ordered as in MASTER-PLAN section 5.
   // Labels are the warm mode names; `rendererKey` maps back to the U05
@@ -184,19 +178,6 @@
   /** Warm affordance to switch to another answer-your-way mode. */
   function switchModeLabel() {
     return 'Answer it a different way';
-  }
-
-  /**
-   * AF-BW-MA-ANTHROPIC re-check on a resolved transcription job. Any model id
-   * matching /anthropic|claude/i is a HARD FAIL. Returns { ok:true } or
-   * { ok:false, code:'AF-BW-MA-ANTHROPIC', model }.
-   */
-  function verifyNoAnthropic(job) {
-    var model = job && (job.model || (job.transcript_json && job.transcript_json.model));
-    if (typeof model === 'string' && ANTHROPIC_RE.test(model)) {
-      return { ok: false, code: 'AF-BW-MA-ANTHROPIC', model: model };
-    }
-    return { ok: true, code: null, model: null };
   }
 
   /**
@@ -368,7 +349,6 @@
     transcriptHelperText: transcriptHelperText,
     reRecordLabel: reRecordLabel,
     switchModeLabel: switchModeLabel,
-    verifyNoAnthropic: verifyNoAnthropic,
     tabSetFor: tabSetFor,
     modeLabel: modeLabel,
     firstMode: firstMode,
@@ -434,14 +414,6 @@
     var st2 = { language: 'English', confirmed: false };
     confirmLanguage(st2);
     check('confirm marks confirmed', st2.confirmed === true);
-
-    // -- verifyNoAnthropic (AF-BW-MA-ANTHROPIC) -------------------------------
-    var bad = verifyNoAnthropic({ model: 'anthropic/claude-sonnet-4' });
-    check('anthropic/claude model id hard-fails', bad.ok === false && bad.code === 'AF-BW-MA-ANTHROPIC');
-    var bad2 = verifyNoAnthropic({ transcript_json: { model: 'claude-3' } });
-    check('anthropic id inside transcript_json hard-fails', bad2.ok === false);
-    var good = verifyNoAnthropic({ model: 'whisper-small' });
-    check('provider-neutral model passes', good.ok === true);
 
     // -- answer-your-way tab set ----------------------------------------------
     var full = tabSetFor({ id: 'q', kind: 'textarea', answer_your_way: ['text', 'media', 'file-pdf', 'file-txt'], handlers: { media: { accept: ['audio', 'video'] } } });

@@ -7,11 +7,10 @@
 #   * config hash (secrets EXCLUDED — never hashed-in, never printed)
 #   * shipped prompt-file hashes vs the canonical PROMPT-HASHES.json pin  -> AF-SM-PROMPT-HASH
 #   * every gate's PASS certificate for the run's declared phases         -> AF-SM-PROCESS-INTEGRITY
-#   * a per-call provenance record EXISTS (else zero-Anthropic is a lie)  -> AF-SM-PROVENANCE-MISSING
-#   * the model/provider used per call — MUST show ZERO Anthropic         -> AF-SM-NOANTHROPIC
+#   * a per-call provenance record EXISTS (the models used are recorded)  -> AF-SM-PROVENANCE-MISSING
 #   * agency isolation: no two roster entries share a pit or locationId   -> AF-SM-AGENCY-SHARED-PIT
 # On PASS it writes delivery/PROCESS-CERTIFICATE.{json,md} with a deterministic
-# certificate_sha (over the ordered gates + prompt-hash-ok + zero-anthropic +
+# certificate_sha (over the ordered gates + prompt-hash-ok +
 # the run identity — NOT the wall clock), mirroring run_email_engine's cert.
 #
 # EXIT: 0 PASS (certificate issued) / 2 AUTOFAIL / 3 USAGE-IO.
@@ -36,7 +35,6 @@ EXIT_USAGE = 3
 
 AF_PROMPT_HASH = "AF-SM-PROMPT-HASH"
 AF_PROCESS = "AF-SM-PROCESS-INTEGRITY"
-AF_NOANTHROPIC = "AF-SM-NOANTHROPIC"
 AF_AGENCY = "AF-SM-AGENCY-SHARED-PIT"
 AF_PROVENANCE = "AF-SM-PROVENANCE-MISSING"
 AF_OVERRIDE = "AF-SM-OVERRIDE-UNLOGGED"
@@ -50,9 +48,7 @@ SECRET_FIELDS = ("pit", "openrouterKey", "kieKey", "geminiKey", "accessToken")
 # is satisfied by ANY of these — not P3-CONTRACT specifically (which fold/cover modes omit).
 REQUIRED_ALWAYS = ("P0-PREFLIGHT", "P5-SCRUB")
 CONTENT_GATES = ("P3-CONTRACT", "P4-MEDIA", "P9-NEWSLETTER", "P10-BLOG", "P11-PODCAST")
-_ANTHROPIC_RE = re.compile(
-    r"claude-(?:opus|sonnet|haiku|instant|fable|[0-9])|anthropic/claude-(?:[0-9]|opus|sonnet|haiku)"
-    r"|us\.anthropic\.claude|sk-ant-|@anthropic-ai/|ANTHROPIC_API_KEY", re.I)
+
 
 
 def _sha256_file(p):
@@ -108,42 +104,18 @@ def check_gates(gates):
 
 
 def check_provenance(calls):
-    """A ZERO-Anthropic certificate is a FALSE proof without a provenance record.
-    The certificate's central claim ('proves ZERO Anthropic per run') can only be
-    made if the run recorded which model/provider each call used. An absent or
-    empty working/provenance/calls.json is fail-closed -> AF-SM-PROVENANCE-MISSING."""
+    """The certificate records which model/provider each call used, so a run with
+    no provenance record cannot be certified. An absent or empty
+    working/provenance/calls.json is fail-closed -> AF-SM-PROVENANCE-MISSING."""
     if not (isinstance(calls, list) and len(calls) > 0):
         return [(AF_PROVENANCE, "no provenance calls recorded (working/provenance/calls.json); "
-                 "cannot certify zero-Anthropic without a per-call model/provider record")]
+                 "cannot certify without a per-call model/provider record")]
     return []
 
 
-def check_no_anthropic(calls):
-    """Every recorded model/provider call must be non-Anthropic (G-NOANTHROPIC).
-
-    Two independent tests: (1) the regex over "<model> <provider>" catches
-    claude-* / anthropic/claude-* / sk-ant- / @anthropic-ai/ / bedrock ids; and
-    (2) an EXACT provider-FIELD test — `{"provider":"anthropic"}` (or "claude")
-    paired with a NON-claude model id (e.g. a bare model name) sails past the
-    regex, so the provider field is matched directly. Either trip is a hard
-    AF-SM-NOANTHROPIC (fail-closed)."""
-    fails = []
-    models = []
-    for c in calls or []:
-        if not isinstance(c, dict):
-            continue
-        model = str(c.get("model", ""))
-        provider = str(c.get("provider", ""))
-        models.append(model)
-        blob = "%s %s" % (model, provider)
-        if _ANTHROPIC_RE.search(blob):
-            fails.append((AF_NOANTHROPIC, "call %r used an Anthropic model/provider" % c.get("step", "?")))
-        elif provider.strip().lower() in ("anthropic", "claude"):
-            # exact provider-field match (the regex misses a bare {provider:"anthropic"}
-            # carrying a non-claude model id) — still a client-path Anthropic call.
-            fails.append((AF_NOANTHROPIC, "call %r declares provider %r (exact provider-field match)"
-                          % (c.get("step", "?"), provider)))
-    return fails, models
+def models_used(calls):
+    """The model id recorded for every call, in order (no vendor is refused)."""
+    return [str(c.get("model", "")) for c in calls or [] if isinstance(c, dict)]
 
 
 def check_agency_isolation(cfg):
@@ -248,8 +220,7 @@ def build(run_dir, config=None, prompts_dir=None, canonical=None, signer="social
     fails += ph_fails
     fails += check_gates(gates if isinstance(gates, dict) else {})
     fails += check_provenance(calls if isinstance(calls, list) else [])
-    na_fails, models = check_no_anthropic(calls if isinstance(calls, list) else [])
-    fails += na_fails
+    models = models_used(calls if isinstance(calls, list) else [])
     fails += check_agency_isolation(cfg)
     ov_fails, logged_overrides = check_overrides_logged(run_dir)
     fails += ov_fails
@@ -277,7 +248,6 @@ def build(run_dir, config=None, prompts_dir=None, canonical=None, signer="social
         "prompt_hashes_ok": not ph_fails,
         "gates": gates,
         "models_used": models,
-        "zero_anthropic": not na_fails,
         "agency_isolation_ok": not any(c == AF_AGENCY for c, _ in fails),
         "all_gates_pass": not any(c == AF_PROCESS for c, _ in fails),
         "creative": creative,
@@ -294,7 +264,6 @@ def build(run_dir, config=None, prompts_dir=None, canonical=None, signer="social
         "prompts": sorted(shipped_hashes.items()),
         "gates": sorted((k, bool(v.get("passed") if isinstance(v, dict) else v)) for k, v in
                         (gates.items() if isinstance(gates, dict) else [])),
-        "zero_anthropic": manifest["zero_anthropic"],
         "prompt_hashes_ok": manifest["prompt_hashes_ok"],
         "creative": creative,  # the certificate binds BOTH "nothing unsafe" AND "exactly what was asked"
     }, sort_keys=True)
@@ -368,7 +337,6 @@ def _write_certificate(run_dir, manifest):
             "- **Config hash (secrets excluded):** `%s`" % manifest["config_hash"],
             "- **Prompt hashes match canonical:** %s" % manifest["prompt_hashes_ok"],
             "- **All gates pass:** %s" % manifest["all_gates_pass"],
-            "- **ZERO Anthropic in run:** %s" % manifest["zero_anthropic"],
             "- **Agency isolation OK:** %s" % manifest["agency_isolation_ok"],
             "- **Overrides logged OK:** %s" % manifest.get("overrides_logged_ok", True),
             "- **Client-copy verbatim OK:** %s" % manifest.get("client_copy_verbatim_ok", True),
@@ -384,8 +352,7 @@ def _write_certificate(run_dir, manifest):
             "- **Certificate SHA:** `%s`" % manifest["certificate_sha"],
             "",
             "Issued by `build_manifest.py`. The publisher (P7) refuses to run without this "
-            "certificate. Client runtime uses the client's OWN provider chain — the "
-            "`zero_anthropic` proof above is a hard gate. `done` is claimed only from this "
+            "certificate. Client runtime uses the client's OWN provider chain. `done` is claimed only from this "
             "certificate plus a live GHL post-listing verify.",
         ]
         (out_dir / "PROCESS-CERTIFICATE.md").write_text("\n".join(md) + "\n", encoding="utf-8")
@@ -398,8 +365,8 @@ def _emit(manifest, fails, as_json):
         print(json.dumps(manifest, indent=2))
         return
     print("== Social Media in a Box :: build manifest + certificate ==")
-    print("zero_anthropic: %s  prompt_hashes_ok: %s  all_gates_pass: %s  agency_ok: %s"
-          % (manifest["zero_anthropic"], manifest["prompt_hashes_ok"],
+    print("prompt_hashes_ok: %s  all_gates_pass: %s  agency_ok: %s"
+          % (manifest["prompt_hashes_ok"],
              manifest["all_gates_pass"], manifest["agency_isolation_ok"]))
     if not fails:
         print("RESULT: PASS — certificate SHA %s (publisher unlocked)." % manifest["certificate_sha"][:12])
@@ -509,14 +476,9 @@ def self_test():
     cf("gate-failed", g, good_calls, good_cfg, AF_PROCESS)
     g = dict(good_gates); del g["P5-SCRUB"]
     cf("required-gate-absent", g, good_calls, good_cfg, AF_PROCESS)
-    bad_calls = good_calls + [{"step": "rogue", "provider": "anthropic", "model": "claude-opus-4-8"}]
-    cf("anthropic-call", good_gates, bad_calls, good_cfg, AF_NOANTHROPIC)
-    # FIX-XC-09c: a bare {provider:"anthropic"} carrying a NON-claude model id sails
-    # past the regex; the exact provider-FIELD test must still trip AF-SM-NOANTHROPIC.
-    field_calls = good_calls + [{"step": "rogue", "provider": "anthropic", "model": "some-internal-model"}]
-    cf("anthropic-provider-field", good_gates, field_calls, good_cfg, AF_NOANTHROPIC)
-    field_calls2 = good_calls + [{"step": "rogue", "provider": "Claude", "model": "gpt-x"}]
-    cf("claude-provider-field", good_gates, field_calls2, good_cfg, AF_NOANTHROPIC)
+    # No vendor rule: a call recorded on an Anthropic-family model does NOT fail the cert.
+    named_calls = good_calls + [{"step": "named", "provider": "anthropic", "model": "claude-opus-4-8"}]
+    cp("anthropic-family-call-passes", good_gates, named_calls, good_cfg)
     agency_cfg = {"brandName": "Agency", "mode": "agency",
                   "roster": [{"pit": "pit-a", "locationId": "loc1"}, {"pit": "pit-a", "locationId": "loc2"}]}
     cf("agency-shared-pit", good_gates, good_calls, agency_cfg, AF_AGENCY)

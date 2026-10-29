@@ -62,7 +62,6 @@
     "seedream/4.5-edit",
     "wan/3-0-video"
   ],
-  "zero_anthropic": true,
   "agency_isolation_ok": true,
   "all_gates_pass": true,
   "creative": {
@@ -84,5 +83,5 @@
   "deploy_mode": "publish-on-cert",
   "failures": [],
   "pass": true,
-  "certificate_sha": "49790b67f7a64cccadead06ee5a7d9e68872c336817a6f9ea1b16a4bdc3102e0"
+  "certificate_sha": "5183bc4dafd85539fb301c5c5d9480401503474b4e518c8225be535f2cb87891"
 }

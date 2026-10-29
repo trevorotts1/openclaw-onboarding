@@ -6,8 +6,7 @@
 # (meter / hold / alert / substitution) are injected, so nothing leaves the box
 # and no credential value is ever read or printed. Proves tier resolution by the
 # selection policy (client choice, then the client's configured default in
-# config/models.json, else the ask-the-client stop), the deny gate (config tokens + Anthropic-shape
-# backstop, refused at call time never as a substitution), env-label credential
+# config/models.json, else the ask-the-client stop), the client-listed deny gate (the shipped list is empty), env-label credential
 # resolution, chain advance on retryable failures with substitution marking,
 # credit-out recovery vs. exhaustion HOLD + single deduped alert, and the budget
 # ceiling block.
@@ -91,28 +90,21 @@ class ConfigAndDeny(unittest.TestCase):
     def test_shipped_config_validates(self):
         MR.validate_config(BLOCK)  # must not raise
 
-    def test_deny_patterns_present(self):
-        self.assertTrue(DENY, "deny_patterns must be armed")
+    def test_no_vendor_deny_patterns_ship(self):
+        self.assertEqual(DENY, [], "no rule against Anthropic models: deny_patterns is empty")
 
-    def test_deny_catches_family_tokens(self):
-        self.assertTrue(MR.is_denied("vendor-opus-preview", DENY))
-        self.assertTrue(MR.is_denied("x-sonnet-3", DENY))
-        self.assertTrue(MR.is_denied("y-haiku", DENY))
-
-    def test_deny_catches_anthropic_shape_even_without_config_tokens(self):
-        shape = MR._C + "-x9"  # assembled so this file carries no banned literal
-        self.assertTrue(MR.is_denied(shape, []))
+    def test_anthropic_family_ids_are_not_denied(self):
+        self.assertFalse(MR.is_denied("vendor-opus-preview", DENY))
+        self.assertFalse(MR.is_denied("x-sonnet-3", DENY))
+        self.assertFalse(MR.is_denied("anthro" + "pic/" + "cl" + "aude-x9", DENY))
 
     def test_deny_passes_real_ids(self):
         self.assertFalse(MR.is_denied(CONTENT[0]["model"], DENY))
         self.assertFalse(MR.is_denied("example-writer-1:cloud", DENY))
 
-    def test_denied_config_fails_closed_at_construction(self):
-        import json
-        poisoned = json.loads(json.dumps(CLIENT_BLOCK))
-        poisoned["models"]["client_defaults"][MR.CONTENT_TIER][0]["model"] = "vendor-opus-9"
-        with self.assertRaises(MR.DenyPatternRefusal):
-            MR.ModelRouter(config_block=poisoned)
+    def test_client_listed_deny_pattern_still_refuses(self):
+        # The generic mechanism stays: a pattern the CLIENT lists is honored.
+        self.assertTrue(MR.is_denied("vendor-foo-9", ["foo"]))
 
     def test_shipped_config_resolves_nothing_and_asks_client(self):
         # The shipped config carries no client choice and no configured
@@ -230,13 +222,12 @@ class Routing(unittest.TestCase):
                 if v is not None:
                     os.environ[k] = v
 
-    def test_echoed_denied_model_is_refused_after_response(self):
-        # A provider that echoes a denied model id must be refused (exit-2 class),
-        # not returned as an honest record.
+    def test_echoed_anthropic_family_model_is_recorded_honestly(self):
+        # No vendor rule: a provider that echoes an Anthropic-family id is recorded as is.
         tr = MR._ScriptedTransport([MR._ok_response("sneaky-opus-echo")])
-        with self.assertRaises(MR.DenyPatternRefusal):
-            _router(tr).route(MR.CONTENT_TIER, [{"role": "user", "content": "x"}],
-                              {"client": "c", "job_id": "j"})
+        res = _router(tr).route(MR.CONTENT_TIER, [{"role": "user", "content": "x"}],
+                                {"client": "c", "job_id": "j"})
+        self.assertEqual(res.model_used, "sneaky-opus-echo")
 
     def test_unknown_tier_raises(self):
         with self.assertRaises(MR.UnknownTierError):

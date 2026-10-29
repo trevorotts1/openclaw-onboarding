@@ -11,7 +11,6 @@
 #   2. golden reproduce                      (each prover PASSes the golden bundle)
 #   3. broken-variants reject                (each attack fixture trips its AF, exit 2)
 #   4. prompt-fidelity pins + tone-core sync  (baked IP matches recorded/canonical)
-#   5. no-Anthropic scan                     (AF-AW-ANTHROPIC: no claude-*/anthropic/* id)
 #   6. end-to-end golden pilot through the entry (a full pass issues a certificate)
 #   7. shipped example re-issues the SHIPPED certificate_sha (deterministic => idempotent)
 #   8. shipped-example broken-variants reject
@@ -170,58 +169,13 @@ expect_reject "chapter-verify-missing" prove_aw_chapter.py "AF-AW-VERIFY-BLOCK" 
 expect_reject "chapter-subtitle-changed" prove_aw_chapter.py "AF-AW-TITLE-LOCK"     "$ATK/chapter_subtitle_changed.md" --mode chapter --title "$GOLD/title.json" --intake "$GOLD/intake.json"
 expect_reject "chapter-story-dropped" prove_aw_chapter.py  "AF-AW-STORIES"          "$ATK/chapter_story_dropped.md" --mode chapter --title "$GOLD/title.json" --intake "$GOLD/intake.json"
 expect_reject "chapter-placeholder"   prove_aw_chapter.py  "AF-AW-PLACEHOLDER"      "$ATK/chapter_placeholder.md" --mode chapter --title "$GOLD/title.json" --intake "$GOLD/intake.json"
-expect_reject "ledger-anthropic"      aw_build_check.py    "AF-AW-ANTHROPIC"        "$ATK/ledger_anthropic.json"
 expect_reject "ledger-rewrite-budget" aw_build_check.py    "AF-AW-REWRITE-BUDGET"   "$ATK/ledger_rewrite_over_budget.json"
 expect_reject "ledger-no-provenance"  aw_build_check.py    "AF-AW-PROVENANCE-MISSING" "$ATK/ledger_no_provenance.json"
-expect_reject "model-role-anthropic"   prove_aw_model_role.py "AF-AW-MODEL-ROLE"        "$ATK/ledger_anthropic.json" "$GOLD/model-map.json"
 expect_reject "model-role-not-in-map"  prove_aw_model_role.py "AF-AW-MODEL-ROLE"        "$ATK/ledger_model_not_in_map.json" "$GOLD/model-map.json"
 
 # 4) prompt-fidelity pins + tone-core sync (named for clarity; covered above).
 run "prompt-fidelity pins match" "$PY" "$SCRIPTS/prove_aw_fidelity.py"
 run "tone-core in lockstep"      "$PY" "$SCRIPTS/verify_tone_core_sync.py"
-
-# 5) no-Anthropic scan (AF-AW-ANTHROPIC) — no concrete claude-*/anthropic/* MODEL
-#    id anywhere in the SHIPPED skill. Deliberately-broken fixtures under
-#    test-fixtures/attack/, broken-variants/, and drifted-prompts/ are EXCLUDED —
-#    they exist precisely to prove the runtime gate rejects an Anthropic id.
-[ "$QUIET" -eq 0 ] && echo "  -- no-Anthropic scan (AF-AW-ANTHROPIC) --"
-if SKILL_DIR="$SKILL_DIR" "$PY" - <<'PY'
-import os, re, sys
-skill = os.environ["SKILL_DIR"]
-pat = re.compile(r"claude-(?:opus|sonnet|haiku|instant|fable)\b"
-                 r"|claude-\d"
-                 r"|anthropic/[a-z]"
-                 r"|us\.anthropic\.[a-z]")
-SKIP_SEGMENTS = ("/test-fixtures/attack/", "/broken-variants/", "/drifted-prompts/")
-hits = []
-for root, dirs, files in os.walk(skill):
-    dirs[:] = [d for d in dirs if d not in (".git", "__pycache__")]
-    for fn in files:
-        p = os.path.join(root, fn)
-        norm = "/" + os.path.relpath(p, skill).replace(os.sep, "/")
-        if any(seg in norm for seg in SKIP_SEGMENTS):
-            continue
-        try:
-            src = open(p, "r", errors="replace").read()
-        except Exception:
-            continue
-        for m in pat.finditer(src):
-            hits.append("%s: %s" % (os.path.relpath(p, skill), m.group(0)))
-if hits:
-    print("AF-AW-ANTHROPIC: concrete Anthropic model id(s) found in the shipped skill:", file=sys.stderr)
-    for h in hits:
-        print("    " + h, file=sys.stderr)
-    sys.exit(2)
-print("no concrete Anthropic model id in the shipped skill (excluding deliberately-broken fixtures)")
-sys.exit(0)
-PY
-then
-    [ "$QUIET" -eq 0 ] && printf '  [PASS] no-Anthropic scan (AF-AW-ANTHROPIC)\n'
-else
-    failed_checks+=("no-Anthropic scan (AF-AW-ANTHROPIC)")
-    [ "$QUIET" -eq 0 ] && printf '  [FAIL] no-Anthropic scan (AF-AW-ANTHROPIC)\n'
-    fails=$((fails + 1))
-fi
 
 # 6) end-to-end golden pilot through the entry (a full pass issues a certificate).
 [ "$QUIET" -eq 0 ] && echo "  -- golden pilot through anthology-entry.sh --"
@@ -283,7 +237,6 @@ if [ -d "$EX" ]; then
     expect_reject "ex/chapter-subtitle"     prove_aw_chapter.py  "AF-AW-TITLE-LOCK"        "$EBV/chapter_subtitle_changed.md" --mode chapter --title "$GOLD/title.json" --intake "$GOLD/intake.json"
     expect_reject "ex/chapter-story"        prove_aw_chapter.py  "AF-AW-STORIES"           "$EBV/chapter_story_dropped.md" --mode chapter --title "$GOLD/title.json" --intake "$GOLD/intake.json"
     expect_reject "ex/chapter-placeholder"  prove_aw_chapter.py  "AF-AW-PLACEHOLDER"       "$EBV/chapter_placeholder.md" --mode chapter --title "$GOLD/title.json" --intake "$GOLD/intake.json"
-    expect_reject "ex/ledger-anthropic"     aw_build_check.py    "AF-AW-ANTHROPIC"         "$EBV/ledger_anthropic.json"
     expect_reject "ex/ledger-rewrite"       aw_build_check.py    "AF-AW-REWRITE-BUDGET"    "$EBV/ledger_rewrite_over_budget.json"
 else
     printf '  [WARN] examples/golden-unbroken-ground not present — skipping shipped-example checks\n'

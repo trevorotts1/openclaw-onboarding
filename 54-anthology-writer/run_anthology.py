@@ -8,7 +8,7 @@ phase's preflight is checked against the run directory's artifacts; the QC phase
 shell out to the fail-closed provers in scripts/ and refuse to advance on ANY
 AF-AW-* violation. This is a runnable STUB: it enforces phase ordering, artifact
 presence, and the fail-closed gates; the LLM authoring steps are performed
-upstream on the CLIENT's own NON-Anthropic provider chain and drop their
+upstream on the CLIENT's own provider chain and drop their
 artifacts (working/tone-doc.md, working/title.json, working/outline.md,
 working/chapter.md, working/RUN-LEDGER.json) into the run dir.
 
@@ -362,17 +362,17 @@ def _chk_chapter_qc(run_dir: Path):
     if not chapter.is_file():
         return False, "missing working/chapter.md for QC"
     # Model-sovereignty is FAIL-CLOSED at P6: a chapter cannot certify without the
-    # run ledger that records the (NON-Anthropic) provenance it was authored on.
+    # run ledger that records the model provenance it was authored on.
     # Was fail-OPEN (build-check ran only `if ledger.is_file()`), so a run with no
-    # ledger sailed through the no-Anthropic gate unproven.
+    # ledger sailed through the provenance gate unproven.
     if not ledger.is_file():
         _write_qc_report(run_dir, "chapter_qc_report.json",
                          {"prover": "run_anthology._chk_chapter_qc", "passed": False,
                           "violations": [{"code": "AF-AW-PROVENANCE-MISSING",
                                           "message": "working/RUN-LEDGER.json is required at "
-                                          "P6-CHAPTER-QC (model provenance / no-Anthropic proof)"}]})
+                                          "P6-CHAPTER-QC (model provenance proof)"}]})
         return False, ("AF-AW-PROVENANCE-MISSING: working/RUN-LEDGER.json is required at "
-                       "P6-CHAPTER-QC — a chapter cannot certify without its NON-Anthropic "
+                       "P6-CHAPTER-QC — a chapter cannot certify without its "
                        "model provenance")
     args_common = []
     if title.is_file():
@@ -391,9 +391,9 @@ def _chk_chapter_qc(run_dir: Path):
         report["parts"]["outline"] = p_ol
     rc_bc, p_bc = _run_prover_json("aw_build_check.py", str(ledger))
     report["parts"]["build_check"] = p_bc
-    # FIX-13: model-role correctness — every stage model must be non-Anthropic AND
-    # in the resolved model-map.json. This closes the gap where aw_build_check.py
-    # bans Anthropic but the engine never validates dispatch against the model map.
+    # FIX-13: model-role correctness — every stage model must be in
+    # the resolved model-map.json. This closes the gap where the engine never
+    # validates dispatch against the model map.
     # The model map lives at the run-dir root (per preflight.sh convention).
     model_map = run_dir / "model-map.json"
     rc_mr, p_mr = 0, None
@@ -403,7 +403,7 @@ def _chk_chapter_qc(run_dir: Path):
         report["parts"]["model_role"] = p_mr
     else:
         # Fail-closed: if model-map.json is absent, the run cannot prove its
-        # dispatch models are in the resolved tier map (the no-Anthropic gate
+        # dispatch models are in the resolved tier map (the provenance gate
         # alone is half-enforcement). The run MUST carry the resolved model map.
         rc_mr = EXIT_GATE
         p_mr = {"prover": "prove_aw_model_role", "passed": False,
@@ -1069,7 +1069,7 @@ def _write_certificate(run_dir: Path, proc: dict):
         "declared_phases": PHASE_ORDER,
         "verified_phases": len(steps),
         "all_phases_pass": all_pass,
-        "runtime": "local-only (no n8n / Airtable / Google Drive / Slack / Gmail); client's own NON-Anthropic providers",
+        "runtime": "local-only (no n8n / Airtable / Google Drive / Slack / Gmail); client's own providers",
         "steps": steps,
     }
     sha_fields = {
@@ -1103,7 +1103,7 @@ def _write_certificate(run_dir: Path, proc: dict):
                                               client_override["applied_bands"])
                 if client_override else "none (default SACRED bands)"),
             "- **All phases pass:** %s" % all_pass,
-            "- **Runtime:** local-only; client's own NON-Anthropic providers",
+            "- **Runtime:** local-only; client's own providers",
             "- **Certificate SHA:** `%s`" % body["certificate_sha"],
             "- **Certified at:** %s" % body["certified_at"],
             "",

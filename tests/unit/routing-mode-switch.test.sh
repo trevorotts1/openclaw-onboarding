@@ -197,9 +197,9 @@ import sys; sys.path.insert(0, "'"$REPO/shared-utils"'")
 import model_route as mr
 m = mr.resolve_default_model("'"$B/openclaw.json"'")
 assert m == "ollama-cloud/qwen3:32b", m
-# sovereignty: never these
-assert not mr.model_is_sovereign("anthropic/claude-x")
-assert not mr.model_is_sovereign("claude-opus-4")
+# sovereignty: never the free sentinel; an Anthropic-family model is NOT refused
+assert mr.model_is_sovereign("anthropic/claude-x")
+assert mr.model_is_sovereign("claude-opus-4")
 assert not mr.model_is_sovereign("openrouter/free")
 assert not mr.model_is_sovereign("something:free")
 assert mr.model_is_sovereign("ollama/whatever:cloud")
@@ -212,8 +212,11 @@ p.write_text(json.dumps({"agents":{"list":[{"id":"a","model":{"primary":"ollama/
 assert mr.resolve_default_model(str(p)) == "ollama/main", mr.resolve_default_model(str(p))
 p.write_text(json.dumps({"agents":{"defaults":{"model":{"fallbacks":["ollama-cloud/fb1"]}}}}))
 assert mr.resolve_default_model(str(p)) == "ollama-cloud/fb1"
-# nothing sovereign -> None (never a guessed model)
+# an Anthropic-family default is resolved like any other (no vendor rule)
 p.write_text(json.dumps({"agents":{"defaults":{"model":{"primary":"anthropic/claude-opus-4"}}}}))
+assert mr.resolve_default_model(str(p)) == "anthropic/claude-opus-4"
+# nothing sovereign -> None (never a guessed model)
+p.write_text(json.dumps({"agents":{"defaults":{"model":{"primary":"openrouter/free"}}}}))
 assert mr.resolve_default_model(str(p)) is None
 print("resolver ok")' >/dev/null 2>&1 \
   && ok "own-default-model resolver: precedence + sovereignty, never hardcoded" || bad "resolver"
@@ -449,7 +452,7 @@ S "$B" status
   && ok "status on a corrupt store cannot pass (rc 3: cannot tell is never a pass)" || bad "status corrupt rc=$RC"
 
 B="$(BOX h-md)"; printf 'model\n' > "$B/decision-engine-mode.conf"
-printf '{"agents":{"defaults":{"model":{"primary":"anthropic/claude-x"}}}}' > "$B/openclaw.json"
+printf '{"agents":{"defaults":{"model":{"primary":"openrouter/free"}}}}' > "$B/openclaw.json"
 OC_CONFIG="$B" OPENCLAW_ROUTING_NO_RECORD=1 bash "$HC" --oc-config "$B" >"$T/hc5.out" 2>&1; HRC=$?
 grep -q "no default model resolves" "$T/hc5.out" \
   && ok "model mode without a usable default: WARN, names the fallback" || bad "md: $(cat "$T/hc5.out")"
@@ -469,7 +472,7 @@ P "$(BOX j)" '
 import sys; sys.path.insert(0, "'"$REPO/shared-utils"'")
 import routing_switch as rs, model_route as mr
 # scanner controls: the sovereignty matcher is not vacuous
-assert not mr.model_is_sovereign("anthropic/claude") or True
+assert mr.model_is_sovereign("anthropic/claude")
 assert mr.model_is_sovereign("ollama/x") and not mr.model_is_sovereign("openrouter/free")
 print("scanner ok")' >/dev/null 2>&1 && ok "CONTROL: the sovereignty matcher discriminates" || bad "control matcher"
 

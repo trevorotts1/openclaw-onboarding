@@ -4,18 +4,13 @@
 # -----------------------------------------------------------------------------
 # DETERMINISTIC, NO-AI, FAIL-CLOSED. Mirrors Skill 49's model-content-receipt
 # gate (prove_sf_cert.evaluate_model_receipt): an ad run must RECORD that the
-# CLIENT's OWN execution-tier model wrote the ad copy, and Anthropic is
-# HARD-BANNED. Before this gate the skill only checked the image-model prefix
+# CLIENT's OWN execution-tier model wrote the ad copy. Before this gate the skill only checked the image-model prefix
 # (gpt-image-*) and had NO copy-model sovereignty check at all (SK2-12).
 #
 #   AF-FBAD-MODEL-TIER        — no model-content-receipt, no resolved model id,
 #                               or an authoring tier that is not an execution/
 #                               content tier (the client's strongest model must
 #                               write the copy, not a cheap/simple tier).
-#   AF-FBAD-MODEL-NOANTHROPIC — the authoring model resolves to Anthropic
-#                               (provider FIELD anthropic/claude, OR the model id
-#                               is an Anthropic/claude shape). Client skills NEVER
-#                               use Anthropic models.
 #
 # The receipt is written by the copy phases (S2 bodies / S3 headlines) into the
 # run dir. This gate reads it fail-closed: a missing/unrecorded receipt FAILS —
@@ -27,7 +22,7 @@
 #   python3 ad_model_sovereignty.py --run-dir DIR [--json]
 #   python3 ad_model_sovereignty.py --self-test
 # =============================================================================
-"""Fail-closed model-sovereignty / no-Anthropic gate for the Facebook Ad Generator."""
+"""Fail-closed model-sovereignty gate for the Facebook Ad Generator."""
 
 import argparse
 import json
@@ -39,13 +34,11 @@ EXIT_AUTOFAIL = 2
 EXIT_USAGE = 3
 
 AF_MODEL_TIER = "AF-FBAD-MODEL-TIER"
-AF_MODEL_NOANTHROPIC = "AF-FBAD-MODEL-NOANTHROPIC"
 
 # Execution/content-tier slugs the authoring model must resolve to (mirrors
 # Skill 49's EXECUTION_TIERS) — NOT a cheap/simple/judge tier.
 EXECUTION_TIERS = {"content", "execution", "exec", "strong", "strongest",
                    "authoring", "primary", "tier-a", "tier_a", "a"}
-_ANTHROPIC_PROVIDERS = {"anthropic", "claude"}
 
 # Standard receipt locations inside an ad run dir (first hit wins).
 _RECEIPT_LOCATIONS = (
@@ -63,16 +56,9 @@ def evaluate_model_receipt(receipt):
         return [(AF_MODEL_TIER, "model-content-receipt is missing/not a JSON object — "
                  "the authoring model was never resolved/recorded (fail-closed)")]
     model = str(receipt.get("model") or receipt.get("model_id") or "").strip()
-    provider = str(receipt.get("provider") or "").strip().lower()
     tier = str(receipt.get("tier") or receipt.get("role") or "").strip().lower()
     if not model:
         fails.append((AF_MODEL_TIER, "model-content-receipt names no resolved model id"))
-    # Anthropic hard-ban tested on the provider FIELD and the model id shape.
-    if provider in _ANTHROPIC_PROVIDERS or model.lower().startswith(("claude", "anthropic")) \
-            or "anthropic" in model.lower():
-        fails.append((AF_MODEL_NOANTHROPIC,
-                      "authoring model is Anthropic (provider=%r, model=%r) — "
-                      "client skills never use Anthropic models" % (provider, model)))
     if tier not in EXECUTION_TIERS:
         fails.append((AF_MODEL_TIER,
                       "authoring tier %r is not an execution/content tier %s — "
@@ -106,7 +92,7 @@ def _emit(fails, source, as_json):
     if source:
         print("receipt: %s" % source)
     if passed:
-        print("RESULT: PASS — client execution-tier model recorded; no Anthropic.")
+        print("RESULT: PASS — client execution-tier model recorded.")
         return EXIT_PASS
     print("RESULT: FAIL (fail-closed) — %d finding(s):" % len(fails))
     for c, m in fails:
@@ -162,18 +148,9 @@ def self_test():
           has(evaluate_model_receipt(None), AF_MODEL_TIER))
     check("empty dict -> AF-FBAD-MODEL-TIER",
           has(evaluate_model_receipt({}), AF_MODEL_TIER))
-    check("anthropic provider -> AF-FBAD-MODEL-NOANTHROPIC",
-          has(evaluate_model_receipt(
-              {"model": "some-model", "provider": "anthropic", "tier": "content"}),
-              AF_MODEL_NOANTHROPIC))
-    check("claude model id -> AF-FBAD-MODEL-NOANTHROPIC",
-          has(evaluate_model_receipt(
-              {"model": "claude-opus-4-8", "provider": "openrouter", "tier": "content"}),
-              AF_MODEL_NOANTHROPIC))
-    check("anthropic slash id -> AF-FBAD-MODEL-NOANTHROPIC",
-          has(evaluate_model_receipt(
-              {"model": "anthropic/claude-3.5-sonnet", "provider": "openrouter", "tier": "content"}),
-              AF_MODEL_NOANTHROPIC))
+    check("anthropic-family model on a client execution tier -> clean (no vendor rule)",
+          evaluate_model_receipt(
+              {"model": "claude-opus-4-8", "provider": "openrouter", "tier": "content"}) == [])
     check("cheap/judge tier -> AF-FBAD-MODEL-TIER",
           has(evaluate_model_receipt(
               {"model": "gemini-3.1-flash-lite", "provider": "gemini", "tier": "judge"}),
@@ -188,7 +165,7 @@ def self_test():
 
 def main(argv=None):
     ap = argparse.ArgumentParser(
-        description="Fail-closed model-sovereignty / no-Anthropic gate (Facebook Ad Generator, Skill 48).")
+        description="Fail-closed model-sovereignty gate (Facebook Ad Generator, Skill 48).")
     ap.add_argument("--receipt", help="path to a model-content-receipt.json")
     ap.add_argument("--run-dir", dest="run_dir", help="ad run dir (searches standard receipt locations)")
     ap.add_argument("--json", action="store_true")

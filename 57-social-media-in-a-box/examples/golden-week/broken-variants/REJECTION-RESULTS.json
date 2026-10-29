@@ -1,5 +1,5 @@
 {
-  "note": "Fail-closed rejection proofs for the golden-week fixture. Each variant is a DISTINCT AF-SM-* trip, executed for real by verify.sh (step 4) which asserts the exact exit code + code and leaves every source fixture read-only. 'materialized' variants are built into a temp file at test time so no secret/anthropic literal is ever shipped into scanned bytes.",
+  "note": "Fail-closed rejection proofs for the golden-week fixture. Each variant is a DISTINCT AF-SM-* trip, executed for real by verify.sh (step 4) which asserts the exact exit code + code and leaves every source fixture read-only. 'materialized' variants are built into a temp file at test time so no secret literal is ever shipped into scanned bytes.",
   "run_all": "bash ../../../verify.sh   # step 4 executes every variant below",
   "variants": [
     {
@@ -65,18 +65,6 @@
       "blocked_at": "P6-MANIFEST",
       "exit": 2,
       "code": "AF-SM-PROCESS-INTEGRITY",
-      "certificate_issued": false,
-      "publisher_ran": false
-    },
-    {
-      "name": "anthropic-call",
-      "fixture": "anthropic-call/ (materialized to temp at test time)",
-      "injected": "a provenance call naming an Anthropic claude-<variant> model id; client runtime is G-NOANTHROPIC",
-      "prover": "scripts/scrub_gate.py <temp-calls-file>",
-      "blocked_at": "P5-SCRUB",
-      "exit": 2,
-      "code": "AF-SM-NOANTHROPIC",
-      "defense_in_depth": "build_manifest.py also refuses to sign the same id at P6 (AF-SM-NOANTHROPIC)",
       "certificate_issued": false,
       "publisher_ran": false
     },

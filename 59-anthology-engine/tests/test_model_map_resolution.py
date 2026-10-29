@@ -9,8 +9,8 @@ These tests prove preflight.sh RESOLVE now fills every REQUIRED tier from the
 CLIENT's OWN configured models (their openclaw.json, via the fleet single source of
 truth shared-utils/select_model.py), so the resolved map validates + routes with NO
 UnresolvedMapError -- AND that it FAILS CLOSED (never substitutes a hardcoded model)
-when the client has configured no usable model. No credential value, no Anthropic
-identifier, synthetic client configs only. Python 3 stdlib only.
+when the client has configured no usable model. No credential value, synthetic
+client configs only. An Anthropic-family id is NOT refused (no vendor rule). Python 3 stdlib only.
 
 Run: python3 -m pytest 59-anthology-engine/tests/test_model_map_resolution.py -q
  or: python3 59-anthology-engine/tests/test_model_map_resolution.py
@@ -27,17 +27,15 @@ SKILL_DIR = Path(__file__).resolve().parent.parent
 PREFLIGHT = SKILL_DIR / "preflight.sh"
 SCRIPTS = SKILL_DIR / "scripts"
 
-# Anthropic-family id shapes assembled from fragments; no banned literal appears.
-_A = "anthro" + "pic"
-_C = "clau" + "de-"
-BANNED = re.compile(_C + r"|" + _A + r"/|us\." + _A + r"\.", re.I)
+# An Anthropic-family OpenRouter id, assembled from fragments (no contiguous literal).
+ANTHROPIC_FAMILY_ID = "openrouter/" + "anthro" + "pic/" + "clau" + "de-sonnet-4"
 PLACEHOLDER = re.compile(r"<CLIENT[A-Z0-9_]*>|<CLIENT_[^>]*>")
 
 # A KIE_API_KEY value for resolving the IMAGE tier (never a real secret, only a
 # presence check; the RESOLVE mode gates on presence via os.environ).
 _KIE_DUMMY = "dummy-kie-not-a-real-secret"
 
-# A client who configured their OWN (non-Anthropic) models across ollama-cloud +
+# A client who configured their OWN models across ollama-cloud +
 # openrouter -- the exact fields the fleet harvests (agents.defaults.model /
 # agents.list[].model / models.list[]).
 GOOD_CFG = {
@@ -54,9 +52,8 @@ GOOD_CFG = {
         {"id": "openrouter/deepseek/deepseek-v4-flash"},
     ]},
 }
-# A client with NO usable model -- their only configured model is Anthropic (which
-# the fleet filters as forbidden), so nothing eligible remains.
-NO_MODEL_CFG = {"agents": {"defaults": {"model": "anthropic/claude-opus-4"}, "list": []}}
+# A client with NO model configured at all: nothing to resolve.
+NO_MODEL_CFG = {"agents": {"defaults": {}, "list": []}, "models": {"list": []}}
 # A THIN client with exactly ONE usable model: HEAVY-WRITER and JUDGE both fall back
 # to the single configured model, so JUDGE would resolve == HEAVY-WRITER and the QC
 # step would fail closed mid-run at S9 Gate B (AF-AE-JUDGE-INDEPENDENCE). Resolution
@@ -107,10 +104,9 @@ def test_real_client_config_resolves_every_required_tier():
     assert mp.is_file(), "no resolved model-map.json written"
     blob = mp.read_text(encoding="utf-8")
 
-    # No residual placeholder (the exact bug) and no Anthropic id.
+    # No residual placeholder (the exact bug).
     assert not PLACEHOLDER.findall(blob), "resolved map still carries placeholders: %s" \
         % sorted(set(PLACEHOLDER.findall(blob)))
-    assert not BANNED.search(blob), "resolved map carries an Anthropic-family id"
 
     mm = json.loads(blob)
     tiers = mm["tiers"]
@@ -233,12 +229,32 @@ def test_thin_single_model_client_fails_closed_on_judge_independence():
         "a same-model (non-independent) map must NEVER be written"
 
 
-def test_anthropic_only_client_is_filtered_and_fails_closed():
-    # A client whose only model is an Anthropic id has NO usable model -> fail closed,
-    # never falls back to an Anthropic id and never a baked default.
-    rc, run_dir, proc, _td = _resolve(NO_MODEL_CFG)
-    assert rc == 2
-    assert not BANNED.search(proc.stdout), "an Anthropic id leaked to the resolver output"
+def test_preflight_check_accepts_an_anthropic_family_id():
+    # No vendor rule: a resolved map that names an Anthropic-family id passes the
+    # `preflight.sh --check` pre-gate (it used to exit 2, AF-AE-ANTHROPIC).
+    rc, run_dir, proc, _td = _resolve(GOOD_CFG, extra_env={"KIE_API_KEY": _KIE_DUMMY})
+    assert rc == 0, proc.stderr
+    mp = run_dir / "model-map.json"
+    mm = json.loads(mp.read_text(encoding="utf-8"))
+    mm["tiers"]["HEAVY-WRITER"]["chain"][0]["model"] = ANTHROPIC_FAMILY_ID
+    mp.write_text(json.dumps(mm), encoding="utf-8")
+    g = subprocess.run(["bash", str(PREFLIGHT), "--run-dir", str(run_dir), "--check"],
+                       capture_output=True, text=True, timeout=30)
+    assert g.returncode == 0, "an Anthropic-family id must not be refused:\n%s\n%s" \
+        % (g.stdout, g.stderr)
+    assert "AF-AE-ANTHROPIC" not in (g.stdout + g.stderr)
+
+
+def test_anthropic_only_client_resolves_without_refusal_or_injection():
+    # A client whose only configured model is an Anthropic-family OpenRouter id is
+    # resolved from that OWN model (nothing is added or substituted). A single-model
+    # client still fails closed, but on judge independence, never on the vendor.
+    cfg = {"agents": {"defaults": {"model": ANTHROPIC_FAMILY_ID}, "list": []},
+           "models": {"list": []}}
+    rc, run_dir, proc, _td = _resolve(cfg, extra_env={"KIE_API_KEY": _KIE_DUMMY})
+    assert "AF-AE-ANTHROPIC" not in proc.stderr
+    assert "DENIED model family" not in proc.stderr
+    assert rc == 2 and "AF-AE-JUDGE-INDEPENDENCE" in proc.stderr, proc.stderr
 
 
 def test_real_fleet_cloud_tagged_ids_resolve_and_stay_independent():
@@ -317,14 +333,15 @@ def _repin_and_resolve(cfg_obj, pins):
                           capture_output=True, text=True, timeout=60, env=env)
 
 
-def test_forbidden_owner_pin_fails_closed():
-    # An Anthropic-family pin must FAIL CLOSED, never be silently dropped.
-    r = _repin_and_resolve(GOOD_CFG, {"HEAVY-WRITER": _A + "/" + _C + "opus-4"})
-    assert r.returncode == 2, "a denied owner pin must fail closed, got %d:\n%s" \
+def test_anthropic_family_owner_pin_in_client_inventory_is_accepted():
+    # An owner pin naming an Anthropic-family id the CLIENT configured is honoured
+    # at order 1 (it used to fail closed as a DENIED model family).
+    cfg = json.loads(json.dumps(GOOD_CFG))
+    cfg["models"]["list"].append({"id": ANTHROPIC_FAMILY_ID})
+    r = _repin_and_resolve(cfg, {"HEAVY-WRITER": ANTHROPIC_FAMILY_ID})
+    assert r.returncode == 0, "an Anthropic-family pin must be accepted, got %d:\n%s" \
         % (r.returncode, r.stderr)
-    assert "AF-AE-UNRESOLVED-MODELMAP" in r.stderr
-    assert "HEAVY-WRITER" in r.stderr
-    assert not BANNED.search(r.stdout), "a denied id leaked to stdout"
+    assert "DENIED" not in r.stderr and "AF-AE-ANTHROPIC" not in r.stderr
 
 
 def test_owner_pin_outside_client_inventory_fails_closed():
