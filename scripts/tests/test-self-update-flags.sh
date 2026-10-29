@@ -53,7 +53,13 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 [ -n "$url" ] && [ -n "$dest" ] || exit 2
-printf '%s\n' "$url" >> "${CURL_LOG:-/dev/null}"
+# Loopback URLs are the job's own gateway/9Router health probes (self-update.sh
+# v1.2.0 proves health after a failed step), not script fetches: the pin test is
+# about what the job DOWNLOADS, so only non-loopback URLs are recorded.
+case "$url" in
+  http://127.0.0.1:*|http://localhost:*) ;;
+  *) printf '%s\n' "$url" >> "${CURL_LOG:-/dev/null}" ;;
+esac
 src="$FIXTURES/$(basename "$url")"
 [ -f "$src" ] || { echo "curl-stub: no fixture for $(basename "$url")" >&2; exit 22; }
 cp "$src" "$dest"
