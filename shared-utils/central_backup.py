@@ -134,7 +134,8 @@ def prune(tool, root=None, dry_run=False, planned=()):
         return []
     have = set()
     try:
-        have = {n for n in os.listdir(str(tdir)) if RUN_RE.match(n) and _is_dir(tdir / n)}
+        # an EMPTY run folder holds no backup, so it is neither counted as a run nor pruned
+        have = {n for n in os.listdir(str(tdir)) if RUN_RE.match(n) and _is_dir(tdir / n) and _nonempty(tdir / n)}
     except OSError:
         pass   # no such folder yet, or unreadable: nothing to prune
     clusters, last = [], None
@@ -161,6 +162,13 @@ def prune(tool, root=None, dry_run=False, planned=()):
 
 def _is_dir(p):   # os.path never raises, unlike Path.is_dir() on a folder we cannot stat
     return os.path.isdir(str(p)) and not os.path.islink(str(p))
+
+
+def _nonempty(p):
+    try:
+        return bool(os.listdir(str(p)))
+    except OSError:
+        return False
 
 
 def _kids(d):
@@ -297,6 +305,11 @@ def migrate(root, workspaces=(), dry_run=False):
         except OSError as exc:   # the folder is exactly where it was, and nothing was deleted
             log("FAILED %s -> %s: %s (left in place)" % (src, dest, exc))
             failed += 1
+            for empty in (dest.parent, broot / tool):   # drop the folders the mkdir just made, or
+                try:                                   # prune would count them as a run
+                    os.rmdir(str(empty))   # rmdir only ever removes an EMPTY folder
+                except OSError:
+                    pass
             continue
         try:
             with open(str(run / "MOVED-FROM.txt"), "a") as fh:

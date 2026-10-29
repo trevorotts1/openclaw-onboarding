@@ -32,10 +32,11 @@
 #      the backup root inside a backup folder is not moved into itself; a reserved tool name is
 #      renamed; an unreadable openclaw.json aborts the move
 #   J  apply-u004-phase2.sh writes its backups to the central folder, not into the department
-#   K  FAILABLE: fifteen mutants of the module (guard widened, pruner off, mover off, run-grouping
-#      off, move turned into delete, copy-then-delete restored, stamp filter off, Path.exists
-#      restored, symlink guards off, self-move guard off, reserved rename off, Downloads root
-#      restored, relative backup dir accepted, unreadable-config abort off) are each caught
+#   K  FAILABLE: eighteen mutants of the module (guard widened, pruner off, mover off, run-grouping
+#      off, move turned into delete, copy-then-delete restored, stamp filter off or loosened to
+#      "8 digits", Path.exists restored, symlink guards off, self-move guard off, reserved rename
+#      off, Downloads root restored, relative backup dir accepted, unreadable-config abort off,
+#      empty run folder left by a failed move, pruner counting empty runs, both) are each caught
 #
 # Hermetic: mktemp -d sandbox, HOME redirected into it, no real ~/.openclaw, no network.
 # bash 3.2 safe: no associative arrays, no mapfile. Exit 0 = all pass, 1 = a failure.
@@ -189,20 +190,23 @@ os.rename = boom
 sys.exit(c.migrate(sys.argv[2]))
 PY
 )"; rc2=$?
-[ "$rc2" = 1 ] && [ "$(snap_all "$mD")" = "$b2" ] && [ "$(find "$M/central" -type f 2>/dev/null | wc -l | tr -d ' ')" = 0 ] \
+[ "$rc2" = 1 ] && [ "$(snap_all "$mD")" = "$b2" ] && [ "$(find "$M/central" -mindepth 1 2>/dev/null | wc -l | tr -d ' ')" = 0 ] \
   && printf '%s\n' "$out2" | grep -q 'FAILED.*left in place' \
-  && ok "L1 a failed rename: exit 1, FAILED logged, every file still in place, nothing copied or deleted" || bad "L1 failed-rename handling: rc=$rc2 $out2"
+  && ok "L1 a failed rename: exit 1, FAILED logged, every file still in place, nothing copied or deleted, no empty folder left in the central folder" || bad "L1 failed-rename handling: rc=$rc2 $out2"
 
   # L2 (D2): a human folder inside departments-archive/ or .floor-backups/ is never moved
   mini; W2="$M/oc/workspace"
-  mkdir -p "$W2/departments-archive/retired-team1" "$W2/.floor-backups/notes"; echo human > "$W2/departments-archive/retired-team1/a.md"; echo human > "$W2/.floor-backups/notes/a.md"
+  mkdir -p "$W2/departments-archive/retired-team1" "$W2/.floor-backups/notes" "$W2/departments-archive/20260101-board-notes" "$W2/.floor-backups/20260615-team-roster"
+  echo human > "$W2/departments-archive/retired-team1/a.md"; echo human > "$W2/.floor-backups/notes/a.md"
+  echo human > "$W2/departments-archive/20260101-board-notes/a.md"; echo human > "$W2/.floor-backups/20260615-team-roster/a.md"
   mk_bak "$W2/departments-archive/20261001-101010"; mk_bak "$W2/.floor-backups/20260623T182141Z"
   out2="$(runcb migrate)"; rc2=$?
   [ "$rc2" = 0 ] && [ -f "$W2/departments-archive/retired-team1/a.md" ] && [ -f "$W2/.floor-backups/notes/a.md" ] \
-    && [ -z "$(find "$M/central" \( -name retired-team1 -o -name notes \) 2>/dev/null)" ] \
+    && [ -f "$W2/departments-archive/20260101-board-notes/a.md" ] && [ -f "$W2/.floor-backups/20260615-team-roster/a.md" ] \
+    && [ -z "$(find "$M/central" \( -name retired-team1 -o -name notes -o -name '20260101-board-notes' -o -name '20260615-team-roster' \) 2>/dev/null)" ] \
     && [ -f "$M/central/departments-archive/20261001T101010Z/AGENTS.md" ] && [ -f "$M/central/floor-backups/20260623T182141Z/AGENTS.md" ] \
     && printf '%s\n' "$out2" | grep -q 'SKIP .*retired-team1' \
-    && ok "L2 only stamped run folders move; retired-team1 and notes stay and are logged SKIP" || bad "L2 holder children: rc=$rc2 $out2"
+    && ok "L2 only stamped run folders move; retired-team1, notes and the date-prefixed 20260101-board-notes stay, logged SKIP" || bad "L2 holder children: rc=$rc2 $out2"
 
   # L3 (D4): a central folder we cannot stat gives FAILED, never a traceback. Python 3.9-3.11 raise
   # PermissionError from Path.exists()/is_dir() there (3.12+ swallow it), so the harness gives
@@ -269,6 +273,29 @@ print(c.backup_root("/r/.openclaw"))
 PY
 )"
   [ "$out2" = "/r/.openclaw/backups" ] && ok "L10 the macOS backup root is <root>/backups (no ~/Downloads branch)" || bad "L10 macOS backup root gave '$out2'"
+
+  # L11 (N1): a failed move must not cost a REAL older backup. Three real runs of one tool exist, a
+  # newer folder cannot be moved; the empty run folder its mkdir made must not count as a 4th run.
+  mini; mkdir -p "$M/central"
+  for d in 20260101 20260102 20260103; do mk_bak "$M/central/fix/${d}T000000Z/x.bak-fix-${d}T000000Z"; done
+  mk_bak "$mD/video.bak-fix-20260601T120000Z"; b2="$(snap_all "$mD")"
+  out2="$(OPENCLAW_ROOT="$M/oc" OPENCLAW_BACKUP_DIR="$M/central" python3 - "$CB" "$M/oc" <<'PY' 2>&1
+import errno, importlib.util, os, sys
+spec = importlib.util.spec_from_file_location("cbm", sys.argv[1]); c = importlib.util.module_from_spec(spec); spec.loader.exec_module(c)
+def boom(a, b): raise OSError(errno.EXDEV, "Invalid cross-device link")
+os.rename = boom
+sys.exit(c.migrate(sys.argv[2]))
+PY
+)"; rc2=$?
+  [ "$rc2" = 1 ] && [ "$(count_dirs "$M/central/fix")" = 3 ] && [ -d "$M/central/fix/20260101T000000Z" ] && [ "$(snap_all "$mD")" = "$b2" ] \
+    && ! printf '%s\n' "$out2" | grep -q 'PRUNE' \
+    && ok "L11 a failed move prunes nothing: the 3 real runs survive, no empty run folder appears" || bad "L11 failed move cost a real backup: rc=$rc2 $out2"
+
+  # L12 (N1): prune counts only run folders that hold something
+  mini; for d in 20260101 20260102 20260103; do mk_bak "$M/central/fix/${d}T000000Z/x"; done; mkdir -p "$M/central/fix/20260601T120000Z"
+  out2="$(runcb prune --tool fix)"
+  [ "$(count_dirs "$M/central/fix")" = 4 ] && [ -d "$M/central/fix/20260101T000000Z" ] && ! printf '%s\n' "$out2" | grep -q 'PRUNE' \
+    && ok "L12 prune ignores an empty run folder: all 3 real runs stay" || bad "L12 prune counted an empty run folder: $out2"
   export HOME="$S_HOME"; unset OPENCLAW_ROOT OPENCLAW_BACKUP_DIR
 }
 
@@ -293,14 +320,44 @@ else bad "H2 _content_current_exit does not call the step (calls at: $CALLS)"; f
 if [ "$#" = 2 ] && [ "${2:-0}" -gt "$RECLAIM_LINE" ] && [ "${2:-0}" -gt "$WIRED_DONE" ]; then
   ok "H3 the end-of-roll call sits after the wiring loop (outside the .wired sentinel)"
 else bad "H3 end-of-roll call not after the wiring loop (calls: $CALLS, wiring done at $WIRED_DONE)"; fi
-SB="$SANDBOX/h"; mkdir -p "$SB/home" "$SB/skills/shared-utils"
-cp "$CB_REAL" "$SB/skills/shared-utils/central_backup.py"
-build_fixture "$SB"
-OUT="$(HOME="$SB/home" OPENCLAW_ROOT="$SB/oc" OPENCLAW_BACKUP_DIR="$SB/central" SKILLS_DIR="$SB/skills" OC_WS_RESOLVED="$SB/oc/workspace" \
-      bash -c 'set -euo pipefail; . "$1"; migrate_backups_out_of_departments; echo "rc=$?"' _ "$FN_FILE" 2>&1)"
-printf '%s\n' "$OUT" | grep -q '^rc=0$' && [ -f "$SB/central/floor-backups/20260623T182141Z/AGENTS.md" ] \
-  && [ ! -e "$SB/oc/workspace/.floor-backups" ] && [ -d "$SB/oc/workspace/departments/back-office" ] \
-  && ok "H4 the shipped function (under set -euo pipefail) moves the folders and returns 0" || bad "H4 shipped function: $OUT"
+# h4_check <file defining the function> <sandbox>: run the shipped function on a box whose
+# workspaces are NOT the default <root>/workspace, so each one is reached only because
+# update-skills.sh passes it on (OC_WS_RESOLVED, WORKSPACE_DIR, ~/clawd). Prints OUT; rc 0 = all moved.
+h4_check() {
+  local fn="$1" sb="$2"
+  mkdir -p "$sb/home/clawd/departments" "$sb/skills/shared-utils" "$sb/custom-ws/.floor-backups" "$sb/other-ws/departments"
+  cp "$CB_REAL" "$sb/skills/shared-utils/central_backup.py"
+  build_fixture "$sb"
+  mk_bak "$sb/custom-ws/.floor-backups/20260701T010101Z"
+  mk_bak "$sb/other-ws/departments/ops.bak-fix-20260702T020202Z"
+  mk_bak "$sb/home/clawd/departments/hr.bak-fix-20260703T030303Z"
+  OUT="$(HOME="$sb/home" OPENCLAW_ROOT="$sb/oc" OPENCLAW_BACKUP_DIR="$sb/central" SKILLS_DIR="$sb/skills" \
+        OC_WS_RESOLVED="$sb/custom-ws" WORKSPACE_DIR="$sb/other-ws" \
+        bash -c 'set -euo pipefail; . "$1"; migrate_backups_out_of_departments; echo "rc=$?"' _ "$fn" 2>&1)"
+  printf '%s\n' "$OUT" | grep -q '^rc=0$' && [ -f "$sb/central/floor-backups/20260623T182141Z/AGENTS.md" ] \
+    && [ ! -e "$sb/oc/workspace/.floor-backups" ] && [ -d "$sb/oc/workspace/departments/back-office" ] \
+    && [ -f "$sb/central/floor-backups/20260701T010101Z/AGENTS.md" ] \
+    && [ -f "$sb/central/fix/20260702T020202Z/ops.bak-fix-20260702T020202Z/AGENTS.md" ] \
+    && [ -f "$sb/central/fix/20260703T030303Z/hr.bak-fix-20260703T030303Z/AGENTS.md" ]
+}
+SB="$SANDBOX/h"
+if h4_check "$FN_FILE" "$SB"; then
+  ok "H4 the shipped function (under set -euo pipefail) moves the default AND the non-default workspaces (OC_WS_RESOLVED, WORKSPACE_DIR, ~/clawd) and returns 0"
+else bad "H4 shipped function: $OUT"; fi
+# H4m: drop the --workspace pass-through from a copy of update-skills.sh -> the same check must go red
+python3 - "$US" "$SANDBOX/us-mut.sh" <<'PY'
+import sys
+s = open(sys.argv[1]).read()
+old = '_args=(${_args[@]+"${_args[@]}"} --workspace "$_w")'
+if s.count(old) != 1:
+    sys.exit("pass-through line matched %d places" % s.count(old))
+open(sys.argv[2], "w").write(s.replace(old, ":"))
+PY
+awk '/^migrate_backups_out_of_departments\(\) \{/{f=1} f{print} f && /^\}$/{exit}' "$SANDBOX/us-mut.sh" > "$SANDBOX/fn-mut.sh"
+if [ -s "$SANDBOX/fn-mut.sh" ] && ! h4_check "$SANDBOX/fn-mut.sh" "$SANDBOX/h-mut"; then
+  ok "H4m dropping the --workspace pass-through from update-skills.sh is caught (H4 goes red)"
+else bad "H4m the pass-through mutation SURVIVED"; fi
+mkdir -p "$SB/home"
 OUT="$(HOME="$SB/home" OPENCLAW_ROOT="$SB/oc" SKILLS_DIR="$SB/nowhere" EXTRACTED_DIR="$SB/nowhere" _SCRIPT_DIR="$SB/nowhere" \
       bash -c 'set -euo pipefail; . "$1"; migrate_backups_out_of_departments; echo "rc=$?"' _ "$FN_FILE" 2>&1)"
 printf '%s\n' "$OUT" | grep -q 'SKIP: shared-utils/central_backup.py not found' && printf '%s\n' "$OUT" | grep -q '^rc=0$' \
@@ -343,7 +400,7 @@ RUN="$(ls -d "$JB"/central/apply-u004-phase2/*/ 2>/dev/null | head -1)"
   && ok "J2 nothing was written into the department tree (and the rulebook did install)" || bad "J2 backup folder written inside the department"
 
 # ----- K: mutants -------------------------------------------------------------------
-hdr "K: the same checks catch fifteen broken copies of the module (failability)"
+hdr "K: the same checks catch eighteen broken copies of the module (failability)"
 mutant() {  # name: build a copy of the module with ONE defect put back, run the whole suite on it
   local name="$1" m="$SANDBOX/mut-$1.py" pf pf2
   cp "$CB_REAL" "$m"
@@ -369,18 +426,23 @@ edits = {
                 '    if sys.platform == "darwin":\n        return Path.home() / "Downloads" / "openclaw-backups"\n    return (Path(root) if root else oc_root()) / "backups"\n'),
   "relative": ('if v and os.path.isabs(v):', 'if v:'),
   "noabort":  ('            return 0\n    moved = failed = 0', '            cfg = ""\n    moved = failed = 0'),
+  "holderloose": ('HOLDER_CHILD_RE = re.compile(r"^\\d{8}[T_-]?\\d{6}Z?(?:-\\d+)?$")', 'HOLDER_CHILD_RE = re.compile(r"^\\d{8}")'),
+  "normdir":  ('os.rmdir(str(empty))   # rmdir only ever removes an EMPTY folder', 'pass'),
+  "countempty": (' and _nonempty(tdir / n)}', '}'),
 }
-old, new = edits[which]
-if s.count(old) != 1:
-    sys.exit("mutation %s matched %d places" % (which, s.count(old)))
-open(p, "w").write(s.replace(old, new))
+pairs = [edits[which]] if which != "failcost" else [edits["normdir"], edits["countempty"]]
+for old, new in pairs:
+    if s.count(old) != 1:
+        sys.exit("mutation %s matched %d places" % (which, s.count(old)))
+    s = s.replace(old, new)
+open(p, "w").write(s)
 PY
   [ $? = 0 ] || { bad "K mutant '$name' could not be built"; return; }
   pf=$FAIL; pf2=$PASS; QUIET=1; suite "$m" >/dev/null 2>&1; QUIET=0
   local caught=$((FAIL - pf)); FAIL=$pf; PASS=$pf2   # the mutant's failures are the point, not ours
   [ "$caught" -gt 0 ] && ok "K mutant '$name' is caught ($caught check(s) went red)" || bad "K mutant '$name' SURVIVED: the checks cannot see it"
 }
-for m in widen noprune nomove nogroup delete copydelete holderall pathexists followwork followtool selfmove noreserved downloads relative noabort; do
+for m in widen noprune nomove nogroup delete copydelete holderall holderloose pathexists followwork followtool selfmove noreserved downloads relative noabort normdir countempty failcost; do
   mutant "$m"
 done
 
