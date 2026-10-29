@@ -2003,6 +2003,78 @@ fi
 
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""
+echo "--- (B-bak) the config backup this run wrote is deleted once the upgrade is PROVEN complete, and kept on any rollback ---"
+# Step 4 writes <root>/openclaw.json.bak-pre-atomic-upgrade-<ts>. Trevor's order of 2026-10-29: a backup made of
+# somebody's OpenClaw is deleted as soon as the install is completed. "Completed" here = the doctor model/provider
+# check and `config validate` passed, the stability window held, /healthz answered 200 and the gateway runs the
+# target. Each case reads the backup path from the script's own "config backed up:" line, so a pass is never
+# "no backup was ever written".
+bak_path() { sed -n 's/.*config backed up: //p' <<<"$1" | head -1; }
+bak_files() { ls "$1/.openclaw"/openclaw.json.bak-pre-atomic-upgrade-* 2>/dev/null | wc -l | tr -d ' '; }
+
+# a. a clean box upgrades: the backup was written, then deleted, and the deletion is logged by path
+HBA="$(make_box bbak-a clean)"; SBA="$SANDBOX/stubsbba"; STBA="$SANDBOX/statebba"
+make_stubs "$SBA" "$STBA" versioned
+OUTBA="$(run_atomic "$HBA" "$SBA" "$STBA")"; RCBA=$?
+PBA="$(bak_path "$OUTBA")"
+if [ "$RCBA" -eq 0 ] && [ -n "$PBA" ] && [ ! -e "$PBA" ] && [ "$(bak_files "$HBA")" = "0" ] \
+   && grep -q "config backup deleted: $PBA" <<<"$OUTBA" && grep -q "backup deleted: $PBA" <<<"$OUTBA"; then
+  pass "Ba: success (rc=0) wrote a config backup, then deleted it and logged the path; none is left in the root"
+else
+  fail "Ba: rc=$RCBA path='$PBA' left=$(bak_files "$HBA"). Output: $OUTBA"
+fi
+
+# b. a LEGACY box is migrated and the upgrade completes: the backup that protected the migration is deleted too
+HBB="$(make_box bbak-b legacy)"; SBB="$SANDBOX/stubsbbb"; STBB="$SANDBOX/statebbb"
+make_stubs "$SBB" "$STBB" versioned
+OUTBB="$(run_atomic "$HBB" "$SBB" "$STBB")"; RCBB=$?
+PBB="$(bak_path "$OUTBB")"
+if [ "$RCBB" -eq 0 ] && [ -n "$PBB" ] && [ ! -e "$PBB" ] && [ "$(bak_files "$HBB")" = "0" ] \
+   && [ "$(cfg_shape "$HBB/.openclaw/openclaw.json" | cut -d: -f1)" = "ENTRIES" ]; then
+  pass "Bb: a migrated legacy box that completed the upgrade has no backup left, and the config is on agents.entries"
+else
+  fail "Bb: rc=$RCBB path='$PBB' left=$(bak_files "$HBB") shape=$(cfg_shape "$HBB/.openclaw/openclaw.json"). Output: $OUTBB"
+fi
+
+# c. the gateway crash-loops after the migration (stability window fails): rolled back, the backup is KEPT and is the original
+HBC="$(make_box bbak-c legacy)"; SBC="$SANDBOX/stubsbbc"; STBC="$SANDBOX/statebbc"
+make_stubs "$SBC" "$STBC" versioned
+SHABC="$(sha_of "$HBC/.openclaw/openclaw.json")"; touch "$STBC/pid_flip"
+OUTBC="$(run_atomic "$HBC" "$SBC" "$STBC")"; RCBC=$?
+PBC="$(bak_path "$OUTBC")"
+if [ "$RCBC" -eq 78 ] && [ -n "$PBC" ] && [ -f "$PBC" ] && [ "$(sha_of "$PBC")" = "$SHABC" ] \
+   && [ "$(sha_of "$HBC/.openclaw/openclaw.json")" = "$SHABC" ] && ! grep -q 'config backup deleted' <<<"$OUTBC"; then
+  pass "Bc: a failed stability window (rc=78) rolled back and KEPT the backup, byte-identical to the original config"
+else
+  fail "Bc: rc=$RCBC path='$PBC' exists=$([ -f "$PBC" ] && echo yes || echo no). Output: $OUTBC"
+fi
+
+# d. doctor changes the model selection (the model check fails): rolled back, the backup is KEPT
+HBD="$(make_box bbak-d clean)"; SBD="$SANDBOX/stubsbbd"; STBD="$SANDBOX/statebbd"
+make_stubs "$SBD" "$STBD" versioned
+set_models "$HBD"; echo models > "$STBD/doctor_mode"
+SHABD="$(sha_of "$HBD/.openclaw/openclaw.json")"
+OUTBD="$(run_atomic "$HBD" "$SBD" "$STBD")"; RCBD=$?
+PBD="$(bak_path "$OUTBD")"
+if [ "$RCBD" -eq 78 ] && [ -n "$PBD" ] && [ -f "$PBD" ] && [ "$(sha_of "$PBD")" = "$SHABD" ] && ! grep -q 'config backup deleted' <<<"$OUTBD"; then
+  pass "Bd: a failed model/provider check (rc=78) rolled back and KEPT the backup"
+else
+  fail "Bd: rc=$RCBD path='$PBD' exists=$([ -f "$PBD" ] && echo yes || echo no). Output: $OUTBD"
+fi
+
+# e. a backup left by an EARLIER run is not this run's and is not touched
+HBE="$(make_box bbak-e clean)"; SBE="$SANDBOX/stubsbbe"; STBE="$SANDBOX/statebbe"
+make_stubs "$SBE" "$STBE" versioned
+printf '{}\n' > "$HBE/.openclaw/openclaw.json.bak-pre-atomic-upgrade-20250101-000000"
+OUTBE="$(run_atomic "$HBE" "$SBE" "$STBE")"; RCBE=$?
+if [ "$RCBE" -eq 0 ] && [ -f "$HBE/.openclaw/openclaw.json.bak-pre-atomic-upgrade-20250101-000000" ] && [ "$(bak_files "$HBE")" = "1" ]; then
+  pass "Be: success deleted only this run's backup; an earlier run's copy was left alone"
+else
+  fail "Be: rc=$RCBE left=$(bak_files "$HBE"). Output: $OUTBE"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 if [ "$FAIL" -gt 0 ]; then
   echo "FAIL: $FAIL check(s) failed -- CI guard triggered"

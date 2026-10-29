@@ -1,5 +1,5 @@
 #!/bin/sh
-# self-update.sh — v1.4.1
+# self-update.sh — v1.5.0
 #
 # The box's own self-update runner. Starts itself in a detached session, then
 # runs these steps IN THIS ORDER (Trevor, transcript L14):
@@ -77,11 +77,22 @@
 # The box's Homebrew/nvm Node is never touched. node_before / node_after land in the
 # status file; a failure leaves the box as found, skips the upgrade, exits 25.
 #
+# Own backups (v1.5.0; Trevor's order of 2026-10-29: a backup made of somebody's OpenClaw is
+# deleted as soon as the install is completed). This job makes two: the config copy
+# <root>/fleet-refresh/openclaw.json.pre-<run id>, and the skills-folder rollback snapshot that
+# update-skills.sh writes during the content step (skills-rollback-<ts>, or the one-time
+# skills-backup-<ts> copy, under <root>/backups or ~/Downloads/openclaw-backups). Once the FINAL
+# status file is written and says success with no rollback (exit 0, no failed step, rolled_back
+# false, needs_host_restart false, no step_rollbacks) both are deleted and every deleted path is
+# logged (path names only). Any other end keeps them: rolled_back, needs_host_restart, a failed
+# or deferred step, rc 70. Only the config copy and the snapshots THIS run's content step wrote
+# are removed; nothing else in those folders is touched.
+#
 # INTERPRETER: /bin/sh, POSIX-safe, macOS bash 3.2 safe. No arrays, no
 # associative params, no mapfile, no ${x^^}, no heredoc nested inside $( ).
 set -u
 
-VERSION="1.4.1"
+VERSION="1.5.0"
 REPO_RAW_BASE="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding"
 REPO_RAW="$REPO_RAW_BASE/main"
 
@@ -120,6 +131,8 @@ API_DOCS_FILE="$API_DOCS_DIR/api-docs.md"
 
 ROLLED_BACK=0
 NEEDS_RESTART=0
+CFG_BACKUP=""    # this run's copy of openclaw.json, made before the content step
+SNAP_MARK=""     # touched just before the content step: the snapshots it wrote are the ones newer than this
 STEP_CODES=""
 # "step|restored_version|healthz_200_utc;" — the schema field agent-pull.md
 # section 10.9 promises. Populated only from a measured probe, never assumed.
@@ -439,6 +452,31 @@ PY
   return 0
 }
 
+# Delete the backups THIS run made of the box's OpenClaw (see "Own backups" in the header). Called only
+# from finish(), only after the final status write reported success with no rollback. Never fatal.
+drop_run_backups() {
+  if [ -n "$CFG_BACKUP" ] && [ -f "$CFG_BACKUP" ]; then
+    if rm -f "$CFG_BACKUP" 2>/dev/null; then log "backup: deleted $CFG_BACKUP"
+    else log "backup: WARN could not delete $CFG_BACKUP"; fi
+  fi
+  if [ -n "$SNAP_MARK" ] && [ -f "$SNAP_MARK" ]; then
+    # The skills-rollback / skills-backup folders update-skills.sh wrote after SNAP_MARK was touched.
+    # Name pattern + newer-than-the-mark + a real directory (no symlink): an older run's snapshot, a
+    # sibling that is not one of these, and anything a client made are never matched.
+    for _db_root in "$ROOT/backups" "$HOME/Downloads/openclaw-backups"; do
+      [ -d "$_db_root" ] || continue
+      find "$_db_root" -mindepth 1 -maxdepth 1 -type d -newer "$SNAP_MARK" \
+        \( -name 'skills-rollback-[0-9][0-9][0-9][0-9]*' -o -name 'skills-backup-[0-9][0-9][0-9][0-9]*' \) \
+        2>/dev/null | while IFS= read -r _db_d; do
+          if rm -rf -- "$_db_d" 2>/dev/null; then log "backup: deleted $_db_d"
+          else log "backup: WARN could not delete $_db_d"; fi
+        done
+    done
+    rm -f "$SNAP_MARK" 2>/dev/null
+  fi
+  return 0
+}
+
 finish() {  # exit_code phase [stuck]
   _fs="${3:-$STUCK_NOTE}"
   if [ "$1" != 0 ] && [ "$1" != "$EX_DEFERRED" ]; then   # item 10: a failed job hands the held note to the watcher
@@ -446,6 +484,12 @@ finish() {  # exit_code phase [stuck]
     [ -z "$_eh" ] || _fs="${_fs:+$_fs; }operator escalation held for the watcher (not sent): $_eh"
   fi
   status_write "$2" "$(now_utc)" "$_fs"
+  # status_write has just recomputed NEEDS_RESTART from the marker file. Success = exactly what that
+  # status file says: exit 0, no failed step, no rollback, no host restart owed.
+  if [ "$1" = 0 ] && [ -z "$FIRST_FAIL" ] && [ "$ROLLED_BACK" = 0 ] && [ "$NEEDS_RESTART" = 0 ] \
+     && [ -z "$STEP_ROLLBACKS" ]; then
+    drop_run_backups
+  fi
   log "END phase=$2 exit=$1"
   exit "$1"
 }
@@ -1653,10 +1697,16 @@ log "STEP update: weekly-full-update.sh"
 status_write "update" "" ""
 
 # F17: keep the config the content update may rewrite, so a rollback restores it.
+# It is deleted by finish() only when the whole run ends in success (drop_run_backups).
 CFG_BACKUP="$REFRESH_DIR/openclaw.json.pre-$RUN_ID"
 if [ -f "$ROOT/openclaw.json" ]; then
   ( umask 077; cp "$ROOT/openclaw.json" "$CFG_BACKUP" ) 2>/dev/null && chmod 600 "$CFG_BACKUP" 2>/dev/null || CFG_BACKUP=""
+else
+  CFG_BACKUP=""
 fi
+# Every skills snapshot update-skills.sh writes from here on is this run's own.
+SNAP_MARK="$WORK/content-step.mark"
+: > "$SNAP_MARK" 2>/dev/null || SNAP_MARK=""
 
 UPD_RC=0
 # critic.C11 (code side): under self-update the content step must NEVER be
@@ -1725,10 +1775,8 @@ if [ "$UPD_RC" -ne 0 ]; then
   fi
 else
   log "OK update"
-  # hostinger.H11: never leave a secret-bearing config copy behind after a clean run.
-  if [ -n "$CFG_BACKUP" ] && [ -f "$CFG_BACKUP" ]; then
-    rm -f "$CFG_BACKUP" 2>/dev/null && log "update: removed the config backup $CFG_BACKUP"
-  fi
+  # hostinger.H11: no secret-bearing config copy is left behind after a clean run. finish() deletes it
+  # (with the skills snapshot) once the FINAL status says success; an earlier failed step keeps it.
 fi
 
 # ══ done ═════════════════════════════════════════════════════════════════════
