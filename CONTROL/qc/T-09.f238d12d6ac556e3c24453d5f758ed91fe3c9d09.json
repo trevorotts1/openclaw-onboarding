@@ -1,0 +1,166 @@
+{
+  "unit": "T-09",
+  "attempt": 3,
+  "repair_attempt": 1,
+  "bind_attempt": 1,
+  "lane": "PBB-672",
+  "branch": "pb/PBB-672/t-09-bind",
+  "worktree": "<worktree-root-parent>/Purple-Billboard-Client-System-Build/worktrees/PBB-672",
+  "head": "99434b243a627c5c4fa7923bb2123650f9a137a5",
+  "digest": "f238d12d6ac556e3c24453d5f758ed91fe3c9d09",
+  "digest_recipe": "git diff -U0 $(git merge-base origin/main <head>) <head> | git patch-id --stable",
+  "digest_recomputed_by_this_lane": true,
+  "base": "3d7135664326eeb7857252afcad5506c1381c3d5",
+  "base_note": "base = git merge-base origin/main HEAD, measured in this worktree. It is unchanged since the PBB-658 receipt, so the pinned digest is stable. Live origin/main at measurement is c994359d6329b6f958c217ee455b40cfb8a0543c, i.e. the head is 40 behind / 10 ahead (git rev-list --left-right --count origin/main...HEAD = '40\t10'). Merge readiness is a separate question from these three rows.",
+  "live_origin_main": "c994359d6329b6f958c217ee455b40cfb8a0543c",
+  "ahead_behind": "40 10",
+  "previous_receipt": "control/qc/T-09.f238d12d6ac556e3c24453d5f758ed91fe3c9d09.json (lane PBB-658, verdict FAIL, 5 PASS / 3 PENDING)",
+  "previous_report": "control/T-09-REPAIR.md",
+  "checker": "opus-chain/PBB-672",
+  "model": "opus-chain[1m]",
+  "independence": "This lane authored nothing in the candidate: not repair commit 99434b243a627c5c4fa7923bb2123650f9a137a5, not merge e5dc7dc39ff283b91b232a63cc72b14542e840f6, and no product file. It verified the committed bytes in its own locked worktree created from that head. It does not reopen the five defects PBB-658 closed and does not re-litigate that FAIL verdict. Honest identity note: the spawning harness token for this agent is 'deepseek-direct' while the harness reports the running model as 'opus-chain[1m]'; the registry-native agent id is unavailable (blocker B-11, registry read HTTP 401), so no native id is invented. required_qc_alias on the checks is 'opus-chain'.",
+  "memory": {
+    "tier": "GREEN",
+    "source": "memory_sample.json {\"tier\":\"GREEN\"}",
+    "measured": "12 cores; memory_pressure -Q reports 55% of 25769803776 bytes free",
+    "heavy_permits_available": 6,
+    "heavy_permits_formula": "min(cores-2, floor((freeGiB-4)/1.5)) = min(10, floor((13.2-4)/1.5)) = 6",
+    "heavy_permits_claimed": 1,
+    "scope_of_permit": "two targeted product-handler trace suites (test_durable_processing.py, test_compat_guard.py), run sequentially; no broad campaign"
+  },
+  "acceptance_clause": "Fresh/existing mapping regressions; preserve unrelated config and actual versions.",
+  "acceptance_source": "control/ledger.json unit T-09 acceptance; live-ledgers/build.json T-09; SPEC/INDEX.md row T-09; live-ledgers/checks.json C-09 scope.",
+  "pending_rows_identified": [
+    "Row 6 — \"required CI check C-09 (focused_artifact_or_required_ci, checks.json required:true)\"",
+    "Row 7 — \"required check C-F03 (Admission/crash/unknown send, minimal_focused_trace F-03)\"",
+    "Row 8 — \"required check C-F12 (Revision-safe upgrade/rollback, minimal_focused_trace F-12)\""
+  ],
+  "rows_checked": [
+    {
+      "row": 1,
+      "clause": "Fresh mapping regressions",
+      "result": "PASS",
+      "carried_not_rescored": true,
+      "source": "PBB-658 author evidence (control/T-09-REPAIR.md); not reopened by this lane",
+      "observation": "Carried. This lane did re-execute the same suites at the same head as the independent focused artifact for row 6 (see row 6 evidence): predicate suite 6 cases all met; hook-mapping-contract 11 rows.",
+      "command": "bash 38-conversational-ai-system/tests/qc-checklist-backend-predicate.test.sh; bash 38-conversational-ai-system/tests/hook-mapping-contract.test.sh",
+      "exit_code": 0
+    },
+    {
+      "row": 2,
+      "clause": "Existing mapping regressions",
+      "result": "PASS",
+      "carried_not_rescored": true,
+      "source": "PBB-658 author evidence; not reopened",
+      "observation": "Carried. Re-executed at this head for the row 6 artifact: 11 rows, both gates agree, expectations met; repair-inbound-hooks selftest ok.",
+      "command": "bash 38-conversational-ai-system/tests/hook-mapping-contract.test.sh; bash 38-conversational-ai-system/tests/repair-inbound-hooks.test.sh",
+      "exit_code": 0
+    },
+    {
+      "row": 3,
+      "clause": "preserve unrelated config",
+      "result": "PASS",
+      "carried_not_rescored": true,
+      "source": "PBB-658 author evidence; not reopened",
+      "observation": "Carried. Decoy rows remain green inside the re-executed hook-mapping-contract suite.",
+      "command": "git diff --name-status 3d7135664 99434b2; bash 38-conversational-ai-system/tests/hook-mapping-contract.test.sh",
+      "exit_code": 0
+    },
+    {
+      "row": 4,
+      "clause": "preserve actual versions",
+      "result": "PASS",
+      "carried_not_rescored": true,
+      "source": "PBB-658 author evidence; not reopened",
+      "observation": "Carried. BookkeepingTests re-executed green at this head for the row 6 artifact: Ran 4 tests, OK.",
+      "command": "cd 38-conversational-ai-system/tools/tests && python3 -m unittest -q test_interactive_owner.BookkeepingTests",
+      "exit_code": 0
+    },
+    {
+      "row": 5,
+      "clause": "regressions (suite parity, base vs head)",
+      "result": "PASS",
+      "carried_not_rescored": true,
+      "source": "PBB-658 author evidence; not reopened",
+      "observation": "Carried. Not re-run as a parity campaign by this lane; the row 6 artifact re-ran the same suites green at the head.",
+      "command": "(carried)",
+      "exit_code": 0
+    },
+    {
+      "row": 6,
+      "clause": "required CI check C-09 (focused_artifact_or_required_ci, checks.json required:true)",
+      "result": "PASS",
+      "bound_by_this_lane": true,
+      "artefact_that_satisfies": "The check type is a disjunction: a focused artifact at the exact candidate OR a required CI run. The focused-artifact limb exists at this head and was executed by this lane (not by the repair author). Precedent for this exact type binding on focused artifacts: checks.json C-11 (PASS, evidence E-T11-QC-PASS -> scratch/pb-skill38-20261024/lanes/PBB-016-operator/QC-PASS.md) and C-12 (PASS, evidence E-T12-QC-PASS -> probe log 'TOTAL=12 PASS=12 FAIL=0'); neither records CI evidence.",
+      "observation": "All five focused-artifact runs green at head 99434b243a627c5c4fa7923bb2123650f9a137a5: (A) predicate suite 'qc-checklist-backend-predicate.test.sh: 6 cases, all met.'; (B) 'hook-mapping-contract.test.sh: 11 rows, both gates agree on every one, expectations met.'; (C) 'selftest ok' / 'oct4_frontdoor.py --selftest: PASS' / 'ok inbound-hooks repair'; (D) bash -n clean on the shipped script and the test; (E) BookkeepingTests 'Ran 4 tests in 1.727s' / 'OK'. CI limb observed and NOT greened: gh api commits/99434b24.../check-runs -> HTTP 422 'No commit found for SHA'; gh api commits/99434b24... -> same 422; git ls-remote --heads origin filtered for PBB-672/PBB-658 -> none. The gh instrument was proved by a positive control on the published sha c994359d ('total_count':58). No CI run exists at this head and none can without publishing, which this lane may not do.",
+      "command": "bash 38-conversational-ai-system/tests/qc-checklist-backend-predicate.test.sh; bash 38-conversational-ai-system/tests/hook-mapping-contract.test.sh; bash 38-conversational-ai-system/tests/repair-inbound-hooks.test.sh; bash -n 38-conversational-ai-system/scripts/11-run-qc-checklist.sh && bash -n 38-conversational-ai-system/tests/qc-checklist-backend-predicate.test.sh; cd 38-conversational-ai-system/tools/tests && python3 -m unittest -q test_interactive_owner.BookkeepingTests; gh api repos/trevorotts1/openclaw-onboarding/commits/99434b24.../check-runs",
+      "exit_code": 0,
+      "ci_limb": "NOT OBSERVED, NOT CLAIMED; conditional caveat recorded in limitations",
+      "reverts_to_pending_if": "the project owner rules that required CI is mandatory in addition to the focused artifact"
+    },
+    {
+      "row": 7,
+      "clause": "required check C-F03 (Admission/crash/unknown send, minimal_focused_trace F-03)",
+      "result": "PASS",
+      "bound_by_this_lane": true,
+      "artefact_that_satisfies": "A minimal focused trace of admission/crash/unknown send against the actual product handler at the exact head: 38-conversational-ai-system/tools/durable_store.py + reconciliation.py, traced by 38-conversational-ai-system/tools/tests/test_durable_processing.py. The test docstring states: 'INBOX the same provider event, delivered twice, has exactly one effect - across a restart and across two real processes... CRASH a real SIGKILL after the provider accepted and before the local receipt was written: the record becomes unknown, reconciliation resolves it, and the provider send log stays at exactly one line. CANCEL a canceled action cannot be dispatched by a racing worker, proven with two real worker processes.'",
+      "observation": "Trace rc 0: 'Ran 26 tests in 3.759s' / 'OK'. Named cases carrying the scope: admission - test_same_event_twice_one_effect_across_restart, test_two_processes_deliver_same_event_one_effect, test_identical_body_different_event_ids_are_two_events, test_own_outgoing_is_excluded_by_direction_and_actor; crash - test_real_sigkill_after_send_then_reconcile_never_resends, test_restart_sweep_makes_crash_explicitly_unknown_without_resend, test_crash_before_send_resolves_not_applied_then_retries_same_action; unknown send - test_sender_exception_is_unknown_not_resent, test_unresolved_unknown_is_never_claimed_even_after_lease_expiry, test_failed_and_unknown_are_distinct, test_reconcile_after_ack_before_completion. Mutation control: in tmp/PBB-672/mut-f03-root2 changing durable_store.claim_for_dispatch's \"WHERE action_id=? AND state='queued'\" to state IN ('queued','canceled') gives rc 1, 'FAILED (failures=2)', FAIL test_canceled_action_cannot_be_dispatched_by_racing_workers, FAIL test_canceled_is_terminal_and_never_claimable. A first mutation of begin_attempt's state guard survived (rc 0) because claim_for_dispatch refuses first; recorded as a survived mutation, not a pass. PACKAGE GAP, named: no F-03 case exists anywhere in the run package - fixtures/contract-traces.json holds F-04..F-08 and F-12A only, fixtures/lifecycle-crash-traces.json is EXPECTED_ONLY_NOT_EXECUTED with no fixture_id, checks.json C-F03 has candidate_sha null and evidence_ids [], and evidence.json has no C-F03 evidence (E-SKILL38-GAPS is an artifact_review with candidate_revision null). The same field-read finds F-12A, so the read discriminates. No fixture was created.",
+      "command": "python3 38-conversational-ai-system/tools/tests/test_durable_processing.py",
+      "exit_code": 0
+    },
+    {
+      "row": 8,
+      "clause": "required check C-F12 (Revision-safe upgrade/rollback, minimal_focused_trace F-12)",
+      "result": "PASS",
+      "bound_by_this_lane": true,
+      "artefact_that_satisfies": "A minimal focused trace of revision-safe upgrade/rollback against the actual product handler at the exact head: 38-conversational-ai-system/tools/compat_guard.py (added by T-39 merge 569eee7a, an ancestor of this head) traced by 38-conversational-ai-system/tools/tests/test_compat_guard.py. The handler contract text covers the scope verbatim: 'Rollback compares the revision the upgrade wrote; a newer client fix causes conflict/forward repair. Never roll back sent effects, contact facts, consent/suppression, counters or unknown-send reconciliation.' and forward_repair() 'reports: corrupt, newer than known, missing, protected-state, or migrated ... nothing is repaired silently'.",
+      "observation": "Trace rc 0: 'Ran 25 tests in 8.138s' / 'OK'. Named cases carrying the scope: CAS conflict/forward repair - test_stale_writer_is_refused_and_writes_nothing, test_two_writers_at_one_generation_produce_exactly_one_write, test_write_that_lowers_the_generation_is_refused; revision-safe upgrade - test_migration_racing_cas_never_regresses_the_generation, test_old_record_is_advanced_once_then_noop, test_second_run_is_byte_identical_noop, test_newer_record_is_refused_with_named_error, test_corrupt_record_is_reported_not_repaired; newer client state preserved - test_cas_refuses_to_roll_back_protected_state, test_migration_may_not_drop_protected_state, test_cas_preserves_unknown_top_level_keys. Mutation control: in tmp/PBB-672/mut-f12/tools replacing cas_update's 'if actual != expected_generation:' with 'if False:' gives rc 1, 'FAILED (failures=3)', FAIL test_migration_racing_cas_never_regresses_the_generation, FAIL test_two_writers_at_one_generation_produce_exactly_one_write, FAIL test_stale_writer_is_refused_and_writes_nothing. Fixture relation, named: fixtures/contract-traces.json case F-12A reads {upgrade_wrote_config_revision: rev_a, current_client_config_revision: rev_b, expected: CAS_CONFLICT_FORWARD_REPAIR} with file status UNVERIFIED_AGAINST_PRODUCT; that JSON was NOT executed and is not claimed as executed. The trace exercises the same semantics (stale revision refused with the record byte-identical, newer record refused not downgraded, forward repair reports rather than silently repairing).",
+      "command": "python3 38-conversational-ai-system/tools/tests/test_compat_guard.py",
+      "exit_code": 0
+    }
+  ],
+  "instrument_proof": {
+    "note": "Both polarities proved before any measurement; 127/128 recorded as aborts, never as facts.",
+    "cases": [
+      "git merge-base --is-ancestor 76700ba... origin/main -> rc 0 (known-merged positive)",
+      "git merge-base --is-ancestor c6182220... origin/main -> rc 1 (unrelated negative)",
+      "git merge-base --is-ancestor 569eee7a... HEAD -> rc 0 (T-39 merge inside candidate)",
+      "git merge-base --is-ancestor origin/main HEAD -> rc 1 (head is 40 behind live main)",
+      "digest known-positive: 75a5a26a..a2c84b2d5 -> d478c181987c206bf3741b2b488f98a37678b5f8",
+      "digest known-negative: wrong base 3d7135664 over a2c84b2d5 -> e98b7fba1930c7dcd005881488df9c75983cd60b",
+      "python unittest positive: -m unittest -q test_ctl_pass.py -> rc 0 'OK'",
+      "python unittest negative: -m unittest -q test_ctl_fail.py -> rc 1 'FAILED (failures=1)'",
+      "python unittest aborts: missing module -> rc 1 errors=1 ImportError; python3 -I loader -> rc 1 errors=1 (abort, discarded)",
+      "bash positive/negative: exit 0 -> 0, exit 1 -> 1; missing suite -> rc 127 abort",
+      "gh API positive control: commits/c994359d.../check-runs -> 'total_count':58; target head -> HTTP 422"
+    ]
+  },
+  "bind_outcome": "3/3 PENDING rows bound PASS (C-09, C-F03, C-F12); 0 FAIL; 0 unsatisfiable. The five defects PBB-658 closed were not reopened and its FAIL verdict was not re-litigated.",
+  "verdict": "PASS",
+  "verdict_reason": "All three PENDING rows bind PASS at head 99434b243a627c5c4fa7923bb2123650f9a137a5 with the digest recomputed here as f238d12d6ac556e3c24453d5f758ed91fe3c9d09. Row 6 is satisfied by the focused_artifact disjunct of its own check type (independent execution of the named suites at the exact head; precedent C-11/C-12). Rows 7 and 8 are satisfied by minimal focused traces of their named scopes executed against the real product handlers at the exact head (durable_store/reconciliation for F-03; compat_guard for F-12), each shown to bite by mutation. No PASS contains a PENDING clause.",
+  "limitations": [
+    "C-09's CI disjunct is NOT observed and NOT claimed: the head is unpublished (HTTP 422 against an authenticated API with a positive control), and this lane may not publish. A ruling that required CI is mandatory in addition to the focused artifact would revert row 6 to PENDING.",
+    "The head is 40 behind and 10 ahead of live origin/main c994359d6329b6f958c217ee455b40cfb8a0543c. The digest is stable because the merge-base is unchanged, but merge readiness is separate; BATCH-MERGE step 5 invalidates affected evidence when the base moves.",
+    "The run package still holds no F-03 case, and F-12A remains an expected shape with status UNVERIFIED_AGAINST_PRODUCT. Neither JSON was edited or executed; the executed traces are the product handlers' own focused suites at the head, and this receipt is the binding record.",
+    "Checker identity: this lane authored no part of the candidate. required_qc_alias is 'opus-chain'; harness model is opus-chain[1m]; the spawning harness agent token is 'deepseek-direct'. The registry-native agent id is unavailable (blocker B-11, HTTP 401), so no native id is invented.",
+    "No product code, test assertion, ledger, census, DECISIONS or LOCKED value was changed. Nothing was pushed, merged or published."
+  ],
+  "evidence_paths": {
+    "report": "lanes/PBB-672-lane/T-09-BIND.md",
+    "logs": [
+      "lanes/PBB-672-lane/A-predicate.log",
+      "lanes/PBB-672-lane/B-hookmap.log",
+      "lanes/PBB-672-lane/C-repairhooks.log",
+      "lanes/PBB-672-lane/D-bashn.log",
+      "lanes/PBB-672-lane/E-bookkeeping.log",
+      "lanes/PBB-672-lane/F-f03-durable.log",
+      "lanes/PBB-672-lane/G-f12-compat.log",
+      "lanes/PBB-672-lane/instrument-proof.txt"
+    ],
+    "mutation_trees": [
+      "tmp/PBB-672/mut-f12/tools (cas_update stale guard disabled -> rc 1, failures=3)",
+      "tmp/PBB-672/mut-f03-root2 (claim_for_dispatch state guard widened -> rc 1, failures=2)"
+    ]
+  },
+  "scope_respected": "No product code changed; no push, PR or merge; no ledger/census/DECISIONS edit; no test assertion edited; no fixture invented."
+}
