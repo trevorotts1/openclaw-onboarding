@@ -2165,6 +2165,129 @@ class WeeklyFullUpdate(unittest.TestCase):
             self.assertEqual(git(stale, "rev-parse", "HEAD"), old)
 
 
+class DirtyRollCopyIsStashedNotFatal(unittest.TestCase):
+    """BFR 20261029 defect 4: <root>/fleet-refresh/onboarding is the roll's own copy, but
+    an old scrub left edits in it on Macs and Docker boxes. `checkout -B main origin/main`
+    aborts on them ("Your local changes ... would be overwritten") so the whole update exited
+    1. The edits are now saved in a kept stash, then the copy is hard-synced."""
+
+    CFG = "scripts/configure-operator-telegram.sh"
+
+    def world(self, td):
+        origin = Path(td, "origin.git")
+        origin.mkdir()
+        git(origin, "init", "-q", "--bare", "-b", "main")
+        seed = new_repo(Path(td, "seed"))
+        commit(seed, {"scripts/fleet-refresh.sh": 'echo "HEAD=$(git -C "$(dirname "$0")/.." rev-parse HEAD)"\n',
+                      "shared-utils/fleet_refresh_runner.py": "", self.CFG: "v1\n", "scripts/gone.sh": "keep\n"}, "one")
+        git(seed, "remote", "add", "origin", str(origin))
+        git(seed, "push", "-q", "origin", "main")
+        clone = Path(td, "clone")
+        subprocess.run(["git", "clone", "-q", str(origin), str(clone)], check=True, env=GIT_ENV)
+        return origin, seed, clone
+
+    def advance(self, seed):
+        new = commit(seed, {self.CFG: "v2\n"}, "two")   # same file the box edited: checkout must conflict
+        git(seed, "push", "-q", "origin", "main")
+        return new
+
+    def scrub(self, clone):
+        (clone / self.CFG).write_text("local-edit\n")
+        (clone / "scripts/gone.sh").unlink()
+        (clone / "scripts/stray.sh").write_text("stray\n")
+
+    def env(self, td, origin, clone):
+        # No git identity at all (a fresh Docker box): the stash must not need one.
+        e = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        e.update(HOME=td, ONBOARDING_CLONE=str(clone), FLEET_ROLL_REPO_URL=str(origin),
+                 OPENCLAW_UPDATE_LEASE=str(Path(td, "lease")), GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_COUNT="1",
+                 GIT_CONFIG_KEY_0="user.useConfigOnly", GIT_CONFIG_VALUE_0="true")
+        return e
+
+    def test_control_unpatched_checkout_really_aborts_on_this_dirt(self):
+        with tempfile.TemporaryDirectory() as td:
+            origin, seed, clone = self.world(td)
+            self.advance(seed)
+            self.scrub(clone)
+            r = subprocess.run(["git", "-C", str(clone), "fetch", "-q", "origin"], capture_output=True, text=True, env=GIT_ENV)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            r = subprocess.run(["git", "-C", str(clone), "checkout", "-q", "-B", "main", "origin/main"],
+                               capture_output=True, text=True, env=GIT_ENV)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("would be overwritten", r.stderr)
+
+    def test_weekly_update_stashes_the_dirt_then_syncs(self):
+        with tempfile.TemporaryDirectory() as td:
+            origin, seed, clone = self.world(td)
+            new = self.advance(seed)
+            self.scrub(clone)
+            script = str(REPO / "scripts" / "weekly-full-update.sh")
+            r = subprocess.run(["bash", script], capture_output=True, text=True, env=self.env(td, origin, clone), timeout=120)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn(f"HEAD={new}", r.stdout)                       # fleet-refresh ran from the synced copy
+            self.assertEqual(git(clone, "status", "--porcelain"), "")
+            self.assertEqual((clone / self.CFG).read_text(), "v2\n")
+            self.assertEqual(len(git(clone, "stash", "list").splitlines()), 1)
+            self.assertIn("fleet-refresh auto-stash", git(clone, "stash", "list"))
+            self.assertIn("3 locally changed file(s): saved as stash " + git(clone, "rev-parse", "stash@{0}")[:12], r.stdout)
+            # nothing the box had was lost: edit, deletion and the untracked file are all in the stash
+            self.assertEqual(git(clone, "show", f"stash@{{0}}:{self.CFG}"), "local-edit")
+            self.assertEqual(git(clone, "show", "stash@{0}^3:scripts/stray.sh"), "stray")
+            self.assertNotEqual(subprocess.run(["git", "-C", str(clone), "cat-file", "-e", "stash@{0}:scripts/gone.sh"],
+                                                env=GIT_ENV).returncode, 0)
+            # the next run finds a clean copy: no second stash, no dirt message
+            r2 = subprocess.run(["bash", script], capture_output=True, text=True, env=self.env(td, origin, clone), timeout=120)
+            self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
+            self.assertEqual(len(git(clone, "stash", "list").splitlines()), 1)
+            self.assertNotIn("locally changed", r2.stdout)
+
+    def test_clean_copy_is_synced_exactly_as_before_with_no_stash(self):
+        with tempfile.TemporaryDirectory() as td:
+            origin, seed, clone = self.world(td)
+            old = git(clone, "rev-parse", "HEAD")
+            new = self.advance(seed)
+            r = subprocess.run(["bash", str(REPO / "scripts" / "weekly-full-update.sh")], capture_output=True, text=True,
+                               env=self.env(td, origin, clone), timeout=120)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn(f"HEAD={new}", r.stdout)
+            self.assertIn(f"{old[:12]} -> {new[:12]}", r.stdout)
+            self.assertEqual(git(clone, "stash", "list"), "")
+            self.assertNotIn("locally changed", r.stdout)
+
+    def test_a_stash_that_cannot_be_written_stops_the_run_with_the_copy_untouched(self):
+        with tempfile.TemporaryDirectory() as td:
+            origin, seed, clone = self.world(td)
+            self.advance(seed)
+            self.scrub(clone)
+            (clone / ".git" / "index.lock").write_text("")                # git cannot take the index: stash fails
+            r = subprocess.run(["bash", str(REPO / "scripts" / "weekly-full-update.sh")], capture_output=True, text=True,
+                               env=self.env(td, origin, clone), timeout=120)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("could not save the 3 local change(s)", r.stdout)
+            self.assertNotIn("HEAD=", r.stdout)                           # fleet-refresh never started
+            self.assertEqual((clone / self.CFG).read_text(), "local-edit\n")   # the box's edits are still there
+            self.assertTrue((clone / "scripts/stray.sh").exists())
+
+    def test_fleet_roll_copy_stashes_the_dirt_then_refreshes(self):
+        with tempfile.TemporaryDirectory() as td:
+            origin, seed, _ = self.world(td)
+            home = Path(td, "home")
+            env = {**self.env(td, origin, Path(td, "unused")), "HOME": str(home)}
+            env.pop("ONBOARDING_CLONE")
+            script = str(REPO / "scripts" / "fleet-roll-copy.sh")
+            r = subprocess.run(["bash", script], capture_output=True, text=True, env=env, timeout=60)
+            self.assertTrue(r.stdout.startswith("COPY cloned"), r.stdout + r.stderr)
+            copy = home / ".openclaw/fleet-refresh/onboarding"
+            new = self.advance(seed)
+            self.scrub(copy)
+            r = subprocess.run(["bash", script], capture_output=True, text=True, env=env, timeout=60)
+            self.assertTrue(r.stdout.startswith("COPY updated"), r.stdout + r.stderr)
+            self.assertEqual(git(copy, "rev-parse", "HEAD"), new)
+            self.assertEqual(git(copy, "status", "--porcelain"), "")
+            self.assertEqual(git(copy, "show", f"stash@{{0}}:{self.CFG}"), "local-edit")
+            self.assertIn("3 locally changed file(s): saved as stash", r.stderr)
+
+
 class OperatorAlert(unittest.TestCase):
     ROWS = [{"box": "box-a", "client": "Client One", "label": "Client One (Hostinger)", "outcome": "ROLLED_BACK", "outcome_detail": "3 fix attempt(s) failed; cc-health",
              "heal": {"attempts": [{}, {}, {}]}, "rollback": {"not_restored": "openclaw.json"}},

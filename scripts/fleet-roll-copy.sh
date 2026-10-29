@@ -29,6 +29,18 @@ if [ -e "$R" ] && [ "$(git -C "$R" remote get-url origin 2>/dev/null)" != "$U" ]
 fi
 PREV=$(git -C "$R" rev-parse HEAD 2>/dev/null || true)
 if [ -d "$R/.git" ]; then
+  # Local edits in this tool-owned copy make `checkout -B` abort. Save them in a kept,
+  # never-dropped stash first (same steps as weekly-full-update.sh), then hard-sync.
+  N=$(git -C "$R" status --porcelain --untracked-files=all 2>/dev/null | wc -l | tr -d ' ')
+  if [ "${N:-0}" -gt 0 ]; then
+    S0=$(git -C "$R" rev-parse -q --verify refs/stash 2>/dev/null || true)
+    git -C "$R" -c user.name=fleet-refresh -c user.email=fleet-refresh@localhost \
+        stash push -q --include-untracked -m "fleet-refresh auto-stash $(date -u +%Y%m%dT%H%M%SZ)" >&2 \
+      || { echo "COPYFAIL could not save the $N local change(s) in $R before refreshing it"; exit 0; }
+    S1=$(git -C "$R" rev-parse -q --verify refs/stash 2>/dev/null || true)
+    [ -n "$S1" ] && [ "$S1" != "$S0" ] \
+      && echo "fleet-roll-copy: $R had $N locally changed file(s): saved as stash $(printf %.12s "$S1") (stash@{0}; kept, never dropped)" >&2
+  fi
   git -C "$R" fetch -q --depth 1 origin +refs/heads/main:refs/remotes/origin/main >&2 \
     && git -C "$R" checkout -q -B main origin/main >&2 \
     && git -C "$R" reset -q --hard origin/main >&2 \
