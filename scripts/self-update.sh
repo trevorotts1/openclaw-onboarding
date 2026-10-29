@@ -1,5 +1,5 @@
 #!/bin/sh
-# self-update.sh — v1.3.0
+# self-update.sh — v1.4.0
 #
 # The box's own self-update runner. Starts itself in a detached session, then
 # runs these steps IN THIS ORDER (Trevor, transcript L14):
@@ -12,7 +12,13 @@
 #                     9router step refuses to run from an unverified checkout.
 #   step 2  9router   install-9router-guards.sh --upgrade <pinned target>
 #   step 3  upgrade   OpenClaw to the version the TRIGGER passes in (Mac only;
-#                     skipped on a Docker box — the host side already did it)
+#                     skipped on a Docker box — the host side already did it).
+#                     FIRST the Node floor: when the Node the gateway LaunchAgent
+#                     runs is below the target's engines.node, OpenClaw's own private
+#                     runtime is installed under <root>/tools/cli-node and ONLY the
+#                     gateway LaunchAgent is pointed at it (node_before/node_after in
+#                     the status file); a failure leaves the box as found and skips the
+#                     upgrade (exit 25).
 #   step 4  update    scripts/weekly-full-update.sh (the FULL path, no terminal)
 #
 # Every step's RAW exit code is recorded in the JSON status file and the job
@@ -42,6 +48,7 @@
 #   20  OpenClaw rc 70 — rollback failed, human needed
 #   *   otherwise the RAW exit code of the first failed step
 #   22  refusal (no root, no target version, missing tools)
+#   25  the Node floor could not be met — the OpenClaw upgrade was not attempted
 #
 # No key value is ever printed, echoed, or written to the status file or the log.
 #
@@ -62,11 +69,19 @@
 #   #26      A shallow 999-setup clone is deepened (git fetch --unshallow) before any
 #            ancestry check on it.
 #
+# Node floor (v1.4.0): OpenClaw 2026.10.6+ refuses every command on a Node below its
+# engines.node, so step 3 now reads the target's engines.node, measures the Node the
+# gateway LaunchAgent runs, and when it is below the floor installs OpenClaw's own
+# private runtime (install-cli.sh --node-only from the target package) under
+# <root>/tools/cli-node and points ONLY that LaunchAgent and this job's PATH at it.
+# The box's Homebrew/nvm Node is never touched. node_before / node_after land in the
+# status file; a failure leaves the box as found, skips the upgrade, exits 25.
+#
 # INTERPRETER: /bin/sh, POSIX-safe, macOS bash 3.2 safe. No arrays, no
 # associative params, no mapfile, no ${x^^}, no heredoc nested inside $( ).
 set -u
 
-VERSION="1.3.0"
+VERSION="1.4.0"
 REPO_RAW_BASE="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding"
 REPO_RAW="$REPO_RAW_BASE/main"
 
@@ -76,6 +91,7 @@ EX_UPDATE=21
 EX_REFUSE=22
 EX_999=23
 EX_9ROUTER=24
+EX_NODE=25       # the Node floor could not be met; the OpenClaw upgrade was NOT attempted
 # 75 = the content step was DEFERRED: another updater legitimately owned this
 # box, so nothing was changed — and this run says so instead of claiming OK
 # (critic.C13). It is NOT a failure: no FIRST_FAIL, no stuck note.
@@ -108,6 +124,9 @@ STEP_CODES=""
 # "step|restored_version|healthz_200_utc;" — the schema field agent-pull.md
 # section 10.9 promises. Populated only from a measured probe, never assumed.
 STEP_ROLLBACKS=""
+NODE_BEFORE=""   # version of the Node the gateway LaunchAgent ran, measured before the upgrade step
+NODE_AFTER=""    # ... and after the Node floor step (same value when it already met the floor)
+NODE_WHY=""      # why node_floor_step failed
 FIRST_FAIL=""
 STUCK_NOTE=""
 LOCK_OWNED=0
@@ -336,11 +355,12 @@ status_write() {  # phase finished stuck
   python3 - "$STATUS_JSON" "$RUN_ID" "$ROLL_ID" "$1" "$STARTED" "$(now_utc)" "$2" \
     "$STEP_CODES" "$STAMP_BEFORE" "$(read_stamp)" "$OC_BEFORE" "$(oc_after)" \
     "$NR_BEFORE" "$(nr_version)" "$ROLLED_BACK" "$NEEDS_RESTART" "$STEP_ROLLBACKS" "$3" "$_tail" \
-    "$ONBOARDING_SHA" "$ONBOARDING_REF" <<'PY'
+    "$ONBOARDING_SHA" "$ONBOARDING_REF" "$NODE_BEFORE" "$NODE_AFTER" <<'PY'
 import json, os, sys
 (dest, run_id, roll_id, phase, started, updated, finished, codes,
  stamp_b, stamp_a, oc_b, oc_a, nr_b, nr_a, rolled_back, needs_restart,
- rollbacks, stuck, tailf, onboarding_sha, onboarding_ref) = sys.argv[1:22]
+ rollbacks, stuck, tailf, onboarding_sha, onboarding_ref,
+ node_b, node_a) = sys.argv[1:24]
 slow = {}
 for part in (codes or "").split(";"):
     if "=" not in part:
@@ -384,6 +404,8 @@ d = {
     "stuck_reason": stuck,
     "onboarding_sha": onboarding_sha,
     "onboarding_ref": onboarding_ref,
+    "node_before": node_b,
+    "node_after": node_a,
     "error_tail": tail,
 }
 d = {k: (v.replace("\r", " ") if isinstance(v, str) else v) for k, v in d.items()}
@@ -1330,6 +1352,229 @@ else
   record_step "9router" 0
 fi
 
+# ══ step 3a: the Node floor (before the OpenClaw upgrade) ════════════════════
+# OpenClaw 2026.10.6 and later refuse EVERY command (doctor included) on a Node
+# below its engines.node (2026.10.8: >=24.22.1 <25 || >=26.12.1), so a roll that
+# installs the new build under an older Node can never start the new gateway.
+# Before the upgrade this step reads the target's engines.node, measures the Node
+# the gateway LaunchAgent actually runs (ProgramArguments, never PATH), and when
+# that is below the floor installs OpenClaw's OWN private runtime with OpenClaw's
+# own installer taken from the target package (install-cli.sh --node-only, which
+# checks the tarball against nodejs.org SHASUMS256.txt) into <root>/tools/cli-node
+# — the exact place the new CLI's runtime recovery looks. The same major line as
+# the box is kept when the range allows it (24.x, else 26.x), else the lowest
+# compatible even line. Only the gateway LaunchAgent's node argument and this
+# job's own PATH are pointed at it; the box's Homebrew/nvm Node is never touched,
+# and the gateway process keeps running until the atomic upgrade restarts it from
+# the edited plist. Any failure undoes what this step did and the upgrade is skipped.
+
+nf_py() {  # check VERSION ENGINE | pick CURRENT ENGINE | repoint PLIST NODE
+  python3 - "$@" <<'PY'
+import os, re, sys
+
+# ponytail: only >=, >, <, <=, = terms joined by spaces and || are read (all engines.node has used); ^ ~ x-ranges
+# and hyphen ranges are refused (exit 2), never guessed. Add them here if OpenClaw ever publishes one.
+CMP = re.compile(r"^(>=|<=|>|<|=)?v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$")
+
+def bump(v, n):  # the first version past a (possibly partial) version
+    return (v[0] + 1, 0, 0) if n == 1 else (v[0], v[1] + 1, 0) if n == 2 else (v[0], v[1], v[2] + 1)
+
+def alts(engine):
+    out = []
+    for alt in engine.split("||"):
+        cs = []
+        for t in re.sub(r"(>=|<=|>|<|=)\s+", r"\1", alt).split():
+            m = CMP.match(t)
+            if not m:
+                raise ValueError("unsupported engines.node term %r in %r" % (t, engine))
+            op, a, b, c = m.groups()
+            cs.append((op or "=", (int(a), int(b or 0), int(c or 0)), 1 + (b is not None) + (c is not None)))
+        if not cs:
+            raise ValueError("empty alternative in engines.node %r" % engine)
+        out.append(cs)
+    return out
+
+def ok(v, cs):
+    for op, b, n in cs:
+        if op == ">=" and not v >= b: return False
+        if op == ">" and not v >= bump(b, n): return False
+        if op == "<" and not v < b: return False
+        if op == "<=" and not v < bump(b, n): return False
+        if op == "=" and not b <= v < bump(b, n): return False
+    return True
+
+def lowest(cs):  # the lowest version one alternative admits, or None
+    lo = None
+    for op, b, n in cs:
+        c = b if op in (">=", "=") else bump(b, n) if op == ">" else None
+        if c and (lo is None or c > lo):
+            lo = c
+    return lo
+
+def ver(s):
+    m = re.match(r"^v?(\d+)\.(\d+)\.(\d+)", s.strip())
+    return tuple(int(x) for x in m.groups()) if m else None
+
+def main(a):
+    cmd = a[0]
+    if cmd == "repoint":  # swap the node argument of a LaunchAgent plist; prints the one it replaced
+        import plistlib
+        unit, new = os.path.realpath(a[1]), a[2]
+        with open(unit, "rb") as f:
+            d = plistlib.load(f)
+        args = [str(x) for x in (d.get("ProgramArguments") or [])]
+        i = next((i for i, x in enumerate(args) if os.path.basename(x) in ("node", "nodejs")), None)
+        if i is None:
+            raise ValueError("no node argument in ProgramArguments")
+        old, args[i], d["ProgramArguments"] = args[i], new, args
+        tmp = "%s.tmp.%d" % (unit, os.getpid())
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, os.stat(unit).st_mode & 0o7777)
+        with os.fdopen(fd, "wb") as f:
+            plistlib.dump(d, f)
+        os.replace(tmp, unit)
+        print(old)
+        return 0
+    engine = a[2].strip()
+    sets = [] if engine in ("", "*") else alts(engine)
+    if cmd == "check":
+        v = ver(a[1])
+        return 0 if v and (not sets or any(ok(v, cs) for cs in sets)) else 1
+    if cmd == "pick":
+        cands = sorted({lo for cs in sets for lo in [lowest(cs)] if lo and ok(lo, cs)})
+        cur = ver(a[1])
+        same = [c for c in cands if cur and c[0] == cur[0]]
+        even = [c for c in cands if c[0] >= 24 and c[0] % 2 == 0]
+        pick = (same or even or cands or [None])[0]
+        if not pick:
+            return 3
+        print("%d.%d.%d" % pick)
+        return 0
+    return 64
+
+try:
+    sys.exit(main(sys.argv[1:]))
+except Exception as e:
+    sys.stderr.write("node-floor: %s\n" % e)
+    sys.exit(2)
+PY
+}
+
+nf_undo() {  # put back what the Node install changed: the prefix, the version dir, the alias
+  if [ "$_nf_made_prefix" = 1 ]; then
+    rm -rf "$_nf_prefix" 2>/dev/null
+    [ "$_nf_made_tools" = 1 ] && rmdir "$ROOT/tools" 2>/dev/null
+  else
+    [ "$_nf_made_dir" = 1 ] && rm -rf "$_nf_prefix/tools/node-v$_nf_want" 2>/dev/null
+    if [ -n "$_nf_oldlink" ]; then ln -sfn "$_nf_oldlink" "$_nf_prefix/tools/node" 2>/dev/null
+    else rm -f "$_nf_prefix/tools/node" 2>/dev/null
+    fi
+  fi
+  return 0
+}
+
+nf_undo_keep() {  # drop the not-yet-committed LaunchAgent copy (and its directory when this step made it)
+  rm -f "$_nf_keep/gateway.plist.next" 2>/dev/null
+  [ "$_nf_made_keep" = 1 ] && rmdir "$_nf_keep" 2>/dev/null
+  return 0
+}
+
+nf_get_installer() {  # OpenClaw's own install-cli.sh, from the TARGET package (npm checks its integrity)
+  _nf_dir="$WORK/node-floor"
+  mkdir -p "$_nf_dir" 2>/dev/null || return 1
+  ( cd "$_nf_dir" && npm pack "openclaw@$TARGET_VERSION" --pack-destination "$_nf_dir" >>"$LOG" 2>&1 ) || return 1
+  _nf_tgz="$(ls "$_nf_dir"/*.tgz 2>/dev/null | head -n1)"
+  [ -n "$_nf_tgz" ] || return 1
+  # install-cli.sh sources its sibling install-policy.sh, so both come out of the package.
+  tar -xzf "$_nf_tgz" -C "$_nf_dir" package/scripts/install-cli.sh package/scripts/install-policy.sh >>"$LOG" 2>&1 || return 1
+  rm -f "$_nf_tgz" 2>/dev/null
+  _nf_inst="$_nf_dir/package/scripts/install-cli.sh"
+  [ -s "$_nf_inst" ] && [ -s "$_nf_dir/package/scripts/install-policy.sh" ]
+}
+
+node_floor_step() {  # 0 = met or not applicable; EX_NODE = failed (NODE_WHY), nothing left changed
+  NODE_WHY=""
+  [ -n "$SUP_HELPER_PATH" ] || { log "node-floor: skipped (oc-supervisor-install.py unavailable, so the gateway's node cannot be read)"; return 0; }
+  _nf_src="$(python3 "$SUP_HELPER_PATH" source 2>/dev/null)" \
+    || { log "node-floor: skipped (no gateway supervisor definition resolves to an installed openclaw)"; return 0; }
+  [ "$_nf_src" = launchd ] || { log "node-floor: skipped (the gateway supervisor is $_nf_src, not a LaunchAgent)"; return 0; }
+  _nf_plist="$(python3 "$SUP_HELPER_PATH" unit 2>/dev/null)"
+  _nf_node="$(python3 "$SUP_HELPER_PATH" node 2>/dev/null)"
+  [ -n "$_nf_plist" ] && [ -n "$_nf_node" ] \
+    || { log "WARN node-floor: skipped (the LaunchAgent names no node binary to measure)"; return 0; }
+
+  _nf_engine="$(npm view "openclaw@$TARGET_VERSION" engines.node 2>>"$LOG")" \
+    || { NODE_WHY="could not read engines.node of openclaw@$TARGET_VERSION (npm view failed)"; return "$EX_NODE"; }
+  _nf_engine="$(printf '%s\n' "$_nf_engine" | head -n1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  if [ -z "$_nf_engine" ]; then
+    log "node-floor: openclaw@$TARGET_VERSION declares no engines.node; nothing to enforce"; return 0
+  fi
+
+  NODE_BEFORE="$("$_nf_node" --version 2>/dev/null | sed 's/^v//')"
+  _nf_c=1
+  if [ -n "$NODE_BEFORE" ]; then nf_py check "$NODE_BEFORE" "$_nf_engine" 2>>"$LOG"; _nf_c=$?; fi
+  [ "$_nf_c" != 2 ] || { NODE_WHY="engines.node of openclaw@$TARGET_VERSION ($_nf_engine) is not a range this job can read; refusing to guess"; return "$EX_NODE"; }
+  if [ "$_nf_c" = 0 ]; then
+    NODE_AFTER="$NODE_BEFORE"
+    log "node-floor: gateway node $NODE_BEFORE ($_nf_node) meets openclaw@$TARGET_VERSION engines.node ($_nf_engine); nothing to do"
+    return 0
+  fi
+  log "node-floor: gateway node ${NODE_BEFORE:-unrunnable} ($_nf_node) is BELOW openclaw@$TARGET_VERSION engines.node ($_nf_engine)"
+
+  _nf_want="$(nf_py pick "$NODE_BEFORE" "$_nf_engine" 2>>"$LOG")" \
+    || { NODE_WHY="no Node release can be derived from engines.node ($_nf_engine)"; return "$EX_NODE"; }
+  _nf_prefix="$ROOT/tools/cli-node"
+  _nf_priv="$_nf_prefix/tools/node/bin/node"
+  _nf_made_tools=0; [ -e "$ROOT/tools" ] || _nf_made_tools=1
+  _nf_made_prefix=0; [ -e "$_nf_prefix" ] || _nf_made_prefix=1
+  _nf_made_dir=0; [ -e "$_nf_prefix/tools/node-v$_nf_want" ] || _nf_made_dir=1
+  _nf_oldlink="$(readlink "$_nf_prefix/tools/node" 2>/dev/null)"
+
+  _nf_pv=""
+  [ -x "$_nf_priv" ] && _nf_pv="$("$_nf_priv" --version 2>/dev/null | sed 's/^v//')"
+  if [ -n "$_nf_pv" ] && nf_py check "$_nf_pv" "$_nf_engine" 2>>"$LOG"; then
+    log "node-floor: reusing the private runtime already installed ($_nf_pv at $_nf_priv)"
+  else
+    log "node-floor: installing Node $_nf_want into $_nf_prefix with OpenClaw's own installer (nodejs.org checksum verified by it)"
+    if ! nf_get_installer; then
+      NODE_WHY="could not fetch OpenClaw's installer (install-cli.sh) from openclaw@$TARGET_VERSION; install Node $_nf_want or newer by hand"
+      return "$EX_NODE"
+    fi
+    # A clean environment: no OPENCLAW_* variable of this box may steer the installer.
+    env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin TMPDIR="${TMPDIR:-/tmp}" \
+      /bin/bash "$_nf_inst" --node-only --prefix "$_nf_prefix" --node-version "$_nf_want" >>"$LOG" 2>&1 </dev/null
+    _nf_ir=$?
+    _nf_pv=""
+    [ -x "$_nf_priv" ] && _nf_pv="$("$_nf_priv" --version 2>/dev/null | sed 's/^v//')"
+    if [ "$_nf_ir" != 0 ] || [ -z "$_nf_pv" ] || ! nf_py check "$_nf_pv" "$_nf_engine" 2>>"$LOG"; then
+      nf_undo
+      NODE_WHY="the private Node $_nf_want install failed (installer exit $_nf_ir, runtime reports '${_nf_pv:-nothing}'); the box is as it was found"
+      return "$EX_NODE"
+    fi
+  fi
+
+  # Point ONLY the gateway LaunchAgent at it. The previous definition is kept (mode 600:
+  # the plist can carry environment values) so one cp puts it back.
+  _nf_keep="$ROOT/node-floor"
+  _nf_made_keep=0; [ -e "$_nf_keep" ] || _nf_made_keep=1
+  ( umask 077; mkdir -p "$_nf_keep" ) 2>/dev/null
+  if ! cp -p "$_nf_plist" "$_nf_keep/gateway.plist.next" 2>>"$LOG"; then
+    nf_undo; nf_undo_keep; NODE_WHY="could not save the LaunchAgent before editing it; the box is as it was found"; return "$EX_NODE"
+  fi
+  chmod 600 "$_nf_keep/gateway.plist.next" 2>/dev/null
+  if ! _nf_old="$(nf_py repoint "$_nf_plist" "$_nf_priv" 2>>"$LOG")" \
+     || [ "$(python3 "$SUP_HELPER_PATH" node 2>/dev/null)" != "$_nf_priv" ]; then
+    cp -p "$_nf_keep/gateway.plist.next" "$_nf_plist" 2>>"$LOG"
+    nf_undo; nf_undo_keep
+    NODE_WHY="could not point the gateway LaunchAgent at $_nf_priv; the box is as it was found"
+    return "$EX_NODE"
+  fi
+  mv -f "$_nf_keep/gateway.plist.next" "$_nf_keep/gateway.plist.before" 2>/dev/null
+  NODE_AFTER="$_nf_pv"
+  PATH="$(dirname "$_nf_priv"):$PATH"; export PATH
+  log "node-floor: the gateway LaunchAgent now runs Node $NODE_AFTER ($_nf_priv) instead of ${NODE_BEFORE:-an unrunnable node} ($_nf_old); previous definition kept at $_nf_keep/gateway.plist.before; the running gateway is untouched until the atomic upgrade restarts it; this job's npm/openclaw calls use the new Node"
+  return 0
+}
+
 # ══ step 3: OpenClaw upgrade (Mac only) ══════════════════════════════════════
 # The target version is the one the trigger passed. Nothing here discovers a
 # version — a self-update that guesses its own destination is the defect the
@@ -1347,30 +1592,41 @@ else
   log "STEP upgrade: OpenClaw -> $TARGET_VERSION"
   status_write "upgrade" "" ""
   UPG_RC=0
-  if ! fetch "$REPO_RAW/scripts/oc-atomic-upgrade.sh" "$WORK/oc-atomic-upgrade.sh" \
-     || ! fetch "$REPO_RAW/scripts/oc-schema-migrate.py" "$WORK/oc-schema-migrate.py" \
-     || [ -z "$SUP_HELPER_PATH" ] || ! cp "$SUP_HELPER_PATH" "$WORK/oc-supervisor-install.py"; then
-    log "FAIL upgrade: could not fetch oc-atomic-upgrade.sh / oc-schema-migrate.py / oc-supervisor-install.py from main"
-    UPG_RC=$EX_UPGRADE
+  node_floor_step; NF_RC=$?
+  # Recorded only when the step really ran against a LaunchAgent: a box with no
+  # gateway definition keeps the step list it always had.
+  if [ "$NF_RC" -ne 0 ] || [ -n "$NODE_BEFORE" ] || [ -n "$NODE_AFTER" ]; then record_step "node-floor" "$NF_RC"; fi
+  status_write "upgrade" "" ""
+  if [ "$NF_RC" -ne 0 ]; then
+    log "FAIL node-floor: $NODE_WHY — the OpenClaw upgrade is NOT attempted"
+    record_fail "$NF_RC" "node floor: $NODE_WHY"
+    probe_after_fail "node-floor"
   else
-    chmod 700 "$WORK/oc-atomic-upgrade.sh" 2>/dev/null || true
-    bash "$WORK/oc-atomic-upgrade.sh" --upgrade --target-version "$TARGET_VERSION" >>"$LOG" 2>&1 </dev/null
-    UPG_RC=$?
-  fi
-  record_step "upgrade" "$UPG_RC"
-  if [ "$UPG_RC" -eq 70 ]; then
-    log "FAIL upgrade: oc-atomic-upgrade.sh exited 70 — rollback failed, a human is needed"
-    # modeB.B11: the rc-70 path used to finish with no needs_host_restart write.
-    probe_after_fail "upgrade" 15
-    status_write "upgrade" "$(now_utc)" "upgrade exited 70 (rollback failed)"
-    finish 20 "upgrade" "upgrade exited 70 (rollback failed)"
-  fi
-  if [ "$UPG_RC" -ne 0 ]; then
-    log "FAIL upgrade: oc-atomic-upgrade.sh exited $UPG_RC"
-    record_fail "$UPG_RC" "upgrade exited $UPG_RC"
-    probe_after_fail "upgrade" 15
-  else
-    log "OK upgrade: $TARGET_VERSION (the supervisor's install now reports $(oc_version))"
+    if ! fetch "$REPO_RAW/scripts/oc-atomic-upgrade.sh" "$WORK/oc-atomic-upgrade.sh" \
+       || ! fetch "$REPO_RAW/scripts/oc-schema-migrate.py" "$WORK/oc-schema-migrate.py" \
+       || [ -z "$SUP_HELPER_PATH" ] || ! cp "$SUP_HELPER_PATH" "$WORK/oc-supervisor-install.py"; then
+      log "FAIL upgrade: could not fetch oc-atomic-upgrade.sh / oc-schema-migrate.py / oc-supervisor-install.py from main"
+      UPG_RC=$EX_UPGRADE
+    else
+      chmod 700 "$WORK/oc-atomic-upgrade.sh" 2>/dev/null || true
+      bash "$WORK/oc-atomic-upgrade.sh" --upgrade --target-version "$TARGET_VERSION" >>"$LOG" 2>&1 </dev/null
+      UPG_RC=$?
+    fi
+    record_step "upgrade" "$UPG_RC"
+    if [ "$UPG_RC" -eq 70 ]; then
+      log "FAIL upgrade: oc-atomic-upgrade.sh exited 70 — rollback failed, a human is needed"
+      # modeB.B11: the rc-70 path used to finish with no needs_host_restart write.
+      probe_after_fail "upgrade" 15
+      status_write "upgrade" "$(now_utc)" "upgrade exited 70 (rollback failed)"
+      finish 20 "upgrade" "upgrade exited 70 (rollback failed)"
+    fi
+    if [ "$UPG_RC" -ne 0 ]; then
+      log "FAIL upgrade: oc-atomic-upgrade.sh exited $UPG_RC"
+      record_fail "$UPG_RC" "upgrade exited $UPG_RC"
+      probe_after_fail "upgrade" 15
+    else
+      log "OK upgrade: $TARGET_VERSION (the supervisor's install now reports $(oc_version))"
+    fi
   fi
 fi
 
