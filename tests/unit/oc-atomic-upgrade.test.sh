@@ -220,9 +220,9 @@ if [ "\${1:-}" = "config" ] && [ "\${2:-}" = "schema" ]; then
 fi
 # doctor --fix (2026.10.8): records the context it ran in -- is the gateway loaded, which build is
 # installed, is stdin at EOF -- so the test asserts on what doctor actually saw. \$STATE/doctor_mode:
-#   (unset) ok | fail | fail_holder (a stale CLI grabs the state DB, then doctor fails) | hang |
+#   (unset) ok | fail | fail_loaded (loads the gateway job, then fails) | fail_holder (a stale CLI grabs the state DB, then doctor fails) | hang |
 #   audit (refuses like the real audit-logs step until the raw checkpoint rows are gone) | audit_always |
-#   models (rewrites agents.defaults.model) | touch (changes only an unrelated key)
+#   models (rewrites agents.defaults.model) | models_all (also the pins and an agent's own model) | touch (changes only an unrelated key)
 if [ "\${1:-}" = "doctor" ]; then
   {
     echo "args=\$*"
@@ -252,6 +252,7 @@ if [ "\${1:-}" = "doctor" ]; then
   MODE="\$(cat "\$STATE/doctor_mode" 2>/dev/null)"
   case "\$MODE" in
     fail) echo "doctor: agent database migration failed" >&2; exit 1 ;;
+    fail_loaded) touch "\$STATE/loaded_ai.openclaw.gateway"; echo "doctor: restarted the LaunchAgent, then failed" >&2; exit 1 ;;   # the real doctor restarts the job itself
     fail_holder)
       sleep 300 >/dev/null 2>&1 </dev/null &
       P=\$!
@@ -269,6 +270,7 @@ if [ "\${1:-}" = "doctor" ]; then
       fi ;;
     models) python3 -c 'import json,os;p=os.environ["HOME"]+"/.openclaw/openclaw.json";c=json.load(open(p));c["agents"]["defaults"]["model"]={"primary":"p/doctor-changed","fallbacks":[]};json.dump(c,open(p,"w"),indent=2)' ;;
     touch) python3 -c 'import json,os;p=os.environ["HOME"]+"/.openclaw/openclaw.json";c=json.load(open(p));c["doctorWasHere"]=True;json.dump(c,open(p,"w"),indent=2)' ;;
+    models_all) python3 -c 'import json,os;p=os.environ["HOME"]+"/.openclaw/openclaw.json";c=json.load(open(p));a=c["agents"];d=a["defaults"];d["model"]={"primary":"p/doctor-changed","fallbacks":[]};d["models"]={"p/doctor-pin":{}};e=a.get("entries") or {};e.get("worker-a",{})["model"]="p/doctor-agent";c["doctorWasHere"]=True;json.dump(c,open(p,"w"),indent=2)' ;;
   esac
   echo "doctor: ok"; exit 0
 fi
@@ -411,6 +413,7 @@ case "\${1:-}" in
     LBL="\$(basename "\${3:-}" .plist)"
     _settle "\$LBL"
     if [ -f "\$STATE/bootstrap_fail" ]; then exit 1; fi
+    if [ -f "\$STATE/bootstrap_fail_once" ]; then rm -f "\$STATE/bootstrap_fail_once"; exit 1; fi    # the first start fails, the next works
     [ -f "\$STATE/loaded_\$LBL" ] && exit 17     # already loaded / still tearing down
     touch "\$STATE/loaded_\$LBL"
     rm -f "\$STATE/ps_etime"                    # a (re)started gateway is a brand-new process
@@ -442,8 +445,32 @@ EOF
 #!/bin/bash
 echo "a-box"
 EOF
-  # node: the supervisor plist names a bare `node`; the resolver finds this one.
-  printf '#!/bin/bash\nexit 0\n' > "$dir/node"
+  # node: the supervisor plist names a bare `node`; the resolver finds this one. The only script this suite hands to
+  # `node -e` is the FTS5 repair that runs just before doctor (v1.4.0): $state/fts_mode picks its answer
+  # (unset = every database clean | fixed | skipped | fail | nosummary | hang). Each call is logged to events with
+  # the node that ran it, the root it was given and whether the gateway job was loaded at that moment.
+  cat > "$dir/node" <<EOF
+#!/bin/bash
+STATE="$state"
+case "\$*" in
+  *FTS_REPAIR_SUMMARY*)
+    echo "node-fts \$(command -v node) root=\${!#} gateway_loaded=\$([ -f "\$STATE/loaded_ai.openclaw.gateway" ] && echo yes || echo no)" >> "\$STATE/events"
+    echo "FTS_REPAIR_RUNTIME node=v26.13.0 sqlite=3.54.0"
+    case "\$(cat "\$STATE/fts_mode" 2>/dev/null)" in
+      fixed)     echo "FIXED /r/agents/main/agent/openclaw-agent.sqlite tables=memory_index_chunks_fts"
+                 echo "FTS_REPAIR_SUMMARY total=1 clean=0 fixed=1 skipped=0 unchecked=0 fail=0"; exit 0 ;;
+      skipped)   echo "SKIPPED /r/agents/main/agent/openclaw-agent.sqlite non-fts-findings=1 fts-tables= (nothing changed, doctor decides)"
+                 echo "FTS_REPAIR_SUMMARY total=1 clean=0 fixed=0 skipped=1 unchecked=0 fail=0"; exit 0 ;;
+      fail)      echo "FAIL /r/agents/main/agent/openclaw-agent.sqlite tables=t_fts integrity_check not ok after rebuild (rolled back)"
+                 echo "FTS_REPAIR_SUMMARY total=1 clean=0 fixed=0 skipped=0 unchecked=0 fail=1"; exit 1 ;;
+      nosummary) exit 0 ;;
+      hang)      sleep 30; exit 0 ;;
+    esac
+    echo "CLEAN /r/agents/main/agent/openclaw-agent.sqlite"
+    echo "FTS_REPAIR_SUMMARY total=1 clean=1 fixed=0 skipped=0 unchecked=0 fail=0"; exit 0 ;;
+esac
+exit 0
+EOF
   # ps: the live gateway's command line is the plist's launch path (or $STATE/ps_args); its age is
   # $STATE/ps_etime (default 00:00 = just started, i.e. after every fixture file was written).
   # A spawned state-database holder has its own answers: $state/ps_<pid>.args and ps_<pid>.etime.
@@ -454,6 +481,8 @@ PSBIN=/bin/ps; [ -x "\$PSBIN" ] || PSBIN=/usr/bin/ps
 for a in "\$@"; do case "\$a" in [0-9]*) [ -f "$state/realps_\$a" ] && exec "\$PSBIN" "\$@" ;; esac; done
 P=""; prev=""
 for a in "\$@"; do [ "\$prev" = "-p" ] && P="\$a"; prev="\$a"; done
+# a pid with a registered parent answers \`ps -o ppid=\` (the OpenClaw app worker cases); everything else keeps the old answers
+case "\$*" in *ppid*) if [ -n "\$P" ] && [ -f "$state/ps_\$P.ppid" ]; then cat "$state/ps_\$P.ppid"; exit 0; fi ;; esac
 case "\$*" in
   *etime*) if [ -n "\$P" ] && [ -f "$state/ps_\$P.etime" ]; then cat "$state/ps_\$P.etime"
            elif [ -f "$state/ps_etime" ]; then cat "$state/ps_etime"; else echo "00:00"; fi ;;
@@ -466,6 +495,15 @@ EOF
 #!/bin/bash
 STATE="$state"
 echo "lsof \$*" >> "\$STATE/events"
+# \`lsof -F fan -p PID\` (the access mode of one holder): \$STATE/lsof_mode_PID holds the letter it opens the main database with
+case "\$*" in *-F*)
+  P=""; prev=""; for a in "\$@"; do [ "\$prev" = "-p" ] && P="\$a"; prev="\$a"; done
+  if [ -n "\$P" ] && [ -f "\$STATE/lsof_mode_\$P" ]; then
+    printf 'p%s\nf8\na%s\nn%s\nf9\nau\nn%s\n' "\$P" "\$(cat "\$STATE/lsof_mode_\$P")" "\$HOME/.openclaw/state/openclaw.sqlite" "\$HOME/.openclaw/state/openclaw.sqlite-wal"
+    exit 0
+  fi
+  exit 1 ;;
+esac
 [ -f "\$STATE/lsof_holders" ] || exit 1
 rc=1
 while read -r p; do
@@ -535,7 +573,7 @@ run_atomic() {
     OC_ATOMIC_QUIESCE_PROOF_SECONDS=1 OC_ATOMIC_STABILITY_SECONDS=1 \
     OC_ATOMIC_BOOTOUT_TIMEOUT="${T_BOOTOUT_TIMEOUT:-6}" OC_ATOMIC_HEALTH_TIMEOUT="${T_HEALTH_TIMEOUT:-4}" \
     OC_ATOMIC_SETTLE_SECONDS="${T_SETTLE:-1}" OC_ATOMIC_DOCTOR_TIMEOUT="${T_DOCTOR_TIMEOUT:-60}" \
-    OC_ATOMIC_DOCTOR_LOOP_LINES="${T_LOOP_LINES:-}" \
+    OC_ATOMIC_DOCTOR_LOOP_LINES="${T_LOOP_LINES:-}" OC_ATOMIC_FTS_TIMEOUT="${T_FTS_TIMEOUT:-}" \
     bash "$script" --upgrade 2>&1
 }
 
@@ -847,28 +885,34 @@ fi
 
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""
-echo "--- (7) ROLLBACK: the gateway CRASH-LOOPS after a completed migration ---"
-# The hardest case: binary changed AND config migrated, then the gateway fails
-# to stay up. Both must be undone. A changing pid across the stability window is
-# the crash-loop signature (exit 78 + KeepAlive respawn every ~11s).
+echo "--- (7) the gateway CRASH-LOOPS after a completed migration AND doctor: the NEW binary stays (v1.4.0) ---"
+# Binary changed, config migrated, doctor --fix exited 0 (so the agent/session databases are migrated), then the
+# gateway fails to stay up. A changing pid across the stability window is the crash-loop signature (exit 78 +
+# KeepAlive respawn every ~11s). Before v1.4.0 this reinstalled the old build and restored the legacy config over
+# migrated databases; now the previous build never goes back: one clean restart of the NEW build, and when that
+# is still dark the script says so loudly (rc 70) and keeps the migrated config. The rollback-and-restore of
+# everything is covered where it can still happen: any failure BEFORE doctor completes (6, 18h-k, KB-e, Fts-d..f).
 H7="$(make_box b7 legacy)"; S7="$SANDBOX/stubs7"; ST7="$SANDBOX/state7"
 make_stubs "$S7" "$ST7" versioned
 CFG7="$H7/.openclaw/openclaw.json"; SHA7_BEFORE="$(sha_of "$CFG7")"
-touch "$ST7/pid_flip"
-OUT7="$(run_atomic "$H7" "$S7" "$ST7")"; RC7=$?
+touch "$ST7/pid_flip" "$ST7/healthz_down"
+OUT7="$(T_HEALTH_TIMEOUT=3 run_atomic "$H7" "$S7" "$ST7")"; RC7=$?
 
-[ "$RC7" -eq 78 ] && pass "7a: a crash-looping gateway was DETECTED and the upgrade rolled back (rc=78)" \
-                  || fail "7a: expected rc=78 on a crash-loop, got $RC7. Output: $OUT7"
-SHAPE7="$(cfg_shape "$CFG7")"
-if [ "$(sha_of "$CFG7")" = "$SHA7_BEFORE" ]; then
-  pass "7b: ROLLBACK — the MIGRATED config was reverted byte-for-byte ($SHAPE7)"
+if [ "$RC7" -eq 70 ] && grep -q 'pid CHANGED during the stability window' <<<"$OUT7" && grep -q 'new binary unhealthy after migration; rollback unsafe' <<<"$OUT7"; then
+  pass "7a: a crash-looping gateway after doctor was DETECTED; the new build got one clean restart and, still dark, the script failed loudly (rc=70)"
 else
-  fail "7b: ROLLBACK FAILED — the config was left as $SHAPE7 after a failed start"
+  fail "7a: expected rc=70 on a crash-loop after doctor, got $RC7. Output: $OUT7"
 fi
-if [ "$(cat "$ST7/version" 2>/dev/null)" = "$OLD_V" ]; then
-  pass "7c: ROLLBACK — the ORIGINAL binary $OLD_V was reinstalled"
+SHAPE7="$(cfg_shape "$CFG7")"
+if [ "$(cfg_shape "$CFG7" | cut -d: -f1)" = "ENTRIES" ] && [ "$(sha_of "$CFG7")" != "$SHA7_BEFORE" ]; then
+  pass "7b: the MIGRATED config stays ($SHAPE7): the legacy list is not put back under a build that rejects it"
 else
-  fail "7c: ROLLBACK FAILED — the box is left on $(cat "$ST7/version" 2>/dev/null)"
+  fail "7b: the config was changed back to $SHAPE7 after doctor completed"
+fi
+if [ "$(cat "$ST7/version" 2>/dev/null)" = "$NEW_V" ] && ! grep -q "openclaw@$OLD_V" "$ST7/npm_installs" 2>/dev/null; then
+  pass "7c: the NEW binary $NEW_V stays; the previous build was never reinstalled"
+else
+  fail "7c: the box is on $(cat "$ST7/version" 2>/dev/null)"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1167,9 +1211,12 @@ for kind in bogus clean; do
   [ "$kind" = "clean" ] && touch "$ST13C/validate_fail"      # config is fine; the build still rejects it
   CFG13C="$H13C/.openclaw/openclaw.json"; SHA13C="$(sha_of "$CFG13C")"
   OUT13C="$(run_atomic "$H13C" "$S13C" "$ST13C")"; RC13C=$?
-  if [ "$RC13C" -eq 78 ] && ! grep -q 'ATOMIC UPGRADE COMPLETE' <<<"$OUT13C" && [ "$(sha_of "$CFG13C")" = "$SHA13C" ] \
-     && [ "$(cat "$ST13C/version")" = "$OLD_V" ] && [ -f "$ST13C/loaded_ai.openclaw.gateway" ]; then
-    pass "13c($kind): config the new build rejects -> rolled back (rc=78), config + binary restored, gateway up, no success banner"
+  # v1.4.0: the new build's verdict comes AFTER doctor --fix, so there is no rolling back to the old build any more:
+  # never a success banner, the failing proof is named, the new binary and the (untouched) config stay, and the box
+  # is left to takeover (rc 71 here; a real gateway that cannot boot on the rejected config ends rc 70, see KB-c).
+  if [ "$RC13C" -eq 71 ] && ! grep -q 'ATOMIC UPGRADE COMPLETE' <<<"$OUT13C" && [ "$(sha_of "$CFG13C")" = "$SHA13C" ] \
+     && [ "$(cat "$ST13C/version")" = "$NEW_V" ] && grep -Eq 'REJECTS the config|rejects and there is no known migration' <<<"$OUT13C" && grep -q 'ERROR NOT ROLLING BACK' <<<"$OUT13C"; then
+    pass "13c($kind): config the new build rejects (after doctor) -> never success: STUCK (rc=71) naming the proof, new binary + config kept, old build not reinstalled"
   else
     fail "13c($kind): rc=$RC13C version=$(cat "$ST13C/version") out=$OUT13C"
   fi
@@ -1323,7 +1370,8 @@ spawn_gateway_like() {
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""
 echo "--- (B21) error #21: npm runs ONLY with the gateway job booted out; never a start onto an incomplete package ---"
-# A crash-looping start puts the job back in launchd BEFORE the rollback reinstalls the old build.
+# A job that is LOADED when the rollback runs (here: doctor --fix restarts the LaunchAgent itself, as the real one does,
+# and then fails; a crash-looping start could do the same before v1.4.0) must be booted out BEFORE the rollback reinstalls the old build.
 # KeepAlive then respawns the gateway against the half-written tree. The stub npm records every
 # install that ran while the job was loaded (npm_while_loaded): the invariant is that it stays absent.
 npm_window_check() {   # <events-file> -> OK, or the reason the rollback's reinstall was not inside a stopped window
@@ -1343,10 +1391,10 @@ print("OK" if after else "NO-BOOTSTRAP-AFTER-THE-PACKAGE-WAS-COMPLETE")
 PY
 }
 H21="$(make_box b21 clean)"; S21="$SANDBOX/stubs21"; ST21="$SANDBOX/state21"
-make_stubs "$S21" "$ST21" versioned; touch "$ST21/pid_flip"
+make_stubs "$S21" "$ST21" versioned; touch "$ST21/pid_flip"; echo fail_loaded > "$ST21/doctor_mode"
 OUT21="$(run_atomic "$H21" "$S21" "$ST21")"; RC21=$?
 if [ "$RC21" -eq 78 ] && [ "$(cat "$ST21/version")" = "$OLD_V" ] && [ "$(grep -c npm-install-witness "$ST21/npm_installs")" -eq 2 ]; then
-  pass "B21a: crash-loop after the start -> rolled back (rc=78) and the OLD build was reinstalled ($OLD_V)"
+  pass "B21a: doctor loaded the (crash-looping) job and failed -> rolled back (rc=78) and the OLD build was reinstalled ($OLD_V)"
 else
   fail "B21a: rc=$RC21 version=$(cat "$ST21/version") installs=$(grep -c npm-install-witness "$ST21/npm_installs" 2>/dev/null). Output: $OUT21"
 fi
@@ -1366,7 +1414,7 @@ MUT21="$(mutate_copy bfr21-mut '_gateway_stop_for_npm() {
   return 0   # MUTATED
   _gateway_loaded || return 0')"
 H21M="$(make_box b21m clean)"; S21M="$SANDBOX/stubs21m"; ST21M="$SANDBOX/state21m"
-make_stubs "$S21M" "$ST21M" versioned; touch "$ST21M/pid_flip"
+make_stubs "$S21M" "$ST21M" versioned; touch "$ST21M/pid_flip"; echo fail_loaded > "$ST21M/doctor_mode"
 OUT21M="$(run_atomic "$H21M" "$S21M" "$ST21M" "$MUT21")"; RC21M=$?
 if [ -n "$MUT21" ] && [ -f "$ST21M/npm_while_loaded" ]; then
   pass "B21d: MUTATION PROOF — with only the stop-before-npm step neutered, the rollback DID run npm with the job loaded ($(cat "$ST21M/npm_while_loaded"))"
@@ -1377,7 +1425,7 @@ fi
 # The job can no longer be booted out (launchd stops honouring bootout after the new install): the
 # rollback must REFUSE to run npm into a tree a respawning gateway is importing, and say a human is needed.
 H21E="$(make_box b21e clean)"; S21E="$SANDBOX/stubs21e"; ST21E="$SANDBOX/state21e"
-make_stubs "$S21E" "$ST21E" versioned; touch "$ST21E/pid_flip" "$ST21E/arm_bootout_noop_after_install"
+make_stubs "$S21E" "$ST21E" versioned; touch "$ST21E/pid_flip" "$ST21E/arm_bootout_noop_after_install"; echo fail_loaded > "$ST21E/doctor_mode"
 OUT21E="$(T_BOOTOUT_TIMEOUT=2 run_atomic "$H21E" "$S21E" "$ST21E")"; RC21E=$?
 if [ "$RC21E" -eq 70 ] && [ "$(grep -c npm-install-witness "$ST21E/npm_installs")" -eq 1 ] && [ ! -f "$ST21E/npm_while_loaded" ] \
    && grep -q 'BINARY RESTORE NOT ATTEMPTED' <<<"$OUT21E"; then
@@ -1389,7 +1437,7 @@ fi
 # The old build's reinstall leaves a half-written tree (the entry file is missing): the gateway must NOT be
 # bootstrapped onto it (it could only crash-loop), and the rollback must say so rather than claim success.
 H21F="$(make_box b21f clean)"; S21F="$SANDBOX/stubs21f"; ST21F="$SANDBOX/state21f"
-make_stubs "$S21F" "$ST21F" versioned; touch "$ST21F/pid_flip" "$ST21F/half_old_install"
+make_stubs "$S21F" "$ST21F" versioned; touch "$ST21F/pid_flip" "$ST21F/half_old_install"; echo fail_loaded > "$ST21F/doctor_mode"
 OUT21F="$(run_atomic "$H21F" "$S21F" "$ST21F")"; RC21F=$?
 LASTNPM21F="$(grep -n '^npm install' "$ST21F/events" | tail -1 | cut -d: -f1)"
 BOOT_AFTER21F="$(tail -n +"$((LASTNPM21F+1))" "$ST21F/events" | grep -c 'launchctl bootstrap.*ai.openclaw.gateway')"
@@ -1625,11 +1673,11 @@ else
 fi
 # ROLLBACK after a quarantine restores the config byte for byte (the entry is enabled again) and says so in the record.
 H24R="$(make_box b24r plugin)"; S24R="$SANDBOX/stubs24r"; ST24R="$SANDBOX/state24r"
-make_stubs "$S24R" "$ST24R" versioned; printf 'codex' > "$ST24R/doctor_broken_plugin"; touch "$ST24R/pid_flip"
+make_stubs "$S24R" "$ST24R" versioned; printf 'codex' > "$ST24R/doctor_broken_plugin"; echo fail > "$ST24R/doctor_mode"
 SHA24R="$(sha_of "$H24R/.openclaw/openclaw.json")"
 OUT24R="$(run_atomic "$H24R" "$S24R" "$ST24R")"; RC24R=$?
 if [ "$RC24R" -eq 78 ] && [ "$(sha_of "$H24R/.openclaw/openclaw.json")" = "$SHA24R" ] && grep -q '"event": "reverted-by-rollback"' "$H24R/.openclaw/oc-atomic-plugin-quarantine.jsonl" 2>/dev/null; then
-  pass "B24h: a later failure rolled back (rc=78): the config is BYTE-IDENTICAL (codex enabled again) and the record says it was reverted"
+  pass "B24h: doctor failed on its second run, after the quarantine (so it never completed) -> rolled back (rc=78): the config is BYTE-IDENTICAL (codex enabled again) and the record says it was reverted"
 else
   fail "B24h: rc=$RC24R sha-equal=$([ "$(sha_of "$H24R/.openclaw/openclaw.json")" = "$SHA24R" ] && echo yes || echo NO) record=$(cat "$H24R/.openclaw/oc-atomic-plugin-quarantine.jsonl" 2>/dev/null)"
 fi
@@ -1703,8 +1751,9 @@ make_stubs "$SPL" "$STPL" versioned; touch "$STPL/loaded_ai.openclaw.gateway"
 OUTPL="$(HOME="$HPL" PATH="$SPL:/usr/bin:/bin:/usr/sbin:/sbin" bash "$ATOMIC" --upgrade --dry-run 2>&1)"; RCPL=$?
 if [ "$RCPL" -eq 0 ] && grep -q 'ORPHAN\|orphan gateway' <<<"$OUTPL" && grep -q 'plugins.entries' <<<"$OUTPL" && grep -q 'whole window' <<<"$OUTPL" \
    && grep -q 'known-good/known-bad controls' <<<"$OUTPL" \
+   && grep -q '7a0\. (launchd) FTS5 repair' <<<"$OUTPL" && grep -q 'failure AFTER doctor --fix exited 0: the NEW binary' <<<"$OUTPL" \
    && ! grep -Eq 'launchctl (bootout|bootstrap)|^npm install|^openclaw doctor' "$STPL/events"; then
-  pass "Bplan: --dry-run lists the orphan reap, the plugin quarantine, the held npm window and the isolated validate, and ran no stop/install/doctor"
+  pass "Bplan: --dry-run lists the orphan reap, the plugin quarantine, the held npm window, the isolated validate, the FTS5 repair and the keep-the-new-binary rule, and ran no stop/install/doctor"
 else
   fail "Bplan: rc=$RCPL. Output: $OUTPL"
 fi
@@ -1991,11 +2040,15 @@ fi
 H18F="$(make_box b18f clean)"; S18F="$SANDBOX/stubs18f"; ST18F="$SANDBOX/state18f"
 make_stubs "$S18F" "$ST18F" versioned
 set_models "$H18F"; echo models > "$ST18F/doctor_mode"
-CFG18F="$H18F/.openclaw/openclaw.json"; SHA18F="$(sha_of "$CFG18F")"
+CFG18F="$H18F/.openclaw/openclaw.json"; cp "$CFG18F" "$SANDBOX/cfg18f.before"
 OUT18F="$(run_atomic "$H18F" "$S18F" "$ST18F")"; RC18F=$?
-if [ "$RC18F" -eq 78 ] && grep -q 'changed the model/provider selection' <<<"$OUT18F" && [ "$(sha_of "$CFG18F")" = "$SHA18F" ] \
-   && [ "$(cat "$ST18F/version")" = "$OLD_V" ] && ! grep -q 'doctor-changed' "$CFG18F"; then
-  pass "18l: doctor changed agents.defaults.model -> rolled back (rc=78), config restored byte-identical, binary $OLD_V"
+# the put-back rewrites the file (a trailing newline), so "put back" is proved on the parsed JSON, not the bytes
+if [ "$RC18F" -eq 71 ] && grep -q 'changed the model/provider selection' <<<"$OUT18F" \
+   && python3 -c 'import json,sys; sys.exit(json.load(open(sys.argv[1])) != json.load(open(sys.argv[2])))' "$CFG18F" "$SANDBOX/cfg18f.before" \
+   && [ "$(cat "$ST18F/version")" = "$NEW_V" ] && ! grep -q 'doctor-changed' "$CFG18F"; then
+  # doctor exited 0, so the databases are migrated and the old build cannot go back (v1.4.0): the run still FAILS, but
+  # the model keys are put back from the values saved before doctor (here the config comes out identical as JSON).
+  pass "18l: doctor changed agents.defaults.model -> the run fails (rc=71), the model keys put back (config identical as JSON), binary stays $NEW_V"
 else
   fail "18l: rc=$RC18F. Output: $OUT18F"
 fi
@@ -2045,28 +2098,28 @@ else
   fail "Bb: rc=$RCBB path='$PBB' left=$(bak_files "$HBB") shape=$(cfg_shape "$HBB/.openclaw/openclaw.json"). Output: $OUTBB"
 fi
 
-# c. the gateway crash-loops after the migration (stability window fails): rolled back, the backup is KEPT and is the original
+# c. the gateway crash-loops after the migration (stability window fails, v1.4.0: after doctor): the new build stays, the backup is KEPT and is the original
 HBC="$(make_box bbak-c legacy)"; SBC="$SANDBOX/stubsbbc"; STBC="$SANDBOX/statebbc"
 make_stubs "$SBC" "$STBC" versioned
 SHABC="$(sha_of "$HBC/.openclaw/openclaw.json")"; touch "$STBC/pid_flip"
 OUTBC="$(run_atomic "$HBC" "$SBC" "$STBC")"; RCBC=$?
 PBC="$(bak_path "$OUTBC")"
-if [ "$RCBC" -eq 78 ] && [ -n "$PBC" ] && [ -f "$PBC" ] && [ "$(sha_of "$PBC")" = "$SHABC" ] \
-   && [ "$(sha_of "$HBC/.openclaw/openclaw.json")" = "$SHABC" ] && ! grep -q 'config backup deleted' <<<"$OUTBC"; then
-  pass "Bc: a failed stability window (rc=78) rolled back and KEPT the backup, byte-identical to the original config"
+if [ "$RCBC" -eq 71 ] && [ -n "$PBC" ] && [ -f "$PBC" ] && [ "$(sha_of "$PBC")" = "$SHABC" ] \
+   && [ "$(cfg_shape "$HBC/.openclaw/openclaw.json" | cut -d: -f1)" = "ENTRIES" ] && ! grep -q 'config backup deleted' <<<"$OUTBC"; then
+  pass "Bc: a failed stability window after doctor (rc=71, the new build stays) KEPT the backup, byte-identical to the original config"
 else
   fail "Bc: rc=$RCBC path='$PBC' exists=$([ -f "$PBC" ] && echo yes || echo no). Output: $OUTBC"
 fi
 
-# d. doctor changes the model selection (the model check fails): rolled back, the backup is KEPT
+# d. doctor changes the model selection (the model check fails, v1.4.0: after doctor): the new build stays, the backup is KEPT
 HBD="$(make_box bbak-d clean)"; SBD="$SANDBOX/stubsbbd"; STBD="$SANDBOX/statebbd"
 make_stubs "$SBD" "$STBD" versioned
 set_models "$HBD"; echo models > "$STBD/doctor_mode"
 SHABD="$(sha_of "$HBD/.openclaw/openclaw.json")"
 OUTBD="$(run_atomic "$HBD" "$SBD" "$STBD")"; RCBD=$?
 PBD="$(bak_path "$OUTBD")"
-if [ "$RCBD" -eq 78 ] && [ -n "$PBD" ] && [ -f "$PBD" ] && [ "$(sha_of "$PBD")" = "$SHABD" ] && ! grep -q 'config backup deleted' <<<"$OUTBD"; then
-  pass "Bd: a failed model/provider check (rc=78) rolled back and KEPT the backup"
+if [ "$RCBD" -eq 71 ] && [ -n "$PBD" ] && [ -f "$PBD" ] && [ "$(sha_of "$PBD")" = "$SHABD" ] && ! grep -q 'config backup deleted' <<<"$OUTBD"; then
+  pass "Bd: a failed model/provider check (rc=71) KEPT the backup"
 else
   fail "Bd: rc=$RCBD path='$PBD' exists=$([ -f "$PBD" ] && echo yes || echo no). Output: $OUTBD"
 fi
@@ -2156,6 +2209,481 @@ if grep -qF "ran under $SUPN/node/bin/node" <<<"$OUTBNF"; then
   pass "Bn8: the log names the node npm ran under ($SUPN/node/bin/node)"
 else
   fail "Bn8: the log does not say which node npm ran under. Output: $OUTBNF"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (B-kb) v1.4.0: once doctor --fix exited 0 the NEW binary stays; the old one is never reinstalled on migrated state ---"
+# doctor --fix stamps the config and migrates the agent/session SQLite databases forward. The previous build
+# cannot read that pair, and the script takes no copy of the databases to restore, so a rollback that reinstalls
+# it only trades a failed proof for a crash loop. Every case below fails AFTER doctor returned 0 and asserts what
+# the box actually looks like afterwards: the binary, the config, the gateway, the exit code.
+kb_setup() {   # <tag> <config-kind> -> KH (home) KS (stubs) KST (state), a state database for the holders to hold
+  KH="$(make_box "$1" "$2")"; KS="$SANDBOX/stubs$1"; KST="$SANDBOX/state$1"
+  make_stubs "$KS" "$KST" versioned
+  make_state_db "$KH"
+}
+old_build_installed() { grep -q "openclaw@$OLD_V" "$1/npm_installs" 2>/dev/null; }   # the stub npm logs every install it was asked for
+
+# KB-a. the gateway answers /healthz 200 on the new build, but the "launched from the supervisor's package" proof
+# fails. A LEGACY config was migrated to agents.entries before doctor: it must stay migrated (the new build rejects `list`).
+kb_setup bkba legacy
+SHAKBA="$(sha_of "$KH/.openclaw/openclaw.json")"
+echo "node /somewhere/else/index.js gateway" > "$KST/ps_args"
+OUTKBA="$(run_atomic "$KH" "$KS" "$KST")"; RCKBA=$?
+BAKKBA="$(sed -n 's/.*config backed up: //p' <<<"$OUTKBA" | head -1)"
+if [ "$RCKBA" -eq 71 ] && [ "$(cat "$KST/version")" = "$NEW_V" ] && ! old_build_installed "$KST" \
+   && ! grep -q 'reinstalling the previous binary' <<<"$OUTKBA"; then
+  pass "KB-a1: a failed proof AFTER doctor -> rc=71 (STUCK), binary stays $NEW_V, the previous build is never reinstalled"
+else
+  fail "KB-a1: rc=$RCKBA version=$(cat "$KST/version") old_reinstalled=$(old_build_installed "$KST" && echo yes || echo no). Output: $OUTKBA"
+fi
+if [ "$(cfg_shape "$KH/.openclaw/openclaw.json" | cut -d: -f1)" = "ENTRIES" ] && [ "$(sha_of "$KH/.openclaw/openclaw.json")" != "$SHAKBA" ] \
+   && ! grep -q 'config restored from' <<<"$OUTKBA"; then
+  pass "KB-a2: the migrated config (agents.entries) was NOT restored to the legacy list the new build rejects"
+else
+  fail "KB-a2: config shape=$(cfg_shape "$KH/.openclaw/openclaw.json"). Output: $OUTKBA"
+fi
+if [ -n "$BAKKBA" ] && [ -f "$BAKKBA" ] && [ "$(sha_of "$BAKKBA")" = "$SHAKBA" ] && grep -qF "backup is KEPT for takeover: $BAKKBA" <<<"$OUTKBA"; then
+  pass "KB-a3: the pre-migration backup is kept, byte-identical to the original, and named for takeover"
+else
+  fail "KB-a3: backup path='$BAKKBA'. Output: $OUTKBA"
+fi
+if [ -f "$KST/loaded_ai.openclaw.gateway" ] && [ "$(grep -c '^launchctl bootout' "$KST/events")" -le 2 ] \
+   && ! grep -q 'launchctl kickstart' "$KST/events" && grep -q 'nothing is restarted' <<<"$OUTKBA"; then
+  pass "KB-a4: the gateway already answered, so nothing was restarted; the gateway is loaded"
+else
+  fail "KB-a4: loaded=$([ -f "$KST/loaded_ai.openclaw.gateway" ] && echo yes || echo no). Output: $OUTKBA"
+fi
+if grep -q 'STUCK: openclaw@'"$NEW_V"' is installed on migrated state and the gateway is serving, but this proof failed: the gateway is not running the target build' <<<"$OUTKBA" \
+   && grep -q 'was not launched from' <<<"$OUTKBA" \
+   && grep -q 'ERROR NOT ROLLING BACK' <<<"$OUTKBA" && ! grep -q 'ERROR ROLLING BACK:' <<<"$OUTKBA"; then
+  pass "KB-a5: STUCK names the exact failed proof (the gateway is not running the target build; its own error says it was not launched from the supervisor's package)"
+else
+  fail "KB-a5: no STUCK line with the failing proof. Output: $OUTKBA"
+fi
+
+# KB-b. the gateway cannot be started after doctor (bootstrap fails once, then works): ONE clean restart of the NEW
+# binary, nothing else; it answers -> the same STUCK, rc 71, never the old build.
+kb_setup bkbb clean
+touch "$KST/bootstrap_fail_once"
+OUTKBB="$(run_atomic "$KH" "$KS" "$KST")"; RCKBB=$?
+if [ "$RCKBB" -eq 71 ] && [ "$(cat "$KST/version")" = "$NEW_V" ] && ! old_build_installed "$KST" && [ -f "$KST/loaded_ai.openclaw.gateway" ] \
+   && grep -q 'ONE clean restart of the NEW build' <<<"$OUTKBB" && grep -q 'PROVEN back and HELD' <<<"$OUTKBB"; then
+  pass "KB-b: a gateway that did not start after doctor got ONE clean restart on the new build, came back, STUCK (rc=71), old build never installed"
+else
+  fail "KB-b: rc=$RCKBB version=$(cat "$KST/version") loaded=$([ -f "$KST/loaded_ai.openclaw.gateway" ] && echo yes || echo no). Output: $OUTKBB"
+fi
+
+# KB-c. the gateway is loaded but never answers /healthz, and the one clean restart does not help: BROKEN, rc 70, loud,
+# and the previous build is STILL not reinstalled.
+kb_setup bkbc legacy
+SHAKBC="$(sha_of "$KH/.openclaw/openclaw.json")"
+touch "$KST/healthz_down"
+OUTKBC="$(T_HEALTH_TIMEOUT=3 run_atomic "$KH" "$KS" "$KST")"; RCKBC=$?
+if [ "$RCKBC" -eq 70 ] && grep -q 'new binary unhealthy after migration; rollback unsafe' <<<"$OUTKBC" \
+   && [ "$(cat "$KST/version")" = "$NEW_V" ] && ! old_build_installed "$KST" && ! grep -q 'reinstalling the previous binary' <<<"$OUTKBC"; then
+  pass "KB-c1: a gateway dark after the one clean restart -> rc=70 with 'new binary unhealthy after migration; rollback unsafe'; old build never installed"
+else
+  fail "KB-c1: rc=$RCKBC version=$(cat "$KST/version"). Output: $OUTKBC"
+fi
+if grep -q '^launchctl kickstart -k gui/[0-9]*/ai.openclaw.gateway' "$KST/events" \
+   && [ "$(grep -c '^launchctl kickstart -k' "$KST/events")" = "1" ]; then
+  pass "KB-c2: the loaded-but-silent gateway got exactly ONE clean restart (kickstart -k), not a loop"
+else
+  fail "KB-c2: restarts: $(grep '^launchctl kickstart' "$KST/events" | tr '\n' '|')"
+fi
+if [ "$(cfg_shape "$KH/.openclaw/openclaw.json" | cut -d: -f1)" = "ENTRIES" ] && [ "$(sha_of "$KH/.openclaw/openclaw.json")" != "$SHAKBC" ] \
+   && ls "$KH/.openclaw"/openclaw.json.bak-pre-atomic-upgrade-* >/dev/null 2>&1 && grep -q 'Pre-migration config backup (kept):' <<<"$OUTKBC"; then
+  pass "KB-c3: the dark box keeps its migrated config and the pre-migration backup (for the takeover)"
+else
+  fail "KB-c3: shape=$(cfg_shape "$KH/.openclaw/openclaw.json"). Output: $OUTKBC"
+fi
+if [ ! -e "$KH/.openclaw/.openclaw-maintenance-lock" ]; then
+  pass "KB-c4: the maintenance lock was released even though the box is dark"
+else
+  fail "KB-c4: the maintenance lock is still held"
+fi
+
+# KB-d. doctor changes the model selection: the model keys (defaults.model, the pins, an agent's own model) are put
+# back from the values saved before doctor; the config is NOT restored whole (it carries doctor's other work).
+kb_setup bkbd legacy
+python3 - "$KH/.openclaw/openclaw.json" <<'PY'
+import json, sys
+c = json.load(open(sys.argv[1]))
+c["agents"]["defaults"]["model"] = {"primary": "p/one", "fallbacks": ["p/two"]}
+c["agents"]["list"][1]["model"] = "p/agent-own"
+json.dump(c, open(sys.argv[1], "w"), indent=2)
+PY
+echo models_all > "$KST/doctor_mode"
+OUTKBD="$(run_atomic "$KH" "$KS" "$KST")"; RCKBD=$?
+CFGKBD="$KH/.openclaw/openclaw.json"
+KBDCHK="$(python3 - "$CFGKBD" <<'PY'
+import json, sys
+c = json.load(open(sys.argv[1])); a = c["agents"]; d = a["defaults"]
+print("model=%s pins=%s agent=%s doctorWasHere=%s shape=%s" % (
+    json.dumps(d.get("model"), sort_keys=True), json.dumps(d.get("models"), sort_keys=True),
+    a["entries"]["worker-a"].get("model"), c.get("doctorWasHere"), "entries" if "entries" in a else "list"))
+PY
+)"
+if [ "$RCKBD" -eq 71 ] && [ "$(cat "$KST/version")" = "$NEW_V" ] && ! old_build_installed "$KST" \
+   && grep -q 'changed the model/provider selection' <<<"$OUTKBD" && grep -q 'model keys were put back' <<<"$OUTKBD"; then
+  pass "KB-d1: doctor changed the model selection -> the run fails (rc=71) on the NEW binary; the old build is not reinstalled"
+else
+  fail "KB-d1: rc=$RCKBD version=$(cat "$KST/version"). Output: $OUTKBD"
+fi
+if [ "$KBDCHK" = 'model={"fallbacks": ["p/two"], "primary": "p/one"} pins={"primary": "pinned-model-do-not-touch"} agent=p/agent-own doctorWasHere=True shape=entries' ]; then
+  pass "KB-d2: defaults.model, the pins and the agent's own model are exactly as before doctor; doctor's other change and the migrated shape stay"
+else
+  fail "KB-d2: config after: $KBDCHK"
+fi
+
+# KB-e. the doctor-refuses / doctor-fails / doctor-killed paths never COMPLETED doctor: the existing rollback, unchanged,
+# on a MIGRATED config: the old binary and the legacy config go back byte for byte.
+kb_setup bkbe legacy
+SHAKBE="$(sha_of "$KH/.openclaw/openclaw.json")"; echo fail > "$KST/doctor_mode"
+OUTKBE="$(run_atomic "$KH" "$KS" "$KST")"; RCKBE=$?
+if [ "$RCKBE" -eq 78 ] && [ "$(cat "$KST/version")" = "$OLD_V" ] && [ "$(sha_of "$KH/.openclaw/openclaw.json")" = "$SHAKBE" ] \
+   && [ -f "$KST/loaded_ai.openclaw.gateway" ] && grep -q 'ERROR ROLLING BACK:' <<<"$OUTKBE" && ! grep -q 'NOT ROLLING BACK' <<<"$OUTKBE"; then
+  pass "KB-e: doctor exited non-zero (never completed) -> the unchanged rollback: rc=78, binary $OLD_V, legacy config byte-identical, gateway loaded"
+else
+  fail "KB-e: rc=$RCKBE version=$(cat "$KST/version"). Output: $OUTKBE"
+fi
+
+# KB-f. MUTATION: with ONLY the hook in _rollback neutered, the SAME box as KB-a is rolled back onto the old build
+# and the legacy config -- proving KB-a is caused by DOCTOR_RAN, not by luck.
+python3 - "$ATOMIC" "$MUT_DIR/oc-atomic-upgrade.nokeep.sh" <<'PY'
+import sys
+s = open(sys.argv[1], encoding="utf-8").read()
+m = s.replace('if [ "$DOCTOR_RAN" = "1" ]; then _keep_new_binary "$why"; return $?; fi', ':', 1)
+if m == s:
+    sys.exit(1)
+open(sys.argv[2], "w", encoding="utf-8").write(m)
+PY
+kb_setup bkbf legacy
+SHAKBF="$(sha_of "$KH/.openclaw/openclaw.json")"
+echo "node /somewhere/else/index.js gateway" > "$KST/ps_args"
+OUTKBF="$(run_atomic "$KH" "$KS" "$KST" "$MUT_DIR/oc-atomic-upgrade.nokeep.sh")"; RCKBF=$?
+if ! cmp -s "$ATOMIC" "$MUT_DIR/oc-atomic-upgrade.nokeep.sh" && [ "$RCKBF" -eq 78 ] && [ "$(cat "$KST/version")" = "$OLD_V" ] \
+   && old_build_installed "$KST" && [ "$(sha_of "$KH/.openclaw/openclaw.json")" = "$SHAKBF" ]; then
+  pass "KB-f: MUTATION PROOF — with the _rollback hook neutered the same box goes back to $OLD_V and the legacy config (the defect reproduced), so KB-a is caused by the hook"
+else
+  fail "KB-f: rc=$RCKBF version=$(cat "$KST/version"). Output: $OUTKBF"
+fi
+
+# KB-g. a plugin quarantined for doctor stays quarantined when a LATER proof fails (the config is not restored), and the
+# record says "quarantined", not "reverted-by-rollback" (compare B24h, where doctor itself never completed).
+kb_setup bkbg plugin
+printf 'codex' > "$KST/doctor_broken_plugin"; echo "node /somewhere/else/index.js gateway" > "$KST/ps_args"
+OUTKBG="$(run_atomic "$KH" "$KS" "$KST")"; RCKBG=$?
+RECKBG="$KH/.openclaw/oc-atomic-plugin-quarantine.jsonl"
+CODEXKBG="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["plugins"]["entries"]["codex"]["enabled"])' "$KH/.openclaw/openclaw.json" 2>/dev/null)"
+if [ "$RCKBG" -eq 71 ] && [ "$CODEXKBG" = "False" ] && grep -q '"event": "quarantined"' "$RECKBG" && ! grep -q 'reverted-by-rollback' "$RECKBG" \
+   && grep -q "plugins: entry DISABLED because its module fails to load: codex" <<<"$OUTKBG"; then
+  pass "KB-g: a plugin quarantined for doctor stays disabled after a later failed proof (rc=71); the record and the log say so, nothing claims it was reverted"
+else
+  fail "KB-g: rc=$RCKBG codex.enabled=$CODEXKBG record: $(cat "$RECKBG" 2>/dev/null). Output: $OUTKBG"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (B-app) v1.4.0: the OpenClaw app's read-only openclaw-node-worker is tolerated, never stopped; nothing else is ---"
+# On a Mac running /Applications/OpenClaw.app the app's child \`openclaw-node-worker\` holds state/openclaw.sqlite
+# READ-ONLY and the app respawns it ~10 s after it is stopped, so the before-doctor gate refused and rolled back
+# every time. The predicate is three facts at once: the name, an OpenClaw.app ancestor, lsof access mode r.
+APPMAIN="/Applications/OpenClaw.app/Contents/MacOS/OpenClaw"
+app_worker() {   # <state> <lsof mode> <worker name> <parent args> [grandparent args] -> prints the worker pid
+  local st="$1" mode="$2" name="$3" parent="$4" grand="${5:-}" p
+  p="$(spawn_holder "$st" "$name" "05:00:00")"
+  echo "$mode" > "$st/lsof_mode_$p"
+  if [ -n "$grand" ]; then
+    echo "$((p + 100000))" > "$st/ps_$p.ppid"; echo "$parent" > "$st/ps_$((p + 100000)).args"
+    echo "$((p + 200000))" > "$st/ps_$((p + 100000)).ppid"; echo "$grand" > "$st/ps_$((p + 200000)).args"
+  else
+    echo "$((p + 100000))" > "$st/ps_$p.ppid"; echo "$parent" > "$st/ps_$((p + 100000)).args"
+  fi
+  echo "$p"
+}
+
+# a. the worker (named, app parent, mode r) holds the database: the gate passes, the upgrade completes, the worker lives
+kb_setup bapa clean
+PAPA="$(app_worker "$KST" r openclaw-node-worker "$APPMAIN")"
+OUTAPA="$(run_atomic "$KH" "$KS" "$KST")"; RCAPA=$?
+if [ "$RCAPA" -eq 0 ] && alive "$PAPA" && [ "$(doctor_calls "$KST")" = "1" ] && [ "$(cat "$KST/version")" = "$NEW_V" ]; then
+  pass "App-a1: with the app's read-only worker holding the database the before-doctor gate passed and the upgrade completed (rc=0); the worker is still alive"
+else
+  fail "App-a1: rc=$RCAPA worker alive=$(alive "$PAPA" && echo yes || echo no) doctor_calls=$(doctor_calls "$KST"). Output: $OUTAPA"
+fi
+if grep -q "state-database holder pid $PAPA is the OpenClaw app's own openclaw-node-worker, holding the database READ-ONLY - tolerated, NOT stopped" <<<"$OUTAPA" \
+   && ! grep -q "reaped stale openclaw CLI holder pid $PAPA" <<<"$OUTAPA" && ! grep -q "state database is still held by pid(s): .*$PAPA" <<<"$OUTAPA"; then
+  pass "App-a2: the tolerated worker was logged by pid, never signalled, and never counted as a holder that is left"
+else
+  fail "App-a2: Output: $OUTAPA"
+fi
+kill "$PAPA" 2>/dev/null
+
+# b. the worker one level further up (a wrapper between it and the app) is still the app's child
+kb_setup bapb clean
+PAPB="$(app_worker "$KST" r openclaw-node-worker "sh -c /opt/x/run-worker" "$APPMAIN")"
+OUTAPB="$(run_atomic "$KH" "$KS" "$KST")"; RCAPB=$?
+if [ "$RCAPB" -eq 0 ] && alive "$PAPB"; then
+  pass "App-b: an OpenClaw.app that is a grandparent (not only the parent) of the worker is found"
+else
+  fail "App-b: rc=$RCAPB. Output: $OUTAPB"
+fi
+kill "$PAPB" 2>/dev/null
+
+# c-f. each of the three facts, broken ONE at a time, restores the refusal: the gate fails, doctor never runs, rollback
+app_refused() {   # <label> <state> <worker pid> <rc> <out>
+  if [ "$4" -eq 78 ] && [ "$(doctor_calls "$2")" = "0" ] && [ "$(cat "$2/version")" = "$OLD_V" ] && alive "$3" \
+     && grep -q 'still holds .*state/openclaw.sqlite' <<<"$5"; then
+    pass "$1"
+  else
+    fail "$1 -- rc=$4 doctor_calls=$(doctor_calls "$2") version=$(cat "$2/version") alive=$(alive "$3" && echo yes || echo no). Output: $5"
+  fi
+}
+kb_setup bapc clean
+PAPC="$(app_worker "$KST" u openclaw-node-worker "$APPMAIN")"
+OUTAPC="$(run_atomic "$KH" "$KS" "$KST")"; RCAPC=$?
+app_refused "App-c: the worker opens the database READ-WRITE (lsof mode u) -> refused: rc=78, doctor not run, rolled back, worker not killed" "$KST" "$PAPC" "$RCAPC" "$OUTAPC"
+kill "$PAPC" 2>/dev/null
+kb_setup bapd clean
+PAPD="$(app_worker "$KST" r openclaw-node-worker "/usr/bin/some-other-parent")"
+OUTAPD="$(run_atomic "$KH" "$KS" "$KST")"; RCAPD=$?
+app_refused "App-d: the worker's parent is NOT OpenClaw.app -> refused: rc=78, doctor not run, rolled back, worker not killed" "$KST" "$PAPD" "$RCAPD" "$OUTAPD"
+kill "$PAPD" 2>/dev/null
+kb_setup bape clean
+PAPE="$(app_worker "$KST" r openclaw-other-worker "$APPMAIN")"
+OUTAPE="$(run_atomic "$KH" "$KS" "$KST")"; RCAPE=$?
+app_refused "App-e: a read-only holder of the app that is NOT named openclaw-node-worker -> refused: rc=78, doctor not run, rolled back" "$KST" "$PAPE" "$RCAPE" "$OUTAPE"
+kill "$PAPE" 2>/dev/null
+kb_setup bapf clean
+PAPF="$(app_worker "$KST" "" openclaw-node-worker "$APPMAIN")"
+rm -f "$KST/lsof_mode_$PAPF"      # lsof cannot say how it opens the file: UNDETERMINED is not "read-only"
+OUTAPF="$(run_atomic "$KH" "$KS" "$KST")"; RCAPF=$?
+app_refused "App-f: lsof cannot show the access mode -> refused (undetermined is never read-only): rc=78, doctor not run, rolled back" "$KST" "$PAPF" "$RCAPF" "$OUTAPF"
+kill "$PAPF" 2>/dev/null
+
+# g. a stale bare CLI next to the worker is still reaped; the worker still survives
+kb_setup bapg clean
+PAPG="$(app_worker "$KST" r openclaw-node-worker "$APPMAIN")"
+PCLI="$(spawn_holder "$KST" "node /opt/x/bin/openclaw status" "05:00:00")"
+OUTAPG="$(run_atomic "$KH" "$KS" "$KST")"; RCAPG=$?
+if [ "$RCAPG" -eq 0 ] && alive "$PAPG" && ! alive "$PCLI" && grep -q "reaped stale openclaw CLI holder pid $PCLI" <<<"$OUTAPG"; then
+  pass "App-g: the stale bare CLI was still reaped while the app's worker was tolerated"
+else
+  fail "App-g: rc=$RCAPG worker alive=$(alive "$PAPG" && echo yes || echo no) cli alive=$(alive "$PCLI" && echo yes || echo no). Output: $OUTAPG"
+fi
+kill "$PAPG" 2>/dev/null
+
+# h. MUTATION: with the predicate neutered the SAME box as App-a rolls back, so App-a is caused by the predicate
+python3 - "$ATOMIC" "$MUT_DIR/oc-atomic-upgrade.noapp.sh" <<'PY'
+import sys
+s = open(sys.argv[1], encoding="utf-8").read()
+m = s.replace("_benign_app_reader() {\n", "_benign_app_reader() { return 1; }\n_benign_app_reader_off() {\n", 1)
+if m == s:
+    sys.exit(1)
+open(sys.argv[2], "w", encoding="utf-8").write(m)
+PY
+kb_setup bapm clean
+PAPM="$(app_worker "$KST" r openclaw-node-worker "$APPMAIN")"
+OUTAPM="$(run_atomic "$KH" "$KS" "$KST" "$MUT_DIR/oc-atomic-upgrade.noapp.sh")"; RCAPM=$?
+if ! cmp -s "$ATOMIC" "$MUT_DIR/oc-atomic-upgrade.noapp.sh" && [ "$RCAPM" -eq 78 ] && [ "$(doctor_calls "$KST")" = "0" ]; then
+  pass "App-h: MUTATION PROOF — with the predicate neutered the same box refuses and rolls back (the exit-78 defect reproduced), so App-a is caused by the predicate"
+else
+  fail "App-h: rc=$RCAPM doctor_calls=$(doctor_calls "$KST"). Output: $OUTAPM"
+fi
+kill "$PAPM" 2>/dev/null
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (B-fts) v1.4.0: the FTS5 indexes the new Node's SQLite flags are rebuilt BEFORE doctor, under the same node ---"
+# Node 26.13 ships SQLite 3.54, whose integrity_check flags FTS5 inverted indexes; doctor then refuses and the box
+# rolled back. These cases drive the real script with a stub node whose answer is $STATE/fts_mode, and assert the
+# ORDER, the node it ran under, and what a failed or unprovable repair does. The repair itself is run for real
+# (below) on synthetic databases.
+kb_setup bfta clean
+OUTFTA="$(run_atomic "$KH" "$KS" "$KST")"; RCFTA=$?
+if [ "$RCFTA" -eq 0 ] && [ "$(grep -c '^node-fts ' "$KST/events")" = "1" ] && grep -q "^node-fts $KS/node root=$KH/.openclaw gateway_loaded=no\$" "$KST/events"; then
+  pass "Fts-a1: the repair ran exactly once, under the supervisor's node, on the box's root, with the gateway booted out"
+else
+  fail "Fts-a1: rc=$RCFTA events: $(grep -E 'node-fts' "$KST/events" | tr '\n' '|'). Output: $OUTFTA"
+fi
+if [ "$(event_order "$KST" "launchctl bootout" "node-fts")" = "OK" ] && [ "$(event_order "$KST" "npm install" "node-fts")" = "OK" ] \
+   && [ "$(event_order "$KST" "node-fts" "openclaw doctor")" = "OK" ] && [ "$(event_order "$KST" "node-fts" "launchctl bootstrap")" = "OK" ]; then
+  pass "Fts-a2: ORDER — bootout, install, the FTS5 repair, then doctor, then the gateway start"
+else
+  fail "Fts-a2: ORDER VIOLATION. Events: $(tr '\n' '|' < "$KST/events")"
+fi
+if grep -q 'FTS_REPAIR_SUMMARY total=1 clean=1 fixed=0 skipped=0 unchecked=0 fail=0' <<<"$OUTFTA"; then
+  pass "Fts-a3: the repair's per-database report and summary are in the job log"
+else
+  fail "Fts-a3: no summary in the log. Output: $OUTFTA"
+fi
+
+kb_setup bftb clean; echo fixed > "$KST/fts_mode"
+OUTFTB="$(run_atomic "$KH" "$KS" "$KST")"; RCFTB=$?
+if [ "$RCFTB" -eq 0 ] && grep -q 'FIXED /r/agents/main/agent/openclaw-agent.sqlite tables=memory_index_chunks_fts' <<<"$OUTFTB" && [ "$(doctor_calls "$KST")" = "1" ]; then
+  pass "Fts-b: a rebuilt index is reported by database and table, and doctor then runs (rc=0)"
+else
+  fail "Fts-b: rc=$RCFTB. Output: $OUTFTB"
+fi
+
+kb_setup bftc clean; echo skipped > "$KST/fts_mode"
+OUTFTC="$(run_atomic "$KH" "$KS" "$KST")"; RCFTC=$?
+if [ "$RCFTC" -eq 0 ] && grep -q 'SKIPPED .* non-fts-findings=1 .*doctor decides' <<<"$OUTFTC" && [ "$(doctor_calls "$KST")" = "1" ]; then
+  pass "Fts-c: a non-FTS finding is left for doctor to decide: not a failure here, doctor still runs (rc=0)"
+else
+  fail "Fts-c: rc=$RCFTC. Output: $OUTFTC"
+fi
+
+fts_refused() {   # <label> <home> <state> <rc> <out> <sha before> <expected text>
+  if [ "$4" -eq 78 ] && [ "$(doctor_calls "$3")" = "0" ] && [ "$(cat "$3/version")" = "$OLD_V" ] && [ -f "$3/loaded_ai.openclaw.gateway" ] \
+     && [ "$(sha_of "$2/.openclaw/openclaw.json")" = "$6" ] && grep -q "$7" <<<"$5" && ! grep -q 'NOT ROLLING BACK' <<<"$5"; then
+    pass "$1"
+  else
+    fail "$1 -- rc=$4 doctor_calls=$(doctor_calls "$3") version=$(cat "$3/version"). Output: $5"
+  fi
+}
+kb_setup bftd legacy; echo fail > "$KST/fts_mode"; SHAFTD="$(sha_of "$KH/.openclaw/openclaw.json")"
+OUTFTD="$(run_atomic "$KH" "$KS" "$KST")"; RCFTD=$?
+fts_refused "Fts-d: a repair that leaves integrity_check not ok -> rolled back (rc=78): doctor not run, binary $OLD_V, legacy config byte-identical, gateway loaded" "$KH" "$KST" "$RCFTD" "$OUTFTD" "$SHAFTD" 'integrity_check not ok after rebuild'
+kb_setup bfte clean; echo nosummary > "$KST/fts_mode"; SHAFTE="$(sha_of "$KH/.openclaw/openclaw.json")"
+OUTFTE="$(run_atomic "$KH" "$KS" "$KST")"; RCFTE=$?
+fts_refused "Fts-e: a repair that printed no summary (rc 0, empty output) is never a pass -> rolled back (rc=78), doctor not run" "$KH" "$KST" "$RCFTE" "$OUTFTE" "$SHAFTE" 'FTS5 repair FAILED'
+kb_setup bftf clean; echo hang > "$KST/fts_mode"; SHAFTF="$(sha_of "$KH/.openclaw/openclaw.json")"
+OUTFTF="$(T_FTS_TIMEOUT=2 run_atomic "$KH" "$KS" "$KST")"; RCFTF=$?
+fts_refused "Fts-f: a repair that hits its bound (2s) is UNDETERMINED, never clean -> killed, rolled back (rc=78), doctor not run" "$KH" "$KST" "$RCFTF" "$OUTFTF" "$SHAFTF" 'UNDETERMINED, never reported clean'
+
+# g. MUTATION: with the repair call removed the SAME failing box upgrades, so Fts-d is caused by the step
+python3 - "$ATOMIC" "$MUT_DIR/oc-atomic-upgrade.nofts.sh" <<'PY'
+import sys
+s = open(sys.argv[1], encoding="utf-8").read()
+m = s.replace("  _repair_fts5 || return 1\n", "", 1)
+if m == s:
+    sys.exit(1)
+open(sys.argv[2], "w", encoding="utf-8").write(m)
+PY
+kb_setup bftg clean; echo fail > "$KST/fts_mode"
+OUTFTG="$(run_atomic "$KH" "$KS" "$KST" "$MUT_DIR/oc-atomic-upgrade.nofts.sh")"; RCFTG=$?
+if ! cmp -s "$ATOMIC" "$MUT_DIR/oc-atomic-upgrade.nofts.sh" && [ "$RCFTG" -eq 0 ] && ! grep -q '^node-fts ' "$KST/events"; then
+  pass "Fts-g: MUTATION PROOF — with the repair step removed the node is never asked and the same box upgrades, so Fts-a..f measure the step"
+else
+  fail "Fts-g: rc=$RCFTG. Output: $OUTFTG"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The repair ITSELF, run for real: the script text between its markers is handed to this machine's own node,
+# exactly as the script hands it (node -e "$JS" <root>), against synthetic databases. A node without
+# node:sqlite, or whose SQLite does not flag a tampered FTS5 index (before 3.44), cannot show the defect: those
+# cases are SKIPPED, loudly, never counted as passes.
+FTS_JS="$SANDBOX/fts-repair.js"
+sed -n "/^IFS= read -r -d '' JS_FTS_REPAIR <<'JS_FTS5'\$/,/^JS_FTS5\$/p" "$ATOMIC" | sed '1d;$d' > "$FTS_JS"
+fts_mk() {   # <db path> <tamper|clean|both|contentless|garbage>
+  mkdir -p "$(dirname "$1")"
+  node -e "
+const {DatabaseSync} = require('node:sqlite');
+const [p, mode] = [process.argv[1], process.argv[2]];
+const c = new DatabaseSync(p, {defensive: false});
+if (mode === 'contentless') {
+  c.exec(\"create virtual table cl_fts using fts5(body, content='')\");
+  for (let i = 1; i < 120; i++) c.prepare('insert into cl_fts(rowid, body) values (?, ?)').run(i, 'alpha beta ' + i);
+  c.exec('update cl_fts_data set block = zeroblob(length(block)) where id > 10');
+} else {
+  for (const t of ['docs_fts', 'other_fts']) {
+    c.exec('create virtual table ' + t + ' using fts5(body)');
+    for (let i = 1; i < 120; i++) c.prepare('insert into ' + t + '(rowid, body) values (?, ?)').run(i, 'alpha beta ' + i + ' gamma ' + (i * 7));
+  }
+  if (mode === 'tamper' || mode === 'both') c.exec(\"update docs_fts_content set c0 = 'totally different words' where id = 5\");
+  if (mode === 'both') { c.exec('create table notes (a integer check (a > 0))'); c.exec('pragma ignore_check_constraints = on'); c.exec('insert into notes values (-1)'); }
+}
+c.close();
+" "$1" "$2" >/dev/null 2>&1
+}
+fts_run() { node -e "$(cat "$FTS_JS")" "$1" 2>&1; }
+fts_tree_sums() { ( cd "$1" && find . -type f | sort | while read -r f; do printf '%s %s\n' "$f" "$(sha_of "$f")"; done ); }
+
+# node prints normalised paths (TMPDIR ends in a slash, so $SANDBOX has a "//"): compare against the same spelling
+FTSR="$(printf '%s' "$SANDBOX/ftsreal" | sed 's|//*|/|g')"; mkdir -p "$FTSR"
+fts_mk "$FTSR/probe/agents/p/agent/openclaw-agent.sqlite" tamper
+FTS_CAN="$(node -e "const {DatabaseSync}=require('node:sqlite');console.log(new DatabaseSync(process.argv[1]).prepare('PRAGMA integrity_check').all().map(r=>Object.values(r)[0]).join('|'))" "$FTSR/probe/agents/p/agent/openclaw-agent.sqlite" 2>/dev/null)"
+if ! grep -q 'malformed inverted index for FTS5 table' <<<"$FTS_CAN"; then
+  echo "  SKIP: Fts-real-*: this node ($(node -v 2>/dev/null || echo none)) cannot build or flag a tampered FTS5 index (integrity_check said: '${FTS_CAN:0:80}') - the real-database cases did NOT run"
+else
+  # r1. only the flagged index is rebuilt, from its own content; a clean database is not rewritten
+  R1="$FTSR/r1"; FA="$R1/agents/a/agent/openclaw-agent.sqlite"; FB="$R1/agents/b/agent/openclaw-agent.sqlite"
+  fts_mk "$FA" tamper; fts_mk "$FB" clean
+  BEF="$(fts_tree_sums "$R1")"; SUMB="$(sha_of "$FB")"
+  OUTR1="$(fts_run "$R1")"; RCR1=$?
+  if [ "$RCR1" -eq 0 ] && grep -qx "FIXED $FA tables=docs_fts" <<<"$OUTR1" && grep -qx "CLEAN $FB" <<<"$OUTR1" \
+     && grep -qx 'FTS_REPAIR_SUMMARY total=2 clean=1 fixed=1 skipped=0 unchecked=0 fail=0' <<<"$OUTR1" && grep -q 'FTS_REPAIR_RUNTIME node=v[0-9.]* sqlite=3\.' <<<"$OUTR1"; then
+    pass "Fts-real-1: only the flagged table (docs_fts, not other_fts) was rebuilt; the clean database was reported clean (real node $(node -v), SQLite $(sed -n 's/.*sqlite=//p' <<<"$OUTR1" | head -1))"
+  else
+    fail "Fts-real-1: rc=$RCR1. Output: $OUTR1"
+  fi
+  CHK="$(node -e "
+const {DatabaseSync} = require('node:sqlite'); const d = new DatabaseSync(process.argv[1]);
+const n = (s) => d.prepare(s).all().map((r) => Object.values(r)[0]).join(',');
+console.log([n('select count(*) from docs_fts'), n(\"select body from docs_fts where rowid = 5\"),
+             n(\"select rowid from docs_fts where docs_fts match 'totally'\"), n(\"select count(*) from docs_fts where docs_fts match 'alpha' and rowid = 5\")].join('|'));
+" "$FA")"
+  if [ "$CHK" = "119|totally different words|5|0" ] && [ "$(sha_of "$FB")" = "$SUMB" ]; then
+    pass "Fts-real-2: the stored rows are unchanged (119, row 5's content kept) and the index was rebuilt from them (it finds 'totally', no longer 'alpha' in row 5); the clean database's bytes are untouched"
+  else
+    fail "Fts-real-2: after-state '$CHK'"
+  fi
+  AFT="$(fts_tree_sums "$R1")"
+  if [ "$(cut -d' ' -f1 <<<"$BEF" | tr '\n' ' ')" = "$(cut -d' ' -f1 <<<"$AFT" | tr '\n' ' ')" ]; then
+    pass "Fts-real-3: no file was created, copied or deleted anywhere under the root (same file list before and after)"
+  else
+    fail "Fts-real-3: file list changed. before: $BEF after: $AFT"
+  fi
+  OUTR1B="$(fts_run "$R1")"
+  if grep -qx 'FTS_REPAIR_SUMMARY total=2 clean=2 fixed=0 skipped=0 unchecked=0 fail=0' <<<"$OUTR1B"; then
+    pass "Fts-real-4: re-running on the repaired root finds both databases clean (the rebuild is durable)"
+  else
+    fail "Fts-real-4: second run: $OUTR1B"
+  fi
+
+  # r2. ANY non-FTS finding leaves the database byte-for-byte alone; an unreadable file is UNCHECKED, never clean
+  R2="$FTSR/r2"; FM="$R2/agents/m/agent/openclaw-agent.sqlite"; FS="$R2/state/openclaw.sqlite"; FJ="$R2/agents/j/agent/openclaw-agent.sqlite"
+  fts_mk "$FM" both; fts_mk "$FS" clean
+  node -e "const {DatabaseSync}=require('node:sqlite');const c=new DatabaseSync(process.argv[1],{defensive:false});c.exec('create table notes (a integer check (a > 0))');c.exec('pragma ignore_check_constraints = on');c.exec('insert into notes values (-1)');c.close()" "$FS" >/dev/null 2>&1
+  mkdir -p "$(dirname "$FJ")"; i=0; : > "$FJ"; while [ "$i" -lt 40 ]; do printf 'this is not a database ' >> "$FJ"; i=$((i+1)); done
+  BEF2="$(fts_tree_sums "$R2")"
+  OUTR2="$(fts_run "$R2")"; RCR2=$?
+  if [ "$RCR2" -eq 0 ] && grep -qx "SKIPPED $FM non-fts-findings=1 fts-tables=docs_fts (nothing changed, doctor decides)" <<<"$OUTR2" \
+     && grep -qx "SKIPPED $FS non-fts-findings=1 fts-tables= (nothing changed, doctor decides)" <<<"$OUTR2" \
+     && grep -q "^UNCHECKED $FJ " <<<"$OUTR2" && grep -qx 'FTS_REPAIR_SUMMARY total=3 clean=0 fixed=0 skipped=2 unchecked=1 fail=0' <<<"$OUTR2"; then
+    pass "Fts-real-5: an FTS5 finding beside a non-FTS one is NOT rebuilt; a state database with only a non-FTS finding is skipped; a file that is no database is UNCHECKED (rc=0: doctor decides)"
+  else
+    fail "Fts-real-5: rc=$RCR2. Output: $OUTR2"
+  fi
+  if [ "$(fts_tree_sums "$R2")" = "$BEF2" ]; then
+    pass "Fts-real-6: every byte of every database is untouched when anything but FTS5 is wrong"
+  else
+    fail "Fts-real-6: a database changed although the repair was not allowed to touch it"
+  fi
+
+  # r3. a rebuild that cannot be done (contentless table: nothing to rebuild from) fails the step and changes nothing
+  R3="$FTSR/r3"; FC="$R3/agents/c/agent/openclaw-agent.sqlite"
+  fts_mk "$FC" contentless
+  BEF3="$(fts_tree_sums "$R3")"
+  OUTR3="$(fts_run "$R3")"; RCR3=$?
+  if [ "$RCR3" -eq 1 ] && grep -q "^FAIL $FC rebuild error: " <<<"$OUTR3" && grep -qx 'FTS_REPAIR_SUMMARY total=1 clean=0 fixed=0 skipped=0 unchecked=0 fail=1' <<<"$OUTR3" \
+     && [ "$(fts_tree_sums "$R3")" = "$BEF3" ]; then
+    pass "Fts-real-7: a rebuild that cannot be done exits 1 with the table named, rolls back, and leaves the database as it was"
+  else
+    fail "Fts-real-7: rc=$RCR3. Output: $OUTR3"
+  fi
+fi
+
+# the repair's source never copies or deletes a database: the only write it can make is the FTS5 'rebuild' command
+if [ -s "$FTS_JS" ] && ! grep -Eq 'copyFile|unlinkSync|rmSync|renameSync|writeFileSync|VACUUM|DROP |DELETE FROM' "$FTS_JS" \
+   && [ "$(grep -c "VALUES(.*rebuild" "$FTS_JS")" = "1" ]; then
+  pass "Fts-src: the repair's source has no copy, delete, rename, file write, VACUUM, DROP or DELETE; 'rebuild' is its only write"
+else
+  fail "Fts-src: the repair's source carries a forbidden write (or could not be extracted: $(wc -c < "$FTS_JS") bytes)"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════

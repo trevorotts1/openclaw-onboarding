@@ -1314,7 +1314,11 @@ function parseArgs(argv) {
   return out;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Compare REAL paths: node reports import.meta.url with symlinks resolved, so a
+// verifier started through a symlinked path (/tmp, /var, a linked skill folder)
+// used to match nothing here and exit 0 in silence - a gate that passes by not
+// running.
+if (process.argv[1] && import.meta.url === pathToFileURL(safeReal(process.argv[1])).href) {
   const args = parseArgs(process.argv.slice(2));
   if (!args || !args.skillDir) {
     console.log("usage: node scripts/selected-tree-gate.mjs --skill-dir DIR [--prefix DIR] [--home DIR] [--no-load] [--agent-selected PATH] [--agent-source TEXT]");

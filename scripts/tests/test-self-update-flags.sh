@@ -255,7 +255,7 @@ ARGV="$T/child-argv.log"; : > "$ARGV"
 PATH="$T/bin:$PATH" HOME="$T/home" OPENCLAW_ROOT="$T/root-detach" FIXTURES="$T/fix" \
   CURL_LOG="$T/urls-detach.log" PY_ARGV_LOG="$ARGV" \
   bash "$SRC" --roll-id "$ROLL" --openclaw-target "$OC_TARGET" \
-  --ninerouter-target "$NR_TARGET" --onboarding-sha "$SHA_PIN" >/dev/null 2>&1
+  --ninerouter-target "$NR_TARGET" --onboarding-sha "$SHA_PIN" --brew-node-upgrade >/dev/null 2>&1
 RC3=$?
 [ "$RC3" -eq 0 ] || { echo "FAIL: detach launcher exit $RC3 (want 0)"; fail=1; }
 [ -s "$ARGV" ] || { echo "FAIL: detach launcher never started a child"; fail=1; }
@@ -263,6 +263,8 @@ grep -qx -- "--onboarding-sha" "$ARGV" \
   || { echo "FAIL: the detached child was not given --onboarding-sha"; fail=1; }
 grep -qx -- "$SHA_PIN" "$ARGV" \
   || { echo "FAIL: the detached child got no pin value"; fail=1; }
+grep -qx -- "--brew-node-upgrade" "$ARGV" \
+  || { echo "FAIL: the detached child was not given --brew-node-upgrade"; fail=1; }
 
 [ "$fail" -eq 0 ] && { echo "PASS: self_update_command() flags + onboarding-sha pin"; exit 0; }
 echo "FAIL: self-update flag smoke test"; exit 1

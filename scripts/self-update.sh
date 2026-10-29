@@ -1,5 +1,5 @@
 #!/bin/sh
-# self-update.sh — v1.5.0
+# self-update.sh — v1.6.0
 #
 # The box's own self-update runner. Starts itself in a detached session, then
 # runs these steps IN THIS ORDER (Trevor, transcript L14):
@@ -15,10 +15,10 @@
 #                     skipped on a Docker box — the host side already did it).
 #                     FIRST the Node floor: when the Node the gateway LaunchAgent
 #                     runs is below the target's engines.node, OpenClaw's own private
-#                     runtime is installed under <root>/tools/cli-node and ONLY the
-#                     gateway LaunchAgent is pointed at it (node_before/node_after in
-#                     the status file); a failure leaves the box as found and skips the
-#                     upgrade (exit 25).
+#                     runtime is installed under <root>/tools/cli-node; the LaunchAgent
+#                     is NEVER repointed (macOS folder consent is per node binary path);
+#                     the upgrade then PROVES the gateway runs a floor-meeting Node and
+#                     can read the Master Files folder (exit 26 if not; 25 = no floor).
 #   step 4  update    scripts/weekly-full-update.sh (the FULL path, no terminal)
 #
 # Every step's RAW exit code is recorded in the JSON status file and the job
@@ -49,6 +49,8 @@
 #   *   otherwise the RAW exit code of the first failed step
 #   22  refusal (no root, no target version, missing tools)
 #   25  the Node floor could not be met — the OpenClaw upgrade was not attempted
+#   26  the upgrade ran but the post-restart proof failed: /healthz, the gateway's Node,
+#       or a read of the Master Files folder as the gateway (macOS folder consent)
 #
 # No key value is ever printed, echoed, or written to the status file or the log.
 #
@@ -69,13 +71,32 @@
 #   #26      A shallow 999-setup clone is deepened (git fetch --unshallow) before any
 #            ancestry check on it.
 #
-# Node floor (v1.4.0): OpenClaw 2026.10.6+ refuses every command on a Node below its
-# engines.node, so step 3 now reads the target's engines.node, measures the Node the
-# gateway LaunchAgent runs, and when it is below the floor installs OpenClaw's own
-# private runtime (install-cli.sh --node-only from the target package) under
-# <root>/tools/cli-node and points ONLY that LaunchAgent and this job's PATH at it.
-# The box's Homebrew/nvm Node is never touched. node_before / node_after land in the
-# status file; a failure leaves the box as found, skips the upgrade, exits 25.
+# Node floor (v1.4.0, rewritten in v1.6.0): OpenClaw 2026.10.6+ refuses every command on a
+# Node below its engines.node, so step 3 reads the target's engines.node and measures the
+# Node the gateway LaunchAgent runs. v1.4.0 then repointed the LaunchAgent at a private
+# Node; that took two client Macs DOWN (exit 70) in the 20261029 Big Fleet Roll. macOS
+# folder consent (Downloads/Desktop/Documents) belongs to ONE node binary PATH, and a
+# client only ever approved Homebrew's node: the gateway on the private Node hung in
+# open() on ~/Downloads/openclaw-master-files behind a prompt nobody answered, and
+# oc-atomic-upgrade.sh's rollback ran on the same unapproved Node. Since v1.6.0 the
+# LaunchAgent is never rewritten. Below the floor, in this order:
+#   1  --brew-node-upgrade (or SELF_UPDATE_BREW_NODE_UPGRADE=1), OFF unless asked: when
+#      Homebrew is present, owned by this user and is where the gateway's node lives,
+#      `brew upgrade node` (non-interactive, old keg kept) raises it in place. OFF by
+#      default because the new keg is a NEW binary path with no folder consent, which is the
+#      defect again on a Mac nobody is sitting at; the post-restart proof below catches it.
+#   2  otherwise OpenClaw's own private runtime is installed under <root>/tools/cli-node
+#      (install-cli.sh --node-only from the target package, nodejs.org checksum verified)
+#      and the LaunchAgent stays on the client's approved node. OpenClaw 2026.10.8 re-execs
+#      the gateway on that cached runtime as a CHILD, which inherits the parent's consent.
+#      npm for the install runs under the private Node through a wrapper (OC_ATOMIC_NPM).
+# Before success is declared (tcc_probe_step, after the restart): /healthz 200 within 60 s;
+# the process serving the gateway port runs a Node that meets the floor; and a launchd job
+# of the gateway's own shape (the LaunchAgent's node as top process, the gateway's runtime as
+# its child) reads the Master Files folder within a bound. Any miss exits 26 and is named in
+# stuck_reason. node_before / node_after land in the status file (node_after is MEASURED
+# from the live gateway process, not assumed). A failed floor step leaves the box as found,
+# skips the upgrade, exits 25. Docker boxes never reach this step.
 #
 # Own backups (v1.5.0; Trevor's order of 2026-10-29: a backup made of somebody's OpenClaw is
 # deleted as soon as the install is completed). This job makes two: the config copy
@@ -92,7 +113,7 @@
 # associative params, no mapfile, no ${x^^}, no heredoc nested inside $( ).
 set -u
 
-VERSION="1.5.0"
+VERSION="1.6.0"
 REPO_RAW_BASE="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding"
 REPO_RAW="$REPO_RAW_BASE/main"
 
@@ -103,6 +124,7 @@ EX_REFUSE=22
 EX_999=23
 EX_9ROUTER=24
 EX_NODE=25       # the Node floor could not be met; the OpenClaw upgrade was NOT attempted
+EX_TCC=26        # the upgrade ran, but the post-restart proof (health, gateway Node, folder read) failed
 # 75 = the content step was DEFERRED: another updater legitimately owned this
 # box, so nothing was changed — and this run says so instead of claiming OK
 # (critic.C13). It is NOT a failure: no FIRST_FAIL, no stuck note.
@@ -140,6 +162,11 @@ STEP_ROLLBACKS=""
 NODE_BEFORE=""   # version of the Node the gateway LaunchAgent ran, measured before the upgrade step
 NODE_AFTER=""    # ... and after the Node floor step (same value when it already met the floor)
 NODE_WHY=""      # why node_floor_step failed
+TCC_WHY=""       # why tcc_probe_step failed
+NF_PROBE=0       # 1 once node_floor_step measured a LaunchAgent gateway: tcc_probe_step then runs after the upgrade
+NF_NPM=""        # wrapper that runs npm under the private Node (set only when the LaunchAgent stays on a below-floor node)
+TCC_LABEL=""     # the probe's launchd label while it is loaded (cleanup boots it out)
+BREW_NODE_UPGRADE="${SELF_UPDATE_BREW_NODE_UPGRADE:-0}"
 FIRST_FAIL=""
 STUCK_NOTE=""
 LOCK_OWNED=0
@@ -157,6 +184,8 @@ usage() {
   echo "  --openclaw-target   also accepted as --target-version"
   echo "  --ninerouter-target also accepted as --9router-target"
   echo "  --999-sha           optional: the 999-setup HEAD must equal this sha (and origin/main)"
+  echo "  --brew-node-upgrade optional: a gateway Node below the floor is raised with 'brew upgrade node'"
+  echo "                      (Homebrew only; off by default: the new keg has no macOS folder consent)"
   echo "  --onboarding-sha    optional: fetch every script this job pulls (oc-atomic-upgrade.sh,"
   echo "                      oc-schema-migrate.py, oc-supervisor-install.py, git_ff_sync.sh,"
   echo "                      weekly-full-update.sh) at this 40-hex commit, not live main"
@@ -519,6 +548,7 @@ while [ "$#" -gt 0 ]; do
     --onboarding-sha)
       [ "$#" -ge 2 ] || { echo "self-update.sh: --onboarding-sha needs a value" >&2; exit "$EX_REFUSE"; }
       ONBOARDING_SHA="$2"; shift 2 ;;
+    --brew-node-upgrade) BREW_NODE_UPGRADE=1; shift ;;
     --detached)    MODE_DETACHED=1; shift ;;
     --foreground)  MODE_FOREGROUND=1; shift ;;
     -h|--help)     usage 0 ;;
@@ -811,6 +841,7 @@ _oclease_release() {
 }
 
 cleanup() {
+  [ -n "${TCC_LABEL:-}" ] && launchctl bootout "gui/$(id -u)/$TCC_LABEL" >/dev/null 2>&1
   [ -n "${WORK:-}" ] && rm -rf "$WORK" 2>/dev/null
   [ "${LOCK_OWNED:-0}" = 1 ] && rm -rf "$LOCK_DIR" 2>/dev/null
   command -v _oclease_release >/dev/null 2>&1 && _oclease_release
@@ -870,6 +901,7 @@ if [ "$MODE_DETACHED" = 0 ] && [ "$MODE_FOREGROUND" = 0 ]; then
   # The pin MUST reach the child: the child is the one that fetches, so dropping
   # it here would silently put the whole roll back on live main.
   [ -n "$ONBOARDING_SHA" ] && set -- "$@" --onboarding-sha "$ONBOARDING_SHA"
+  [ "$BREW_NODE_UPGRADE" = 1 ] && set -- "$@" --brew-node-upgrade
   # critic.C9: a Mac job can run past an hour (the 999 installer opens Apple's
   # dialog and waits up to 60 minutes; a gateway outage has measured 10-20 min
   # and once about 2 h). caffeinate -dimsu holds a power assertion for exactly the
@@ -1414,21 +1446,23 @@ fi
 # OpenClaw 2026.10.6 and later refuse EVERY command (doctor included) on a Node
 # below its engines.node (2026.10.8: >=24.22.1 <25 || >=26.12.1), so a roll that
 # installs the new build under an older Node can never start the new gateway.
-# Before the upgrade this step reads the target's engines.node, measures the Node
-# the gateway LaunchAgent actually runs (ProgramArguments, never PATH), and when
-# that is below the floor installs OpenClaw's OWN private runtime with OpenClaw's
-# own installer taken from the target package (install-cli.sh --node-only, which
-# checks the tarball against nodejs.org SHASUMS256.txt) into <root>/tools/cli-node
-# — the exact place the new CLI's runtime recovery looks. The same major line as
-# the box is kept when the range allows it (24.x, else 26.x), else the lowest
-# compatible even line. Only the gateway LaunchAgent's node argument and this
-# job's own PATH are pointed at it; the box's Homebrew/nvm Node is never touched,
-# and the gateway process keeps running until the atomic upgrade restarts it from
-# the edited plist. Any failure undoes what this step did and the upgrade is skipped.
+# This step reads the target's engines.node and measures the Node the gateway
+# LaunchAgent actually runs (ProgramArguments, never PATH). It NEVER rewrites the
+# LaunchAgent: macOS folder consent is per node binary path, the client approved
+# only the node the gateway already runs, and a gateway started on any other binary
+# hangs on its first read of ~/Downloads/openclaw-master-files (see the header).
+# Below the floor it (1) raises Homebrew's node in place when --brew-node-upgrade
+# was given and Homebrew owns the gateway's node, else (2) installs OpenClaw's OWN
+# private runtime with OpenClaw's own installer taken from the target package
+# (install-cli.sh --node-only, checked against nodejs.org SHASUMS256.txt) into
+# <root>/tools/cli-node, the exact place the new CLI's runtime recovery looks, and
+# hands npm to the atomic upgrade through a wrapper that runs it under that runtime.
+# Any failure undoes what this step installed and the upgrade is skipped.
+# tcc_probe_step, after the upgrade, proves the result.
 
-nf_py() {  # check VERSION ENGINE | pick CURRENT ENGINE | repoint PLIST NODE
+nf_py() {  # check VERSION ENGINE | pick CURRENT ENGINE
   python3 - "$@" <<'PY'
-import os, re, sys
+import re, sys
 
 # ponytail: only >=, >, <, <=, = terms joined by spaces and || are read (all engines.node has used); ^ ~ x-ranges
 # and hyphen ranges are refused (exit 2), never guessed. Add them here if OpenClaw ever publishes one.
@@ -1475,23 +1509,6 @@ def ver(s):
 
 def main(a):
     cmd = a[0]
-    if cmd == "repoint":  # swap the node argument of a LaunchAgent plist; prints the one it replaced
-        import plistlib
-        unit, new = os.path.realpath(a[1]), a[2]
-        with open(unit, "rb") as f:
-            d = plistlib.load(f)
-        args = [str(x) for x in (d.get("ProgramArguments") or [])]
-        i = next((i for i, x in enumerate(args) if os.path.basename(x) in ("node", "nodejs")), None)
-        if i is None:
-            raise ValueError("no node argument in ProgramArguments")
-        old, args[i], d["ProgramArguments"] = args[i], new, args
-        tmp = "%s.tmp.%d" % (unit, os.getpid())
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, os.stat(unit).st_mode & 0o7777)
-        with os.fdopen(fd, "wb") as f:
-            plistlib.dump(d, f)
-        os.replace(tmp, unit)
-        print(old)
-        return 0
     engine = a[2].strip()
     sets = [] if engine in ("", "*") else alts(engine)
     if cmd == "check":
@@ -1517,7 +1534,7 @@ except Exception as e:
 PY
 }
 
-nf_undo() {  # put back what the Node install changed: the prefix, the version dir, the alias
+nf_undo() {  # put back what the private Node install changed: the prefix, the version dir, the alias
   if [ "$_nf_made_prefix" = 1 ]; then
     rm -rf "$_nf_prefix" 2>/dev/null
     [ "$_nf_made_tools" = 1 ] && rmdir "$ROOT/tools" 2>/dev/null
@@ -1527,12 +1544,6 @@ nf_undo() {  # put back what the Node install changed: the prefix, the version d
     else rm -f "$_nf_prefix/tools/node" 2>/dev/null
     fi
   fi
-  return 0
-}
-
-nf_undo_keep() {  # drop the not-yet-committed LaunchAgent copy (and its directory when this step made it)
-  rm -f "$_nf_keep/gateway.plist.next" 2>/dev/null
-  [ "$_nf_made_keep" = 1 ] && rmdir "$_nf_keep" 2>/dev/null
   return 0
 }
 
@@ -1559,6 +1570,7 @@ node_floor_step() {  # 0 = met or not applicable; EX_NODE = failed (NODE_WHY), n
   _nf_node="$(python3 "$SUP_HELPER_PATH" node 2>/dev/null)"
   [ -n "$_nf_plist" ] && [ -n "$_nf_node" ] \
     || { log "WARN node-floor: skipped (the LaunchAgent names no node binary to measure)"; return 0; }
+  NF_PROBE=1   # a LaunchAgent gateway exists: tcc_probe_step proves it after the upgrade
 
   _nf_engine="$(npm view "openclaw@$TARGET_VERSION" engines.node 2>>"$LOG")" \
     || { NODE_WHY="could not read engines.node of openclaw@$TARGET_VERSION (npm view failed)"; return "$EX_NODE"; }
@@ -1577,6 +1589,8 @@ node_floor_step() {  # 0 = met or not applicable; EX_NODE = failed (NODE_WHY), n
     return 0
   fi
   log "node-floor: gateway node ${NODE_BEFORE:-unrunnable} ($_nf_node) is BELOW openclaw@$TARGET_VERSION engines.node ($_nf_engine)"
+
+  nf_brew_upgrade && { NODE_AFTER="$_nb_v"; return 0; }
 
   _nf_want="$(nf_py pick "$NODE_BEFORE" "$_nf_engine" 2>>"$LOG")" \
     || { NODE_WHY="no Node release can be derived from engines.node ($_nf_engine)"; return "$EX_NODE"; }
@@ -1610,26 +1624,139 @@ node_floor_step() {  # 0 = met or not applicable; EX_NODE = failed (NODE_WHY), n
     fi
   fi
 
-  # Point ONLY the gateway LaunchAgent at it. The previous definition is kept (mode 600:
-  # the plist can carry environment values) so one cp puts it back.
-  _nf_keep="$ROOT/node-floor"
-  _nf_made_keep=0; [ -e "$_nf_keep" ] || _nf_made_keep=1
-  ( umask 077; mkdir -p "$_nf_keep" ) 2>/dev/null
-  if ! cp -p "$_nf_plist" "$_nf_keep/gateway.plist.next" 2>>"$LOG"; then
-    nf_undo; nf_undo_keep; NODE_WHY="could not save the LaunchAgent before editing it; the box is as it was found"; return "$EX_NODE"
+  # The LaunchAgent is NOT touched: the node it names is the one the client approved for
+  # macOS folder access. OpenClaw 2026.10.8 started on it re-execs the gateway on the cached
+  # runtime above as a child, which inherits the parent's consent.
+  _nf_pbin="$(dirname "$_nf_priv")"
+  PATH="$_nf_pbin:$PATH"; export PATH
+  # The atomic upgrade puts the LaunchAgent's (below-floor) node first on PATH for npm, so npm
+  # and openclaw's preinstall hook would run on it and refuse (exit 78). Hand it an npm that
+  # runs under the runtime instead, unless the operator already pinned one.
+  if [ -z "${OC_ATOMIC_NPM:-}" ]; then
+    NF_NPM="$WORK/npm-private"
+    printf '#!/bin/sh\nPATH="%s:$PATH"; export PATH\nexec "%s/npm" "$@"\n' "$_nf_pbin" "$_nf_pbin" > "$NF_NPM" \
+      && chmod 700 "$NF_NPM" || NF_NPM=""
   fi
-  chmod 600 "$_nf_keep/gateway.plist.next" 2>/dev/null
-  if ! _nf_old="$(nf_py repoint "$_nf_plist" "$_nf_priv" 2>>"$LOG")" \
-     || [ "$(python3 "$SUP_HELPER_PATH" node 2>/dev/null)" != "$_nf_priv" ]; then
-    cp -p "$_nf_keep/gateway.plist.next" "$_nf_plist" 2>>"$LOG"
-    nf_undo; nf_undo_keep
-    NODE_WHY="could not point the gateway LaunchAgent at $_nf_priv; the box is as it was found"
-    return "$EX_NODE"
+  log "node-floor: the gateway LaunchAgent stays on ${NODE_BEFORE:-an unrunnable node} ($_nf_node), the node it was approved on; the cached private runtime $_nf_pv ($_nf_priv) serves the gateway as its child after the upgrade; npm for the install runs under it; this job's PATH leads with it"
+  return 0
+}
+
+# --brew-node-upgrade only. 0 = the node the LaunchAgent names now meets the floor; 1 = not tried or
+# not achieved (the caller falls back to the private runtime). The old keg is kept (no cleanup), so
+# the running gateway and a rollback still find the binary they were started on.
+nf_brew_upgrade() {
+  [ "$BREW_NODE_UPGRADE" = 1 ] || return 1
+  command -v brew >/dev/null 2>&1 || { log "node-floor: brew upgrade skipped (no Homebrew on PATH)"; return 1; }
+  _nb_prefix="$(brew --prefix 2>/dev/null)"
+  if [ -z "$_nb_prefix" ] || [ -z "$(find "$_nb_prefix" -maxdepth 0 -user "$(id -un)" 2>/dev/null)" ]; then
+    log "node-floor: brew upgrade skipped (Homebrew prefix '${_nb_prefix:-unknown}' is not owned by this user)"; return 1
   fi
-  mv -f "$_nf_keep/gateway.plist.next" "$_nf_keep/gateway.plist.before" 2>/dev/null
-  NODE_AFTER="$_nf_pv"
-  PATH="$(dirname "$_nf_priv"):$PATH"; export PATH
-  log "node-floor: the gateway LaunchAgent now runs Node $NODE_AFTER ($_nf_priv) instead of ${NODE_BEFORE:-an unrunnable node} ($_nf_old); previous definition kept at $_nf_keep/gateway.plist.before; the running gateway is untouched until the atomic upgrade restarts it; this job's npm/openclaw calls use the new Node"
+  _nb_real="$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$_nf_node" 2>/dev/null)"
+  _nb_prefix="$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$_nb_prefix" 2>/dev/null)"
+  case "$_nb_real" in
+    "$_nb_prefix"/Cellar/node/*) ;;
+    *) log "node-floor: brew upgrade skipped (the gateway's node ${_nb_real:-$_nf_node} is not Homebrew's node formula)"; return 1 ;;
+  esac
+  log "node-floor: brew upgrade node (non-interactive, old keg kept) to raise $_nf_node"
+  nf_bounded 1200 env HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ANALYTICS=1 \
+    HOMEBREW_NO_ENV_HINTS=1 NONINTERACTIVE=1 brew upgrade node
+  _nb_rc=$?
+  # The measured node decides, not brew's exit code (its link step can warn on a good upgrade).
+  _nb_v="$("$_nf_node" --version 2>/dev/null | sed 's/^v//')"
+  if [ -z "$_nb_v" ] || ! nf_py check "$_nb_v" "$_nf_engine" 2>>"$LOG"; then
+    log "WARN node-floor: brew upgrade node (rc $_nb_rc) did not raise it (node now '${_nb_v:-unrunnable}'); using the private runtime instead"
+    return 1
+  fi
+  log "node-floor: brew upgrade node (rc $_nb_rc) raised the gateway's node to $_nb_v; the LaunchAgent is unchanged"
+  return 0
+}
+
+nf_bounded() {  # SECONDS cmd... : stdin closed, output to the log, killed after SECONDS (rc 124)
+  _bd_s="$1"; shift
+  "$@" >>"$LOG" 2>&1 </dev/null &
+  _bd_pid=$!
+  _bd_end=$(( $(date +%s) + _bd_s ))
+  while kill -0 "$_bd_pid" 2>/dev/null; do
+    if [ "$(date +%s)" -ge "$_bd_end" ]; then
+      kill "$_bd_pid" 2>/dev/null; sleep 1; kill -9 "$_bd_pid" 2>/dev/null
+      wait "$_bd_pid" 2>/dev/null; return 124
+    fi
+    sleep 1
+  done
+  wait "$_bd_pid"
+}
+
+# The process serving the gateway port, as the executable it was started from (ps comm is the
+# path as exec'd). Nothing when it cannot be identified: the caller reports UNDETERMINED.
+gw_runtime_exe() {
+  _gx_pid="$(PATH="$PATH:/usr/sbin:/sbin" lsof -nP -iTCP:"$(gateway_port)" -sTCP:LISTEN -t 2>/dev/null | head -n1)"
+  case "$_gx_pid" in ''|*[!0-9]*) return 1 ;; esac
+  _gx_exe="$(ps -o comm= -p "$_gx_pid" 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  case "$_gx_exe" in /*) [ -x "$_gx_exe" ] && printf '%s' "$_gx_exe" ;; *) return 1 ;; esac
+}
+
+# 0 only when a launchd job of the gateway's own shape reads DIR: TOP (the LaunchAgent's node) as
+# the top process, CHILD (the node serving the gateway port) spawned by it. Run as a launchd job
+# because macOS folder consent follows the responsible process; a read from this shell would be
+# judged on this job's identity, not the gateway's. Bounded: a hung read (an unanswered consent
+# prompt) is killed by the bootout and reported, never waited on.
+tcc_read_probe() {  # TOP CHILD DIR
+  _tr_dir="$WORK/tcc-probe"; _tr_js="$_tr_dir/probe.js"; _tr_res="$_tr_dir/result"
+  _tr_plist="$_tr_dir/probe.plist"; _tr_uid="$(id -u)"; _tr_secs="${SELF_UPDATE_TCC_PROBE_SECONDS:-25}"
+  command -v launchctl >/dev/null 2>&1 || { TCC_WHY="launchctl not found, so the folder read could not be tried"; return 1; }
+  mkdir -p "$_tr_dir" 2>/dev/null && rm -f "$_tr_res" || { TCC_WHY="could not create the probe directory"; return 1; }
+  cat > "$_tr_js" <<'JS'
+// argv: DIR [CHILD RESULT]. The child run is this same script with DIR only.
+const fs = require('fs'), path = require('path'), cp = require('child_process');
+const [dir, child, res] = process.argv.slice(2);
+function rd(d) { try { fs.readdirSync(d); } catch (e) { if (e.code !== 'ENOENT') throw e; fs.readdirSync(path.dirname(d)); } }
+rd(dir);
+if (child && cp.spawnSync(child, [__filename, dir], { timeout: 20000 }).status !== 0) process.exit(1);
+if (res) fs.writeFileSync(res, 'ok');
+JS
+  TCC_LABEL="ai.openclaw.tcc-probe.$$"
+  python3 - "$_tr_plist" "$TCC_LABEL" "$1" "$_tr_js" "$3" "$2" "$_tr_res" <<'PY' || { TCC_WHY="could not write the probe job"; TCC_LABEL=""; return 1; }
+import plistlib, sys
+p, label, top, js, d, child, res = sys.argv[1:8]
+plistlib.dump({"Label": label, "ProgramArguments": [top, js, d, child, res], "RunAtLoad": True,
+               "KeepAlive": False, "ExitTimeOut": 2}, open(p, "wb"))
+PY
+  if ! launchctl bootstrap "gui/$_tr_uid" "$_tr_plist" >>"$LOG" 2>&1; then
+    TCC_WHY="launchd would not load the probe job (launchctl bootstrap gui/$_tr_uid failed)"; TCC_LABEL=""; return 1
+  fi
+  _tr_end=$(( $(date +%s) + _tr_secs ))
+  while [ ! -f "$_tr_res" ] && [ "$(date +%s)" -lt "$_tr_end" ]; do sleep 1; done
+  launchctl bootout "gui/$_tr_uid/$TCC_LABEL" >>"$LOG" 2>&1; TCC_LABEL=""
+  if [ ! -f "$_tr_res" ]; then
+    TCC_WHY="the gateway's node chain ($1, then $2) did not finish reading $3 within ${_tr_secs} s: a macOS folder-consent prompt nobody answered (check: log show --last 10m --predicate 'process == \"tccd\"' | grep PROMPTING)"
+    return 1
+  fi
+  return 0
+}
+
+# After the restart, before success is declared. 0 = proven (or no LaunchAgent gateway to prove);
+# 1 = not proven, TCC_WHY says which part. The Node it measures is what lands in node_after.
+tcc_probe_step() {
+  TCC_WHY=""
+  [ "$NF_PROBE" = 1 ] || return 0
+  if ! healthz_wait "${SELF_UPDATE_TCC_HEALTH_SECONDS:-60}"; then
+    TCC_WHY="/healthz did not answer 200 within ${SELF_UPDATE_TCC_HEALTH_SECONDS:-60} s after the restart"
+    mark_needs_restart "tcc-probe: $TCC_WHY"; return 1
+  fi
+  _tp_exe="$(gw_runtime_exe)" || _tp_exe=""
+  if [ -z "$_tp_exe" ]; then
+    TCC_WHY="the process serving the gateway port $(gateway_port) could not be identified (lsof, ps), so which Node it runs is UNDETERMINED"; return 1
+  fi
+  _tp_v="$("$_tp_exe" --version 2>/dev/null | sed 's/^v//')"
+  NODE_AFTER="$_tp_v"
+  if ! nf_py check "$_tp_v" "$_nf_engine" 2>>"$LOG"; then
+    TCC_WHY="the gateway process runs Node ${_tp_v:-unrunnable} ($_tp_exe), below engines.node (${_nf_engine:-none})"; return 1
+  fi
+  _tp_top="$(python3 "$SUP_HELPER_PATH" node 2>/dev/null)"
+  if [ -z "$_tp_top" ]; then TCC_WHY="the LaunchAgent names no node binary after the upgrade"; return 1; fi
+  _tp_mf="${OPENCLAW_MASTER_FILES_DIR:-${MASTER_FILES_DIR:-$HOME/Downloads/openclaw-master-files}}"
+  tcc_read_probe "$_tp_top" "$_tp_exe" "$_tp_mf" || return 1
+  log "tcc-probe: /healthz 200; the gateway serves from Node $_tp_v ($_tp_exe), which meets engines.node (${_nf_engine:-none}); $_tp_top then $_tp_exe read ${_tp_mf##*/} as a launchd job"
   return 0
 }
 
@@ -1667,6 +1794,7 @@ else
       UPG_RC=$EX_UPGRADE
     else
       chmod 700 "$WORK/oc-atomic-upgrade.sh" 2>/dev/null || true
+      [ -z "$NF_NPM" ] || { OC_ATOMIC_NPM="$NF_NPM"; export OC_ATOMIC_NPM; }
       bash "$WORK/oc-atomic-upgrade.sh" --upgrade --target-version "$TARGET_VERSION" >>"$LOG" 2>&1 </dev/null
       UPG_RC=$?
     fi
@@ -1684,6 +1812,13 @@ else
       probe_after_fail "upgrade" 15
     else
       log "OK upgrade: $TARGET_VERSION (the supervisor's install now reports $(oc_version))"
+      if ! tcc_probe_step; then
+        log "FAIL tcc-probe: $TCC_WHY"
+        record_step "tcc-probe" "$EX_TCC"
+        record_fail "$EX_TCC" "post-restart proof: $TCC_WHY"
+      elif [ "$NF_PROBE" = 1 ]; then
+        record_step "tcc-probe" 0
+      fi
     fi
   fi
 fi

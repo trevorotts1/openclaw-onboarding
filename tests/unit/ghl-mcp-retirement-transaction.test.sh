@@ -19,6 +19,12 @@
 #   E  re-running --retire is a no-op (idempotent, no second archive)
 #   F  a resurrection path that cannot be disabled -> MIGRATION_FAILED, exit 1,
 #      no success marker
+#   G  every env-file shape (.env.bak-<ts>, .env.*, *.env, *.env.bak*) in the
+#      MCP dir stays OUT of the archive and IN PLACE, so a client's own credential
+#      backup no longer fails the retirement at archive-secret-risk
+#   H  the secret scan still guards everything else: a live value in a non-env
+#      file, or a credential-named file, still refuses the retirement
+#   I  the updater's MISCONFIGURED banner names no script the same run prunes
 set -u
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -231,6 +237,93 @@ case "$S" in *MIGRATION_FAILED*) pass "(F) undying launchd job -> MIGRATION_FAIL
 [ "$RC" = "1" ] && pass "(F2) MIGRATION_FAILED exits 1" || fail "(F2) MIGRATION_FAILED rc=$RC"
 [ -f "$BOX2/home/.openclaw/.retired/ghl-mcp-retirement.json" ] && fail "(F3) a success marker was written" || pass "(F3) no success marker"
 [ -f "$BOX2/home/.openclaw/.retired/ghl-mcp-migration-failed.json" ] && pass "(F4) failure receipt written" || fail "(F4) no failure receipt"
+
+# ── Box 3: client env-file backups (G) ──────────────────────────────────────
+# Big Fleet Roll 20261029: the tar excluded only the exact names .env and
+# .ghl-mcp.env, so a client's own .env.bak-<ts> (holding the live key) was
+# copied into every archive and the secret scan refused the retirement.
+ENV_SHAPES=".env.bak-20260804T085754Z .env.bak .env.production .env.local prod.env .ghl-mcp.env.bak-20260910-ghl old.env.bak2 dist/.env.bak-nested"
+put_env_backups() {  # put_env_backups <mcp dir>
+  local M="$1" f
+  mkdir -p "$M/dist"
+  for f in $ENV_SHAPES; do
+    printf 'GHL_API_KEY=pit-secret-value-0123456789\nGOHIGHLEVEL_LOCATION_ID=loc123\n' > "$M/$f"
+  done
+  # look-alikes that are NOT env files and must still be archived
+  echo "module.exports = {}" > "$M/environment.js"
+  echo "how env vars work" > "$M/docs-env-notes.md"
+}
+env_sums() {  # env_sums <mcp dir>  -> one cksum line per client env file
+  local M="$1" f
+  for f in .env .ghl-mcp.env $ENV_SHAPES; do
+    if [ -f "$M/$f" ]; then cksum < "$M/$f" | sed "s|\$| $f|"; else echo "MISSING $f"; fi
+  done
+}
+
+BOX3="$WORK/box3"; make_box "$BOX3"
+M3="$BOX3/home/.openclaw/mcp-servers/ghl-community-mcp"
+put_env_backups "$M3"
+BEFORE3="$(env_sums "$M3")"
+
+OUT="$(run_as "$BOX3" "" --retire)"; RC=$?; S="$(status_of "$OUT")"
+case "$S" in *RETIRED_VERIFIED_OFF*) pass "(G) env-file backups in the MCP dir -> VERIFIED_OFF" ;; *) fail "(G) env-file backups: '$S' (rc=$RC)" ;; esac
+[ "$RC" = "0" ] && pass "(G2) exit 0 with env-file backups present" || fail "(G2) rc=$RC"
+
+ARC3="$(ls -d "$BOX3"/home/.openclaw/.retired/archive-* 2>/dev/null | head -1)"
+if [ -n "$ARC3" ]; then
+  LEFT="$(find "$ARC3/tree" -type f \( -name '.env' -o -name '.env.*' -o -name '*.env' -o -name '*.env.bak*' -o -name '.env.bak-*' \) 2>/dev/null)"
+  [ -z "$LEFT" ] && pass "(G3) no env-file shape reached the archive tree" || fail "(G3) archived env files: $(printf '%s' "$LEFT" | tr '\n' ' ')"
+  if grep -rIlF -- 'pit-secret-value-0123456789' "$ARC3" 2>/dev/null | grep -q .; then
+    fail "(G4) the live key value is in the archive"
+  else
+    pass "(G4) the live key value is absent from the archive"
+  fi
+  [ -f "$ARC3/tree/environment.js" ] && [ -f "$ARC3/tree/docs-env-notes.md" ] && [ -f "$ARC3/tree/dist/main.js" ] \
+    && pass "(G5) non-env look-alikes (environment.js, docs-env-notes.md) are still archived" \
+    || fail "(G5) a non-env file was dropped by the env excludes"
+else
+  fail "(G3) no archive produced"; fail "(G4) no archive produced"; fail "(G5) no archive produced"
+fi
+AFTER3="$(env_sums "$M3")"
+[ "$BEFORE3" = "$AFTER3" ] && pass "(G6) every client env file is still in place, byte-identical" || fail "(G6) a client env file was moved, deleted or changed"
+
+# ── Box 4: the scan still guards everything else (H) ────────────────────────
+BOX4="$WORK/box4"; make_box "$BOX4"
+M4="$BOX4/home/.openclaw/mcp-servers/ghl-community-mcp"
+put_env_backups "$M4"
+echo "const k='pit-secret-value-0123456789'" > "$M4/dist/leak.js"
+OUT="$(run_as "$BOX4" "" --retire)"; RC=$?; S="$(status_of "$OUT")"
+case "$S" in *MIGRATION_FAILED*) pass "(H) a live value in a non-env file still refuses" ;; *) fail "(H) leak in dist/leak.js was not refused: '$S'" ;; esac
+[ "$RC" = "1" ] && pass "(H2) refusal exits 1" || fail "(H2) rc=$RC"
+grep -q 'archive-secret-risk' "$BOX4/home/.openclaw/.retired/ghl-mcp-migration-failed.json" 2>/dev/null \
+  && pass "(H3) the receipt names stage archive-secret-risk" || fail "(H3) receipt does not name archive-secret-risk"
+[ -f "$BOX4/home/Library/LaunchAgents/com.clawd.ghl-mcp.plist" ] && [ -f "$BOX4/pm2/app" ] \
+  && pass "(H4) nothing was disabled (plist installed, pm2 app registered)" || fail "(H4) the refusal disabled a surface"
+[ -f "$BOX4/home/.openclaw/.retired/ghl-mcp-retirement.json" ] && fail "(H5) a success marker was written" || pass "(H5) no success marker"
+[ -f "$M4/dist/leak.js" ] && [ "$BEFORE3" = "$(env_sums "$M4")" ] \
+  && pass "(H6) the source tree and the client env files were left untouched" || fail "(H6) the refusal changed the source tree"
+
+BOX5="$WORK/box5"; make_box "$BOX5"
+M5="$BOX5/home/.openclaw/mcp-servers/ghl-community-mcp"
+put_env_backups "$M5"
+echo '{}' > "$M5/credentials.json"
+OUT="$(run_as "$BOX5" "" --retire)"; RC=$?; S="$(status_of "$OUT")"
+case "$S" in *MIGRATION_FAILED*) pass "(H7) a credential-named file (credentials.json) still refuses" ;; *) fail "(H7) credentials.json was not refused: '$S'" ;; esac
+[ "$RC" = "1" ] && pass "(H8) refusal exits 1" || fail "(H8) rc=$RC"
+
+# ── (I) the updater banner must not name a script the same run prunes ───────
+US="$REPO_ROOT/update-skills.sh"
+PRUNED="$(grep -m1 -E '^[[:space:]]*local _retired="' "$US" | sed -E 's/.*_retired="([^"]*)".*/\1/')"
+BANNER="$(awk '/GHL MCP \(Tier 2\) IS MISCONFIGURED/{f=1} f{print} f&&/Exiting 2 = content current/{exit}' "$US")"
+if [ -z "$PRUNED" ] || [ -z "$BANNER" ]; then
+  fail "(I) could not locate the pruned list or the MISCONFIGURED banner in update-skills.sh"
+else
+  BAD=""
+  for n in $PRUNED; do printf '%s' "$BANNER" | grep -qF "$n" && BAD="$BAD $n"; done
+  [ -z "$BAD" ] && pass "(I) the MISCONFIGURED banner names no pruned script" || fail "(I) the banner points at pruned script(s):$BAD"
+  printf '%s' "$BANNER" | grep -qF 'ghl-mcp-autostart.sh --status' \
+    && pass "(I2) the banner points at the retained tool's --status" || fail "(I2) the banner does not name 'ghl-mcp-autostart.sh --status'"
+fi
 
 echo ""
 echo "ghl-mcp-retirement-transaction: $PASS passed, $FAIL failed"
