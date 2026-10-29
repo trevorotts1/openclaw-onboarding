@@ -167,22 +167,56 @@ detect_port() {
   [ -z "$p" ] && [ -n "${OPENCLAW_GATEWAY_PORT:-}" ] && p="$OPENCLAW_GATEWAY_PORT"
   [ -z "$p" ] && [ -n "${OPENCLAW_PORT:-}" ] && p="$OPENCLAW_PORT"
   [ -z "$p" ] && [ -n "${GATEWAY_PORT:-}" ] && p="$GATEWAY_PORT"
+  [ -z "$p" ] && case "$CFG_PORT" in ''|0|*[!0-9]*) : ;; *) p="$CFG_PORT" ;; esac
   [ -z "$p" ] && p="18789"   # documented default — LAST resort only
   echo "$p"
 }
+
+# ---- TLS-aware probe: read gateway.tls.enabled / gateway.port from openclaw.json
+# With gateway.tls.enabled=true the gateway answers https ONLY: a plain http://
+# probe gets an empty reply (curl 000), reads a healthy gateway as dead, and the
+# heal below kickstarts it every cooldown, dropping live sessions (one Mac fleet
+# box logged 2234 failed probes and 1116 kickstarts that way). The flag is read
+# with python, never the openclaw CLI (on 2026.10.x a CLI call can take the
+# sqlite maintenance lock). The probe is loopback-only, so curl -k (the cert is
+# self-signed) can never be aimed at anything else. Config unreadable, no
+# python3 or no flag => http, exactly as before. GATEWAY_WATCHDOG_TLS=1|0
+# overrides: a VPS Docker HOST has no config to read, so
+# install-host-watchdog-cron.sh forwards what it read inside the container.
+GW_CFG="$HOME/.openclaw/openclaw.json"
+[ "$BOX" = "vps-container" ] && GW_CFG="/data/.openclaw/openclaw.json"
+GW_CFG_OUT=""
+[ -f "$GW_CFG" ] && GW_CFG_OUT="$(OC_CFG="$GW_CFG" python3 -c 'import json,os
+try:
+    g=json.load(open(os.environ["OC_CFG"])).get("gateway") or {}
+    p=g.get("port")
+    print(1 if str((g.get("tls") or {}).get("enabled")).lower()=="true" else 0, p if type(p) is int and 0<p<65536 else 0)
+except Exception:
+    print("0 0")' 2>/dev/null)"
+CFG_TLS="${GW_CFG_OUT%% *}"   # 1 = TLS on, 0 = off, empty = unreadable
+CFG_PORT="${GW_CFG_OUT##* }"  # 0 or empty = not set in the config
+case "${GATEWAY_WATCHDOG_TLS:-}" in 0|1) CFG_TLS="$GATEWAY_WATCHDOG_TLS" ;; esac
+
 PORT_NUM="$(detect_port)"
+if [ "$CFG_TLS" = "1" ]; then
+  PROBE_BASE="https://127.0.0.1:${PORT_NUM}"; CURL_K="-k"
+else
+  PROBE_BASE="http://127.0.0.1:${PORT_NUM}"; CURL_K=""
+fi
 
 # ---- Health probe ----------------------------------------------------------
 # Returns 0 healthy, 1 unhealthy. Three corroborating signals; ANY pass = up.
 is_healthy() {
   # Signal A: HTTP {"ok":true} on the gateway root (the hook 200 body shape).
-  body="$(curl -fsS --max-time "$CURL_TIMEOUT" "http://127.0.0.1:${PORT_NUM}/" 2>/dev/null)"
+  # shellcheck disable=SC2086  # CURL_K is empty or the single word -k
+  body="$(curl -fsS $CURL_K --max-time "$CURL_TIMEOUT" "${PROBE_BASE}/" 2>/dev/null)"
   case "$body" in
     *'"ok":true'*|*'"ok": true'*) return 0 ;;
   esac
   # Signal B: /healthz returns HTTP 200 (the canonical gateway-up probe).
-  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time "$CURL_TIMEOUT" \
-          "http://127.0.0.1:${PORT_NUM}/healthz" 2>/dev/null)"
+  # shellcheck disable=SC2086
+  code="$(curl -s $CURL_K -o /dev/null -w '%{http_code}' --max-time "$CURL_TIMEOUT" \
+          "${PROBE_BASE}/healthz" 2>/dev/null)"
   [ "$code" = "200" ] && return 0
   # Signal C: CLI status (TERTIARY fallback — only reached when BOTH HTTP probes
   # above failed and the `openclaw` CLI exists). Conservative + errs-safe: reject
@@ -398,7 +432,7 @@ fi
 
 # Unhealthy
 fails="$(read_count)"; fails=$(( fails + 1 )); write_count "$fails"
-log "BAD: gateway probe failed on :${PORT_NUM} (consecutive=${fails}/${FAIL_THRESHOLD})"
+log "BAD: gateway probe failed on :${PORT_NUM} via ${PROBE_BASE%%://*} (consecutive=${fails}/${FAIL_THRESHOLD})"
 
 if [ "$fails" -ge "$FAIL_THRESHOLD" ]; then
   # Clear the 2026.9.x session-store migration gate FIRST when that is what is
