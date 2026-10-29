@@ -3446,5 +3446,39 @@
     ]
    }
   }
+ },
+ {
+  "name": "backups-out-of-departments-guard",
+  "was": "backups-out-of-departments-guard.yml",
+  "script": "scripts/ci/fast-guards.d/backups-out-of-departments-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "update-skills.sh",
+     "shared-utils/central_backup.py",
+     "scripts/apply-u004-phase2.sh",
+     "32-command-center-setup/scripts/backfill-dept-agent-personalization.sh",
+     "23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py",
+     "23-ai-workforce-blueprint/scripts/test-phantom-dept-collision-gate.sh",
+     "tests/unit/backups-out-of-departments.test.sh",
+     ".github/workflows/backups-out-of-departments-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "update-skills.sh",
+     "shared-utils/central_backup.py",
+     "scripts/apply-u004-phase2.sh",
+     "32-command-center-setup/scripts/backfill-dept-agent-personalization.sh",
+     "23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py",
+     "23-ai-workforce-blueprint/scripts/test-phantom-dept-collision-gate.sh",
+     "tests/unit/backups-out-of-departments.test.sh",
+     ".github/workflows/backups-out-of-departments-guard.yml"
+    ]
+   }
+  }
  }
 ]

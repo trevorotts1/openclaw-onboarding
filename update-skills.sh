@@ -2399,6 +2399,56 @@ PYEOF
   return 0
 }
 
+# ----------------------------------------------------------
+# BACKUPS-OUT-OF-DEPARTMENTS (2026-10-29). Repair tools used to leave their backup FOLDERS
+# inside the live department tree (<dept>.bak-<tool>-<stamp>/ beside the real departments,
+# <workspace>/.floor-backups/<stamp>/, <workspace>/departments-archive/<stamp>/): months old,
+# hundreds of duplicate AGENTS.md / TOOLS.md copies that every scanner and refresher walked.
+# Every roll, OUTSIDE the per-version .wired-<version> sentinel (and from the content-current
+# exit, which skips the wiring loop), shared-utils/central_backup.py MOVES such folders (never
+# deletes in the move) into the box's ONE central backup folder (outside every workspace; the
+# macOS ~/Downloads/openclaw-backups or <OpenClaw root>/backups on a Docker box, the rule
+# platform/common.sh OC_BACKUPS uses) and keeps the newest $OPENCLAW_BACKUP_KEEP (default 3)
+# runs per tool there. Idempotent: a second run finds nothing. A real department folder is
+# never moved. The tool refuses to run as root (a root-owned folder on the node-owned volume
+# blocks the next prune), so on a Docker box the roll must run as the box user, as it already
+# does. ALWAYS returns 0: this must never be the thing that fails a roll.
+# ----------------------------------------------------------
+migrate_backups_out_of_departments() {
+  local _cb="" _c
+  for _c in "${SKILLS_DIR:-}/shared-utils/central_backup.py" \
+            "${EXTRACTED_DIR:-}/shared-utils/central_backup.py" \
+            "${_SCRIPT_DIR:-}/shared-utils/central_backup.py"; do
+    if [ -f "$_c" ]; then _cb="$_c"; break; fi
+  done
+  if [ -z "$_cb" ]; then
+    echo "  [backups-out] SKIP: shared-utils/central_backup.py not found"
+    return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "  [backups-out] SKIP: no python3 on PATH"
+    return 0
+  fi
+  # Same root rule as the rest of the roll when it is available; otherwise the tool applies
+  # its own copy of that rule ($OPENCLAW_ROOT, /data/.openclaw, ~/.openclaw).
+  local _oc_root="" _args=() _w
+  if declare -F resolve_oc_root >/dev/null 2>&1; then
+    _oc_root="$(resolve_oc_root 2>/dev/null || echo '')"
+  fi
+  [ -z "$_oc_root" ] || _args=(--root "$_oc_root")
+  for _w in "${OC_WS_RESOLVED:-}" "${WORKSPACE_DIR:-}" "$HOME/clawd"; do
+    if [ -n "$_w" ] && [ -d "$_w" ]; then _args=(${_args[@]+"${_args[@]}"} --workspace "$_w"); fi
+  done
+  local _rc=0
+  python3 "$_cb" migrate ${_args[@]+"${_args[@]}"} || _rc=$?
+  case "$_rc" in
+    0) ;;
+    4) echo "  [backups-out] REFUSED: the updater is running as root. Nothing was moved; run it as the box user (docker exec -u node <container> ... on a Docker box)." ;;
+    *) echo "  [backups-out] WARN: finished with rc=$_rc (see the lines above); the roll continues" ;;
+  esac
+  return 0
+}
+
 link_shared_core_files() {
   local CANON_DIR="${1:-}"
 
@@ -4549,6 +4599,8 @@ official-ghl-mcp-registration"
 # from the pulled bundle ($ONBOARDING_DIR) as its last candidate.
 # Exit 2 (loud, non-zero) when the check latches GHL_MCP_RUNTIME_FATAL.
 _content_current_exit() {
+  # A roll with nothing new to install still moves backup folders out of the department tree.
+  migrate_backups_out_of_departments || true
   wire_ghl_mcp "36-ghl-mcp-setup"
   rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
   if [ "${GHL_MCP_RUNTIME_FATAL:-no}" = "yes" ]; then
@@ -9615,6 +9667,9 @@ else:
   # populations it cannot see, and runs even when the step above refused.
   # See reclaim_unify_backups() for the three shapes and the safety pattern.
   reclaim_unify_backups || true
+
+  # Backup FOLDERS leave the department tree every roll (also run from _content_current_exit).
+  migrate_backups_out_of_departments || true
 
   # ----------------------------------------------------------
   # D5 -- PRE-STAMP dept-agent activation gate (feeds the unified completeness
