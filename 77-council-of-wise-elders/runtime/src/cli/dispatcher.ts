@@ -53,7 +53,7 @@ import {
   handleAuthorizationCommand,
   mirrorSession,
 } from './authorization.js';
-import { runConvene, runRoutes } from './convene.js';
+import { chamberUrlFor, durablePublicOrigin, runConvene, runRoutes } from './convene.js';
 import { exportVerdictReport } from './report-export.js';
 import { resolveDataDir } from './paths.js';
 
@@ -68,7 +68,17 @@ const defaultIo: CliIo = {
 };
 
 export interface CliDeps {
-  createHost?: (options: { dataDir?: string; skillRoot?: string }) => LocalHost;
+  createHost?: (options: {
+    dataDir?: string;
+    skillRoot?: string;
+    env?: NodeJS.ProcessEnv;
+  }) => LocalHost;
+  /**
+   * The environment the session-read commands resolve durable values
+   * from (data directory, the service's own public origin). Default
+   * process.env; tests inject it so no real box state is read.
+   */
+  env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -341,17 +351,28 @@ const USAGE = [
   '  replay SESSION [--json]             Committed event history (read only, no provider calls)',
   '  export SESSION --format md|json|pdf [--out FILE]',
   '  routes [--origin URL] [--json]      Model routes and harness defaults from the council service',
-  '  convene (--sample | --brief FILE) [--mode light|medium|heavy] [--seat-ids a,b,c] [--route ID] [--model ID]',
+  '  convene (--sample | --brief FILE) [--mode light|medium|heavy] [--seat-ids a,b,c] [--route ID] [--model ID] [--no-open]',
   '          [--harness H] [--ollama-plan 20|100] [--fallback-model ID] [--fresh-facts FILE] [--origin URL]',
   '                                      Convene a council on the running service (starts it now)',
   '                                      --mode defaults to medium; the four older modes (full, selected,',
   '                                      quick, consult) still convene exactly as before; --seat-ids names',
   '                                      the panel (every mode seats all nine by default);',
   '                                      --ollama-plan is asked once and remembered; --fallback-model is',
-  '                                      the OpenRouter model used when an Ollama route fails',
+  '                                      the OpenRouter model used when an Ollama route fails;',
+  '                                      --no-open skips the desktop chamber pop (headless boxes open nothing anyway)',
   '',
   'Global flags: --json, --data-dir DIR (default: per-user council data directory)',
 ].join('\n');
+
+/**
+ * The durable chamber URL for an existing session, resolved from what the
+ * box already recorded. Reads never probe, never open a browser and never
+ * start a new request.
+ */
+function durableChamberUrl(env: NodeJS.ProcessEnv, sessionId: string): string | null {
+  const origin = durablePublicOrigin(env);
+  return origin === null ? null : chamberUrlFor(origin, sessionId);
+}
 
 export async function runCli(
   argv: string[],
@@ -359,6 +380,7 @@ export async function runCli(
   deps: CliDeps = {},
 ): Promise<number> {
   const json = argv.includes('--json');
+  const env = deps.env ?? process.env;
   try {
     const { positionals, flags } = parseArgs(argv);
     const [command, sub, third] = positionals;
@@ -385,11 +407,11 @@ export async function runCli(
     };
     const dataDirFor = (): string => {
       refuseWithoutRoot();
-      return resolveDataDir({ override: dataDir ?? null, skillRoot });
+      return resolveDataDir({ override: dataDir ?? null, skillRoot, env });
     };
     const hostFor = (): LocalHost => {
       refuseWithoutRoot();
-      return makeHost({ dataDir, skillRoot });
+      return makeHost({ dataDir, skillRoot, env });
     };
     const engineFor = (host: CouncilHost) => new CouncilEngine(host);
 
@@ -744,6 +766,9 @@ export async function runCli(
         const engine = engineFor(host);
         const session = await engine.getSession(sessionId);
         const budget = host.budget.snapshot(sessionId);
+        // A read, not a new request: the durable chamber URL rides the
+        // result when the box has one, with no probe and no question.
+        const chamber = durableChamberUrl(env, sessionId);
         printResult(
           io,
           json,
@@ -753,6 +778,7 @@ export async function runCli(
             `  state: ${session.state.state} (version ${session.state.state_version})`,
             `  brief revision: ${session.state.brief_revision}`,
             `  provider requests consumed: ${budget.consumed.provider_requests} of ${budget.ceilings.max_provider_requests}`,
+            ...(chamber === null ? [] : [`  chamber_url: ${chamber}`]),
           ].join('\n'),
           {
             ok: true,
@@ -763,6 +789,7 @@ export async function runCli(
             brief_revision: session.state.brief_revision,
             sample: session.sample,
             budget,
+            ...(chamber === null ? {} : { chamber_url: chamber }),
           },
         );
         return 0;
@@ -805,10 +832,12 @@ export async function runCli(
             },
           );
         }
+        const chamber = durableChamberUrl(env, sessionId);
         printResult(io, json, verdictHuman(verdict, session.sample), {
           ok: true,
           sample: session.sample,
           verdict,
+          ...(chamber === null ? {} : { chamber_url: chamber }),
         });
         return 0;
       }

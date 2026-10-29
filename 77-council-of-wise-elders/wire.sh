@@ -30,6 +30,12 @@
 #   COUNCIL_WIRE: READY|NOOP|ADOPTED_EXISTING|DEFERRED_NO_GUI|NOT_READY <CODE> <detail>
 # plus, only when the connector token file exists, one line before it:
 #   COUNCIL_CONNECTOR: READY|NOOP|DEFERRED_NO_GUI|NOT_READY <CODE> <detail>
+# The store decision is announced on its own lines, and only when it needs
+# saying: COUNCIL_WIRE: STORE_AUTHORITY_RESOLVED <dir> (<source>; ...) when the
+# store this run will keep differs from what active.json recorded,
+# STORE_SWITCH <live> -> <new> when a running service is being moved, and
+# NOT_READY STORE_AUTHORITY_UNKNOWN|STORE_AUTHORITY_MISMATCH when the history
+# cannot be resolved or the installer did not record the chosen store.
 # --connector-only runs the connector step and exits 0 (no build, no service).
 # Exit 0 for every state except RUNTIME_BUILD_FAILED (exit 1), so a transient
 # npm failure withholds the .wired sentinel and the next roll retries.
@@ -37,7 +43,11 @@
 # Env: COUNCIL_WIRE_PLATFORM (mac|vps) COUNCIL_NODE COUNCIL_NPM COUNCIL_PM2
 #      COUNCIL_SERVICE_PORT (8787) COUNCIL_SERVICE_LABEL (ai.blackceo.council-service)
 #      COUNCIL_PM2_APP (council-of-wise-elders) OPENCLAW_ROOT CC_PUBLIC_URL
-#      MC_TENANT_PUBLIC_URL COUNCIL_CLOUDFLARED (absolute cloudflared path)
+#      MC_TENANT_PUBLIC_URL COUNCIL_PUBLIC_ORIGIN (the chamber link origin; wins
+#      over every derived source) COUNCIL_DATA_DIR (the store to keep; default is
+#      the live service's open council.db, else the store the previous launcher,
+#      LaunchAgent or service log names) COUNCIL_CLOUDFLARED (absolute
+#      cloudflared path)
 #      COUNCIL_AGENT_SKILL_DIR (skill folder the agent resolves) COUNCIL_OPENCLAW
 #      (openclaw CLI path) OPENCLAW_AGENT_ID (agent the resolver is asked for)
 #
@@ -78,7 +88,9 @@ if [ -n "${OPENCLAW_ROOT:-}" ]; then OC="$OPENCLAW_ROOT"
 elif [ -d /data/.openclaw ]; then OC=/data/.openclaw
 else OC="$HOME/.openclaw"; fi
 P="$OC/council-runtime"
-DATA="$OC/council-data"
+# Resolved in section 5a from the database the live service actually has open,
+# so a rewire can never re-point the service at an empty default store.
+DATA=""
 LOGDIR="$OC/logs"
 LOG="$LOGDIR/council-service.log"
 PORT="${COUNCIL_SERVICE_PORT:-8787}"
@@ -284,6 +296,158 @@ if [ "$OURS" = "0" ]; then
   fi
 fi
 
+# ------------------------------------------------- 5a. durable store authority
+# The store is the council SQLite database the LIVE service has open, and that
+# is the only witness that cannot drift. Observed on the operator box
+# 2026-10-29: active.json had been re-pointed at an empty
+# ~/.openclaw/council-data while the running service kept serving
+# ~/Library/Application Support/wise-elders/service (9 sessions, 1075 events,
+# 426 jobs). Wiring from active.json alone would have stranded all of it.
+#
+# With the service DOWN there is no open file to ask, and active.json alone is
+# NOT evidence: every earlier version of this script wrote active.json and the
+# generated launcher from its own default, so launcher, LaunchAgent and
+# active.json can agree on the same WRONG directory. The witnesses that do
+# survive a stopped service are the ones the previous run actually used: the
+# generated launcher's COUNCIL_SERVICE_DATA_DIR line, the LaunchAgent's
+# WorkingDirectory, and the service's own last front_door_started record
+# (service-launch.mjs prints the dataDir it served). All three are PARSED AS
+# TEXT - the launcher is never sourced, never executed.
+#
+# Resolution: COUNCIL_DATA_DIR (explicit) -> the live listener's open council.db
+# -> the one recorded directory that holds a council.db -> the one recorded
+# directory that exists (a fresh install before its first service start) ->
+# $OC/council-data. Two or more recorded directories that hold a store, or
+# several that exist with no store among them, is history that cannot be
+# resolved: NOT_READY STORE_AUTHORITY_UNKNOWN, never a silent guess. Nothing is
+# copied, migrated, initialised or deleted, and no store is created here.
+# ponytail: the live store is measured from the listener's open DB with lsof.
+# Upgrade path is the service recording its own dataDir in service.json at
+# startup (writer is runtime-owned).
+live_store() { # prints the data dir of the council.db the $PORT listener holds
+  local _pid _f
+  command -v lsof >/dev/null 2>&1 || return 1
+  _pid="$(lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | head -1)"
+  [ -n "$_pid" ] || return 1
+  _f="$(lsof -p "$_pid" -Fn 2>/dev/null | sed -n 's/^n\(.*\/council\.db\)$/\1/p' | head -1)"
+  [ -n "$_f" ] && [ -f "$_f" ] || return 1
+  dirname "$_f"
+}
+# The data dir the launcher this script generated last time records. Text only:
+# the launcher is never sourced, evaluated or executed. Section 7 emits exactly
+# one line, COUNCIL_SERVICE_DATA_DIR=<sq DATA_DIR>; export COUNCIL_SERVICE_DATA_DIR
+# so the value is ONE single-quoted shell word, and sq() writes an apostrophe
+# inside it as '\'' . That shape is decoded here (spaces and apostrophes
+# included) and nothing else is: an unquoted, double-quoted, differently
+# exported, empty or relative value returns 2, so the caller can fail closed
+# instead of silently dropping this witness. No expansion is possible or done.
+launcher_data_dir() {
+  local v u _l
+  v="$(sed -n "s/^COUNCIL_SERVICE_DATA_DIR=\(.*\); export COUNCIL_SERVICE_DATA_DIR\$/X\1/p" "$P/bin/council-service" 2>/dev/null | head -1)"
+  if [ -z "$v" ]; then
+    # No line in the generated shape. A line that still starts with the
+    # assignment is a launcher this parser does not understand: refuse it (2)
+    # instead of reporting "this witness says nothing" (1).
+    _l="$(sed -n '/^COUNCIL_SERVICE_DATA_DIR=/p' "$P/bin/council-service" 2>/dev/null | head -1)"
+    [ -n "$_l" ] && return 2
+    return 1
+  fi
+  v="${v#X}"
+  case "$v" in \'*\') ;; *) return 2 ;; esac
+  v="${v#\'}"; v="${v%\'}"
+  case "$v" in *"'"*)
+    u="$(printf '%s' "$v" | sed "s/'\\\\''//g")"
+    case "$u" in *"'"*) return 2 ;; esac
+    v="$(printf '%s' "$v" | sed "s/'\\\\''/'/g")"
+  ;; esac
+  case "$v" in /?*) printf '%s' "$v" ;; *) return 2 ;; esac
+}
+# The data dir the LaunchAgent was started in (pm2 twin uses the same value).
+plist_data_dir() {
+  local v
+  [ -f "${PLIST:-}" ] || return 1
+  v="$(sed -n 's/.*<key>WorkingDirectory<\/key>[[:space:]]*<string>\(.*\)<\/string>.*/\1/p' "$PLIST" 2>/dev/null | head -1)"
+  [ -n "$v" ] || return 1
+  v="$(printf '%s' "$v" | sed -e 's/&lt;/</g' -e 's/&gt;/>/g' -e 's/&amp;/\&/g')"
+  printf '%s' "$v"
+}
+# The data dir the service itself reported on its last successful start.
+log_data_dir() {
+  local v
+  [ -f "${LOG:-}" ] || return 1
+  v="$(sed -n 's/.*"event":"front_door_started".*"dataDir":"\([^"]*\)".*/\1/p' "${LOG:-}" 2>/dev/null | tail -1)"
+  [ -n "$v" ] && printf '%s' "$v"
+}
+src_of() { # <dir> : names the FIRST witness that recorded it
+  [ -n "$1" ] || return 0
+  [ -n "$LIVE_DATA" ] && [ "$1" = "$LIVE_DATA" ] && { printf 'live service store'; return 0; }
+  [ -n "$LOG_DATA" ] && [ "$1" = "$LOG_DATA" ] && { printf 'previous service log'; return 0; }
+  [ -n "$LAUNCHER_DATA" ] && [ "$1" = "$LAUNCHER_DATA" ] && { printf 'previous launcher'; return 0; }
+  [ -n "$PLIST_DATA" ] && [ "$1" = "$PLIST_DATA" ] && { printf 'LaunchAgent'; return 0; }
+  [ -n "$RECORDED_DATA" ] && [ "$1" = "$RECORDED_DATA" ] && { printf 'active.json'; return 0; }
+  printf 'default'
+}
+LIVE_DATA="$(live_store 2>/dev/null)" || LIVE_DATA=""
+LAUNCHER_DATA="$(launcher_data_dir 2>/dev/null)"; LAUNCHER_RC=$?
+LAUNCHER_DATA_UNCERTAIN=0
+[ "$LAUNCHER_RC" = 0 ] || LAUNCHER_DATA=""
+[ "$LAUNCHER_RC" = 2 ] && LAUNCHER_DATA_UNCERTAIN=1
+PLIST_DATA="$(plist_data_dir 2>/dev/null)" || PLIST_DATA=""
+LOG_DATA="$(log_data_dir 2>/dev/null)" || LOG_DATA=""
+RECORDED_DATA="$(jget "$P/active.json" dataDir)"
+DATA=""; DATA_SOURCE=""
+if [ -n "${COUNCIL_DATA_DIR:-}" ]; then
+  DATA="$COUNCIL_DATA_DIR"; DATA_SOURCE="COUNCIL_DATA_DIR"
+elif [ -n "$LIVE_DATA" ]; then
+  DATA="$LIVE_DATA"; DATA_SOURCE="live service store"
+else
+  _stores=""; _n_store=0; _store=""; _dirs=""; _n_dir=0; _dir=""; _seen=""
+  _nl="
+"
+  for _c in "$LOG_DATA" "$LAUNCHER_DATA" "$PLIST_DATA" "$RECORDED_DATA"; do
+    [ -n "$_c" ] || continue
+    case "$_seen" in *"$_nl$_c$_nl"*) continue ;; esac
+    _seen="$_seen$_nl$_c$_nl"
+    [ -d "$_c" ] || continue
+    if [ -f "$_c/council.db" ]; then
+      _n_store=$((_n_store+1)); _store="$_c"
+      [ -z "$_stores" ] && _stores="$_c" || _stores="$_stores, $_c"
+    else
+      _n_dir=$((_n_dir+1)); [ -n "$_dir" ] || _dir="$_c"
+      [ -z "$_dirs" ] && _dirs="$_c" || _dirs="$_dirs, $_c"
+    fi
+  done
+  if [ "$_n_store" -gt 1 ]; then
+    notready STORE_AUTHORITY_UNKNOWN "several recorded directories hold a council.db ($_stores) and no live service names one; refusing to guess - set COUNCIL_DATA_DIR to the store to keep"
+  elif [ "$_n_store" = 1 ]; then
+    DATA="$_store"; DATA_SOURCE="$(src_of "$_store")"
+  elif [ "$_n_dir" -gt 1 ]; then
+    notready STORE_AUTHORITY_UNKNOWN "several recorded data directories exist and none holds a council.db ($_dirs); refusing to guess - set COUNCIL_DATA_DIR"
+  elif [ "$_n_dir" = 1 ]; then
+    DATA="$_dir"; DATA_SOURCE="$(src_of "$_dir")"
+  elif [ "$LAUNCHER_DATA_UNCERTAIN" = 1 ]; then
+    notready STORE_AUTHORITY_UNKNOWN "the launcher this script wrote last time ($P/bin/council-service) records COUNCIL_SERVICE_DATA_DIR in a shape that cannot be parsed safely, no other witness names a store and no recorded data directory exists; falling back to $OC/council-data would be a guess - set COUNCIL_DATA_DIR to the store to keep"
+  else
+    DATA="$OC/council-data"; DATA_SOURCE="default"
+  fi
+fi
+# An explicit COUNCIL_DATA_DIR still wins, but a store-less explicit choice next
+# to a recorded store is never allowed to pass unseen.
+if [ -n "${COUNCIL_DATA_DIR:-}" ] && [ ! -f "$DATA/council.db" ]; then
+  for _c in "$LIVE_DATA" "$LOG_DATA" "$LAUNCHER_DATA" "$PLIST_DATA" "$RECORDED_DATA"; do
+    [ -n "$_c" ] && [ "$_c" != "$DATA" ] && [ -f "$_c/council.db" ] && {
+      say "STORE_AUTHORITY_NOTICE COUNCIL_DATA_DIR=$DATA holds no council.db while $_c does; the explicit choice still wins and nothing is copied"
+      break
+    }
+  done
+fi
+if [ "$DATA" != "${RECORDED_DATA:-}" ] && { [ -n "$RECORDED_DATA" ] || [ "$DATA_SOURCE" != "default" ]; }; then
+  say "STORE_AUTHORITY_RESOLVED $DATA ($DATA_SOURCE; active.json recorded ${RECORDED_DATA:-nothing})"
+fi
+if [ -n "$LIVE_DATA" ] && [ "$DATA" != "$LIVE_DATA" ]; then
+  say "STORE_SWITCH $LIVE_DATA -> $DATA ($DATA_SOURCE); sessions in the live store stay there, nothing is migrated or copied"
+fi
+
 # ------------------------------------------------------------------- 5. build
 mkdir -p "$LOGDIR" "$P" 2>/dev/null
 PREV_REL="$(jget "$P/active.json" releaseId)"
@@ -312,6 +476,15 @@ if [ -z "$REL_ID" ] || [ ! -f "$REL_PATH/scripts/service-launch.mjs" ] || [ ! -f
   say "NOT_READY RUNTIME_BUILD_FAILED active.json does not describe a usable release (id=$REL_ID path=$REL_PATH; the release must carry dist/blackceo-council.mjs)"
   exit 1
 fi
+# The launcher and the LaunchAgent are generated from DATA_DIR (the store
+# active.json records). If the installer did not record the store resolved in
+# 5a - a NOOP that ignored --data-dir - the service would be started on a
+# DIFFERENT store than the one this run decided is authoritative. That is a
+# silent store switch, so it is refused here, before any launcher is written.
+if [ "${DATA_DIR:-}" != "$DATA" ]; then
+  say "NOT_READY STORE_AUTHORITY_MISMATCH active.json records '${DATA_DIR:-none}' but the authoritative store is '$DATA' ($DATA_SOURCE); refusing to generate a launcher on a different store - nothing copied, nothing migrated"
+  exit 0
+fi
 # Installer truth: verify the ACTUAL entry point the shim execs -- byte hash
 # against the release's artifact receipt, plus a parse-level load check.
 # Never 'ready' from SKILL.md presence or source match alone: a missing or
@@ -328,6 +501,20 @@ if ! "$NODE_EXE" --check "$ENTRY" >/dev/null 2>&1; then
   say "NOT_READY RUNTIME_BUILD_FAILED entry point $ENTRY does not load (node --check failed); previous files preserved, nothing switched"
   exit 1
 fi
+# --------------------------------- 5c. durable front door (CTR-103)
+# The installed `council-ask` must NEVER exec a path inside the skill checkout
+# that ran this wiring: that checkout may be a lane worktree or a temporary
+# clone that post-merge hygiene deletes. Copy the front door and its one helper
+# into $P/frontdoor/<release-id>/ (immutable, versioned, never deleted) and bake
+# THAT path into the shim. Not inside the release dir: a release is hash-covered
+# by its artifact receipt, and install-runtime refuses an "unexpected generated
+# file" there. The copy is load-checked before any shim is written.
+ASK_ENTRY="$(bash "$SKILL_DIR/scripts/install-front-door.sh" "$P" "$REL_ID" "$SKILL_DIR" "$NODE_EXE" 2>&1)"
+_ask_rc=$?
+if [ "$_ask_rc" -ne 0 ] || [ ! -f "$ASK_ENTRY" ]; then
+  notready FRONTDOOR_INSTALL_FAILED "durable front door not installed (rc=$_ask_rc): ${ASK_ENTRY:-no detail}"
+fi
+
 CHANGED=0
 [ "$REL_ID" != "$PREV_REL" ] && CHANGED=1
 
@@ -380,15 +567,40 @@ CC_URL="${CC_PUBLIC_URL:-${MC_TENANT_PUBLIC_URL:-}}"
 if [ -z "$CC_URL" ]; then CC_URL="$(envget "$CC_APP/.env.local" CC_PUBLIC_URL)"; fi
 if [ -z "$CC_URL" ]; then CC_URL="$(envget "$CC_APP/.env.local" MC_TENANT_PUBLIC_URL)"; fi
 if [ -z "$CC_URL" ]; then CC_URL="$(jget "$OC/workspace/.workforce-build-state.json" commandCenterUrl)"; fi
-PUBLIC=""
+# COUNCIL_PUBLIC_ORIGIN is the operator's direct answer and wins over every
+# derived source: a box can serve two Council hostnames (the operator Mac
+# serves council. and trevor-council.zerohumanworkforce.com today), and this
+# script must never pick between them by guessing.
+PUBLIC="${COUNCIL_PUBLIC_ORIGIN:-}"
+PUBLIC_SOURCE=""
+[ -n "$PUBLIC" ] && PUBLIC_SOURCE="COUNCIL_PUBLIC_ORIGIN"
 if [ -n "$CC_URL" ]; then
   _h="${CC_URL#*://}"; _h="${_h%%/*}"; _h="${_h%%:*}"
   case "$_h" in
     ''|localhost|localhost.*|'['*) ;;          # never localhost or an IPv6 literal
-    *[!0-9.]*) case "$_h" in *.*) PUBLIC="https://${_h%%.*}-council.${_h#*.}" ;; esac ;;  # not an IPv4 literal
+    *[!0-9.]*) case "$_h" in *.*) [ -z "$PUBLIC" ] && { PUBLIC="https://${_h%%.*}-council.${_h#*.}"; PUBLIC_SOURCE="command center host"; } ;; esac ;;  # not an IPv4 literal
   esac
 fi
-if [ -z "$PUBLIC" ]; then PUBLIC="$(jget "$P/service.json" public_origin)"; fi
+if [ -z "$PUBLIC" ]; then
+  PUBLIC="$(jget "$P/service.json" public_origin)"
+  [ -n "$PUBLIC" ] && PUBLIC_SOURCE="service.json"
+fi
+# Never bake an origin no client can open: loopback is the box's own screen,
+# and the reserved documentation TLDs (example.com, .example, .test, .invalid)
+# are fixtures. The operator box's service.json carried
+# "https://fixed.example.com" on 2026-10-29, which made the chamber link a dead
+# URL in the reply. A rejected origin is dropped, never "repaired" by guessing.
+if [ -n "$PUBLIC" ]; then
+  _h2="${PUBLIC#*://}"; _h2="${_h2%%/*}"; _h2="${_h2%%:*}"; _h2="$(printf '%s' "$_h2" | tr '[:upper:]' '[:lower:]')"
+  case "$_h2" in
+    # Apex AND subdomains: "example.com" alone is a fixture just as much as
+    # "x.example.com" (council-entry.mjs rejects the first; the probe usually
+    # drops the apex anyway, but not with COUNCIL_PUBLIC_ORIGIN_SKIP_PROBE=1).
+    ''|localhost|*.localhost|127.*|0.0.0.0|'['*|::1|example.com|example.net|example.org|example|test|invalid|*.example.com|*.example.net|*.example.org|*.example|*.test|*.invalid)
+      say "PUBLIC_ORIGIN_REJECTED $PUBLIC ($PUBLIC_SOURCE: loopback or documentation host, not a client link)"
+      PUBLIC="" ;;
+  esac
+fi
 # The candidate is always baked into the shim; the CLI re-checks it at convene time.
 CANDIDATE="$PUBLIC"
 # Keep the candidate only if it answers like a Cloudflare Access login (302/303 to
@@ -428,22 +640,47 @@ SHIM="$P/bin/blackceo-council"
   printf 'exec %s %s "$@"\n' "$(sq "$NODE_EXE")" "$(sq "$REL_PATH/dist/blackceo-council.mjs")"
 } >"$SHIM.tmp.$$" && chmod 755 "$SHIM.tmp.$$" && mv -f "$SHIM.tmp.$$" "$SHIM"
 
+# The documented front door. One command that proves the service authority,
+# opens a NEW session for an explicit ask, reads sessions from the SERVICE
+# (never the CLI's local store) and always emits the chamber link + desktop
+# pop. Same env as the CLI shim, plus the CLI itself so the entry command
+# never has to guess which shim to delegate convening to.
+ASK_SHIM="$P/bin/council-ask"
+{
+  printf '#!/bin/sh\n# %s\n' "$MARK"
+  printf 'WISE_ELDERS_SERVICE_ORIGIN=%s; export WISE_ELDERS_SERVICE_ORIGIN\n' "$(sq "$ORIGIN")"
+  printf 'WISE_ELDERS_SERVICE_JSON=%s; export WISE_ELDERS_SERVICE_JSON\n' "$(sq "$P/service.json")"
+  printf 'WISE_ELDERS_OPENCLAW_ROOT=%s; export WISE_ELDERS_OPENCLAW_ROOT\n' "$(sq "$OC")"
+  printf 'COUNCIL_CLI=%s; export COUNCIL_CLI\n' "$(sq "$SHIM")"
+  [ -n "$CANDIDATE" ] && printf 'WISE_ELDERS_PUBLIC_CANDIDATE=%s; export WISE_ELDERS_PUBLIC_CANDIDATE\n' "$(sq "$CANDIDATE")"
+  [ -n "$PUBLIC" ] && printf 'WISE_ELDERS_PUBLIC_ORIGIN=%s; export WISE_ELDERS_PUBLIC_ORIGIN\n' "$(sq "$PUBLIC")"
+  printf 'exec %s %s "$@"\n' "$(sq "$NODE_EXE")" "$(sq "$ASK_ENTRY")"
+} >"$ASK_SHIM.tmp.$$" && chmod 755 "$ASK_SHIM.tmp.$$" && mv -f "$ASK_SHIM.tmp.$$" "$ASK_SHIM"
+
 LSHA="$(sha_file "$LAUNCHER")"
 PREV_SHA="$(jget "$P/service.json" launcher_sha256)"
 
-link_shim() { # <bin dir> : symlink our shim unless a foreign file owns the name
-  local d="$1" t="$1/blackceo-council"
+link_shim() { # <bin dir> <name> <src> : symlink unless a foreign file owns the name
+  local d="$1" n="$2" src="$3" t="$1/$2"
   mkdir -p "$d" 2>/dev/null || return 0
   if [ -e "$t" ] || [ -L "$t" ]; then
     head -n 5 "$t" 2>/dev/null | grep -qF "$MARK" || { say "SHIM_KEPT_EXISTING $t"; return 0; }
   fi
-  ln -sfn "$SHIM" "$t" 2>/dev/null || true
+  ln -sfn "$src" "$t" 2>/dev/null || true
 }
 link_shims() {
-  link_shim "$HOME/.local/bin"
+  local _d
+  for _d in "$HOME/.local/bin"; do
+    link_shim "$_d" blackceo-council "$SHIM"
+    link_shim "$_d" council-ask "$ASK_SHIM"
+  done
   if [ "$PLATFORM" = "vps" ]; then
     for _d in /data/.npm-global/bin "$HOME/.npm-global/bin"; do
-      if [ -d "$_d" ] && [ -w "$_d" ]; then link_shim "$_d"; break; fi
+      if [ -d "$_d" ] && [ -w "$_d" ]; then
+        link_shim "$_d" blackceo-council "$SHIM"
+        link_shim "$_d" council-ask "$ASK_SHIM"
+        break
+      fi
     done
   fi
 }

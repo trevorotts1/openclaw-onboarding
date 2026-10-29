@@ -531,6 +531,33 @@ function activate(prefix, releaseId, releaseDir, sourceManifest, artifactReceipt
   return active;
 }
 
+// The idempotence path returns before activate(), so a requested --data-dir that
+// differs from the active record used to be dropped on the floor: wire.sh then
+// read the OLD dataDir back out of active.json and baked it into the launcher,
+// silently leaving the service on a different store than the one it resolved.
+// Record the requested durable data dir on an otherwise-unchanged release (it is
+// a config field of active.json, never a release file, never a receipt) so a
+// NOOP is honest. Nothing is copied, migrated or deleted here.
+function recordDataDir(activePath, active, dataDir) {
+  if (!dataDir || active.dataDir === dataDir) return false;
+  try {
+    mkdirSync(dataDir, { recursive: true });
+    writeJsonAtomic(activePath, { ...active, dataDir });
+    return true;
+  } catch (error) {
+    // Never pretend it was recorded: the old value stays and wire.sh refuses the
+    // disagreement with NOT_READY STORE_AUTHORITY_MISMATCH.
+    console.log(`FAIL data-dir: cannot record ${dataDir}: ${formatError(error)}`);
+    return false;
+  }
+}
+
+function noopDetail(active, dataDir, recorded) {
+  if (recorded) return `only active.json dataDir updated to ${dataDir}`;
+  if (active.dataDir === dataDir) return "nothing changed";
+  return "dataDir NOT updated (see the FAIL line above)";
+}
+
 function formatError(error) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -685,7 +712,8 @@ export async function main(argv) {
       if (sameSource && sameNode && existsSync(active.releasePath)) {
         const checked = verifyRelease(prefix, active.releasePath, probe.executable);
         if (checked.ok) {
-          console.log(`NOOP: release ${active.releaseId} already matches ${sourceManifest.digest} and verifies; nothing changed`);
+          const recorded = recordDataDir(activePath, active, dataDir);
+          console.log(`NOOP: release ${active.releaseId} already matches ${sourceManifest.digest} and verifies; ${noopDetail(active, dataDir, recorded)}`);
           return 0;
         }
         console.log(`INFO active release failed verification (${checked.problems.join("; ")}); rebuilding`);
@@ -706,7 +734,8 @@ export async function main(argv) {
     if (active.releaseId === releaseId && existsSync(finalDir)) {
       const checked = verifyRelease(prefix, finalDir, probe.executable);
       if (checked.ok) {
-        console.log(`NOOP: release ${releaseId} is active and verifies; nothing changed`);
+        const recorded = recordDataDir(activePath, active, dataDir);
+        console.log(`NOOP: release ${releaseId} is active and verifies; ${noopDetail(active, dataDir, recorded)}`);
         return 0;
       }
     }

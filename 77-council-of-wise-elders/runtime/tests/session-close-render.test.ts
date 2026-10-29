@@ -237,16 +237,35 @@ test('R1: real store -> default close -> actual renderer writes index.html with 
   assert.ok(html.includes('The stored verdict reason.'), 'the consensus section must carry the store verdict reason');
   assert.ok(html.includes('Stored prerequisite one.'), 'the actions section must carry the store verdict prerequisite');
 
-  // PDF verdict, named for this box: rendered by the real headless
-  // renderer when one exists, or the documented print-from-browser
-  // degrade — never faked, never a blocker.
+  // PDF verdict, named for this box. The renderer's documented contract
+  // (scripts/render-counsel-artifact.mjs: "a PDF is best effort only ...
+  // nothing here ever blocks on PDF production and no PDF is ever faked by
+  // renaming HTML") means a real renderer either produces a real PDF or the
+  // run degrades to print-from-browser. The earlier assertion required
+  // 'rendered' whenever a renderer binary merely EXISTED, so a box with
+  // Chrome present but unable to complete the print (profile lock, window
+  // server, timeout) failed a test whose subject is the artifact, not the
+  // PDF. What is asserted now is the honesty the contract actually
+  // promises: the two documented states only, the verdict names the
+  // renderer this box probed, and 'rendered' must be a real %PDF file.
   const probe = probePdfRenderer();
   const pdf = finalized.artifact as { pdf?: { status: string; method: string | null; pdfPath: string | null } };
-  if (probe.method !== null) {
-    assert.equal(pdf?.pdf?.status, 'rendered', `a real ${probe.method} renderer exists, so the PDF must be rendered`);
-    assert.ok(pdf!.pdf!.pdfPath && existsSync(pdf!.pdf!.pdfPath), 'the rendered PDF file must exist');
+  assert.ok(pdf?.pdf, 'finalize must report the PDF verdict');
+  assert.ok(
+    pdf!.pdf!.status === 'rendered' || pdf!.pdf!.status === 'print-from-browser',
+    `the PDF verdict must be one of the two documented states, got ${String(pdf!.pdf!.status)}`,
+  );
+  assert.equal(
+    pdf!.pdf!.method,
+    probe.method,
+    'the verdict must name the renderer this box actually probed, never a different one',
+  );
+  if (pdf!.pdf!.status === 'rendered') {
+    assert.ok(pdf!.pdf!.pdfPath && existsSync(pdf!.pdf!.pdfPath), 'a rendered PDF must exist on disk');
+    const head = readFileSync(pdf!.pdf!.pdfPath!).subarray(0, 4).toString('latin1');
+    assert.equal(head, '%PDF', 'a rendered PDF must be a real PDF, never a renamed HTML file');
   } else {
-    assert.equal(pdf?.pdf?.status, 'print-from-browser', 'no headless renderer on this box: the documented honest degrade');
+    assert.equal(pdf!.pdf!.pdfPath, null, 'the documented degrade ships no PDF path');
   }
 
   // Idempotence unchanged: a second finalize renders nothing more.

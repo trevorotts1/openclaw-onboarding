@@ -1,5 +1,5 @@
 ---
-version: 1.0.69
+version: 1.0.70
 name: council-of-wise-elders
 description: Convene a source-grounded Council of Wise Elders for business or
   personal decisions, test alternatives, explain disagreements, produce one
@@ -152,6 +152,7 @@ brief and the flow look identical either way.
 Recognize these explicit phrases through the existing intent router:
 
 - "Ask my Council of Wise Elders"
+- "Ask the council" ("ask the council ...", "take this to the council")
 - "Take this decision to the council"
 - "Ask the Tiffany Aliche seat" (any named seat works the same way)
 - "Review this plan with the council"
@@ -162,6 +163,66 @@ council. Recognize existing-session controls before creating new work:
 titled Stop that council. "What did they decide?" reads the verdict.
 "Explain Russell's objection" retrieves an existing objection as a read, and
 creates a linked consult only when new inference is requested.
+
+## The front door: one command
+
+`council-ask` (installed beside `blackceo-council` by `wire.sh`) is the
+supported entry point for every council call. It does the whole front door in
+one step, so no part of it is a second, optional agent action:
+
+```
+council-ask ask --brief FILE [--mode light|medium|heavy] [--route R] [--model M] [--json]
+council-ask session <session-id> [--json]
+council-ask sessions [--json]
+council-ask authority [--json]
+```
+
+`--json` prints exactly one JSON document on stdout (a refusal is one JSON
+document on stderr). Every subcommand honours it; never advertise a flag the
+command ignores.
+
+The installed shim execs
+`$OPENCLAW_ROOT/council-runtime/frontdoor/<release-id>/scripts/council-entry.mjs`,
+a durable copy made by `scripts/install-front-door.sh` during `wire.sh`. It
+never points into the skill checkout that ran the wiring, because that
+checkout can be a lane worktree or a temporary clone that is deleted after
+merge. The source copy in this skill (`node scripts/council-entry.mjs`) never
+expires, so the command works from a checkout too.
+
+Four rules it enforces, and the agent must not re-implement them by hand:
+
+1. **An explicit ask always opens a NEW session.** A `COMPLETED` sitting on
+   the same question is context, not the answer: the command says so in one
+   line and still convenes. Only an OPEN session (in progress) is continued,
+   and a `BLOCKED` one is resolved, never reused as the answer. Answering
+   "ask the council" with a four-day-old verdict is a failure, not a
+   shortcut (recorded on the operator box, 2026-10-28).
+2. **The service is the authority.** `council-ask ask` proves the service
+   answers `/healthz` before it convenes. If it does not, the command
+   refuses with `COUNCIL_SERVICE_DOWN` and the exact recovery. Report that
+   refusal plainly; never start a parallel council and never simulate one.
+3. **Session reads go through the service.** `council-ask session <id>` and
+   `council-ask sessions` read the service store. `blackceo-council status`,
+   `pause`, `cancel` and `verdict` read the CLI's LOCAL store instead, so on
+   a box whose sessions live in the service they report
+   `COUNCIL_SESSION_NOT_FOUND` for sessions that exist. Never use them as
+   the authority for "did the council run?".
+4. **The chamber link is part of the call; the desktop pop is best effort.**
+   The command runs `scripts/chamber-visual.sh` itself and always prints the
+   one `Chamber link:` line. Copy that exact line; do not run a separate "now
+   get the link" step, because it gets skipped. The pop is delivered to the
+   box's own desktop when a GUI session can be reached (an Aqua process, or a
+   root bridge through `launchctl asuser`); otherwise the helper reports
+   `pop: skipped` or `pop: failed` on stderr and the link is still printed.
+   A headless box, a VPS, or an ssh session never claims a pop it did not
+   deliver. Nothing here sends to Telegram or any other channel: the agent's
+   own reply is the delivery path, and the link line must be pasted into it.
+
+`council-ask authority` prints the box's real state (service origin and
+health, the actual LaunchAgent name from `service.json`, release id, public
+origin, CLI path, and the front door path that is actually executing). An
+adopted box keeps its own LaunchAgent name, so read it from there rather than
+assuming the default.
 
 ## How a council runs
 

@@ -27,8 +27,15 @@ and dispatch are the proven live legs.
    values pulling against each other; there is no money check), announce
    the size in one line, and honor the client's override: "quick answer"
    is light, "full council" is heavy.
-2. Resolve existing sessions first. If a council is already open for the
-   same decision, continue it; never create a duplicate.
+2. Resolve existing sessions first, and know what "open" means. An
+   explicit front-door ask ("ask the council", "take this to the council")
+   ALWAYS opens a new session: a COMPLETED sitting on the same question is
+   context and never the answer, and a BLOCKED one is resolved rather than
+   reused. Only a session actually in progress is continued; never create a
+   duplicate of a running one. Read that list with `council-ask sessions`
+   (the service store), never with `blackceo-council status` (the CLI's
+   local store, which reports COUNCIL_SESSION_NOT_FOUND for sessions the
+   service holds).
 3. Build the brief from permitted context only, with the one shared
    brief-builder (`runtime/src/brief/permitted-brief.ts`) running FIRST
    in the convene flow. It reads the door's own memory files through
@@ -81,7 +88,12 @@ and dispatch are the proven live legs.
    JSON array of `{claim, url, title, retrieved_at}`. Keep "From the
    elder's books" and "From the web today" separate in everything you
    tell the client, and never fabricate a finding, URL or date.
-7. Convene with
+7. Convene with `council-ask ask --brief FILE [--mode light|medium|heavy]`.
+   It is the supported front door: it proves the service answers first
+   (refusing `COUNCIL_SERVICE_DOWN` instead of improvising), convenes
+   through `blackceo-council convene`, and prints the chamber link while
+   popping it on a desktop, so the link is never a second, optional step.
+   The underlying client is
    `blackceo-council convene --brief FILE --mode light|medium|heavy` (or
    `--sample` for the built-in sample decision). Convening with no `--mode`
    runs medium; that default is deliberate, so name the mode you

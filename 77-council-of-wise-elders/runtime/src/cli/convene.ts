@@ -8,10 +8,13 @@
  * It never picks a model itself: the service resolves the route.
  */
 
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { browserOpenCommand } from '../bridges/browser-open.js';
 import type { CliIo } from './dispatcher.js';
 import { CouncilError, invalidInput, usageError, type CouncilErrorCode } from './errors.js';
+import { openclawRoot } from './paths.js';
 
 export type Harness = 'claude-nine' | 'claude-code' | 'deepseek' | 'unknown';
 
@@ -42,13 +45,20 @@ export interface ConveneOpts {
   probeTimeoutMs?: number;
   env?: NodeJS.ProcessEnv;
   io: CliIo;
+  /**
+   * Test seam: the desktop opener. Tests inject a recorder so no browser
+   * is ever launched. The default is fire-and-forget and never blocks.
+   */
+  openUrl?: (url: string) => void;
+  /** Test seam: whether a desktop (GUI) session exists. */
+  guiPresent?: () => boolean;
 }
 
 interface Parsed {
   flags: Map<string, string | true>;
 }
 
-const BOOLEAN_FLAGS = new Set(['sample', 'json']);
+const BOOLEAN_FLAGS = new Set(['sample', 'json', 'no-open']);
 const ROUTES_FLAGS = new Set(['origin', 'json', 'data-dir']);
 const CONVENE_FLAGS = new Set([
   'sample',
@@ -65,6 +75,7 @@ const CONVENE_FLAGS = new Set([
   'public-origin',
   'json',
   'data-dir',
+  'no-open',
 ]);
 
 function parse(args: string[], allowed: Set<string>, command: string): Parsed {
@@ -105,19 +116,39 @@ function resolveOrigin(p: Parsed, env: NodeJS.ProcessEnv): string {
 // The address the client opens in a browser (the per-box Cloudflare Access
 // hostname). Links only: API calls keep using resolveOrigin (loopback).
 // Null when unset; otherwise an https origin with no path, query or login.
-function resolvePublicOrigin(p: Parsed, env: NodeJS.ProcessEnv): string | null {
-  const raw = str(p, 'public-origin') ?? env.WISE_ELDERS_PUBLIC_ORIGIN;
-  if (raw === undefined || raw === '') return null;
+/**
+ * A public origin is one plain https origin: no path, query, fragment,
+ * credentials or loopback spelling. Null when the input does not qualify.
+ */
+export function validPublicOrigin(raw: string | undefined | null): string | null {
+  if (typeof raw !== 'string' || raw.length === 0) return null;
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
-    throw invalidInput(`The public origin "${raw}" is not a valid URL.`);
+    return null;
   }
   if (url.protocol !== 'https:' || url.pathname !== '/' || url.search || url.hash || url.username || url.password) {
-    throw invalidInput(`The public origin "${raw}" must be an https origin with no path, query or login, like https://name.example.com.`);
+    return null;
   }
   return url.origin;
+}
+
+function resolvePublicOrigin(p: Parsed, env: NodeJS.ProcessEnv): string | null {
+  const raw = str(p, 'public-origin') ?? env.WISE_ELDERS_PUBLIC_ORIGIN;
+  if (raw === undefined || raw === '') return null;
+  let isUrl = true;
+  try {
+    new URL(raw);
+  } catch {
+    isUrl = false;
+  }
+  if (!isUrl) throw invalidInput(`The public origin "${raw}" is not a valid URL.`);
+  const origin = validPublicOrigin(raw);
+  if (origin === null) {
+    throw invalidInput(`The public origin "${raw}" must be an https origin with no path, query or login, like https://name.example.com.`);
+  }
+  return origin;
 }
 
 const PROBE_TIMEOUT_MS = 5_000;
@@ -163,6 +194,53 @@ function envFileValue(path: string, key: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The box's own service record. WISE_ELDERS_SERVICE_JSON is what the
+ * supported `blackceo-council` shim exports; the fallback is the same
+ * file chamber-visual.sh reads. Null unless the environment actually
+ * names a box layout: a bare test environment must never read (or write)
+ * the real operator box's record.
+ */
+export function serviceJsonPath(env: NodeJS.ProcessEnv): string | null {
+  const explicit = env.WISE_ELDERS_SERVICE_JSON;
+  if (explicit && explicit.trim().length > 0) return explicit;
+  if (env.WISE_ELDERS_OPENCLAW_ROOT || env.OPENCLAW_ROOT || env.HOME) {
+    return join(openclawRoot(env), 'council-runtime', 'service.json');
+  }
+  return null;
+}
+
+/** The verified public_origin the service itself persists, if any. */
+function serviceJsonPublicOrigin(env: NodeJS.ProcessEnv): string | null {
+  const path = serviceJsonPath(env);
+  if (path === null) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { public_origin?: unknown };
+    return validPublicOrigin(typeof parsed.public_origin === 'string' ? parsed.public_origin : null);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The durable chamber origin: the env value the box already carries, then
+ * the service's own persisted public_origin (written only after a verified
+ * probe). Reads use this WITHOUT any network call, so an existing-session
+ * read stays an honest read: no probe, no new request, no question.
+ */
+export function durablePublicOrigin(env: NodeJS.ProcessEnv): string | null {
+  return (
+    validPublicOrigin(env.COUNCIL_PUBLIC_URL) ??
+    validPublicOrigin(env.WISE_ELDERS_PUBLIC_ORIGIN) ??
+    serviceJsonPublicOrigin(env)
+  );
+}
+
+/** The per-session Roast Room address, identical to chamber-visual.sh's. */
+export function chamberUrlFor(origin: string, sessionId: string): string {
+  return `${origin}/chamber/#session=${encodeURIComponent(sessionId)}`;
 }
 
 // Candidate Council addresses, best first, re-derived at convene time from
@@ -253,6 +331,48 @@ function persistPublicOrigin(path: string | undefined, origin: string): void {
   } catch {
     /* link still works for this run */
   }
+}
+
+/**
+ * Does this process have a desktop session? Mirrors chamber-visual.sh:
+ * macOS only, and only under the Aqua window manager. Anything else is
+ * headless and opens nothing.
+ */
+function defaultGuiPresent(): boolean {
+  // Never pop a browser from a test process, whatever window server the
+  // machine running the suite happens to have.
+  if (process.env.NODE_TEST_CONTEXT) return false;
+  if (process.platform !== 'darwin') return false;
+  try {
+    const result = spawnSync('launchctl', ['managername'], { encoding: 'utf8' });
+    return String(result.stdout ?? '').trim() === 'Aqua';
+  } catch {
+    return false;
+  }
+}
+
+/** Fire-and-forget opener: never awaited, never blocks the reply. */
+function defaultOpenUrl(url: string): void {
+  try {
+    const { command, args } = browserOpenCommand(url);
+    const child = spawn(command, args, { detached: true, stdio: 'ignore' });
+    child.on('error', () => {
+      /* opening is a convenience; the printed link is the truth */
+    });
+    child.unref();
+  } catch {
+    /* a missing opener never breaks a convene */
+  }
+}
+
+function desktopEnabled(env: NodeJS.ProcessEnv, opts: ConveneOpts): boolean {
+  const forced = env.COUNCIL_CHAMBER_OPEN;
+  if (forced === '0' || forced === 'no' || forced === 'false') return false;
+  if (forced === '1' || forced === 'yes' || forced === 'true') return true;
+  const gui = env.COUNCIL_CHAMBER_GUI;
+  if (gui === '0' || gui === 'no' || gui === 'absent') return false;
+  if (gui === '1' || gui === 'yes' || gui === 'present') return true;
+  return (opts.guiPresent ?? defaultGuiPresent)();
 }
 
 // The service speaks its own refusal codes (COMPOSITION_NOT_READY, ...), which
@@ -432,7 +552,9 @@ export async function runConvene(args: string[], opts: ConveneOpts): Promise<num
       throw usageError(`--harness must be one of ${CHOOSABLE_HARNESSES.join(', ')}.`);
     }
     const origin = resolveOrigin(p, env);
-    let publicOrigin = resolvePublicOrigin(p, env);
+    // The explicit env/flag wins; else the box's own durable, previously
+    // verified record; only with neither does the convene-time probe run.
+    let publicOrigin = resolvePublicOrigin(p, env) ?? durablePublicOrigin(env);
     // No fixed origin: resolve the link now, in parallel with the convene call.
     const probe =
       publicOrigin === null
@@ -477,14 +599,33 @@ export async function runConvene(args: string[], opts: ConveneOpts): Promise<num
     if (factsPath !== null) body.fresh_facts = readFreshFacts(factsPath);
 
     const res = await callService(origin, '/api/council/convene', { method: 'POST', body }, opts.fetchImpl ?? fetch);
-    if (probe !== null) {
-      publicOrigin = await probe;
-      if (publicOrigin !== null) persistPublicOrigin(env.WISE_ELDERS_SERVICE_JSON, publicOrigin);
+    // An explicit new council request must be a NEW session. The service
+    // creates one per convene; a terminal state here would mean an
+    // existing session was substituted for the requested sitting, so it
+    // is refused instead of being printed as the new result.
+    if (res.state === 'COMPLETED' || res.state === 'CANCELLED' || res.state === 'FAILED') {
+      throw serviceError(
+        'CONVENE_NOT_NEW',
+        `The service answered this new council request with session ${String(res.session_id)} already ${String(res.state)}, so no new sitting was created.`,
+        'Convene again; a new request must create a new session, never return a finished one.',
+      );
+    }
+    if (probe !== null) publicOrigin = await probe;
+    // Persist the verified address in the box's own service record whether
+    // it came from the probe or from the environment, so later reads and
+    // later runs carry the SAME durable chamber URL.
+    if (publicOrigin !== null) {
+      persistPublicOrigin(env.WISE_ELDERS_SERVICE_JSON ?? serviceJsonPath(env) ?? undefined, publicOrigin);
     }
     const sessionId = String(res.session_id);
     const sessionUrl = `${origin}${typeof res.session_path === 'string' ? res.session_path : `/council/${sessionId}`}`;
     const eventsUrl = `${origin}${typeof res.events_path === 'string' ? res.events_path : `/api/council/sessions/${sessionId}/events`}`;
-    const chamberUrl = publicOrigin === null ? null : `${publicOrigin}/chamber/#session=${sessionId}`;
+    const chamberUrl = publicOrigin === null ? null : chamberUrlFor(publicOrigin, sessionId);
+    // The supported invocation opens the chamber on a desktop box; a
+    // headless box opens nothing and still prints the link.
+    if (chamberUrl !== null && !p.flags.has('no-open') && desktopEnabled(env, opts)) {
+      (opts.openUrl ?? defaultOpenUrl)(chamberUrl);
+    }
     if (json) {
       const extra = chamberUrl === null ? {} : { chamber_url: chamberUrl };
       opts.io.out(`${JSON.stringify({ ...res, session_url: sessionUrl, events_url: eventsUrl, ...extra }, null, 2)}\n`);
