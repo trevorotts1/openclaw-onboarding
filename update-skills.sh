@@ -2083,7 +2083,45 @@ reap_dead_skill_manifest() {
 # GHL MCP wiring uses `openclaw mcp set` which validates its own
 # input. This helper is provided here as a forward-defense guard
 # so future changes are forced to go through validation + rollback.
+#
+# The validation NEVER touches the live state dir (Big Fleet Roll error #25,
+# same family as #18): see oc_validate_isolated() just below.
 # ----------------------------------------------------------
+
+# Validate a candidate openclaw.json WITHOUT contending with a live gateway.
+#
+# Big Fleet Roll error #25: on OpenClaw 2026.10.x `openclaw config validate`
+# takes the sqlite maintenance lease on the state database even though it only
+# reads. Run against a box whose gateway is serving, it left the gateway alive
+# (pid up) but unanswering (healthz 000) until a restart; run while launchd
+# KeepAlive is about to respawn the gateway, it produces the #18 crash loop
+# ("state ... is undergoing offline maintenance; retry when it finishes"). So
+# "the gateway is not serving right now" is NOT a safe moment either -- the
+# check is ALWAYS isolated: a throwaway COPY of the config, with home, state
+# and config path all pointed at a scratch dir, so the lease it takes is on a
+# database nobody else owns. The schema check itself is unchanged.
+#
+# ponytail: a plugin installed only under the live state dir is invisible to
+# the scratch dir, so a config that references one can validate stricter than
+# it would live. That fails in the safe direction (the edit is rolled back),
+# never as a gateway outage. Revisit only if a real edit is wrongly rolled back.
+#
+# rc 0 = valid; non-zero = invalid OR the isolated check could not be set up
+# (fail closed: an unvalidated edit is never kept).
+oc_validate_isolated() {
+  local cfg="$1" scratch rc=0
+  scratch="$(mktemp -d "${TMPDIR:-/tmp}/oc-validate.XXXXXX")" || return 1
+  if ! cp -f "$cfg" "$scratch/openclaw.json"; then
+    rm -rf "$scratch"
+    return 1
+  fi
+  OPENCLAW_HOME="$scratch" OPENCLAW_STATE_DIR="$scratch" \
+    OPENCLAW_CONFIG_PATH="$scratch/openclaw.json" OPENCLAW_SKIP_UPDATE_CHECK=1 \
+    openclaw config validate >> "$LOG_FILE" 2>&1 || rc=$?
+  rm -rf "$scratch"
+  return "$rc"
+}
+
 safe_json_edit() {
   local OCJSON="$1"
   local DESCRIPTION="${2:-openclaw.json edit}"
@@ -2108,9 +2146,10 @@ safe_json_edit() {
     return 0
   fi
 
-  # Validate with the CLI if available
+  # Validate with the CLI if available -- isolated, never against the live
+  # state dir (see oc_validate_isolated).
   if command -v openclaw >/dev/null 2>&1; then
-    if ! openclaw config validate >> "$LOG_FILE" 2>&1; then
+    if ! oc_validate_isolated "$OCJSON"; then
       echo "  [safe_json_edit] WARN: openclaw config validate FAILED after $DESCRIPTION -- rolling back"
       cp -f "$BACKUP" "$OCJSON" 2>/dev/null || true
       rm -f "$BACKUP" 2>/dev/null || true
