@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oc-atomic-upgrade.sh — v1.0.0
+# oc-atomic-upgrade.sh — v1.1.0
 #
 # THE ONLY SAFE WAY TO MOVE A BOX ONTO A NEW OPENCLAW BUILD.
 #
@@ -14,6 +14,22 @@
 # EFFECT: on one box it silently rewrote `agents.defaults.models` pins. So the
 # old gate degraded to a permanent refusal that froze 35 of 38 boxes while
 # risking model pins for a migration that never happened.
+#
+# WHAT DOCTOR *IS* USED FOR HERE (v1.1.0, fleet-roll errors #16 and #18)
+# `doctor --fix` still cannot migrate `agents.list` -> `agents.entries` (above), and
+# this script never uses it for that. It IS the only migrator of the AGENT/SESSION
+# DATABASE: a gateway on OpenClaw >= 2026.10.5 refuses to boot on an agent database
+# at schema 24 ("run openclaw doctor --fix to migrate session identities"), so a
+# roll that installs the new build and starts it without doctor rolls back every time.
+# On a launchd box this script therefore runs the NEW binary's
+# `doctor --fix --non-interactive` (stdin /dev/null, bounded) AFTER the install and
+# the config rewrite and BEFORE the start, while the gateway is booted out. Doctor
+# takes exclusive maintenance and refuses while any other process holds the state
+# database, so stale `openclaw` CLI processes holding <root>/state/openclaw.sqlite
+# are reaped first (never the gateway, a node service, the app, an ancestor, or
+# anything started during this run). Doctor must not change the model/provider
+# selection; if it does, the upgrade rolls back. The one known doctor refusal this
+# script repairs is the legacy-audit-raw checkpoint (see _repair_audit_checkpoint).
 #
 # ═══════════════════════════════════════════════════════════════════════════
 # THE FOUR FACTS THAT DICTATE THE ORDER OF OPERATIONS
@@ -125,7 +141,10 @@
 #                                    OC_ATOMIC_BOOTOUT_TIMEOUT can still remove the
 #                                    job later; the default (25) outlasts launchd's
 #                                    20s ExitTimeOut. 0 disables (and says so).
-#   Non-numeric values of the three timeouts above fall back to their defaults.
+#   OC_ATOMIC_DOCTOR_TIMEOUT         seconds `doctor --fix --non-interactive` may run
+#                                    before it is killed and the upgrade rolls back
+#                                    (default 900; it backs up and migrates databases)
+#   Non-numeric values of the four timeouts above fall back to their defaults.
 #
 # ═══════════════════════════════════════════════════════════════════════════
 # WHICH OPENCLAW? THE ONE THE SUPERVISOR LAUNCHES (CAN015), NEVER THE ONE ON PATH
@@ -149,7 +168,7 @@
 
 set -uo pipefail
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIGRATOR="$SCRIPT_DIR/oc-schema-migrate.py"
 SUP_HELPER="$SCRIPT_DIR/oc-supervisor-install.py"
@@ -168,6 +187,8 @@ NPM_BIN="${OC_ATOMIC_NPM:-npm}"
 BOOTOUT_TIMEOUT="$(_uint "${OC_ATOMIC_BOOTOUT_TIMEOUT:-}" 60)"
 HEALTH_TIMEOUT="$(_uint "${OC_ATOMIC_HEALTH_TIMEOUT:-}" 60)"
 SETTLE_SECONDS="$(_uint "${OC_ATOMIC_SETTLE_SECONDS:-}" 25)"
+DOCTOR_TIMEOUT="$(_uint "${OC_ATOMIC_DOCTOR_TIMEOUT:-}" 900)"
+RUN_START_EPOCH="$(date +%s)"   # a state-database holder started before this is stale (_reap_state_holders)
 
 GATEWAY_LABEL="ai.openclaw.gateway"
 SELFHEAL_LABEL="com.openclaw.service-remediate"
@@ -190,6 +211,7 @@ SUP_PREFIX=""
 SUP_ENTRY=""
 SUP_SOURCE=""     # launchd | systemd ("" = no supervisor definition)
 SUP_UNIT=""       # definition handle: the plist/unit path, or container:<name> for docker
+DOCTOR_WHY=""     # why _migrate_state_with_doctor failed (the rollback reason)
 
 _say()  { printf '[oc-atomic-upgrade] %s\n' "$*"; }
 _ok()   { printf '[oc-atomic-upgrade] OK    %s\n' "$*"; }
@@ -917,6 +939,292 @@ _prove_gateway_on_target() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# STATE-DATABASE HOLDERS (fleet-roll error #18) AND DOCTOR (error #16)
+# ─────────────────────────────────────────────────────────────────────────────
+# #18: a stale `openclaw` CLI from an earlier run (a hung status / config validate /
+# memory command) still holds <root>/state/openclaw.sqlite open. The new gateway
+# then refuses to start ("undergoing offline maintenance") and doctor refuses to
+# take maintenance ("An agent database is in use"). Only a bare CLI that started
+# BEFORE this run is ever stopped; see _reap_state_holders for what is never touched.
+# #16: the new gateway refuses an agent database at schema 24, and only
+# `doctor --fix` migrates it (see the header). Doctor needs the gateway stopped and
+# no other holder, which is exactly the window this script already owns.
+# Both apply to the launchd supervisor only; a docker install keeps its state inside
+# the container, where nothing here can see it, and is left exactly as before.
+
+_pid_gone() { ! kill -0 "$1" 2>/dev/null; }
+
+# Prints the subcommand word (e.g. "doctor") and returns 0 ONLY when $1 is a bare
+# openclaw CLI invocation: `openclaw <word> ...`, or `node <...>/openclaw[.mjs|/dist/*.js]
+# <word> ...`. Anything else returns 1 and prints nothing: a gateway or node-host service
+# or other long-running / interactive subcommand, the OpenClaw app (*.app), an unparseable
+# command line, or any process that is not openclaw. Only ps's argument vector is read
+# (never the environment), and only the subcommand word is ever printed.
+_cli_holder_subcommand() (
+  local args tok seen=0 sub=""
+  args="$(ps -o args= -p "$1" 2>/dev/null)"
+  [ -n "$args" ] || exit 1
+  case "$args" in *.app/*|*.app\ *) exit 1 ;; esac
+  set -f
+  for tok in $args; do
+    if [ "$seen" = "0" ]; then
+      case "$tok" in
+        -*) ;;                                        # a runtime flag, e.g. node --max-old-space-size=4096
+        node|*/node|nodejs|*/nodejs) ;;               # the runtime hosting the CLI
+        openclaw|*/openclaw|*/openclaw.mjs|*/openclaw/dist/*.js|*/openclaw/dist/*.mjs) seen=1 ;;
+        *) exit 1 ;;
+      esac
+      continue
+    fi
+    case "$tok" in -*) continue ;; esac
+    sub="$tok"
+    break
+  done
+  case "$sub" in
+    ''|*[!a-z0-9-]*) exit 1 ;;
+    gateway|node|daemon|acp|mcp|tui|chat|terminal|attach|connect|dashboard|proxy|worker|onboard|configure|browser|voicecall|webhooks|resume) exit 1 ;;
+  esac
+  printf '%s' "$sub"
+)
+
+# Pids holding the shared state database (or its -wal/-shm) open, one per line.
+# rc 0 = measured (the list may be empty); rc 2 = could not measure (no lsof). An
+# unmeasurable state is NOT "nobody holds it".
+_state_holders() {
+  local f
+  command -v lsof >/dev/null 2>&1 || return 2
+  for f in "$OC_ROOT_DIR/state/openclaw.sqlite" "$OC_ROOT_DIR/state/openclaw.sqlite-wal" "$OC_ROOT_DIR/state/openclaw.sqlite-shm"; do
+    [ -e "$f" ] && lsof -t "$f" 2>/dev/null
+  done | sort -u | grep -E '^[0-9]+$'
+  return 0
+}
+
+# Stop the STALE bare `openclaw` CLI processes that hold the state database, and log
+# each one. A holder is left alone unless ALL of these hold: it is a bare openclaw CLI
+# (_cli_holder_subcommand), it is not this process or one of its parents, it is not the
+# gateway pid, and it started clearly BEFORE this run (2s slack: etime is whole seconds).
+# SIGTERM first, SIGKILL only if it survives. rc 0 = nobody we can see holds the database
+# afterwards (or lsof is missing: said so, not assumed clear); rc 1 = someone still does.
+_reap_state_holders() {
+  local where="$1" pids pid sub started gw anc p n rc left
+  [ "$SUPERVISOR" = "launchd" ] || return 0
+  pids="$(_state_holders)"; rc=$?
+  if [ "$rc" -eq 2 ]; then
+    _warn "lsof is not available - who holds $OC_ROOT_DIR/state/openclaw.sqlite ($where) is UNDETERMINED, not 'nobody'"
+    return 0
+  fi
+  [ -n "$pids" ] || { _ok "no process holds the state database ($where)"; return 0; }
+  anc=" $$ "; p="$$"; n=0
+  while [ "$n" -lt 64 ]; do
+    p="$(_lease_ppid "$p")"
+    case "$p" in ''|*[!0-9]*) break ;; esac
+    [ "$p" -gt 1 ] || break
+    anc="$anc$p "; n=$((n+1))
+  done
+  gw="$(_gateway_pid)"
+  for pid in $pids; do
+    case "$anc" in *" $pid "*) _say "state-database holder pid $pid is this run or one of its parents - left alone"; continue ;; esac
+    if [ -n "$gw" ] && [ "$pid" = "$gw" ]; then _say "state-database holder pid $pid is the gateway - left alone"; continue; fi
+    sub="$(_cli_holder_subcommand "$pid")" || sub=""
+    if [ -z "$sub" ]; then
+      _say "state-database holder pid $pid is not a bare openclaw CLI (a service, the app, or another program) - left alone"
+      continue
+    fi
+    started="$(_proc_start_epoch "$pid")"
+    if [ -z "$started" ]; then
+      _say "state-database holder pid $pid (openclaw $sub): start time unreadable - left alone"
+      continue
+    fi
+    if [ $((started + 2)) -ge "$RUN_START_EPOCH" ]; then
+      _say "state-database holder pid $pid (openclaw $sub) started during this run - left alone"
+      continue
+    fi
+    kill -TERM "$pid" 2>/dev/null
+    _poll 5 _pid_gone "$pid" || { kill -KILL "$pid" 2>/dev/null; _poll 3 _pid_gone "$pid"; }
+    if _pid_gone "$pid"; then
+      _ok "reaped stale openclaw CLI holder pid $pid (openclaw $sub, started $((RUN_START_EPOCH - started))s before this run; $where)"
+    else
+      _warn "stale openclaw CLI holder pid $pid (openclaw $sub) did not stop"
+    fi
+  done
+  left="$(_state_holders | tr '\n' ' ' | sed 's/ *$//')"
+  if [ -n "$left" ]; then
+    _warn "the state database is still held by pid(s): $left ($where)"
+    return 1
+  fi
+  _ok "no process holds the state database ($where)"
+  return 0
+}
+
+# Run a command with stdin from /dev/null, stdout+stderr into $2, and the whole process
+# group killed after $1 seconds. rc 124 = timed out; 127 = could not start; otherwise the
+# command's own exit code (a signal death is 128+signal).
+_run_bounded() {
+  local t="$1" out="$2"
+  shift 2
+  python3 -I - "$t" "$out" "$@" <<'PY'
+import os, signal, subprocess, sys
+t, out, cmd = int(sys.argv[1]), sys.argv[2], sys.argv[3:]
+with open(out, "wb") as fh:
+    try:
+        p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=fh, stderr=subprocess.STDOUT, start_new_session=True)
+    except OSError as e:
+        fh.write(("cannot start %s: %s\n" % (cmd[0], e.strerror)).encode())
+        sys.exit(127)
+    try:
+        rc = p.wait(timeout=t)
+    except subprocess.TimeoutExpired:
+        os.killpg(p.pid, signal.SIGKILL)
+        p.wait()
+        sys.exit(124)
+sys.exit(rc if rc >= 0 else 128 - rc)
+PY
+}
+
+# Doctor output is advisory text, but mask anything shaped like a credential before it is logged.
+_mask_secrets() {
+  sed -E \
+    -e 's/(sk|rk|pk|ghp|gho|ghs|xox[abprs]|AIza|ya29)[-_.A-Za-z0-9]{16,}/<masked>/g' \
+    -e 's/([Tt]oken|[Kk]ey|[Ss]ecret|[Pp]assw(or)?d|[Aa]uthorization|[Bb]earer)([^[:space:]]{0,30})([=:][[:space:]]*|[[:space:]]+)[^[:space:]]+/\1\3\4<masked>/g'
+}
+
+# One line of JSON naming ONLY the model selection: agents.defaults.model (primary, fallbacks),
+# the NAMES pinned in agents.defaults.models, and each agent's own model. NOCONFIG when there is
+# no config, UNREADABLE when it cannot be parsed. Values are model names, never credentials.
+_model_snapshot() {
+  [ -f "$OC_CONFIG" ] || { printf 'NOCONFIG'; return 0; }
+  OC_CFG="$OC_CONFIG" python3 -I -c 'import json,os
+def nm(m):
+    if isinstance(m, str):
+        return {"primary": m, "fallbacks": []}
+    if isinstance(m, dict):
+        return {"primary": m.get("primary"), "fallbacks": m.get("fallbacks") or []}
+    return None
+try:
+    c = json.load(open(os.environ["OC_CFG"]))
+    a = c.get("agents") or {}
+    d = a.get("defaults") or {}
+    pins = d.get("models")
+    ents = a.get("entries")
+    if not isinstance(ents, dict):
+        ents = dict((str(e.get("id", i)), e) for i, e in enumerate(a.get("list") or []) if isinstance(e, dict))
+    print(json.dumps({"defaults": nm(d.get("model")),
+                      "pins": sorted(pins) if isinstance(pins, dict) else None,
+                      "agents": dict((k, nm(v.get("model"))) for k, v in ents.items() if isinstance(v, dict) and "model" in v)},
+                     sort_keys=True))
+except Exception:
+    print("UNREADABLE")' 2>/dev/null || printf 'UNREADABLE'
+}
+
+# Doctor refuses the audit-logs migration when the sanitized archive no longer matches its
+# checkpoint, and there is no supported flag for it (vendor docs: "do not delete or rewrite
+# archives"). The unsupported narrow repair is to drop ONLY the raw-archive checkpoint rows
+# (exactly scope 'migration.legacy-audit-raw' in diagnostic_events of the shared state
+# database) so doctor re-parses the raw archive and de-duplicates it by key. NEVER a LIKE:
+# 'migration.legacy-audit' is the live coordination lease. The rows are saved first, the
+# before/after counts are logged, and nothing is deleted while any process holds the database.
+_repair_audit_checkpoint() {
+  local db="$OC_ROOT_DIR/state/openclaw.sqlite" rows rc
+  if [ ! -f "$db" ]; then
+    _err "no state database at $db - there is no audit checkpoint to repair"
+    return 1
+  fi
+  if ! _reap_state_holders "before the audit-checkpoint repair"; then
+    _err "a process still holds the state database - refusing to edit it"
+    return 1
+  fi
+  rows="$OC_ROOT_DIR/audit-checkpoint-rows-$(date +%Y%m%d-%H%M%S).json"
+  OC_STATE_DB="$db" OC_ROWS_OUT="$rows" python3 -I - <<'PY'
+import json, os, sqlite3, sys
+SCOPE = "migration.legacy-audit-raw"
+db, out = os.environ["OC_STATE_DB"], os.environ["OC_ROWS_OUT"]
+try:
+    con = sqlite3.connect(db, timeout=15)
+    cur = con.execute("SELECT * FROM diagnostic_events WHERE scope = ?", (SCOPE,))
+    cols = [d[0] for d in cur.description]
+    rows = [dict(zip(cols, [v if v is None or isinstance(v, (int, float, str)) else repr(v) for v in r])) for r in cur.fetchall()]
+    if not rows:
+        print("    | no rows with scope %s - nothing to delete" % SCOPE)
+        sys.exit(3)
+    with os.fdopen(os.open(out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as fh:
+        json.dump(rows, fh)
+    deleted = con.execute("DELETE FROM diagnostic_events WHERE scope = ?", (SCOPE,)).rowcount
+    con.commit()
+    left = con.execute("SELECT COUNT(*) FROM diagnostic_events WHERE scope = ?", (SCOPE,)).fetchone()[0]
+    print("    | scope %s: rows before=%d deleted=%d after=%d (saved to %s)" % (SCOPE, len(rows), deleted, left, out))
+    sys.exit(0 if left == 0 else 1)
+except Exception as e:
+    print("    | audit checkpoint repair failed: %s: %s" % (type(e).__name__, e))
+    sys.exit(1)
+PY
+  rc=$?
+  [ "$rc" -eq 0 ]
+}
+
+# Run the NEW binary's `doctor --fix --non-interactive` so the agent/session database is
+# migrated before the gateway starts. rc 0 = doctor exited 0 with no refused step and the
+# model/provider names are unchanged; rc 1 = failed, the reason is in DOCTOR_WHY and the
+# caller rolls back. Called only after the quiesce is PROVEN and the new binary is on disk.
+_migrate_state_with_doctor() {
+  local out rc attempt=0 refused before after
+  DOCTOR_WHY=""
+  if ! _reap_state_holders "before doctor"; then
+    DOCTOR_WHY="another process still holds $OC_ROOT_DIR/state/openclaw.sqlite and is not a stale bare openclaw CLI this script may stop, so \`openclaw doctor --fix\` would refuse (it needs exclusive maintenance)"
+    return 1
+  fi
+  before="$(_model_snapshot)"
+  if [ "$before" = "UNREADABLE" ]; then
+    DOCTOR_WHY="the model/provider selection in $OC_CONFIG could not be read, so \"doctor did not change it\" cannot be proven - refusing to run doctor"
+    return 1
+  fi
+  out="$(mktemp "${TMPDIR:-/tmp}/oc-doctor.XXXXXX")" || {
+    DOCTOR_WHY="could not create a temp file for the doctor output"; return 1; }
+  # Doctor rewrites retired config keys: record that BEFORE it runs so the rollback restores the config.
+  [ -f "$OC_CONFIG" ] && STATE_CONFIG_CHANGED=1
+  while :; do
+    attempt=$((attempt+1))
+    _say "running the NEW binary: openclaw doctor --fix --non-interactive (attempt $attempt of 2, bound ${DOCTOR_TIMEOUT}s, stdin /dev/null) ..."
+    _run_bounded "$DOCTOR_TIMEOUT" "$out" openclaw doctor --fix --non-interactive; rc=$?
+    tail -n 40 "$out" | _mask_secrets | sed 's/^/    | /'
+    refused=0
+    if grep -qF 'sanitized archive is missing or truncated' "$out" 2>/dev/null \
+       || grep -qF 'sanitized archive changed after checkpoint' "$out" 2>/dev/null; then
+      refused=1
+    fi
+    if [ "$rc" -eq 0 ] && [ "$refused" -eq 0 ]; then break; fi
+    if [ "$refused" -eq 1 ] && [ "$attempt" -eq 1 ]; then
+      _warn "doctor refused on the legacy-audit-raw checkpoint - dropping only that scope's rows, then re-running doctor once"
+      if ! _repair_audit_checkpoint; then
+        rm -f "$out"
+        DOCTOR_WHY="doctor --fix refused on the legacy-audit-raw checkpoint and the narrow checkpoint repair did not complete"
+        return 1
+      fi
+      continue
+    fi
+    rm -f "$out"
+    if [ "$rc" -eq 124 ]; then
+      DOCTOR_WHY="doctor --fix did not finish within ${DOCTOR_TIMEOUT}s and was killed"
+    elif [ "$refused" -eq 1 ]; then
+      DOCTOR_WHY="doctor --fix STILL refuses on the audit checkpoint after the checkpoint repair and one re-run"
+    else
+      DOCTOR_WHY="doctor --fix FAILED (exit $rc, output above) - the agent/session database was not proven migrated"
+    fi
+    return 1
+  done
+  rm -f "$out"
+  after="$(_model_snapshot)"
+  if [ "$before" != "NOCONFIG" ] && [ "$after" != "$before" ]; then
+    _err "doctor changed the model/provider selection:"
+    _err "  before: $before"
+    _err "  after : $after"
+    DOCTOR_WHY="doctor --fix changed the model/provider selection (names above) - model config must never be touched"
+    return 1
+  fi
+  _ok "doctor --fix exited 0 with no refused step; model/provider names identical before and after"
+  return 0
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ROLLBACK — undoes, in reverse, exactly what was recorded as done.
 # ─────────────────────────────────────────────────────────────────────────────
 _rollback() {
@@ -958,6 +1266,8 @@ _rollback() {
 
   if [ "$STATE_QUIESCED" = "1" ]; then
     if [ "$GATEWAY_LOADED_AT_START" = "1" ]; then
+      # A stale CLI holding the state database would keep the restored gateway from starting.
+      _reap_state_holders "before the rollback restart" || true
       # Re-load what we booted out, then PROVE it (loaded + pid + /healthz 200).
       # Never claim a restart from an exit code.
       if _restore_gateway; then
@@ -1239,8 +1549,9 @@ do_upgrade() {
     echo "    5. $NPM_BIN install -g ${SUP_PREFIX:+--prefix $SUP_PREFIX }openclaw@$TARGET_VERSION   (the supervisor's install: ${SUP_PKG_ROOT:-none found, PATH})"
     echo "    6. ask the NEW binary: openclaw config schema  -> which keys does \`agents\` accept?"
     echo "    7. if it accepts \`entries\` and not \`list\`: migrate + verify losslessness; else leave the config alone"
+    echo "    7a. (launchd) reap STALE bare openclaw CLI processes holding $OC_ROOT_DIR/state/openclaw.sqlite (never the gateway, a node service, the app, or anything started in this run), then run the NEW binary: doctor --fix --non-interactive (stdin /dev/null, bounded ${DOCTOR_TIMEOUT}s) so the agent/session database migration finishes BEFORE the gateway starts; a legacy-audit-raw checkpoint refusal drops only that scope's rows and re-runs doctor once; model/provider names must be identical afterwards, else roll back"
     echo "    7b. map retired values (skills.workshop.autonomous.mode propose -> off) then \`openclaw config validate\` with the NEW binary; rejected = roll back"
-    echo "    8. bootstrap $GATEWAY_LABEL; require a STABLE pid for ${STABILITY_SECONDS}s, /healthz 200, and the launched package at $TARGET_VERSION"
+    echo "    8. reap stale state-database holders again; bootstrap $GATEWAY_LABEL; require a STABLE pid for ${STABILITY_SECONDS}s, /healthz 200, and the launched package at $TARGET_VERSION"
     echo "    9. release the lock, re-arm $SELFHEAL_LABEL"
     echo "    Any failure from step 3 onward: restore config AND binary, start the gateway."
     return 0
@@ -1367,6 +1678,19 @@ do_upgrade() {
     fi
   fi
 
+  # ── 7a. MIGRATE THE AGENT/SESSION DATABASE WITH THE NEW BINARY'S DOCTOR ────
+  # The gateway is booted out (proven above), the new binary is on disk, and the config is
+  # in the shape that binary reads. Doctor only repairs state here; it leaves the (already
+  # stopped) service as it found it. Launchd boxes only: see the STATE-DATABASE block.
+  if [ "$SUPERVISOR" = "launchd" ]; then
+    if ! _migrate_state_with_doctor; then
+      _rollback "$DOCTOR_WHY"
+      return $?
+    fi
+  else
+    _say "doctor --fix: not run for the $SUPERVISOR supervisor (its state lives where this script cannot see it) - unchanged"
+  fi
+
   # ── 7b. THE NEW BINARY MUST ACCEPT THE CONFIG BEFORE ANYTHING IS CALLED DONE ─
   # Apply the known value map for keys the new build retired (propose -> off, per
   # the vendor's doctor migration), then ask the build itself. An unmapped or
@@ -1407,6 +1731,8 @@ do_upgrade() {
   fi
 
   # ── 8. START, AND PROVE IT STAYED UP ───────────────────────────────────────
+  # A stale CLI that grabbed the state database since doctor would stop the gateway starting.
+  _reap_state_holders "before the gateway start" || _warn "starting the gateway anyway; the start proof below decides"
   if ! _start_gateway; then
     _rollback "the gateway could not be started after the upgrade"
     return $?
