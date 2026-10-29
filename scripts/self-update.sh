@@ -1,5 +1,5 @@
 #!/bin/sh
-# self-update.sh — v1.2.0
+# self-update.sh — v1.3.0
 #
 # The box's own self-update runner. Starts itself in a detached session, then
 # runs these steps IN THIS ORDER (Trevor, transcript L14):
@@ -48,11 +48,25 @@
 # agent-pull-fix: R5
 # agent-pull-fix: R10
 #
+# Big Fleet Roll 2026-10 fixes (v1.3.0):
+#   item 10  Under a roll the roll's WATCHER fixes a broken box and Rescue Rangers
+#            is not involved, so no descendant may send the operator escalation
+#            (OPERATOR_ESCALATION_CHAT_ID can be the Rescue Rangers group and wake a
+#            paid agent). The job exports SELF_UPDATE_ROLL_ID / SELF_UPDATE_RUN_ID /
+#            SELF_UPDATE_ESCALATION_FILE; update-skills.sh holds its operator note in
+#            that file instead of sending it, and the note's headline lands in the
+#            status file's error_tail (and stuck_reason when the job failed).
+#   #20      Before the 9Router guards run, the delivered nine-router-setup skill
+#            copies are compared against the verified 999-setup copy and the result is
+#            stamped; the guards always run from the 999-setup copy.
+#   #26      A shallow 999-setup clone is deepened (git fetch --unshallow) before any
+#            ancestry check on it.
+#
 # INTERPRETER: /bin/sh, POSIX-safe, macOS bash 3.2 safe. No arrays, no
 # associative params, no mapfile, no ${x^^}, no heredoc nested inside $( ).
 set -u
 
-VERSION="1.2.0"
+VERSION="1.3.0"
 REPO_RAW_BASE="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding"
 REPO_RAW="$REPO_RAW_BASE/main"
 
@@ -301,10 +315,19 @@ probe_after_fail() {  # step [wait_seconds]
 # step behind this named guard instead of handing the box to a bare updater.
 FLEET_REQUIRE_SAFETY_NET="${FLEET_REQUIRE_SAFETY_NET:-1}"
 
+# Item 10: first line of the operator note update-skills.sh held back instead of
+# sending it under this roll (redacted); empty when nothing was held.
+esc_headline() {
+  [ -s "${ESC_FILE:-}" ] && head -n1 "$ESC_FILE" 2>/dev/null | _redact
+  return 0
+}
+
 status_write() {  # phase finished stuck
   mkdir -p "$ROOT/fleet-refresh" 2>/dev/null || return 0
   _tail="${TMPDIR:-/tmp}/self-update-tail.$$"
   tail -n 20 "$LOG" 2>/dev/null | _redact > "$_tail" 2>/dev/null || : > "$_tail"
+  _eh="$(esc_headline)"
+  [ -z "$_eh" ] || printf '[operator escalation held for the watcher, NOT sent] %s\n' "$_eh" >> "$_tail"
   if [ -f "$ROOT/fleet-refresh/needs_host_restart" ] || [ "${NEEDS_RESTART:-0}" = 1 ]; then
     NEEDS_RESTART=1
   else
@@ -381,7 +404,12 @@ PY
 }
 
 finish() {  # exit_code phase [stuck]
-  status_write "$2" "$(now_utc)" "${3:-$STUCK_NOTE}"
+  _fs="${3:-$STUCK_NOTE}"
+  if [ "$1" != 0 ] && [ "$1" != "$EX_DEFERRED" ]; then   # item 10: a failed job hands the held note to the watcher
+    _eh="$(esc_headline)"
+    [ -z "$_eh" ] || _fs="${_fs:+$_fs; }operator escalation held for the watcher (not sent): $_eh"
+  fi
+  status_write "$2" "$(now_utc)" "$_fs"
   log "END phase=$2 exit=$1"
   exit "$1"
 }
@@ -473,6 +501,8 @@ mkdir -p "$REFRESH_DIR" 2>/dev/null || {
   echo "self-update.sh: REFUSED — cannot create $REFRESH_DIR" >&2; exit "$EX_REFUSE"; }
 LOCK_DIR="$REFRESH_DIR/agent-pull.lock"
 STATUS_JSON="$REFRESH_DIR/agent-pull-status.json"
+# Item 10: where update-skills.sh holds the operator note it must not send under a roll.
+ESC_FILE="$REFRESH_DIR/operator-escalation-held.txt"
 
 # One log per ROLL, so two rolls on one box can never overwrite each other's
 # run. Without a roll id the legacy single-file name is kept.
@@ -807,6 +837,13 @@ log "lock: $(cat "$LOCK_DIR/pid" 2>/dev/null) owns the run"
 
 log "START runner v$VERSION pid=$$ root=$ROOT roll=${ROLL_ID:-none} run_id=$RUN_ID openclaw=${TARGET_VERSION:-none} ninerouter=${NINE9ROUTER_TARGET:-none}"
 
+# Item 10: every descendant learns it runs under a roll (RUN_ID is always ap-*), so
+# update-skills.sh holds its operator note in ESC_FILE instead of sending it. A note
+# left by an earlier run must not be read as this run's.
+rm -f "$ESC_FILE" 2>/dev/null
+SELF_UPDATE_ROLL_ID="$ROLL_ID"; SELF_UPDATE_RUN_ID="$RUN_ID"; SELF_UPDATE_ESCALATION_FILE="$ESC_FILE"
+export SELF_UPDATE_ROLL_ID SELF_UPDATE_RUN_ID SELF_UPDATE_ESCALATION_FILE
+
 # Pre-update values, kept for every subsequent status write.
 STAMP_BEFORE="$(read_stamp)"
 sup_helper_init
@@ -874,6 +911,18 @@ get_ffsync() {
   return 1
 }
 
+# #26: a SHALLOW clone cuts the history graph — `git merge-base` finds nothing (the
+# checkout reads as an "unrelated root") and `rev-list --count origin/main..HEAD` counts
+# commits that ARE in main. Deepen it before any ancestry check. A failed fetch is
+# network or remote trouble, never proof of an unrelated history.
+unshallow_if_shallow() {  # repo -> 0 full history (or never shallow) | 1 could not deepen
+  [ "$(git -C "$1" rev-parse --is-shallow-repository 2>/dev/null)" = true ] || return 0
+  log "$1 is a SHALLOW clone - running git fetch --unshallow before any ancestry check"
+  GIT_TERMINAL_PROMPT=0 git -C "$1" fetch --unshallow --quiet origin >>"$LOG" 2>&1 </dev/null && return 0
+  log "FAIL: git fetch --unshallow failed in $1 (network or remote trouble, not proof of an unrelated history)"
+  return 1
+}
+
 V999_HEAD=""   # set only when sync_999 verified the checkout; the 9router step requires it
 V999_WHY=""
 
@@ -881,6 +930,7 @@ sync_999() {  # repo -> 0 verified (V999_HEAD set) | 1 failed (V999_WHY says why
   _r="$1"; V999_HEAD=""; V999_WHY=""
   command -v git >/dev/null 2>&1 || { V999_WHY="git missing"; return 1; }
   [ -e "$_r/.git" ] || { V999_WHY="$_r is not a git checkout; cannot verify it matches origin/main"; return 1; }
+  unshallow_if_shallow "$_r" || { V999_WHY="$_r is a shallow clone and git fetch --unshallow failed"; return 1; }
   get_ffsync || { V999_WHY="git_ff_sync.sh unavailable (fetch from main and sibling copy both failed)"; return 1; }
   _out="$(sh "$FFSYNC" "$_r" 2>&1 </dev/null)"; _rc=$?
   _def="$(git -C "$_r" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)"; _def="${_def#origin/}"
@@ -928,6 +978,35 @@ check_999_prereqs() {
   xcode-select -p >/dev/null 2>&1 || _bad="$_bad command-line-tools"
   PREREQ_MISSING="${_bad# }"
   [ -z "$PREREQ_MISSING" ]
+}
+
+# #20 / #28: `setup-macos.sh --skills-only` never refreshes ~/.claude/skills/nine-router-setup
+# (it is the installer itself), so a box keeps whatever copy was delivered. A stale one
+# (an Oct 7 copy lacked the 0.5.104 guard anchors) installs the OLD guard set. The guards
+# below always run from the VERIFIED 999-setup checkout. This compares each delivered copy
+# with the 999-setup copy, logs a stale one by name, and stamps the result for the watcher.
+# It copies and deletes nothing: replacing that skill is exactly what --skills-only forbids.
+nine_skill_stamp() {  # fresh_skill_dir (inside the verified 999 checkout)
+  _ns_fresh="$1"; _ns_res="same"; _ns_stale=""; _ns_seen=0
+  _ns_fp="$(cd -P "$_ns_fresh" 2>/dev/null && pwd -P)"
+  for _ns_d in "$HOME/.claude/skills/nine-router-setup" "$HOME/.claude-nine/skills/nine-router-setup"; do
+    [ -e "$_ns_d" ] || continue
+    _ns_seen=1
+    _ns_dp="$(cd -P "$_ns_d" 2>/dev/null && pwd -P)" || _ns_dp=""
+    [ -n "$_ns_dp" ] && [ "$_ns_dp" = "$_ns_fp" ] && continue
+    [ -n "$_ns_dp" ] && diff -rq -x .DS_Store "$_ns_fresh" "$_ns_d" >/dev/null 2>&1 && continue
+    _ns_res="stale"; _ns_stale="$_ns_stale $_ns_d"
+  done
+  if [ "$_ns_res" = stale ]; then
+    log "WARN 9router: delivered nine-router-setup copy differs from the verified 999-setup copy (stale:$_ns_stale); the guards run from $_ns_fresh, never from the delivered copy"
+  elif [ "$_ns_seen" = 1 ]; then
+    log "9router: delivered nine-router-setup copy matches the verified 999-setup copy"
+  else
+    log "9router: no delivered nine-router-setup copy; the guards run from $_ns_fresh"
+  fi
+  ( umask 077; printf '999_head=%s\nskill_dir=%s\ndelivered=%s\nstale_copies=%s\nutc=%s\n' \
+      "$V999_HEAD" "$_ns_fresh" "$_ns_res" "${_ns_stale# }" "$(now_utc)" \
+      > "$REFRESH_DIR/nine-router-setup.stamp" ) 2>/dev/null || true
 }
 
 # ── env stores: find the box's OWN keys and plan names BY NAME ───────────────
@@ -1232,6 +1311,7 @@ if [ "$IS_MAC" = 1 ] && [ "$IS_DOCKER" = 0 ]; then
     log "REFUSED 9router: no pinned target (pass --9router-target VERSION or set NINEROUTER_TARGET); never upgrading to an unpinned latest"
     R9_RC=$EX_REFUSE
   else
+    nine_skill_stamp "$NINE_REPO/.claude/skills/nine-router-setup"
     bash "$GUARDS" --upgrade "$NINE9ROUTER_TARGET" >>"$LOG" 2>&1 </dev/null
     R9_RC=$?
     [ "$R9_RC" -eq 0 ] || log "FAIL 9router: install-9router-guards.sh --upgrade $NINE9ROUTER_TARGET exited $R9_RC"

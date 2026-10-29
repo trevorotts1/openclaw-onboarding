@@ -28,6 +28,12 @@ if [ -n "$br" ] && [ "$(g config --get "branch.$br.remote")" = origin ]; then
     if [ -n "$(g status --porcelain --untracked-files=no)" ]; then
       echo "branch $br: upstream gone and the tree has local changes; left untouched"; exit 3
     fi
+    # A shallow clone cuts the graph, so the counts below would call merged commits
+    # unmerged (and `git merge-base` would read origin/$def as an unrelated root).
+    # Deepen first; a failed fetch is network trouble, not a verdict on the history.
+    if [ "$(g rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
+      out=$(g fetch --unshallow --quiet origin 2>&1) || { echo "branch $br: shallow clone and git fetch --unshallow failed: $out"; exit 1; }
+    fi
     n=$(g rev-list --count "origin/$def..HEAD")
     if [ "$n" != 0 ]; then
       echo "branch $br: upstream gone (deleted on origin) and $n commit(s) are not in origin/$def; left untouched"; exit 3
