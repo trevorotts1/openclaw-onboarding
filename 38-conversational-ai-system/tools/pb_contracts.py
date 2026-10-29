@@ -1167,6 +1167,25 @@ def cmd_dispatch(args):
     )
 
 
+def _monthly_manifest_terms_errors(manifest):
+    """The T-23 approval-terms check, owned by shared-utils/manifest.
+
+    monthly_manifest imports this layer at its own import time (it reads
+    PLACEMENT_BOUND_FIELDS instead of copying the list), so the import is
+    resolved here, at call time: a module-level import would close a cycle for
+    every pb_contracts caller that never sees a manifest. A checkout without
+    the module refuses the manifest rather than validating past the check.
+    """
+    module_dir = SKILL_ROOT.parent / "shared-utils" / "manifest"
+    if str(module_dir) not in sys.path:
+        sys.path.insert(0, str(module_dir))
+    try:
+        import monthly_manifest  # late import on purpose, see docstring
+    except ImportError as exc:
+        return ["$.: approval terms check unavailable (%s)" % exc]
+    return monthly_manifest.terms_errors(manifest)
+
+
 def approval_errors(action, manifest_path):
     """Check the action against the current approval manifest."""
     if action["scope"] == "public_placement":
