@@ -860,6 +860,11 @@
     "paths": [
      "update-skills.sh",
      "tests/unit/fleet-standing-gate.test.sh",
+     "shared-utils/fleet_preflight.py",
+     "shared-utils/fleet_refresh_runner.py",
+     "scripts/onboarding-state.sh",
+     "tests/unit/fleet-preflight.test.py",
+     "tests/unit/client-skills-untouched.test.sh",
      ".github/workflows/fleet-standing-fail-open-guard.yml"
     ]
    },
@@ -870,6 +875,11 @@
     "paths": [
      "update-skills.sh",
      "tests/unit/fleet-standing-gate.test.sh",
+     "shared-utils/fleet_preflight.py",
+     "shared-utils/fleet_refresh_runner.py",
+     "scripts/onboarding-state.sh",
+     "tests/unit/fleet-preflight.test.py",
+     "tests/unit/client-skills-untouched.test.sh",
      ".github/workflows/fleet-standing-fail-open-guard.yml"
     ]
    }

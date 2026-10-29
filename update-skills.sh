@@ -253,6 +253,8 @@ cc_dirty_overlap() {
   return 1
 }
 
+FLEET_PREFLIGHT_ENFORCE_FROM="2026-11-05"   # UTC; standing and provider checks pause the update from this day
+
 fleet_standing_resolve_slug() {
     # 1. explicit env  2. openclaw.json env.vars  3. hostname
     if [ -n "${FLEET_STANDING_BOX_SLUG:-}" ]; then
@@ -399,6 +401,27 @@ fleet_standing_gate() {
         return 0
     fi
 
+    # FIRST-WEEK GRACE (FLEET-PREFLIGHT). Until FLEET_PREFLIGHT_ENFORCE_FROM (UTC) a
+    # blocked verdict is warn-and-notify only: the update is NOT held. From that
+    # date it holds exactly as before. One plain note per week goes to the client
+    # through shared-utils/fleet_preflight.py (best effort, never fails the run).
+    # The date is mirrored in that file; tests/unit/fleet-preflight.test.py pins them equal.
+    local _pf_today="${FLEET_PREFLIGHT_NOW:-$(date -u +%Y-%m-%d)}"
+    _pf_today="${_pf_today%%T*}"
+    local _pf_py="" _pf_d
+    for _pf_d in "$(dirname "${BASH_SOURCE[0]:-$0}")/shared-utils" "${OPENCLAW_ROOT:-/nonexistent}/skills/shared-utils" \
+                 "${OPENCLAW_ROOT:-/nonexistent}/fleet-refresh/onboarding/shared-utils" /data/.openclaw/skills/shared-utils \
+                 "$HOME/.openclaw/skills/shared-utils"; do
+        [ -f "$_pf_d/fleet_preflight.py" ] && { _pf_py="$_pf_d/fleet_preflight.py"; break; }
+    done
+    if [ -n "$_pf_py" ] && command -v python3 >/dev/null 2>&1; then
+        python3 "$_pf_py" --phase standing --standing blocked --root "${OC_CONFIG:-}" >/dev/null 2>&1 || true
+    fi
+    if [[ "$_pf_today" < "$FLEET_PREFLIGHT_ENFORCE_FROM" ]]; then
+        echo "  [standing-gate] account not current, but this is the first-week grace (until ${FLEET_PREFLIGHT_ENFORCE_FROM}, UTC): warning only -- proceeding"
+        return 0
+    fi
+
     # ---- blocked ----
     local agents_md="${OC_CONFIG:-$HOME/.openclaw}/AGENTS.md"
     local stamp; stamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -429,6 +452,72 @@ fleet_standing_gate() {
 
 fleet_standing_gate
 #=== END FLEET-STANDING-GATE-V1 ===
+
+#=== BEGIN FLEET-PREFLIGHT-V1 ===
+# ============================================================
+#  WEEKLY-UPDATE PRE-FLIGHT, after the account standing gate above and before any
+#  install step: (b) provider standing, (c) free storage, (d) memory pressure.
+#  The checks live in shared-utils/fleet_preflight.py (one place, one set of named
+#  constants, one notice mechanism). Any enforced failure = NO install this run:
+#  the run ends with the documented status PAUSED-PREFLIGHT, printed as the line
+#  "FLEET-PREFLIGHT-PAUSED: <reasons>", exit 0 (the same shape as the standing
+#  hold: nothing changed, nothing broken). Provider standing is warn-only until
+#  FLEET_PREFLIGHT_ENFORCE_FROM; storage and memory pressure are enforced now.
+#  A missing helper or python3, or any internal error, PROCEEDS (fail open).
+#  FLEET_PREFLIGHT_BYPASS=1 skips it (operator).
+# ============================================================
+fleet_preflight_checks() {
+    if [ "${FLEET_PREFLIGHT_BYPASS:-0}" = "1" ]; then
+        echo "  [preflight] bypassed (FLEET_PREFLIGHT_BYPASS=1)"; return 0
+    fi
+    local _py="" _d _out _rc
+    for _d in "$(dirname "${BASH_SOURCE[0]:-$0}")/shared-utils" "${OPENCLAW_ROOT:-/nonexistent}/skills/shared-utils" \
+              "${OPENCLAW_ROOT:-/nonexistent}/fleet-refresh/onboarding/shared-utils" /data/.openclaw/skills/shared-utils \
+              "$HOME/.openclaw/skills/shared-utils"; do
+        [ -f "$_d/fleet_preflight.py" ] && { _py="$_d/fleet_preflight.py"; break; }
+    done
+    if [ -z "$_py" ] || ! command -v python3 >/dev/null 2>&1; then
+        echo "  [preflight] helper or python3 not available on this box -- proceeding (fail open)"; return 0
+    fi
+    _rc=0
+    _out="$(python3 "$_py" --phase checks --root "${OC_CONFIG:-}" 2>&1)" || _rc=$?
+    printf '%s\n' "$_out" | sed 's/^/  /'
+    if [ "$_rc" = "10" ]; then
+        echo ""
+        echo "============================================================"
+        echo "  Update paused (pre-flight check). Nothing on this system has"
+        echo "  been changed and everything keeps running as it is. The"
+        echo "  update installs on the next scheduled run once it clears."
+        echo "============================================================"
+        echo ""
+        exit 0
+    fi
+    return 0
+}
+fleet_preflight_checks
+
+# A numbered skill folder is the repo's only when the bundle being installed ships a folder of
+# that name (or its -ARCHIVED tombstone). Anything else is the CLIENT's own (for example a
+# skill the client built): it is never deleted, moved, wired, verified or stamped by this
+# updater, and it is counted apart as skills_client_extra. Updater-made backup copies
+# (.bak / .pre / .rollback / .orig) are not client skills and keep today's handling.
+oc_skill_is_client_made() {
+    local _n="${1:-}"
+    [ -n "$_n" ] && [ -n "${EXTRACTED_DIR:-}" ] && [ -d "$EXTRACTED_DIR" ] || return 1
+    case "$_n" in *.bak*|*.pre*|*.rollback*|*.orig*|*-ARCHIVED*) return 1 ;; esac
+    [ -d "$EXTRACTED_DIR/$_n" ] && return 1
+    [ -d "$EXTRACTED_DIR/$_n-ARCHIVED" ] && return 1
+    return 0
+}
+oc_count_client_skills() {
+    local _c=0 _x
+    for _x in "${1:-/nonexistent}"/[0-9]*/; do
+        [ -d "$_x" ] || continue
+        oc_skill_is_client_made "$(basename "$_x")" && _c=$((_c + 1))
+    done
+    echo "$_c"
+}
+#=== END FLEET-PREFLIGHT-V1 ===
 
 #=== BEGIN OPENCLAW-BACKUP-RETENTION-V1 ===
 # ============================================================
@@ -6746,6 +6835,7 @@ print(state + " " + str(len(headers)))
     for _wskill_dir in "$SKILLS_DIR"/[0-9]*/; do
       [ -d "$_wskill_dir" ] || continue
       case "$(basename "$_wskill_dir")" in *ARCHIVED*) continue ;; esac
+      oc_skill_is_client_made "$(basename "$_wskill_dir")" && continue   # the client's own skill: never touched
       [ -f "$_wskill_dir/.wired-${ONBOARDING_VERSION}" ] || _MISSING_WIRED_SENTINELS=$((_MISSING_WIRED_SENTINELS + 1))
     done
     if [ "$_MISSING_WIRED_SENTINELS" -gt 0 ]; then
@@ -7232,20 +7322,18 @@ PYEOF
   done
 
   # ----------------------------------------------------------
-  # SKILL-NUMBER COLLISION CLEANUP (2026-10-05). /def (diagnose-explain-fix) was
-  # hand-installed at slot 70, which belongs to 70-lean-core-file-system, and
-  # now ships as 73-diagnose-explain-fix. The copy loop above only adds and
-  # replaces, so a box that carries the old hand-installed folder keeps two
-  # skills labelled 70. Remove ONLY that exact folder, ONLY once 73 is on disk,
-  # and ONLY if it really is the /def skill (frontmatter name check). Never
-  # touches 70-lean-core-file-system. Guarded removal, so a blocked tree is
-  # refused whole instead of half-deleted.
+  # SKILL-NUMBER COLLISION NOTE (2026-10-05, made report-only 2026-10-29). /def
+  # (diagnose-explain-fix) was hand-installed at slot 70, which belongs to
+  # 70-lean-core-file-system, and now ships as 73-diagnose-explain-fix. This step
+  # used to REMOVE the old 70-diagnose-explain-fix folder. It no longer does: that
+  # folder is not shipped by this repo, so it is the box owner's (a hand-installed
+  # copy, possibly edited) and the standing rule is that the update never deletes,
+  # moves or modifies a skill folder the repo does not ship. It is only reported.
   # ----------------------------------------------------------
   _STRAY_DEF="$SKILLS_DIR/70-diagnose-explain-fix"
   if [ -d "$_STRAY_DEF" ] && [ -f "$SKILLS_DIR/73-diagnose-explain-fix/SKILL.md" ] \
      && grep -q '^name: diagnose-explain-fix' "$_STRAY_DEF/SKILL.md" 2>/dev/null; then
-    oc_remove_tree_guarded "$_STRAY_DEF" "skill" || true
-    echo "    Retired stray duplicate: 70-diagnose-explain-fix (now 73-diagnose-explain-fix)"
+    echo "    Note: 70-diagnose-explain-fix is an older hand-installed copy of 73-diagnose-explain-fix; left in place (never deleted -- remove it by hand if you no longer want it)"
   fi
   unset _STRAY_DEF
 
@@ -9053,6 +9141,8 @@ PYEOF
     [ -d "$SKILL_DIR" ] || continue
     SKILL_NAME=$(basename "$SKILL_DIR")
     case "$SKILL_NAME" in *ARCHIVED*) continue ;; esac
+    # The client's own skill (not shipped by this repo): never wired, never stamped.
+    oc_skill_is_client_made "$SKILL_NAME" && continue
 
     # Per-box model-map RE-RESOLVE -- NOT sentinel-gated (runs BEFORE the wired-sentinel
     # short-circuit below). The anthology-engine's tier map (skill-dir model-map.json,
@@ -10687,6 +10777,7 @@ PY
       [ -d "$_gskill" ] || continue
       _gname="$(basename "$_gskill")"
       case "$_gname" in *ARCHIVED*) continue ;; esac
+      oc_skill_is_client_made "$_gname" && continue   # the client's own skill: not verified, not in the gate
       # INF002: per-skill QC deadline override. Skill 06 (ghl-install-pages) QC runs live
       # builder checks and legitimately needs 10 minutes; every other skill keeps the
       # default (OBS_QC_TIMEOUT_SECONDS, else 180 s) so a hung QC still cannot stall the roll.
@@ -10722,6 +10813,8 @@ PY
   echo "   Version: $ONBOARDING_VERSION"
   echo "   Location: $SKILLS_DIR"
   echo "   Files on disk: $VERIFY_SKILL_COUNT skill folders confirmed in active dir"
+  SKILLS_CLIENT_EXTRA="$(oc_count_client_skills "$SKILLS_DIR")"
+  echo "   skills_client_extra: ${SKILLS_CLIENT_EXTRA} client-made skill folder(s) left untouched (not counted against installed-vs-expected)"
   if [ -n "$ONLY_SKILLS" ]; then
     echo "   Mode: SELECTIVE -- only [$ONLY_SKILLS]"
     echo "   Skipped: $SKIPPED_COUNT other skills (not in --only list)"
