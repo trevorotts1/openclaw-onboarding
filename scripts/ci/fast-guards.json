@@ -2292,7 +2292,14 @@
     "paths": [
      "update-skills.sh",
      "platform/mac/service-selfheal/**",
+     "platform/vps/service-selfheal/**",
+     "scripts/oc-atomic-upgrade.sh",
+     "scripts/self-update.sh",
+     "scripts/ghl-mcp-autostart.sh",
+     "scripts/telegram-offset-healthcheck.sh",
+     "shared-utils/oc-env-descriptor.sh",
      "tests/unit/roll-converges-gateway-watchdog.test.sh",
+     "tests/unit/gateway-tls-probe-family.test.sh",
      "tests/unit/full-update-path-contract.test.sh",
      ".github/workflows/roll-converges-gateway-watchdog-guard.yml"
     ]
@@ -2302,7 +2309,14 @@
     "paths": [
      "update-skills.sh",
      "platform/mac/service-selfheal/**",
+     "platform/vps/service-selfheal/**",
+     "scripts/oc-atomic-upgrade.sh",
+     "scripts/self-update.sh",
+     "scripts/ghl-mcp-autostart.sh",
+     "scripts/telegram-offset-healthcheck.sh",
+     "shared-utils/oc-env-descriptor.sh",
      "tests/unit/roll-converges-gateway-watchdog.test.sh",
+     "tests/unit/gateway-tls-probe-family.test.sh",
      "tests/unit/full-update-path-contract.test.sh",
      ".github/workflows/roll-converges-gateway-watchdog-guard.yml"
     ]

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oc-atomic-upgrade.sh — v1.2.1
+# oc-atomic-upgrade.sh — v1.2.2
 #
 # THE ONLY SAFE WAY TO MOVE A BOX ONTO A NEW OPENCLAW BUILD.
 #
@@ -198,7 +198,7 @@
 
 set -uo pipefail
 
-VERSION="1.2.1"
+VERSION="1.2.2"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIGRATOR="$SCRIPT_DIR/oc-schema-migrate.py"
 SUP_HELPER="$SCRIPT_DIR/oc-supervisor-install.py"
@@ -457,11 +457,27 @@ except Exception:
     print(18789)' 2>/dev/null || echo 18789
 }
 
+# 1 when gateway.tls.enabled is true in the config, else 0 (also on an unreadable
+# config). A TLS gateway answers https ONLY: an http:// probe gets an empty reply,
+# so a healthy gateway would read as down and the upgrade would roll back.
+_gateway_tls() {
+  OC_CFG="$OC_CONFIG" python3 -c 'import json,os
+try:
+    t=((json.load(open(os.environ["OC_CFG"])).get("gateway") or {}).get("tls") or {}).get("enabled")
+    print(1 if str(t).lower()=="true" else 0)
+except Exception:
+    print(0)' 2>/dev/null || echo 0
+}
+
 # rc 0 ONLY when GET /healthz answers 200. No curl = cannot prove = rc 1.
+# TLS gateway: https with -k (loopback only, self-signed cert).
 _healthz_ok() {
   command -v curl >/dev/null 2>&1 || return 1
-  [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 \
-        "http://127.0.0.1:$(_gateway_port)/healthz" 2>/dev/null)" = "200" ]
+  local s=http k=""
+  if [ "$(_gateway_tls)" = "1" ]; then s=https; k="-k"; fi
+  # shellcheck disable=SC2086  # k is empty or the single word -k
+  [ "$(curl -s $k -o /dev/null -w '%{http_code}' --max-time 3 \
+        "$s://127.0.0.1:$(_gateway_port)/healthz" 2>/dev/null)" = "200" ]
 }
 
 _config_sha() {
@@ -1657,7 +1673,7 @@ _rollback() {
     echo "  ##    launchctl bootstrap gui/\$(id -u) \\" >&2
     echo "  ##      \$HOME/Library/LaunchAgents/$GATEWAY_LABEL.plist" >&2
     echo "  ##    launchctl kickstart gui/\$(id -u)/$GATEWAY_LABEL" >&2
-    echo "  ##    curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<port>/healthz   # must print 200" >&2
+    echo "  ##    curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<port>/healthz   # must print 200 (https and curl -k when gateway.tls.enabled)" >&2
     echo "  ##  Then re-arm the self-heal agent:" >&2
     echo "  ##    bash platform/mac/service-selfheal/install-service-remediate.sh" >&2
     echo "  ################################################################" >&2

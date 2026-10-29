@@ -1,5 +1,5 @@
 #!/bin/sh
-# self-update.sh — v1.4.0
+# self-update.sh — v1.4.1
 #
 # The box's own self-update runner. Starts itself in a detached session, then
 # runs these steps IN THIS ORDER (Trevor, transcript L14):
@@ -81,7 +81,7 @@
 # associative params, no mapfile, no ${x^^}, no heredoc nested inside $( ).
 set -u
 
-VERSION="1.4.0"
+VERSION="1.4.1"
 REPO_RAW_BASE="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding"
 REPO_RAW="$REPO_RAW_BASE/main"
 
@@ -267,10 +267,24 @@ except Exception:
   printf '%s' "${_gp:-18789}"
 }
 
+gateway_tls() {  # 1 when gateway.tls.enabled is true in the config, else 0 (also unreadable)
+  [ -f "$ROOT/openclaw.json" ] || { printf '0'; return 0; }
+  OC_CFG="$ROOT/openclaw.json" python3 -c 'import json,os
+try:
+    t=((json.load(open(os.environ["OC_CFG"])).get("gateway") or {}).get("tls") or {}).get("enabled")
+    print(1 if str(t).lower()=="true" else 0)
+except Exception:
+    print(0)' 2>/dev/null || printf '0'
+}
+
 healthz_ok() {  # 0 ONLY on a measured 200; no curl = cannot prove = 1
   command -v curl >/dev/null 2>&1 || return 1
-  [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 \
-        "http://127.0.0.1:$(gateway_port)/healthz" 2>/dev/null)" = "200" ]
+  # A TLS gateway answers https ONLY (http:// gets an empty reply). Loopback, so -k.
+  _hz_s=http; _hz_k=""
+  if [ "$(gateway_tls)" = "1" ]; then _hz_s=https; _hz_k="-k"; fi
+  # shellcheck disable=SC2086  # _hz_k is empty or the single word -k
+  [ "$(curl -s $_hz_k -o /dev/null -w '%{http_code}' --max-time 3 \
+        "$_hz_s://127.0.0.1:$(gateway_port)/healthz" 2>/dev/null)" = "200" ]
 }
 
 healthz_wait() {  # [seconds] — bounded re-probe; a restart can take a minute
