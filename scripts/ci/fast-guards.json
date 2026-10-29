@@ -1227,6 +1227,42 @@
   }
  },
  {
+  "name": "memory-guard",
+  "was": "(new, memory-guard)",
+  "script": "scripts/ci/fast-guards.d/memory-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "scripts/memory-guard.py",
+     "scripts/memory-guard.sh",
+     "scripts/ensure-pipeline-crons.sh",
+     "install.sh",
+     "tests/fixtures/fake-openclaw-cron.py",
+     "tests/unit/memory-guard.test.sh",
+     "scripts/ci/fast-guards.d/memory-guard.sh"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "scripts/memory-guard.py",
+     "scripts/memory-guard.sh",
+     "scripts/ensure-pipeline-crons.sh",
+     "install.sh",
+     "tests/fixtures/fake-openclaw-cron.py",
+     "tests/unit/memory-guard.test.sh",
+     "scripts/ci/fast-guards.d/memory-guard.sh"
+    ]
+   }
+  }
+ },
+ {
   "name": "model-selector-guard",
   "was": "model-selector-guard.yml",
   "script": "scripts/ci/fast-guards.d/model-selector-guard.sh",
