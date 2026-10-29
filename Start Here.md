@@ -306,7 +306,7 @@ Every skill has a specific install sequence. Follow it exactly:
 - Install skills 01-30 in order, confirm each one individually
 - Only after skill 31 (Upgraded Memory System) is verified complete → remove ONBOARDING PENDING flag
 - Only after skill 31 (Upgraded Memory System) is verified complete → write ONBOARDING COMPLETE to MEMORY.md
-- NOTE: Former Skills 33 (Department Heads) and 34 (Intelligent Staffing) have been merged INTO Skill 23 (AI Workforce Blueprint). They no longer exist as separate skills. Their folders are archived as 33-department-heads-ARCHIVED and 34-intelligent-staffing-ARCHIVED.
+- NOTE: Former Skills 33 (Department Heads) and 34 (Intelligent Staffing) have been merged INTO Skill 23 (AI Workforce Blueprint). They no longer exist as separate skills, and their folders are no longer shipped.
 
 ---
 
@@ -1235,14 +1235,6 @@ Replace `[MASTER_FILES_FOLDER]` with the actual path from step 3.
         EXAMPLES.md
         CORE_UPDATES.md
         github-setup.skill
-    11-superdesign-ARCHIVED/          # ARCHIVED - replaced by 45-design-intelligence-library
-        ARCHIVED.md
-        SKILL.md
-        INSTALL.md
-        INSTRUCTIONS.md
-        EXAMPLES.md
-        CORE_UPDATES.md
-        superdesign.skill
     12-openrouter-setup/
         SKILL.md
         INSTALL.md
@@ -1250,13 +1242,6 @@ Replace `[MASTER_FILES_FOLDER]` with the actual path from step 3.
         EXAMPLES.md
         CORE_UPDATES.md
         openrouter-setup.skill
-    13-google-workspace-setup/
-        SKILL.md
-        INSTALL.md
-        INSTRUCTIONS.md
-        EXAMPLES.md
-        CORE_UPDATES.md
-        google-workspace-setup.skill
     14-google-workspace-integration/
         SKILL.md
         INSTALL.md
@@ -1311,16 +1296,6 @@ Replace `[MASTER_FILES_FOLDER]` with the actual path from step 3.
         CORE_UPDATES.md
         youtube-watcher-full.md
         youtube-watcher.skill
-        upstream-original/
-    21-tavily-search-ARCHIVED/        # ARCHIVED - replaced by 03-agent-browser + 09-context7
-        ARCHIVED.md
-        SKILL.md
-        INSTALL.md
-        INSTRUCTIONS.md
-        EXAMPLES.md
-        CORE_UPDATES.md
-        tavily-search-full.md
-        tavily-search.skill
         upstream-original/
     22-book-to-persona-coaching-leadership-system/
         SKILL.md
@@ -1778,8 +1753,6 @@ All skill folders are located inside:
 | 8 | Vercel Setup (API/browser) | 08-vercel-setup |
 | 9 | Context7 Setup (API/browser) | 09-context7 |
 | 10 | GitHub / Git Setup (API + git config) | 10-github-setup |
-| 11 | SuperDesign Instructions Setup (ARCHIVED — replaced by 45-design-intelligence-library) | 11-superdesign-ARCHIVED |
-| 12 | Google Workspace Setup (ARCHIVED — branch: Workspace vs Gmail) | 13-google-workspace-setup-ARCHIVED |
 | 13 | Google Workspace Integration | 14-google-workspace-integration |
 | 14 | BlackCEO Team Management Setup | 15-blackceo-team-management |
 | 15 | Summarize YouTube Setup | 16-summarize-youtube |
@@ -1787,7 +1760,6 @@ All skill folders are located inside:
 | 17 | Proactive Agent | 18-proactive-agent |
 | 18 | Humanizer | 19-humanizer |
 | 19 | YouTube Watcher | 20-youtube-watcher |
-| 20 | Tavily Search (ARCHIVED — replaced by 03-agent-browser + 09-context7) | 21-tavily-search-ARCHIVED |
 | 21 | Book To Persona & Coaching & Leadership System | 22-book-to-persona-coaching-leadership-system |
 | 22 | AI Workforce Blueprint | 23-ai-workforce-blueprint |
 | 23 | Storyboard Writer | 24-storyboard-writer |

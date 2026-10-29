@@ -754,6 +754,11 @@
      "docs/archived-skill-tombstones.json",
      "tests/unit/documented-entrypoint-paths.test.py",
      "tests/unit/archived-skill-tombstones.test.py",
+     "tests/unit/archived-skills-removed.test.sh",
+     "tests/unit/archived-skill-retirement.test.sh",
+     "scripts/remove-archived-skills.sh",
+     "update-skills.sh",
+     "install.sh",
      ".github/workflows/documented-entrypoints-and-archived-tombstones-guard.yml"
     ]
    },
@@ -768,6 +773,11 @@
      "docs/archived-skill-tombstones.json",
      "tests/unit/documented-entrypoint-paths.test.py",
      "tests/unit/archived-skill-tombstones.test.py",
+     "tests/unit/archived-skills-removed.test.sh",
+     "tests/unit/archived-skill-retirement.test.sh",
+     "scripts/remove-archived-skills.sh",
+     "update-skills.sh",
+     "install.sh",
      ".github/workflows/documented-entrypoints-and-archived-tombstones-guard.yml"
     ]
    }

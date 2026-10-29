@@ -1143,6 +1143,11 @@ def evaluate_artifact_coverage(skill_dir):
         actual_archived = len(archived_dirs)
 
         skill_problems = []
+        # Retired skills are not shipped: OpenClaw logs an error on every skills rescan for each
+        # folder it cannot load, and update-skills.sh deletes the copies older rolls left on boxes.
+        if archived_dirs:
+            skill_problems.append(f"tree ships retired *-ARCHIVED folder(s) {archived_dirs}; "
+                                  f"delete them and list them in docs/archived-skill-tombstones.json")
         # README prose: "N numbered skill folders" + "M active ... K archived".
         readme = root / "README.md"
         readme_txt = readme.read_text(encoding="utf-8", errors="replace") if readme.is_file() else ""

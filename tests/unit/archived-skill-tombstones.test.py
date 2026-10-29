@@ -1,24 +1,21 @@
 #!/usr/bin/env python3
-"""Unit tests for the archived-skill tombstones (T2-12).
+"""Unit tests for the retired-skill registry, docs/archived-skill-tombstones.json.
 
-T2-12: `33-department-heads-ARCHIVED/SKILL.md` opened as an active installer for
-seventeen permanent department heads with no archive banner and no successor, and
-`34-intelligent-staffing-ARCHIVED/SKILL.md` still declared that it extends Skill
-23 and depends on Skill 33. The cluster addendum added
-`13-google-workspace-setup-ARCHIVED`, whose text defers work to a skill number and
-a script that do not exist. An operator who opens any of the three sees a live
-installer; following it reintroduces a superseded model into a live workforce.
+History. T2-12 first made the retired `*-ARCHIVED` folders harmless tombstones. That was
+not enough: OpenClaw rescans the skills folder constantly and logs an error for every
+folder it cannot load, and a retired folder carries no description, so each one logged
+234 errors in 13 hours on a real client box. The repository therefore no longer ships any
+`*-ARCHIVED` folder, and update-skills.sh / scripts/remove-archived-skills.sh delete the
+copies older rolls left on boxes.
 
-The state each archived folder is supposed to be in is declared in
-`docs/archived-skill-tombstones.json`, not inferred. These tests enforce it, in
-both directions:
+The registry stays, because two live mechanisms read it: update-skills.sh moves the old
+LIVE copy of each retired skill aside, and scripts/onboarding-state.sh drops the stale
+onboarding-state key. These tests keep it honest, in both directions:
 
-  * a tombstoned folder that loses its banner, its successor, or its installer's
-    refusal turns this suite RED;
-  * a folder still declared pending must say why, so "not yet done" is visible
-    rather than silently skipped;
-  * a NEW archived folder that nobody declared turns this suite RED, so the next
-    archive cannot slip in as a live installer.
+  * a `*-ARCHIVED` folder reappearing at the repository root turns this suite RED, so a
+    retired skill can never be shipped again by accident;
+  * a registry entry that is malformed, names a successor that does not exist, or lost the
+    commit that last shipped the folder turns it RED, so a retired skill stays restorable.
 
 Run:
     python3 tests/unit/archived-skill-tombstones.test.py
@@ -29,9 +26,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
-import sys
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -40,192 +34,85 @@ _REPO_ROOT = _HERE.parent.parent
 _MANIFEST_PATH = _REPO_ROOT / "docs" / "archived-skill-tombstones.json"
 assert _MANIFEST_PATH.is_file(), f"manifest not found at {_MANIFEST_PATH}"
 
-_MANIFEST = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
-_BANNER = _MANIFEST["banner_prefix"]
-_ENTRIES = _MANIFEST["archived"]
+_ENTRIES = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))["archived"]
 
-_FENCE_RE = re.compile(r"^\s*```", re.MULTILINE)
+_KEY_RE = re.compile(r"^[0-9]+-.+-ARCHIVED$")
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
-def _archived_dirs_on_disk():
+def _archived_dirs(root: Path):
     return sorted(
-        name for name in os.listdir(_REPO_ROOT)
-        if name.endswith("-ARCHIVED") and (_REPO_ROOT / name).is_dir()
+        name for name in os.listdir(root)
+        if name.endswith("-ARCHIVED") and (root / name).is_dir()
     )
 
 
-def _tombstoned():
-    return sorted(k for k, v in _ENTRIES.items() if v.get("tombstoned") is True)
-
-
-class TestManifestCoversReality(unittest.TestCase):
-    def test_every_archived_directory_is_declared(self):
-        on_disk = set(_archived_dirs_on_disk())
-        declared = set(_ENTRIES)
+class TestNoArchivedFolderShips(unittest.TestCase):
+    def test_no_archived_directory_at_the_repository_root(self):
         self.assertEqual(
-            on_disk - declared, set(),
-            "archived folder(s) on disk with no entry in "
-            "docs/archived-skill-tombstones.json — declare them tombstoned or pending",
+            _archived_dirs(_REPO_ROOT), [],
+            "a *-ARCHIVED folder is back at the repository root. Retired skills are not "
+            "shipped: OpenClaw logs an error on every skills rescan for each one. Delete "
+            "the folder and record it in docs/archived-skill-tombstones.json instead.",
         )
 
-    def test_no_declared_directory_is_missing_from_disk(self):
-        on_disk = set(_archived_dirs_on_disk())
-        declared = set(_ENTRIES)
-        self.assertEqual(
-            declared - on_disk, set(),
-            "manifest declares archived folder(s) that do not exist — remove the stale entries",
-        )
 
-    def test_pending_entries_state_a_reason(self):
-        for name, entry in sorted(_ENTRIES.items()):
-            if entry.get("tombstoned") is True:
-                continue
-            with self.subTest(archived=name):
+class TestRegistryIsWellFormed(unittest.TestCase):
+    def test_registry_is_not_empty(self):
+        self.assertTrue(_ENTRIES, "registry is empty: the live copies would never be retired")
+
+    def test_every_key_is_a_numbered_archived_name(self):
+        for key in sorted(_ENTRIES):
+            with self.subTest(key=key):
+                self.assertRegex(key, _KEY_RE)
+
+    def test_every_successor_is_a_live_skill_folder(self):
+        for key, entry in sorted(_ENTRIES.items()):
+            with self.subTest(key=key):
+                successor = entry.get("successor", "")
+                self.assertTrue(successor, f"{key} names no successor")
                 self.assertTrue(
-                    (entry.get("pending") or "").strip(),
-                    f"{name} is not tombstoned and gives no reason — an outstanding "
-                    f"archive must be visible, never a silent skip",
+                    (_REPO_ROOT / successor).is_dir(),
+                    f"{key} names successor {successor!r}, which is not a folder at the repository root",
+                )
+                self.assertFalse(successor.endswith("-ARCHIVED"),
+                                 f"{key} names another retired skill as its successor")
+
+    def test_every_entry_records_the_commit_that_last_shipped_it(self):
+        for key, entry in sorted(_ENTRIES.items()):
+            with self.subTest(key=key):
+                self.assertRegex(
+                    entry.get("last_commit", ""), _SHA_RE,
+                    f"{key} has no 40-character last_commit: the retired skill could not be restored",
                 )
 
-    def test_the_three_t2_12_folders_are_declared_tombstoned(self):
-        for name in (
-            "33-department-heads-ARCHIVED",
-            "34-intelligent-staffing-ARCHIVED",
-            "13-google-workspace-setup-ARCHIVED",
-        ):
-            with self.subTest(archived=name):
-                self.assertTrue(
-                    _ENTRIES.get(name, {}).get("tombstoned") is True,
-                    f"{name} must stay tombstoned (T2-12)",
+    def test_a_retired_skill_is_not_also_a_live_folder(self):
+        for key in sorted(_ENTRIES):
+            live = key[: -len("-ARCHIVED")]
+            with self.subTest(key=key):
+                self.assertFalse(
+                    (_REPO_ROOT / live).is_dir(),
+                    f"{live} is registered as retired but still ships as a live skill folder",
                 )
-
-
-class TestTombstonedFoldersAreTombstones(unittest.TestCase):
-    def test_skill_md_carries_the_banner(self):
-        for name in _tombstoned():
-            with self.subTest(archived=name):
-                text = (_REPO_ROOT / name / "SKILL.md").read_text(encoding="utf-8")
-                self.assertTrue(
-                    text.lstrip().startswith(_BANNER),
-                    f"{name}/SKILL.md does not open with the tombstone banner "
-                    f"{_BANNER!r} — it reads as a live skill",
-                )
-
-    def test_skill_md_names_its_successor(self):
-        for name in _tombstoned():
-            with self.subTest(archived=name):
-                successor = _ENTRIES[name]["successor"]
-                text = (_REPO_ROOT / name / "SKILL.md").read_text(encoding="utf-8")
-                self.assertIn(
-                    successor, text,
-                    f"{name}/SKILL.md does not name its successor {successor}",
-                )
-
-    def test_skill_md_states_it_must_not_be_run(self):
-        for name in _tombstoned():
-            with self.subTest(archived=name):
-                text = (_REPO_ROOT / name / "SKILL.md").read_text(encoding="utf-8")
-                self.assertIn("Do not run its installer", text)
-
-    def test_skill_md_has_no_runnable_procedure(self):
-        """A tombstone carries no code fences: nothing in it can be executed."""
-        for name in _tombstoned():
-            with self.subTest(archived=name):
-                text = (_REPO_ROOT / name / "SKILL.md").read_text(encoding="utf-8")
-                self.assertIsNone(
-                    _FENCE_RE.search(text),
-                    f"{name}/SKILL.md still contains a runnable code block",
-                )
-
-    def test_install_md_carries_the_banner(self):
-        for name in _tombstoned():
-            install_md = _REPO_ROOT / name / "INSTALL.md"
-            if not install_md.is_file():
-                continue
-            with self.subTest(archived=name):
-                text = install_md.read_text(encoding="utf-8")
-                self.assertTrue(
-                    text.lstrip().startswith("# ARCHIVED — DO NOT RUN"),
-                    f"{name}/INSTALL.md still reads as an installation guide",
-                )
-
-
-class TestArchivedInstallersRefuseToRun(unittest.TestCase):
-    """The sharpest check here: the installer is executed and must fail."""
-
-    def _run_installer(self, path: Path):
-        with tempfile.TemporaryDirectory() as fake_home:
-            env = dict(os.environ)
-            env["HOME"] = fake_home
-            return subprocess.run(
-                ["bash", str(path)],
-                capture_output=True, text=True, timeout=60,
-                cwd=str(path.parent), env=env, stdin=subprocess.DEVNULL,
-            )
-
-    def test_each_tombstoned_installer_exits_non_zero(self):
-        ran_at_least_one = False
-        for name in _tombstoned():
-            installer = _REPO_ROOT / name / "install.sh"
-            if not installer.is_file():
-                continue
-            ran_at_least_one = True
-            with self.subTest(archived=name):
-                proc = self._run_installer(installer)
-                self.assertNotEqual(
-                    proc.returncode, 0,
-                    f"{name}/install.sh ran to success — an archived installer must refuse",
-                )
-                combined = proc.stdout + proc.stderr
-                self.assertIn("REFUSED", combined,
-                              f"{name}/install.sh failed without saying it refused")
-                self.assertIn(_ENTRIES[name]["successor"], combined,
-                              f"{name}/install.sh refused without naming its successor")
-        self.assertTrue(
-            ran_at_least_one,
-            "no tombstoned archived folder ships an install.sh — this check exercised nothing",
-        )
-
-    def test_installer_writes_nothing(self):
-        """A refusal must not touch the box on its way out."""
-        for name in _tombstoned():
-            installer = _REPO_ROOT / name / "install.sh"
-            if not installer.is_file():
-                continue
-            with self.subTest(archived=name):
-                with tempfile.TemporaryDirectory() as fake_home:
-                    env = dict(os.environ)
-                    env["HOME"] = fake_home
-                    subprocess.run(
-                        ["bash", str(installer)],
-                        capture_output=True, text=True, timeout=60,
-                        cwd=str(installer.parent), env=env, stdin=subprocess.DEVNULL,
-                    )
-                    self.assertEqual(
-                        os.listdir(fake_home), [],
-                        f"{name}/install.sh wrote into HOME before refusing",
-                    )
 
 
 class TestTheCheckCanGoRed(unittest.TestCase):
-    """Directed negative cases: prove each rule catches the defect it names."""
+    """Directed negative cases: prove the rules catch the defects they name."""
 
-    def test_a_live_installer_body_fails_the_banner_rule(self):
-        live_body = "# Skill 99: Something\n\n## What This Skill Does\n\nInstalls things.\n"
-        self.assertFalse(live_body.lstrip().startswith(_BANNER))
-
-    def test_a_body_with_a_code_fence_fails_the_no_procedure_rule(self):
-        with_fence = f"{_BANNER} — Skill 99\n\n```bash\nbash install.sh\n```\n"
-        self.assertIsNotNone(_FENCE_RE.search(with_fence))
-
-    def test_a_zero_exit_installer_fails_the_refusal_rule(self):
+    def test_a_planted_archived_folder_is_detected(self):
+        import tempfile
         with tempfile.TemporaryDirectory() as td:
-            stub = Path(td) / "install.sh"
-            stub.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
-            proc = subprocess.run(["bash", str(stub)], capture_output=True,
-                                  text=True, timeout=60, stdin=subprocess.DEVNULL)
-        self.assertEqual(proc.returncode, 0,
-                         "control: a permissive installer exits zero, which the rule rejects")
+            root = Path(td)
+            (root / "99-gone-ARCHIVED").mkdir()
+            (root / "98-live").mkdir()
+            (root / "97-archive-tools").mkdir()
+            self.assertEqual(_archived_dirs(root), ["99-gone-ARCHIVED"])
+
+    def test_a_malformed_key_or_sha_is_rejected(self):
+        self.assertIsNone(_KEY_RE.match("11-superdesign"))
+        self.assertIsNone(_KEY_RE.match("superdesign-ARCHIVED"))
+        self.assertIsNone(_SHA_RE.match("83f54c2"))
+        self.assertIsNone(_SHA_RE.match("G" * 40))
 
 
 if __name__ == "__main__":

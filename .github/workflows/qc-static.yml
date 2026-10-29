@@ -1596,6 +1596,7 @@ jobs:
         run: |
           set -uo pipefail
           bash tests/unit/archived-skill-retirement.test.sh
+          bash tests/unit/archived-skills-removed.test.sh
           bash tests/unit/update-summary.test.sh
           bash tests/unit/frontdoor-999-clone-9router.test.sh
           bash tests/unit/box-fixes-gates.test.sh
