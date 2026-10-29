@@ -30,7 +30,7 @@
 - In plain English: installs on boxes that sit behind Cloudflare sign-in stop being marked "degraded" for a check that could never pass from the box itself, and a box that really is missing its registration or persona setup still fails, now with the exact missing items named.
 - Risk level: LOW. The only new network call is to this box's own loopback port, and only after the public host has answered with its own Access login redirect.
 
-## [Unreleased]  -  2026-10-26  -  oct-25 release-hygiene batch: pins, stamps, README and changelog for l01-l19, l25-l27 + the KIE prompt gate fix
+## [v27.1.68]  -  2026-10-26  -  oct-25 release-hygiene batch: pins, stamps, README and changelog for l01-l19, l25-l27 + the KIE prompt gate fix
 
 - Release-hygiene closing entry for the oct-25 fix batch already merged through the lane trains and PR #2592: l01-l08 (Skill 71 install/preflight/handoff/intake), l09-l12 (Skill 49 launch plan/dispatch/role wrappers), l13-l19 (Skill 06 maintenance crons and QC gates), l25-l27 (Skill 83 verify, packaging and docs), plus the KIE prompt gate fix 7908c5472 (script_writer raw-retention declared as a rule-12 gate). Each unit's own behavior is recorded in its skill CHANGELOG; this entry closes the batch bookkeeping.
 - In plain English: the work from the oct-25 fix batch is now fully recorded - the repo version, the four skill changelogs (71, 49, 06, 75), and Skill 06's README/INSTALL now document the maintenance-cron subsystem (aggregate installer, lib-cron-presence.sh, four cron installers, reaper-schedule check) that l13-l19 shipped without docs.
