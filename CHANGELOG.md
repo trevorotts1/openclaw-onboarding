@@ -40,7 +40,7 @@
 
 ## [Unreleased]  -  2026-10-25  -  PBB-357 / T-04 repair round 2: record and proof repaired, verified external storage binding, child temp propagation and measured global capacity
 
-- Bumps Skill 38 to v2.0.151 with its own changelog entry, and re-lands `evidence/storage-and-resource-receipt.json` byte-identical (blob `e8cfbbad1f54d20233c60996bc155504d817885b`).
+- Bumps Skill 38 to v2.0.95 with its own changelog entry, and re-lands `evidence/storage-and-resource-receipt.json` byte-identical (blob `e8cfbbad1f54d20233c60996bc155504d817885b`).
 - Repairs PBB-339 D1: the gate's rule 4 scanned the whole root CHANGELOG for the first "bumps Skill 38 to" line, so it refused a wholly true record. Repaired to read only the newest entry. A true fixture exits 1 on the old gate (`VIOLATION ... first 'bumps Skill 38 to' line is v2.0.8 but ... is v2.0.9`) and 0 on the repaired gate; reverting the fix makes `--self-test` exit 1 with `SELF-TEST FAIL — 1 fixture(s) behaved wrongly`.
 - Repairs PBB-339 D2: the previous message claimed "no control code ... changed" while the same commit added this gate and extended `skill-version-newline-guard.sh`. This record states what the diff does instead.
 - Adds the class-wide gate `scripts/qc-assert-commit-version-claim.py`, run from `skill-version-newline-guard` on every `skill-version.txt` change. Embedded self-test: 12 fixtures, wrong records fail, right records pass.
@@ -86,25 +86,6 @@
 - In plain English: the proof of where the work lives and where temporary files actually go is back, and the commit record that lied about its own version can no longer pass a gate.
 - Nothing is enforced by control code yet; no config, ledger, provider, limit or credential was changed. The abandoned repair commit `702d6e4cdb` is not an ancestor of this branch.
 - Risk level: LOW (evidence artifact, bookkeeping and one read-only CI gate).
-## [Unreleased]  -  2026-10-24  -  PBB-177 / T-04: verified external storage binding and measured global capacity
-
-- Adds `evidence/storage-and-resource-receipt.json` and bumps Skill 38 to v2.0.32 with its own changelog entry. The receipt binds the live external mount by media UUID, resolves every configured parent and device, and proves child `TMPDIR`/`TMP`/`TEMP`/tempfile propagation for shell, Python (including a grandchild) and Node.
-## [Unreleased]  -  2026-10-24  -  PBB-177 / T-04: verified external storage binding and measured global capacity
-
-- Adds `evidence/storage-and-resource-receipt.json` and bumps Skill 38 to v2.0.34 with its own changelog entry. The receipt binds the live external mount by media UUID, resolves every configured parent and device, and proves child `TMPDIR`/`TMP`/`TEMP`/tempfile propagation for shell, Python (including a grandchild) and Node.
-- Measured facts, each with the command and exit code that produced it: mount `/dev/disk7s1`, `st_dev 16777244`, UUID `9584F366-F6FB-4A40-AA75-DB2EA0FA01EA`; filesystem 4000770232320 bytes total and 2524230701056 available; 24 GiB RAM with 5254676480 bytes reclaimable; limits 10 agents per workflow / 50 workflows / 500 agents.
-- Recorded gaps, not papered over: the `config/storage.json` device pin is stale (`disk5s1` / `16777240`) and is never read by `tools/control.py`; macOS `mktemp` ignores `TMPDIR` and writes to the internal disk; `PYTHONPYCACHEPREFIX` is ignored under `-I`; and 9 `node_modules` symlinks under the run roots resolve off-volume.
-- In plain English: this proves where the work actually lives and where temporary files really go, and it names the places where the proof shows a hole instead of pretending they are covered.
-- Nothing is enforced yet. No control code, config, ledger, provider, limit or credential was changed; provider quota, memory admission and unprobed tool caches remain explicitly UNKNOWN.
-- Risk level: LOW (evidence artifact and bookkeeping only).
-## [Unreleased]  -  2026-10-24  -  PBB-220 / T-05: adopted engineering loop and proven launchd observer/owner-action bridge
-
-- Adds `CONTROL/eng_loop.py`, `CONTROL/owner_handler.py` and `evidence/engineering-loop-registration.json`, and bumps Skill 38 to v2.0.34. The existing narrow adapter is extended, not replaced: the owner handler is byte-identical and the adapter changes only to allow an isolated label/plist/store.
-- Proven with actual IDs on one synthetic action: create, launchd-tick dispatch, owner ACK, a separate completion receipt, duplicate create/dispatch refused with exactly one effect, a host-level crash followed by replacement resume, and a stop whose read-back completion is a distinct receipt from its ACK.
-- Independent observation came from a separate process reading the effect file and the SQLite store, plus native `launchctl print` with two known-present positive controls. The production engineering job was observed running and left untouched.
-- In plain English: the loop that observes and dispatches work is now a real background macOS job with a durable queue, and the proof shows the same work cannot be performed twice by accident.
-- Nothing is enforced beyond this candidate: C-05, C-F15, C-F18 and C-F19 stay UNVERIFIED for independent QC, and the receipt names what was not exercised.
-- Risk level: LOW (additive control code and evidence; no provider, credential, customer or runtime change).
 
 ## [Unreleased]  -  2026-10-24  -  PBB-070 / T-47: cross-repository compatibility manifest and deployment evidence
 

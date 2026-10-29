@@ -5,7 +5,7 @@
   "bind_attempt": 1,
   "lane": "PBB-672",
   "branch": "pb/PBB-672/t-09-bind",
-  "worktree": "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/worktrees/PBB-672",
+  "worktree": "<worktree-root-parent>/Purple-Billboard-Client-System-Build/worktrees/PBB-672",
   "head": "99434b243a627c5c4fa7923bb2123650f9a137a5",
   "digest": "f238d12d6ac556e3c24453d5f758ed91fe3c9d09",
   "digest_recipe": "git diff -U0 $(git merge-base origin/main <head>) <head> | git patch-id --stable",

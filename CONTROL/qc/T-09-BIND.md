@@ -5,7 +5,7 @@
 | Unit | T-09 — "Repair current hook mapping upgrade behavior if gap reproduced" |
 | Acceptance clause | "Fresh/existing mapping regressions; preserve unrelated config and actual versions." |
 | Lane | PBB-672 (BUILD), branch `pb/PBB-672/t-09-bind` |
-| Worktree | `/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/worktrees/PBB-672` (locked, "portable drive") |
+| Worktree | `<worktree-root-parent>/Purple-Billboard-Client-System-Build/worktrees/PBB-672` (locked, "portable drive") |
 | Head measured | `99434b243a627c5c4fa7923bb2123650f9a137a5` (unchanged; the repair commit from lane PBB-658) |
 | Digest (recomputed here) | `f238d12d6ac556e3c24453d5f758ed91fe3c9d09` |
 | Base used by the digest recipe | `git merge-base origin/main HEAD` = `3d7135664326eeb7857252afcad5506c1381c3d5` |
