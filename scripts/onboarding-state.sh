@@ -557,6 +557,15 @@ except Exception:
     print("GATE: no state file — nothing verified yet")
     sys.exit(1)
 skills = state.get("skills", {})
+# CLIENT-MADE SKILLS are not part of installed-vs-expected. The denominator is what
+# the repo ships (discoveredSkills, written by obs_seed_state from the source
+# bundle); a folder the client built themselves never fails the gate and is
+# counted apart. Nothing is removed from the state file.
+shipped = state.get("discoveredSkills")
+client_extra = []
+if shipped:
+    client_extra = sorted(k for k in skills if k not in set(shipped))
+    skills = {k: v for k, v in skills.items() if k in set(shipped)}
 total = len(skills)
 passed = [k for k, v in skills.items() if v.get("status") == "qc-passed"]
 park   = [k for k, v in skills.items() if v.get("status") == "interview-pending"]
@@ -573,6 +582,7 @@ print("GATE-HUMAN: " + human)
 print("GATE-MACHINE: " + json.dumps({
     "ok": ok, "total": total, "passed": len(passed),
     "interviewPending": len(park), "failed": failed,
+    "skills_client_extra": len(client_extra),
 }))
 sys.exit(0 if ok else 1)
 PYEOF
