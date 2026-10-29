@@ -234,6 +234,26 @@ if [ -z "${ONBOARDING_CLONE:-}" ] && [ -e "$R" ] && [ "$(git -C "$R" remote get-
 fi
 PREV="$(git -C "$R" rev-parse HEAD 2>/dev/null || true)"
 if [ -d "$R/.git" ]; then
+  # Tool-owned copy, but an old scrub (or anyone) can leave edits in it, and
+  # `checkout -B` aborts on them ("local changes ... would be overwritten") so the
+  # whole update exited 1. Save them first in a stash that is kept in the copy and
+  # never dropped, then hard-sync. If the stash cannot be written, stop: nothing
+  # is ever discarded unsaved. Only this copy is touched, never another checkout.
+  _n="$(git -C "$R" status --porcelain --untracked-files=all 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "${_n:-0}" -gt 0 ]; then
+    _s0="$(git -C "$R" rev-parse -q --verify refs/stash 2>/dev/null || true)"
+    if ! git -C "$R" -c user.name=fleet-refresh -c user.email=fleet-refresh@localhost \
+           stash push -q --include-untracked -m "fleet-refresh auto-stash $(date -u +%Y%m%dT%H%M%SZ)"; then
+      log "ERROR: could not save the $_n local change(s) in $R before syncing — nothing was changed on this box"
+      exit 1
+    fi
+    _s1="$(git -C "$R" rev-parse -q --verify refs/stash 2>/dev/null || true)"
+    if [ -n "$_s1" ] && [ "$_s1" != "$_s0" ]; then
+      log "onboarding copy $R had $_n locally changed file(s): saved as stash ${_s1:0:12} (stash@{0}; kept in the copy, never dropped)"
+    else
+      log "WARNING: onboarding copy $R reported $_n local change(s) but git stashed nothing (e.g. a nested repository); syncing anyway"
+    fi
+  fi
   if ! { git -C "$R" fetch -q --depth 1 origin +refs/heads/main:refs/remotes/origin/main \
          && git -C "$R" checkout -q -B main origin/main && git -C "$R" reset -q --hard origin/main; }; then
     log "ERROR: could not sync $R to origin/main — nothing was changed on this box"
