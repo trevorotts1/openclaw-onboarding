@@ -45,6 +45,9 @@ Carries the PBB-177 T-04 operator-path redaction onto live main: every `/Volumes
 ## [2.0.221] - 2026-10-28 - rebase PBB-177 T-04 path redaction onto live main (lane batch1)
 
 Carries the PBB-177 T-04 operator-path redaction onto live main: every operator volume root in `evidence/storage-and-resource-receipt.json` becomes the `<PATH>` placeholder (118 sites), matching the unit's second commit. Changelog lines on main already carried the redacted text, so no changelog replay was needed beyond this stamp. Verifies clean against the skill-38 suite.
+## [2.0.221] - 2026-10-28 - Skill 38 to v2.0.221
+
+Rebase-carry of PBB-2314 (88e9684ab) onto live main: branch-relative bookkeeping invariants for test_interactive_owner.py (BookkeepingTests read the fork point, not the moving tip), spliced onto main's evolved file keeping FulfillmentCliTests and the diff-window owned_changelog_versions work. Version stamp only beyond the carried test change.
 
 ## [2.0.220] - 2026-10-28 - chore(train20): batch landing of the PBB-1708 interactive-owner tests
 
