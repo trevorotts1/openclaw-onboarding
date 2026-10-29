@@ -1,5 +1,14 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.67 - 2026-10-29 - fix(32): the installer repairs a missing better-sqlite3 native binding, and a pin-current box stamps commandCenterBuildFresh
+
+Two faults from the last Big Fleet Roll, both in `run-full-install.sh`.
+
+1. **Native binding (#12).** A user npm config with `ignore-scripts=true` made `npm ci` skip better-sqlite3's install script, so its native binding was never built and the refresh died at `db:push failed; migration incomplete`. After `npm ci`, `cc_install_locked_dependencies` now calls the new `cc_ensure_sqlite_binding`: it loads better-sqlite3 (`new Database(":memory:")`) with the exact node the Command Center runs on (`cc_with_node`). If that fails it runs `npm rebuild better-sqlite3 --ignore-scripts=false` for that one package, on that node, and loads it again. The flag is per command, so the user's npm config (global or project) is never changed. A checkout without better-sqlite3 in `node_modules` is left alone; a binding that still will not load after the rebuild stops the install with the real reason instead of the later `db:push` failure.
+2. **AT_PIN stamp (#13).** On a pin-current box the `CC_AT_PIN=1` branch of `cc_route_update_through_canonical_path` returned before anything stamped `commandCenterBuildFresh`, so the FINAL check saw the key unset and a successful run ended `done-degraded` (`ccBuildFresh(6)`). That branch now stamps the key from the same content oracle every other path uses (`build-inventory.sh --verify`): `true` when the served `.next` verifies against the checkout, `false` (still degraded, recovery retries) when it does not. It still deploys nothing.
+
+Tests: `scripts/test-d18-d19-npm-ci-node-and-cron-agent-rebind.sh` (6 new cases, 3 failed on the previous installer) and `tests/unit/cc-update-path-build-fresh.test.sh` (3 new cases, 2 failed on the previous installer). skill-version v13.1.66 -> v13.1.67.
+
 ## v13.1.65 - 2026-10-28 - fix(32): the public host's registry entry records the owner's Access subject at provision; tenant doc matches the persona-context rule
 
 `interview-launch.py provision` now records `subjects: [<owner email>]` on the public host's `MC_TENANT_REGISTRY_JSON` entry when it creates the entry and the build state holds a real owner `contactEmail` (never a `pending+` placeholder, never added to an existing entry). Issuer and audience still come only from the live Cloudflare Access login, which `register-access` reads; boxes hold no Cloudflare credentials, so the roll reports a host still missing them on a `CC_TENANT_REGISTRY_ACCESS_MISSING` line (`shared-utils/ensure_cc_tenant_env.py`). `TENANT-CONFIGURATION.md` now states the rule the Command Center applies to the persona company config (no id fields, or every id field equal to the key). skill-version v13.1.64 -> v13.1.65.
