@@ -166,13 +166,18 @@ mk_wrap noguard 'print("x")'; rm -f "$WD/memory-guard.py"
 run_wrap; RC=$?
 { [ "$RC" -eq 0 ] && grep -q "SKIPPED" "$SANDBOX/wrap.out"; } && pass "3h: script missing (older bundle) -> skipped, exit 0" || fail "3h: rc=$RC"
 
-echo "--- 4: real wrapper end to end (fake openclaw, too-old OpenClaw -> skipped, nothing written) ---"
+echo "--- 4: real wrapper end to end (fake openclaw: too-old OpenClaw skipped, 2026.10.5 admitted, nothing written) ---"
 WH="$SANDBOX/wh-real"; mkdir -p "$WH/.openclaw" "$SANDBOX/real-bin"
 printf '{"memory":{"search":{"provider":"gemini"}},"agents":{"entries":{"main":{}}}}' > "$WH/.openclaw/openclaw.json"
-printf '#!/bin/sh\necho "OpenClaw 2026.9.4 (old)"\n' > "$SANDBOX/real-bin/openclaw"; chmod +x "$SANDBOX/real-bin/openclaw"
+printf '#!/bin/sh\necho "OpenClaw 2026.10.4 (old)"\n' > "$SANDBOX/real-bin/openclaw"; chmod +x "$SANDBOX/real-bin/openclaw"
 BEFORE="$(cat "$WH/.openclaw/openclaw.json")"
 env -u OC_ROOT HOME="$WH" PATH="$SANDBOX/real-bin:$PATH" bash "$GUARD_SH" > "$SANDBOX/real.out" 2>&1; RC=$?
-{ [ "$RC" -eq 0 ] && grep -q "older than 2026.10.8" "$SANDBOX/real.out" && [ "$(cat "$WH/.openclaw/openclaw.json")" = "$BEFORE" ]; } && pass "4a: older OpenClaw: exit 0, SKIPPED, config byte-identical" || fail "4a: rc=$RC: $(tail -3 "$SANDBOX/real.out")"
+{ [ "$RC" -eq 0 ] && grep -q "older than 2026.10.5" "$SANDBOX/real.out" && [ "$(cat "$WH/.openclaw/openclaw.json")" = "$BEFORE" ]; } && pass "4a: older OpenClaw: exit 0, SKIPPED, config byte-identical" || fail "4a: rc=$RC: $(tail -3 "$SANDBOX/real.out")"
+# 2026.10.5 is a client-box build: it must pass the version gate (fake CLI prints no probe JSON, so
+# the key check sees a transient error and changes nothing; the config stays byte-identical).
+printf '#!/bin/sh\necho "OpenClaw 2026.10.5 (current)"\n' > "$SANDBOX/real-bin/openclaw"; chmod +x "$SANDBOX/real-bin/openclaw"
+env -u OC_ROOT HOME="$WH" PATH="$SANDBOX/real-bin:$PATH" bash "$GUARD_SH" > "$SANDBOX/real2.out" 2>&1; RC=$?
+{ [ "$RC" -eq 0 ] && ! grep -q "SKIPPED: OpenClaw" "$SANDBOX/real2.out" && grep -q "key check" "$SANDBOX/real2.out" && [ "$(cat "$WH/.openclaw/openclaw.json")" = "$BEFORE" ]; } && pass "4b: OpenClaw 2026.10.5 is admitted (not skipped), config byte-identical" || fail "4b: rc=$RC: $(tail -3 "$SANDBOX/real2.out")"
 
 echo ""
 echo "=== $PASS passed, $FAIL failed ==="

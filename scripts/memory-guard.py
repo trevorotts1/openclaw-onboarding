@@ -36,8 +36,10 @@ by hand the guard forgets its record and treats the new setting as the original.
 
 Writes go through `openclaw config patch --stdin` (one validated write per pass)
 as the box user; the script refuses to run as root. Needs the current config
-shape (top-level memory.search, agents.entries) and OpenClaw 2026.10.8 or newer
-(the build the probe and the patch were verified on); otherwise it reports
+shape (top-level memory.search, agents.entries) and OpenClaw 2026.10.5 or newer
+(the first build that applies a memory.search provider, model or enabled change
+without restarting the Gateway; none of the commands used here takes the SQLite
+maintenance lock on any build tested, 2026.9.1 to 2026.10.8); otherwise it reports
 SKIPPED and changes nothing.
 
 Usage:
@@ -65,7 +67,8 @@ import time
 IDLE_DAYS_DEFAULT = 30
 CONFIRM_DELAY_S = 90
 PROBE_TIMEOUT_S = 180
-MIN_OPENCLAW = (2026, 10, 8)  # the build the probe and `config patch` were verified on
+# 2026.10.4 and older restart the serving Gateway on any memory.search provider/model/enabled change; 2026.10.5+ hot-reload it.
+MIN_OPENCLAW = (2026, 10, 5)
 ALWAYS_ON_IDS = {"main"}
 ALWAYS_ON_PATTERNS = ("master-orchestrator",)
 OPERATOR_CHAT_IDS = {"5252140759", "6663821679", "6771245262"}
@@ -969,8 +972,8 @@ def _self_test():
         reset(legacy)
         key_pass(box()); idle_pass(box())
         check("older config shape is skipped without any call", not calls() and cfg_now() == legacy)
-        for ver, want in (("2026.10.8", True), ("2026.11.2", True), ("2027.1.1", True), ("2026.10.7", False),
-                          ("2026.9.30", False), ("garbage", False)):
+        for ver, want in (("2026.10.5", True), ("2026.10.8", True), ("2026.11.2", True), ("2027.1.1", True),
+                          ("2026.10.4", False), ("2026.9.30", False), ("garbage", False)):
             open(os.path.join(d, "version"), "w").write(ver)
             check("OpenClaw %s %s" % (ver, "runs" if want else "is skipped"), openclaw_ok(box()) is want)
     finally:
