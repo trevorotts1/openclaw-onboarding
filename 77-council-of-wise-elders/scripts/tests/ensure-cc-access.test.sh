@@ -28,7 +28,7 @@ OP2="ops2@cx-test.example"
 # Emails file: operator list, a file email for newbox + driftbox + okbox, a placeholder for phbox.
 cat > "$WORK/emails.json" <<JSON
 {"operator":["$OP"],"clients":{"newbox":["owner-new@cx-test.example"],"driftbox":["owner-drift@cx-test.example"],
- "okbox":["owner-ok@cx-test.example"],"phbox":["pending+phbox@cx-test.example"]}}
+ "okbox":["owner-ok@cx-test.example"],"phbox":["pending+phbox@cx-test.example"],"localbox":["owner-local@cx-test.example"]}}
 JSON
 
 # fixture: remote tunnel CC hosts (no app) newbox noemail phbox rescbox; driftbox/okbox/openbox have apps;
@@ -106,19 +106,20 @@ check "phbox: placeholder pending+ email is NEEDS_EMAIL" line_has phbox NEEDS_EM
 check "driftbox (allow-list lacks an operator and the client email): PLANNED to add 2, counts only" line_has driftbox "PLANNED dry-run: would add 2 email(s) (1 operator, 1 client"
 check "openbox (everyone rule): DRIFT" line_has openbox DRIFT
 check "okbox: ALREADY_PRESENT" line_has okbox ALREADY_PRESENT
-check "localbox (local tunnel) not listed, -gw and rescue hosts not listed" bash -c "! grep -E '^CC_ACCESS: (localbox|[a-z]+-gw|rescue-)' '$OUT'"
+check "localbox (local tunnel, readable :4000 rule) PLANNED like any Command Center; -gw and rescue hosts not listed" bash -c "grep -q '^CC_ACCESS: localbox.$Z PLANNED' '$OUT' && ! grep -E '^CC_ACCESS: ([a-z]+-gw|rescue-)' '$OUT'"
 check "summary counts skipped hosts" grep -Eq 'skipped=[1-9]' "$OUT"
 check "no GoHighLevel configuration: one 'ghl: skipped' counts line, no failure" test "$(grep -c '^ghl: skipped (no credentials/location)$' "$OUT")" = 1
 check "receipts written in the state dir" test -s "$WORK/state/cc-access-last-run.json" -a -s "$WORK/state/cc-access-runs.log"
-check "receipt lists needs_email hosts and counts" test "$(jq -c '[.counts.NEEDS_EMAIL, .counts.PLANNED, (.needs_email|length)] | join(",")' "$WORK/state/cc-access-last-run.json")" = '"2,3,2"'
+check "receipt lists needs_email hosts and counts" test "$(jq -c '[.counts.NEEDS_EMAIL, .counts.PLANNED, (.needs_email|length)] | join(",")' "$WORK/state/cc-access-last-run.json")" = '"2,4,2"'
 
 echo "== 3. --apply creates only what is safe"
 start_fake "$WORK/f.json"
 run_script --apply
 check "apply exit 0" test "$RC" = 0
+check "localbox CREATED (local tunnel proven by its own :4000 rule)" line_has localbox CREATED
 check "newbox CREATED" line_has newbox CREATED
 check "rescbox CREATED" line_has rescbox CREATED
-check "exactly 3 writes: one POST per creatable host + one PUT to driftbox's allow policy" bash -c "test \"$(nonget_count)\" = 3 && ! grep -Ev '^GET |^POST /client/v4/accounts/qc-acct/access/apps\$|^PUT /client/v4/accounts/qc-acct/access/apps/app-drift/policies/p1\$' '$LOG'"
+check "exactly 4 writes: one POST per creatable host + one PUT to driftbox's allow policy" bash -c "test \"$(nonget_count)\" = 4 && ! grep -Ev '^GET |^POST /client/v4/accounts/qc-acct/access/apps\$|^PUT /client/v4/accounts/qc-acct/access/apps/app-drift/policies/p1\$' '$LOG'"
 check "driftbox RECONCILED" line_has driftbox RECONCILED
 check "driftbox: every original rule kept in order, the 2 missing emails appended" test "$(state '.policies["app-drift"][0].include | map(.email.email)')" = '["ops@cx-test.example","someone-else@cx-test.example","ops2@cx-test.example","owner-drift@cx-test.example"]'
 check "receipt counts RECONCILED and names the host" test "$(jq -c '[.counts.RECONCILED, .reconciled]' "$WORK/state/cc-access-last-run.json")" = '[1,["driftbox.'$Z'"]]'
@@ -130,7 +131,7 @@ check "rescbox allow-list is operator + the rescue app owner email" test "$(stat
 check "no created policy contains everyone or a service token" test "$(state '[.policies[][] | .include[]? | keys[]] | map(select(. != "email" and . != "everyone")) | length')" = 0 -a "$(state '[.policies[] | .[] | select(.id|startswith("pol-")) | .include[] | keys[]] | unique')" = '["email"]'
 check "NEEDS_EMAIL hosts got no app (noemail, phbox)" test "$(app_count noemail)" = 0 -a "$(app_count phbox)" = 0
 check "DRIFT app untouched (openbox: still 24h, still only the everyone rule); apps themselves never edited" test "$(state '[.apps[] | select(.id=="app-drift" or .id=="app-open")] | map(.session_duration) | unique')" = '["24h"]' -a "$(state '.policies["app-open"]')" = '[{"id":"p3","name":"Allowed users","decision":"allow","include":[{"everyone":{}}]}]'
-check "no app for the local-tunnel host, -gw or rescue hosts" test "$(app_count localbox)" = 0 -a "$(state '[.apps[] | select(.domain | test("-gw\\.")) ] | length')" = 0
+check "local-tunnel host gets its login page; -gw and rescue hosts get none" test "$(app_count localbox)" = 1 -a "$(state '[.apps[] | select(.domain | test("-gw\\.")) ] | length')" = 0
 
 echo "== 4. second --apply is a no-op"
 cp "$STATE" "$WORK/after.json"; start_fake "$WORK/after.json"
@@ -169,7 +170,7 @@ check "orphans: exit 0 (no FAILED)" test "$RC" = 0
 check "'Configuration for tunnel not found' (newbox): SKIPPED_ORPHAN" line_has newbox "SKIPPED_ORPHAN .*tunnel $T1, whose configuration no longer exists (HTTP 404"
 check "tunnel gone (noemail): SKIPPED_ORPHAN" line_has noemail "SKIPPED_ORPHAN .*tunnel $T2"
 check "deleted tunnel (phbox): SKIPPED_ORPHAN" line_has phbox "SKIPPED_ORPHAN"
-check "orphans got no app; the other hosts still ran (rescbox CREATED, driftbox RECONCILED: 2 writes)" bash -c "test '$(app_count newbox)' = 0 && grep -q '^CC_ACCESS: rescbox.$Z CREATED' '$OUT' && test '$(nonget_count)' = 2"
+check "orphans got no app; the other hosts still ran (rescbox + localbox CREATED, driftbox RECONCILED: 3 writes)" bash -c "test '$(app_count newbox)' = 0 && grep -q '^CC_ACCESS: rescbox.$Z CREATED' '$OUT' && grep -q '^CC_ACCESS: localbox.$Z CREATED' '$OUT' && test '$(nonget_count)' = 3"
 # each orphan tunnel also carries the box's -gw and rescue- records: 3 tunnels x 3 records
 check "receipt counts and names every orphan record (3 tunnels x 3 records)" test "$(jq -c '[.counts.SKIPPED_ORPHAN, ([.orphans[].host | select(IN("newbox.'$Z'","noemail.'$Z'","phbox.'$Z'"))] | sort)]' "$WORK/state/cc-access-last-run.json")" = '[9,["newbox.'$Z'","noemail.'$Z'","phbox.'$Z'"]]'
 check "runs.log line carries orphans=9" bash -c "tail -n1 '$WORK/state/cc-access-runs.log' | grep -q ' orphans=9 '"
@@ -273,7 +274,7 @@ env CF_API_BASE="http://127.0.0.1:$PORT/client/v4" COUNCIL_ACCESS_STATE_DIR="$WO
     CLOUDFLARE_API_TOKEN="$TOKEN" CLOUDFLARE_ACCOUNT_ID=qc-acct CLOUDFLARE_ZONE_ID=wrong-zone \
     COUNCIL_ACCESS_ENV_FILE="$WORK/excl.env" TMPDIR="$WORK/tmp" "$SCRIPT" --apply >"$WORK/out/case.excl" 2>&1; RC=$?
 check "excluded host newbox: silent (no CC_ACCESS line at all), zero writes to it, no app" bash -c "test '$RC' = 0 && ! grep -q 'newbox' '$WORK/out/case.excl' && test \"$(app_count newbox)\" = 0"
-check "excluded host newbox: not one write was for it (only rescbox CREATED + driftbox RECONCILED)" test "$(nonget_count)" = 2
+check "excluded host newbox: not one write was for it (only rescbox + localbox CREATED + driftbox RECONCILED)" test "$(nonget_count)" = 3
 check "the run still proceeds for the others (rescbox CREATED)" bash -c "grep -q '^CC_ACCESS: rescbox.$Z CREATED' '$WORK/out/case.excl'"
 check "the excluded host is absent from the receipt" bash -c "! grep -q 'newbox' '$WORK/state/cc-access-last-run.json'"
 

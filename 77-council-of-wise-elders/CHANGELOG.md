@@ -1,5 +1,13 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.68: local-tunnel Command Centers get their login pages, and the provisioned address list never omits a client
+
+In plain English: a Command Center behind a locally managed tunnel never got the login page the Council address needs, so those clients' Council addresses could not appear. The same readable `:4000` ingress rule that proves a remotely managed host now proves a locally managed one; with no readable rule the host is still skipped with zero writes. The autoprovision receipt's provisioned list now names every host whose Council address the run proved exists (created now, already provisioned, or login-synced).
+
+- Fix (`fix/mimo-council77`, 135dec57c): `scripts/ensure-cc-access.sh`, `scripts/council-access-autoprovision.sh`, with their tests `scripts/tests/ensure-cc-access.test.sh` and `scripts/tests/council-access-autoprovision.test.sh`.
+- Docs (same unit): `INSTALL.md` and `references/install-matrix.md` name the operator-side token file (`council-tunnels/<tunnel-name>.token`) and the delivery rename to `secrets/tunnel-council.token`, merged with the existing in-container and host path wording.
+- Release commit carries the version ceremony only (`skill-version.txt`, `version`, `SKILL.md` frontmatter, this entry): skill 77 v1.0.67 -> v1.0.68.
+
 ## v1.0.67: version stamp for the consolidated fanout batch
 
 - **Consolidation 20261028-0700 version stamp, skill 77 v1.0.66 -> v1.0.67.** Skill content changed by units merged into batch/consolidate-20261028-0700. Version stamp, SKILL.md frontmatter and `version` and this entry only.

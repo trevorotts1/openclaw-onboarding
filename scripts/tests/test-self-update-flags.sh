@@ -53,6 +53,13 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 [ -n "$url" ] && [ -n "$dest" ] || exit 2
+# Loopback URLs are the job's own gateway/9Router health probes (self-update.sh
+# v1.2.0 proves health after a failed step), not script fetches: the pin test is
+# about what the job DOWNLOADS, so only non-loopback URLs are recorded.
+case "$url" in
+  http://127.0.0.1:*|http://localhost:*) ;;
+  *) printf '%s\n' "$url" >> "${CURL_LOG:-/dev/null}" ;;
+esac
 src="$FIXTURES/$(basename "$url")"
 [ -f "$src" ] || { echo "curl-stub: no fixture for $(basename "$url")" >&2; exit 22; }
 cp "$src" "$dest"
@@ -122,5 +129,140 @@ if [ -f "$STATUS" ]; then
   sed -n 's/.*openclaw=\([^ ]*\) ninerouter=\([^ ]*\).*/openclaw_target=\1 ninerouter_target=\2/p' "$LOG" | head -1
 fi
 
-[ "$fail" -eq 0 ] && { echo "PASS: self_update_command() flags accepted end to end"; exit 0; }
+# ── onboarding-sha pin (rc5-selfupdate-sha; critic.C1 / critic.C10) ──────────
+# A frozen roll must fetch every script at ITS commit, not live main. These cases
+# prove the ref reaches the fetch URLs, the status file, and the detached child.
+
+SHA_PIN="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"     # 40 hex — valid
+SHA_SHORT="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"    # 39 hex — refused
+SHA_LONG="${SHA_PIN}a"                                # 41 hex — refused
+SHA_NONHEX="zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz" # 40 chars, not hex — refused
+BASE_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding"
+
+run_case() {  # root url_log [extra flags...] -> the job's exit code
+  _r="$1"; _u="$2"; shift 2
+  mkdir -p "$_r"
+  _c="/tmp/openclaw-self-update-$ROLL.sh"
+  cp "$SRC" "$_c" || return 99
+  ( PATH="$T/bin:$PATH" HOME="$T/home" OPENCLAW_ROOT="$_r" FIXTURES="$T/fix" \
+      CURL_LOG="$_u" bash "$_c" --roll-id "$ROLL" --openclaw-target "$OC_TARGET" \
+      --ninerouter-target "$NR_TARGET" --foreground "$@" >/dev/null 2>&1 )
+}
+
+U1="$T/urls-pinned.log"; : > "$U1"
+run_case "$T/root-pinned" "$U1" --onboarding-sha "$SHA_PIN"; RC1=$?
+case "$RC1" in
+  0|23) : ;;
+  *) echo "FAIL: pinned run exit $RC1 (want 0 or 23)"; fail=1 ;;
+esac
+if [ -s "$U1" ]; then
+  if grep -v "^$BASE_URL/$SHA_PIN/" "$U1" | grep -q .; then
+    echo "FAIL: a fetch ignored the pin (want every URL under /$SHA_PIN/):"
+    grep -v "^$BASE_URL/$SHA_PIN/" "$U1" | sed 's/^/  /'
+    fail=1
+  fi
+  for f in oc-atomic-upgrade.sh oc-schema-migrate.py oc-supervisor-install.py weekly-full-update.sh; do
+    grep -q "^$BASE_URL/$SHA_PIN/scripts/$f\$" "$U1" \
+      || { echo "FAIL: pinned run did not fetch scripts/$f at the pinned sha"; fail=1; }
+  done
+  grep -q "/main/" "$U1" && { echo "FAIL: pinned run fetched something from main"; fail=1; }
+else
+  echo "FAIL: pinned run recorded no fetches — the pin is unproven"; fail=1
+fi
+python3 -I - "$T/root-pinned/fleet-refresh/agent-pull-status.json" "$SHA_PIN" <<'PY' || fail=1
+import json, sys
+d = json.load(open(sys.argv[1]))
+bad = []
+if d.get("onboarding_sha") != sys.argv[2]:
+    bad.append("onboarding_sha=%r" % (d.get("onboarding_sha"),))
+if d.get("onboarding_ref") != sys.argv[2]:
+    bad.append("onboarding_ref=%r" % (d.get("onboarding_ref"),))
+if bad:
+    print("FAIL: status pin fields: %s" % ", ".join(bad))
+    raise SystemExit(1)
+print("ok - status records onboarding_sha and onboarding_ref = %s" % sys.argv[2])
+PY
+
+# Backward compatible: no flag means live main, exactly as before.
+U2="$T/urls-main.log"; : > "$U2"
+run_case "$T/root-main" "$U2"; RC2=$?
+case "$RC2" in
+  0|23) : ;;
+  *) echo "FAIL: unpinned run exit $RC2 (want 0 or 23)"; fail=1 ;;
+esac
+if [ -s "$U2" ]; then
+  if grep -v "^$BASE_URL/main/" "$U2" | grep -q .; then
+    echo "FAIL: unpinned run did not fetch from main:"
+    grep -v "^$BASE_URL/main/" "$U2" | sed 's/^/  /'
+    fail=1
+  fi
+else
+  echo "FAIL: unpinned run recorded no fetches"; fail=1
+fi
+python3 -I - "$T/root-main/fleet-refresh/agent-pull-status.json" <<'PY' || fail=1
+import json, sys
+d = json.load(open(sys.argv[1]))
+bad = []
+if d.get("onboarding_sha") != "":
+    bad.append("onboarding_sha=%r (want empty)" % (d.get("onboarding_sha"),))
+if d.get("onboarding_ref") != "main":
+    bad.append("onboarding_ref=%r (want 'main')" % (d.get("onboarding_ref"),))
+if bad:
+    print("FAIL: unpinned status fields: %s" % ", ".join(bad))
+    raise SystemExit(1)
+print("ok - unpinned run records ref=main with no sha")
+PY
+
+# Bad shapes are refused at the parser, before any fetch or root lookup.
+for bad in "$SHA_SHORT" "$SHA_LONG" "$SHA_NONHEX" "abcdef0"; do
+  out="$(PATH="$T/bin:$PATH" HOME="$T/home" bash "$SRC" --roll-id "$ROLL" \
+          --openclaw-target "$OC_TARGET" --onboarding-sha "$bad" 2>&1)"; rc=$?
+  [ "$rc" -eq 22 ] || { echo "FAIL: --onboarding-sha '$bad' exit $rc (want 22)"; fail=1; }
+  printf '%s' "$out" | grep -q -- "--onboarding-sha must be 40 hex" \
+    || { echo "FAIL: --onboarding-sha '$bad' message: $out"; fail=1; }
+done
+out="$(PATH="$T/bin:$PATH" HOME="$T/home" bash "$SRC" --roll-id "$ROLL" \
+        --openclaw-target "$OC_TARGET" --onboarding-sha 2>&1)"; rc=$?
+[ "$rc" -eq 22 ] || { echo "FAIL: dangling --onboarding-sha exit $rc (want 22)"; fail=1; }
+printf '%s' "$out" | grep -q -- "--onboarding-sha needs a value" \
+  || { echo "FAIL: dangling --onboarding-sha message: $out"; fail=1; }
+
+# The env form is honoured and validated the same way (parity with --999-sha).
+out="$(ONBOARDING_SHA="$SHA_SHORT" PATH="$T/bin:$PATH" HOME="$T/home" bash "$SRC" \
+        --roll-id "$ROLL" --openclaw-target "$OC_TARGET" 2>&1)"; rc=$?
+[ "$rc" -eq 22 ] || { echo "FAIL: ONBOARDING_SHA env exit $rc (want 22)"; fail=1; }
+printf '%s' "$out" | grep -q -- "--onboarding-sha must be 40 hex" \
+  || { echo "FAIL: ONBOARDING_SHA env message: $out"; fail=1; }
+
+# The real delivery is DETACHED: if the parent does not hand the pin to the child
+# it starts, the worker silently reverts to main. Capture the child argv without
+# spawning anything — a python3 shim records the Popen arguments and answers with
+# a fake pid, then defers every other call to the real interpreter.
+REAL_PY="$(command -v python3)"
+cat > "$T/bin/python3" <<EOF
+#!/usr/bin/env bash
+if [ "\$1" = "-c" ] && printf '%s' "\$2" | grep -q 'subprocess.Popen'; then
+  shift 2
+  printf '%s\n' "\$@" >> "\$PY_ARGV_LOG"
+  echo 999999
+  exit 0
+fi
+exec "$REAL_PY" "\$@"
+EOF
+chmod 700 "$T/bin/python3"
+mkdir -p "$T/root-detach"
+ARGV="$T/child-argv.log"; : > "$ARGV"
+PATH="$T/bin:$PATH" HOME="$T/home" OPENCLAW_ROOT="$T/root-detach" FIXTURES="$T/fix" \
+  CURL_LOG="$T/urls-detach.log" PY_ARGV_LOG="$ARGV" \
+  bash "$SRC" --roll-id "$ROLL" --openclaw-target "$OC_TARGET" \
+  --ninerouter-target "$NR_TARGET" --onboarding-sha "$SHA_PIN" >/dev/null 2>&1
+RC3=$?
+[ "$RC3" -eq 0 ] || { echo "FAIL: detach launcher exit $RC3 (want 0)"; fail=1; }
+[ -s "$ARGV" ] || { echo "FAIL: detach launcher never started a child"; fail=1; }
+grep -qx -- "--onboarding-sha" "$ARGV" \
+  || { echo "FAIL: the detached child was not given --onboarding-sha"; fail=1; }
+grep -qx -- "$SHA_PIN" "$ARGV" \
+  || { echo "FAIL: the detached child got no pin value"; fail=1; }
+
+[ "$fail" -eq 0 ] && { echo "PASS: self_update_command() flags + onboarding-sha pin"; exit 0; }
 echo "FAIL: self-update flag smoke test"; exit 1

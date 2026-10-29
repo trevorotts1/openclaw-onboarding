@@ -414,8 +414,12 @@ token - the in-container path for container hosts (`OPENCLAW_ROOT` resolves
 to `/data/.openclaw` or `~/.openclaw` as wire.sh does), the host path
 `~/.openclaw/secrets/tunnel-council.token` for host-run connectors; the
 `CONNECTOR_PENDING` line names both delivery paths. How it reaches the box
-is an operator delivery step, never wire.sh,
-which fetches nothing. When the file exists, wire.sh keeps
+is an operator delivery step, never wire.sh, which fetches nothing: the
+provisioner saved it operator side at
+`~/.openclaw/secrets/council-tunnels/<tunnel-name>.token`
+(`COUNCIL_TUNNEL_TOKEN_DIR`), and delivery copies that file to the box under
+the fixed name `$OPENCLAW_ROOT/secrets/tunnel-council.token`. When the file
+exists, wire.sh keeps
 `cloudflared tunnel run --token-file <file>` running (Mac LaunchAgent
 `ai.blackceo.council-tunnel`, VPS pm2 app `cloudflared-council`), restarts
 it only when the file changes, never touches the Command Center connector,

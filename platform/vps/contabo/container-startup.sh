@@ -15,9 +15,11 @@
 #      community GHL MCP has been stripped out of it — this script no longer
 #      invokes the GHL MCP autostart at all (GHL_MCP_RETIRED), and nothing it
 #      runs may bring that service back;
-#   5. $HOME/{999-setup,.claude,.local} live in <volume>/persist-home (symlinked
-#      back on every boot), so a recreate keeps the 999 repo, the ~/.claude skill
-#      links and pip --user packages;
+#   5. all FIVE $HOME entries the skill requires -- 999-setup, .claude, .local,
+#      .agent-browser and the nested Downloads/openclaw-master-files -- live in
+#      <volume>/persist-home (symlinked back on every boot), so a recreate keeps
+#      the 999 repo, the ~/.claude skill links, pip --user packages, the browser
+#      profile and the master-files corpus;
 #   6. wait-gateway-owner-stale.sh runs right before the gateway exec (a fast
 #      `docker restart` otherwise leaves the gateway dead: "cannot verify
 #      Gateway ownership"). Copy it beside this file in <volume>/scripts/.
@@ -62,24 +64,86 @@ if [ ! -L "$HOME/.pm2" ]; then
   ln -sfn "$PM2_HOME" "$HOME/.pm2" 2>/dev/null || true
 fi
 
-# Only /home/node/.openclaw (the volume) survives a recreate. Keep the real copies of these
-# home folders there and symlink them back on every boot. Idempotent: a symlink is left alone;
-# a real folder is merged into the persistent copy without overwriting (cp -an) and removed
-# only if every file in it now exists in the persistent copy; then the link is made. Fail-soft.
-# (cp -n exits non-zero when it skips an existing file on BSD and newer GNU cp, so its exit
+# Only /home/node/.openclaw (the volume) survives a recreate. Keep the real copies of the
+# five home folders the skill requires (SKILL.md D2) there and symlink them back on every
+# boot; Downloads/openclaw-master-files is nested, so its parents are created. Idempotent: a
+# symlink is left alone.
+#
+# CONTENT-VERIFIED merge, never a no-clobber copy. `cp -an` silently SKIPS a destination file
+# that differs, so an existence-only check would then let `rm -rf` destroy the live version --
+# that is how the 2026-10-12 master-files wipe happened. Here:
+#   * a path present only in the live folder is copied across (never overwriting anything);
+#   * a same-path entry that DIFFERS is a CONFLICT: that folder's relink is refused, BOTH
+#     copies are kept, every conflicting path is logged to <root>/logs/persist-home-conflict.log,
+#     and boot continues (fail-soft, exit 0) so the gateway still starts.
+# (cp -n also exits non-zero when it skips an existing file on BSD and newer GNU cp, so its
 # status cannot be the success test.)
 _merged() { ( cd "$1" && find . -mindepth 1 ! -type d -print ) | while IFS= read -r _f; do
   [ -e "$2/$_f" ] || [ -L "$2/$_f" ] || exit 1; done; }
 PERSIST_HOME="$OC/persist-home"
+CONFLICT_LOG="$LOGS/persist-home-conflict.log"
+# Every relink-set entry the skill requires. Downloads/openclaw-master-files is nested.
+PERSIST_HOME_ENTRIES="999-setup .claude .local .agent-browser Downloads/openclaw-master-files"
+
+_persist_log() { # one timestamped line to the conflict log AND stderr (docker logs)
+  printf '%s %s\n' "$(date -u +%FT%TZ)" "$1" >> "$CONFLICT_LOG" 2>/dev/null || true
+  printf '[persist-home] %s\n' "$1" >&2
+}
+_persist_list() { # $1=folder; prints every entry relative to it; non-zero when unreadable
+  ( cd "$1" 2>/dev/null && find . -mindepth 1 -print )
+}
+_relink_conflicts() { # $1=live, $2=persistent; prints same-path entries that differ
+  ( cd "$1" 2>/dev/null && find . -mindepth 1 -print ) | while IFS= read -r _f; do
+    if [ -e "$2/$_f" ] || [ -L "$2/$_f" ]; then
+      if [ -d "$1/$_f" ] && [ ! -L "$1/$_f" ]; then
+        { [ -d "$2/$_f" ] && [ ! -L "$2/$_f" ]; } || printf '%s\n' "$_f"
+      else
+        cmp -s "$1/$_f" "$2/$_f" 2>/dev/null || printf '%s\n' "$_f"
+      fi
+    fi
+  done
+}
+_safe_merge() { # $1=live, $2=persistent; 0 only when the live tree is provably preserved in $2
+  local _list _f _c
+  _list="$(_persist_list "$1")" || { _persist_log "COPY-FAILED unreadable live folder $1"; return 1; }
+  while IFS= read -r _f; do
+    [ -n "$_f" ] || continue
+    { [ -e "$2/$_f" ] || [ -L "$2/$_f" ]; } && continue
+    mkdir -p "$(dirname "$2/$_f")" 2>/dev/null || { _persist_log "COPY-FAILED $_f"; return 1; }
+    if [ -d "$1/$_f" ] && [ ! -L "$1/$_f" ]; then
+      mkdir -p "$2/$_f" 2>/dev/null || { _persist_log "COPY-FAILED $_f"; return 1; }
+    else
+      cp -a "$1/$_f" "$2/$_f" 2>/dev/null || { _persist_log "COPY-FAILED $_f"; return 1; }
+    fi
+  done <<_PERSIST_EOF
+$_list
+_PERSIST_EOF
+  _c="$(_relink_conflicts "$1" "$2")"
+  if [ -n "$_c" ]; then
+    while IFS= read -r _f; do
+      [ -n "$_f" ] && _persist_log "CONFLICT $_f (live $1 kept, persistent $2 kept)"
+    done <<_CONFLICT_EOF
+$_c
+_CONFLICT_EOF
+    return 1
+  fi
+  _merged "$1" "$2"
+}
 mkdir -p "$PERSIST_HOME" 2>/dev/null || true
-for _n in 999-setup .claude .local; do
+for _n in $PERSIST_HOME_ENTRIES; do
   _p="$HOME/$_n"; _d="$PERSIST_HOME/$_n"
   [ -L "$_p" ] && continue
-  mkdir -p "$_d" 2>/dev/null || continue
+  mkdir -p "$_d" 2>/dev/null || { _persist_log "SKIPPED-$_n (cannot create $_d)"; continue; }
   if [ -d "$_p" ]; then
-    cp -an "$_p"/. "$_d"/ 2>/dev/null; _merged "$_p" "$_d" && rm -rf "$_p"
+    if _safe_merge "$_p" "$_d"; then
+      rm -rf "$_p"
+    else
+      _persist_log "RELINK-REFUSED $_n (both copies kept; resolve by hand, then restart)"
+      continue
+    fi
   fi
-  [ -e "$_p" ] || ln -s "$_d" "$_p" 2>/dev/null || true
+  mkdir -p "$(dirname "$_p")" 2>/dev/null || true
+  { [ -e "$_p" ] || [ -L "$_p" ]; } || ln -s "$_d" "$_p" 2>/dev/null || true
 done
 
 # GATEWAY-FIRST (2026-10-12): on openclaw 2026.10.1 an `openclaw` CLI call made while NO gateway
