@@ -24,9 +24,14 @@ fi
 # WHICH HOSTS. Same discovery as provision-council-access.sh --all (proxied CNAMEs
 # to *.cfargotunnel.com, <slug>.<zone> labels, no -hooks/-podcast/-council, the
 # COUNCIL_ACCESS_EXCLUDE list), then kept only with POSITIVE proof it is a Command
-# Center: its tunnel is remote-managed and has an ingress rule for that exact host
-# on :4000. rescue-<slug>, <slug>-gw, webhook hosts and locally managed tunnels are
-# SKIPPED (zero writes): gating a non-Command-Center host could break it. A host whose
+# Center: its tunnel has an ingress rule for that exact host on :4000. A locally
+# managed tunnel is proven the same way whenever its connector-reported config is
+# readable, so a local-managed Command Center gets its login page too;
+# provision-council-access.sh refuses to publish a Council address for a host with
+# no login page, so skipping every local tunnel left local-tunnel clients with no
+# address forever. rescue-<slug>, <slug>-gw, webhook hosts, and any host with no
+# readable :4000 rule (including a local-managed tunnel whose config the API cannot
+# show) are SKIPPED (zero writes): gating a non-Command-Center host could break it. A host whose
 # tunnel or tunnel configuration no longer exists (HTTP 404, "Configuration for tunnel
 # not found") is an orphan record: SKIPPED_ORPHAN, zero writes, exit 0, named in the
 # receipt. A transient read error (5xx, timeout, auth) stays FAILED, and so does a
@@ -356,9 +361,17 @@ ensure_host() {
     return
   fi
   src="$(jq -r '.result.source // "cloudflare"' <<<"$cfgr")"
-  [ "$src" = "cloudflare" ] || { finish "$h" SKIPPED "tunnel is locally managed; cannot confirm this is the Command Center host"; return; }
   svc="$(cc_ingress_service_for_host "$cfgr" "$h")"; port="$(cc_ingress_port_of "$svc")"
-  [ "$port" = "$CC_INGRESS_PORT" ] || { finish "$h" SKIPPED "not a Command Center host (no :${CC_INGRESS_PORT} ingress rule)"; return; }
+  if [ "$port" != "$CC_INGRESS_PORT" ]; then
+    # The same :4000 rule is the same positive proof for a locally managed
+    # tunnel (the API shows the connector-reported config read-only), so a
+    # local-managed Command Center gets its login page too. With no readable
+    # rule there is no proof and zero writes either way.
+    if [ "$src" = "cloudflare" ]; then
+      finish "$h" SKIPPED "not a Command Center host (no :${CC_INGRESS_PORT} ingress rule)"; return
+    fi
+    finish "$h" SKIPPED "tunnel is locally managed and shows no :${CC_INGRESS_PORT} ingress rule for this host; cannot confirm this is the Command Center host"; return
+  fi
 
   local app info="" present="[]"; app="$(app_for "$h")"
   if [ -n "$app" ]; then
