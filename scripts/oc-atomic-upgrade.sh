@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oc-atomic-upgrade.sh — v1.1.0
+# oc-atomic-upgrade.sh — v1.2.1
 #
 # THE ONLY SAFE WAY TO MOVE A BOX ONTO A NEW OPENCLAW BUILD.
 #
@@ -26,10 +26,37 @@
 # the config rewrite and BEFORE the start, while the gateway is booted out. Doctor
 # takes exclusive maintenance and refuses while any other process holds the state
 # database, so stale `openclaw` CLI processes holding <root>/state/openclaw.sqlite
-# are reaped first (never the gateway, a node service, the app, an ancestor, or
-# anything started during this run). Doctor must not change the model/provider
-# selection; if it does, the upgrade rolls back. The one known doctor refusal this
-# script repairs is the legacy-audit-raw checkpoint (see _repair_audit_checkpoint).
+# are reaped first (never the launchd job's gateway, a node service, the app, an ancestor,
+# or anything started during this run; a gateway left holding the database while the job
+# is booted out is an orphan and is stopped separately, see #33 below). Doctor must
+# not change the model/provider selection; if it does, the upgrade rolls back. The one
+# known doctor refusal this script repairs is the legacy-audit-raw checkpoint (see
+# _repair_audit_checkpoint).
+#
+# FOUR MORE ROLL FAILURES THIS SCRIPT NOW PREVENTS (v1.2.0, fleet-roll errors #21 #24 #25 #33)
+# #21  launchd KeepAlive respawns a LOADED gateway job while npm is still rewriting the
+#      package, so the gateway imports a half-written tree and the stability window never
+#      holds. EVERY npm install here (forward and rollback) now runs with the gateway job
+#      proven booted out for the whole window, and the job is bootstrapped again only after
+#      the package measures complete (_npm_install_held / _package_complete).
+# #24  `doctor` loads every enabled plugin's module at startup, BEFORE it fixes anything; one
+#      whose import is missing (ERR_MODULE_NOT_FOUND from a plugin-sdk export) makes it spin
+#      forever. Doctor now runs under a bound AND a loop detector (the same module-load error
+#      printed OC_ATOMIC_DOCTOR_LOOP_LINES times kills it at once, long before the bound). Its
+#      own output then names the EXACT plugin; only that plugin's `enabled` is set to false
+#      (never the allow list, never its config, never an install/enable call, never a guess),
+#      the change is recorded, and doctor runs again, bounded the same way
+#      (_quarantine_from_output). The rollback restores the config byte for byte.
+# #25  `openclaw config validate` takes the sqlite maintenance lock even when read-only, and
+#      against a SERVING gateway that kills it (healthz 000 while the pid lives). With the
+#      gateway job loaded the check runs on a private copy of the config in a private state
+#      directory, under a known-good and a known-bad control, and an instrument that cannot
+#      tell them apart is UNDETERMINED, never "valid" (_config_valid_isolated).
+# #33  an orphan gateway (ppid 1, left by an earlier run) that still holds the state
+#      database makes the new LaunchAgent exit 78 "Another gateway already owns this state
+#      directory", which was read as a bad binary. Before the quiesce proof, before the
+#      start and before a rollback restart, a gateway process that holds the state database
+#      and is not the launchd job's pid is stopped BY IDENTITY and logged (_reap_orphan_gateways).
 #
 # ═══════════════════════════════════════════════════════════════════════════
 # THE FOUR FACTS THAT DICTATE THE ORDER OF OPERATIONS
@@ -144,7 +171,10 @@
 #   OC_ATOMIC_DOCTOR_TIMEOUT         seconds `doctor --fix --non-interactive` may run
 #                                    before it is killed and the upgrade rolls back
 #                                    (default 900; it backs up and migrates databases)
-#   Non-numeric values of the four timeouts above fall back to their defaults.
+#   OC_ATOMIC_DOCTOR_LOOP_LINES      how many times doctor may print the SAME module-load error
+#                                    (digits ignored) before it is judged to be spinning on it and
+#                                    killed early (default 5; 0 = rely on the bound alone)
+#   Non-numeric values of the five numbers above fall back to their defaults.
 #
 # ═══════════════════════════════════════════════════════════════════════════
 # WHICH OPENCLAW? THE ONE THE SUPERVISOR LAUNCHES (CAN015), NEVER THE ONE ON PATH
@@ -168,7 +198,7 @@
 
 set -uo pipefail
 
-VERSION="1.1.0"
+VERSION="1.2.1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIGRATOR="$SCRIPT_DIR/oc-schema-migrate.py"
 SUP_HELPER="$SCRIPT_DIR/oc-supervisor-install.py"
@@ -188,6 +218,7 @@ BOOTOUT_TIMEOUT="$(_uint "${OC_ATOMIC_BOOTOUT_TIMEOUT:-}" 60)"
 HEALTH_TIMEOUT="$(_uint "${OC_ATOMIC_HEALTH_TIMEOUT:-}" 60)"
 SETTLE_SECONDS="$(_uint "${OC_ATOMIC_SETTLE_SECONDS:-}" 25)"
 DOCTOR_TIMEOUT="$(_uint "${OC_ATOMIC_DOCTOR_TIMEOUT:-}" 900)"
+DOCTOR_LOOP_LINES="$(_uint "${OC_ATOMIC_DOCTOR_LOOP_LINES:-}" 5)"
 RUN_START_EPOCH="$(date +%s)"   # a state-database holder started before this is stale (_reap_state_holders)
 
 GATEWAY_LABEL="ai.openclaw.gateway"
@@ -212,6 +243,8 @@ SUP_ENTRY=""
 SUP_SOURCE=""     # launchd | systemd ("" = no supervisor definition)
 SUP_UNIT=""       # definition handle: the plist/unit path, or container:<name> for docker
 DOCTOR_WHY=""     # why _migrate_state_with_doctor failed (the rollback reason)
+PLUGIN_QUARANTINED=""   # plugin ids whose entry this run set enabled=false (#24); the rollback undoes them with the config
+PLUGIN_RECORD=""        # <root>/oc-atomic-plugin-quarantine.jsonl, the durable record of that
 
 _say()  { printf '[oc-atomic-upgrade] %s\n' "$*"; }
 _ok()   { printf '[oc-atomic-upgrade] OK    %s\n' "$*"; }
@@ -448,17 +481,68 @@ _config_sha() {
 # ── 2026.10.4 -> 2026.10.5 shipped a box whose config held skills.workshop.autonomous
 # ── .mode "propose": every CLI command died, and this script had still printed
 # ── "ATOMIC UPGRADE COMPLETE" because nothing here ever asked the new binary.
-_config_valid_for_installed_binary() {
-  local out
-  out="$(openclaw config validate --json 2>/dev/null)" && return 0
-  printf '%s' "$out" | python3 -c 'import json,sys
+#
+# ── #25: on 2026.10.5 `config validate` takes the sqlite maintenance lock EVEN WHEN
+# ── READ-ONLY, so run against the live state directory while a gateway is SERVING it
+# ── stops that gateway answering (healthz 000 while its pid lives). Whenever the gateway
+# ── job is loaded the verdict therefore comes from _config_valid_isolated, which never
+# ── touches the live state directory. With the job booted out (the upgrade window) no
+# ── gateway exists to contend with, and the plain call is correct.
+_print_validate_issues() {
+  printf '%s' "$1" | python3 -c 'import json,sys
 try:
     for i in json.load(sys.stdin).get("issues") or []:
         print("%s: %s" % (i.get("path"), i.get("message")))
 except Exception:
     print("(no parseable issue list - the build rejected the config)")' 2>/dev/null | sed 's/^/    | /' >&2
+}
+_config_valid_for_installed_binary() {
+  local out
+  if _gateway_loaded; then _config_valid_isolated; return $?; fi
+  out="$(openclaw config validate --json 2>/dev/null)" && return 0
+  _print_validate_issues "$out"
   return 1
 }
+
+# One validate run that cannot see the live state directory: its own state dir ($1), its
+# own config file ($2), config writes refused. rc and stdout are the build's own verdict.
+_validate_in_isolation() {
+  OPENCLAW_STATE_DIR="$1" OPENCLAW_CONFIG_PATH="$2" OPENCLAW_CONFIG_READONLY=1 \
+    openclaw config validate --json 2>/dev/null
+}
+
+# rc 0 = the build accepts the config; rc 1 = it rejects it (issues printed) OR the check
+# could not be trusted. The private state dir holds a COPY of the config and symlinks to the
+# live plugin directories (so third-party plugin entries still resolve) but none of the live
+# state. The instrument is proven on this very transport first: a known-bad config must be
+# rejected and a known-good one accepted, else the answer is UNDETERMINED and treated as "not
+# proven valid" (the caller then runs the full procedure inside the quiesce, where a live
+# validate is safe) - never as "valid".
+_config_valid_isolated() {
+  local iso out rc d
+  iso="$(mktemp -d "${TMPDIR:-/tmp}/oc-validate.XXXXXX")" || {
+    _warn "isolated config validation UNDETERMINED: could not create a private state directory"; return 1; }
+  for d in extensions npm plugins; do
+    [ -d "$OC_ROOT_DIR/$d" ] && ln -s "$OC_ROOT_DIR/$d" "$iso/$d"
+  done
+  printf '{}\n' > "$iso/control-good.json"
+  printf '{"agents":{"__oc_atomic_probe__":true}}\n' > "$iso/control-bad.json"
+  if ! cp "$OC_CONFIG" "$iso/openclaw.json" 2>/dev/null; then
+    _rm_isolated "$iso"; _warn "isolated config validation UNDETERMINED: could not copy the config"; return 1
+  fi
+  if ! _validate_in_isolation "$iso" "$iso/control-good.json" >/dev/null; then
+    _rm_isolated "$iso"; _warn "isolated config validation UNDETERMINED: the known-good control was rejected, so this check cannot be trusted"; return 1
+  fi
+  if _validate_in_isolation "$iso" "$iso/control-bad.json" >/dev/null; then
+    _rm_isolated "$iso"; _warn "isolated config validation UNDETERMINED: the known-bad control was ACCEPTED, so this check cannot tell valid from invalid"; return 1
+  fi
+  out="$(_validate_in_isolation "$iso" "$iso/openclaw.json")"; rc=$?
+  _rm_isolated "$iso"
+  [ "$rc" -eq 0 ] && return 0
+  _print_validate_issues "$out"
+  return 1
+}
+_rm_isolated() { rm -f "$1/extensions" "$1/npm" "$1/plugins" 2>/dev/null; rm -rf "$1" 2>/dev/null; }
 
 # ── SHARED INSTALLATION LEASE (mac.MAC-1 / consistency.C1) ───────────────────
 # oc-atomic is the writer that actually moves a box onto a new OpenClaw build,
@@ -570,14 +654,17 @@ _lease_acquire() {
   fi
 
   if command -v flock >/dev/null 2>&1; then
-    exec 9<>"$OC_LEASE_PATH" 2>/dev/null || return 1
+    # `exec` with ONLY redirections applies every one of them to the whole script, so a bare `exec 9<>f 2>/dev/null`
+    # sends stderr to /dev/null for the rest of the run and every later _err line (each rollback reason) vanishes.
+    # Group the exec so the 2>/dev/null covers only its own failure message; fd 9 still stays open.
+    { exec 9<>"$OC_LEASE_PATH"; } 2>/dev/null || return 1
     if ! flock -n 9 2>/dev/null; then
-      exec 9>&- 2>/dev/null || true
+      { exec 9>&-; } 2>/dev/null || true
       return 3
     fi
     if _lease_owner_live; then
       flock -u 9 2>/dev/null || true
-      exec 9>&- 2>/dev/null || true
+      { exec 9>&-; } 2>/dev/null || true
       return 3
     fi
     _lease_write_own "${RUN_ID:-oc-atomic-$$}" || return 1
@@ -659,25 +746,14 @@ _lock_release() { rm -f "$LOCK_FILE" 2>/dev/null; }
 # ─────────────────────────────────────────────────────────────────────────────
 # QUIESCE
 # ─────────────────────────────────────────────────────────────────────────────
-_quiesce() {
-  # Rollback state is set BEFORE the stop it undoes (see the state block at the
-  # top). It used to be set after, so a quiesce that failed returned early with
-  # STATE_QUIESCED=0 and the rollback never restarted the gateway it had just
-  # booted out -- then printed "exactly as it was found".
-  STATE_QUIESCED=1
+# Stop the gateway job/container and PROVE it is gone. bootout, NOT kickstart -k: kickstart
+# restarts the process and leaves the job loaded, so KeepAlive respawns it every ~11s; only
+# bootout is a stop, and it is ASYNCHRONOUS (it returns before the job has left launchd), so
+# the proof is a bounded poll, never a one-shot check. Shared by the quiesce and by the npm
+# window (_gateway_stop_for_npm). rc 1 = it is still there; the caller refuses to go on.
+_stop_gateway_job() {
   case "$SUPERVISOR" in
     launchd)
-      # The self-heal agent first: booting the gateway out while its watchdog is
-      # still armed just races it back up within 5 minutes.
-      if _job_loaded "$SELFHEAL_LABEL"; then
-        STATE_SELFHEAL_BOOTED_OUT=1
-        launchctl bootout "gui/$UIDN/$SELFHEAL_LABEL" >/dev/null 2>&1
-        _ok "self-heal agent $SELFHEAL_LABEL booted out"
-      fi
-      # bootout, NOT kickstart -k. kickstart restarts the process and leaves the
-      # job loaded; KeepAlive then respawns it every ~11s. Only bootout is a stop.
-      # bootout is ASYNCHRONOUS: it returns before the job has left launchd, so
-      # a one-shot check straight after it races the teardown. Poll, bounded.
       launchctl bootout "gui/$UIDN/$GATEWAY_LABEL" >/dev/null 2>&1
       if ! _poll "$BOOTOUT_TIMEOUT" _gateway_unloaded; then
         _err "gateway job $GATEWAY_LABEL is STILL LOADED ${BOOTOUT_TIMEOUT}s after bootout — refusing to continue"
@@ -698,11 +774,71 @@ _quiesce() {
         _ok "container openclaw stopped (restart:unless-stopped does not revive an explicit stop)"
       fi
       ;;
+  esac
+  return 0
+}
+
+_quiesce() {
+  # Rollback state is set BEFORE the stop it undoes (see the state block at the
+  # top). It used to be set after, so a quiesce that failed returned early with
+  # STATE_QUIESCED=0 and the rollback never restarted the gateway it had just
+  # booted out -- then printed "exactly as it was found".
+  STATE_QUIESCED=1
+  case "$SUPERVISOR" in
+    launchd)
+      # The self-heal agent first: booting the gateway out while its watchdog is
+      # still armed just races it back up within 5 minutes.
+      if _job_loaded "$SELFHEAL_LABEL"; then
+        STATE_SELFHEAL_BOOTED_OUT=1
+        launchctl bootout "gui/$UIDN/$SELFHEAL_LABEL" >/dev/null 2>&1
+        _ok "self-heal agent $SELFHEAL_LABEL booted out"
+      fi
+      _stop_gateway_job || return 1
+      ;;
+    docker) _stop_gateway_job || return 1 ;;
     none)
       _ok "no supervisor found — nothing to quiesce"
       ;;
   esac
   return 0
+}
+
+# ── #21: THE NPM WINDOW. A gateway job that is LOADED while npm rewrites the package gets
+# ── respawned by KeepAlive every ~11s against a half-written tree ("Cannot find module
+# ── .../dist/index.js"), so the stability window never holds and a rollback that reinstalls
+# ── the old build the same way leaves the box dark. Every npm install here therefore runs
+# ── with the job proven booted out for the WHOLE window, and nothing may bootstrap it again
+# ── until the package measures complete.
+# A package is complete when it measures a version AND the file the supervisor launches
+# exists (the very file the half-written tree was missing).
+_package_complete() {
+  [ -n "$(_measured_version)" ] || return 1
+  [ -z "$SUP_ENTRY" ] || [ -f "$SUP_ENTRY" ] || return 1
+  [ -z "$SUP_PKG_ROOT" ] || [ -f "$SUP_PKG_ROOT/package.json" ]
+}
+# Make sure the gateway is not loaded right now. No-op when it already is not (the normal
+# case: the quiesce booted it out); after a failed START it IS loaded and must be booted out
+# again before the rollback reinstalls anything.
+_gateway_stop_for_npm() {
+  _gateway_loaded || return 0
+  _warn "the gateway is LOADED at the start of an npm window (KeepAlive would respawn it against a half-written package) - stopping it first"
+  _stop_gateway_job
+}
+# npm install of $1 with the gateway held stopped on BOTH sides of it. rc 2 = the gateway
+# could not be held stopped, so npm never ran; otherwise npm's own rc.
+_npm_install_held() {
+  local rc
+  _gateway_stop_for_npm || return 2
+  _npm_install "$1" >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 2 ] && rc=1      # 2 is this function's own "never ran" code
+  # Something (a remediator that ignored the lock, a stray bootstrap) loaded the job DURING
+  # the window: it may have imported a half-written tree. Stop it again so the start that
+  # follows the install is a fresh process on the complete package.
+  if _gateway_loaded; then
+    _warn "the gateway job was loaded again DURING the npm window - booting it out so it restarts on the finished package"
+    _gateway_stop_for_npm || return 2
+  fi
+  return "$rc"
 }
 
 # ── PROVE the quiesce. An absent process is a claim; a config that stops
@@ -1059,24 +1195,53 @@ _reap_state_holders() {
 # Run a command with stdin from /dev/null, stdout+stderr into $2, and the whole process
 # group killed after $1 seconds. rc 124 = timed out; 127 = could not start; otherwise the
 # command's own exit code (a signal death is 128+signal).
+# #24: with OC_BOUNDED_LOOP_RE and OC_BOUNDED_LOOP_N set, the command is also killed EARLY (rc 125)
+# once one output line matching that regex has been printed N times (digits ignored, so a timestamp
+# or a pid does not hide the repeat). That is a command spinning on the same error, and waiting out
+# the whole bound for it would leave the box dark for nothing; a command that merely mentions an
+# error once or twice is left to finish.
 _run_bounded() {
   local t="$1" out="$2"
   shift 2
   python3 -I - "$t" "$out" "$@" <<'PY'
-import os, signal, subprocess, sys
+import os, re, signal, subprocess, sys, time
 t, out, cmd = int(sys.argv[1]), sys.argv[2], sys.argv[3:]
+lre, ln = os.environ.get("OC_BOUNDED_LOOP_RE", ""), int(os.environ.get("OC_BOUNDED_LOOP_N") or 0)
+rx = re.compile(lre) if lre and ln > 0 else None
+
+def looping():
+    seen = {}
+    with open(out, "r", errors="replace") as fh:
+        for line in fh:
+            if rx.search(line):
+                k = re.sub(r"[0-9]+", "#", line.strip())[:300]
+                seen[k] = seen.get(k, 0) + 1
+                if seen[k] >= ln:
+                    return True
+    return False
+
 with open(out, "wb") as fh:
     try:
         p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=fh, stderr=subprocess.STDOUT, start_new_session=True)
     except OSError as e:
         fh.write(("cannot start %s: %s\n" % (cmd[0], e.strerror)).encode())
         sys.exit(127)
-    try:
-        rc = p.wait(timeout=t)
-    except subprocess.TimeoutExpired:
-        os.killpg(p.pid, signal.SIGKILL)
-        p.wait()
-        sys.exit(124)
+    end = time.monotonic() + t
+    while True:
+        left = end - time.monotonic()
+        try:
+            rc = p.wait(timeout=max(0.0, min(1.0, left)))
+            break
+        except subprocess.TimeoutExpired:
+            pass
+        if rx is not None and looping():
+            os.killpg(p.pid, signal.SIGKILL)
+            p.wait()
+            sys.exit(125)
+        if left <= 0:
+            os.killpg(p.pid, signal.SIGKILL)
+            p.wait()
+            sys.exit(124)
 sys.exit(rc if rc >= 0 else 128 - rc)
 PY
 }
@@ -1166,7 +1331,7 @@ PY
 # model/provider names are unchanged; rc 1 = failed, the reason is in DOCTOR_WHY and the
 # caller rolls back. Called only after the quiesce is PROVEN and the new binary is on disk.
 _migrate_state_with_doctor() {
-  local out rc attempt=0 refused before after
+  local out rc attempt=0 refused before after qrc
   DOCTOR_WHY=""
   if ! _reap_state_holders "before doctor"; then
     DOCTOR_WHY="another process still holds $OC_ROOT_DIR/state/openclaw.sqlite and is not a stale bare openclaw CLI this script may stop, so \`openclaw doctor --fix\` would refuse (it needs exclusive maintenance)"
@@ -1184,7 +1349,8 @@ _migrate_state_with_doctor() {
   while :; do
     attempt=$((attempt+1))
     _say "running the NEW binary: openclaw doctor --fix --non-interactive (attempt $attempt of 2, bound ${DOCTOR_TIMEOUT}s, stdin /dev/null) ..."
-    _run_bounded "$DOCTOR_TIMEOUT" "$out" openclaw doctor --fix --non-interactive; rc=$?
+    OC_BOUNDED_LOOP_RE='ERR_MODULE_NOT_FOUND|ERR_PACKAGE_PATH_NOT_EXPORTED|Cannot find (module|package) ' OC_BOUNDED_LOOP_N="$DOCTOR_LOOP_LINES" \
+      _run_bounded "$DOCTOR_TIMEOUT" "$out" openclaw doctor --fix --non-interactive; rc=$?
     tail -n 40 "$out" | _mask_secrets | sed 's/^/    | /'
     refused=0
     if grep -qF 'sanitized archive is missing or truncated' "$out" 2>/dev/null \
@@ -1201,8 +1367,19 @@ _migrate_state_with_doctor() {
       fi
       continue
     fi
+    # #24: doctor loads every enabled plugin's module at startup, BEFORE it fixes anything, and spins on one
+    # whose import is gone. It was killed at the first sign of the loop (rc 125) or at its bound (rc 124), or
+    # it died; if its own output names ONE plugin entry, disable that entry (only its `enabled` flag, recorded)
+    # and run it again, bounded the same way. Not counted as one of the two doctor attempts.
+    if [ "$rc" -ne 0 ] && [ "$PLUGIN_QUARANTINE_COUNT" -lt "$PLUGIN_QUARANTINE_MAX" ]; then
+      _quarantine_from_output "$out"; qrc=$?
+      if [ "$qrc" -eq 0 ]; then attempt=$((attempt-1)); continue; fi
+      if [ "$qrc" -eq 2 ]; then rm -f "$out"; DOCTOR_WHY="$PLUGIN_WHY"; return 1; fi
+    fi
     rm -f "$out"
-    if [ "$rc" -eq 124 ]; then
+    if [ "$rc" -eq 125 ]; then
+      DOCTOR_WHY="doctor --fix was spinning on the same module-load error (ERR_MODULE_NOT_FOUND) that names no single enabled plugin entry, and was killed"
+    elif [ "$rc" -eq 124 ]; then
       DOCTOR_WHY="doctor --fix did not finish within ${DOCTOR_TIMEOUT}s and was killed"
     elif [ "$refused" -eq 1 ]; then
       DOCTOR_WHY="doctor --fix STILL refuses on the audit checkpoint after the checkpoint repair and one re-run"
@@ -1225,10 +1402,173 @@ _migrate_state_with_doctor() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# ORPHAN GATEWAY (fleet-roll error #33)
+# ─────────────────────────────────────────────────────────────────────────────
+# A gateway left by an earlier run (ppid 1: launchd re-parented it) still owns the state
+# database while this run boots out the JOB. The job's pid is empty, so the quiesce proof
+# reads "nothing running", and the new LaunchAgent then exits 78 "Another gateway (pid N)
+# already owns this state directory" - which used to be read as a bad binary and cost the
+# box its whole first cycle. _reap_state_holders deliberately never touches a gateway; this
+# is the one place that does, and only a process that passes EVERY test below:
+#   * it holds the state database open (lsof, the same evidence _reap_state_holders uses),
+#   * its command line is `[node ...] <openclaw entry> gateway` (or the `openclaw-gateway`
+#     process title) - only the argument vector is read, never the environment, and only
+#     the entry path is ever logged (a gateway can be started with a token on its line),
+#   * it is not the launchd job's own pid, nor a child of it, nor this process,
+#   * its start time is unchanged between the first look and each signal (identity, so a
+#     recycled pid is never signalled).
+# SIGTERM first, SIGKILL only if it survives. Launchd boxes only.
+
+# rc 0 and prints the entry token iff pid $1 runs `[node flags] <openclaw entry> [flags] gateway`
+# or is titled `openclaw-gateway`; anything else (the app, a CLI, another program) is rc 1.
+_gateway_cmdline_entry() (
+  local args tok seen=0 first=""
+  args="$(ps -o args= -p "$1" 2>/dev/null)"
+  [ -n "$args" ] || exit 1
+  case "$args" in *.app/*|*.app\ *) exit 1 ;; esac
+  set -f
+  for tok in $args; do
+    if [ -z "$first" ]; then
+      first="$tok"
+      case "$tok" in openclaw-gateway|*/openclaw-gateway) printf '%s' "$tok"; exit 0 ;; esac
+    fi
+    if [ "$seen" = "0" ]; then
+      case "$tok" in
+        -*) ;;
+        node|*/node|nodejs|*/nodejs) ;;
+        openclaw|*/openclaw|*/openclaw.mjs|*/openclaw/dist/*.js|*/openclaw/dist/*.mjs) seen=1; first="$tok" ;;
+        *) exit 1 ;;
+      esac
+      continue
+    fi
+    case "$tok" in -*) continue ;; esac
+    if [ "$tok" = "gateway" ]; then printf '%s' "$first"; exit 0; fi
+    exit 1
+  done
+  exit 1
+)
+
+# rc 0 = no orphan gateway holds the state database afterwards (or lsof is missing: said so,
+# not assumed clear); rc 1 = one still does. $1 = where in the run this is, for the log.
+_reap_orphan_gateways() {
+  local where="$1" pids pid gw rc ent started ppid left=""
+  [ "$SUPERVISOR" = "launchd" ] || return 0
+  pids="$(_state_holders)"; rc=$?
+  if [ "$rc" -eq 2 ]; then
+    _warn "lsof is not available - whether an orphan gateway owns $OC_ROOT_DIR/state ($where) is UNDETERMINED, not 'no'"
+    return 0
+  fi
+  gw="$(_gateway_pid)"
+  for pid in $pids; do
+    [ "$pid" = "$$" ] && continue
+    if [ -n "$gw" ] && [ "$pid" = "$gw" ]; then
+      _say "state-database holder pid $pid is the launchd job's gateway - left alone ($where)"; continue
+    fi
+    ent="$(_gateway_cmdline_entry "$pid")" || continue      # a CLI or another program: _reap_state_holders' business
+    ppid="$(_lease_ppid "$pid")"
+    if [ -n "$gw" ] && [ "$ppid" = "$gw" ]; then
+      _say "state-database holder pid $pid is a child of the launchd job's gateway (pid $gw) - left alone ($where)"; continue
+    fi
+    started="$(_lease_start "$pid")"
+    if [ -z "$started" ]; then
+      _warn "orphan gateway candidate pid $pid: start time unreadable, identity cannot be pinned - left alone ($where)"
+      left="$left $pid"; continue
+    fi
+    _say "ORPHAN GATEWAY pid $pid (ppid ${ppid:-?}, started $started, $(basename "$ent")) holds the state database and is not the launchd job's pid (${gw:-job not running}) - stopping it ($where)"
+    kill -TERM "$pid" 2>/dev/null
+    _poll 10 _pid_gone "$pid" || {
+      if [ "$(_lease_start "$pid")" = "$started" ] && _gateway_cmdline_entry "$pid" >/dev/null; then kill -KILL "$pid" 2>/dev/null; fi
+      _poll 3 _pid_gone "$pid"
+    }
+    if _pid_gone "$pid"; then
+      _ok "orphan gateway pid $pid stopped ($where)"
+    else
+      _err "orphan gateway pid $pid did NOT stop ($where)"
+      left="$left $pid"
+    fi
+  done
+  if [ -n "$left" ]; then
+    _err "an orphan gateway still owns the state directory (pid(s):$left) - a start now would exit 78 and be misread as a bad binary"
+    return 1
+  fi
+  return 0
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# UNLOADABLE PLUGIN (fleet-roll error #24)
+# ─────────────────────────────────────────────────────────────────────────────
+# `doctor` imports every enabled plugin's module at startup. When one plugin's import is
+# gone (ERR_MODULE_NOT_FOUND from an `openclaw/plugin-sdk/...` export) it SPINS instead of
+# failing: Star Bobatoon's `doctor --fix` hung until it was killed by hand. The load happens at
+# startup, before doctor changes anything, so killing it there costs nothing. When the bounded
+# doctor (_migrate_state_with_doctor) is killed - early by the loop detector in _run_bounded, or at
+# its bound - or dies, and its own output names one enabled plugin entry, that entry - and only its
+# `enabled` flag - is set to false, recorded, and doctor is run again. It never guesses (no single
+# named plugin = nothing is touched), never edits the allow list or the entry's `config`, never
+# creates an entry, and never calls
+# `openclaw plugins install|enable|update` (codex is never installed or enabled here). The
+# change lives in the config this run already backed up, so any rollback restores it byte
+# for byte; the record below is how a human finds and reverses it after a SUCCESSFUL run.
+PLUGIN_QUARANTINE_MAX=3
+
+# <event> <plugin> <import> <was-enabled> -> one JSON line in <root>/oc-atomic-plugin-quarantine.jsonl
+_plugin_record() {
+  PLUGIN_RECORD="$OC_ROOT_DIR/oc-atomic-plugin-quarantine.jsonl"
+  OC_REC="$PLUGIN_RECORD" OC_CFG="$OC_CONFIG" OC_BAK="${CONFIG_BACKUP:-}" OC_VER="$VERSION" python3 -I - "$@" <<'PY' 2>/dev/null
+import json, os, sys, time
+ev, plugin, imp, was = (sys.argv[1:5] + ["", "", "", ""])[:4]
+rec = {"utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "event": ev, "plugin": plugin,
+       "failing_import": imp, "was_enabled": was, "config": os.environ["OC_CFG"],
+       "config_backup": os.environ["OC_BAK"], "oc_atomic_upgrade": os.environ["OC_VER"],
+       "restore": "set plugins.entries.%s.enabled back to %s in %s (or: cat the config_backup over it); then re-run openclaw doctor" % (plugin, was, os.environ["OC_CFG"])}
+fd = os.open(os.environ["OC_REC"], os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+with os.fdopen(fd, "a") as fh:
+    fh.write(json.dumps(rec, sort_keys=True) + "\n")
+PY
+}
+
+# Disable exactly plugins.entries.<$1>.enabled. rc 0 = done and recorded.
+_plugin_disable_entry() {
+  local id="$1" imp="$2" staged was
+  staged="${OC_CONFIG}.atomic-staged.$$"
+  was="$(python3 "$MIGRATOR" plugin-disable "$OC_CONFIG" "$id" "$staged" 2>/dev/null)" || { rm -f "$staged"; return 1; }
+  was="${was#was=}"
+  [ -s "$staged" ] || { rm -f "$staged"; return 1; }
+  # Rollback state BEFORE the write it undoes.
+  STATE_CONFIG_CHANGED=1
+  # QC-ALLOW-NO-CHOWN: redirect through the existing inode — owner/group/mode preserved by construction.
+  if ! cat "$staged" > "$OC_CONFIG" 2>/dev/null; then rm -f "$staged"; return 1; fi
+  rm -f "$staged"
+  PLUGIN_QUARANTINED="$PLUGIN_QUARANTINED $id"
+  _plugin_record quarantined "$id" "$imp" "$was"
+  return 0
+}
+
+# Name the plugin a doctor output file ($1) blames and disable that entry. Counts against
+# PLUGIN_QUARANTINE_MAX; the caller checks PLUGIN_QUARANTINE_COUNT first. rc 0 = one entry disabled
+# (run doctor again); rc 1 = nothing attributable, nothing touched; rc 2 = a plugin was named
+# but its entry could not be disabled (PLUGIN_WHY).
+PLUGIN_QUARANTINE_COUNT=0
+PLUGIN_WHY=""
+_quarantine_from_output() {
+  local hit id imp
+  hit="$(python3 "$MIGRATOR" plugin-attribute "$1" "$OC_CONFIG" 2>/dev/null)" || return 1
+  id="${hit%%	*}"; imp="${hit#*	}"
+  case "$id" in codex) _say "the failing plugin is codex: disabling its entry only - codex is never installed, enabled or accepted here" ;; esac
+  if ! _plugin_disable_entry "$id" "$imp"; then
+    PLUGIN_WHY="plugin '$id' fails to load ($imp) and doctor spins on it, but its entry in $OC_CONFIG could not be disabled"
+    return 2
+  fi
+  PLUGIN_QUARANTINE_COUNT=$((PLUGIN_QUARANTINE_COUNT+1))
+  _ok "QUARANTINED plugin '$id' (module fails to load: $imp): plugins.entries.$id.enabled set to false, nothing else changed; recorded in $PLUGIN_RECORD"
+  return 0
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ROLLBACK — undoes, in reverse, exactly what was recorded as done.
 # ─────────────────────────────────────────────────────────────────────────────
 _rollback() {
-  local why="$1" failed=0 proved=""
+  local why="$1" failed=0 proved="" rc p
   echo "" >&2
   _err "ROLLING BACK: $why"
 
@@ -1244,6 +1584,8 @@ _rollback() {
       _ok "config restored from $CONFIG_BACKUP (inode/owner/mode preserved)"
       proved="$proved config"
       STATE_CONFIG_CHANGED=0
+      for p in $PLUGIN_QUARANTINED; do _plugin_record reverted-by-rollback "$p" "" "restored"; done
+      PLUGIN_QUARANTINED=""
     else
       _err "CONFIG RESTORE FAILED — the backup is intact at $CONFIG_BACKUP"
       failed=1
@@ -1251,26 +1593,42 @@ _rollback() {
   fi
 
   if [ "$STATE_BINARY_CHANGED" = "1" ] && [ -n "$OLD_VERSION" ]; then
-    _say "reinstalling the previous binary: openclaw@$OLD_VERSION"
-    # The install's exit code is a claim; the MEASURED version is the result.
-    _npm_install "$OLD_VERSION" >/dev/null 2>&1
-    if [ "$(_measured_version)" = "$OLD_VERSION" ]; then
-      _ok "binary restored to openclaw@$OLD_VERSION (measured)"
+    if [ "$(_measured_version)" = "$OLD_VERSION" ] && _package_complete; then
+      _ok "binary is already openclaw@$OLD_VERSION and the package is complete (measured) - nothing to reinstall"
       proved="$proved binary=$OLD_VERSION"
       STATE_BINARY_CHANGED=0
     else
-      _err "BINARY RESTORE FAILED — this box may be left on a build its config does not match"
-      failed=1
+      _say "reinstalling the previous binary: openclaw@$OLD_VERSION"
+      # #21: the gateway job is booted out for the WHOLE npm window (it is loaded here when the
+      # failure came after the start, and KeepAlive would respawn it against a half-written tree).
+      # The install's exit code is a claim; the MEASURED version and a complete package are the result.
+      _npm_install_held "$OLD_VERSION"; rc=$?
+      if [ "$rc" -eq 2 ]; then
+        _err "BINARY RESTORE NOT ATTEMPTED — the gateway could not be held stopped, and npm into a package a respawning gateway is importing is how a box goes dark"
+        failed=1
+      elif [ "$(_measured_version)" = "$OLD_VERSION" ] && _package_complete; then
+        _ok "binary restored to openclaw@$OLD_VERSION (measured, package complete)"
+        proved="$proved binary=$OLD_VERSION"
+        STATE_BINARY_CHANGED=0
+      else
+        _err "BINARY RESTORE FAILED — this box may be left on a build its config does not match"
+        failed=1
+      fi
     fi
   fi
 
   if [ "$STATE_QUIESCED" = "1" ]; then
     if [ "$GATEWAY_LOADED_AT_START" = "1" ]; then
-      # A stale CLI holding the state database would keep the restored gateway from starting.
+      # An orphan gateway or a stale CLI holding the state database would keep the restored gateway
+      # from starting (#33).
+      _reap_orphan_gateways "before the rollback restart" || true
       _reap_state_holders "before the rollback restart" || true
       # Re-load what we booted out, then PROVE it (loaded + pid + /healthz 200).
-      # Never claim a restart from an exit code.
-      if _restore_gateway; then
+      # Never claim a restart from an exit code. #21: never onto a package that is not complete.
+      if ! _package_complete; then
+        _err "GATEWAY NOT RE-LOADED — the package is incomplete (${SUP_ENTRY:-package.json} missing); bootstrapping onto it would only crash-loop. Repair the package first (steps below)"
+        failed=1
+      elif _restore_gateway; then
         proved="$proved gateway(loaded+pid+healthz200)"
         STATE_QUIESCED=0
       else
@@ -1544,14 +1902,16 @@ do_upgrade() {
     _say "DRY RUN — the plan, in order, touching nothing:"
     echo "    1. write the maintenance lock  ($LOCK_FILE)"
     echo "    2. bootout $SELFHEAL_LABEL, then bootout $GATEWAY_LABEL (NOT kickstart)"
+    echo "    2b. (launchd) stop any ORPHAN gateway (not the job's pid) that holds the state database, by identity, and log it"
     echo "    3. prove quiescence: no pid, and config sha stable for ${QUIESCE_PROOF_SECONDS}s"
     echo "    4. back up the config"
-    echo "    5. $NPM_BIN install -g ${SUP_PREFIX:+--prefix $SUP_PREFIX }openclaw@$TARGET_VERSION   (the supervisor's install: ${SUP_PKG_ROOT:-none found, PATH})"
+    echo "    5. $NPM_BIN install -g ${SUP_PREFIX:+--prefix $SUP_PREFIX }openclaw@$TARGET_VERSION   (the supervisor's install: ${SUP_PKG_ROOT:-none found, PATH}) with the gateway job proven booted out for the whole window; the package must measure complete before anything is started"
     echo "    6. ask the NEW binary: openclaw config schema  -> which keys does \`agents\` accept?"
     echo "    7. if it accepts \`entries\` and not \`list\`: migrate + verify losslessness; else leave the config alone"
-    echo "    7a. (launchd) reap STALE bare openclaw CLI processes holding $OC_ROOT_DIR/state/openclaw.sqlite (never the gateway, a node service, the app, or anything started in this run), then run the NEW binary: doctor --fix --non-interactive (stdin /dev/null, bounded ${DOCTOR_TIMEOUT}s) so the agent/session database migration finishes BEFORE the gateway starts; a legacy-audit-raw checkpoint refusal drops only that scope's rows and re-runs doctor once; model/provider names must be identical afterwards, else roll back"
-    echo "    7b. map retired values (skills.workshop.autonomous.mode propose -> off) then \`openclaw config validate\` with the NEW binary; rejected = roll back"
-    echo "    8. reap stale state-database holders again; bootstrap $GATEWAY_LABEL; require a STABLE pid for ${STABILITY_SECONDS}s, /healthz 200, and the launched package at $TARGET_VERSION"
+    echo "    7a. (launchd) reap STALE bare openclaw CLI processes holding $OC_ROOT_DIR/state/openclaw.sqlite (never the launchd job's gateway, a node service, the app, or anything started in this run; an orphan gateway is stopped at 2b), then run the NEW binary: doctor --fix --non-interactive (stdin /dev/null, bounded ${DOCTOR_TIMEOUT}s) so the agent/session database migration finishes BEFORE the gateway starts; a legacy-audit-raw checkpoint refusal drops only that scope's rows and re-runs doctor once; model/provider names must be identical afterwards, else roll back"
+    echo "    7a1. (launchd) doctor spinning on a plugin whose module cannot load (the same ERR_MODULE_NOT_FOUND ${DOCTOR_LOOP_LINES} times, or the bound) is killed; the plugin is named from its output, ONLY plugins.entries.<id>.enabled is set to false (recorded; never the allow list, never install/enable/update), and doctor runs again"
+    echo "    7b. map retired values (skills.workshop.autonomous.mode propose -> off) then \`openclaw config validate\` with the NEW binary (job is out, so no gateway to contend with; against a SERVING gateway the check runs on a private copy in a private state dir under known-good/known-bad controls); rejected = roll back"
+    echo "    8. stop any orphan gateway again, reap stale state-database holders again; bootstrap $GATEWAY_LABEL; require a STABLE pid for ${STABILITY_SECONDS}s, /healthz 200, and the launched package at $TARGET_VERSION"
     echo "    9. release the lock, re-arm $SELFHEAL_LABEL"
     echo "    Any failure from step 3 onward: restore config AND binary, start the gateway."
     return 0
@@ -1563,6 +1923,12 @@ do_upgrade() {
   # ── 2-3. QUIESCE AND PROVE IT ──────────────────────────────────────────────
   if ! _quiesce; then
     _rollback "the gateway could not be stopped"; return $?
+  fi
+  # #33: the job is out, so its pid is empty and the proof below would read "nothing running"
+  # while an orphan from an earlier run still owns the state directory and rewrites the config.
+  if ! _reap_orphan_gateways "after the quiesce"; then
+    _rollback "an orphan gateway process still owns the state directory and could not be stopped"
+    return $?
   fi
   if ! _prove_quiesced; then
     _rollback "quiescence could not be PROVEN — a live writer would silently revert the migration within about a minute"
@@ -1584,14 +1950,25 @@ do_upgrade() {
   # ── 5. INSTALL THE NEW BINARY (while nothing is running) ───────────────────
   if [ "$OLD_VERSION" != "$TARGET_VERSION" ]; then
     _say "installing openclaw@$TARGET_VERSION ..."
-    if ! _npm_install "$TARGET_VERSION" >/dev/null 2>&1; then
+    # Rollback state BEFORE the install it undoes: an npm that dies half-way leaves a half-written
+    # tree, and the rollback must repair that, not trust an exit code (#21).
+    STATE_BINARY_CHANGED=1
+    _npm_install_held "$TARGET_VERSION"; rc=$?
+    if [ "$rc" -eq 2 ]; then
+      _rollback "the gateway could not be held stopped for the npm window - npm was NOT run, so no respawning gateway can import a half-written package"
+      return $?
+    fi
+    if [ "$rc" -ne 0 ]; then
       _rollback "\`$NPM_BIN install -g ${SUP_PREFIX:+--prefix $SUP_PREFIX }openclaw@$TARGET_VERSION\` FAILED"
       return $?
     fi
-    STATE_BINARY_CHANGED=1
     new_version="$(_measured_version)"
     if [ "$new_version" != "$TARGET_VERSION" ]; then
       _rollback "the install reported success but the binary MEASURES $new_version, not $TARGET_VERSION — an exit code is a claim, not a result"
+      return $?
+    fi
+    if ! _package_complete; then
+      _rollback "the install measures $new_version but the package is INCOMPLETE (${SUP_ENTRY:-package.json} is missing) - the gateway must not be started on it"
       return $?
     fi
     _ok "binary is now openclaw@$new_version (measured)"
@@ -1731,7 +2108,13 @@ do_upgrade() {
   fi
 
   # ── 8. START, AND PROVE IT STAYED UP ───────────────────────────────────────
-  # A stale CLI that grabbed the state database since doctor would stop the gateway starting.
+  # #33: an orphan gateway that owns the state directory makes the LaunchAgent exit 78, which reads
+  # as a bad binary. Stop it by identity first; a stale CLI that grabbed the database since doctor
+  # would stop the start too.
+  if ! _reap_orphan_gateways "before the gateway start"; then
+    _rollback "an orphan gateway process still owns the state directory - the start would exit 78 and look like a bad binary"
+    return $?
+  fi
   _reap_state_holders "before the gateway start" || _warn "starting the gateway anyway; the start proof below decides"
   if ! _start_gateway; then
     _rollback "the gateway could not be started after the upgrade"
@@ -1755,6 +2138,7 @@ do_upgrade() {
   _ok "ATOMIC UPGRADE COMPLETE"
   _say "  binary : $OLD_VERSION -> $(_measured_version) (measured)"
   _say "  config : ${CONFIG_BACKUP:+backup retained at $CONFIG_BACKUP}"
+  [ -z "$PLUGIN_QUARANTINED" ] || _say "  plugins: entry DISABLED because its module fails to load:$PLUGIN_QUARANTINED  (restore steps in $PLUGIN_RECORD)"
   return 0
 }
 
