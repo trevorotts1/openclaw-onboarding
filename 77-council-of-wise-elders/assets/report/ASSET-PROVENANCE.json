@@ -97,7 +97,7 @@
  ],
  "preserved_originals": {
   "rule": "the existing Council hero image and the nine seat portraits are used EXACTLY as they are; no replacement or lookalike was generated, and no original was modified, copied into a new path, or re-encoded",
-  "source_tree": "/Volumes/mac mini m4/Downloads/git trees and automations/council-telegram-repair-20261029/lanes/CTR-142-combined/candidate/77-council-of-wise-elders/assets/seats",
+  "source_tree": "assets/seats",
   "baseline_check": {
    "baseline_1_0_72": {
     "tree": "lanes/CTR-142-combined/candidate/77-council-of-wise-elders",
