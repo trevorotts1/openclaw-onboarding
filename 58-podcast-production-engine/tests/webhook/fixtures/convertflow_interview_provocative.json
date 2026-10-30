@@ -19,7 +19,7 @@
     "podcast_interview_smiq": "I have never told anyone that I mortgaged the house twice to make payroll.",
     "podcast_survey__additional_info": "Lean into the tension; the audience can handle it.",
     "date_for_release": "2026-08-01T14:00:00Z",
-    "tts_model": "s2.1-pro",
+    "tts_model": "drama-3",
     "episode_type": "full",
     "explicit": "clean",
     "target_runtime": "12"

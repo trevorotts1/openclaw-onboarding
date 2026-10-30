@@ -197,7 +197,7 @@ If validation fails (zero duration, no video stream, corrupt format): do NOT del
 
 ## TTS (narration) - Fish Audio primary, cloud fallbacks, Piper optional
 
-Per `SKILL.md` and the v14.3.0 change: the primary narrator is Fish Audio 2.1 Pro (`s2.1-pro`); Gemini TTS, OpenAI TTS and MiniMax (Mimo) are the cloud fallbacks; Piper is an OPTIONAL, opt-in (`SKILL47_INSTALL_PIPER=1`), offline-only fallback that is NOT installed by default. OpenMontage's TTS auto-discovery uses the cloud providers installed in `tools/audio/` when Piper is absent. For premium TTS, hand off to Skill 30 (`fish-audio-api-reference`) instead of adding new API keys here.
+Per `SKILL.md` and the v14.3.0 change: the primary narrator is Fish Audio Drama-3 (`drama-3`); Gemini TTS, OpenAI TTS and MiniMax (Mimo) are the cloud fallbacks; Piper is an OPTIONAL, opt-in (`SKILL47_INSTALL_PIPER=1`), offline-only fallback that is NOT installed by default. OpenMontage's TTS auto-discovery uses the cloud providers installed in `tools/audio/` when Piper is absent. For premium TTS, hand off to Skill 30 (`fish-audio-api-reference`) instead of adding new API keys here.
 
 ---
 

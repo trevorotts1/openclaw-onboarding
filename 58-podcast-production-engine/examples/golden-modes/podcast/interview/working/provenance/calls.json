@@ -37,6 +37,6 @@
   {
     "step": "tts",
     "provider": "fish-audio",
-    "model": "s2.1-pro"
+    "model": "drama-3"
   }
 ]

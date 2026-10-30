@@ -4,7 +4,7 @@
 # Adapted from Skill 35 scripts/generate_podcast_audio.sh (the proven generate,
 # verify, retry pipeline) per PRD Step 11 and reuse map Section 7.2. What this
 # module adds over the Skill 35 base:
-#   - Fish Audio model s2.1-pro selected via the HTTP header "model:" (LIVE-VERIFIED
+#   - Fish Audio model drama-3 selected via the HTTP header "model:" (LIVE-VERIFIED
 #     accepted by POST https://api.fish.audio/v1/tts at build time on 2026-07-06:
 #     HTTP 200, content-type audio/mpeg).
 #   - The client's OWN reference_id is required (one private voice model per client).
@@ -29,7 +29,7 @@
 # Arguments (positions 1 to 4 are compatible with the Skill 35 base):
 #   script_file    path to the tagged Final Draft podcast script text file
 #   reference_id   the client's OWN Fish Audio voice reference_id (required)
-#   model          (optional) Fish Audio backbone model; default s2.1-pro; any
+#   model          (optional) Fish Audio backbone model; default drama-3; any
 #                  "*-free" model is structurally refused for client content
 #   output_mp3     (optional) explicit output path; default podcast_audio.mp3, or
 #                  derived as "<client_name> - <episode_title>.mp3" when both are given
@@ -57,14 +57,14 @@
 # Fish Audio API reference: https://docs.fish.audio/api-reference/introduction
 #   Endpoint: POST https://api.fish.audio/v1/tts
 #   Auth:     Authorization: Bearer <FISH_AUDIO_API_KEY>
-#   Model:    via HTTP header "model: s2.1-pro"
+#   Model:    via HTTP header "model: drama-3"
 #   Response: binary audio stream (Transfer-Encoding: chunked)
 
 set -euo pipefail
 
 SCRIPT_FILE="${1:-}"
 REFERENCE_ID="${2:-}"
-MODEL="${3:-s2.1-pro}"
+MODEL="${3:-drama-3}"
 OUTPUT_MP3="${4:-}"
 CLIENT_NAME="${5:-}"
 EPISODE_TITLE="${6:-}"
@@ -109,7 +109,7 @@ case "$MODEL_LC" in
   *-free|*free)
     err "REFUSED: model '$MODEL' is a free tier. The free tier carries no service"
     err "  level agreement and may train on inputs, so it is forbidden for client"
-    err "  content. Use the paid model s2.1-pro with the client's own reference_id."
+    err "  content. Use the paid model drama-3 with the client's own reference_id."
     exit 2
     ;;
 esac

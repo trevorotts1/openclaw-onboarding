@@ -133,7 +133,7 @@ CHECKLIST_PART_A: list[tuple[str, list[tuple[str, str]]]] = [
     (
         "AUDIO",
         [
-            ("fish_render", "Speech Script converted via Fish Audio model s2.1-pro with the client's own voice reference_id; free tier never used."),
+            ("fish_render", "Speech Script converted via Fish Audio model drama-3 with the client's own voice reference_id; free tier never used."),
             ("audio_mastered", "Split at natural boundaries and ffmpeg-joined if needed; condition_on_previous_chunks true; no seams; loudness mastered to the department doctrine; ffprobe-verified."),
             ("mp3_named", "MP3 named client name first, then episode title; valid characters only."),
         ],

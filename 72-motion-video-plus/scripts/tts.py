@@ -42,8 +42,8 @@ A silent run writes {"status": "no_narration", "reason": ...,
 prints the same record to stdout.
 
 Model rules (see references/fish-audio-tts.md):
-- Default model is s2.1-pro.
-- drama-3-preview is OPT-IN only. The API SILENTLY falls back to s2.1-pro
+- Default model is drama-3.
+- s2.1-pro is the prior-gen fallback. The API SILENTLY falls back to s2.1-pro
   for unrecognized model values, so this script verifies the SERVED model
   from the response metadata on every request and hard-fails on mismatch.
   It never silently accepts the fallback.
@@ -286,7 +286,7 @@ def main():
         fail("FISH_AUDIO_API_KEY is not set")
 
     tts = manifest.get("tts", {})
-    model = tts.get("model", "s2.1-pro")
+    model = tts.get("model", "drama-3")
     reference_id = tts.get("reference_id")
     temperature = tts.get("temperature", 0.4)
     if not reference_id:

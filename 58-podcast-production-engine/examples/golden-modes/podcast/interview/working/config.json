@@ -68,7 +68,7 @@
   "fishAudio": {
     "apiKey": "REFERENCED-FROM-ENV",
     "referenceId": "REFERENCED-FROM-ENV",
-    "model": "s2.1-pro",
+    "model": "drama-3",
     "freeTier": false,
     "bitrateKbps": 192,
     "conditionOnPreviousChunks": true

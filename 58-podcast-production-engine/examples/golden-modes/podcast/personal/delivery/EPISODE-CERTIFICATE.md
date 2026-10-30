@@ -15,9 +15,9 @@ Rubric scores: voice 9, arc 9, persuasion 8, opening 9, closing 9, captivation 8
 Attempt: one of a maximum of three
 Spoken word count, tags stripped, reported honestly: 1284
 Runtime at one hundred forty words per minute: 550 seconds, about nine point two minutes, inside the seven to fifteen minute band
-Fish Audio: model s2.1-pro, free tier False, client reference_id referenced from env, never printed
+Fish Audio: model drama-3, free tier False, client reference_id referenced from env, never printed
 ZERO Anthropic in run: True
-Models used: kimi-2.6, gemini-3.1-flash-lite, s2.1-pro, gpt-image-2, sonar-reasoning
+Models used: kimi-2.6, gemini-3.1-flash-lite, drama-3, gpt-image-2, sonar-reasoning
 Judge tier distinct from writer tier: True
 QC persona (qc-specialist-podcast) distinct from the drafting persona: True
 Book teaser: skipped, correct for Personal mode

@@ -23,7 +23,7 @@ Per-episode checklist (Part A), honestly completed
 - Draft and improvement: Final Draft prose only, everything speakable; Fish square-bracket tags at pivots; improvement pass raised intensity without changing title or thesis, removing the transparency beat, adding fabricated material, or inflating length; read-aloud pass clean.
 - Quality control: all sixteen Tier 1 checks pass; all ten rubric dimensions at eight or higher; word count honest; attempt one of three.
 - Image: cover generated at one thousand twenty four square via Kie.ai gpt-image-2, then squared and compressed to fourteen hundred square JPEG, RGB, under five hundred twelve kilobytes, spec-valid filename.
-- Audio: Fish Audio s2.1-pro with the client's own reference_id, free tier never used, condition on previous chunks true, seamless joins, mastered to minus fifteen LUFS integrated inside the department doctrine, ffprobe verified; mp3 named client first then title.
+- Audio: Fish Audio drama-3 with the client's own reference_id, free tier never used, condition on previous chunks true, seamless joins, mastered to minus fifteen LUFS integrated inside the department doctrine, ffprobe verified; mp3 named client first then title.
 - Documents: tooling detected before creation; Episode Package rich; Speech Script clean; Google sharing set.
 - Book teaser: not applicable; Personal mode skips it entirely.
 - Media, publishing, link-back, enrollment: uploads HEAD-verified; Podbean permalink captured; link-back read back byte for byte; running spreadsheet updated; engine stopped at the boundary with zero customer messages.

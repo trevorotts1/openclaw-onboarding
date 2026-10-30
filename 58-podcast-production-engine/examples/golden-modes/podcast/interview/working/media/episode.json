@@ -20,7 +20,7 @@
     15
   ],
   "audio": {
-    "model": "s2.1-pro",
+    "model": "drama-3",
     "referenceId": "REFERENCED-FROM-ENV",
     "freeTier": false,
     "bitrateKbps": 192,
