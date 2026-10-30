@@ -71,7 +71,8 @@
   },
   "files": [
     "dist",
-    "public/chamber"
+    "public/chamber",
+    "public/report"
   ],
   "license": "UNLICENSED",
   "main": "dist/index.js",

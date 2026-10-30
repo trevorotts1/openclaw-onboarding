@@ -886,7 +886,11 @@ export class CouncilEngine {
             )
             .filter((v): v is string => v !== null)
         : null;
-    const outputContract = cardOutputContract(purpose, challengeIds);
+    const outputContract = cardOutputContract(
+      purpose,
+      challengeIds,
+      purpose === 'consult' ? null : round,
+    );
     const systemWithContract = `${system}\n${outputContract.instruction}`;
     const requestInput: Record<string, unknown> = {
       brief: session.brief,
@@ -933,7 +937,7 @@ export class CouncilEngine {
           model_policy: session.spec.model_policy,
           system:
             repairs > 0
-              ? `${systemWithContract}\n${cardRepairInstruction(purpose, challengeIds, lastIssues)}`
+              ? `${systemWithContract}\n${cardRepairInstruction(purpose, challengeIds, lastIssues, purpose === 'consult' ? null : round)}`
               : systemWithContract,
           input: requestInput,
         };

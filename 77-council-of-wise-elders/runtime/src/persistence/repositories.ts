@@ -78,6 +78,17 @@ import { ProjectionOutbox, type OutboxIntent, type OutboxIntentInput } from './o
 import type { CouncilDatabase, SqliteDatabaseHandle } from './sqlite.js';
 import type { CouncilPersistenceConfig } from './config.js';
 
+/** One event a composed service appends through the repository journal. */
+export interface RepositoryEventInput {
+  event_id: string;
+  type: CouncilEventType;
+  payload: Record<string, unknown>;
+  created_at: string;
+  from_state?: string | null;
+  to_state?: string | null;
+  actor_subject?: string;
+}
+
 export const DELETION_TOMBSTONE_SOURCE = 'council-persistence';
 export const DELETION_TOMBSTONE_OPERATION = 'session_deleted';
 
@@ -221,6 +232,31 @@ export class CouncilRepositories {
     if (this.isDeleted(envelope.tenant_id, sessionId)) {
       throw sessionDeleted(sessionId);
     }
+  }
+
+  /**
+   * Append one committed event through the canonical journal in its own
+   * transaction. The composed services (report export journaling) use
+   * this instead of reaching into the journal's transaction handle; the
+   * vocabulary, sequence allocation and hash chain are the journal's.
+   */
+  appendEvent(
+    envelope: AuthorizationEnvelope,
+    sessionId: string,
+    input: RepositoryEventInput,
+  ): JournalEvent {
+    this.assertNotDeleted(envelope, sessionId);
+    return this.db.write((handle) =>
+      this.journal.append(handle, envelope, sessionId, {
+        event_id: input.event_id,
+        type: input.type,
+        from_state: input.from_state ?? null,
+        to_state: input.to_state ?? null,
+        actor_subject: input.actor_subject ?? envelope.actor_subject,
+        payload: input.payload,
+        created_at: input.created_at,
+      }),
+    );
   }
 
   // -------------------------------------------------------------- sessions

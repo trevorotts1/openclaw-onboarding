@@ -81,10 +81,19 @@
     return { name: name, rest: ' is weighing: ' + (seat.weighing || text) };
   };
 
-  var STATUS_TEXT = { writing: 'Writing now', done: 'Position in', idle: 'Has not spoken yet' };
+  var STATUS_TEXT = { writing: 'Writing now', done: 'Position in', idle: 'Has not spoken yet', blocked: 'No accepted response recorded' };
+  // A blocked seat says what the typed blocked_reason recorded, never the
+  // generic "has not spoken yet" when an output was rejected or a call failed.
+  var BLOCKED_TEXT = {
+    rejected: 'Response failed validation',
+    provider_failed: 'Provider request failed',
+    no_result: 'No result recorded',
+    unclassified: 'No accepted response recorded'
+  };
 
-  room.seatLabel = function seatLabel(seat, status) {
-    return seat.name + ', ' + seat.domain + '. ' + (STATUS_TEXT[status] || STATUS_TEXT.idle);
+  room.seatLabel = function seatLabel(seat, status, blockedKind) {
+    var state = status === 'blocked' ? (BLOCKED_TEXT[blockedKind] || STATUS_TEXT.blocked) : (STATUS_TEXT[status] || STATUS_TEXT.idle);
+    return seat.name + ', ' + seat.domain + '. ' + state;
   };
 
   /* progress.value is a fraction 0..1 (values above 1 are read as percent). */
@@ -281,9 +290,47 @@
     return { id: id, data: data, btn: btn, bubble: bubble, bubbleText: bubbleText };
   }
 
+  /*
+   * A duplicated room is a stale stage, a stale seat box or a second name pill
+   * for the same seat: the panel clips it, so it reads as a second row of
+   * portraits with the same names. The page owns one stage and one seat box.
+   * Runs on every render through the guarded helpers below; a minimal test DOM
+   * without selectors keeps its single stage and is never touched.
+   */
+  function removeNode(node) {
+    if (node && node.parentNode) node.parentNode.removeChild(node);
+  }
+
+  function duplicateSeatId(pill) {
+    var slot = pill.parentNode;
+    var btn = slot ? slot.parentNode : null;
+    return btn && btn.getAttribute ? btn.getAttribute('data-seat-id') : '';
+  }
+
+  function pruneDuplicates() {
+    if (!mount) return;
+    try {
+      if (typeof mount.querySelectorAll !== 'function') return;
+      var stages = mount.querySelectorAll('.ch-room-stage');
+      for (var i = stages.length - 1; i >= 1; i -= 1) removeNode(stages[i]);
+      var boxes = mount.querySelectorAll('.ch-room-seats');
+      for (var j = boxes.length - 1; j >= 1; j -= 1) removeNode(boxes[j]);
+      var pills = mount.querySelectorAll('.ch-seat-pill');
+      var seen = {};
+      for (var k = 0; k < pills.length; k += 1) {
+        var id = duplicateSeatId(pills[k]);
+        if (id && seen[id]) removeNode(pills[k]);
+        else if (id) seen[id] = true;
+      }
+    } catch (e) {
+      /* no selector support: the DOM path built exactly one stage itself */
+    }
+  }
+
   function ensureSeats(ids) {
     var key = ids.join('|');
     if (key === seatKey) return;
+    pruneDuplicates();
     seatKey = key;
     layoutKey = '';
     seatRefs = {};
@@ -314,7 +361,7 @@
     var bubble = (entry && entry.bubble) || { kind: 'none', text: '' };
     var kind = bubble.kind || 'none';
     var spot = !!(entry && entry.spotlight);
-    setAttr(ref.btn, 'aria-label', room.seatLabel(ref.data, status));
+    setAttr(ref.btn, 'aria-label', room.seatLabel(ref.data, status, entry && entry.blockedKind));
     setAttr(ref.btn, 'data-status', status);
     ref.btn.classList.toggle('ch-seat--spot', spot);
     ref.btn.classList.toggle('ch-seat--speaking', kind === 'line');
@@ -342,6 +389,8 @@
 
     els.headline = el('p', 'ch-round-headline');
     els.explain = el('p', 'ch-round-explain');
+    els.counts = el('p', 'ch-round-counts');
+    els.counts.hidden = true;
     els.weighing = el('p', 'ch-round-weighing');
     els.weighName = el('b', 'ch-round-name');
     els.weighRest = el('span', 'ch-round-rest');
@@ -352,6 +401,16 @@
     els.track.setAttribute('aria-hidden', 'true');
     els.fill = el('span', 'ch-round-fill');
     els.track.appendChild(els.fill);
+
+    // Native, keyboard-safe disclosure: a raw validator/schema message is
+    // available on demand, escaped by textContent, and never in the summary.
+    els.tech = el('details', 'ch-round-tech');
+    els.tech.hidden = true;
+    els.techSummary = el('summary', 'ch-round-tech-summary', 'Technical details');
+    els.techList = el('ul', 'ch-round-tech-list');
+    els.tech.appendChild(els.techSummary);
+    els.tech.appendChild(els.techList);
+    els.techKey = '';
 
     els.conn = el('div', 'ch-round-conn');
     els.connText = el('span', 'ch-round-conn-text');
@@ -387,7 +446,7 @@
     els.sr.setAttribute('aria-live', 'polite');
     els.sr.setAttribute('aria-atomic', 'true');
 
-    [top, els.headline, els.explain, els.weighing, els.track, els.conn, els.actions, els.sr].forEach(function (n) {
+    [top, els.headline, els.explain, els.counts, els.weighing, els.track, els.tech, els.conn, els.actions, els.sr].forEach(function (n) {
       round.appendChild(n);
     });
     table.appendChild(round);
@@ -408,6 +467,27 @@
       setText(els.explain, (r && r.explain) || '');
     }
     setHidden(els.explain, !els.explain.textContent);
+
+    var partial = !!(r && r.countsFinal === false && session && session.voters > 0 &&
+      (session.status === 'blocked' || session.status === 'failed'));
+    setText(els.counts, partial ? 'The preference tally is partial and not final.' : '');
+    setHidden(els.counts, !partial);
+
+    var tech = r && Array.isArray(r.blockedDetails) ? r.blockedDetails : [];
+    setHidden(els.tech, tech.length === 0);
+    if (tech.length) {
+      var key = tech.map(function (d) { return String((d && d.label) || '') + '\u0000' + String((d && d.text) || ''); }).join('\u0001');
+      if (key !== els.techKey) {
+        els.techKey = key;
+        while (els.techList.firstChild) els.techList.removeChild(els.techList.firstChild);
+        tech.forEach(function (d) {
+          var item = el('li', 'ch-round-tech-item');
+          item.appendChild(el('span', 'ch-round-tech-label', String((d && d.label) || '')));
+          item.appendChild(el('span', 'ch-round-tech-text', String((d && d.text) || '')));
+          els.techList.appendChild(item);
+        });
+      }
+    }
 
     var showLabel = !!(r && (r.label || r.timer));
     setHidden(els.label.parentNode, !showLabel);
@@ -444,6 +524,7 @@
 
   function render(view) {
     lastView = view;
+    pruneDuplicates();
     var session = view.session || null;
     var ids = session && session.seats && session.seats.length
       ? session.seats.map(function (s) { return s.id; })
@@ -462,6 +543,20 @@
   function init() {
     mount = document.getElementById('ch-room');
     if (!mount) return;
+    // Defence in depth only. A second evaluation (double script tag, a cached
+    // inline copy, a hot reload) converges on the stage already mounted
+    // instead of stacking a second room under the first. The duplicated
+    // portrait row seen in a screenshot is NOT proven to come from a second
+    // stage: init clears #ch-room before appending one stage, and index.html
+    // has one #ch-room and one script tag. Browser capture is the only
+    // discriminator; this prune removes only extra stages, extra seat boxes
+    // and a second pill for the same data-seat-id, never unique user DOM.
+    if (room._booted) {
+      pruneDuplicates();
+      return;
+    }
+    room._booted = true;
+    pruneDuplicates();
     mount.classList.add('ch-room-panel');
     if (!mount.hasAttribute('aria-label')) mount.setAttribute('aria-label', 'The council room');
     stage = el('div', 'ch-room-stage');

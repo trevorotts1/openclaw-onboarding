@@ -28,6 +28,9 @@ echo Darwin
 SH
 cat > "$STUB/launchctl" <<'SH'
 #!/bin/bash
+# FAKE_GUI_RC models `launchctl print gui/<uid>`: 0 = this user has a GUI
+# session, 1 = none. Every other subcommand (managername) echoes the manager.
+if [ "${1:-}" = "print" ]; then exit "${FAKE_GUI_RC:-0}"; fi
 echo "${FAKE_MANAGER:-Aqua}"
 SH
 chmod +x "$STUB/open" "$STUB/uname" "$STUB/launchctl"
@@ -53,7 +56,10 @@ check "headless: link still emitted" \
   grep -qxF 'Chamber link: https://demo-council.example.com/chamber/#session=abc123' <<<"$OUT"
 check "headless: open never invoked" test ! -s "$OPEN_LOG"
 
-# 3. Auto GUI probe: launchctl managername Aqua pops, Background does not.
+# 3. Auto GUI probe: Aqua pops directly; a non-Aqua gateway still delivers
+#    through the user's own GUI session (the CTR-103 fix - the old rule made the
+#    pop depend on THIS process being Aqua, so a gateway silently skipped it);
+#    with no GUI session at all it never claims a pop.
 : > "$OPEN_LOG"
 OUT="$(env -u COUNCIL_CHAMBER_GUI FAKE_MANAGER=Aqua COUNCIL_PUBLIC_URL="https://demo-council.example.com" bash "$SCRIPT" 2>"$WORK/err")"
 sleep 0.3
@@ -61,9 +67,20 @@ check "auto probe Aqua: open invoked once" test "$(wc -l < "$OPEN_LOG" | tr -d '
 check "auto probe Aqua: no session anchor without --session" \
   grep -qxF 'Chamber link: https://demo-council.example.com/chamber/' <<<"$OUT"
 : > "$OPEN_LOG"
-OUT="$(env -u COUNCIL_CHAMBER_GUI FAKE_MANAGER=Background COUNCIL_PUBLIC_URL="https://demo-council.example.com" bash "$SCRIPT" 2>"$WORK/err")"
+OUT="$(env -u COUNCIL_CHAMBER_GUI FAKE_MANAGER=Background FAKE_GUI_RC=0 COUNCIL_PUBLIC_URL="https://demo-council.example.com" bash "$SCRIPT" 2>"$WORK/err")"
 sleep 0.3
-check "auto probe Background (headless): zero pop" test ! -s "$OPEN_LOG"
+check "auto probe Background with a GUI session: exactly one pop" \
+  test "$(wc -l < "$OPEN_LOG" | tr -d ' ')" = 1
+check "auto probe Background with a GUI session: reports opened" \
+  grep -q '^pop: opened' "$WORK/err"
+: > "$OPEN_LOG"
+OUT="$(env -u COUNCIL_CHAMBER_GUI FAKE_MANAGER=Background FAKE_GUI_RC=1 COUNCIL_PUBLIC_URL="https://demo-council.example.com" bash "$SCRIPT" 2>"$WORK/err")"
+sleep 0.3
+check "auto probe Background, no GUI session: zero pop" test ! -s "$OPEN_LOG"
+check "auto probe Background, no GUI session: link still emitted" \
+  grep -qxF 'Chamber link: https://demo-council.example.com/chamber/' <<<"$OUT"
+check "auto probe Background, no GUI session: reports skipped" \
+  grep -q '^pop: skipped (no GUI session' "$WORK/err"
 
 # 4. URL source order: COUNCIL_PUBLIC_URL > WISE_ELDERS_PUBLIC_ORIGIN >
 #    service.json public_origin > loopback fallback.

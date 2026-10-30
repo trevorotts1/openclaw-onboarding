@@ -10,7 +10,7 @@
  * the isolated opening; every later pass challenges the open cruxes from
  * the previous round's cards.
  */
-import { SEAT_IDS } from './enums';
+import { SEAT_IDS } from './enums.js';
 
 export const COUNCIL_SIZES = ['light', 'medium', 'heavy'] as const;
 export type CouncilSize = (typeof COUNCIL_SIZES)[number];

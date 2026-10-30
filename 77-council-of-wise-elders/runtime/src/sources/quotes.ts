@@ -16,16 +16,16 @@
  * check.
  */
 
-import type { SeatId } from '../contracts/enums';
-import type { VerifiedQuoteCandidate } from '../contracts/schemas';
+import type { SeatId } from '../contracts/enums.js';
+import type { VerifiedQuoteCandidate } from '../contracts/schemas.js';
 import {
   errorDiagnostic,
   sourceVersionOf,
   type Diagnostic,
   type EvidenceUnit,
   type SourceRecord,
-} from './schemas';
-import { locatorMatches, normalizeQuotedText, sameSpeaker } from './text';
+} from './schemas.js';
+import { locatorMatches, normalizeQuotedText, sameSpeaker } from './text.js';
 
 /** The five-tuple a quotation claim must prove (Section 8.4). */
 export interface QuoteTuple {

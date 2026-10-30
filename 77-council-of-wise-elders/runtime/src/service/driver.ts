@@ -28,6 +28,12 @@ import type { TrustedPrincipal } from '../authorization/index.js';
 import type { PinnedRouteSnapshot } from '../budgets/route-snapshot.js';
 import { buildSampleSession } from '../cli/fixture-transport.js';
 import type { Clock, IdSource, StoredSession } from '../cli/host-ports.js';
+import { isUnresolvedExplorationOption } from '../brief/exploration.js';
+import {
+  prepareProposals,
+  type ProposalInferenceRequest,
+  type ProposedOption,
+} from '../brief/proposal-stage.js';
 import {
   canonicalHash,
   isCouncilSize,
@@ -79,6 +85,28 @@ export interface ResolvedSessionRoute {
   model_label: string;
   selection_source: 'explicit' | 'client_default';
   harness: string | null;
+}
+
+/**
+ * CTR-134: the configured runtime model request adapter, bound to the exact
+ * route/model the caller's convene resolved. The service composition supplies
+ * this from `transportForSnapshot(snapshot)` — the SAME adapter the sitting
+ * uses — in its one-shot form (one attempt, no retry, no fallback).
+ */
+export type PreparationInference = (
+  route: ResolvedSessionRoute,
+  request: ProposalInferenceRequest,
+  context: { session_id: string },
+) => Promise<{ text: string }>;
+
+/** Bounded preparation accounting shown with the accepted sitting. */
+export interface PreparationRecord {
+  state: 'prepared';
+  request_budget: 1;
+  request_count: 1;
+  route_id: string;
+  model_label: string;
+  alternatives_are_proposals: true;
 }
 /** A web finding gathered by the convening agent (sources/elder-knowledge.ts). */
 export interface FreshFact {
@@ -147,11 +175,19 @@ export interface ConveneAccepted {
   parallel_limit: number;
   /** One plain line: the fallback route, or none and why. */
   fallback: string;
+  /**
+   * Present only when the brief carried no substantive alternative and ONE
+   * preparatory request proposed them. The alternatives are labelled
+   * proposals, never client facts, and the sitting's cap already accounts
+   * for the request.
+   */
+  preparation?: PreparationRecord;
 }
 
 export type DriverRefusalCode =
   | 'COMPOSITION_NOT_READY'
   | 'CONVENE_INPUT_INVALID'
+  | 'COUNCIL_PREPARATION_REQUIRED'
   | 'OLLAMA_PLAN_REQUIRED'
   | RouteChoiceErrorCode;
 
@@ -189,6 +225,12 @@ export interface CouncilDriverDeps {
   ) => void;
   /** Pack version stamped on non-sample sessions. */
   sourcePackVersion?: string;
+  /**
+   * CTR-134: the configured adapter used for the ONE preparatory request.
+   * Absent means an exploratory brief is refused as input-needed instead of
+   * being scored on an invented option.
+   */
+  prepareInference?: PreparationInference;
 }
 
 const APPROVAL_BASIS = 'convening_is_approval (Trevor decision 2026-10-19)';
@@ -240,9 +282,107 @@ export function roundsPolicyOf(mode: CouncilSize): ConveneRoundsPolicy {
   };
 }
 
+// ---------------------------------------------------------------------------
+// CTR-134: one bounded preparation pass before the sitting
+// ---------------------------------------------------------------------------
+
+/**
+ * A brief is ready to sit when it names at least two real alternatives. The
+ * known unresolved exploration candidate is not one, and it is never counted
+ * as a decision option.
+ */
+function substantiveOptionCount(brief: DecisionBrief | undefined): number {
+  if (!brief || !Array.isArray(brief.options)) return 0;
+  return brief.options.filter(
+    (option) =>
+      option &&
+      typeof option.label === 'string' &&
+      option.label.trim().length > 0 &&
+      !isUnresolvedExplorationOption(option),
+  ).length;
+}
+
+/**
+ * The preparation stage reads ONLY what the enqueue token already carries:
+ * the question, the evidence-bound facts and their locators, the constraints,
+ * and the explicit unknowns. Nothing else is read from disk here, and nothing
+ * is filled in when it is absent.
+ */
+function preparationContext(brief: DecisionBrief) {
+  const locatorById = new Map<string, string>();
+  for (const entry of Array.isArray(brief.evidence_manifest) ? brief.evidence_manifest : []) {
+    if (entry && typeof entry.evidence_id === 'string' && typeof entry.locator === 'string') {
+      locatorById.set(entry.evidence_id, entry.locator);
+    }
+  }
+  const facts = (Array.isArray(brief.facts) ? brief.facts : [])
+    .filter((fact) => fact && typeof fact.statement === 'string' && fact.statement.trim().length > 0)
+    .slice(0, 40)
+    .map((fact) => {
+      const firstId = Array.isArray(fact.evidence_ids) ? fact.evidence_ids[0] : undefined;
+      return {
+        statement: fact.statement.trim(),
+        source: (typeof firstId === 'string' ? locatorById.get(firstId) : null) ?? null,
+      };
+    });
+  const sourcesRead = [...new Set(
+    (Array.isArray(brief.evidence_manifest) ? brief.evidence_manifest : [])
+      .map((entry) => (entry && typeof entry.locator === 'string' ? entry.locator : ''))
+      .filter((locator) => locator.length > 0),
+  )];
+  const constraints = (Array.isArray(brief.constraints) ? brief.constraints : [])
+    .filter((constraint) => constraint && typeof constraint.description === 'string')
+    .slice(0, 40)
+    .map((constraint) => constraint.description);
+  const unknowns = (Array.isArray(brief.unknowns) ? brief.unknowns : [])
+    .filter((unknown) => unknown && typeof unknown.statement === 'string')
+    .slice(0, 60)
+    .map((unknown) => unknown.statement);
+  return {
+    sources_read: sourcesRead,
+    facts,
+    constraints,
+    unknowns,
+  };
+}
+
+/**
+ * Attach the proposed alternatives to the enqueue token. Every label is kept
+ * verbatim from the preparation response; none is renamed into a fact, price
+ * or result, and the placeholder is dropped rather than promoted.
+ */
+function withProposals(
+  brief: DecisionBrief,
+  options: readonly ProposedOption[],
+  unknowns: readonly string[],
+): DecisionBrief {
+  const kept = (Array.isArray(brief.options) ? brief.options : []).filter(
+    (option) => option && !isUnresolvedExplorationOption(option),
+  );
+  const existing = Array.isArray(brief.unknowns) ? brief.unknowns : [];
+  const seen = new Set(existing.map((unknown) => unknown.statement));
+  const added = [];
+  for (const statement of unknowns) {
+    if (typeof statement !== 'string' || statement.trim().length === 0) continue;
+    const trimmed = statement.trim();
+    if (seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    added.push({
+      id: `unknown-proposed-${added.length + 1}`,
+      statement: trimmed,
+      evidence_ids: [],
+    });
+    if (added.length >= 40) break;
+  }
+  return {
+    ...brief,
+    options: [...kept, ...options.map((option) => ({ ...option }))],
+    unknowns: [...existing, ...added],
+  };
+}
+
 /** <dataDir>/provider-plan.json — the client's Ollama plan, asked once. */
-const PROVIDER_PLAN_FILE = 'provider-plan.json';
-/** The one question asked when an Ollama route has no known plan (design verbatim). */
+const PROVIDER_PLAN_FILE = 'provider-plan.json';/** The one question asked when an Ollama route has no known plan (design verbatim). */
 const OLLAMA_PLAN_ACTION =
   'Ask the client: are you on the Ollama $20 a month plan or the $100 a month plan? Then convene again with --ollama-plan 20 or --ollama-plan 100.';
 /** The OpenRouter route the fallback model is resolved on. */
@@ -561,8 +701,122 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
       throw invalid('requested_by is required.');
     }
     const resolved = await route(input.route ?? {});
+    // CTR-134: one preparation pass, on the SAME route/model the caller's
+    // convene resolved, before any session exists. A brief that names fewer
+    // than two real alternatives cannot be scored honestly; the known
+    // unresolved exploration candidate is never counted, never renamed, and
+    // never scored. With a bound configured adapter the single request
+    // proposes alternatives and the sitting proceeds on them, labelled as
+    // proposals. Without one, the request is refused as input-needed.
+    let sessionInput = input;
+    let preparation: PreparationRecord | null = null;
+    if (!input.sample && substantiveOptionCount(input.brief) < 2) {
+      const token = input.brief;
+      const question = typeof token?.question === 'string' ? token.question.trim() : '';
+      if (token === undefined || question.length === 0) {
+        throw invalid(
+          'The brief carries fewer than two substantive alternatives and no question to prepare from.',
+          { substantive_options: token === undefined ? 0 : substantiveOptionCount(token) },
+        );
+      }
+      if (typeof deps.prepareInference !== 'function') {
+        throw new DriverRefusal(
+          'COUNCIL_PREPARATION_REQUIRED',
+          'No configured inference adapter is bound, so real alternatives cannot be prepared and none is invented.',
+          'Bind the service transport, then convene again; or state two to five real alternatives in the brief.',
+          422,
+          {
+            preparation: {
+              state: 'input-needed',
+              question,
+              request_budget: 0,
+              requires_new_inference: false,
+              missing: ['a configured inference adapter for the one preparation request'],
+            },
+          },
+        );
+      }
+      // A preparation request must not be spent on a route the sitting could
+      // not size (an Ollama route with no known plan). Check that gate FIRST;
+      // it is the same selector the sitting below uses.
+      const provisionalMode =
+        input.mode !== undefined
+          ? resolveModeSelection(input.mode, '').mode
+          : resolveModeSelection(undefined, question).mode;
+      if (isCouncilSize(provisionalMode)) {
+        const plan = resolveOllamaPlan(input.ollama_plan);
+        const parallel = parallelLimitFor({
+          providerSlug: resolved.snapshot.providerSlug,
+          ollamaPlan: plan,
+          panelSize: (input.seat_ids ?? SEAT_IDS).length,
+          waveWidth: MODE_ROUND_POLICY[provisionalMode].max_concurrent_calls,
+        });
+        if (!parallel.ok) {
+          throw new DriverRefusal(
+            'OLLAMA_PLAN_REQUIRED',
+            'The client chooses their own Ollama, and its plan is not known yet, so the council cannot size how many advisors run at once.',
+            OLLAMA_PLAN_ACTION,
+            409,
+          );
+        }
+      }
+      const preparationSessionId = `prep-${deps.ids.newId()}`;
+      let requestsUsed = 0;
+      const infer = async (request: ProposalInferenceRequest) => {
+        if (requestsUsed >= 1) {
+          throw new Error(
+            'The preparation stage is limited to ONE provider request; a second request was refused, not sent.',
+          );
+        }
+        requestsUsed += 1;
+        return deps.prepareInference!(resolved, request, { session_id: preparationSessionId });
+      };
+      const prepared = await prepareProposals(
+        {
+          question,
+          permitted_context: preparationContext(token),
+          display_timezone:
+            typeof token.display_timezone === 'string' && token.display_timezone.trim().length > 0
+              ? token.display_timezone
+              : 'UTC',
+          max_options: 5,
+          request_budget: 1,
+        },
+        { infer, max_requests: 1 },
+      );
+      if (!prepared.ok) {
+        throw new DriverRefusal(
+          'COUNCIL_PREPARATION_REQUIRED',
+          prepared.detail,
+          'State two to five real alternatives in the brief, then convene again. No decision was scored and no alternative was invented.',
+          422,
+          {
+            preparation: {
+              state: prepared.state,
+              question,
+              request_budget: prepared.request_budget,
+              request_count: prepared.request_count,
+              requires_new_inference: false,
+              missing: prepared.missing,
+            },
+          },
+        );
+      }
+      sessionInput = {
+        ...input,
+        brief: withProposals(token, prepared.options, prepared.unknowns),
+      };
+      preparation = {
+        state: 'prepared',
+        request_budget: 1,
+        request_count: 1,
+        route_id: resolved.snapshot.routeId,
+        model_label: resolved.model_label,
+        alternatives_are_proposals: true,
+      };
+    }
     const sessionId = `sess-${deps.ids.newId()}`;
-    const { session, selection } = buildSession(input, sessionId, resolved);
+    const { session, selection } = buildSession(sessionInput, sessionId, resolved);
     const mode = session.spec.mode;
     const councilMode = isCouncilSize(mode);
 
@@ -595,6 +849,12 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
       councilMode,
     );
     const ceilings = ceilingsForMode(mode);
+    // The one preparation request already spent part of the caller's existing
+    // cap; the sitting's grant keeps the SAME total ceiling by reserving that
+    // one request here. No second cap, no money or token ceiling added.
+    if (preparation !== null) {
+      ceilings.max_provider_requests = Math.max(1, ceilings.max_provider_requests - 1);
+    }
 
     const repos = deps.deliberation.repositories;
     repos.createSession(deps.envelope, session);
@@ -699,6 +959,7 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
       request_cap: ceilings.max_provider_requests,
       parallel_limit: parallelLimit,
       fallback: fallback.line,
+      ...(preparation !== null ? { preparation } : {}),
     };
   }
 
