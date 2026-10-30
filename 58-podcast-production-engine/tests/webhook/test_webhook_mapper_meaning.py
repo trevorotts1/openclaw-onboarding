@@ -80,9 +80,9 @@ def test_whitespace_is_normalized(sut, load_fixture, tenant_location_id):
 
 
 def test_enum_forms_are_normalized(sut, load_fixture, tenant_location_id):
-    # Make sends S2.1-Pro, Full, Clean; the mapper lowercases enum values.
+    # Make sends Drama-3, Full, Clean; the mapper lowercases enum values.
     result = sut.map_payload(load_fixture("make_personal_counterintuitive.json"), tenant_location_id)
-    assert result.canonical["tts_model"] == "s2.1-pro"
+    assert result.canonical["tts_model"] == "drama-3"
     assert result.canonical["episode_type"] == "full"
     assert result.canonical["explicit"] == "clean"
     assert result.canonical["mode"] == "personal_podcast_style"

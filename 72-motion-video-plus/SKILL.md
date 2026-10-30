@@ -1,7 +1,7 @@
 ---
 name: motion-video-plus
 description: Produces motion graphics in four delivery modes (PowerPoint graphic, desktop VSL insert, mobile VSL insert, standalone video) through one canonical V2 pipeline: mode-first intake, a schema-validated job package, typed component scenes rendered through the production adapters, and gated review and QC. Use for animated charts, explainers, and product or brand motion graphics sized for a slide, a VSL slot, or a standalone video. Do not use for AI video-model generation (Skill 67 kie-video) or documentary montage and whole-VSL production (Skill 47 movie-producer).
-version: 2.0.0
+version: 2.1.0
 ---
 
 # Motion Video Plus: Skill 72

@@ -112,7 +112,7 @@ This installs:
 Linux/VPS container fails every Remotion/HyperFrames (headless-Chromium) render. `install.sh`
 runs this for you; if installing by hand, run it after `make setup`:
 
-> **Narration / TTS voice order:** the **primary narrator is Fish Audio 2.1 Pro (`s2.1-pro`)**;
+> **Narration / TTS voice order:** the **primary narrator is Fish Audio Drama-3 (`drama-3`)**;
 > **Gemini TTS, OpenAI TTS, and MiniMax (a.k.a. "Mimo") are the cloud fallbacks**; **Piper is an
 > OPTIONAL, opt-in, offline-only fallback that is NOT installed by default**. Because Piper isn't
 > installed by default, OpenMontage's TTS auto-discovery simply uses the cloud providers. Opt in

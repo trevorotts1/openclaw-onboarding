@@ -1,7 +1,7 @@
 ---
 name: movie-producer
 description: Autonomous multi-pipeline video production (the Movie Producer skill) using the OpenMontage agentic engine — real-footage documentary montage (free, zero-key), or Kie.AI-powered image/video generation. Operates on the client's own optional API keys only.
-version: v15.1.12
+version: v15.2.0
 ---
 
 # Movie Producer — Automated Video Production (Skill 47)
@@ -34,7 +34,7 @@ Autonomous, multi-pipeline video production driven by the OpenMontage engine —
 - **Free documentary-montage path** — `pipeline_defs/documentary-montage.yaml` builds a semantic corpus of real-world footage from Pexels, Archive.org (Prelinger et al.), NASA, Wikimedia Commons, and Unsplash, then uses CLIP-based retrieval to fill slot descriptions. Zero API keys needed. Budget cap ~$1.
 - **Kie.AI generative path** — when the client sets `KIE_API_KEY`, the tool registry auto-routes ALL image generation through `kie_image.py` (models `gpt-image-2-5-sunburst-image-to-image` / `gpt-image-2-5-sunburst-text-to-image`) and ALL video generation through `kie_video.py` (primary `gemini-omni-video`, fallback `veo3`/`veo3_fast`). Native paid providers (FAL/Runway/HeyGen/OpenAI/Google) are never installed.
 - **Free render engines preserved + provisioned for macOS AND Linux/VPS** — FFmpeg mux/stitch, Remotion (`remotion-composer/`), HyperFrames (`npx hyperframes`). These are never rewired to a paid provider. `provision-render-deps.sh` (run by `install.sh`, and baked into the `Dockerfile`) installs the pinned latest Remotion + arch/OS compositor + Chrome-Headless-Shell, the pinned latest HyperFrames CLI + bundled Chrome, and the Chromium system libraries + ffmpeg (Linux `apt`) — so the browser-based render paths work on a fresh Linux container, not just the operator's Mac. Node floor is **≥ 22** (HyperFrames requirement).
-- **Narration / TTS voice order** — the **primary narrator is Fish Audio 2.1 Pro (`s2.1-pro`)**; **Gemini TTS, OpenAI TTS, and MiniMax (a.k.a. "Mimo") are the cloud fallbacks**; **Piper is an OPTIONAL, opt-in, offline-only fallback that is NOT installed by default**. Because Piper isn't installed by default, OpenMontage's TTS auto-discovery simply uses the cloud providers. Opt in to the offline Piper fallback with `SKILL47_INSTALL_PIPER=1` when running `provision-render-deps.sh` / `install.sh`.
+- **Narration / TTS voice order** — the **primary narrator is Fish Audio Drama-3 (`drama-3`)**; **Gemini TTS, OpenAI TTS, and MiniMax (a.k.a. "Mimo") are the cloud fallbacks**; **Piper is an OPTIONAL, opt-in, offline-only fallback that is NOT installed by default**. Because Piper isn't installed by default, OpenMontage's TTS auto-discovery simply uses the cloud providers. Opt in to the offline Piper fallback with `SKILL47_INSTALL_PIPER=1` when running `provision-render-deps.sh` / `install.sh`.
 - **13 production pipelines** — the pinned OpenMontage tree (`install.sh` pins commit `ce11f6a`, `OPENMONTAGE_PINNED_SHA`) ships exactly 13 `pipeline_defs/*.yaml`: `documentary-montage`, `animated-explainer`, `animation`, `avatar-spokesperson`, `character-animation`, `cinematic`, `clip-factory`, `hybrid`, `localization-dub`, `podcast-repurpose`, `screen-demo`, `talking-head`, and `framework-smoke` (internal smoke-test). They drive the AI coding-assistant-as-orchestrator model. See the pipeline selection guide in `INSTRUCTIONS.md`. No code orchestrator binary required.
 - **Rule-Zero budget discipline** — every client `config.yaml` ships with `budget.mode: cap` + a low `total_usd`. The system announces provider + model + estimated cost BEFORE any paid call and gates approval at `single_action_approval_usd: 0.50`.
 
@@ -50,7 +50,7 @@ Autonomous, multi-pipeline video production driven by the OpenMontage engine —
 | This skill (Skill 47) | Hand off to |
 |---|---|
 | Produces a finished MP4 that needs captions burned in | Skill 26 (`caption-creator`) |
-| Produces voice narration (primary: Fish Audio 2.1 Pro `s2.1-pro`; Gemini/OpenAI/MiniMax (Mimo) cloud fallbacks; Piper optional offline) or needs premium TTS | Skill 30 (`fish-audio-api-reference`) |
+| Produces voice narration (primary: Fish Audio Drama-3 `drama-3`; Gemini/OpenAI/MiniMax (Mimo) cloud fallbacks; Piper optional offline) or needs premium TTS | Skill 30 (`fish-audio-api-reference`) |
 | Output needs manual editorial cuts, color grade, or timeline work | Skill 27 (`video-editor`) |
 | Needs a storyboard authored before production starts | Skill 24 (`storyboard-writer`) |
 | Needs motion graphics for a VSL (animated chart, explainer, product piece) | Skill 72 (`motion-video-plus`) makes the insert; this skill stays the parent and owns the VSL, its narration, and its music. The insert returns through the shipped bridge (`scripts/vsl_handoff.py`), and its status rides this skill's board and attestation surfaces through `scripts/motion_status.py` under the contract in `72-motion-video-plus/references/status-and-delivery.md`. An insert never creates a task of its own. |
