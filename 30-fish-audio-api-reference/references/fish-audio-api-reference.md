@@ -1,14 +1,14 @@
 # Fish Audio API Reference
 
-> Complete developer reference for the Fish Audio text-to-speech API. Last updated: 2026-07-13 (S2.1 Pro Free capability/constraint refresh from fish.audio's July 2026 announcement).
+> Complete developer reference for the Fish Audio text-to-speech API. Last updated: 2026-10-30 (Drama-3 production default; S2.1 Pro retained as prior generation).
 
 ---
 
-## Current Model: S2.1 Pro (authoritative)
+## Current Model: Drama-3 (authoritative)
 
 These facts pin the current production release. They supersede any older `s2-pro` or plain `S2` wording elsewhere in this document; every example below now uses the current id.
 
-- **Model id:** `s2.1-pro`. This is the current release (S2.1 Pro), not plain S2 and not the interim `s2-pro` label. `s1` is the legacy generation and stays parenthesis-tagged.
+- **Model id:** `drama-3`. This is the current release (Drama-3, Oct 13 2026 announcement), superseding S2.1 Pro. Same `POST /v1/tts` endpoint, model chosen by the HTTP `model` header. `s2.1-pro` is the prior generation; `s2-pro` the interim label; `s1` legacy (parenthesis tags, retires 2026-12-31).
 - **Header-based selection:** the model is chosen by the HTTP `model` header on `POST /v1/tts` (for example `model: s2.1-pro`), never a request-body field. The public endpoint enum can lag the release blog, so verify the exact `s2.1-pro` header value with one live call before you depend on it. Fish Audio's own free-tier JS example confirms the identical mechanic for the other tier: `headers: { model: "s2.1-pro-free" }` (https://fish.audio/blog/s2-1-pro-free-api/).
 - **Voice selection:** by `reference_id`, one private voice model per speaker. For client work this is always the client's own private voice model, managed through the voices and instant-voice-clone APIs.
 - **Tag inventory:** S2.1 Pro reads free-form square-bracket tags. The emotional palette is 24 basic emotions plus 25 advanced emotions plus the tone markers, the audio-effect markers, and the short and long pause markers (all tabulated in the Emotions and Paralanguage section). S1 legacy uses the same names in parentheses.
@@ -77,7 +77,7 @@ Authorization: Bearer YOUR_API_KEY
 curl -X POST "https://api.fish.audio/v1/tts" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/msgpack" \
-  -H "model: s2.1-pro" \
+  -H "model: drama-3" \
   --data-binary @request.msgpack
 ```
 
@@ -116,7 +116,7 @@ POST /v1/tts
 |--------|----------|-------------|
 | `Authorization` | Yes | `Bearer YOUR_API_KEY` |
 | `Content-Type` | Yes | `application/json` or `application/msgpack` |
-| `model` | Yes | `s1`, `s2.1-pro` (recommended — PAID, client/production default), or `s2.1-pro-free` (FREE — operator-internal dev only, never client production, expires end of July 2026). Always a HEADER value, never a body field. |
+| `model` | Yes | `drama-3` (recommended — PAID, client/production default), `s2.1-pro` (prior gen, PAID), or `s2.1-pro-free` (FREE — operator-internal dev only, never client production). Always a HEADER value, never a body field. |
 
 ### Request Parameters
 
@@ -155,7 +155,7 @@ POST /v1/tts
 curl -X POST "https://api.fish.audio/v1/tts" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -H "model: s2.1-pro" \
+  -H "model: drama-3" \
   -d '{
     "text": "Hello, this is a test of Fish Audio text-to-speech API.",
     "reference_id": "802e3bc2b27e49c2995d23ef70e6ac89",
@@ -214,7 +214,7 @@ with httpx.Client() as client:
         headers={
             "authorization": "Bearer YOUR_API_KEY",
             "content-type": "application/msgpack",
-            "model": "s2.1-pro"
+            "model": "drama-3"
         }
     )
     
@@ -234,7 +234,8 @@ Returns binary audio data in the specified format.
 
 | Model | Description | Quality | Speed | Use Case |
 |-------|-------------|---------|-------|----------|
-| `s2.1-pro` | Current release (S2.1 Pro), best quality, PAID — client/production default | Excellent | Fastest | Production, content creation |
+| `drama-3` | Current release (Drama-3), plain-language direction + paired tags, PAID — client/production default | Excellent | Fastest | Production, content creation |
+| `s2.1-pro` | Prior generation, best quality at its time, PAID | Excellent | Fastest | Fallback when Drama-3 unavailable |
 | `s2.1-pro-free` | Same S2.1 Pro model at $0, operator-internal dev tier only | Excellent | Fastest | Internal dev/prototyping ONLY. Never client production. |
 | `s1` | Stable legacy model | Excellent | Fast | Prototyping, general use |
 
@@ -244,9 +245,9 @@ Returns binary audio data in the specified format.
 
 | Use Case | Model | Latency | Bitrate | Normalize | Format |
 |----------|-------|---------|---------|-----------|--------|
-| **Phone calls** | s2.1-pro | normal | 64 kbps | true | mp3 |
-| **Podcasts / content** | s2.1-pro | normal | 192 kbps | true | mp3 |
-| **Real-time streaming** | s2.1-pro | balanced | 32 kbps | false | opus |
+| **Phone calls** | drama-3 | normal | 64 kbps | true | mp3 |
+| **Podcasts / content** | drama-3 | normal | 192 kbps | true | mp3 |
+| **Real-time streaming** | drama-3 | balanced | 32 kbps | false | opus |
 
 ---
 
@@ -360,7 +361,7 @@ S1 uses `(parenthesis)` tags with a fixed set of emotions.
 (angry)(shouting) Get out of here now!
 ```
 
-### S2 Model: Natural Language Syntax
+### Drama-3 / S2 Model: Natural Language Syntax
 
 S2 uses `[bracket]` syntax with free-form natural language descriptions:
 
@@ -722,7 +723,8 @@ curl -X POST "https://api.fish.audio/model" \
 
 | Model | Price |
 |-------|-------|
-| `s2.1-pro` | $15.00 / million UTF-8 bytes |
+| `drama-3` | $50.00 / million chars (launch Oct 13-Nov 12 2026: $10/M chars, 80% off) |
+| `s2.1-pro` | $15.00 / million UTF-8 bytes (prior generation) |
 | `s2.1-pro-free` | $0 — operator-internal dev tier only, never client production; see model prohibition above. Free access expires end of July 2026. |
 | `s1` | $15.00 / million UTF-8 bytes |
 
@@ -853,7 +855,7 @@ await writeFile("output.mp3", buffer);
 ```
 Authorization: Bearer YOUR_API_KEY
 Content-Type: application/json (or application/msgpack)
-model: s2.1-pro
+model: drama-3
 ```
 
 ### Quick TTS Request
@@ -861,7 +863,7 @@ model: s2.1-pro
 curl -X POST "https://api.fish.audio/v1/tts" \
   -H "Authorization: Bearer $FISH_API_KEY" \
   -H "Content-Type: application/json" \
-  -H "model: s2.1-pro" \
+  -H "model: drama-3" \
   -d '{"text":"Hello world","reference_id":"VOICE_ID","format":"mp3"}' \
   --output output.mp3
 ```
@@ -871,7 +873,7 @@ curl -X POST "https://api.fish.audio/v1/tts" \
 - Or use the [Discovery page](https://fish.audio/discovery)
 
 ### Model Selection Flow
-1. Default to `s2.1-pro` for best quality
+1. Default to `drama-3` for best quality
 2. Use `normalize: true` for numbers/dates
 3. Use `normalize: false` for fine-grained control
 4. Use `latency: balanced` for real-time applications

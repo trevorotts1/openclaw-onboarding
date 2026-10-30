@@ -16,27 +16,27 @@ from.
 
 ## Models
 
-From Fish Audio's OpenAPI spec, the TTS model enum is: `s1`, `s2-pro`, `s2.1-pro`, `s2.1-pro-free`, and `drama-3-preview`.
+From Fish Audio's OpenAPI spec, the TTS model enum is: `s1`, `s2-pro`, `s2.1-pro`, `s2.1-pro-free`, and `drama-3`.
 
-- **Tooling default: `s2.1-pro`.** This is the model `scripts/tts.py` requests when the job does not configure another (manifest `tts` settings), and the proven model from the reference run. It is a provider setting for this tool, recorded in the narration fingerprint; it is not an authoring-model prescription, and a job may configure a different listed model.
-- **Opt-in: `drama-3-preview`.** This is the new model. There is no product literally called "Fish Audio 3". Request it with the model string `drama-3-preview`.
+- **Tooling default: `drama-3`.** This is the model `scripts/tts.py` requests when the job does not configure another (manifest `tts` settings). `s2.1-pro` is the prior-gen fallback. It is a provider setting for this tool, recorded in the narration fingerprint; it is not an authoring-model prescription, and a job may configure a different listed model.
+- **Prior gen: `s2.1-pro`.** A job may configure this explicitly when Drama-3 is unavailable. There is no product literally called "Fish Audio 3"; the model string is `drama-3`.
 - `s2.1-pro-free` exists in the enum but the free tier is forbidden for client voice work; do not use it.
 
 ## The silent-fallback rule (critical)
 
-The spec says an unrecognized model value SILENTLY falls back to `s2.1-pro` instead of erroring. That means if an API key lacks `drama-3-preview` access, the request may quietly return S2.1 Pro audio while the operator believes they got Drama 3.
+The spec says an unrecognized model value SILENTLY falls back to `s2.1-pro` instead of erroring. That means if an API key lacks `drama-3` access, the request may quietly return S2.1 Pro audio while the operator believes they got Drama 3.
 
 The skill MUST verify which model actually served each request:
 
-1. After every TTS request, read the response metadata for the serving model.
+1. After every TTS request, read the response metadata for the serving model (must read `drama-3` when requested).
 2. Compare it to the requested model.
 3. On mismatch, STOP the voiceover stage and surface it to the operator plainly: requested X, served Y. Never silently accept the fallback.
 4. `scripts/tts.py` implements this check and exits non-zero on mismatch. If the served model cannot be determined, it refuses unless `--allow-unverified` is passed, and says so plainly.
 
 ## Pricing (exact)
 
-- **S2.1 Pro is free through Nov 30 2026**, then $15 per 1M UTF-8 bytes. That works out to about $0.20 per 15 minutes of voiceover and about $1.56 per 2 hours. Do not use any other figures.
-- **drama-3-preview pricing is unknown.** There is no published pricing row for it. Document any quote the operator receives in the run notes; never guess.
+- **Drama-3 API list: $50/M chars; launch window Oct 13 - Nov 12 2026: $10/M chars (80% off).** S2.1 Pro is $15 per 1M UTF-8 bytes (about $0.20 per 15 minutes of voiceover, about $1.56 per 2 hours). Do not use any other figures.
+- **Drama-3 launch pricing (80% off) runs Oct 13 - Nov 12 2026.** Document the invoiced rate in the run notes; never guess.
 
 ## Chunking rules
 
@@ -69,7 +69,7 @@ Chunking is transport, not scene structure (MG-020/MG-023):
 
 ## Multi-speaker (preview)
 
-The spec confirms multi-speaker dialogue synthesis for `drama-3-preview`. Note it as a capability for multi-voice long-form content (for example interview or conversation scenes). It is marked preview: verify output quality on a short sample before committing a full run to it.
+The spec confirms multi-speaker dialogue synthesis for `drama-3`. Note it as a capability for multi-voice long-form content (for example interview or conversation scenes). It is marked preview: verify output quality on a short sample before committing a full run to it.
 
 ## Credentials
 

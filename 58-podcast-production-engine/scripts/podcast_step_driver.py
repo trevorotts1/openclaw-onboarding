@@ -645,7 +645,7 @@ def _emit_step_command(step: int | str, job_id: str, row: dict, payload: dict,
 
     if step == 11:
         return (
-            "bash %s <script_file> <reference_id> s2.1-pro <out.mp3> \"%s\" \"%s\""
+            "bash %s <script_file> <reference_id> drama-3 <out.mp3> \"%s\" \"%s\""
             % (_script("generate_podcast_audio.sh"), client_name, title)
         )
 

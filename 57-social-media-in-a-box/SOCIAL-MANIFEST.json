@@ -3,7 +3,7 @@
   "skill": "social-media-in-a-box",
   "skill_number": 57,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Social Media in a Box pipeline (Skill 57). The deterministic orchestrator run_social_media.py walks these phases IN ORDER (P0->P8) with NO phase skips. Each phase declares its produces_artifact, its _chk_* preflight symbol(s), and its AF-SM-* gate codes. Every AF-SM-* code below is enforced by a fail-closed, model-free, stdlib-only prover (scripts/*.py); py_symbol names the function that decides it. Editing this file is step (i) of any change: add the gate, add the AF code here with its trigger, add the checker, add the self-test fixture. Cloned in shape from 50-email-engine/EMAIL-MANIFEST.json.",
-  "design_law": "Enforcement, not description. SACRED bands (config/bands.json) are the DEFAULT floor; a logged client-exact override wins and is recorded on the certificate. CLIENT runtime uses the CLIENT's OWN provider chain (OpenRouter model + 2 fallbacks / client Gemini vision QC / client Kie.ai media) and the CLIENT's OWN GHL PIT + social accounts — NEVER operator keys. There is NO n8n and NO Airtable at runtime: prompts are baked, state is a local SQLite ledger, deliverables are local + labeled. The publisher physically cannot run without a complete signed manifest that proves ZERO Anthropic per run.",
+  "design_law": "Enforcement, not description. SACRED bands (config/bands.json) are the DEFAULT floor; a logged client-exact override wins and is recorded on the certificate. CLIENT runtime uses the CLIENT's OWN provider chain (OpenRouter model + 2 fallbacks / client Gemini vision QC / client Kie.ai media) and the CLIENT's OWN GHL PIT + social accounts — NEVER Anthropic/claude-* ids, NEVER operator keys. There is NO n8n and NO Airtable at runtime: prompts are baked, state is a local SQLite ledger, deliverables are local + labeled. The publisher physically cannot run without a complete signed manifest that proves ZERO Anthropic per run.",
   "$modes_note": "v0.2.0 (merge plan §3). Engine-driven modes (week/day/carousel/video/podcast-cover/plan/clean) unchanged from v0.1.0. FOLD modes (podcast C3 / newsletter C4 / blog C5 / engage C6) each land as a first-class standalone mode under the SAME entry+nonce+prover spine; when their config toggle is set the weekly cadence runs them as additional certified runs (the config schema $fold_note: 'each is also its own standalone mode'). CREATIVE modes (brief M1 / campaign M2 / client-copy M3 / reactive M4) are client-driven content lanes (P2-BRIEF / P2-INGEST) that keep the identical P3->P8 gate chain. syndicate (C9) is a fail-closed DEFER stub (v0.4.0). Every mode still runs ONLY through social-media-entry.sh (nonce) with no phase skips.",
   "$producers_note": "F05 PRODUCER ADAPTER LAYER: each phase may name a producer_adapter (the phase id is the registry key in run_social_media.py's PRODUCER_REGISTRY — real adapters register there; the F33 execution policy dispatches their work). run_social_media.py --producers invokes a phase's adapter BEFORE its gate: missing artifacts trigger production (or a specific dependency failure — never a claim that production occurred), and outputs are reused on resume ONLY when the adapter's declared input hashes still match the receipt. Receipts persist per phase (working/producers/receipts.json): input/output sha256 hashes, assigned agent, execution id, completion receipt, simulated flag. Stub/fake adapters (tests) stamp simulated=true and can NEVER satisfy live completion (F08 contract). The gate ALWAYS still runs after the producer — the producer layer sits BEHIND the gates, never replacing a _chk_*.",
   "modes": {
@@ -63,7 +63,7 @@
       "preflight": {
         "required": true,
         "checker": "_chk_content_authored",
-        "label": "content.json authored (days[] / carousel / storyboard etc.), baked prompts 01-04,15-16 used; provider chain is the client's OpenRouter model + 2 fallbacks . AF-SM-CONTENT-MISSING."
+        "label": "content.json authored (days[] / carousel / storyboard etc.), baked prompts 01-04,15-16 used; provider chain is the client's OpenRouter model + 2 fallbacks (NEVER anthropic). AF-SM-CONTENT-MISSING."
       },
       "gate_codes": ["AF-SM-CONTENT-MISSING"]
     },
@@ -103,30 +103,30 @@
     {
       "id": "P5-SCRUB",
       "order": 5,
-      "name": "Scrub gate (client-name + secret + pinData output screen)",
+      "name": "Scrub gate (client-name + secret + pinData + zero-Anthropic output screen)",
       "module": "2-content-engine",
       "owning_role": "social-media-qc-specialist",
       "produces_artifact": "working/qc/scrub_report.json",
       "preflight": {
         "required": true,
         "checker": "_chk_scrub",
-        "label": "scrub_gate.py PASS over generated content AND shipped bytes: ZERO client-name tokens, ZERO secret-pattern hits (sk-or-v1-/pit-/Kie/bearer/accessToken), ZERO pinData blocks. AF-SM-CLIENT-NAME / AF-SM-SECRET / AF-SM-PINDATA."
+        "label": "scrub_gate.py PASS over generated content AND shipped bytes: ZERO client-name tokens, ZERO secret-pattern hits (sk-or-v1-/pit-/Kie/bearer/accessToken), ZERO pinData blocks, ZERO anthropic/claude-* identifiers (G-NOANTHROPIC). AF-SM-CLIENT-NAME / AF-SM-SECRET / AF-SM-PINDATA / AF-SM-NOANTHROPIC."
       },
-      "gate_codes": ["AF-SM-CLIENT-NAME", "AF-SM-SECRET", "AF-SM-PINDATA"]
+      "gate_codes": ["AF-SM-CLIENT-NAME", "AF-SM-SECRET", "AF-SM-PINDATA", "AF-SM-NOANTHROPIC"]
     },
     {
       "id": "P6-MANIFEST",
       "order": 6,
-      "name": "Build manifest (signed process certificate; prompt-hash pin)",
+      "name": "Build manifest (signed process certificate; proves zero-Anthropic per run; prompt-hash pin)",
       "module": "4-publisher",
       "owning_role": "department-lead",
       "produces_artifact": "delivery/PROCESS-CERTIFICATE.json",
       "preflight": {
         "required": true,
         "checker": "_chk_manifest",
-        "label": "build_manifest.py records config hash (secrets excluded), prompt-file hashes vs canonical, every gate PASS certificate, a per-call provenance record MUST exist, model/provider used per call recorded, artifact checksums. Publisher refuses to run without a complete manifest. AF-SM-PROCESS-INTEGRITY / AF-SM-PROMPT-HASH / AF-SM-PROVENANCE-MISSING  / AF-SM-AGENCY-SHARED-PIT."
+        "label": "build_manifest.py records config hash (secrets excluded), prompt-file hashes vs canonical, every gate PASS certificate, a per-call provenance record MUST exist (a zero-Anthropic proof is a lie without it), model/provider used per call (MUST show ZERO Anthropic), artifact checksums. Publisher refuses to run without a complete manifest. AF-SM-PROCESS-INTEGRITY / AF-SM-PROMPT-HASH / AF-SM-PROVENANCE-MISSING / AF-SM-NOANTHROPIC / AF-SM-AGENCY-SHARED-PIT."
       },
-      "gate_codes": ["AF-SM-PROCESS-INTEGRITY", "AF-SM-PROMPT-HASH", "AF-SM-PROVENANCE-MISSING", "AF-SM-AGENCY-SHARED-PIT"]
+      "gate_codes": ["AF-SM-PROCESS-INTEGRITY", "AF-SM-PROMPT-HASH", "AF-SM-PROVENANCE-MISSING", "AF-SM-NOANTHROPIC", "AF-SM-AGENCY-SHARED-PIT"]
     },
     {
       "id": "P7-PUBLISH",
@@ -229,14 +229,14 @@
     {
       "id": "P11-PODCAST",
       "order": 11,
-      "name": "Podcast fold (C3 — Fish-Audio S2 audio + bands + Podbean transport + cover)",
+      "name": "Podcast fold (C3 — Fish-Audio drama-3 audio + bands + Podbean transport + cover)",
       "module": "3-media-core",
       "owning_role": "director-of-podcast",
       "produces_artifact": "working/media/podcast.json",
       "preflight": {
         "required": true,
         "checker": "_chk_podcast",
-        "label": "prompt 17 wrote the 1,500-2,000-word [emotion]-tagged script; Fish-Audio S2-Pro TTS; ffprobe 600-900 s / >=128 kbps; exactly 1400x1400 JPEG cover (prompt 14; the GPT Image 2.5 Sunburst 2K output is resized). prove_bands.py (kind podcast) PASS. Unconfigured Fish-Audio/Podbean -> {\"deferred\":true} = PODCAST_DEFERRED labeled skip, NEVER a band failure. Podbean = local API call (no n8n). AF-SM-PODCAST-SCRIPT / AF-SM-PODCAST-DURATION / AF-SM-PODCAST-COVER."
+        "label": "prompt 17 wrote the 1,500-2,000-word [emotion]-tagged script; Fish-Audio drama-3 TTS; ffprobe 600-900 s / >=128 kbps; exactly 1400x1400 JPEG cover (prompt 14; the GPT Image 2.5 Sunburst 2K output is resized). prove_bands.py (kind podcast) PASS. Unconfigured Fish-Audio/Podbean -> {\"deferred\":true} = PODCAST_DEFERRED labeled skip, NEVER a band failure. Podbean = local API call (no n8n). AF-SM-PODCAST-SCRIPT / AF-SM-PODCAST-DURATION / AF-SM-PODCAST-COVER."
       },
       "gate_codes": ["AF-SM-PODCAST-SCRIPT", "AF-SM-PODCAST-DURATION", "AF-SM-PODCAST-COVER"]
     },
@@ -298,9 +298,10 @@
     {"code": "AF-SM-CLIENT-NAME", "stage": "P5/build", "level": "bytes", "trigger": "a client-name token from the build-private scrub list is present (list is env-supplied, NEVER shipped)", "enforced_by": "scrub_gate", "py_symbol": "scan_client_names"},
     {"code": "AF-SM-SECRET", "stage": "P5/build", "level": "bytes", "trigger": "a secret pattern is present (sk-or-v1-, pit-, Kie key, bearer/JWT, webhook accessToken)", "enforced_by": "scrub_gate", "py_symbol": "scan_secrets"},
     {"code": "AF-SM-PINDATA", "stage": "P5/build", "level": "bytes", "trigger": "an n8n pinData block is present in a shipped/generated artifact", "enforced_by": "scrub_gate", "py_symbol": "scan_pindata"},
+    {"code": "AF-SM-NOANTHROPIC", "stage": "P5/P6/build", "level": "bytes", "trigger": "an anthropic/claude-* model identifier is present in any client-path file or run manifest (G-NOANTHROPIC); OR a per-call provenance record declares an EXACT provider field of 'anthropic'/'claude' carrying a non-claude model id (the regex misses a bare {provider:\"anthropic\"}, so the provider field is matched directly)", "enforced_by": "scrub_gate / build_manifest", "py_symbol": "scan_anthropic / check_no_anthropic"},
     {"code": "AF-SM-PROCESS-INTEGRITY", "stage": "P6", "level": "run", "trigger": "deploy/publish requested without a signed process certificate, or a phase was skipped", "enforced_by": "build_manifest / run_social_media", "py_symbol": "build"},
     {"code": "AF-SM-PROMPT-HASH", "stage": "P6/build", "level": "bytes", "trigger": "a shipped prompt file hash does not match the canonical source/prompts hash", "enforced_by": "build_manifest", "py_symbol": "check_prompt_hashes"},
-    {"code": "AF-SM-PROVENANCE-MISSING", "stage": "P6", "level": "run", "trigger": "the certificate is requested with no per-call provenance record (working/provenance/calls.json absent/empty); the models used cannot be recorded without it", "enforced_by": "build_manifest", "py_symbol": "check_provenance"},
+    {"code": "AF-SM-PROVENANCE-MISSING", "stage": "P6", "level": "run", "trigger": "the certificate is requested with no per-call provenance record (working/provenance/calls.json absent/empty); a zero-Anthropic proof cannot be made without it", "enforced_by": "build_manifest", "py_symbol": "check_provenance"},
     {"code": "AF-SM-AGENCY-SHARED-PIT", "stage": "P6", "level": "run", "trigger": "agency mode: two roster entries share a pit or locationId (co-mingled credentials)", "enforced_by": "build_manifest", "py_symbol": "check_agency_isolation"},
     {"code": "AF-SM-PUBLISH-RESULT", "stage": "P7", "level": "run", "trigger": "a sub-mode result does not carry the normalized {platform, success, totalPosts, processedAccounts, errors} contract", "enforced_by": "run_social_media", "py_symbol": "_chk_publish"},
     {"code": "AF-SM-PUBLISH-UNPROVEN", "stage": "P7", "level": "run", "trigger": "the publisher was invoked without a complete upstream manifest/certificate", "enforced_by": "run_social_media", "py_symbol": "_chk_publish"},

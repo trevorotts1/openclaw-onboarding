@@ -59,7 +59,7 @@
     "$fold_note": "v0.2.0 FOLD toggles (merge plan C3-C7). All OPTIONAL and default OFF; a box that does not set them runs exactly like v0.1.0. When set true (or configured), the umbrella 'week' mode fans the extra out as a chained phase, and each is also its own standalone mode.",
     "newsletter": {"type": "boolean", "default": false, "description": "C4: enable the weekly social-week digest email via GHL Campaigns (Tue 9 AM client-timezone)."},
     "blog": {"type": "boolean", "default": false, "description": "C5: enable the Day-7 long-form blog via GHL blog / LeadConnector (blogs.write)."},
-    "podcast": {"type": "boolean", "default": false, "description": "C3: enable the weekly audio episode (Fish-Audio S2 -> ffprobe duration/bitrate bands -> Podbean + 1400x1400 cover). Unconfigured Fish-Audio/Podbean = PODCAST_DEFERRED labeled skip, never a failure."},
+    "podcast": {"type": "boolean", "default": false, "description": "C3: enable the weekly audio episode (Fish-Audio drama-3 -> ffprobe duration/bitrate bands -> Podbean + 1400x1400 cover). Unconfigured Fish-Audio/Podbean = PODCAST_DEFERRED labeled skip, never a failure."},
     "engage": {"type": "boolean", "default": false, "description": "C6: enable the read-only 7-day engagement/anomaly report to notifyChannel (never blocks a publish run)."},
     "fishAudioKey": {"type": "string", "description": "C3: the client's own Fish-Audio key (podcast TTS). Referenced from env; never printed. Absent -> PODCAST_DEFERRED."},
     "podbeanApi": {"type": "string", "description": "C3: the client's Podbean transport target (local Podbean API call, no n8n; Q5 default). Absent -> PODCAST_DEFERRED."},

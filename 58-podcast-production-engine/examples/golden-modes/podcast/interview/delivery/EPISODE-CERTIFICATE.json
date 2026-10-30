@@ -36,14 +36,14 @@
     "kimi-2.6",
     "glm-5.2",
     "gemini-3.1-flash-lite",
-    "s2.1-pro",
+    "drama-3",
     "gpt-image-2",
     "sonar-reasoning"
   ],
   "judge_tier_distinct_from_writer": true,
   "qc_persona_distinct_from_writer": true,
   "fish_audio": {
-    "model": "s2.1-pro",
+    "model": "drama-3",
     "free_tier": false,
     "reference_id": "REFERENCED-FROM-ENV"
   },

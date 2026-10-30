@@ -1,7 +1,7 @@
 ---
 name: podcast-production-engine
-description: Turn ONE completed podcast intake survey into ONE published podcast episode, end to end, autonomously, on the client's own box, with the client's own credentials, at a bounded cost, with independent quality control, full durability, and a client-facing dashboard. Fuses the fleet's render lane (Skill 57 podcast mode script writer plus Kie.ai cover, Skill 35 Fish render script plus Podbean playbook, Skill 30 Fish Audio reference) with the Skill 23 professional-podcast doctrine (director-of-podcast, podcast-host, audio-post-producer, qc-specialist-podcast, loudness mastering, quality gates). Runs the canonical 18-step pipeline across four output-type presets (Interview, Solo, Season-Strategy, Episode Asset Pack) and two production modes (Personal Podcast, Interview Style). Content work routes to Ollama Cloud Kimi 2.6 then GLM 5.2 then OpenRouter equivalents then Gemini 3.1 Flash Lite, NEVER an Anthropic model at runtime. The Convert and Flow data plane is Skill 44 caf plus Skill 29 REST only, never a Model Context Protocol tier inside the pipeline. Fish Audio synthesis uses model s2.1-pro via header with the client's own reference_id, never the free tier for client content. Two separate quality gates that are never conflated: the 8.5 ten-category build gate that decides whether work merges, and the 16 Tier-1 plus 10-dimension rubric plus 3-strike episode gate that decides whether an episode ships to a listener. Move in silence: the engine enrolls the workflow and STOPS, Convert and Flow owns every customer message. Zero em dashes, no triple backtick fences in any produced output.
-version: 1.0.20
+description: Turn ONE completed podcast intake survey into ONE published podcast episode, end to end, autonomously, on the client's own box, with the client's own credentials, at a bounded cost, with independent quality control, full durability, and a client-facing dashboard. Fuses the fleet's render lane (Skill 57 podcast mode script writer plus Kie.ai cover, Skill 35 Fish render script plus Podbean playbook, Skill 30 Fish Audio reference) with the Skill 23 professional-podcast doctrine (director-of-podcast, podcast-host, audio-post-producer, qc-specialist-podcast, loudness mastering, quality gates). Runs the canonical 18-step pipeline across four output-type presets (Interview, Solo, Season-Strategy, Episode Asset Pack) and two production modes (Personal Podcast, Interview Style). Content work routes to Ollama Cloud Kimi 2.6 then GLM 5.2 then OpenRouter equivalents then Gemini 3.1 Flash Lite, NEVER an Anthropic model at runtime. The Convert and Flow data plane is Skill 44 caf plus Skill 29 REST only, never a Model Context Protocol tier inside the pipeline. Fish Audio synthesis uses model drama-3 via header with the client's own reference_id, never the free tier for client content. Two separate quality gates that are never conflated: the 8.5 ten-category build gate that decides whether work merges, and the 16 Tier-1 plus 10-dimension rubric plus 3-strike episode gate that decides whether an episode ships to a listener. Move in silence: the engine enrolls the workflow and STOPS, Convert and Flow owns every customer message. Zero em dashes, no triple backtick fences in any produced output.
+version: 1.1.0
 ---
 
 # Podcast Production Engine (Skill 58)
@@ -134,9 +134,9 @@ the podcast department agent's OWN turn; sub-agents handle pure content work onl
 
 ## Fish Audio facts (pinned; verify the header live at the canary)
 
-- Current model is S2.1 Pro, model id s2.1-pro, selected via HTTP HEADER on POST
+- Current model is Drama-3, model id drama-3, selected via HTTP HEADER on POST
   https://api.fish.audio/v1/tts with Bearer auth. The endpoint's enum documentation lags the
-  release blog, so the s2.1-pro header value is live-verified during the canary before any
+  release blog, so the drama-3 header value is live-verified during the canary before any
   client content depends on it.
 - Voice is the client's OWN private voice model, selected by reference_id (one private voice
   per client). Output is mp3 at 192 kbps. Set condition_on_previous_chunks true for long
@@ -498,7 +498,7 @@ from the respondent's visual description anchored by the episode theme and title
 bounded backoff schedule; then ffmpeg in-house: confirm square, resize into the 1500 to 3000
 range, JPEG, RGB, under 512 kilobytes, spec-valid filename. Never below 1500 square.
 
-STEP 11, AUDIO. status `producing_audio`. Fish Audio s2.1-pro via header with the client's own
+STEP 11, AUDIO. status `producing_audio`. Fish Audio drama-3 via header with the client's own
 reference_id, mp3 at 192; split at natural beat boundaries only if a per-request limit demands
 (never mid-sentence, never mid-tag), condition_on_previous_chunks true, ffmpeg-join seamlessly,
 master to the Skill 23 loudness doctrine (minus 14 to minus 16 LUFS integrated), verify with

@@ -18,10 +18,10 @@ Rubric scores: voice 8, arc 9, persuasion 9, opening 8, closing 9, captivation 8
 Attempt: one of a maximum of three
 Spoken word count, tags stripped, reported honestly: 1179
 Runtime at one hundred forty words per minute: 505 seconds, about eight point four minutes, inside the seven to fifteen minute band
-Fish Audio: model s2.1-pro, free tier False, client reference_id referenced from env, never printed
+Fish Audio: model drama-3, free tier False, client reference_id referenced from env, never printed
 Book teaser: produced on glm-5.2, at most three pages, no font below fourteen point, cliffhanger ending, written to contact.book_teaser
 ZERO Anthropic in run: True
-Models used: kimi-2.6, glm-5.2, gemini-3.1-flash-lite, s2.1-pro, gpt-image-2, sonar-reasoning
+Models used: kimi-2.6, glm-5.2, gemini-3.1-flash-lite, drama-3, gpt-image-2, sonar-reasoning
 Judge tier distinct from writer tier: True
 QC persona (qc-specialist-podcast) distinct from the drafting persona: True
 Enrollment: 04-Podcast-is-Completed field-triggered by the URL write; 06-Podcast-Episode-Is-Ready enrolled per the discovered trigger; both verified via caf reads; double-enrollment guarded
