@@ -130,7 +130,7 @@ Run this test to confirm your credentials work:
 curl -s -X POST "https://api.fish.audio/v1/tts" \
   -H "Authorization: Bearer $FISH_AUDIO_API_KEY" \
   -H "Content-Type: application/json" \
-  -H "model: s2.1-pro" \
+  -H "model: drama-3" \
   -d "{
     \"text\": \"Fish Audio is connected and working.\",
     \"reference_id\": \"$FISH_AUDIO_VOICE_ID\",

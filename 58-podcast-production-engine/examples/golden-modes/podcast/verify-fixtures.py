@@ -94,7 +94,7 @@ for ep in EPISODES:
     cert = json.loads(read(os.path.join(d, "delivery/EPISODE-CERTIFICATE.json")))
     check(cert["script_words"] == w, f"{ep['dir']}: certificate script_words drift")
     check(cert["zero_anthropic"] is True, f"{ep['dir']}: certificate not zero_anthropic")
-    check(cert["fish_audio"]["free_tier"] is False and cert["fish_audio"]["model"] == "s2.1-pro", f"{ep['dir']}: fish audio spec wrong")
+    check(cert["fish_audio"]["free_tier"] is False and cert["fish_audio"]["model"] == "drama-3", f"{ep['dir']}: fish audio spec wrong")
 
 # ---- interview book teaser ----
 teaser = read(os.path.join(HERE, "interview/delivery/book-teaser.txt"))

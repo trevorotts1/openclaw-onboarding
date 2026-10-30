@@ -22,7 +22,7 @@ OpenMontage has **no `.gitmodules`** file. There are **zero git submodules**. Hy
 | pyyaml / pydantic / jsonschema / python-dotenv / Pillow / requests / google-auth | PyPI | NO | `make setup` → `pip install -r requirements.txt` |
 | remotion + @remotion/* + react / react-dom | npm | NO | `make setup` → `cd remotion-composer && npm install`; **pinned latest `remotion@4.0.489` + arch/OS `@remotion/compositor-*` + Chrome-Headless-Shell** by `provision-render-deps.sh` (Step 3.5) |
 | hyperframes | npm (CLI via npx) | NO | `make setup` → cache-warm; **pinned latest `hyperframes@0.7.56` + bundled Chrome** by `provision-render-deps.sh` |
-| piper-tts | PyPI | NO | **OPTIONAL / opt-in only.** `make setup` soft-warms; `provision-render-deps.sh` installs `piper-tts==1.4.2` + pre-stages the `en_US-lessac-medium` voice ONNX model **ONLY when `SKILL47_INSTALL_PIPER=1`** (OFF by default; never fatal). Primary narrator is Fish Audio 2.1 Pro; Piper is an offline-only last-resort fallback. |
+| piper-tts | PyPI | NO | **OPTIONAL / opt-in only.** `make setup` soft-warms; `provision-render-deps.sh` installs `piper-tts==1.4.2` + pre-stages the `en_US-lessac-medium` voice ONNX model **ONLY when `SKILL47_INSTALL_PIPER=1`** (OFF by default; never fatal). Primary narrator is Fish Audio Drama-3; Piper is an offline-only last-resort fallback. |
 | Chromium system libs (`libnss3`, `libatk1.0-0`, `libgbm-dev`, `libasound2`, `libxkbcommon-dev`, `fonts-liberation`, …) + ffmpeg | system libs (Linux) | NO | **`provision-render-deps.sh` `apt-get`s them (Linux); the `Dockerfile` bakes them into `node:22-bookworm-slim`.** No-op on macOS (native). Needed for Remotion/HyperFrames headless Chrome to LAUNCH. |
 | FFmpeg + ffprobe | system binary | NO | Skill 47 fail-loud preflight: `command -v ffmpeg` (client installs via brew/apt) |
 | Node >= 22 + npx | system binary | NO | Skill 47 fail-loud preflight: `node -v` + version check (client installs). Floor is **22** (HyperFrames `engines: node>=22`). |
@@ -37,7 +37,7 @@ closes that gap, arch/OS-aware and idempotent, on macOS AND Linux/VPS. Pinned la
 versions — **bump in one place** (the constants at the top of `provision-render-deps.sh`,
 mirrored by the `Dockerfile` `ARG`s):
 
-**Narration / TTS voice order:** **Fish Audio 2.1 Pro (`s2.1-pro`) is the primary narrator;
+**Narration / TTS voice order:** **Fish Audio Drama-3 (`drama-3`) is the primary narrator;
 Gemini TTS, OpenAI TTS, and MiniMax (a.k.a. "Mimo") are the cloud fallbacks; Piper is an
 OPTIONAL, opt-in, offline-only fallback that is NOT installed by default** (opt in with
 `SKILL47_INSTALL_PIPER=1`). With Piper absent, OpenMontage's TTS auto-discovery uses the cloud

@@ -203,7 +203,7 @@ fi
 
 # ---------------------------------------------------------------------------
 # 4 -- Piper TTS (OPTIONAL, OPT-IN, offline-only fallback) -- OFF BY DEFAULT
-#     Voice order: Fish Audio 2.1 Pro (s2.1-pro) is the PRIMARY narrator; Gemini TTS,
+#     Voice order: Fish Audio Drama-3 (drama-3) is the PRIMARY narrator; Gemini TTS,
 #     OpenAI TTS, and MiniMax (a.k.a. "Mimo") are the cloud fallbacks; Piper is an OPTIONAL
 #     offline-only last-resort fallback that is NOT installed by default. With Piper absent,
 #     OpenMontage's TTS auto-discovery simply uses the cloud providers. Opt in with
@@ -215,7 +215,7 @@ fi
 head_ "Piper TTS (OPTIONAL -- opt-in offline fallback, OFF by default)"
 if [ "${SKILL47_INSTALL_PIPER:-0}" != "1" ]; then
   green "Piper not requested (SKILL47_INSTALL_PIPER unset) -- skipping install + voice pre-stage."
-  info "Primary narrator is Fish Audio 2.1 Pro (s2.1-pro); Gemini/OpenAI/MiniMax (Mimo) TTS are the cloud fallbacks."
+  info "Primary narrator is Fish Audio Drama-3 (drama-3); Gemini/OpenAI/MiniMax (Mimo) TTS are the cloud fallbacks."
   info "OpenMontage TTS auto-discovery will use the cloud providers. Opt in with SKILL47_INSTALL_PIPER=1."
 else
   info "SKILL47_INSTALL_PIPER=1 -- installing the OPTIONAL offline Piper fallback (never fatal)."

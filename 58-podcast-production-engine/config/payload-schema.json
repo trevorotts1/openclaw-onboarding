@@ -66,7 +66,7 @@
       "type": "string",
       "enum": ["s2", "s1"],
       "default": "s2",
-      "description": "Optional. Governs the Fish Audio delivery-tag SYNTAX family: s2 uses square-bracket tags (default), s1 is legacy parentheses. Independent of the render model header. The render module selects Fish Audio model id s2.1-pro via the request header with the client's own reference_id and never uses the free tier for client content."
+      "description": "Optional. Governs the Fish Audio delivery-tag SYNTAX family: s2 uses square-bracket tags (default), s1 is legacy parentheses. Independent of the render model header. The render module selects Fish Audio model id drama-3 via the request header with the client's own reference_id and never uses the free tier for client content."
     },
     "writing_model": {
       "type": "string",

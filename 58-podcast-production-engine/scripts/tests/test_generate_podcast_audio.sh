@@ -107,7 +107,7 @@ run_script() {
       FISH_AUDIO_API_KEY="fake-key-for-tests" \
       HOME="$WORK/home" \
       "$@" \
-      bash "$SCRIPT_UNDER_TEST" "$SCRIPT_FILE" "fake-reference-id" "s2.1-pro" "$outfile" \
+      bash "$SCRIPT_UNDER_TEST" "$SCRIPT_FILE" "fake-reference-id" "drama-3" "$outfile" \
       > "$WORK/out.log" 2>&1
 }
 

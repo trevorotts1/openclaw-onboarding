@@ -45,7 +45,7 @@ No case study, statistic, institution, person, or biography anywhere in these fi
 
 RUNTIME PROVENANCE, ZERO ANTHROPIC
 
-Each fixture's working/provenance/calls.json records the runtime models that produced it: the writer chain is Ollama Cloud Kimi 2.6 first, then GLM 5.2, then the OpenRouter equivalents, then Gemini 3.1 Flash Lite as the final fallback; the semantic judge tier is Gemini 3.1 Flash Lite or GLM 5.2 and is always distinct from the writer; audio is Fish Audio s2.1-pro with the client's own reference_id and never the free tier; cover art is Kie.ai gpt-image-2. Every certificate carries zero_anthropic true. No Anthropic model id, provider, package, key, or host appears in any runtime file, which is what guard-no-anthropic-runtime.py enforces at the merge gate.
+Each fixture's working/provenance/calls.json records the runtime models that produced it: the writer chain is Ollama Cloud Kimi 2.6 first, then GLM 5.2, then the OpenRouter equivalents, then Gemini 3.1 Flash Lite as the final fallback; the semantic judge tier is Gemini 3.1 Flash Lite or GLM 5.2 and is always distinct from the writer; audio is Fish Audio drama-3 with the client's own reference_id and never the free tier; cover art is Kie.ai gpt-image-2. Every certificate carries zero_anthropic true. No Anthropic model id, provider, package, key, or host appears in any runtime file, which is what guard-no-anthropic-runtime.py enforces at the merge gate.
 
 SILENCE AND SECRECY
 
