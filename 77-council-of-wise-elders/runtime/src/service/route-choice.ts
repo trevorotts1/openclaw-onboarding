@@ -37,7 +37,7 @@ import {
 } from '../cli/route-discovery.js';
 import type { ModelPolicy } from '../contracts/index.js';
 import type { PinnedRouteSnapshot, RouteTrustedScope } from '../budgets/index.js';
-import { CompatibleHttpTransport } from '../providers/compatible.js';
+import { CompatibleHttpTransport, type CompatibleTransportBinding } from '../providers/compatible.js';
 import { createOllamaTransport } from '../providers/ollama.js';
 import type { CouncilRouteSelection } from '../providers/selection.js';
 
@@ -479,7 +479,17 @@ function selectionFromSnapshot(snapshot: PinnedRouteSnapshot): CouncilRouteSelec
  */
 export function transportForSnapshot(
   snapshot: PinnedRouteSnapshot,
-  opts: { homeDir?: string; env?: NodeJS.ProcessEnv; spawnImpl?: typeof spawn },
+  opts: {
+    homeDir?: string;
+    env?: NodeJS.ProcessEnv;
+    spawnImpl?: typeof spawn;
+    /**
+     * CTR-134: one-shot preparation. The same configured adapter, but it may
+     * make exactly one attempt and never retries, so the preparatory request
+     * can never spend a second provider request or fall through to a retry.
+     */
+    singleAttempt?: boolean;
+  },
 ): ModelTransport | null {
   let route: DiscoveredRoute;
   try {
@@ -505,14 +515,18 @@ export function transportForSnapshot(
           : route.harness.configDir,
       model: snapshot.requestedModelOrAlias,
       spawnImpl: opts.spawnImpl,
+      ...(opts.singleAttempt ? { maxAttempts: 1 } : {}),
     });
   }
   if (route.compatible) {
-    const binding = {
+    const binding: CompatibleTransportBinding = {
       selection: selectionFromSnapshot(snapshot),
       baseUrl: route.compatible.baseUrl,
       credentialResolver: async () =>
         resolveDiscoveredCredential(route, opts.env ?? process.env),
+      // One attempt only: the engine retry mode performs a single dispatch
+      // and reports a transient failure instead of re-sending.
+      ...(opts.singleAttempt ? { retryMode: 'none' as const } : {}),
     };
     // An Ollama route composes through the existing OpenAI-compatible
     // Ollama profile: the configured /v1 surface, the local daemon with

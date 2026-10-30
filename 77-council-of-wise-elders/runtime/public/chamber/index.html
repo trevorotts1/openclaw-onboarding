@@ -9,9 +9,11 @@
 <link rel="stylesheet" href="./chamber-theme.css">
 <link rel="stylesheet" href="./chamber-shell.css">
 <link rel="stylesheet" href="./chamber-decision.css">
+<link rel="stylesheet" href="./chamber-advisory.css">
 <link rel="stylesheet" href="./chamber-room.css">
 <link rel="stylesheet" href="./chamber-keypoints.css">
 <link rel="stylesheet" href="./chamber-seatcard.css">
+<link rel="stylesheet" href="./chamber-cue.css">
 </head>
 <body class="ch">
 <div class="ch-app">
@@ -52,8 +54,27 @@
     <section id="ch-decision" class="ch-panel" aria-label="The decision"></section>
     <div class="ch-stage-grid">
       <section id="ch-room" class="ch-panel" aria-label="The council room"></section>
-      <aside id="ch-keypoints" class="ch-panel" aria-label="Key points"></aside>
+      <details class="ch-panel ch-activity">
+        <summary class="ch-activity-summary">Activity history</summary>
+        <aside id="ch-keypoints" aria-label="Key points"></aside>
+      </details>
     </div>
+    <!-- Results cue (CTR-144). Plain flow between the council room and the
+         results, so it never covers a seat face or a control. Chamber-cue.js
+         fills the text from the view: waiting while the council works, ready
+         with a native anchor once the answer exists, and a pointer to the
+         room's own explanation when the sitting was blocked or stopped. -->
+    <div id="ch-results-cue" class="ch-cue" role="status" aria-live="polite" hidden>
+      <p id="ch-cue-text" class="ch-cue-text"></p>
+      <a id="ch-cue-link" class="ch-btn ch-cue-link" href="#ch-advisory" hidden></a>
+      <span id="ch-cue-arrow" class="ch-cue-arrow" aria-hidden="true" hidden></span>
+    </div>
+    <!-- Option detail bars live below the council in every state. The compact
+         decision header above carries only the question and the short status,
+         so the portraits are never pushed down by option rows. chamber-decision.js
+         mounts its existing list here instead of ranking anything itself. -->
+    <section id="ch-options" class="ch-panel ch-dec-options-panel" aria-label="Options and preferences" hidden></section>
+    <section id="ch-advisory" class="ch-panel" aria-label="The council's answer" hidden></section>
   </main>
 
   <footer class="ch-foot">
@@ -144,5 +165,7 @@
 <script src="./chamber-room.js"></script>
 <script src="./chamber-keypoints.js"></script>
 <script src="./chamber-seatcard.js"></script>
+<script src="./chamber-advisory.js"></script>
+<script src="./chamber-cue.js"></script>
 </body>
 </html>

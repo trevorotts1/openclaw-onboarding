@@ -138,6 +138,13 @@ export interface HostCallTransportOptions {
   spawnImpl?: typeof spawn;
   /** Injectable retry sleep for tests; production waits for real time. */
   sleepImpl?: (ms: number) => Promise<void>;
+  /**
+   * Attempts this transport may make for one operation. Default keeps the
+   * historical 3 (one call plus at most two transient retries). A one-shot
+   * preparation request passes 1: it never retries, so it can never spend
+   * more than the single provider request its budget records.
+   */
+  maxAttempts?: number;
 }
 
 interface HarnessResultEnvelope {
@@ -302,7 +309,7 @@ export class SubprocessHostCallTransport implements ModelTransport {
       ...iso.args,
     ];
     const sleep = this.options.sleepImpl ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-    const maxAttempts = RETRY_BACKOFF_MS.length + 1;
+    const maxAttempts = Math.max(1, this.options.maxAttempts ?? RETRY_BACKOFF_MS.length + 1);
 
     for (let attempt = 1; ; attempt += 1) {
       try {

@@ -257,6 +257,8 @@ export function assembleSeatContext(args: {
   snapshot: PinnedRouteSnapshot;
   seatId: SeatId;
   operation: 'round_2_response' | 'round_3_ratification' | 'consult';
+  /** The round this assembly feeds, when the caller knows it. */
+  round?: number | null;
   systemText: string;
 }): ContextAssemblyResult {
   const limits = args.deps.routeBudget(args.snapshot);
@@ -275,6 +277,7 @@ export function assembleSeatContext(args: {
         : args.operation === 'consult'
           ? 'consult'
           : 'advisor',
+      args.round ?? null,
     ),
   };
   const seatBudgets: Partial<Record<SeatId, number>> = {};
@@ -951,6 +954,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
       'advisor',
       challengeIds,
       ctx.attempt_kind === 'output_repair' ? ctx.repair_issues : [],
+      round,
     );
 
     let response: TransportResponse;
@@ -991,7 +995,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
             assigned.length === 0
               ? `No targeted challenge is assigned to your seat. Confirm or update your previous position against the evidence; a fresh round ${round} card is still required.`
               : null,
-          output_contract: cardOutputContract('advisor', challengeIds),
+          output_contract: cardOutputContract('advisor', challengeIds, round),
         },
       });
     } catch (error) {
@@ -1182,6 +1186,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
         snapshot,
         seatId,
         operation: 'round_2_response',
+        round,
         systemText: CHALLENGE_ROUND_SYSTEM,
       }),
     );

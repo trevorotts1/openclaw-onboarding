@@ -130,6 +130,10 @@
   var mode = 'loading';
   var selectedId = null;
   var model = null;
+  // The last session record read, kept for renderers that show verdict detail
+  // the folded view does not carry (conditions, dissent, proposed steps).
+  // Null while nothing is open; never invented.
+  var currentRecord = null;
   var demo = null; // {data, base, start, timer, index, prevId}
   var subscribers = [];
   var stream = null;
@@ -216,7 +220,14 @@
       })
       .then(function (body) {
         if (!body || !body.session) throw new Error('The service returned no session record.');
-        return body.session;
+        var record = body.session;
+        // CTR-156: the service's read-only reader projection rides beside the
+        // saved record. Attach it to the record the renderers receive without
+        // changing a single saved field.
+        if (body.reader_projection && typeof body.reader_projection === 'object') {
+          record = Object.assign({}, record, { reader_projection: body.reader_projection });
+        }
+        return record;
       });
   }
 
@@ -228,6 +239,7 @@
       refetchTimer = null;
       readSession(id).then(function (record) {
         if (gen !== generation || !model) return;
+        currentRecord = record;
         state.applyRecord(model, record);
         notify();
       }).catch(function () { /* the next card or verdict triggers another read */ });
@@ -338,6 +350,7 @@
     var gen = generation;
     selectedId = id;
     model = null;
+    currentRecord = null;
     retries = 0;
     mode = 'loading';
     setConn('idle', '', false);
@@ -345,6 +358,7 @@
     notify();
     return readSession(id).then(function (record) {
       if (gen !== generation) return;
+      currentRecord = record;
       model = state.create(record);
       mode = 'live';
       notify();
@@ -352,6 +366,7 @@
     }).catch(function (err) {
       if (gen !== generation) return;
       model = null;
+      currentRecord = null;
       mode = 'empty';
       setConn('unavailable', (err && err.message) || 'Could not open this session.', true);
       notify();
@@ -390,6 +405,7 @@
     generation += 1;
     selectedId = null;
     model = null;
+    currentRecord = null;
     mode = 'empty';
     setConn('idle', '', false);
     notify();
@@ -430,6 +446,7 @@
     var gen = generation;
     selectedId = null;
     model = null;
+    currentRecord = null;
     mode = 'loading';
     setConn('idle', '', false);
     setHash('#demo');
@@ -448,6 +465,7 @@
         d.start = Date.now();
         d.base = isFinite(firstMs) ? firstMs - first.at_ms : null;
         model = state.create(data.record);
+        currentRecord = data.record;
         mode = 'demo';
         notify();
         playDemo(d, gen);
@@ -456,6 +474,7 @@
         if (gen !== generation || demo !== d) return;
         demo = null;
         model = null;
+        currentRecord = null;
         mode = 'empty';
         setConn('unavailable', 'The demo replay could not be loaded (' + ((err && err.message) || 'error') + ').', false);
         notify();
@@ -490,6 +509,9 @@
 
   ns.live = {
     getView: getView, subscribe: subscribe, select: select, refreshList: refreshList,
+    // The raw session read (brief, cards, verdict) for renderers that show
+    // verdict detail the folded view drops. Read-only; null when nothing is open.
+    getRecord: function () { return currentRecord; },
     startDemo: startDemo, stopDemo: stopDemo, reconnect: reconnect
   };
 

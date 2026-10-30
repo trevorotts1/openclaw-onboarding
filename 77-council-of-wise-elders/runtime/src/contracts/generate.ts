@@ -41,8 +41,8 @@ import {
   sessionStateRecordSchema,
   verdictSchema,
   CONTRACT_PACKAGE_VERSION,
-} from './schemas';
-import { canonicalStringify } from './canonical-json';
+} from './schemas.js';
+import { canonicalStringify } from './canonical-json.js';
 
 export const JSON_SCHEMA_ARTIFACT_PATH = '../../../schemas/json-schemas.json';
 

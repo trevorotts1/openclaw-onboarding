@@ -15,13 +15,13 @@
  * required work so no seat is held to a weaker standard.
  */
 
-import { SEAT_ROSTER, type SeatId } from '../contracts/enums';
+import { SEAT_ROSTER, type SeatId } from '../contracts/enums.js';
 import {
   sourceVersionOf,
   type EvidenceUnit,
   type SourceRecord,
-} from './schemas';
-import { normalizeTitle, sameSpeaker } from './text';
+} from './schemas.js';
+import { normalizeTitle, sameSpeaker } from './text.js';
 
 export const MIN_TRACEABLE_CONCEPTS = 3;
 export const MIN_APPLICATION_CASES = 1;

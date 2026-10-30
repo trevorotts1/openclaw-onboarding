@@ -27,8 +27,15 @@ and dispatch are the proven live legs.
    values pulling against each other; there is no money check), announce
    the size in one line, and honor the client's override: "quick answer"
    is light, "full council" is heavy.
-2. Resolve existing sessions first. If a council is already open for the
-   same decision, continue it; never create a duplicate.
+2. Resolve existing sessions first, and know what "open" means. An
+   explicit front-door ask ("ask the council", "take this to the council")
+   ALWAYS opens a new session: a COMPLETED sitting on the same question is
+   context and never the answer, and a BLOCKED one is resolved rather than
+   reused. Only a session actually in progress is continued; never create a
+   duplicate of a running one. Read that list with `council-ask sessions`
+   (the service store), never with `blackceo-council status` (the CLI's
+   local store, which reports COUNCIL_SESSION_NOT_FOUND for sessions the
+   service holds).
 3. Build the brief from permitted context only, with the one shared
    brief-builder (`runtime/src/brief/permitted-brief.ts`) running FIRST
    in the convene flow. It reads the door's own memory files through
@@ -44,44 +51,27 @@ and dispatch are the proven live legs.
    brief carries only `private_preference_ref`, an opaque handle), and
    never exceeds its 2000-word cap. The brief shape is identical
    whichever door the client came through.
-4. Show the prepared brief before convening. Unknowns stay unknown; a
-   standard-company placeholder is never presented as a confirmed fact.
-5. Ask the client which model to use, and offer the council's providers in
-   this fixed order. Run `blackceo-council routes` and list what it
-   returns: those are the council runtime's own configured providers on
-   this box, never the calling agent's models.
-   - OpenRouter first, and recommended: it adds no parallel ceiling of its
-     own, so the sitting runs at the mode's wave width, and it never asks
-     a plan question.
-   - The client's own Ollama, if they prefer it. When their plan is not
-     already known, ask once: the $20 a month plan runs at most three
-     advisors at a time, the $100 a month plan runs up to ten. Ollama is
-     the only provider with a ceiling of its own. When Ollama fails and
-     the client has named an OpenRouter fallback model
-     (`--fallback-model ID`), the failed seats re-run on OpenRouter; with
-     no fallback model the sitting blocks on the failed seats instead.
-   - Agnes 3.0 Flash, when the client selects it: no parallel ceiling of
-     its own, so the same mode wave width applies.
-   A provider only sets a ceiling, the mode sets the wave width, and the
-   lower of the two is what runs: light runs 3 seats at a time on every
-   route; medium and heavy run the whole nine where the provider has no
-   ceiling, and an Ollama $20 plan still holds them to 3 (its $100 ceiling
-   of 10 exceeds the nine seats, so it changes nothing). An uncapped
-   provider never widens a light sitting past 3.
-   The default follows the same rule as SKILL.md: read the calling agent's
-   own configured provider (in OpenClaw, `openclaw agents list`; on
-   claude-nine or Claude Code, the harness default) and, if one of those
-   routes is that provider family, that route is the default; otherwise
-   OpenRouter is the default and the recommendation. Never pick silently.
-   Pass the client's choice with `--route` and `--model`; when the client
-   defers, pass nothing and the detected harness decides (`--harness`
-   overrides).
+4. Do not stop to show a draft brief or ask the client to choose a model.
+   Unknowns stay unknown; a standard-company placeholder is never
+   presented as a confirmed fact.
+5. The supported front door resolves the calling agent's own configured
+   route. Run it from the calling agent's own workspace; never ask the
+   client to choose from the council runtime's routes, never present those
+   routes as the calling agent's models, and never invent or force a
+   provider. If the front door refuses with ROUTE_CHOICE_REQUIRED,
+   ROUTE_NOT_CONFIGURED, ROUTE_NOT_COMPOSABLE, or ROUTE_MODEL_NOT_OFFERED,
+   report that typed refusal and its recovery exactly.
 6. For a question that depends on current facts, research the web first
    with your own tools and pass the findings with `--fresh-facts FILE`, a
    JSON array of `{claim, url, title, retrieved_at}`. Keep "From the
    elder's books" and "From the web today" separate in everything you
    tell the client, and never fabricate a finding, URL or date.
-7. Convene with
+7. Convene with `council-ask ask --brief FILE [--mode light|medium|heavy]`.
+   It is the supported front door: it proves the service answers first
+   (refusing `COUNCIL_SERVICE_DOWN` instead of improvising), convenes
+   through `blackceo-council convene`, and prints the chamber link while
+   popping it on a desktop, so the link is never a second, optional step.
+   The underlying client is
    `blackceo-council convene --brief FILE --mode light|medium|heavy` (or
    `--sample` for the built-in sample decision). Convening with no `--mode`
    runs medium; that default is deliberate, so name the mode you
