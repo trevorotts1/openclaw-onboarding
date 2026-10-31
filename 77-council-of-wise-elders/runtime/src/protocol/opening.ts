@@ -391,6 +391,7 @@ export class OpeningRoundExecutor implements OperationExecutorPort {
       'advisor',
       [],
       ctx.attempt_kind === 'output_repair' ? ctx.repair_issues : [],
+      1,
     );
 
     let response: TransportResponse;
@@ -419,7 +420,7 @@ export class OpeningRoundExecutor implements OperationExecutorPort {
           input_manifest_sha256: plan.input_manifest_sha256,
           pack_version: plan.pack_version,
           // The exact card schema; Round 1 issues no challenges.
-          output_contract: cardOutputContract('advisor', []),
+          output_contract: cardOutputContract('advisor', [], 1),
         },
       });
     } catch (error) {
@@ -622,7 +623,7 @@ export class OpeningRoundExecutor implements OperationExecutorPort {
     }
     const route: RouteContextBudget = {
       ...limits,
-      system_rules_bytes: cardSystemBytes(OPENING_ROUND_SYSTEM, 'advisor'),
+      system_rules_bytes: cardSystemBytes(OPENING_ROUND_SYSTEM, 'advisor', 1),
     };
     const seatBudgets: Partial<Record<SeatId, number>> = {};
     for (const other of SEAT_IDS) {

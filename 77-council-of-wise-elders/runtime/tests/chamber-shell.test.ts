@@ -163,9 +163,11 @@ test('index.html has the contract skeleton, tags in contract order and the hones
     'chamber-theme.css',
     'chamber-shell.css',
     'chamber-decision.css',
+    'chamber-advisory.css',
     'chamber-room.css',
     'chamber-keypoints.css',
     'chamber-seatcard.css',
+    'chamber-cue.css',
   ]);
   const js = [...html.matchAll(/<script src="\.\/([^"]+)"><\/script>/g)].map((m) => m[1]);
   assert.deepEqual(js, [
@@ -177,6 +179,8 @@ test('index.html has the contract skeleton, tags in contract order and the hones
     'chamber-room.js',
     'chamber-keypoints.js',
     'chamber-seatcard.js',
+    'chamber-advisory.js',
+    'chamber-cue.js',
   ]);
 
   // Mount points in document order.

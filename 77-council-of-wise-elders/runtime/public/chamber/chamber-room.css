@@ -14,6 +14,16 @@
   overflow: hidden;
 }
 
+/* One room paints. chamber-room.js removes a stale stage, seat box or second
+   name pill for the same seat on every render. This CSS rule is a narrower
+   last guard: it hides only a second .ch-room-stage sibling or a second
+   .ch-room-seats sibling inside #ch-room. A duplicate pill alone is removed
+   by the script, not by this rule, so it is script-covered only. */
+#ch-room > .ch-room-stage ~ .ch-room-stage,
+#ch-room .ch-room-seats ~ .ch-room-seats {
+  display: none !important;
+}
+
 .ch-room-stage {
   --ch-room-w: clamp(96px, 10.5vw, 150px);
   --ch-room-bust-h: calc(var(--ch-room-w) * 1.25);

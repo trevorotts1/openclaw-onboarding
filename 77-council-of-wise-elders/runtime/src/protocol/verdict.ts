@@ -56,6 +56,7 @@ import {
   deriveCriticalDomainApplicability,
   type CriticalDomainApplicability,
 } from '../scoring/critical-domains.js';
+import { isUnresolvedExplorationOption } from '../brief/exploration.js';
 
 // ---------------------------------------------------------------------------
 // Exact-hash helpers
@@ -343,6 +344,56 @@ function scoringCardsOf(
   return advisors.filter((card) => card.round === lastRound);
 }
 
+/** Labels that assert a recommendation. WAIT / INSUFFICIENT_EVIDENCE do not. */
+const RECOMMENDATION_LABELS = new Set<ScoredVerdict['label']>([
+  'GO',
+  'GO_WITH_CONDITIONS',
+  'RESHAPE',
+  'DONT_DO_IT',
+]);
+
+/**
+ * CTR-133: the publication boundary refuses a scored verdict built on a known
+ * unresolved exploration candidate. The observed defect exported
+ * GO_WITH_CONDITIONS recommending `option-explore` at score 7.4; that must be
+ * impossible to publish again, including from an old brief or a stale engine.
+ *
+ * Genuine indecision stays distinct and publishable: a placeholder option with
+ * a null score and a null recommendation under WAIT or INSUFFICIENT_EVIDENCE is
+ * an honest "nothing can be scored yet", not a forged GO.
+ */
+export function assessExplorationExport(
+  verdict: ScoredVerdict,
+  brief: DecisionBrief,
+): string[] {
+  const placeholders = brief.options.filter(isUnresolvedExplorationOption);
+  if (placeholders.length === 0) return [];
+  const ids = new Set(placeholders.map((option) => option.id));
+  const problems: string[] = [];
+
+  for (const summary of verdict.option_scores) {
+    if (ids.has(summary.option_id) && summary.score !== null) {
+      problems.push(
+        `option ${summary.option_id} is an unresolved exploration candidate and received score ${summary.score}; a placeholder is never a scored alternative`,
+      );
+    }
+  }
+  if (
+    verdict.recommended_option_id !== null &&
+    ids.has(verdict.recommended_option_id)
+  ) {
+    problems.push(
+      `recommended option ${verdict.recommended_option_id} is an unresolved exploration candidate; no recommendation may be exported from it`,
+    );
+  }
+  if (RECOMMENDATION_LABELS.has(verdict.label)) {
+    problems.push(
+      `label ${verdict.label} asserts a recommendation while the brief carries only an unresolved exploration candidate`,
+    );
+  }
+  return problems;
+}
+
 /**
  * Validate a verdict for publication against its exact revision hash.
  * This is the Section 14.6 final validation: schema, arithmetic,
@@ -406,6 +457,18 @@ export function validateVerdictForPublication(
       checks,
     };
   }
+
+  // CTR-133: an unresolved exploration candidate is never exported as a valid
+  // scored recommendation. This is a publication gate, not a relabel: schema
+  // validation above still ran unchanged.
+  const explorationProblems = assessExplorationExport(verdict, brief);
+  push(
+    'exploration_not_scored',
+    explorationProblems.length === 0 ? 'pass' : 'fail',
+    explorationProblems.length === 0
+      ? 'no unresolved exploration candidate was scored or recommended'
+      : explorationProblems.join('; '),
+  );
 
   // Internal consistency of the stored summaries (always run).
   const internalProblems: string[] = [];

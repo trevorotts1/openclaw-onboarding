@@ -1,5 +1,5 @@
 ---
-version: 1.0.69
+version: 1.0.74
 name: council-of-wise-elders
 description: Convene a source-grounded Council of Wise Elders for business or
   personal decisions, test alternatives, explain disagreements, produce one
@@ -32,8 +32,14 @@ completed live session is not yet established, so live completion is
 reported as unverified, never as proven. Every advisor pack stands at
 bibliographic_only coverage: no seat is quality_qualified, and seats
 abstain on claims their coverage does not support. Portable PDF export
-from the standalone runtime is not ready by design and refuses with a
-typed error; the Command Center side renders PDFs. Wherever a named
+from the standalone runtime renders the same print document through the
+PDF renderer the box already carries (headless Chrome/Chromium, the
+Playwright browser cache, or the CUPS filter); a completed sitting is
+downloadable from the chamber as a real `application/pdf` attachment and
+again from the past-session read, at
+`/council/<session-id>/report.pdf`, inside the same owner boundary as
+the session. A box with no renderer says so with a typed not-ready error
+that names the missing piece; HTML is never renamed `.pdf`. Wherever a named
 prerequisite is genuinely missing (no usable model route, a council
 service that reports not ready, no compatible Command Center release for
 managed mode), this skill's front door must report that precise state
@@ -152,6 +158,7 @@ brief and the flow look identical either way.
 Recognize these explicit phrases through the existing intent router:
 
 - "Ask my Council of Wise Elders"
+- "Ask the council" ("ask the council ...", "take this to the council")
 - "Take this decision to the council"
 - "Ask the Tiffany Aliche seat" (any named seat works the same way)
 - "Review this plan with the council"
@@ -162,6 +169,66 @@ council. Recognize existing-session controls before creating new work:
 titled Stop that council. "What did they decide?" reads the verdict.
 "Explain Russell's objection" retrieves an existing objection as a read, and
 creates a linked consult only when new inference is requested.
+
+## The front door: one command
+
+`council-ask` (installed beside `blackceo-council` by `wire.sh`) is the
+supported entry point for every council call. It does the whole front door in
+one step, so no part of it is a second, optional agent action:
+
+```
+council-ask ask --brief FILE [--mode light|medium|heavy] [--route R] [--model M] [--json]
+council-ask session <session-id> [--json]
+council-ask sessions [--json]
+council-ask authority [--json]
+```
+
+`--json` prints exactly one JSON document on stdout (a refusal is one JSON
+document on stderr). Every subcommand honours it; never advertise a flag the
+command ignores.
+
+The installed shim execs
+`$OPENCLAW_ROOT/council-runtime/frontdoor/<release-id>/scripts/council-entry.mjs`,
+a durable copy made by `scripts/install-front-door.sh` during `wire.sh`. It
+never points into the skill checkout that ran the wiring, because that
+checkout can be a lane worktree or a temporary clone that is deleted after
+merge. The source copy in this skill (`node scripts/council-entry.mjs`) never
+expires, so the command works from a checkout too.
+
+Four rules it enforces, and the agent must not re-implement them by hand:
+
+1. **An explicit ask always opens a NEW session.** A `COMPLETED` sitting on
+   the same question is context, not the answer: the command says so in one
+   line and still convenes. Only an OPEN session (in progress) is continued,
+   and a `BLOCKED` one is resolved, never reused as the answer. Answering
+   "ask the council" with a four-day-old verdict is a failure, not a
+   shortcut (recorded on the operator box, 2026-10-28).
+2. **The service is the authority.** `council-ask ask` proves the service
+   answers `/healthz` before it convenes. If it does not, the command
+   refuses with `COUNCIL_SERVICE_DOWN` and the exact recovery. Report that
+   refusal plainly; never start a parallel council and never simulate one.
+3. **Session reads go through the service.** `council-ask session <id>` and
+   `council-ask sessions` read the service store. `blackceo-council status`,
+   `pause`, `cancel` and `verdict` read the CLI's LOCAL store instead, so on
+   a box whose sessions live in the service they report
+   `COUNCIL_SESSION_NOT_FOUND` for sessions that exist. Never use them as
+   the authority for "did the council run?".
+4. **The chamber link is part of the call; the desktop pop is best effort.**
+   The command runs `scripts/chamber-visual.sh` itself and always prints the
+   one `Chamber link:` line. Copy that exact line; do not run a separate "now
+   get the link" step, because it gets skipped. The pop is delivered to the
+   box's own desktop when a GUI session can be reached (an Aqua process, or a
+   root bridge through `launchctl asuser`); otherwise the helper reports
+   `pop: skipped` or `pop: failed` on stderr and the link is still printed.
+   A headless box, a VPS, or an ssh session never claims a pop it did not
+   deliver. Nothing here sends to Telegram or any other channel: the agent's
+   own reply is the delivery path, and the link line must be pasted into it.
+
+`council-ask authority` prints the box's real state (service origin and
+health, the actual LaunchAgent name from `service.json`, release id, public
+origin, CLI path, and the front door path that is actually executing). An
+adopted box keeps its own LaunchAgent name, so read it from there rather than
+assuming the default.
 
 ## How a council runs
 
@@ -203,51 +270,19 @@ counsel artifact.
    store (only an opaque `private_preference_ref` handle), marks what
    the context does not state as an explicit unknown, and never runs
    past its 2000-word cap. Ask only the next material missing question.
-   Preserve unknowns and show the prepared brief.
-4. Resolve the model route from the CALLING agent first, then the
-   runtime. The routes `blackceo-council routes` returns are the council
-   runtime's own configured providers on this box - they are NOT the
-   calling agent's models, and they must never be presented as if they
-   were (never list claude-nine, Claude Code, or DeepSeek options to an
-   OpenClaw client whose agent runs on a different provider).
-   Offer the council's providers in this fixed order:
-   - OpenRouter first, and recommended: it runs every advisor at once, with
-     no parallel limit, so the sitting is the fastest.
-   - The client's own Ollama, if they prefer it. When their plan is not
-     already known, ask once: the $20 a month plan runs at most three
-     advisors at a time; the $100 a month plan runs up to ten. When Ollama
-     fails and the client has named an OpenRouter fallback model
-     (`--fallback-model ID`), the failed seats re-run on OpenRouter; with
-     no fallback model the sitting blocks on the failed seats instead.
-   - Agnes 3.0 Flash, when the client selects it: no parallel limit.
-
-   The DEFAULT is one rule, and it is the same rule in INSTRUCTIONS.md:
-   if one of those routes is the calling agent's own provider family, that
-   route is the default (it runs the client's own provider); otherwise
-   OpenRouter is the default, which is also what you recommend. OpenRouter
-   being "first and recommended" never overrides the caller's own provider.
-   a. Read the calling agent's configured provider and model from its own
-      environment: in OpenClaw, `openclaw agents list` (the agent's
-      `Model:` line, `<provider>/<model>`); on claude-nine or Claude Code,
-      the harness's configured default. Never guess it.
-   b. Run `blackceo-council routes` (or `models --json`). If a route
-      matches the caller's provider family, that route is the default and
-      you say plainly: "your agent's provider is <provider>, and the council
-      runs it through <route>". If no route matches the caller's provider
-      family, the default is OpenRouter (the recommended one) and step c
-      asks the client to choose from the routes that exist.
-   c. If NO route matches the caller's provider, say exactly this and
-      stop: "The council runtime on this box is configured with: <the
-      routes it returned>. None of those is your agent's model
-      (<provider>/<model>), so I cannot run the council on it. Choose one
-      of those routes for the council, or configure <provider> for the
-      council runtime." Ask that one question with those names only.
-   d. Never pick a model silently. If exactly one usable route exists and
-      the client already said to use the default, use it and say which.
-   e. If the client names a route or model, pass it with `--route` and
-      `--model`. If the client says "my default" and a matching route
-      exists, pass nothing and let the detected harness decide
-      (`--harness` overrides detection).
+   Preserve unknowns; do not stop to show a draft unless the client asks.
+4. Resolve the model route from the CALLING agent, never from a guessed
+   global default. The supported front door does this: run it from the
+   calling agent's own workspace and pass the calling agent's configured
+   route/model through the accepted caller-route path. The routes
+   `blackceo-council routes` returns are the council runtime's own
+   configured providers on this box - they are NOT the calling agent's
+   models, and they must never be presented as if they were.
+   Never ask the client to choose a provider and never stop to confirm a
+   route. If the front door refuses with ROUTE_CHOICE_REQUIRED,
+   ROUTE_NOT_CONFIGURED, ROUTE_NOT_COMPOSABLE, or ROUTE_MODEL_NOT_OFFERED,
+   report that typed refusal and its recovery exactly; do not invent,
+   force, or silently substitute a provider.
 4a. When the question depends on current facts (prices, laws, markets,
    news, a competitor, anything that changes), research the web before
    convening. Use your own web tools, keep each finding as a short claim

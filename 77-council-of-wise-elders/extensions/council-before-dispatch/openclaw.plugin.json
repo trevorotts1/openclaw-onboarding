@@ -1,0 +1,101 @@
+{
+  "id": "council-before-dispatch",
+  "name": "Council Before Dispatch",
+  "description": "Runs the supported Council front door for an authorized explicit ask before the model turn.",
+  "version": "1.2.0",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "channel",
+      "accountId",
+      "conversationId",
+      "senderIds",
+      "agentId",
+      "agentWorkspace",
+      "councilAskPath",
+      "stateDir"
+    ],
+    "properties": {
+      "channel": {
+        "type": "string",
+        "const": "telegram"
+      },
+      "accountId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "conversationId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "senderIds": {
+        "type": "array",
+        "minItems": 1,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "agentId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "agentWorkspace": {
+        "type": "string",
+        "minLength": 1
+      },
+      "councilAskPath": {
+        "type": "string",
+        "minLength": 1
+      },
+      "runtimeRoot": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Optional explicit Council runtime root. Omit to follow <prefix>/active.json derived from councilAskPath. The plugin accepts only a dependency-complete, Node-ESM-loadable root (dist/brief/permitted-brief.js, dist/contracts/ with extensioned relative imports, and node_modules/zod at the runtime's exact pin) and refuses COUNCIL_RUNTIME_UNRESOLVED otherwise."
+      },
+      "stateDir": {
+        "type": "string",
+        "minLength": 1
+      },
+      "mode": {
+        "type": "string",
+        "enum": ["light", "medium", "heavy"],
+        "default": "medium"
+      },
+      "displayTimezone": {
+        "type": "string",
+        "minLength": 1,
+        "default": "UTC"
+      },
+      "maxQuestionChars": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 4000,
+        "default": 1500
+      },
+      "maxMessageChars": {
+        "type": "integer",
+        "minimum": 64,
+        "maximum": 20000,
+        "default": 4000
+      },
+      "timeoutMs": {
+        "type": "integer",
+        "minimum": 300000,
+        "maximum": 600000,
+        "default": 300000
+      },
+      "staleClaimMs": {
+        "type": "integer",
+        "minimum": 60000,
+        "maximum": 86400000,
+        "default": 900000
+      }
+    }
+  }
+}
