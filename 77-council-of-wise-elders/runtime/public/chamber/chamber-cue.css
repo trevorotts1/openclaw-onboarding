@@ -1,0 +1,77 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Results cue (CTR-144): the compact bar between the council room and the
+   results below it.
+   ───────────────────────────────────────────────────────────────────────────
+   Colours come only from the --ch-* tokens in chamber-theme.css. Plain
+   document flow: the bar sits under the room and above #ch-options, so it
+   never covers a seat face or a control. One gentle downward nudge on the
+   arrow while a sitting is running; the theme already stops every animation
+   under prefers-reduced-motion, and this file says so explicitly too.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ch-cue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ch-space-2) var(--ch-space-3);
+  padding: var(--ch-space-2) var(--ch-space-3);
+  background: var(--ch-surface-2);
+  border: 1px solid var(--ch-gold);
+  border-radius: var(--ch-radius-pill);
+  color: var(--ch-ink);
+  text-align: center;
+}
+.ch-cue[hidden] { display: none; }
+
+.ch-cue-text {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--ch-ink);
+  overflow-wrap: anywhere;
+}
+
+.ch-cue-arrow {
+  flex: none;
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-top: -5px;
+  border-right: 2px solid var(--ch-gold);
+  border-bottom: 2px solid var(--ch-gold);
+  transform: rotate(45deg);
+}
+.ch-cue-arrow[hidden] { display: none; }
+
+/* The link keeps a 44px target and the shared gold focus ring from the theme. */
+.ch-cue-link {
+  min-height: 44px;
+  min-width: 44px;
+  padding-inline: var(--ch-space-4);
+  border-color: var(--ch-gold);
+  color: var(--ch-ink);
+  font-size: 14px;
+  text-decoration: none;
+}
+.ch-cue-link:hover { background: var(--ch-gold-soft); }
+.ch-cue-link[hidden] { display: none; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .ch-cue-arrow { animation: ch-cue-nudge 1.8s var(--ch-ease) infinite; }
+  @keyframes ch-cue-nudge {
+    0%, 55%, 100% { transform: translateY(0) rotate(45deg); }
+    78% { transform: translateY(5px) rotate(45deg); }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ch-cue-arrow { animation: none; }
+}
+
+@media (max-width: 599px) {
+  .ch-cue {
+    border-radius: var(--ch-radius-card);
+    padding: var(--ch-space-2);
+  }
+  .ch-cue-link { width: 100%; }
+}

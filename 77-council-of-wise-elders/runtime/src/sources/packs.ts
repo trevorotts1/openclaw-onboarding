@@ -17,7 +17,7 @@ import {
   SEAT_ROSTER,
   advisorProfileLabel,
   type SeatId,
-} from '../contracts/enums';
+} from '../contracts/enums.js';
 
 const SEAT_ID_SET: ReadonlySet<string> = new Set(SEAT_IDS);
 
@@ -29,7 +29,7 @@ import {
   computePackQualification,
   type PackQualification,
   type WorkCoverage,
-} from './coverage';
+} from './coverage.js';
 import {
   errorDiagnostic,
   evidenceUnitSchema,
@@ -39,8 +39,8 @@ import {
   type Diagnostic,
   type EvidenceUnit,
   type SourceRecord,
-} from './schemas';
-import { normalizeTitle } from './text';
+} from './schemas.js';
+import { normalizeTitle } from './text.js';
 
 /** Pack-level claim surface the validator audits (parsed JSON files). */
 export interface PackInput {

@@ -41,7 +41,7 @@
       out.push({
         letter: letter,
         label: label,
-        valueText: hasVotes ? String(o.votes) : '–',
+        valueText: hasVotes && typeof voters === 'number' && voters > 0 ? o.votes + '/' + voters : hasVotes ? String(o.votes) : '–',
         widthPct: hasVotes ? pct(share) : 0,
         recommended: !!o.recommended || (verdictId != null && verdictId === o.id),
         srText: srText(letter, label, hasVotes ? o.votes : null, voters, session ? session.votesRound : null)
@@ -81,6 +81,11 @@
 
   var host = document.getElementById('ch-decision');
   if (!host) return;
+  // The compact header is the question and the status only. The option rows
+  // are mounted in #ch-options, which index.html places below the council
+  // room, so the bars sit under the portraits in idle, active, blocked and
+  // completed states alike. Older markup without that mount keeps them here.
+  var optionsHost = document.getElementById('ch-options') || host;
 
   function el(tag, cls, text) {
     var n = document.createElement(tag);
@@ -107,6 +112,12 @@
   var titleCol = el('div', 'ch-dec-titlecol');
   var title = el('h1', 'ch-dec-title');
   title.id = 'ch-decision-title';
+  // Short live/completed status. The text is the view's own statusText; this
+  // line derives nothing, and it is not a live region (the room announces).
+  var statusLine = el('p', 'ch-dec-status');
+  statusLine.id = 'ch-decision-status';
+  statusLine.setAttribute('data-status', 'none');
+  var statusKind = 'none';
   var badges = el('div', 'ch-dec-badges');
   var sub = el('p', 'ch-dec-sub');
   var actions = el('div', 'ch-dec-actions');
@@ -121,14 +132,19 @@
     })
   );
   titleCol.appendChild(title);
+  titleCol.appendChild(statusLine);
   titleCol.appendChild(badges);
   titleCol.appendChild(sub);
   titleCol.appendChild(actions);
 
   var list = el('ul', 'ch-dec-options');
   list.setAttribute('aria-label', 'Options');
+  // A standing caption for the rows below the council: these shares are a live
+  // snapshot and never the verdict. The header above stays one compact line.
+  var note = el('p', 'ch-dec-note');
   host.appendChild(titleCol);
-  host.appendChild(list);
+  optionsHost.appendChild(note);
+  optionsHost.appendChild(list);
 
   var rows = []; // [{li, chip, label, reco, fill, value, sr}]
   var badgeNodes = []; // [{kind, node}]
@@ -187,6 +203,13 @@
     setText(title, empty ? 'Ask the council a question' : session.question || 'Council question');
     setText(sub, caption || '');
     setHidden(sub, !caption);
+    var nextStatus = !empty && session && session.status ? String(session.status) : 'none';
+    setText(statusLine, !empty && session && session.statusText ? String(session.statusText) : '');
+    setHidden(statusLine, !statusLine.textContent);
+    if (nextStatus !== statusKind) {
+      statusKind = nextStatus;
+      statusLine.setAttribute('data-status', nextStatus);
+    }
     // Hiding the focused empty-state button would drop focus to <body> (WCAG 2.4.3): park it on the title.
     if (!empty && actions.contains(document.activeElement)) {
       title.tabIndex = -1;
@@ -194,6 +217,16 @@
     }
     setHidden(actions, !empty);
     setHidden(list, model.length === 0);
+    // The whole lower panel follows the list: no empty box on the idle page.
+    setHidden(optionsHost, empty || model.length === 0);
+    // An advisor count is a preference tally, never a probability. The final
+    // verdict lives in the advisory panel below.
+    setText(
+      note,
+      empty || model.length === 0
+        ? ''
+        : 'These shares are a live snapshot, not the final verdict. They count advisors who preferred each option, not a probability.'
+    );
     renderBadges(badgesModel(session));
 
     while (rows.length < model.length) rows.push(buildRow());

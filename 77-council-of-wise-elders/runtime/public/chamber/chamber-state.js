@@ -289,9 +289,48 @@
     return names.length < 2 ? names.join('') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
   }
 
+  /*
+   * Machine outcome codes the runner writes to the attempt ledger and the job
+   * row. A seat is classified ONLY from these typed codes; message text is
+   * never parsed. A code this build does not know stays unclassified rather
+   * than being guessed into "rejected" or "did not answer".
+   */
+  var OUTCOME_CLASS = {
+    output_validation_failed: 'rejected',
+    transport_rejected: 'provider_failed',
+    transport_not_accepted: 'provider_failed',
+    transport_failed: 'provider_failed',
+    provider_completion_unknown: 'no_result',
+    completion_unknown: 'no_result'
+  };
+  var OUTCOME_PLAIN = {
+    output_validation_failed: 'response failed validation',
+    transport_rejected: 'provider request refused',
+    transport_not_accepted: 'provider request not accepted',
+    transport_failed: 'provider request failed',
+    provider_completion_unknown: 'no result recorded',
+    completion_unknown: 'no result recorded'
+  };
+
+  function outcomeClass(code) {
+    return typeof code === 'string' && has(OUTCOME_CLASS, code) ? OUTCOME_CLASS[code] : null;
+  }
+
+  function lastErrorFor(b, seatId) {
+    var errors = Array.isArray(b.last_errors) ? b.last_errors : [];
+    var found = null;
+    errors.forEach(function (e) {
+      if (e && e.seat_id === seatId && typeof e.outcome_code === 'string') found = e;
+    });
+    return found;
+  }
+
   /**
-   * One plain sentence for a blocked session, from the service's blocked_reason:
-   * which advisors are missing (by name) and why. Null when the service sent none.
+   * One plain sentence for a blocked session, from the service's blocked_reason.
+   * Missing seats are grouped by the TYPED outcome code: an output rejected by
+   * validation says so, a provider failure says so, and only a seat with no
+   * recorded result keeps "has not answered". Unknown codes stay unclassified.
+   * Null when the service sent no blocked_reason.
    */
   function blockedText(m) {
     var b = obj(m.blocked);
@@ -299,14 +338,64 @@
     if (!missing.length) return text(b.detail);
     var mr = Number(b.missing_round);
     var where = isFinite(mr) && mr >= 1 ? ' in ' + roundPlain(mr) : '';
-    var out = 'The council is blocked because ' + listNames(missing) + (missing.length === 1 ? ' has' : ' have') + ' not answered' + where + '.';
-    var causes = [];
-    (Array.isArray(b.last_errors) ? b.last_errors : []).forEach(function (e) {
-      var msg = e && text(e.message);
-      if (msg) causes.push(nameOf(e.seat_id) + ': ' + msg.replace(/\.$/, '') + '.');
-      else if (e && text(e.outcome_code)) causes.push(nameOf(e.seat_id) + ': ' + e.outcome_code.replace(/_/g, ' ') + '.');
+    var groups = { rejected: [], provider_failed: [], no_result: [], unclassified: [] };
+    missing.forEach(function (seat) {
+      var e = lastErrorFor(b, seat);
+      var kind = e ? outcomeClass(e.outcome_code) : null;
+      (kind ? groups[kind] : groups.unclassified).push(seat);
     });
-    return out + (causes.length ? ' ' + causes.join(' ') : '');
+    var clauses = [];
+    if (groups.rejected.length) clauses.push('responses from ' + listNames(groups.rejected) + ' failed validation');
+    if (groups.provider_failed.length) clauses.push('the provider request for ' + listNames(groups.provider_failed) + ' failed');
+    if (groups.no_result.length) clauses.push(listNames(groups.no_result) + (groups.no_result.length === 1 ? ' has' : ' have') + ' not answered');
+    if (groups.unclassified.length) clauses.push('no accepted response was recorded from ' + listNames(groups.unclassified));
+    var joined = clauses.length === 1 ? clauses[0]
+      : clauses.length === 2 ? clauses[0] + ' and ' + clauses[1]
+        : clauses.slice(0, -1).join(', ') + ', and ' + clauses[clauses.length - 1];
+    var out = 'The council is blocked because ' + joined + where + '.';
+    if (groups.no_result.length) {
+      var calls = Array.isArray(b.unfinished_calls) ? b.unfinished_calls : [];
+      var minutes = null;
+      calls.forEach(function (c) {
+        var n = Number(c && c.minutes);
+        if (minutes === null && isFinite(n)) minutes = n;
+      });
+      out += ' The provider call ended with no result recorded' + (minutes !== null ? ' about ' + minutes + ' minutes after it started' : '') + '.';
+    }
+    return out;
+  }
+
+  /**
+   * Technical validation detail, kept OUT of the sentence above. The room
+   * renders each entry inside a native <details> with textContent only, so a
+   * raw schema message is available but never reads as the council's summary
+   * and never becomes markup.
+   */
+  function blockedDetails(m) {
+    var b = obj(m.blocked);
+    var out = [];
+    function push(label, value) {
+      var t = text(value);
+      if (!t) return;
+      for (var i = 0; i < out.length; i += 1) if (out[i].text === t) return;
+      out.push({ label: label, text: t });
+    }
+    push('Service detail', b.detail);
+    if (!text(b.detail)) push('Service detail', m.reason);
+    (Array.isArray(b.last_errors) ? b.last_errors : []).forEach(function (e) {
+      if (!e || typeof e.seat_id !== 'string') return;
+      var code = text(e.outcome_code);
+      var label = nameOf(e.seat_id) + (code && has(OUTCOME_PLAIN, code) ? ': ' + OUTCOME_PLAIN[code] : code ? ': ' + code.replace(/_/g, ' ') : '');
+      if (text(e.message)) push(label, e.message);
+      else if (code) push(label, code);
+    });
+    (Array.isArray(b.unfinished_calls) ? b.unfinished_calls : []).forEach(function (c) {
+      if (!c) return;
+      var n = Number(c.minutes);
+      var op = text(c.operation_id);
+      push('Unfinished provider call', (op ? op + ': ' : '') + 'no result recorded' + (isFinite(n) ? ' about ' + n + ' minutes after it started' : '') + '.');
+    });
+    return out;
   }
 
   // ------------------------------------------------------------------ view
@@ -452,6 +541,20 @@
     var copy = (state && COPY[state]) || COPY.DRAFT;
     var elapsed = Math.max(0, nowMs - (isFinite(m.since) ? m.since : nowMs));
 
+    // A blocked session names the seats it is short of. Their seat label says
+    // what actually happened (rejected, provider failure, no result) instead
+    // of the generic "has not spoken yet".
+    var seatBlocked = {};
+    if (state === 'BLOCKED') {
+      var blockedSeats = Array.isArray(obj(m.blocked).missing_seats)
+        ? obj(m.blocked).missing_seats.filter(function (x) { return typeof x === 'string'; })
+        : [];
+      blockedSeats.forEach(function (id) {
+        var e = lastErrorFor(obj(m.blocked), id);
+        seatBlocked[id] = e ? (outcomeClass(e.outcome_code) || 'unclassified') : 'unclassified';
+      });
+    }
+
     var done = 0;
     var writers = [];
     var rows = m.seatIds.map(function (id) {
@@ -459,7 +562,11 @@
       var status = 'idle';
       if (ctx && (s.accepted[ctx] || s.cards[ctx])) { status = 'done'; done += 1; }
       else if (inRound) { status = 'writing'; writers.push(id); }
-      return { id: id, status: status, spotlight: false, bubble: { kind: 'none', text: '' }, latest: null, cards: seatCards(m, id) };
+      if (has(seatBlocked, id)) status = 'blocked';
+      return {
+        id: id, status: status, spotlight: false, bubble: { kind: 'none', text: '' }, latest: null,
+        blockedKind: has(seatBlocked, id) ? seatBlocked[id] : null, cards: seatCards(m, id)
+      };
     });
     var total = m.seatIds.length;
     var complete = inRound > 0 && total > 0 && done === total;
@@ -573,7 +680,13 @@
         label: roundLabel(m), number: inRound || null, total: totalRounds(m.mode), headline: headline, explain: explain,
         // Running: time in this state. Finished: how long the whole session took (frozen).
         timer: clock(end - (m.endedAt !== null && isFinite(m.startAt) ? m.startAt : isFinite(m.since) ? m.since : end)), progress: progress, progressText: progressText,
-        weighing: weighing, complete: complete
+        weighing: weighing, complete: complete,
+        // A tallied vote is only final after the verdict is validated; while a
+        // session is blocked the count is a partial preference record.
+        countsFinal: state === 'COMPLETED',
+        // Raw validation detail stays out of headline/explain and is rendered
+        // only inside the room's native <details> disclosure.
+        blockedDetails: state === 'BLOCKED' ? blockedDetails(m) : []
       },
       seats: rows, keyPoints: keyPoints
     };

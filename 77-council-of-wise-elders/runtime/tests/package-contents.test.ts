@@ -20,7 +20,7 @@ const pkg = JSON.parse(readFileSync(join(runtimeDir, 'package.json'), 'utf8')) a
 };
 
 test('package files allowlist carries dist and the chamber assets', () => {
-  assert.deepEqual(pkg.files, ['dist', 'public/chamber']);
+  assert.deepEqual(pkg.files, ['dist', 'public/chamber', 'public/report']);
   assert.equal(pkg.main, 'dist/index.js');
   assert.equal(pkg.bin['blackceo-council'], 'dist/blackceo-council.mjs');
 });
@@ -56,8 +56,10 @@ test('every chamber file the front door serves exists on disk', (t) => {
     'council-room.css',
     'council-journey.css',
     'chamber-shell.css',
+    'chamber-cue.css',
     'chamber-shell.js',
     'chamber-live.js',
+    'chamber-cue.js',
     'blackceo-logo.png',
     'RECEIPT.md',
   ]) {

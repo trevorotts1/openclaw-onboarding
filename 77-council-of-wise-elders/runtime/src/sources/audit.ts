@@ -18,10 +18,10 @@
  * invent a time).
  */
 
-import { canonicalHash } from '../contracts/canonical-json';
-import type { PackQualification, WorkCoverage } from './coverage';
-import { validateAdvisorPack, type PackInput, type PackValidation, type PackValidationOptions } from './packs';
-import type { Diagnostic } from './schemas';
+import { canonicalHash } from '../contracts/canonical-json.js';
+import type { PackQualification, WorkCoverage } from './coverage.js';
+import { validateAdvisorPack, type PackInput, type PackValidation, type PackValidationOptions } from './packs.js';
+import type { Diagnostic } from './schemas.js';
 
 export const VALIDATOR_VERSION = 'wise-elders.source-validator/v1';
 

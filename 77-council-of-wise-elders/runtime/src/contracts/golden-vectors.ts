@@ -14,8 +14,8 @@
  * different key orders must hash identically in every consumer (T148).
  */
 
-import { SEAT_IDS } from './enums';
-import type { SeatScoreEntry } from './scoring';
+import { SEAT_IDS } from './enums.js';
+import type { SeatScoreEntry } from './scoring.js';
 
 export const GOLDEN_WEIGHTS: readonly number[] = [2, 3, 2, 3, 3, 2, 3, 2, 2];
 export const GOLDEN_TOTAL_WEIGHT = 22;

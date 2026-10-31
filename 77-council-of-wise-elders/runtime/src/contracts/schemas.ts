@@ -49,10 +49,10 @@ import {
   STANCES,
   VALIDATION_STATUSES,
   VERDICT_LABELS,
-} from './enums';
-import { isSha256Hex, isUtcTimestamp, isValidId } from './primitives';
-import { MAX_ADVISOR_ROUND } from './modes';
-import type { ValidationIssue, ValidationResult } from './errors';
+} from './enums.js';
+import { isSha256Hex, isUtcTimestamp, isValidId } from './primitives.js';
+import { MAX_ADVISOR_ROUND } from './modes.js';
+import type { ValidationIssue, ValidationResult } from './errors.js';
 
 /** Current canonical contract version for this package surface. */
 export const CONTRACT_PACKAGE_VERSION = 'wise-elders.core/1.0.0';
