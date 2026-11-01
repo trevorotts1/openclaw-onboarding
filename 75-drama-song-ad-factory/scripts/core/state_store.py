@@ -7,6 +7,18 @@ list readers with typed errors, version migration through the canonical
 request builder, non-generating remeasurement consumers, replay-safe decision
 receipts and the pending continuation queue.
 
+Continuation queue rows carry an opaque fencing token and a lease deadline so
+a claimed row that was never completed becomes recoverable: a live claim is
+never stolen, an expired one is taken over with a NEW token while keeping the
+original continuation id, attempt identity and creation time.
+
+The decision that ORIGINATED a continuation is bound once, in the same
+transaction that first creates the row from record_decision(), and is never
+replaced by a later acknowledgement, a replay or a wall-clock rollback. Rows
+created by enqueue_continuation() are bound as unassociated and never adopt a
+later acknowledgement. Rows written before origin binding existed are derived
+only from one unambiguous saved receipt; several possible origins refuse.
+
 Every mutation validates against a fresh read, then writes with a single
 UPDATE predicated on the row version (rowcount 0 = lost race). The write
 itself is the atomic compare-and-set; pre-checks only pick error codes.
@@ -17,14 +29,19 @@ upstream change is STALE (via mark_stale).
 from __future__ import annotations
 
 import json
+import math
 import os
 import sqlite3
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 
 SCHEMA_VERSION = "1.0.0"
-DB_SCHEMA_VERSION = 1
+#: Version 2 adds the continuation fencing columns (claim_token,
+#: lease_expires). Version 1 databases are a supported migration input.
+DB_SCHEMA_VERSION = 2
+SUPPORTED_DB_VERSIONS = (1, DB_SCHEMA_VERSION)
 
 STATES = frozenset({
     "NOT_STARTED", "READY", "RUNNING", "WAITING_PROVIDER",
@@ -58,6 +75,94 @@ class StoreError(Exception):
     def __init__(self, code, message):
         super().__init__(message)
         self.code = code
+
+
+#: A continuation lease may not outlive a day; anything longer is a caller
+#: bug, not a policy choice.
+MAX_CONTINUATION_LEASE_S = 86400
+
+#: Continuation origin sources. ``recorded`` was bound by the same transaction
+#: that first created the row from a decision; ``unassociated`` was created
+#: directly and never adopts a later acknowledgement. A continuation with NO
+#: row here predates origin binding and is derived only from saved receipts.
+_ORIGIN_RECORDED = "recorded"
+_ORIGIN_UNASSOCIATED = "unassociated"
+
+
+def _ident(name, value):
+    """Non-empty string identifier. Wrong types are typed failures."""
+    if not isinstance(value, str) or not value.strip():
+        raise MalformedRecordError(
+            "%s must be a non-empty string, got %r" % (name, value),
+            path=name)
+    return value
+
+
+def _lease_seconds(name, value):
+    """Finite, positive lease in seconds, at most one day. Booleans,
+    infinity, not-a-number and non-numbers are refused."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise MalformedRecordError(
+            "%s must be a finite number of seconds, got %r"
+            % (name, value), path=name)
+    try:
+        seconds = float(value)
+    except OverflowError:
+        # An integer too large for a C double is a malformed lease, not an
+        # interpreter overflow escaping the typed boundary (10**400).
+        raise MalformedRecordError(
+            "%s must be finite, positive and at most %d seconds, got %r"
+            % (name, MAX_CONTINUATION_LEASE_S, value), path=name)
+    if not math.isfinite(seconds) or seconds <= 0 \
+            or seconds > MAX_CONTINUATION_LEASE_S:
+        raise MalformedRecordError(
+            "%s must be finite, positive and at most %d seconds, got %r"
+            % (name, MAX_CONTINUATION_LEASE_S, value), path=name)
+    return seconds
+
+
+def _migrate_db(con):
+    """Explicit, repeat-safe schema migration.
+
+    Known older versions are accepted as migration input; anything else is
+    refused instead of guessed. The column adds and the version bump share
+    one transaction, so a crash leaves the database at its old version.
+    """
+    row = con.execute("SELECT v FROM meta WHERE k='db_version'").fetchone()
+    if row is None or row[0] is None:
+        raise StoreError("NEEDS_RECOVERY", "database carries no version tag")
+    try:
+        version = int(str(row[0]).strip())
+    except (TypeError, ValueError):
+        raise StoreError("NEEDS_RECOVERY",
+                         "unreadable database version %r" % (row[0],))
+    if version == DB_SCHEMA_VERSION:
+        return version
+    if version not in SUPPORTED_DB_VERSIONS:
+        raise StoreError(
+            "NEEDS_RECOVERY",
+            "unknown database version %d (supported: %s)"
+            % (version, ", ".join(str(v) for v in SUPPORTED_DB_VERSIONS)))
+    if con.in_transaction:
+        con.commit()
+    con.execute("BEGIN IMMEDIATE")
+    try:
+        if version == 1:
+            cols = {r[1] for r in con.execute(
+                "PRAGMA table_info(continuations)")}
+            if "claim_token" not in cols:
+                con.execute(
+                    "ALTER TABLE continuations ADD COLUMN claim_token TEXT")
+            if "lease_expires" not in cols:
+                con.execute(
+                    "ALTER TABLE continuations ADD COLUMN lease_expires REAL")
+        con.execute("UPDATE meta SET v=? WHERE k='db_version'",
+                    (str(DB_SCHEMA_VERSION),))
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    return DB_SCHEMA_VERSION
 
 
 def _ro_connect(path, timeout=5):
@@ -112,8 +217,21 @@ def needs_recovery(db_path):
                 return True, "corrupt: missing tables"
             flag = con.execute(
                 "SELECT v FROM meta WHERE k='db_version'").fetchone()
-            if flag is None or flag[0] != str(DB_SCHEMA_VERSION):
-                return True, "incompatible: schema drift, migrate first"
+            if flag is None or flag[0] is None:
+                return True, "corrupt: no db_version tag"
+            try:
+                version = int(str(flag[0]).strip())
+            except (TypeError, ValueError):
+                return True, ("incompatible: unreadable schema version %r"
+                              % (flag[0],))
+            if version not in SUPPORTED_DB_VERSIONS:
+                return True, ("incompatible: schema version %d unsupported"
+                              " (supported: %s)"
+                              % (version, ", ".join(
+                                  str(v) for v in SUPPORTED_DB_VERSIONS)))
+            if version < DB_SCHEMA_VERSION:
+                return False, ("migrate: %d -> %d"
+                               % (version, DB_SCHEMA_VERSION))
             return False, "clean"
         finally:
             con.close()
@@ -149,11 +267,16 @@ class Store:
                 "CREATE TABLE IF NOT EXISTS continuations(id TEXT PRIMARY KEY,"
                 " run_id TEXT, stage TEXT, op TEXT, identity TEXT,"
                 " request_digest TEXT, attempt_id TEXT, state TEXT,"
-                " claimed_by TEXT, created_at REAL, updated_at REAL);"
+                " claimed_by TEXT, created_at REAL, updated_at REAL,"
+                " claim_token TEXT, lease_expires REAL);"
                 "CREATE UNIQUE INDEX IF NOT EXISTS cont_open_identity"
                 " ON continuations(run_id, identity) WHERE state != 'done';"
+                "CREATE TABLE IF NOT EXISTS continuation_origins("
+                " continuation_id TEXT PRIMARY KEY, run_id TEXT, ack_id TEXT,"
+                " origin_source TEXT, bound_at REAL);"
                 "INSERT OR IGNORE INTO meta(k, v)"
                 " VALUES('db_version', '%d');" % DB_SCHEMA_VERSION)
+        _migrate_db(self.con)
         mode = self.con.execute("PRAGMA journal_mode").fetchone()[0]
         # memory: :memory: DBs report mode=memory and cannot do WAL;
         # nothing to crash-recover there, so accept it.
@@ -203,6 +326,28 @@ class Store:
             raise StoreError("VERSION_MISMATCH",
                              "lost race on %s/%s" % (run_id, stage))
         return self._row(run_id, stage)
+
+    @contextmanager
+    def _immediate(self):
+        """Writer transaction acquired BEFORE any wall-clock sample.
+
+        sqlite3's connection context manager only commits and rolls back; it
+        does not take a lock, and the implicit transaction is DEFERRED, so a
+        cached `now` could be sampled while another writer held the database.
+        BEGIN IMMEDIATE first means the lease comparisons, conditional
+        updates and event inserts in the block all run after the writer lock
+        is held, inside one atomic transaction.
+        """
+        if self.con.in_transaction:
+            self.con.commit()
+        self.con.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+        except BaseException:
+            self.con.rollback()
+            raise
+        else:
+            self.con.commit()
 
     # -- API --
     def init_run(self, run_id, stages):
@@ -404,31 +549,43 @@ class Store:
         existing row back with its ORIGINAL attempt_id -- never a second
         continuation and never a duplicate paid attempt."""
         identity = request_digest or "op:%s:%s" % (stage, op)
-        with self.con:
+        with self._immediate():
             return self._enqueue_locked(run_id, stage, op, identity,
                                         request_digest, attempt_id)
 
     def _enqueue_locked(self, run_id, stage, op, identity, request_digest,
-                        attempt_id):
+                        attempt_id, origin_ack_id=None):
         row = self.con.execute(
             "%s WHERE run_id=? AND identity=? AND state != 'done'"
             % _CONT_SELECT, (run_id, identity)).fetchone()
         if row is not None:
             return {"created": False, "continuation": _cont_dict(row)}
         now = time.time()
+        continuation_id = uuid.uuid4().hex
         try:
             self.con.execute(
                 "INSERT INTO continuations(id, run_id, stage, op, identity,"
                 " request_digest, attempt_id, state, claimed_by, created_at,"
                 " updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, 'pending', NULL,"
                 " ?, ?)",
-                (uuid.uuid4().hex, run_id, stage, op, identity,
+                (continuation_id, run_id, stage, op, identity,
                  request_digest, attempt_id, now, now))
         except sqlite3.IntegrityError:
             row = self.con.execute(
                 "%s WHERE run_id=? AND identity=? AND state != 'done'"
                 % _CONT_SELECT, (run_id, identity)).fetchone()
             return {"created": False, "continuation": _cont_dict(row)}
+        # Bind the origin in the SAME transaction as the row insert. A replay,
+        # a later decision or a clock rollback can never replace it; a direct
+        # enqueue records that it had no decision, so no later acknowledgement
+        # is ever promoted to origin. INSERT OR IGNORE keeps this one-shot.
+        self.con.execute(
+            "INSERT OR IGNORE INTO continuation_origins(continuation_id,"
+            " run_id, ack_id, origin_source, bound_at)"
+            " VALUES(?, ?, ?, ?, ?)",
+            (continuation_id, run_id, origin_ack_id,
+             _ORIGIN_RECORDED if origin_ack_id is not None
+             else _ORIGIN_UNASSOCIATED, now))
         self._event(run_id, stage, "continuation-enqueue", identity)
         row = self.con.execute(
             "%s WHERE run_id=? AND identity=? AND state != 'done'"
@@ -454,27 +611,336 @@ class Store:
         q += " ORDER BY created_at"
         return [_cont_dict(r) for r in self.con.execute(q, args)]
 
-    def resume_continuations(self, run_id, worker, op=None):
+    def resume_continuations(self, run_id, worker, op=None, *,
+                             lease_s=300, include_expired=False):
         """Resume the SAME run after a restart: claim each pending
         continuation exactly once (pending -> claimed compare-and-set).
         One continuation per work item; the claimed rows keep their original
-        attempt_id, so a restart never duplicates a paid attempt."""
+        attempt_id, so a restart never duplicates a paid attempt.
+
+        Default behaviour is unchanged: PENDING rows only. ``include_expired``
+        additionally takes over CLAIMED rows whose lease ran out, issuing a
+        fresh unpredictable token and preserving the original id, run, stage,
+        operation, request digest, attempt identity and creation time. A live
+        lease is never stolen. A claimed row that predates fenced leases has
+        no defensible expiry, so recovery refuses the whole batch with
+        NEEDS_RECOVERY rather than guessing or silently adopting it."""
+        _ident("run_id", run_id)
+        _ident("worker", worker)
+        lease = _lease_seconds("lease_s", lease_s)
         claimed = []
-        with self.con:
-            for cont in self.scan_pending_continuations(run_id):
+        with self._immediate():
+            now = time.time()
+            rows = self.con.execute(
+                "%s WHERE run_id=? AND state IN ('pending', 'claimed')"
+                " ORDER BY created_at" % _CONT_SELECT, (run_id,)).fetchall()
+            for raw in rows:
+                cont = _cont_dict(raw)
                 if op is not None and cont["op"] != op:
                     continue
-                cur = self.con.execute(
-                    "UPDATE continuations SET state='claimed', claimed_by=?,"
-                    " updated_at=? WHERE id=? AND state='pending'",
-                    (worker, time.time(), cont["id"]))
-                if cur.rowcount == 1:
-                    cont["state"] = "claimed"
-                    cont["claimed_by"] = worker
-                    claimed.append(cont)
-                    self._event(run_id, cont["stage"], "continuation-resume",
-                                cont["identity"])
+                if cont["state"] == "pending":
+                    cur = self.con.execute(
+                        "UPDATE continuations SET state='claimed',"
+                        " claimed_by=?, claim_token=?, lease_expires=?,"
+                        " updated_at=? WHERE id=? AND run_id=?"
+                        " AND state='pending'",
+                        (worker, uuid.uuid4().hex, now + lease, now,
+                         cont["id"], run_id))
+                    kind = "continuation-resume"
+                else:
+                    if not include_expired:
+                        continue
+                    if cont["claim_token"] is None \
+                            or cont["lease_expires"] is None:
+                        raise StoreError(
+                            "NEEDS_RECOVERY",
+                            "claimed continuation %s predates fenced leases:"
+                            " it has no defensible lease expiry" % cont["id"])
+                    if cont["lease_expires"] > now:
+                        continue            # a live lease is never stolen
+                    cur = self.con.execute(
+                        "UPDATE continuations SET state='claimed',"
+                        " claimed_by=?, claim_token=?, lease_expires=?,"
+                        " updated_at=? WHERE id=? AND run_id=?"
+                        " AND state='claimed' AND claim_token=?"
+                        " AND lease_expires<=?",
+                        (worker, uuid.uuid4().hex, now + lease, now,
+                         cont["id"], run_id, cont["claim_token"], now))
+                    kind = "continuation-takeover"
+                if cur.rowcount != 1:
+                    continue                # someone else won the row
+                fresh = self._cont_row(run_id, cont["id"])
+                claimed.append(fresh)
+                self._event(run_id, fresh["stage"], kind, fresh["identity"])
         return claimed
+
+    def get_continuation(self, run_id, continuation_id):
+        """One continuation of THIS run, including completed rows."""
+        _ident("run_id", run_id)
+        _ident("continuation_id", continuation_id)
+        return self._cont_row(run_id, continuation_id)
+
+    def get_continuation_decision(self, run_id, continuation_id):
+        """The persisted decision that ORIGINATED a continuation.
+
+        Supported restart read: given ONLY the run id and a claimed (or
+        completed) continuation id, this returns the exact saved
+        acknowledgement and action, so a restarted consumer never needs
+        private SQL, a third queue, or replay arguments as authority.
+
+        Origin is the ack bound atomically when record_decision first created
+        the row. It is never re-derived from wall-clock order, so a later
+        decision recorded after a clock rollback cannot displace it, and a
+        replay or a second decision never rewrites it. A row created directly
+        by enqueue_continuation has NO origin and never adopts a later
+        acknowledgement: that returns None.
+
+        Rows written before origin binding existed have no bound origin. They
+        are bound from saved receipts ONLY when exactly one receipt names this
+        continuation AND agrees on attempt id and request digest. Several
+        possible origins refuse with AMBIGUOUS_ASSOCIATION; receipts that
+        contradict the row refuse with NEEDS_RECOVERY; no receipt returns
+        None. Timestamps are never used to choose, so legacy derivation cannot
+        prove which call created the row -- only which single saved receipt
+        agrees with it.
+
+        Public shape (compatible; adds origin_source and evidence):
+            {"run_id", "continuation_id", "ack_id", "channel", "at",
+             "decision": <exact stored action>, "receipt": <saved receipt>,
+             "origin_source": "recorded" | "receipt_derivation",
+             "evidence": {"continuation_id", "attempt_id",
+                          "request_digest", ...}}
+        """
+        _ident("run_id", run_id)
+        _ident("continuation_id", continuation_id)
+        row = self._cont_row(run_id, continuation_id)  # NOT_FOUND if foreign
+        bound = self.con.execute(
+            "SELECT ack_id, origin_source FROM continuation_origins"
+            " WHERE continuation_id=? AND run_id=?",
+            (continuation_id, run_id)).fetchone()
+        if bound is None:
+            return self._legacy_origin(run_id, continuation_id, row)
+        ack_id, source = bound
+        if source == _ORIGIN_UNASSOCIATED:
+            return None              # direct enqueue: never adopt a later ack
+        if source != _ORIGIN_RECORDED or not ack_id:
+            raise StoreError(
+                "NEEDS_RECOVERY",
+                "continuation %s carries an unreadable origin binding %r"
+                % (continuation_id, source))
+        return self._decision_origin(
+            run_id, continuation_id, ack_id, "recorded",
+            {"continuation_id": True, "attempt_id": "recorded",
+             "request_digest": "recorded"})
+
+    def _decision_origin(self, run_id, continuation_id, ack_id, source,
+                         evidence):
+        """Read and validate one saved decision as this row's origin."""
+        found = self.con.execute(
+            "SELECT channel, decision, receipt, at FROM decisions"
+            " WHERE run_id=? AND ack_id=?", (run_id, ack_id)).fetchone()
+        if found is None:
+            raise StoreError(
+                "NEEDS_RECOVERY",
+                "continuation %s names originating decision %r, which is"
+                " missing" % (continuation_id, ack_id))
+        channel, decision_raw, receipt_raw, at = found
+        receipt = _saved_json(receipt_raw, "decision %r receipt" % ack_id)
+        if not isinstance(receipt, dict):
+            raise StoreError(
+                "NEEDS_RECOVERY",
+                "decision %r has no saved receipt" % ack_id)
+        action = _saved_json(decision_raw, "decision %r action" % ack_id)
+        if action != receipt.get("decision") \
+                or receipt.get("ack_id") != ack_id:
+            raise StoreError(
+                "NEEDS_RECOVERY",
+                "decision %r action and receipt disagree" % ack_id)
+        if receipt.get("continuation_id") != continuation_id:
+            raise StoreError(
+                "NEEDS_RECOVERY",
+                "originating decision %r does not name continuation %s"
+                % (ack_id, continuation_id))
+        return {"run_id": run_id, "continuation_id": continuation_id,
+                "ack_id": ack_id, "channel": channel,
+                "at": at if at is not None else 0.0,
+                "decision": action, "receipt": receipt,
+                "origin_source": source, "evidence": evidence}
+
+    def _legacy_origin(self, run_id, continuation_id, row):
+        """Origin for a row written before origin binding existed.
+
+        Only unambiguous SAVED evidence binds: one receipt that names this row
+        and agrees on attempt identity and request digest. Nothing is inferred
+        from timestamps, insertion order, ack-id order or the earliest row.
+        """
+        matching, excluded = [], 0
+        for (ack_id, channel, decision_raw, receipt_raw,
+             at) in self.con.execute(
+                "SELECT ack_id, channel, decision, receipt, at"
+                " FROM decisions WHERE run_id=?", (run_id,)):
+            receipt = _saved_json(receipt_raw, "decision %r receipt" % ack_id)
+            if not isinstance(receipt, dict):
+                raise StoreError(
+                    "NEEDS_RECOVERY",
+                    "decision %r has no saved receipt" % ack_id)
+            if receipt.get("continuation_id") != continuation_id:
+                continue
+            action = _saved_json(decision_raw, "decision %r action" % ack_id)
+            if action != receipt.get("decision") \
+                    or receipt.get("ack_id") != ack_id:
+                raise StoreError(
+                    "NEEDS_RECOVERY",
+                    "decision %r action and receipt disagree" % ack_id)
+            if receipt.get("attempt_id") != row["attempt_id"] \
+                    or receipt.get("request_digest") != row["request_digest"]:
+                # This saved receipt names the row but cannot be the call that
+                # created it; it is excluded, never used to guess.
+                excluded += 1
+                continue
+            matching.append({"ack_id": ack_id, "channel": channel,
+                             "at": at if at is not None else 0.0,
+                             "decision": action, "receipt": receipt})
+        if not matching:
+            if excluded:
+                raise StoreError(
+                    "NEEDS_RECOVERY",
+                    "continuation %s is referenced only by saved decisions"
+                    " whose attempt id or request digest contradicts the row;"
+                    " the origin cannot be established" % continuation_id)
+            return None
+        if len(matching) > 1:
+            raise StoreError(
+                "AMBIGUOUS_ASSOCIATION",
+                "continuation %s is referenced by %d saved decisions that"
+                " agree with the row; the origin cannot be chosen without"
+                " guessing" % (continuation_id, len(matching)))
+        found = matching[0]
+        return {"run_id": run_id, "continuation_id": continuation_id,
+                "ack_id": found["ack_id"], "channel": found["channel"],
+                "at": found["at"], "decision": found["decision"],
+                "receipt": found["receipt"],
+                "origin_source": "receipt_derivation",
+                "evidence": {"continuation_id": True,
+                             "attempt_id": "match",
+                             "request_digest": "match",
+                             "excluded_contradictory": excluded}}
+
+    def heartbeat_continuation(self, run_id, continuation_id, worker,
+                               claim_token, *, lease_s=300):
+        """Extend a LIVE fenced claim. Wrong owner, wrong token, a completed
+        or pending row, and an expired lease are all refused typed."""
+        _ident("run_id", run_id)
+        _ident("continuation_id", continuation_id)
+        _ident("worker", worker)
+        _ident("claim_token", claim_token)
+        lease = _lease_seconds("lease_s", lease_s)
+        with self._immediate():
+            now = time.time()
+            row = self._cont_row(run_id, continuation_id)
+            self._require_live_claim(row, worker, claim_token, now)
+            cur = self.con.execute(
+                "UPDATE continuations SET lease_expires=?, updated_at=?"
+                " WHERE id=? AND run_id=? AND state='claimed'"
+                " AND claimed_by=? AND claim_token=? AND lease_expires>?",
+                (now + lease, now, continuation_id, run_id, worker,
+                 claim_token, now))
+            if cur.rowcount != 1:
+                raise StoreError("STALE_LEASE",
+                                 "claim lost before heartbeat")
+            self._event(run_id, row["stage"], "continuation-heartbeat",
+                        row["identity"])
+            return self._cont_row(run_id, continuation_id)
+
+    def complete_continuation(self, run_id, continuation_id, worker,
+                              claim_token):
+        """Finish a live fenced claim. The worker and token stay on the row
+        so a repeated matching completion is acknowledged as duplicate, even
+        after reopening the database. A foreign claim is never acknowledged."""
+        _ident("run_id", run_id)
+        _ident("continuation_id", continuation_id)
+        _ident("worker", worker)
+        _ident("claim_token", claim_token)
+        with self._immediate():
+            now = time.time()
+            row = self._cont_row(run_id, continuation_id)
+            if row["state"] == "done":
+                if row["claimed_by"] == worker \
+                        and row["claim_token"] == claim_token:
+                    return {"duplicate": True, "continuation": row}
+                raise StoreError("NOT_OWNER",
+                                 "completion acknowledged by another claim")
+            self._require_live_claim(row, worker, claim_token, now)
+            cur = self.con.execute(
+                "UPDATE continuations SET state='done', lease_expires=NULL,"
+                " updated_at=? WHERE id=? AND run_id=? AND state='claimed'"
+                " AND claimed_by=? AND claim_token=? AND lease_expires>?",
+                (now, continuation_id, run_id, worker, claim_token, now))
+            if cur.rowcount != 1:
+                raise StoreError("STALE_LEASE",
+                                 "claim lost before completion")
+            self._event(run_id, row["stage"], "continuation-complete",
+                        row["identity"])
+            return {"duplicate": False,
+                    "continuation": self._cont_row(run_id, continuation_id)}
+
+    def release_continuation(self, run_id, continuation_id, worker,
+                             claim_token):
+        """Return a live claim to the queue for an explicit retry. The last
+        worker and token stay on the row so a repeated matching release is
+        acknowledged as duplicate; the next claim replaces both, which
+        invalidates the old release token."""
+        _ident("run_id", run_id)
+        _ident("continuation_id", continuation_id)
+        _ident("worker", worker)
+        _ident("claim_token", claim_token)
+        with self._immediate():
+            now = time.time()
+            row = self._cont_row(run_id, continuation_id)
+            if row["state"] == "pending":
+                if row["claimed_by"] == worker \
+                        and row["claim_token"] == claim_token:
+                    return {"duplicate": True, "continuation": row}
+                raise StoreError("NOT_OWNER",
+                                 "release carries a foreign claim")
+            if row["state"] != "claimed":
+                raise StoreError("ILLEGAL_TRANSITION",
+                                 "release from %s" % row["state"])
+            self._require_live_claim(row, worker, claim_token, now)
+            cur = self.con.execute(
+                "UPDATE continuations SET state='pending',"
+                " lease_expires=NULL, updated_at=? WHERE id=? AND run_id=?"
+                " AND state='claimed' AND claimed_by=? AND claim_token=?"
+                " AND lease_expires>?",
+                (now, continuation_id, run_id, worker, claim_token, now))
+            if cur.rowcount != 1:
+                raise StoreError("STALE_LEASE", "claim lost before release")
+            self._event(run_id, row["stage"], "continuation-release",
+                        row["identity"])
+            return {"duplicate": False,
+                    "continuation": self._cont_row(run_id, continuation_id)}
+
+    def _cont_row(self, run_id, continuation_id):
+        row = self.con.execute(
+            "%s WHERE id=? AND run_id=?" % _CONT_SELECT,
+            (continuation_id, run_id)).fetchone()
+        if row is None:
+            raise StoreError("NOT_FOUND", "%s/%s"
+                             % (run_id, continuation_id))
+        return _cont_dict(row)
+
+    @staticmethod
+    def _require_live_claim(row, worker, claim_token, now):
+        if row["state"] != "claimed":
+            raise StoreError("ILLEGAL_TRANSITION",
+                             "continuation %s is %s, not claimed"
+                             % (row["id"], row["state"]))
+        if row["claimed_by"] != worker or row["claim_token"] != claim_token:
+            raise StoreError("NOT_OWNER",
+                             "claim is held by another worker or token")
+        if row["lease_expires"] is None or row["lease_expires"] <= now:
+            raise StoreError("STALE_LEASE",
+                             "lease expired; take over with include_expired")
 
     def record_decision(self, run_id, ack_id, decision, channel="message",
                         stage="", op="", request_digest=None,
@@ -490,7 +956,7 @@ class Store:
             raise MalformedRecordError(
                 "record_decision needs a decision object, got %s"
                 % type(decision).__name__, path="decision")
-        with self.con:
+        with self._immediate():
             cur = self.con.execute(
                 "INSERT OR IGNORE INTO decisions(run_id, ack_id, channel,"
                 " decision, receipt, at) VALUES(?, ?, ?, ?, '', ?)",
@@ -500,16 +966,49 @@ class Store:
                 row = self.con.execute(
                     "SELECT receipt FROM decisions WHERE run_id=? AND ack_id=?",
                     (run_id, ack_id)).fetchone()
-                self._event(run_id, stage, "decision-ack", ack_id)
-                return {"duplicate": True, "receipt": json.loads(row[0]),
-                        "continuation": self._continuation_for(
-                            run_id, request_digest, stage, op)}
+                raw = row[0] if row is not None else None
+                if not raw:
+                    raise StoreError(
+                        "NEEDS_RECOVERY",
+                        "decision %r has no saved receipt to replay" % ack_id)
+                try:
+                    receipt = json.loads(raw)
+                except ValueError:
+                    raise StoreError(
+                        "NEEDS_RECOVERY",
+                        "decision %r has an unreadable saved receipt"
+                        % ack_id)
+                if not isinstance(receipt, dict):
+                    raise StoreError(
+                        "NEEDS_RECOVERY",
+                        "decision %r has a saved receipt that is not a JSON"
+                        " object" % ack_id)
+                # Replay returns the ORIGINAL intent: the saved receipt and
+                # the exact continuation it named, including a completed one.
+                # Changed replay arguments (stage/op/digest/attempt/decision)
+                # are ignored -- routing is never re-derived from them.
+                cont = None
+                cid = receipt.get("continuation_id")
+                if cid:
+                    found = self.con.execute(
+                        "%s WHERE id=? AND run_id=?" % _CONT_SELECT,
+                        (cid, run_id)).fetchone()
+                    if found is None:
+                        raise StoreError(
+                            "NEEDS_RECOVERY",
+                            "decision %r references missing continuation %r"
+                            % (ack_id, cid))
+                    cont = _cont_dict(found)
+                self._event(run_id, (cont or {}).get("stage") or "",
+                            "decision-ack", ack_id)
+                return {"duplicate": True, "receipt": receipt,
+                        "continuation": cont}
             cont = None
             if stage:
                 got = self._enqueue_locked(
                     run_id, stage, op or "resume",
                     request_digest or "op:%s:%s" % (stage, op or "resume"),
-                    request_digest, attempt_id)
+                    request_digest, attempt_id, origin_ack_id=ack_id)
                 cont = got["continuation"]
             receipt = {
                 "ack_id": ack_id, "channel": channel, "decision": decision,
@@ -619,14 +1118,27 @@ class Store:
 
 
 _CONT_COLS = ("id", "run_id", "stage", "op", "identity", "request_digest",
-              "attempt_id", "state", "claimed_by", "created_at")
+              "attempt_id", "state", "claimed_by", "created_at",
+              "updated_at", "claim_token", "lease_expires")
 
 _CONT_SELECT = ("SELECT id, run_id, stage, op, identity, request_digest,"
-                " attempt_id, state, claimed_by, created_at"
+                " attempt_id, state, claimed_by, created_at, updated_at,"
+                " claim_token, lease_expires"
                 " FROM continuations")
 
 _RECEIPT_COLS = ("cache_key", "kind", "audio_hash", "evaluator_version",
                  "policy_version", "plan_revision", "parent_key", "valid")
+
+
+def _saved_json(raw, what):
+    """Parse one saved JSON column. Corruption is a named refusal, never a
+    silent absence."""
+    if raw is None or raw == "":
+        raise StoreError("NEEDS_RECOVERY", "%s is missing" % what)
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        raise StoreError("NEEDS_RECOVERY", "%s is unreadable" % what)
 
 
 def _cont_dict(row):

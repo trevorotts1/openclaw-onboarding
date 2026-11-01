@@ -790,6 +790,67 @@ def main(argv=None):
 
 
 
+def _ensemble_timing(run_dir):
+    """Selected measured audio timing for a FINAL continuity package (F5).
+
+    Absent timing keeps the package in honest preview mode; a quality label
+    or a written plan is never read as timing. The final package is refused
+    by ``ensemble_package.plan`` until real measured timing exists.
+    """
+    for rel in (("audio", "timing.json"), ("music", "timing.json")):
+        path = os.path.join(run_dir, *rel)
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as fh:
+                doc = json.load(fh)
+            if isinstance(doc, dict) and doc.get("measured"):
+                return doc
+    return None
+
+
+def _produce_ensemble(run_dir, item, out, doc):
+    """F7: package per character id then view, never by view alone.
+
+    Two characters that share a view name stay distinct; every picture is
+    matched to the character and hash it was approved under; a placeholder
+    or missing owed view keeps the package PREVIEW (it can never claim
+    final). No paid generation happens here -- approved files are copied.
+    """
+    from character_bible import character_approval as CA  # noqa: PLC0415
+    from character_bible import ensemble_package as EP  # noqa: PLC0415
+    approved = CA.approval_record(run_dir)
+    timing = _ensemble_timing(run_dir)
+    mode = ("final" if (isinstance(approved, dict)
+                        and approved.get("status") == CA.APPROVED
+                        and timing is not None) else "preview")
+    package = EP.plan(run_dir, mode=mode, bible=doc,
+                      approval=approved, measured_timing=timing)
+    img_dir = os.path.join(str(out), _ITEMS["character_bible"].files[1])
+    EP.write(package, img_dir)
+    for slug, rec in package["characters"].items():
+        imgs = {view: meta["path"] for view, meta in rec["views"].items()
+                if meta.get("status") != "placeholder"}
+        slug_dir = os.path.join(img_dir, slug)
+        os.makedirs(slug_dir, exist_ok=True)
+        render(record({
+            "character_name": rec["name"],
+            "character_description": doc_character_field(doc, slug, "background"),
+        }), imgs, os.path.join(slug_dir, DELIVERY_PDF_NAME))
+    return RI_stage(item, out)
+
+
+def RI_stage(item, out):
+    """Delivery staging, kept in one place so the ensemble path reuses it."""
+    from delivery_package import run_inputs as _RI  # noqa: PLC0415
+    return _RI.stage(item, out)
+
+
+def doc_character_field(doc, slug, field):
+    for entry in doc.get("characters") or []:
+        if str(entry.get("slug") or entry.get("name") or "").strip() == slug:
+            return str(entry.get(field) or "").strip()
+    return ""
+
+
 def produce_delivery(run_dir, item):
     """DEL-13 packaging adapter: the REAL DEL-02 deliver path (bible + images).
 
@@ -813,6 +874,9 @@ def produce_delivery(run_dir, item):
     out = RI.delivery_dir(run_dir)
     if os.path.isfile(os.path.join(run_dir, "character", "bible.json")):
         from character_bible import character_approval as CA  # noqa: PLC0415
+        doc = CA.load_bible(run_dir)
+        if doc and len(doc.get("characters") or []) > 1:
+            return _produce_ensemble(run_dir, item, out, doc)
         refs = CA.locked_references(run_dir)
         imgs = {}
         for r in refs:
