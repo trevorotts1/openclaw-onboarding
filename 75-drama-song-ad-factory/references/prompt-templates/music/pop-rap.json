@@ -18,6 +18,15 @@
   "skeleton_rule": "Intro (spoken opener) -> Vocalise (optional, a short wordless lead-in, never a forced opening) -> Verse -> Pre-Chorus -> Hook (the payoff: at or after the build-up, at the story beat where its words become true) -> verses and pre-choruses between hooks -> Product passage on beat 8 -> remaining hooks evenly -> last hook near 90% -> Outro (spoken CTA) -> [End].",
   "villain_pain_lyric_guidance": "VILLAIN IN THE LYRICS (Suno): name the villain in the verses, carry a pain line with real stakes and consequences, then turn to the rise in the hook. First person, present tense, concrete nouns -- the listener must feel the pain and the problem in the depth of their soul before the rise lands.",
   "villain_pain_lyric_guidance_source": "product_style_bible/bible.py VILLAIN_LYRIC_GUIDANCE (U16 onb 8467e0354d3116eec980928cab7abaab8cef51ed, 999 c4787e2c13e71e3f7877d232aa7c80271f477adc)",
-  "cue_overrides": {},
+  "cue_overrides": {
+    "rap:verse": "rhythmic rap on the beat, easy-to-follow flow, short rhyme units, crisp words",
+    "sung:verse": "bright melodic line, clear words, buoyant driving pocket",
+    "sung:pre-chorus": "melodic lift, clear words, opening into the hook",
+    "sung:pre-hook": "melodic lift, clear words, opening into the hook",
+    "sung:chorus": "bright catchy sung hook, forward melody, clear words",
+    "sung:hook": "bright catchy sung hook, forward melody, clear words",
+    "sung:product": "melodic, warm, clear diction on the name",
+    "sung:bridge": "stripped piano and voice, sustained and clear"
+  },
   "rap_rate_wps": 2.5
 }

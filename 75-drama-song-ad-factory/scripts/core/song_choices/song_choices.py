@@ -230,10 +230,17 @@ def _banned_words(style_id):
     _sr = getattr(_R, "suno_recipe", _R)
     try:
         sid = _sr._style_key(style_id)
+    except Exception:   # noqa: BLE001  the catalog owns the fifteen additions
+        sid = str(style_id)
+    try:
         raps = sid in getattr(_sr, "RAP_STYLE_IDS", ()) or bool(
             _sr.music_block(sid).get("rap_allowed"))
-    except Exception:   # noqa: BLE001  unknown style -> the stricter set
-        raps = False
+    except Exception:   # noqa: BLE001  no music template yet -> ask the catalog
+        try:
+            from music_styles import catalog as _CAT
+            raps = "rap" in _CAT.CATALOG[_CAT._style_key(sid)]["deliveries"]
+        except Exception:   # noqa: BLE001  unknown style -> the stricter set
+            raps = False
     words = list(_BANNED_ALWAYS) + list(_BANNED_SHARED)
     if not raps:
         words += ["rap", "rapping"]
