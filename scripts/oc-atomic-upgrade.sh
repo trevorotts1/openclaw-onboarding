@@ -169,6 +169,19 @@
 #                                    (default 25; the crash-loop period is ~11s,
 #                                    so this spans at least two respawns)
 #   OC_ATOMIC_NPM                    npm binary (default: npm)
+#   OPENCLAW_APPROVED_NPM_VERSION    approved openclaw package version (X.Y.Z).
+#                                    Falls back to the `approved_npm_version` key
+#                                    in the release-pin.json the git pin reads
+#                                    (<root>/fleet-refresh/release-pin.json, or
+#                                    OPENCLAW_RELEASE_PIN_FILE).
+#   OPENCLAW_RELEASE_PIN_MODE        enforce | advisory | off. Unset means the
+#                                    fallback rule: approved_npm_version IS set
+#                                    => enforce; nothing set => off (today's
+#                                    pre-pin behaviour, no refusal). `off`
+#                                    reproduces the pre-pin behaviour exactly.
+#                                    In enforce, no valid version => exit 78
+#                                    (NPM_PIN_UNCONFIGURED / NPM_PIN_INVALID /
+#                                    NPM_PIN_MODE_INVALID / NPM_PIN_TARGET_CONFLICT).
 #   OC_ATOMIC_BOOTOUT_TIMEOUT        seconds to wait for a booted-out job to
 #                                    actually leave launchd (default 60). bootout
 #                                    is ASYNCHRONOUS: it returns before the
@@ -280,6 +293,113 @@ _say()  { printf '[oc-atomic-upgrade] %s\n' "$*"; }
 _ok()   { printf '[oc-atomic-upgrade] OK    %s\n' "$*"; }
 _warn() { printf '[oc-atomic-upgrade] WARN  %s\n' "$*" >&2; }
 _err()  { printf '[oc-atomic-upgrade] ERROR %s\n' "$*" >&2; }
+
+# ── APPROVED NPM VERSION PIN ─────────────────────────────────────────────────
+# The git-ref pin (update-skills.sh) governs repo CONTENT; it cannot govern the
+# `openclaw` npm package this procedure installs at :392/:394. Without a pin the
+# target is `npm view openclaw version` — whatever npm publishes that minute.
+# ONE pin surface: the SAME release-pin.json the git pin reads. This block adds
+# the key `approved_npm_version`; it does not create a competing file.
+#   version : OPENCLAW_APPROVED_NPM_VERSION, then approved_npm_version
+#   mode    : OPENCLAW_RELEASE_PIN_MODE, then the file's mode, then a fallback
+#             rule: an approved_npm_version that IS configured => enforce;
+#             nothing configured => off (today's behaviour, no refusal).
+#   file    : OPENCLAW_RELEASE_PIN_FILE, then <root>/fleet-refresh/release-pin.json
+# Modes, same discipline as the git pin:
+#   enforce  -> no valid version => REFUSE (exit 78) with a named reason code
+#   advisory -> no valid version => follow npm-latest with a loud warning
+#   off      -> today's behaviour exactly: the pin is ignored entirely
+# A pin must be a released semver (X.Y.Z, optional -prerelease/+build). Ranges,
+# tags (latest), URLs and branch-like values are refused: a range is still a
+# moving target and is not an approved release.
+NPM_PIN_VERSION=""
+OC_NPM_PIN_REASON=""
+_npm_pin_root() {
+  if [ -n "${OPENCLAW_ROOT:-}" ]; then printf '%s' "$OPENCLAW_ROOT"
+  elif [ -d /data/.openclaw ]; then printf '%s' /data/.openclaw
+  else printf '%s/.openclaw' "$HOME"; fi
+}
+_npm_pin_file() {
+  printf '%s' "${OPENCLAW_RELEASE_PIN_FILE:-$(_npm_pin_root)/fleet-refresh/release-pin.json}"
+}
+_npm_pin_read() {
+  local f; f="$(_npm_pin_file)"
+  [ -f "$f" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 -I -c 'import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+v=d.get(sys.argv[2])
+if v is None:
+    sys.exit(1)
+print(v)' "$f" "$1" 2>/dev/null
+}
+_npm_pin_mode() {
+  local m="${OPENCLAW_RELEASE_PIN_MODE:-}"
+  [ -n "$m" ] || m="$(_npm_pin_read mode 2>/dev/null || true)"
+  if [ -z "$m" ]; then
+    # No mode configured anywhere. Preserve today's behaviour unless an
+    # approved npm version IS configured: unconfigured => off (no pin, no
+    # refusal, npm-latest exactly as before); configured => enforce the pin
+    # that was deliberately set. An explicit mode still wins verbatim.
+    if [ -n "$(_npm_pin_configured)" ]; then m="enforce"; else m="off"; fi
+  fi
+  printf '%s' "$m"
+}
+_npm_pin_configured() {
+  local v="${OPENCLAW_APPROVED_NPM_VERSION:-}"
+  [ -n "$v" ] || v="$(_npm_pin_read approved_npm_version 2>/dev/null || true)"
+  printf '%s' "$v"
+}
+_npm_pin_valid() {
+  [ -n "${1:-}" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 -I -c 'import re,sys
+sys.exit(0 if re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.]+)?", sys.argv[1]) else 1)' "$1" 2>/dev/null
+}
+# Sets NPM_PIN_VERSION ("" = no pin applies). rc 78 = refuse.
+_npm_pin_require() {
+  local m r
+  m="$(_npm_pin_mode)"; r="$(_npm_pin_configured)"
+  NPM_PIN_VERSION=""; OC_NPM_PIN_REASON=""
+  case "$m" in
+    enforce|advisory|off) ;;
+    *) OC_NPM_PIN_REASON="NPM_PIN_MODE_INVALID"; return 78 ;;
+  esac
+  [ "$m" = "off" ] && return 0
+  if [ -z "$r" ]; then
+    OC_NPM_PIN_REASON="NPM_PIN_UNCONFIGURED"
+    [ "$m" = "enforce" ] && return 78
+    printf '[npm-pin] %s (advisory: target will be whatever npm says right now)\n' "$OC_NPM_PIN_REASON" >&2
+    return 0
+  fi
+  if ! _npm_pin_valid "$r"; then
+    OC_NPM_PIN_REASON="NPM_PIN_INVALID"
+    [ "$m" = "enforce" ] && return 78
+    printf '[npm-pin] %s: %s (advisory: target will be whatever npm says right now)\n' "$OC_NPM_PIN_REASON" "$r" >&2
+    return 0
+  fi
+  NPM_PIN_VERSION="$r"
+  return 0
+}
+# Applies the pin to TARGET_VERSION. rc 78 = refuse (missing pin or conflict).
+_npm_pin_apply() {
+  local m
+  _npm_pin_require || return 78
+  [ -n "$NPM_PIN_VERSION" ] || return 0
+  m="$(_npm_pin_mode)"
+  if [ -n "${TARGET_VERSION:-}" ] && [ "$TARGET_VERSION" != "$NPM_PIN_VERSION" ]; then
+    if [ "$m" = "enforce" ]; then
+      OC_NPM_PIN_REASON="NPM_PIN_TARGET_CONFLICT"
+      return 78
+    fi
+    _warn "[npm-pin] --target-version $TARGET_VERSION disagrees with the approved pin $NPM_PIN_VERSION; the approved pin wins"
+  fi
+  TARGET_VERSION="$NPM_PIN_VERSION"
+  return 0
+}
 
 # ── Resolve the box's OpenClaw root the same way every other script here does ─
 #
@@ -2065,6 +2185,26 @@ do_upgrade() {
   local staged new_version ts
 
   _resolve_root
+  # ── APPROVED NPM VERSION PIN. Checked BEFORE the container probe, the lease,
+  # ── any measurement and any npm/curl call, so a refusal costs the box and the
+  # ── network nothing. In enforce mode an unset/invalid pin returns 78 here and
+  # ── the `npm view openclaw version` fallback is never reached.
+  if ! _npm_pin_apply; then
+    case "$OC_NPM_PIN_REASON" in
+      NPM_PIN_TARGET_CONFLICT)
+        _refuse_banner \
+          "REFUSED — NPM_PIN_TARGET_CONFLICT: --target-version $TARGET_VERSION disagrees with the approved npm pin $NPM_PIN_VERSION. An approved release is not negotiable at the call site." \
+          "Nothing was changed. Pass --target-version $NPM_PIN_VERSION, or change approved_npm_version deliberately." ;;
+      *)
+        _refuse_banner \
+          "REFUSED — ${OC_NPM_PIN_REASON}: no approved OpenClaw npm version is configured, so the target would be whatever npm publishes right now." \
+          "Nothing was changed. Set approved_npm_version in $(_npm_pin_file) (or OPENCLAW_APPROVED_NPM_VERSION), or set the pin mode to advisory/off deliberately." ;;
+    esac
+    return 78
+  fi
+  if [ -n "$NPM_PIN_VERSION" ]; then
+    _say "npm-pin   : approved openclaw@$NPM_PIN_VERSION (pin file: $(_npm_pin_file))"
+  fi
   # agent-pull-fix: R9
   if _running_in_container; then
     _refuse_banner \
