@@ -11,6 +11,81 @@
 set -u
 SCRIPT_VERSION="1.0.0"
 
+#=== BEGIN APPROVED-RELEASE-TARGET-V1 ===
+# ----------------------------------------------------------
+#  APPROVED IMMUTABLE RELEASE TARGET -- selectable, OFF by default.
+#
+#  Every fetch in this file used to take whatever `main` happened to be at
+#  run time. This block lets a box honour ONE explicitly approved release
+#  identity instead: a release tag (`v27.1.66`) or a full 40-hex commit.
+#
+#  Trevor has not decided whether an approved pinned release should reach
+#  clients automatically, so this is SELECTABLE and inert until turned on:
+#
+#    OPENCLAW_RELEASE_PIN_MODE=off      (default) exactly the old behaviour
+#    OPENCLAW_RELEASE_PIN_MODE=prefer   use the target when one is configured,
+#                                       else continue on the moving branch
+#                                       after printing the reason code
+#    OPENCLAW_RELEASE_PIN_MODE=require  refuse the update (exit 78) with a
+#                                       named reason code when no usable
+#                                       approved target is configured
+#
+#  Target source, first one that answers:
+#    1. $OPENCLAW_APPROVED_RELEASE
+#    2. <openclaw root>/approved-release -- line 1 = tag or full 40-hex
+#       commit, optional line 2 = off|prefer|require. This file is what a
+#       cron-run update can see; cron does not inherit an operator's env.
+#
+#  Reason codes (stable, greppable): RELEASE_TARGET_UNSET,
+#  RELEASE_TARGET_INVALID, RELEASE_TARGET_MISSING.
+# ----------------------------------------------------------
+_OC_REL_MODE="${OPENCLAW_RELEASE_PIN_MODE:-}"
+_OC_REL_TARGET="${OPENCLAW_APPROVED_RELEASE:-}"
+if [ -z "$_OC_REL_MODE" ] || [ -z "$_OC_REL_TARGET" ]; then
+  for _oc_rel_f in /data/.openclaw/approved-release "$HOME/.openclaw/approved-release"; do
+    [ -f "$_oc_rel_f" ] || continue
+    { IFS= read -r _oc_rel_l1 || true; IFS= read -r _oc_rel_l2 || true; } < "$_oc_rel_f"
+    if [ -z "$_OC_REL_TARGET" ]; then _OC_REL_TARGET="$(printf '%s' "${_oc_rel_l1:-}" | tr -d '[:space:]')"; fi
+    if [ -z "$_OC_REL_MODE" ];   then _OC_REL_MODE="$(printf '%s' "${_oc_rel_l2:-}" | tr -d '[:space:]')"; fi
+    break
+  done
+fi
+_OC_REL_MODE="${_OC_REL_MODE:-off}"
+_OC_REL_REF="main"     # the moving default branch: unchanged behaviour
+case "$_OC_REL_MODE" in
+  off|prefer|require) : ;;
+  *) echo "ERROR (release-pin): OPENCLAW_RELEASE_PIN_MODE='$_OC_REL_MODE' is not one of off|prefer|require." >&2
+     echo "RELEASE_TARGET_INVALID" >&2; exit 78 ;;
+esac
+if [ "$_OC_REL_MODE" != "off" ]; then
+  if [ -z "$_OC_REL_TARGET" ]; then
+    echo "RELEASE_TARGET_UNSET: no approved release target configured (OPENCLAW_RELEASE_PIN_MODE=$_OC_REL_MODE)" >&2
+    [ "$_OC_REL_MODE" = "require" ] && exit 78
+  else
+    case "$_OC_REL_TARGET" in
+      *[!0-9A-Za-z._-]*)
+        echo "RELEASE_TARGET_INVALID: '$_OC_REL_TARGET' carries characters a ref cannot" >&2
+        [ "$_OC_REL_MODE" = "require" ] && exit 78 ;;
+      [0-9a-f][0-9a-f]*)
+        # A commit target must be the FULL 40-hex id: a short sha is ambiguous.
+        if [ "${#_OC_REL_TARGET}" -eq 40 ]; then
+          _OC_REL_REF="$_OC_REL_TARGET"
+        else
+          echo "RELEASE_TARGET_INVALID: '$_OC_REL_TARGET' is not a full 40-hex commit" >&2
+          [ "$_OC_REL_MODE" = "require" ] && exit 78
+        fi ;;
+      v[0-9]*)
+        _OC_REL_REF="$_OC_REL_TARGET" ;;
+      *)
+        echo "RELEASE_TARGET_INVALID: '$_OC_REL_TARGET' is neither a v<digit> release tag nor a full 40-hex commit" >&2
+        [ "$_OC_REL_MODE" = "require" ] && exit 78 ;;
+    esac
+  fi
+fi
+# RELEASE_TARGET_MISSING is raised where the target is resolved against the
+# remote (a failed git fetch, or an HTTP 404 below).
+#=== END APPROVED-RELEASE-TARGET-V1 ===
+
 # ----------------------------------------------------------
 # Detect platform (Mac vs VPS) — determines all paths
 # ----------------------------------------------------------
@@ -31,7 +106,7 @@ fi
 # ----------------------------------------------------------
 # Fetch helpers
 # ----------------------------------------------------------
-GH_RAW="https://raw.githubusercontent.com/trevorotts1/${REPO_NAME}/main"
+GH_RAW="https://raw.githubusercontent.com/trevorotts1/${REPO_NAME}/${_OC_REL_REF}"
 
 fetch_remote() {
   # $1 = path relative to repo root. Returns content or empty on 404.
@@ -91,7 +166,7 @@ fi
 # We hit the GitHub git/trees API for a one-shot listing
 # ----------------------------------------------------------
 REMOTE_SKILLS_TMP=$(mktemp)
-TREE_JSON=$(curl -fsSL --max-time 15 "https://api.github.com/repos/trevorotts1/${REPO_NAME}/git/trees/main" 2>/dev/null)
+TREE_JSON=$(curl -fsSL --max-time 15 "https://api.github.com/repos/trevorotts1/${REPO_NAME}/git/trees/${_OC_REL_REF}" 2>/dev/null)
 if [ -n "$TREE_JSON" ]; then
   echo "$TREE_JSON" | python3 -c "
 import json,sys,re
