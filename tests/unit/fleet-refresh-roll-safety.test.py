@@ -1865,6 +1865,12 @@ class WrapperWaves(unittest.TestCase):
     """fleet-refresh.sh end to end with fake curl/ssh: only the chosen wave is
     dispatched, and the run ends with the one-screen outcome table."""
 
+    # Fixtures exercise real --apply / wave paths, which require an approved
+    # release pin exactly like production. The pin is format-validated at the
+    # gate; these fixtures never resolve it (the roll copy fails at COPYFAIL,
+    # or the origin is a local temp repo), so a constant is honest here.
+    FIXTURE_PIN = "f" * 40
+
     def run_wrapper(self, td, *args):
         fake = Path(td, "bin")
         fake.mkdir(exist_ok=True)
@@ -1872,7 +1878,8 @@ class WrapperWaves(unittest.TestCase):
         (fake / "ssh").write_text(f'#!/bin/sh\necho "$@" >> "{td}/ssh.log"\necho "COPYFAIL test box cannot reach GitHub"\n')
         for f in fake.iterdir():
             f.chmod(0o755)
-        env = {**os.environ, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": td}
+        env = {**os.environ, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": td,
+               "OPENCLAW_APPROVED_RELEASE": self.FIXTURE_PIN}
         return subprocess.run(["bash", str(REPO / "scripts" / "fleet-refresh.sh"), *args],
                               capture_output=True, text=True, env=env, timeout=120)
 
@@ -1911,7 +1918,8 @@ class WrapperWaves(unittest.TestCase):
             (fake / "ssh").write_text("#!/bin/sh\nsleep 1\necho \"COPYFAIL test box cannot reach GitHub\"\n")
             for f in fake.iterdir():
                 f.chmod(0o755)
-            env = {**os.environ, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": td}
+            env = {**os.environ, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": td,
+                   "OPENCLAW_APPROVED_RELEASE": self.FIXTURE_PIN}
             runs = []
             for client in ("Client One", "Client Two"):
                 bf = Path(td, client.replace(" ", "") + ".json")
@@ -1942,7 +1950,8 @@ class WrapperWaves(unittest.TestCase):
             fake.mkdir()
             (fake / "curl").write_text("#!/bin/sh\necho 200\n")
             (fake / "curl").chmod(0o755)
-            env = {**os.environ, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": td}
+            env = {**os.environ, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": td,
+                   "OPENCLAW_APPROVED_RELEASE": self.FIXTURE_PIN}
             run = lambda: subprocess.run(["bash", str(clone / "scripts/fleet-refresh.sh"), "--local", "--apply"],
                                          capture_output=True, text=True, env=env, timeout=120)
             git(clone, "checkout", "-q", "-b", "feature")
@@ -2012,6 +2021,10 @@ class WrapperWaves(unittest.TestCase):
             stale_state = (git(stale, "rev-parse", "HEAD"), git(stale, "config", "--get-all", "remote.origin.fetch"))
             commit(seed, {"x": "2"}, "two")
             git(seed, "push", "-q", "origin", "main")
+            # The wrapper exercises a real --apply path: it carries an approved
+            # release pin like production. Pinned to the fixture origin's own
+            # head, which the roll copy then syncs to.
+            new = git(seed, "rev-parse", "HEAD")
             fake = td / "bin"
             fake.mkdir()
             (fake / "curl").write_text("#!/bin/sh\necho 200\n")
@@ -2029,7 +2042,7 @@ class WrapperWaves(unittest.TestCase):
             (wrapper_repo / "shared-utils/operator_google.py").write_text(
                 (REPO / "shared-utils/operator_google.py").read_text())
             env = {**GIT_ENV, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": str(home),
-                   "FLEET_ROLL_REPO_URL": str(origin)}
+                   "FLEET_ROLL_REPO_URL": str(origin), "OPENCLAW_APPROVED_RELEASE": new}
             r = subprocess.run(["bash", str(wrapper_repo / "scripts/fleet-refresh.sh"), "--wave", "first",
                                 "--boxes-file", str(td / "b.json"), "--apply"],
                                capture_output=True, text=True, env=env, timeout=120)
@@ -2105,6 +2118,9 @@ class WrapperWaves(unittest.TestCase):
         commit(seed, {"shared-utils/fleet_refresh_runner.py": stub}, "one")
         git(seed, "remote", "add", "origin", str(origin))
         git(seed, "push", "-q", "origin", "main")
+        # The wrapper exercises a real --apply path: it carries an approved
+        # release pin like production (the fixture origin's head).
+        pinned = git(seed, "rev-parse", "HEAD")
         home = td / "home"
         home.mkdir()   # no roll copy yet: the wrapper clones it
         fake = td / "bin"
@@ -2126,7 +2142,8 @@ class WrapperWaves(unittest.TestCase):
         Path(td, "b.json").write_text(json.dumps([{"name": "box-1", "ssh_target": "h", "platform": platform,
                                                    "container": "c-1", "wave": "first"}]))
         (td / "docker/proj").mkdir(parents=True)
-        env = {**GIT_ENV, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": str(home), "FLEET_ROLL_REPO_URL": str(origin)}
+        env = {**GIT_ENV, "PATH": f"{fake}:{os.environ['PATH']}", "HOME": str(home), "FLEET_ROLL_REPO_URL": str(origin),
+               "OPENCLAW_APPROVED_RELEASE": pinned}
         r = subprocess.run(["bash", str(wrapper_repo / "scripts/fleet-refresh.sh"), "--wave", "first",
                             "--boxes-file", str(td / "b.json"), "--apply"],
                            capture_output=True, text=True, env=env, timeout=180)
@@ -2179,8 +2196,12 @@ class WeeklyFullUpdate(unittest.TestCase):
             old = git(clone, "rev-parse", "HEAD")
             new = commit(seed, {"x": "2"}, "two")
             git(seed, "push", "-q", "origin", "main")
+            # weekly-full-update.sh runs a real --local --apply path: it carries
+            # an approved pin like production. Pinned to the fixture origin's
+            # own head, which the roll copy syncs to (HEAD={new} below).
             r = subprocess.run(["bash", str(REPO / "scripts" / "weekly-full-update.sh")], capture_output=True,
-                               text=True, env={**GIT_ENV, "ONBOARDING_CLONE": str(clone), "HOME": td})
+                               text=True, env={**GIT_ENV, "ONBOARDING_CLONE": str(clone), "HOME": td,
+                                               "OPENCLAW_APPROVED_RELEASE": new})
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn(f"ARGS=--local --apply PREV={old} HEAD={new}", r.stdout)
 
@@ -2189,7 +2210,8 @@ class WeeklyFullUpdate(unittest.TestCase):
             subprocess.run(["git", "clone", "-q", str(origin), str(stale)], check=True, env=GIT_ENV)
             git(stale, "reset", "-q", "--hard", old)
             r = subprocess.run(["bash", str(REPO / "scripts" / "weekly-full-update.sh")], capture_output=True, text=True,
-                               env={**GIT_ENV, "HOME": td, "FLEET_ROLL_REPO_URL": str(origin), "PATH": os.environ["PATH"]})
+                               env={**GIT_ENV, "HOME": td, "FLEET_ROLL_REPO_URL": str(origin), "PATH": os.environ["PATH"],
+                                     "OPENCLAW_APPROVED_RELEASE": new})
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn(f"ARGS=--local --apply PREV= HEAD={new}", r.stdout)
             self.assertIn(f"onboarding copy {td}/.openclaw/fleet-refresh/onboarding", r.stdout)
@@ -2227,12 +2249,17 @@ class DirtyRollCopyIsStashedNotFatal(unittest.TestCase):
         (clone / "scripts/gone.sh").unlink()
         (clone / "scripts/stray.sh").write_text("stray\n")
 
-    def env(self, td, origin, clone):
+    def env(self, td, origin, clone, pin=None):
         # No git identity at all (a fresh Docker box): the stash must not need one.
         e = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         e.update(HOME=td, ONBOARDING_CLONE=str(clone), FLEET_ROLL_REPO_URL=str(origin),
                  OPENCLAW_UPDATE_LEASE=str(Path(td, "lease")), GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_COUNT="1",
                  GIT_CONFIG_KEY_0="user.useConfigOnly", GIT_CONFIG_VALUE_0="true")
+        # Fixtures that run weekly-full-update.sh carry an approved release pin
+        # like production (the fixture origin's head); fleet-roll-copy-only
+        # fixtures take none because that script has no pin gate.
+        if pin is not None:
+            e["OPENCLAW_APPROVED_RELEASE"] = pin
         return e
 
     def test_control_unpatched_checkout_really_aborts_on_this_dirt(self):
@@ -2253,7 +2280,7 @@ class DirtyRollCopyIsStashedNotFatal(unittest.TestCase):
             new = self.advance(seed)
             self.scrub(clone)
             script = str(REPO / "scripts" / "weekly-full-update.sh")
-            r = subprocess.run(["bash", script], capture_output=True, text=True, env=self.env(td, origin, clone), timeout=120)
+            r = subprocess.run(["bash", script], capture_output=True, text=True, env=self.env(td, origin, clone, pin=new), timeout=120)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn(f"HEAD={new}", r.stdout)                       # fleet-refresh ran from the synced copy
             self.assertEqual(git(clone, "status", "--porcelain"), "")
@@ -2267,7 +2294,7 @@ class DirtyRollCopyIsStashedNotFatal(unittest.TestCase):
             self.assertNotEqual(subprocess.run(["git", "-C", str(clone), "cat-file", "-e", "stash@{0}:scripts/gone.sh"],
                                                 env=GIT_ENV).returncode, 0)
             # the next run finds a clean copy: no second stash, no dirt message
-            r2 = subprocess.run(["bash", script], capture_output=True, text=True, env=self.env(td, origin, clone), timeout=120)
+            r2 = subprocess.run(["bash", script], capture_output=True, text=True, env=self.env(td, origin, clone, pin=new), timeout=120)
             self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
             self.assertEqual(len(git(clone, "stash", "list").splitlines()), 1)
             self.assertNotIn("locally changed", r2.stdout)
@@ -2278,7 +2305,7 @@ class DirtyRollCopyIsStashedNotFatal(unittest.TestCase):
             old = git(clone, "rev-parse", "HEAD")
             new = self.advance(seed)
             r = subprocess.run(["bash", str(REPO / "scripts" / "weekly-full-update.sh")], capture_output=True, text=True,
-                               env=self.env(td, origin, clone), timeout=120)
+                               env=self.env(td, origin, clone, pin=new), timeout=120)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn(f"HEAD={new}", r.stdout)
             self.assertIn(f"{old[:12]} -> {new[:12]}", r.stdout)
@@ -2288,11 +2315,11 @@ class DirtyRollCopyIsStashedNotFatal(unittest.TestCase):
     def test_a_stash_that_cannot_be_written_stops_the_run_with_the_copy_untouched(self):
         with tempfile.TemporaryDirectory() as td:
             origin, seed, clone = self.world(td)
-            self.advance(seed)
+            new = self.advance(seed)
             self.scrub(clone)
             (clone / ".git" / "index.lock").write_text("")                # git cannot take the index: stash fails
             r = subprocess.run(["bash", str(REPO / "scripts" / "weekly-full-update.sh")], capture_output=True, text=True,
-                               env=self.env(td, origin, clone), timeout=120)
+                               env=self.env(td, origin, clone, pin=new), timeout=120)
             self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
             self.assertIn("could not save the 3 local change(s)", r.stdout)
             self.assertNotIn("HEAD=", r.stdout)                           # fleet-refresh never started
