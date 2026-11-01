@@ -57,6 +57,35 @@ SCRIPT_VERSION="1.1.0"
 # ----------------------------------------------------------
 _OC_REL_MODE="${OPENCLAW_RELEASE_PIN_MODE:-}"
 _OC_REL_TARGET="${OPENCLAW_APPROVED_RELEASE:-}"
+# ONE pin surface: read the SAME fleet-refresh/release-pin.json that
+# update-skills.sh, fleet-refresh.sh, weekly-full-update.sh and
+# oc-atomic-upgrade.sh read. This script used to read only a divergent
+# legacy text file nothing else wrote, so a canonical pin was invisible here.
+if [ -z "$_OC_REL_MODE" ] || [ -z "$_OC_REL_TARGET" ]; then
+  _oc_rel_pin_file="${OPENCLAW_RELEASE_PIN_FILE:-}"
+  if [ -z "$_oc_rel_pin_file" ]; then
+    _oc_rel_root="${OPENCLAW_ROOT:-}"
+    [ -n "$_oc_rel_root" ] || { [ -d /data/.openclaw ] && _oc_rel_root=/data/.openclaw; }
+    [ -n "$_oc_rel_root" ] || _oc_rel_root="$HOME/.openclaw"
+    _oc_rel_pin_file="$_oc_rel_root/fleet-refresh/release-pin.json"
+  fi
+  if [ -r "$_oc_rel_pin_file" ] && command -v python3 >/dev/null 2>&1; then
+    if [ -z "$_OC_REL_TARGET" ]; then
+      _OC_REL_TARGET="$(python3 -I -c 'import json,sys
+try: v=json.load(open(sys.argv[1])).get("approved_ref")
+except Exception: v=None
+print(v if isinstance(v,str) else "")' "$_oc_rel_pin_file" 2>/dev/null | tr -d '[:space:]' || true)"
+    fi
+    if [ -z "$_OC_REL_MODE" ]; then
+      _OC_REL_MODE="$(python3 -I -c 'import json,sys
+try: v=json.load(open(sys.argv[1])).get("mode")
+except Exception: v=None
+print(v if isinstance(v,str) else "")' "$_oc_rel_pin_file" 2>/dev/null | tr -d '[:space:]' || true)"
+    fi
+  fi
+fi
+# Legacy plaintext fallback (approved-release), kept for boxes that predate
+# release-pin.json. The canonical json above wins when both are present.
 if [ -z "$_OC_REL_MODE" ] || [ -z "$_OC_REL_TARGET" ]; then
   for _oc_rel_f in /data/.openclaw/approved-release "$HOME/.openclaw/approved-release"; do
     [ -f "$_oc_rel_f" ] || continue
@@ -67,6 +96,13 @@ if [ -z "$_OC_REL_MODE" ] || [ -z "$_OC_REL_TARGET" ]; then
   done
 fi
 _OC_REL_MODE="${_OC_REL_MODE:-off}"
+# Vocabulary bridge: the canonical modes are enforce|advisory|off. This
+# resolver speaks require|prefer|off under the SAME env var, so a box pinned
+# with canonical "enforce"/"advisory" used to abort here with exit 78.
+case "$_OC_REL_MODE" in
+  enforce)  _OC_REL_MODE="require" ;;
+  advisory) _OC_REL_MODE="prefer" ;;
+esac
 _OC_REL_REF="main"     # the moving default branch: unchanged behaviour
 case "$_OC_REL_MODE" in
   off|prefer|require) : ;;
