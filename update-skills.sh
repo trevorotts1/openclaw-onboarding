@@ -41,6 +41,10 @@ export OPENCLAW_PLATFORM="$_DETECT_PLATFORM"
 # checkout refresh and re-exec first. No platform variables or prerequisites
 # beyond git are used here.
 self_sync_guard() {
+  if [ "${RELEASE_REF:-main}" != "main" ]; then
+    echo "  [self-sync] pinned approved release ${RELEASE_REF} — skipping origin/main self-sync (content is fetched from the pinned ref)"
+    return 0
+  fi
   [ "${OPENCLAW_UPDATE_SKIP_SELF_SYNC:-0}" = "1" ] && { echo "  [self-sync] skipped (OPENCLAW_UPDATE_SKIP_SELF_SYNC=1)"; return 0; }
   [ "${OPENCLAW_UPDATE_SELF_SYNCED:-0}" = "1" ] && { echo "  [self-sync] already re-exec'd from origin/main — proceeding"; return 0; }
 
@@ -98,6 +102,96 @@ self_sync_guard() {
 
 # Capture argv before anything capable of aborting, then self-sync before the
 # platform bootstrap (including the FileVault/power-resilience check).
+# >>> RELEASE-PIN BEGIN (approved immutable release identity) >>>
+# One approved, immutable release identity governs the whole update path.
+# Resolution order: OPENCLAW_APPROVED_RELEASE env, then the pin file's
+# approved_ref. Mode: OPENCLAW_RELEASE_PIN_MODE env, then the pin file's mode,
+# then "enforce".
+#   enforce  -> no valid pin => REFUSE with a named reason code (exit 78)
+#   advisory -> no valid pin => follow main with a loud warning
+#   off      -> legacy behaviour (follow main)
+# A pin is a 40-hex commit id or a tag name. Branch names that move
+# (main/master/HEAD/origin/*) are refused as pins.
+RELEASE_REF=""
+OC_RELEASE_PIN_REASON=""
+_release_pin_root() {
+  if [ -n "${OPENCLAW_ROOT:-}" ]; then printf '%s' "$OPENCLAW_ROOT"
+  elif [ -d /data/.openclaw ]; then printf '%s' /data/.openclaw
+  else printf '%s/.openclaw' "$HOME"; fi
+}
+_release_pin_file() {
+  printf '%s' "${OPENCLAW_RELEASE_PIN_FILE:-$(_release_pin_root)/fleet-refresh/release-pin.json}"
+}
+_release_pin_read() {
+  local f; f="$(_release_pin_file)"
+  [ -f "$f" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 -I -c 'import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+v=d.get(sys.argv[2])
+if v is None:
+    sys.exit(1)
+print(v)' "$f" "$1" 2>/dev/null
+}
+_release_pin_mode() {
+  local m="${OPENCLAW_RELEASE_PIN_MODE:-}"
+  [ -n "$m" ] || m="$(_release_pin_read mode 2>/dev/null || true)"
+  [ -n "$m" ] || m="enforce"
+  printf '%s' "$m"
+}
+_release_pin_ref() {
+  local r="${OPENCLAW_APPROVED_RELEASE:-}"
+  [ -n "$r" ] || r="$(_release_pin_read approved_ref 2>/dev/null || true)"
+  printf '%s' "$r"
+}
+_release_is_sha() { case "${1:-}" in ""|*[!0-9a-f]*) return 1 ;; esac; [ "${#1}" -eq 40 ]; }
+_release_pin_validate() {
+  local r="$1" m
+  m="$(_release_pin_mode)"
+  case "$m" in enforce|advisory|off) ;; *) OC_RELEASE_PIN_REASON="RELEASE_PIN_MODE_INVALID"; return 1 ;; esac
+  [ -n "$r" ] || { OC_RELEASE_PIN_REASON="RELEASE_PIN_UNCONFIGURED"; return 1; }
+  case "$r" in main|master|HEAD|origin/*|refs/*) OC_RELEASE_PIN_REASON="RELEASE_PIN_INVALID"; return 1 ;; esac
+  case "$r" in *[!A-Za-z0-9._/-]*) OC_RELEASE_PIN_REASON="RELEASE_PIN_INVALID"; return 1 ;; esac
+  return 0
+}
+# 0 = proceed. 78 = refuse (enforce + no usable pin). Sets RELEASE_REF.
+_release_pin_require() {
+  local m r
+  m="$(_release_pin_mode)"; r="$(_release_pin_ref)"
+  RELEASE_REF=""
+  if _release_pin_validate "$r"; then RELEASE_REF="$r"; return 0; fi
+  if [ "$m" = "enforce" ] || [ "$OC_RELEASE_PIN_REASON" = "RELEASE_PIN_MODE_INVALID" ]; then
+    printf '%s\n' "$OC_RELEASE_PIN_REASON"
+    return 78
+  fi
+  RELEASE_REF="main"
+  if [ "$m" = "advisory" ]; then
+    printf '[release-pin] %s (advisory: following moving main)\n' "$OC_RELEASE_PIN_REASON" >&2
+  fi
+  return 0
+}
+_release_clone_source() {
+  local dest="$1" url="${2:-https://github.com/trevorotts1/openclaw-onboarding.git}"
+  if _release_is_sha "$RELEASE_REF"; then
+    git clone --depth 1 "$url" "$dest" || return 1
+    git -C "$dest" fetch --depth 1 origin "$RELEASE_REF" || return 1
+    git -C "$dest" checkout --detach "$RELEASE_REF" || return 1
+  else
+    git clone --depth 1 --branch "$RELEASE_REF" "$url" "$dest" || return 1
+  fi
+}
+# <<< RELEASE-PIN END <<<
+
+_release_pin_require
+_RELEASE_PIN_RC=$?
+if [ "$_RELEASE_PIN_RC" -ne 0 ]; then
+  echo "update-skills.sh: REFUSED — ${OC_RELEASE_PIN_REASON}: no approved immutable release identity is configured; refusing to follow the moving default branch. Nothing was changed." >&2
+  exit 78
+fi
+
 SELF_SYNC_ARGS=("$@")
 self_sync_guard
 
@@ -4320,13 +4414,17 @@ registry_parity_gate() {
 # the cron script -- so $HOME is where the file to repair actually lives. Both
 # are checked anyway (deduplicated) in case a box differs.
 # ----------------------------------------------------------
-CANONICAL_UPDATER_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh"
+CANONICAL_UPDATER_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${RELEASE_REF:-main}/update-skills.sh"
+# The moving-branch spelling stays recognisable so a box already healed to it is
+# never mistaken for a custom updater URL once an approved release is pinned.
+CANONICAL_UPDATER_URL_MAIN="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh"
 LEGACY_UPDATER_PATH_FRAGMENT="main/scripts/update-skills.sh"
 # Since the fleet-refresh roll-safety release the weekly cron runs the SAME
 # full path as the operator's roll (onboarding + 999 + Command Center + health
 # gate + rollback) via scripts/weekly-full-update.sh, which itself runs this
 # updater. Both older URLs are repointed there.
-WEEKLY_FULL_UPDATE_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/weekly-full-update.sh"
+WEEKLY_FULL_UPDATE_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${RELEASE_REF:-main}/scripts/weekly-full-update.sh"
+WEEKLY_FULL_UPDATE_URL_MAIN="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/weekly-full-update.sh"
 
 heal_one_weekly_cron_updater() {
   local cron_script="$1"
@@ -4334,12 +4432,14 @@ heal_one_weekly_cron_updater() {
   # Never CREATE the cron script here -- only repair one already on disk.
   [ -f "$cron_script" ] || return 0
 
-  if grep -q "$WEEKLY_FULL_UPDATE_URL" "$cron_script" 2>/dev/null; then
+  if grep -qF "$WEEKLY_FULL_UPDATE_URL" "$cron_script" 2>/dev/null \
+     || { [ "${RELEASE_REF:-main}" = "main" ] && grep -qF "$WEEKLY_FULL_UPDATE_URL_MAIN" "$cron_script" 2>/dev/null; }; then
     echo "  [cron-heal] OK -- already runs the full weekly update: $cron_script"
     return 0
   fi
   if ! grep -q "$LEGACY_UPDATER_PATH_FRAGMENT" "$cron_script" 2>/dev/null \
-     && ! grep -q "$CANONICAL_UPDATER_URL" "$cron_script" 2>/dev/null; then
+     && ! grep -qF "$CANONICAL_UPDATER_URL" "$cron_script" 2>/dev/null \
+     && ! grep -qF "$CANONICAL_UPDATER_URL_MAIN" "$cron_script" 2>/dev/null; then
     echo "  [cron-heal] OK -- custom updater URL, left alone: $cron_script"
     return 0
   fi
@@ -4374,9 +4474,10 @@ heal_one_weekly_cron_updater() {
   # using sed -i at all. `cat > "$cron_script"` (not mv) preserves the original
   # inode, owner and 0700 mode -- an mv would install the temp file's 0600.
   if sed -e "s|${LEGACY_UPDATER_PATH_FRAGMENT}|main/update-skills.sh|g" \
+         -e "s|${CANONICAL_UPDATER_URL_MAIN}|${WEEKLY_FULL_UPDATE_URL}|g" \
          -e "s|${CANONICAL_UPDATER_URL}|${WEEKLY_FULL_UPDATE_URL}|g" "$cron_script" > "$tmp" 2>/dev/null \
      && [ -s "$tmp" ] \
-     && grep -q "$WEEKLY_FULL_UPDATE_URL" "$tmp" \
+     && grep -qF "$WEEKLY_FULL_UPDATE_URL" "$tmp" \
      && ! grep -q "$LEGACY_UPDATER_PATH_FRAGMENT" "$tmp"; then
     cat "$tmp" > "$cron_script"
     rm -f "$tmp"
@@ -5340,12 +5441,12 @@ main() {
         _fd_dest="$_SCRIPT_DIR/shared-utils"
         mkdir -p "$_fd_dest" 2>/dev/null || true
       fi
-      echo "  ℹ [FRONT DOOR] shared stage missing or stale — fetching lib-frontdoor.sh + oct4_frontdoor.py from main..."
+      echo "  ℹ [FRONT DOOR] shared stage missing or stale — fetching lib-frontdoor.sh + oct4_frontdoor.py from ${RELEASE_REF:-main}..."
       _fd_fetch_ok=1
       for _fd_name in lib-frontdoor.sh oct4_frontdoor.py; do
         _fd_tmp="$_fd_dest/.${_fd_name}.tmp.$$"
         if curl -fsSL --max-time 30 \
-             "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/shared-utils/${_fd_name}" \
+             "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${RELEASE_REF:-main}/shared-utils/${_fd_name}" \
              -o "$_fd_tmp" 2>/dev/null && [ -s "$_fd_tmp" ]; then
           mv -f "$_fd_tmp" "$_fd_dest/$_fd_name" 2>/dev/null || _fd_fetch_ok=0
         else
@@ -5628,7 +5729,7 @@ main() {
   EXTRACTED_DIR=""
 
   if command -v git >/dev/null 2>&1; then
-    if git clone --depth 1 "https://github.com/trevorotts1/openclaw-onboarding.git" "$TEMP_EXTRACT" 2>/dev/null; then
+    if _release_clone_source "$TEMP_EXTRACT" 2>/dev/null; then
       # HARD verify the remote is exactly the intended repo (no leftover-clone mix-up)
       _origin="$(git -C "$TEMP_EXTRACT" remote get-url origin 2>/dev/null)"
       case "$_origin" in
@@ -5648,7 +5749,13 @@ main() {
   # `ditto` (NOT Info-ZIP unzip) which handles UTF-8 filenames correctly.
   if [ -z "$EXTRACTED_DIR" ]; then
     echo "  (git clone unavailable/failed -- falling back to zip + ditto)"
-    curl -fSL --progress-bar "https://github.com/trevorotts1/openclaw-onboarding/archive/refs/heads/main.zip" -o "$TEMP_ZIP"
+    _release_zip_url="https://github.com/trevorotts1/openclaw-onboarding/archive/refs/heads/main.zip"
+    if _release_is_sha "${RELEASE_REF:-main}"; then
+      _release_zip_url="https://github.com/trevorotts1/openclaw-onboarding/archive/${RELEASE_REF}.zip"
+    elif [ "${RELEASE_REF:-main}" != "main" ]; then
+      _release_zip_url="https://github.com/trevorotts1/openclaw-onboarding/archive/refs/tags/${RELEASE_REF}.zip"
+    fi
+    curl -fSL --progress-bar "$_release_zip_url" -o "$TEMP_ZIP"
     rm -rf "$TEMP_EXTRACT"; mkdir -p "$TEMP_EXTRACT"
     if command -v ditto >/dev/null 2>&1; then
       ditto -x -k "$TEMP_ZIP" "$TEMP_EXTRACT" 2>/dev/null || true
@@ -11058,7 +11165,7 @@ PYEOF
         fi
         if [ -n "$_WOU_JOB_ID" ]; then
           _WOU_PROMPT_TMP="/tmp/openclaw-cron-refresh-check-$$.txt"
-          if curl -fsSL --max-time 15 "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/cron-prompt.txt" -o "$_WOU_PROMPT_TMP" 2>/dev/null && [ -s "$_WOU_PROMPT_TMP" ]; then
+          if curl -fsSL --max-time 15 "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${RELEASE_REF:-main}/cron-prompt.txt" -o "$_WOU_PROMPT_TMP" 2>/dev/null && [ -s "$_WOU_PROMPT_TMP" ]; then
             refresh_weekly_cron_message "$_WOU_JOB_ID" "$_WOU_JOB_KIND" "$(cat "$_WOU_PROMPT_TMP")"
           else
             echo "  [weekly-cron-refresh] SKIP — could not fetch cron-prompt.txt; nothing changed"
@@ -11090,7 +11197,7 @@ PYEOF
       # Nothing is auto-pushed to the client. No owner target needed, so the old
       # operator-ID resolver/guard is removed entirely. Mirrors install.sh Step 12.
       PROMPT_TMP="/tmp/openclaw-cron-prompt-$$.txt"
-      REPO_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main"
+      REPO_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${RELEASE_REF:-main}"
       # Unified repo: same URL for both Mac and VPS platforms
       if curl -fsSL --max-time 15 "${REPO_URL}/cron-prompt.txt" -o "$PROMPT_TMP" 2>/dev/null && [ -s "$PROMPT_TMP" ]; then
         PROMPT_CONTENT=$(cat "$PROMPT_TMP")

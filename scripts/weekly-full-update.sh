@@ -59,6 +59,118 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 
+# >>> RELEASE-PIN BEGIN (approved immutable release identity) >>>
+# One approved, immutable release identity governs the whole update path.
+# Resolution order: OPENCLAW_APPROVED_RELEASE env, then the pin file's
+# approved_ref. Mode: OPENCLAW_RELEASE_PIN_MODE env, then the pin file's mode,
+# then "enforce".
+#   enforce  -> no valid pin => REFUSE with a named reason code (exit 78)
+#   advisory -> no valid pin => follow main with a loud warning
+#   off      -> legacy behaviour (follow main)
+# A pin is a 40-hex commit id or a tag name. Branch names that move
+# (main/master/HEAD/origin/*) are refused as pins.
+RELEASE_REF=""
+OC_RELEASE_PIN_REASON=""
+_release_pin_root() {
+  if [ -n "${OPENCLAW_ROOT:-}" ]; then printf '%s' "$OPENCLAW_ROOT"
+  elif [ -d /data/.openclaw ]; then printf '%s' /data/.openclaw
+  else printf '%s/.openclaw' "$HOME"; fi
+}
+_release_pin_file() {
+  printf '%s' "${OPENCLAW_RELEASE_PIN_FILE:-$(_release_pin_root)/fleet-refresh/release-pin.json}"
+}
+_release_pin_read() {
+  local f; f="$(_release_pin_file)"
+  [ -f "$f" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 -I -c 'import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+v=d.get(sys.argv[2])
+if v is None:
+    sys.exit(1)
+print(v)' "$f" "$1" 2>/dev/null
+}
+_release_pin_mode() {
+  local m="${OPENCLAW_RELEASE_PIN_MODE:-}"
+  [ -n "$m" ] || m="$(_release_pin_read mode 2>/dev/null || true)"
+  [ -n "$m" ] || m="enforce"
+  printf '%s' "$m"
+}
+_release_pin_ref() {
+  local r="${OPENCLAW_APPROVED_RELEASE:-}"
+  [ -n "$r" ] || r="$(_release_pin_read approved_ref 2>/dev/null || true)"
+  printf '%s' "$r"
+}
+_release_is_sha() { case "${1:-}" in ""|*[!0-9a-f]*) return 1 ;; esac; [ "${#1}" -eq 40 ]; }
+_release_pin_validate() {
+  local r="$1" m
+  m="$(_release_pin_mode)"
+  case "$m" in enforce|advisory|off) ;; *) OC_RELEASE_PIN_REASON="RELEASE_PIN_MODE_INVALID"; return 1 ;; esac
+  [ -n "$r" ] || { OC_RELEASE_PIN_REASON="RELEASE_PIN_UNCONFIGURED"; return 1; }
+  case "$r" in main|master|HEAD|origin/*|refs/*) OC_RELEASE_PIN_REASON="RELEASE_PIN_INVALID"; return 1 ;; esac
+  case "$r" in *[!A-Za-z0-9._/-]*) OC_RELEASE_PIN_REASON="RELEASE_PIN_INVALID"; return 1 ;; esac
+  return 0
+}
+# 0 = proceed. 78 = refuse (enforce + no usable pin). Sets RELEASE_REF.
+_release_pin_require() {
+  local m r
+  m="$(_release_pin_mode)"; r="$(_release_pin_ref)"
+  RELEASE_REF=""
+  if _release_pin_validate "$r"; then RELEASE_REF="$r"; return 0; fi
+  if [ "$m" = "enforce" ] || [ "$OC_RELEASE_PIN_REASON" = "RELEASE_PIN_MODE_INVALID" ]; then
+    printf '%s\n' "$OC_RELEASE_PIN_REASON"
+    return 78
+  fi
+  RELEASE_REF="main"
+  if [ "$m" = "advisory" ]; then
+    printf '[release-pin] %s (advisory: following moving main)\n' "$OC_RELEASE_PIN_REASON" >&2
+  fi
+  return 0
+}
+_release_clone_source() {
+  local dest="$1" url="${2:-https://github.com/trevorotts1/openclaw-onboarding.git}"
+  if _release_is_sha "$RELEASE_REF"; then
+    git clone --depth 1 "$url" "$dest" || return 1
+    git -C "$dest" fetch --depth 1 origin "$RELEASE_REF" || return 1
+    git -C "$dest" checkout --detach "$RELEASE_REF" || return 1
+  else
+    git clone --depth 1 --branch "$RELEASE_REF" "$url" "$dest" || return 1
+  fi
+}
+# <<< RELEASE-PIN END <<<
+
+_release_pin_require
+_PIN_RC=$?
+if [ "$_PIN_RC" -ne 0 ]; then
+  echo "weekly-full-update.sh: REFUSED — ${OC_RELEASE_PIN_REASON}: no approved immutable release identity is configured; refusing to follow the moving default branch. Nothing was changed." >&2
+  exit 78
+fi
+if [ "$RELEASE_REF" != "main" ]; then
+  UPDATER_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${RELEASE_REF}/update-skills.sh"
+fi
+
+_wfu_sync_to_release() {
+  local R="$1"
+  if [ "$RELEASE_REF" = "main" ]; then
+    git -C "$R" fetch -q --depth 1 origin +refs/heads/main:refs/remotes/origin/main || return 1
+    git -C "$R" checkout -q -B main origin/main || return 1
+    git -C "$R" reset -q --hard origin/main || return 1
+  elif _release_is_sha "$RELEASE_REF"; then
+    git -C "$R" fetch -q --depth 1 origin "$RELEASE_REF" || return 1
+    git -C "$R" checkout -q --detach "$RELEASE_REF" || return 1
+    git -C "$R" reset -q --hard "$RELEASE_REF" || return 1
+    [ "$(git -C "$R" rev-parse HEAD)" = "$RELEASE_REF" ] || return 1
+  else
+    git -C "$R" fetch -q --depth 1 origin "refs/tags/$RELEASE_REF:refs/tags/$RELEASE_REF" || return 1
+    git -C "$R" checkout -q -B "release-$RELEASE_REF" "refs/tags/$RELEASE_REF" || return 1
+    git -C "$R" reset -q --hard "refs/tags/$RELEASE_REF" || return 1
+    [ "$(git -C "$R" rev-parse HEAD)" = "$(git -C "$R" rev-parse "refs/tags/$RELEASE_REF")" ] || return 1
+  fi
+}
+
 # cron runs with PATH=/usr/bin:/bin; openclaw, node, npm and pm2 live elsewhere.
 # Without them sessions.reset and atomic-deploy.sh cannot run at all.
 for d in "${OPENCLAW_ROOT:-/nonexistent}/npm-global/bin" /data/.openclaw/npm-global/bin \
@@ -262,12 +374,11 @@ if [ -d "$R/.git" ]; then
       log "WARNING: onboarding copy $R reported $_n local change(s) but git stashed nothing (e.g. a nested repository); syncing anyway"
     fi
   fi
-  if ! { git -C "$R" fetch -q --depth 1 origin +refs/heads/main:refs/remotes/origin/main \
-         && git -C "$R" checkout -q -B main origin/main && git -C "$R" reset -q --hard origin/main; }; then
-    log "ERROR: could not sync $R to origin/main — nothing was changed on this box"
+  if ! _wfu_sync_to_release "$R"; then
+    log "ERROR: could not sync $R to approved release $RELEASE_REF — nothing was changed on this box"
     exit 1
   fi
-elif ! { mkdir -p "$(dirname "$R")" && git clone -q --depth 1 --single-branch --branch main "$REPO_URL" "$R"; }; then
+elif ! { mkdir -p "$(dirname "$R")" && _release_clone_source "$R" "$REPO_URL"; }; then
   # critic.C11 (code side): under self-update the content step is NEVER handed
   # to the bare updater — it has no snapshot and no rollback, so a bad release
   # would be unrecoverable on that box. Exit non-zero and say nothing changed.
@@ -275,7 +386,7 @@ elif ! { mkdir -p "$(dirname "$R")" && git clone -q --depth 1 --single-branch --
     log "REFUSED: no usable onboarding copy (could not create $R) and this run is under self-update — the bare updater has no snapshot/rollback, so it is never used here. Nothing was changed on this box."
     exit 1
   fi
-  log "WARNING: no usable onboarding copy (could not create $R) — falling back to the root updater fetched from main (same FULL path per OCT4 #10; narrower transport only, no snapshot/rollback machinery around it)"
+  log "WARNING: no usable onboarding copy (could not create $R) — falling back to the root updater fetched from ${RELEASE_REF} (same FULL path per OCT4 #10; narrower transport only, no snapshot/rollback machinery around it)"
   tmp="$(mktemp "${TMPDIR:-/tmp}/openclaw-update-XXXXXX")"
   trap 'rm -f "$tmp"' EXIT
   curl -fsSL --max-time 60 "$UPDATER_URL" -o "$tmp" || { log "ERROR: could not download update-skills.sh"; exit 1; }
