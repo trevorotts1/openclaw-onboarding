@@ -4,6 +4,14 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.136 - 2026-11-01 - chore(c05): version stamp for the eighteen-style cue and rate wiring
+
+- **G3 version stamp, skill 75 v2.9.135 -> v2.9.136.** The C05 change set touches
+  skill 75 content (ten music prompt templates, `song_choices`, and `suno_recipe`)
+  without a `skill-version.txt` bump, which fails G3. Bumped to the next patch and
+  kept the `SKILL.md` frontmatter `version:` in agreement; no other file holds this
+  version. No release or tag is created here.
+
 ## v2.9.134 - 2026-10-28 - chore(train20): land the S75-T41 receipt and its guard tests
 
 Lands the S75-T41 receipt, attempts and suno prompt guard tests in the train20 batch.
