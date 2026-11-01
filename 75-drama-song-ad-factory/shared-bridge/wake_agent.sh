@@ -101,22 +101,37 @@ DB="$(printf '%s' "$1" | "$PYTHON" -c '
 import json, sys
 print(str(json.load(sys.stdin).get("db") or "").strip())
 ')"
+# The fence this poll line was materialized under. Every ledger write below
+# carries it, so a line from a claim that was since taken over cannot queue or
+# acknowledge anything.
+FENCE="$(printf '%s' "$1" | "$PYTHON" -c '
+import json, sys
+value = json.load(sys.stdin).get("fence")
+print("" if value is None else int(value))
+')"
 
 # The durable wake record. Best-effort bookkeeping: a broken ledger must not
 # eat a real agent turn, but every outcome is attempted. `--queued` answers
 # "in_flight" when another wake already holds this order — that is a quiet
 # success (the request is active), never a duplicate turn.
 WAKE_LEDGER() {
+  set -- "$@" --order "$ORDER_ID"
+  [ -z "${FENCE:-}" ] || set -- "$@" --fence "$FENCE"
   if [ -n "$DB" ]; then
-    "$PYTHON" "$HERE/studio_bridge.py" wake "$@" --order "$ORDER_ID" --db "$DB"
-  else
-    "$PYTHON" "$HERE/studio_bridge.py" wake "$@" --order "$ORDER_ID"
+    set -- "$@" --db "$DB"
   fi
+  "$PYTHON" "$HERE/studio_bridge.py" wake "$@"
 }
 
 QUEUED="$(WAKE_LEDGER --queued 2>/dev/null || true)"
 case "$QUEUED" in
   *'"in_flight": true'*) exit 0 ;;   # a wake is already running: quiet success
+  # The poll line's fence is no longer the live claim's: a takeover happened
+  # after this line was printed. Starting a turn now would be a SECOND
+  # materializer, so refuse (the next poll prints a current line).
+  *'"code": "STALE_CLAIM"'*)
+    echo "wake_agent: poll line is stale (claim was taken over); not starting a turn" >&2
+    exit 2 ;;
 esac
 
 FAIL_AND_EXIT() {  # <ledger reason> <exit code> <message>

@@ -54,12 +54,21 @@ import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from studio_claim import (ClaimLedger, LedgerError, message_id,  # noqa: E402
-                          STEP_CLAIMED, STEP_ORDER_FETCHED, STEP_MATERIALIZED,
-                          STEP_WAKE_QUEUED, STEP_EXECUTION_ACCEPTED)
+                          STEPS, STEP_CLAIMED, STEP_ORDER_FETCHED,
+                          STEP_MATERIALIZED, STEP_WAKE_QUEUED,
+                          STEP_EXECUTION_ACCEPTED)
 
 EXIT = {"ok": 0, "error": 1, "refused": 2, "undefined": 3}
 
 STATUS_EVENTS = ("claim", "needs_you", "answer", "ready", "deliver", "done")
+
+#: The studio's own TERMINAL order states (service/src/lifecycle.js
+#: TERMINAL_STATES). `cancel` is one of the contract's state events
+#: (`POST /api/studio/orders/<id>/state`), it is allowed while the order waits
+#: or sits at an approval stop before paid production, and once reached the
+#: state never moves again. A terminal order is never materialized and never
+#: woken: its local claim is released instead of resumed (ITEM 29 step 4).
+TERMINAL_ORDER_STATES = ("done", "cancelled", "expired")
 
 #: The claim ledger's owner row: one box = one claimant, whatever the process.
 BRIDGE_OWNER = "studio-bridge"
@@ -503,7 +512,10 @@ def cmd_handshake(args):
 def cmd_claim(args):
     with ClaimLedger(args.db) as led:
         if led.claim_order(args.order, args.owner):
-            _emit({"order_id": args.order, "owner": args.owner, "won": True})
+            st = led.order_state(args.order) or {}
+            _emit({"order_id": args.order, "owner": args.owner, "won": True,
+                   "fence": st.get("fence"),
+                   "claim_token": st.get("claim_token")})
             return EXIT["ok"]
     _emit({"order_id": args.order, "won": False,
            "code": "ALREADY_CLAIMED",
@@ -1191,6 +1203,62 @@ def _ensure_run_state(skill_root, run_dir, order_id):
         return None
     return stages
 
+def _advance_claim(led, order_id, owner, fence, step, now=None,
+                   stale_code="STALE_CLAIM"):
+    """Move the claim one step, FENCED, and treat an already-recorded step as
+    success (a resumed poll reconciles, it does not re-run). A fence from a
+    taken-over claim is a named refusal and the caller must stop."""
+    st = led.order_state(order_id)
+    if st is None:
+        _emit({"order_id": order_id, "code": stale_code,
+               "message": "no live claim for this order"})
+        return False
+    if fence is not None and int(st.get("fence") or -1) != int(fence):
+        _emit({"order_id": order_id, "code": stale_code,
+               "message": "claim was taken over before %s" % step})
+        return False
+    cur = st.get("step") or STEP_CLAIMED
+    if cur in STEPS and STEPS.index(step) <= STEPS.index(cur):
+        return True                 # already recorded: idempotent resume
+    if led.advance_step(order_id, owner, step, now=now, fence=fence):
+        return True
+    _emit({"order_id": order_id, "code": stale_code,
+           "message": "claim was taken over before %s" % step})
+    return False
+
+
+def _terminal_state(order):
+    """The studio's terminal state for this order, or None when it may run.
+
+    The service projects `state` onto every order payload it returns
+    (service/src/index.js: GET /api/studio/orders/<id> answers `project(...)`,
+    and `project` sets `state` from `resolveOrderState`), so a cancellation is
+    ON THE WIRE: `{"event": "cancel"}` moves a waiting or approval-stop order to
+    `cancelled`, which is terminal (lifecycle.js TERMINAL_STATES).
+
+    A payload with no usable `state` is NOT terminal. Recovery must never be
+    blocked by a field an older service or a stub did not send: unknown is
+    "keep resuming", which is exactly the pre-existing ST1 behaviour.
+    """
+    if not isinstance(order, dict):
+        return None
+    state = str(order.get("state") or "").strip().lower()
+    return state if state in TERMINAL_ORDER_STATES else None
+
+
+def _drop_terminal(led, order_id, state, via):
+    """Carry the studio's terminal state: resume nothing, release the claim.
+
+    No wake line is printed (a cancelled order must never start a run, a paid
+    job or a client notice), and the local claim row is deleted so the startup
+    scan stops offering this order. The receipt outlives the row, so the fact
+    stays auditable after the claim is gone.
+    """
+    led.write_receipt(order_id, "remote_terminal", {"state": state, "via": via})
+    led.release_order(order_id, BRIDGE_OWNER)
+    return EXIT["ok"]
+
+
 def cmd_poll(args):
     """Check in, claim one waiting order, replay it, print one JSON line.
 
@@ -1203,6 +1271,11 @@ def cmd_poll(args):
     wake request stays pending — the line is re-emitted — until the supported
     runtime acknowledgement (wake --ack) arrives. Execution-accepted is final:
     later polls stay silent, so no duplicate campaign or paid job can start.
+
+    A resume carries the studio's CURRENT order state: a terminal order
+    (`cancelled`, `done`, `expired`) is never materialized, woken or re-emitted,
+    and its local claim is released with a `remote_terminal` receipt on the
+    ledger (ITEM 29 step 4).
     """
     key = load_key()
     if not key:
@@ -1214,29 +1287,49 @@ def cmd_poll(args):
                "message": "no studio address; pass --base-url or run enroll"})
         return EXIT["refused"]
 
-    status, out = _http("POST", base + "/api/studio/checkin", key=key,
-                        body=checkin_body(args.skill_root, args.runs, args.client_dir))
-    if status // 100 != 2 or not out.get("ok"):
-        return _refusal(out, status, "check-in")
-    line = out.get("line")
-    if not line:
-        return EXIT["ok"]                       # nothing waiting: no output at all
-    found = INBOX_LINE.match(str(line))
-    if not found:
-        _emit({"code": "BAD_INBOX_LINE", "message": str(line)[:200]})
-        return EXIT["refused"]
-    order_id, title = found.group(1), found.group(2)
-    if not ORDER_ID.fullmatch(order_id):
-        _emit({"code": "BAD_ORDER_ID", "message": "refusing order id %r" % order_id[:64]})
-        return EXIT["refused"]
-
     db = os.path.abspath(args.db or str(state_dir() / "studio.db"))
     with ClaimLedger(db) as led:
-        won = led.claim_order(order_id, BRIDGE_OWNER)
+        # Startup recovery BEFORE relying on the waiting inbox (SPEC 9.4, D35):
+        # a claim event can take an order out of that inbox while its local
+        # handoff is unfinished, so a crashed claim is found here, not lost.
+        pending = led.unfinished_orders(BRIDGE_OWNER)
+        resume_token = None
+        from_recovery = bool(pending)
+        if pending:
+            # A stored poll line carries the claim token this owner proved
+            # with last time: present it back so the ledger can tell a
+            # crash-resume apart from a second live materializer.
+            order_id, title = pending[0], ""
+            for rec in reversed(led.receipts(order_id)):
+                if rec.get("kind") == "poll_line":
+                    resume_token = (rec.get("payload") or {}).get("claim_token")
+                    break
+        else:
+            status, out = _http("POST", base + "/api/studio/checkin", key=key,
+                                body=checkin_body(args.skill_root, args.runs,
+                                                  args.client_dir))
+            if status // 100 != 2 or not out.get("ok"):
+                return _refusal(out, status, "check-in")
+            line = out.get("line")
+            if not line:
+                return EXIT["ok"]               # nothing waiting: no output at all
+            found = INBOX_LINE.match(str(line))
+            if not found:
+                _emit({"code": "BAD_INBOX_LINE", "message": str(line)[:200]})
+                return EXIT["refused"]
+            order_id, title = found.group(1), found.group(2)
+            if not ORDER_ID.fullmatch(order_id):
+                _emit({"code": "BAD_ORDER_ID",
+                       "message": "refusing order id %r" % order_id[:64]})
+                return EXIT["refused"]
+
+        won = led.claim_order(order_id, BRIDGE_OWNER,
+                              resume_token=resume_token)
         if not won:
-            return EXIT["ok"]                   # a live OTHER owner holds it
+            return EXIT["ok"]                   # a live holder keeps it
         recs = led.receipts(order_id)
         st = led.order_state(order_id) or {}
+        fence = st.get("fence")
         if st.get("step") == STEP_EXECUTION_ACCEPTED:
             return EXIT["ok"]   # acknowledged: silent, no duplicate campaign
         kinds = {r["kind"] for r in recs}
@@ -1244,6 +1337,22 @@ def cmd_poll(args):
                              if r["kind"] == "order_fetched"), None)
         stored_line = next((r["payload"] for r in reversed(recs)
                             if r["kind"] == "poll_line"), None)
+
+        # Carry the studio's CURRENT state into the resume (ITEM 29 step 4).
+        # The stored order was fetched before the crash; the client can cancel
+        # while the claim sits unfinished, and a cancelled order leaves the
+        # waiting inbox, so nothing else here would ever notice. Re-read the
+        # order and honour a terminal state: no wake line, no run, no paid job,
+        # the claim released. A failed re-read resumes the stored claim as
+        # before (a transient GET must never wedge a recovery; the next poll
+        # retries it).
+        if from_recovery:
+            status, out = _http("GET", base + "/api/studio/orders/%s" % order_id,
+                                key=key)
+            if status // 100 == 2 and out.get("ok"):
+                closed = _terminal_state(out.get("order"))
+                if closed:
+                    return _drop_terminal(led, order_id, closed, "resume")
 
         # Claim event: sent once. A repeat poll after a crash must never
         # re-post a claim the studio could reject as its own replay (D35).
@@ -1266,8 +1375,16 @@ def cmd_poll(args):
                 # claimed-and-forgotten state.
                 return _refusal(out, status, "order fetch")
             order = out.get("order") or {}
+            # The order can be cancelled between the check-in line and this
+            # fetch; the fetched payload already carries that state, so it is
+            # honoured here too — nothing is materialized for a closed order.
+            closed = _terminal_state(order)
+            if closed:
+                return _drop_terminal(led, order_id, closed, "fetch")
             led.write_receipt(order_id, "order_fetched", {"order": order})
-        led.advance_step(order_id, BRIDGE_OWNER, STEP_ORDER_FETCHED)
+        if not _advance_claim(led, order_id, BRIDGE_OWNER, fence,
+                              STEP_ORDER_FETCHED):
+            return EXIT["refused"]
         title = str(order.get("title") or title)
         client_id = str(order.get("client_id") or "")
 
@@ -1304,9 +1421,23 @@ def cmd_poll(args):
             out_line = {"order_id": order_id, "run_dir": str(run_dir),
                         "next": "%s %s next --run-dir %s"
                                 % (sys.executable, factory, run_dir),
-                        "db": db}
+                        "db": db, "fence": fence,
+                        "claim_token": st.get("claim_token")}
+            if not _advance_claim(led, order_id, BRIDGE_OWNER, fence,
+                                  STEP_MATERIALIZED):
+                return EXIT["refused"]
+        else:
+            # A resumed poll carries the CURRENT claim's fence, never the one
+            # frozen in the receipt: the line handed to the wake must match the
+            # claim that is live now.
+            out_line = dict(out_line)
+        out_line["fence"] = fence
+        out_line["claim_token"] = st.get("claim_token")
+        if stored_line is None or stored_line.get("fence") != fence:
+            # First materialization, or a takeover since the line was frozen:
+            # refresh the recorded line so a direct acknowledgement (no
+            # explicit --fence) is checked against the live claim.
             led.write_receipt(order_id, "poll_line", out_line)
-            led.advance_step(order_id, BRIDGE_OWNER, STEP_MATERIALIZED)
         # Materialized but not yet acknowledged: re-emit the SAME line so the
         # wake request persists and is retried (a quiet success here is the
         # claimed-and-forgotten state this repair exists to remove).
@@ -1318,6 +1449,23 @@ def cmd_poll(args):
 
 #: A wake turn must finish inside this lease or a later tick may re-wake.
 WAKE_LEASE_TTL_S = 600.0
+
+
+def _wake_fence(led, order_id, explicit):
+    """The fence a wake step must present.
+
+    Explicit `--fence` (from the poll line) wins. A legacy direct caller that
+    passed no fence falls back to the fence frozen on the latest poll line, so
+    an acknowledgement recorded after a takeover is still refused. ``None``
+    (no line, no explicit fence) keeps the pre-repair behaviour for old callers.
+    """
+    if explicit is not None:
+        return int(explicit)
+    for rec in reversed(led.receipts(order_id)):
+        if rec.get("kind") == "poll_line":
+            value = (rec.get("payload") or {}).get("fence")
+            return int(value) if value is not None else None
+    return None
 
 
 def cmd_wake(args):
@@ -1337,6 +1485,7 @@ def cmd_wake(args):
     with ClaimLedger(db) as led:
         st = led.order_state(args.order)
         owner = st["owner"] if st else BRIDGE_OWNER
+        fence = _wake_fence(led, args.order, getattr(args, "fence", None))
         if args.queued:
             won = led.lease_acquire("wake:" + args.order, lease_owner,
                                     ttl_s=WAKE_LEASE_TTL_S, now=now)
@@ -1344,19 +1493,31 @@ def cmd_wake(args):
                 _emit({"order_id": args.order, "in_flight": True,
                        "message": "a wake for this order is already in flight"})
                 return EXIT["ok"]
-            led.advance_step(args.order, owner, STEP_WAKE_QUEUED, now=now)
+            if not _advance_claim(led, args.order, owner, fence,
+                                  STEP_WAKE_QUEUED, now=now):
+                led.lease_clear("wake:" + args.order)
+                return EXIT["refused"]
             led.write_receipt(args.order, "wake_queued",
                               {"pid": os.getpid()}, now=now)
             _emit({"order_id": args.order, "queued": True})
             return EXIT["ok"]
         if args.ack:
-            led.advance_step(args.order, owner, STEP_EXECUTION_ACCEPTED, now=now)
+            if not _advance_claim(led, args.order, owner, fence,
+                                  STEP_EXECUTION_ACCEPTED, now=now,
+                                  stale_code="STALE_ACK"):
+                return EXIT["refused"]
             led.write_receipt(args.order, "execution_accepted",
                               {"pid": os.getpid()}, now=now)
             led.lease_clear("wake:" + args.order)
             _emit({"order_id": args.order, "execution_accepted": True})
             return EXIT["ok"]
         if args.fail:
+            if fence is not None and st is not None \
+                    and int(st.get("fence") or -1) != int(fence):
+                _emit({"order_id": args.order, "wake_failed": False,
+                       "code": "STALE_FAIL",
+                       "message": "failure carries a stale fence"})
+                return EXIT["refused"]
             led.write_receipt(args.order, "wake_failed",
                               {"reason": args.reason or "UNNAMED",
                                "pid": os.getpid()}, now=now)
@@ -1523,6 +1684,8 @@ def main(argv=None):
     wk.add_argument("--ack", action="store_true", help="runtime acknowledged the turn")
     wk.add_argument("--fail", action="store_true", help="wake failed; the request stays queued")
     wk.add_argument("--reason", default=None, help="with --fail: the named failure code")
+    wk.add_argument("--fence", type=int, default=None,
+                    help="the poll line's fence: a stale fence is refused")
     wk.set_defaults(func=cmd_wake)
 
     sd = sub.add_parser("state-dir", help="print the persistent state root (one contract)")

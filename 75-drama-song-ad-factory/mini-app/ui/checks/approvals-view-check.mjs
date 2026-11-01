@@ -171,48 +171,282 @@ const first = await render(SAMPLE);
   rule("empty change box sends nothing", svc.sent().length === 0, `${svc.sent().length} call(s)`);
 }
 
-// ── 5. song: three players, three values ─────────────────────────────────────
+// ── 5. song: each version fetched, playable before it can be picked ──────────
+// CONTRACT_EXPECTATION_CHANGE (ST5 song block, dossier ITEM 33 step 2):
+//   "Fetch media with the authenticated client, create an object URL, and enable
+//    the answer only after actual decode and readiness (audio can play, image loads)."
+// The old hot-linked https://cdn.test/<x>.mp3 assertion is replaced, not kept.
+// Derivation used here is choice C of ST5-SONG-DETERMINE-r1: NO absolute player
+// count ("always three"); the count rule below is fixture-relative — one player
+// per LISTED song file — plus the locked-until-playable gate, the revisioned
+// route, and the named-reason lock. No player identity/count contract is invented.
 {
-  const { root } = await render(SAMPLE);
-  const card = findCard(root, "song");
-  const audios = walk(card).filter((n) => n.tagName === "AUDIO");
-  rule("song shows three audio players",
-    audios.length === 3 && audios.map((a) => a.getAttribute("src")).join(",")
-      === "https://cdn.test/a.mp3,https://cdn.test/b.mp3,https://cdn.test/c.mp3",
-    `${audios.length} player(s)`);
+  const D64 = "c".repeat(64);
+  const songRevUrl = (ver, f) => `/api/studio/orders/${ORDER_ID}/approvals/song/${ver}/${D64}/file/${f}`;
+  const SONG_ROUTE = /^\/api\/studio\/orders\/[^/]+\/approvals\/song\/[1-9][0-9]*\/[0-9a-f]{64}\/file\/[A-Za-z0-9._-]{1,80}$/;
+  const makeSongBlob = (bytes) => {
+    if (typeof Blob === "function") {
+      try { return new Blob([new Uint8Array(bytes)], { type: "audio/mpeg" }); } catch { /* fall through */ }
+    }
+    return { size: bytes };
+  };
+  const songFiles = [
+    { name: "a.mp3", url: songRevUrl(3, "a.mp3"), sha256: "1".repeat(64), bytes: 5 },
+    { name: "b.mp3", url: songRevUrl(3, "b.mp3"), sha256: "2".repeat(64), bytes: 6 },
+    { name: "c.mp3", url: songRevUrl(3, "c.mp3"), sha256: "3".repeat(64), bytes: 7 },
+  ];
+  const songKnown = new Map(songFiles.map((f) => [f.url, f]));
+  const songItems = () => SAMPLE.filter((i) => i.stage === "song")
+    .map((i) => ({ ...i, files: songFiles.map((f) => ({ ...f })) }));
 
-  const sent = [];
-  for (let i = 1; i <= 3; i++) {
-    const fresh = await render(SAMPLE); // every answer repaints the cards
-    const picks = walk(findCard(fresh.root, "song"))
-      .filter((n) => n.tagName === "BUTTON" && n.textContent === "Pick this one");
-    await click(picks[i - 1]);
-    sent.push(fresh.svc.sent()[0]?.[4]);
+  // AUDIO shim: a real <audio> reports readiness through readyState and
+  // canplay/canplaythrough. This shim does the same two things the shipped
+  // audioReady() reads, so the gate is exercised without a browser engine.
+  const origCreateAudio = globalThis.document.createElement;
+  let audioFails = false;
+  let audioReadyDelay = 60;
+  globalThis.document.createElement = function (tag) {
+    const n = origCreateAudio(tag);
+    if (String(tag).toUpperCase() === "AUDIO") {
+      n.readyState = 0;
+      n.error = null;
+      n.paused = true;
+      n.pause = () => { n.paused = true; };
+      n.dispatch = (type) => {
+        for (const fn of (n.listeners[type] || []).slice()) fn({ type });
+      };
+      n.removeEventListener = (type, fn) => {
+        n.listeners[type] = (n.listeners[type] || []).filter((f) => f !== fn);
+      };
+      n.load = () => {
+        setTimeout(() => {
+          if (audioFails) { n.error = { code: 4 }; n.dispatch("error"); return; }
+          n.readyState = 3; // HAVE_FUTURE_DATA — first playable state
+          n.dispatch("canplaythrough");
+        }, audioReadyDelay);
+      };
+    }
+    return n;
+  };
+  // One song round: own service, request log and playable switch.
+  const songRound = async (opts = {}) => {
+    audioFails = Boolean(opts.fails);
+    audioReadyDelay = Number.isFinite(opts.delay) ? opts.delay : 60;
+    const svc = fakeService(songItems());
+    const seen = [];
+    svc.fetchApprovalMedia = async (url) => {
+      seen.push(url);
+      const f = songKnown.get(url);
+      if (!f) { const e = new Error("That media address is not this studio's approval route."); e.code = "APPROVAL_MEDIA_REFUSED"; throw e; }
+      return { blob: makeSongBlob(f.bytes), sha256: f.sha256 };
+    };
+    globalThis.studioService = svc;
+    const root = makeElement("div");
+    const rendered = await renderApprovalsFor({ order_id: ORDER_ID }, root);
+    const card = findCard(root, "song");
+    const read = () => {
+      const c = findCard(root, "song");
+      const players = c ? walk(c).filter((n) => n.tagName === "AUDIO") : [];
+      const picks = c ? walk(c).filter((n) => n.tagName === "BUTTON" && n.textContent === "Pick this one") : [];
+      return {
+        players, picks,
+        srcs: players.map((p) => p.getAttribute("src")),
+        lockedAll: picks.length > 0 && picks.every((b) => "disabled" in b.attrs),
+        unlockedAll: picks.length > 0 && picks.every((b) => !("disabled" in b.attrs)),
+        text: textOf(c || makeElement("div")),
+      };
+    };
+    const pre = read();
+    await new Promise((r) => setTimeout(r, 25)); // inside the readiness delay
+    const mid = read();
+    await new Promise((r) => setTimeout(r, 200)); // after readiness (or the error)
+    const post = read();
+    return { svc, seen: seen.slice(), rendered, root, pre, mid, post, card };
+  };
+  try {
+    const listed = songFiles.length;
+    const routes = songFiles.map((f) => f.url);
+    const song = await songRound();
+    rule("song lists one player per listed song file",
+      song.pre.players.length === listed, `${song.pre.players.length} player(s) for ${listed} file(s)`);
+    rule("song players show fetched blob URLs, never the listing address",
+      song.post.players.length === listed
+        && song.post.srcs.every((s) => typeof s === "string" && s.startsWith("blob:"))
+        && song.post.srcs.every((s) => !routes.includes(s)),
+      song.post.srcs.join(","));
+    rule("song audio is fetched over the exact revisioned route",
+      routes.every((u) => song.seen.includes(u))
+        && song.seen.every((u) => SONG_ROUTE.test(u)),
+      song.seen.join(","));
+    rule("song picks stay locked until each version can play",
+      song.mid.picks.length === listed && song.mid.lockedAll,
+      `${song.mid.picks.length} pick(s) mid-readiness`);
+    rule("song picks unlock after their audio can play",
+      song.post.picks.length === listed && song.post.unlockedAll,
+      `${song.post.picks.length} pick(s) post-readiness`);
+
+    const sent = [];
+    for (let i = 1; i <= 3; i++) {
+      const fresh = await songRound();
+      await click(fresh.post.picks[i - 1]);
+      sent.push(fresh.svc.sent()[0]?.[4]);
+    }
+    rule("song “Pick this one” sends 1, 2, 3", sent.join(",") === "1,2,3", sent.join(","));
+
+    const broken = await songRound({ fails: true });
+    rule("a song file that cannot play keeps its pick locked and says so",
+      broken.post.picks.length === listed
+        && broken.post.picks.every((b) => "disabled" in b.attrs)
+        && /stays locked/.test(broken.post.text),
+      broken.post.text.slice(-140));
+  } finally {
+    globalThis.document.createElement = origCreateAudio;
+    audioFails = false;
   }
-  rule("song “Pick this one” sends 1, 2, 3", sent.join(",") === "1,2,3", sent.join(","));
 }
 
 // ── 6. storyboard: stills, GO, and the shot number ───────────────────────────
+// CONTRACT_EXPECTATION_CHANGE (ST4/ST5 revisioned media): the storyboard stills are
+// fetched through the client's fetchApprovalMedia over the exact revisioned route
+// (stage/version/presentation-digest/file) and shown as blob: object URLs; the answer
+// controls unlock only after each still decodes. Dossier ITEM 32 ST4 step 2: "Address
+// media by revision or content digest, never by first basename match." Dossier ITEM 33
+// ST5 step 2: "Fetch media with the authenticated client, create an object URL, and
+// enable the answer only after actual decode and readiness (audio can play, image loads)."
+// The old hot-linked https://cdn.test/shot- assertion is replaced, not kept.
+// NOTE (render pipe): the shared view module serves one paint at a time and a later
+// paint cancels the earlier render's in-flight media jobs; the stills rounds below
+// render the storyboard card on its own (storyboard item only) and settle each round
+// before reading it, because the listing rule under test is per-card: one still per
+// listed file, fetched over the exact revisioned route. (The song card's players would
+// mix their requests into the request log through the same fetch path.) Answer rows
+// are asserted on the service that drew the answered card: the view reads
+// globalThis.studioService both when it paints and when the click handler submits.
 {
-  const { root } = await render(SAMPLE);
-  const imgs = walk(findCard(root, "storyboard")).filter((n) => n.tagName === "IMG");
-  rule("storyboard lists its stills", imgs.length === 2
-    && imgs.every((i) => i.getAttribute("src").startsWith("https://cdn.test/shot-")), `${imgs.length} still(s)`);
+  // ── in-block media shim (fixture; nothing outside this block changes) ─────────
+  const D64 = "d".repeat(64);
+  const revUrl = (stage, ver, f) => `/api/studio/orders/${ORDER_ID}/approvals/${stage}/${ver}/${D64}/file/${f}`;
+  const REV_ROUTE = /^\/api\/studio\/orders\/[^/]+\/approvals\/[^/]+\/[1-9][0-9]*\/[0-9a-f]{64}\/file\/[A-Za-z0-9._-]{1,80}$/;
+  const makeBlob = (bytes) => {
+    if (typeof Blob === "function") {
+      try { return new Blob([new Uint8Array(bytes)], { type: "image/png" }); } catch { /* fall through */ }
+    }
+    return { size: bytes };
+  };
+  const mediaFiles = [
+    { name: "shot-1.png", url: revUrl("storyboard", 2, "shot-1.png"), sha256: "a".repeat(64), bytes: 10 },
+    { name: "shot-2.png", url: revUrl("storyboard", 2, "shot-2.png"), sha256: "b".repeat(64), bytes: 20 },
+  ];
+  const knownBlobs = new Map(mediaFiles.map((f) => [f.url, f]));
+  const storyItems = () => SAMPLE.filter((i) => i.stage === "storyboard")
+    .map((i) => ({ ...i, files: mediaFiles.map((f) => ({ ...f })) }));
+  // IMG decode is deferred per render: each IMG node awaits its own render's gate,
+  // so the locked state is observable before the release and the unlocked state
+  // after — with no cross-render mixing, because the gate lives on the render's
+  // own state object and is wired onto the node at creation.
+  let activeGate = null;
+  const origCreate = globalThis.document.createElement;
+  globalThis.document.createElement = function (tag) {
+    const n = origCreate(tag);
+    if (String(tag).toUpperCase() === "IMG") {
+      n.decode = () => (activeGate || Promise.resolve());
+      n.complete = true;
+      n.naturalWidth = 640;
+      n.load = () => {};
+    }
+    return n;
+  };
+  // One stills round: its own service, request log and decode gate. The round is
+  // read twice — locked before the release, settled after — then the gate is
+  // released and the unlock awaited, so no later paint can cancel this round first.
+  const stillsRound = async (fill) => {
+    const svc = fakeService(storyItems());
+    const seen = [];
+    svc.fetchApprovalMedia = async (url) => {
+      seen.push(url);
+      const f = knownBlobs.get(url);
+      if (!f) { const e = new Error("That media address is not this studio's approval route."); e.code = "APPROVAL_MEDIA_REFUSED"; throw e; }
+      return { blob: makeBlob(f.bytes), sha256: f.sha256 };
+    };
+    let release = null;
+    activeGate = new Promise((res) => { release = res; });
+    globalThis.studioService = svc;
+    const root = makeElement("div");
+    const rendered = await renderApprovalsFor({ order_id: ORDER_ID }, root);
+    const card = findCard(root, "storyboard");
+    const preImgs = card ? walk(card).filter((n) => n.tagName === "IMG") : [];
+    const preBtns = card ? walk(card).filter((n) => n.tagName === "BUTTON"
+      && (n.textContent === "Change this shot" || n.textContent === "Approve all")) : [];
+    const pre = {
+      imgCount: preImgs.length, imgSrcs: preImgs.map((im) => im.getAttribute("src")),
+      btnCount: preBtns.length,
+      lockedAll: preBtns.length > 0 && preBtns.every((b) => "disabled" in b.attrs),
+    };
+    release();
+    await new Promise((r) => setTimeout(r, 200));
+    const postCard = findCard(root, "storyboard");
+    const postImgs = postCard ? walk(postCard).filter((n) => n.tagName === "IMG") : [];
+    const postBtns = postCard ? walk(postCard).filter((n) => n.tagName === "BUTTON"
+      && (n.textContent === "Change this shot" || n.textContent === "Approve all")) : [];
+    const out = {
+      svc, seen: seen.slice(), rendered, root, pre,
+      imgCount: postImgs.length, imgSrcs: postImgs.map((im) => im.getAttribute("src")),
+      btnCount: postBtns.length,
+      unlockedAll: postBtns.length > 0 && postBtns.every((b) => !("disabled" in b.attrs)),
+    };
+    if (fill !== undefined) {
+      const nowCard = findCard(root, "storyboard");
+      if (fill === null) {
+        const goBtn = findButton(nowCard, "Approve all");
+        if (goBtn) await click(goBtn);
+      } else {
+        const inputs = walk(nowCard).filter((n) => n.tagName === "INPUT");
+        const changeButtons = walk(nowCard).filter((n) => n.tagName === "BUTTON"
+          && n.textContent === "Change this shot");
+        if (inputs.length > 1 && changeButtons.length > 1) {
+          inputs[1].value = fill;
+          await click(changeButtons[1]);
+        }
+      }
+      await new Promise((r) => setTimeout(r, 200));
+      out.sent = svc.sent().slice();
+    }
+    return out;
+  };
+  try {
+    const listed = mediaFiles.length;
+    const approvedRoutes = mediaFiles.map((f) => f.url);
+    const storyRoutes = new Set(approvedRoutes);
+    const stills = await stillsRound();
+    const storySeen = stills.seen.filter((u) => storyRoutes.has(u));
+    rule("storyboard answers stay locked until the stills decode",
+      stills.pre.btnCount > 0 && stills.pre.lockedAll,
+      `${stills.pre.btnCount} button(s) pre-decode`);
+    rule("storyboard lists one still per listed file",
+      stills.imgCount === listed, `${stills.imgCount} still(s) for ${listed} file(s)`);
+    rule("storyboard stills show fetched blob URLs, never the listing address",
+      stills.imgCount === listed && stills.imgSrcs.every((s) => typeof s === "string" && s.startsWith("blob:")),
+      stills.imgSrcs.join(","));
+    rule("storyboard stills are fetched over the exact revisioned route",
+      approvedRoutes.every((u) => storySeen.includes(u))
+        && storySeen.every((u) => REV_ROUTE.test(u))
+        && stills.seen.every((u) => knownBlobs.has(u)),
+      storySeen.join(","));
+    rule("storyboard answers unlock after the stills decode",
+      stills.btnCount > 0 && stills.unlockedAll,
+      `${stills.btnCount} button(s) post-decode`);
 
-  const go = await render(SAMPLE);
-  await click(findButton(findCard(go.root, "storyboard"), "Approve all"));
-  rule("storyboard “Approve all” sends GO",
-    go.svc.sent()[0]?.[4] === "GO", JSON.stringify(go.svc.sent()[0]));
+    const go = await stillsRound(null);
+    rule("storyboard “Approve all” sends GO",
+      stills.imgCount === listed && go.sent[0]?.[4] === "GO", JSON.stringify(go.sent[0]));
 
-  const shot = await render(SAMPLE);
-  const card = findCard(shot.root, "storyboard");
-  const inputs = walk(card).filter((n) => n.tagName === "INPUT");
-  inputs[1].value = "the door should be red";
-  const changeButtons = walk(card).filter((n) => n.tagName === "BUTTON"
-    && n.textContent === "Change this shot");
-  await click(changeButtons[1]);
-  rule("storyboard “Change this shot” sends shot N: text",
-    shot.svc.sent()[0]?.[4] === "shot 2: the door should be red", JSON.stringify(shot.svc.sent()[0]));
+    const shot = await stillsRound("the door should be red");
+    rule("storyboard “Change this shot” sends shot N: text",
+      stills.imgCount === listed && shot.sent[0]?.[4] === "shot 2: the door should be red", JSON.stringify(shot.sent[0]));
+  } finally {
+    globalThis.document.createElement = origCreate;
+    activeGate = null;
+  }
 }
 
 // ── 7. the answer lands back on the card, in words ───────────────────────────
