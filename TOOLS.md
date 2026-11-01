@@ -154,8 +154,8 @@ Both live at the repo root next to `lib-shared.sh`/`update-skills.sh`; python lo
   subagent's later notifications to the MAIN agent — it is never woken. `scripts/gate-wait.sh ci
   <owner/repo> <sha>` (loops `gh api .../check-runs` inside one bounded foreground call) or
   `scripts/gate-wait.sh cmd '<command>' --pass '<regex>' --fail '<regex>'` (any other gate) always
-  returns before `--max-seconds` (default 480, safely under the 600s Bash tool ceiling — pass
-  `timeout: 600000` on the calling Bash call) with exit `0`=green, `1`=failure present, `2`=still
+  returns before `--max-seconds` (default 90, kept below the 120s harness auto-background
+  threshold) with exit `0`=green, `1`=failure present, `2`=still
   pending. Exit 2 means CALL IT AGAIN — that is the whole fix; it needs no trust in background
   notifications at all.
 
