@@ -185,11 +185,20 @@ _release_clone_source() {
 }
 # <<< RELEASE-PIN END <<<
 
-_release_pin_require
-_RELEASE_PIN_RC=$?
-if [ "$_RELEASE_PIN_RC" -ne 0 ]; then
-  echo "update-skills.sh: REFUSED — ${OC_RELEASE_PIN_REASON}: no approved immutable release identity is configured; refusing to follow the moving default branch. Nothing was changed." >&2
-  exit 78
+# --help/-h performs no side effects; do not require a release identity to print usage.
+_oc_help_only=0
+for _oc_arg in "$@"; do
+  case "$_oc_arg" in --help|-h) _oc_help_only=1 ;; esac
+done
+if [ "$_oc_help_only" -eq 1 ]; then
+  RELEASE_REF="main"
+else
+  _release_pin_require
+  _RELEASE_PIN_RC=$?
+  if [ "$_RELEASE_PIN_RC" -ne 0 ]; then
+    echo "update-skills.sh: REFUSED — ${OC_RELEASE_PIN_REASON}: no approved immutable release identity is configured; refusing to follow the moving default branch. Nothing was changed." >&2
+    exit 78
+  fi
 fi
 
 SELF_SYNC_ARGS=("$@")

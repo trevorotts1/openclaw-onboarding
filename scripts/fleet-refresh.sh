@@ -206,11 +206,16 @@ _release_clone_source() {
 }
 # <<< RELEASE-PIN END <<<
 
-_release_pin_require
-_RELEASE_PIN_RC=$?
-if [ "$_RELEASE_PIN_RC" -ne 0 ]; then
-  echo "fleet-refresh.sh: REFUSED — ${OC_RELEASE_PIN_REASON}: no approved immutable release identity is configured; refusing to roll the moving default branch. Nothing was changed." >&2
-  exit 78
+# A local dry run performs no side effects, so no release identity is required.
+if [ "$LOCAL" -eq 1 ] && [ "$APPLY" -eq 0 ]; then
+  RELEASE_REF="main"
+else
+  _release_pin_require
+  _RELEASE_PIN_RC=$?
+  if [ "$_RELEASE_PIN_RC" -ne 0 ]; then
+    echo "fleet-refresh.sh: REFUSED — ${OC_RELEASE_PIN_REASON}: no approved immutable release identity is configured; refusing to roll the moving default branch. Nothing was changed." >&2
+    exit 78
+  fi
 fi
 
 case "$WAVE" in
