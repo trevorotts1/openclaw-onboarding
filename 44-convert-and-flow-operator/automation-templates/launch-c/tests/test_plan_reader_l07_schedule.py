@@ -144,7 +144,8 @@ class CalendarTests(unittest.TestCase):
                 "timezone": "America/New_York",
             })
             rc, doc = Harness(plan, {"email_pre_launch": build_doc("email_pre_launch", 2)}).run()
-            self.assertIsNotNone(doc, offset)   # rc 4: every pre-launch send is past at NOW
+            self.assertEqual(rc, 4, offset)   # every pre-launch send is past at NOW
+            self.assertIsNotNone(doc, offset)
             self.assertTrue(doc["calendar"]["dst_ambiguous"])
             self.assertTrue(doc["calendar"]["launch_at"].endswith(offset), doc["calendar"])
 
@@ -201,7 +202,7 @@ class ScheduleCompileTests(unittest.TestCase):
         self.assertEqual([n["phase"] for n in build["schedule"]["calendar_nodes"]],
                          ["doors_open", "launch", "doors_close"])
 
-    def test_late_compile_drops_expired_prelaunch_ctas_and_stays_ready(self):
+    def test_late_compile_all_sends_past_blocks_with_no_future_sends(self):
         plan = plan_doc(calendar=self._calendar())
         late = datetime.fromisoformat("2026-11-03T10:00:00-05:00")
         rc, doc = Harness(plan, {"email_pre_launch": build_doc(
