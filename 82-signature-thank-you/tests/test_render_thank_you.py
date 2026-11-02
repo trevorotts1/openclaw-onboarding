@@ -227,5 +227,22 @@ class HonestCopyTest(unittest.TestCase):
         self.assertNotIn("<a ", card)
 
 
+
+
+class DeliveryUrlSafetyTest(unittest.TestCase):
+    """DTY-18: a delivery link renders only when it is an absolute https URL with a host."""
+
+    def test_only_absolute_https_delivery_urls_are_linked(self):
+        for bad in ("//attacker.example/phish", "/\\attacker.example", "http://example.test/a", "javascript:alert(1)",
+                    "https://", "", None):
+            self.assertIsNone(rt._https_access_url(bad), bad)
+        self.assertEqual(rt._https_access_url(" https://example.test/a "), "https://example.test/a")
+
+    def test_safe_url_refuses_protocol_relative_and_plain_http(self):
+        self.assertEqual(rt._safe_url("//attacker.example/phish"), "#")
+        self.assertEqual(rt._safe_url("http://example.test/a"), "#")
+        self.assertEqual(rt._safe_url("https://example.test/a"), "https://example.test/a")
+
+
 if __name__ == "__main__":
     unittest.main()

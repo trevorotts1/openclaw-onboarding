@@ -55,6 +55,7 @@ html.escape; URLs are restricted to http/https/mailto/fragment schemes.
 Stdlib only. Deterministic: no clock, no randomness, no network.
 """
 
+import urllib.parse
 import functools
 import html
 import json
@@ -122,7 +123,7 @@ _CURRENCY_EXPONENTS = {
 _COLOR_RE = re.compile(
     r"^(#[0-9a-fA-F]{3,8}|[a-zA-Z]{1,30}|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\))$"
 )
-_SAFE_URL_PREFIXES = ("https://", "http://", "mailto:", "#", "/")
+_SAFE_URL_PREFIXES = ("https://", "mailto:", "#", "/")
 
 
 def _esc(value):
@@ -139,9 +140,19 @@ def _color(value, default):
 def _safe_url(value, default="#"):
     if isinstance(value, str):
         stripped = value.strip()
+        if stripped.startswith(("//", "/\\")):  # protocol-relative: leaves the page's own origin
+            return default
         if stripped.lower().startswith(_SAFE_URL_PREFIXES):
             return stripped
     return default
+
+
+def _https_access_url(value):
+    """A delivery link is shown only when it is an absolute https URL with a host (DTY-18)."""
+    if not isinstance(value, str):
+        return None
+    parsed = urllib.parse.urlparse(value.strip())
+    return value.strip() if parsed.scheme == "https" and parsed.netloc else None
 
 
 def format_amount(amount_minor, currency):
@@ -458,7 +469,7 @@ def _access_section(view):
         name = names.get(offer_id) or offer_id
         buttons, kind = [], "pending"
         for block in blocks.get(offer_id, []):
-            url = block.get("delivery_url")
+            url = _https_access_url(block.get("delivery_url"))
             if not url:
                 continue
             action = block.get("next_action") or "access"
@@ -632,7 +643,7 @@ def _primary_action_html(view):
     """The first granted access block is the primary next action."""
     items_by_offer = {i.get("offer_id"): i for i in view.get("items") or []}
     for block in view.get("access_blocks") or []:
-        url = block.get("delivery_url")
+        url = _https_access_url(block.get("delivery_url"))
         if not url:
             continue
         action = block.get("next_action") or "access"
