@@ -61,6 +61,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 import uuid
@@ -728,20 +729,47 @@ def _missing_manifest_images(page: dict, res: dict, run_dir: str) -> list[str]:
     return missing
 
 
+_IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.I | re.S)
+_IMG_SRC_ATTR_RE = re.compile(
+    r"""\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""", re.I)
+
+
+def _unmanifested_images(page: dict, res: dict, run_dir: str) -> list[str]:
+    """S06-11 (DOM -> manifest): every <img> src on a funnel page must be a
+    cdn_url of images/manifest.json or GHL media storage. Returns the others
+    (relative paths, external/temp URLs, data:/file:, empty src)."""
+    if str(page.get("surface") or "funnel") == "website":
+        return []
+    import ghl_rest_canvas  # lazy: ghl_rest_canvas does not import ghl_verify
+    allowed = {str(r.get("cdn_url", "")).strip() for r in _load_image_manifest(run_dir)}
+    bad: list[str] = []
+    for tag in _IMG_TAG_RE.findall(_resolve_rendered_dom(res)):
+        m = _IMG_SRC_ATTR_RE.search(tag)
+        src = next((g for g in m.groups() if g is not None), "") if m else ""
+        src = src.strip()
+        if src in allowed and src:
+            continue
+        if ghl_rest_canvas.is_ghl_media_url(src):
+            continue
+        bad.append(src or "<empty src>")
+    return bad
+
+
 def _image_gate_errors(page: dict, res: dict, run_dir: str) -> tuple[list[str], list[str]]:
     """Return ``(render_error_strings, missing_cdn_urls)`` for the rendered-<img>
     gate. Empty when the gate is off or all images rendered."""
+    errors: list[str] = []
     missing = _missing_manifest_images(page, res, run_dir)
-    if not missing:
-        return [], []
-    sample = "; ".join(missing[:5])
-    return (
-        [
+    if missing:
+        errors.append(
             f"missing_images: {len(missing)} manifest cdn_url(s) for page "
-            f"{page.get('page_id')!r} not found in the rendered DOM: {sample}"
-        ],
-        missing,
-    )
+            f"{page.get('page_id')!r} not found in the rendered DOM: {'; '.join(missing[:5])}")
+    bad = _unmanifested_images(page, res, run_dir)
+    if bad:
+        errors.append(
+            f"unmanifested_image: {len(bad)} <img> src(s) on page {page.get('page_id')!r} "
+            f"are neither in images/manifest.json nor GHL media storage: {'; '.join(bad[:5])}")
+    return errors, missing
 
 
 # ── The single real check (one page → one raw record) ────────────────────────

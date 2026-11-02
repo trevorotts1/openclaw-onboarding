@@ -312,3 +312,34 @@ def test_verify_page_passes_with_marker_taken_from_the_page_result(env, monkeypa
 def test_page_result_missing_identity_yields_no_marker():
     assert ghl_verify.marker_from_page_result({"launch_id": "L1"}) == ""
     assert ghl_verify.marker_from_page_result(None) == ""
+
+
+# ── S06-11 (verify half): every rendered <img> src must be manifested ────────
+
+GHL_MEDIA = "https://storage.googleapis.com/msgsndr/loc/media/hero.png"
+
+
+def _verify_with_img(env, monkeypatch, src, **extra):
+    run, _ = env
+    dom = f'<p>{MARKER}</p><img src="{src}">'
+    monkeypatch.setattr(ghl_builder, "render_check", _stub_render((dom, [])))
+    page = {"step": "s", "page_id": "p1", "preview_url": "https://x/preview/p1",
+            "marker": MARKER, **extra}
+    return ghl_verify.verify_page(page, run_dir=str(run), live=True)
+
+
+def test_relative_img_src_fails_verify(env, monkeypatch):
+    rec = _verify_with_img(env, monkeypatch, "images/hero.png")
+    assert rec["PASS"] is False
+    assert any(e.startswith("unmanifested_image") and "images/hero.png" in e
+               for e in rec["render_errors"])
+
+
+def test_ghl_media_img_src_is_accepted(env, monkeypatch):
+    rec = _verify_with_img(env, monkeypatch, GHL_MEDIA)
+    assert not any(e.startswith("unmanifested_image") for e in rec["render_errors"])
+
+
+def test_website_surface_skips_unmanifested_image_gate(env, monkeypatch):
+    rec = _verify_with_img(env, monkeypatch, "images/hero.png", surface="website")
+    assert not any(e.startswith("unmanifested_image") for e in rec["render_errors"])

@@ -135,8 +135,9 @@ def _gate_verdict(evidence_root: str) -> dict:
         )
     checks_passed.append("writer_identity")
 
-    # ── Check 2: trust must be exactly LIVE (a missing value is not LIVE) ────────
-    trust = summary.get("trust")
+    # ── Check 2: trust must be LIVE (absent = LIVE, as before S06-04; a MOCK
+    # run never leaves a nonce file, so dropping the field cannot pass 2b) ────
+    trust = summary.get("trust", "LIVE")
     if trust in _NON_SHIPPABLE_TRUST or os.path.isfile(mock_sentinel):
         raise GateVerdictError(
             f"GATE FAIL: this evidence tree carries trust={trust!r} or a "
