@@ -302,16 +302,29 @@ try {
   // A failed or missing build is a hard, visible stop: no archive is
   // produced from source alone and no old bundle is ever packaged.
   const runtimeDir = join(root, "runtime");
+  const prebuiltEntry = join(runtimeDir, "dist", "blackceo-council.mjs");
   if (existsSync(join(runtimeDir, "package.json"))) {
-    for (const [cmd, args, label] of [
-      ["npm", ["ci", "--no-audit", "--no-fund"], "dependency install (npm ci)"],
-      ["npm", ["run", "build"], "runtime build (npm run build)"],
-    ]) {
-      const r = spawnSync(cmd, args, { cwd: runtimeDir, encoding: "utf8", timeout: 15 * 60_000 });
-      if (r.status !== 0) {
-        fail(`runtime ${label} failed (exit ${r.status}): build the executable with ` +
-          "`npm ci --no-audit --no-fund && npm run build` in runtime/ before packaging. " +
-          `${(r.stderr || r.stdout || "").trim().split("\n").slice(-3).join(" | ")}`);
+    // No recompile when the runtime source did not change. The release record
+    // still names this source commit, and the entry gate below hash+load-checks
+    // the exact executable being packaged. The operator must prove the reused
+    // dist is the build of the same source before setting this; the CTR-194
+    // receipt records that tree comparison.
+    if (process.env.COUNCIL_PACKAGE_REUSE_RUNTIME === "1") {
+      if (!existsSync(prebuiltEntry)) {
+        fail(`COUNCIL_PACKAGE_REUSE_RUNTIME=1 but ${prebuiltEntry} is missing; build the runtime or unset the flag`);
+      }
+      console.log(`runtime build reused (COUNCIL_PACKAGE_REUSE_RUNTIME=1): ${prebuiltEntry}`);
+    } else {
+      for (const [cmd, args, label] of [
+        ["npm", ["ci", "--no-audit", "--no-fund"], "dependency install (npm ci)"],
+        ["npm", ["run", "build"], "runtime build (npm run build)"],
+      ]) {
+        const r = spawnSync(cmd, args, { cwd: runtimeDir, encoding: "utf8", timeout: 15 * 60_000 });
+        if (r.status !== 0) {
+          fail(`runtime ${label} failed (exit ${r.status}): build the executable with ` +
+            "`npm ci --no-audit --no-fund && npm run build` in runtime/ before packaging. " +
+            `${(r.stderr || r.stdout || "").trim().split("\n").slice(-3).join(" | ")}`);
+        }
       }
     }
   }

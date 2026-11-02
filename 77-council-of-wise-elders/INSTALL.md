@@ -137,7 +137,29 @@ does the whole job:
    null, manager launchd, pm2 or external, name, release id), plus the
    launcher `council-runtime/bin/council-service` and the command line tool
    `council-runtime/bin/blackceo-council`.
-5. Prints one result line, `COUNCIL_WIRE: READY`, `NOOP`, `ADOPTED_EXISTING`,
+5. Installs the `extensions/council-before-dispatch` package into
+   `$OPENCLAW_ROOT/extensions/council-before-dispatch` (whole declared package,
+   over the existing directory, no delete step), validates the installed
+   OpenClaw version against the package's own `openclaw.compat` floor, and runs
+   that package's `provision.mjs` against THIS box's trusted config. On
+   `READY` it writes the exact derived entry to
+   `plugins.entries["council-before-dispatch"]`, adds the extensions directory
+   to `plugins.load.paths`, and extends an existing `plugins.allow` list. It
+   never creates an allowlist, never widens `allowFrom`, and never supplies an
+   operator fallback: a missing or ambiguous binding is a typed
+   `COUNCIL_PLUGIN: NOT_READY` with zero authorization, and any existing entry
+   is disabled rather than left on a stale binding. Config writes are atomic,
+   JSON-validated and checked with `openclaw config validate`; an invalid
+   candidate is rolled back byte-for-byte. The new plugin activates on the next
+   gateway start.
+6. Prints one `COUNCIL_PLUGIN:` line: `READY <plugin>@<version> api=<version>
+   agent=<id> ...`, `NOOP` when the config already matches, or `NOT_READY
+   <code> <detail>` for `PLUGIN_API_UNKNOWN`, `PLUGIN_API_INCOMPATIBLE`,
+   `PLUGIN_BINDING_UNRESOLVED`, `PLUGIN_CONFIG_INVALID` or
+   `PLUGIN_INSTALL_FAILED`. Provisioning is honest: `READY` means the box's
+   stated binding is self-consistent and the runtime closure files are present,
+   not that a Telegram ask has been exercised.
+7. Prints one result line, `COUNCIL_WIRE: READY`, `NOOP`, `ADOPTED_EXISTING`,
    `DEFERRED_NO_GUI` or `NOT_READY <code>`. The codes (NODE_TOO_OLD, NO_NPM,
    NO_PM2, RUNNING_AS_ROOT, PORT_IN_USE, SERVICE_UNHEALTHY,
    RUNTIME_BUILD_FAILED, UNSUPPORTED_PLATFORM) and their fixes are in
@@ -223,10 +245,17 @@ Its last line is `COUNCIL_BOX: READY`, `DEGRADED <codes>` or
 `NOT_READY <codes>` (exit 0, 0, 1; exit 2 means the verifier itself could
 not run). It checks, in order: the release receipt, the release hash, the
 service registration (LaunchAgent or pm2), the local `/status`, a usable
-model route, the `blackceo-council` command, the public address and its
-Cloudflare Access sign-in gate, and (VPS) a tunnel connector inside the
-container. Every code and its fix is in references/install-matrix.md.
-READY is the only state that means the client can use the Council today.
+model route, the `blackceo-council` command, the installed Council plugin
+package and its registry entry, the plugin's trusted binding against
+`provision.mjs`, the plugin's loaded registry record (`openclaw plugins list
+--json`), the public address and its Cloudflare Access sign-in gate, and
+(VPS) a tunnel connector inside the container. Plugin codes are
+`PLUGIN_NOT_INSTALLED`, `PLUGIN_NOT_REGISTERED`, `PLUGIN_NOT_ALLOWED`,
+`PLUGIN_LOAD_PATH_MISSING`, `PLUGIN_BINDING_UNRESOLVED`,
+`PLUGIN_BINDING_DRIFT`, `PLUGIN_NOT_LOADED`, and the honest
+`PLUGIN_HOOK_UNVERIFIED` (registry probe unavailable). Every code and its fix
+is in references/install-matrix.md. READY is the only state that means the
+client can use the Council today.
 
 ## Step 9: Permitted live acceptance
 

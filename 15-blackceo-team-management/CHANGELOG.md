@@ -4,6 +4,13 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [7.1.11] - 2026-11-02
+
+### Changed - REMOTE RESCUE TEMPLATE: AN EXPLICIT COUNCIL ASK IS NOT BOARD WORK
+
+- Batch cohort-20261102-2210-ctr219, unit CTR-194 (Council front-door install): `templates/remote-rescue/AGENTS.md` gains the "Explicit Council ask (not board work)" section, so the Remote Rescue agent sends an explicit Council ask to Skill 77's front door instead of `mc-route.sh` or a department.
+- skill-version v7.1.8 -> v7.1.11 (v7.1.9 and v7.1.10 are claimed by other batch branches).
+
 ## [7.1.8] - 2026-10-29
 
 ### Fixed - REMOTE RESCUE INSTALLER ON A BOX WITH A BELOW-FLOOR NODE FIRST ON PATH

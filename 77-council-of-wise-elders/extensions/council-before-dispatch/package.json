@@ -1,6 +1,6 @@
 {
   "name": "@blackceo/openclaw-council-before-dispatch",
-  "version": "1.2.0",
+  "version": "1.2.3",
   "private": true,
   "type": "module",
   "description": "Authorized explicit Council ask handler for OpenClaw before_dispatch.",
@@ -10,7 +10,9 @@
     "index.js",
     "index.ts",
     "lib",
+    "lib/binding-predicate.mjs",
     "test",
+    "test/binding-predicate.test.mjs",
     "install",
     "fixtures",
     "provision.mjs",
@@ -19,7 +21,9 @@
     "CONTRACT.md"
   ],
   "openclaw": {
-    "extensions": ["./index.js"],
+    "extensions": [
+      "./index.js"
+    ],
     "compat": {
       "pluginApi": ">=2026.10.8",
       "minGatewayVersion": "2026.10.8"
