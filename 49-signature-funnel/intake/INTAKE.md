@@ -6,7 +6,7 @@ question is shown, never which question is asked or where the answer goes.
 
 | Piece | File |
 |---|---|
-| Question bank (42 questions) | `shared-utils/client_intake/question-bank.json` |
+| Question bank (60 questions) | `shared-utils/client_intake/question-bank.json` |
 | Engine: `next`, `record`, `resolve_unknown`, `check`, `finalize` | `shared-utils/client_intake/engine.py` |
 | Colour help: logo, website, three palettes, safe default | `shared-utils/client_intake/palette_help.py`, `palette-defaults.json` |
 | Answers file contract (C1) | `shared-utils/client_intake/answers.schema.json` |

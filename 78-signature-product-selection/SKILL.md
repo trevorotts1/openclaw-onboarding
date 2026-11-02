@@ -19,9 +19,11 @@ between packages. The order form that takes payment is Skill 79 (checkout).
 
 ## Invocation boundary
 
-- Journey mode `multiple_options` only. `single_simple` returns a decline
-  result directing the caller to Skill 79 combined mode; it never renders a
-  fake one-button selection page.
+- Journey mode `multiple_options` only. `check_invocation` (in
+  `scripts/selection_core.py`) returns `decline_single_offer` for
+  `single_simple`, and for any launch with a single main offer whatever its
+  journey mode claims, directing the caller to Skill 79 combined mode; it never
+  renders a fake one-button selection page.
 - An explicitly requested standalone comparison page may run with its own
   approved brief.
 - Any other journey mode (`folded_levels`, `free_entry`, ...) has no selection

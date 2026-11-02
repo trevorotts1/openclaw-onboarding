@@ -222,15 +222,17 @@ class Upsell2EndToEndTests(unittest.TestCase):
     def test_upsell_2_from_downsell_1_recurring(self):
         wd, record, graph, by_role = make_workdir(self._recurring_u2)
         self.addCleanup(shutil.rmtree, wd, True)
-        # Landing-copy ref sourced from the landing role's own result
-        # artifact in the work dir (no sidecar key for it here).
-        shutil.copy(FIXTURES / "result-landing.fixture.json",
-                    wd / "result-landing.json")
+        # CARRIED 46 removed the result-landing.json fallback: the sidecar
+        # itself must name the landing copy (recurring terms plus the ref).
+        sidecar = wd / "sidecar-upsell_2-recurring.json"
+        doc = load(FIXTURES / "enrichment-upsell_2-recurring.json")
+        doc["source_landing_copy_ref"] = "TEST-ONLY-landing-copy-ref"
+        sidecar.write_text(json.dumps(doc), encoding="utf-8")
         proc = run_wrapper(
             wd, "upsell_2",
             copy_path=S80_FIX / "copy-upsell2-public.valid.json",
             journey_path=ADAPT_FIX / "journey-upsell2-from-downsell1.testonly.json",
-            enrichment=FIXTURES / "enrichment-upsell_2-recurring.json",
+            enrichment=sidecar,
             artifact_path="80-signature-upsell/fixtures/"
                           "copy-upsell2-public.valid.json")
         self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -658,6 +660,13 @@ class Upsell1ImagesTests(unittest.TestCase):
             self.assertEqual(len(request["sections"]), 8, stage)
             self.assertEqual(request["metadata"]["canonical_ids"], list("12345678"), stage)
             self.assertTrue((run / stage).is_dir(), stage)
+        # CARRIED 9: the plan written from the enriched request reaches Skill 71 through --slots
+        plan = load(wd / "image-plan-upsell_1.json")
+        self.assertEqual(sorted(plan), list("12345678"))
+        self.assertIn("TEST ONLY", plan["1"][0]["subject"])
+        self.assertNotIn("Editorial photograph that illustrates", json.dumps(plan))
+        self.assertIn(plan["1"][0]["subject"],
+                      json.dumps(load(run / "production-request-visual-mockup.json")))
         self.assertEqual(len(list((run / "desktop-wireframe").glob("section-*.png"))), 8)
         self.assertEqual(len(list((run / "visual-mockup" / "mobile").glob("part-*.png"))), 8)
         # the stub provider never composes review PDFs or overview boards (a placeholder is not
@@ -708,11 +717,15 @@ class Upsell1ImagesTests(unittest.TestCase):
 
 
 def real_inputs(wd, copy_path, journey_path):
-    """The same copy and journey with test_only cleared, as a real launch stages them."""
+    """The same copy and journey with test_only cleared, as a real launch stages them.
+    A real launch's journey must cite resolvable ledger evidence (S80 UPS-02), so the
+    test-only evidence refs are swapped for conforming ledger refs."""
     out = []
     for name, src in (("copy.json", copy_path), ("journey.json", journey_path)):
         doc = load(src)
         doc["test_only"] = False
+        for rec in doc.get("verified_purchases") or []:
+            rec["evidence_ref"] = "ledger:order-0001"
         (wd / name).write_text(json.dumps(doc))
         out.append(wd / name)
     return out

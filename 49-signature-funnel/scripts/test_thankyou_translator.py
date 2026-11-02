@@ -131,6 +131,15 @@ def stage(td: Path, req=None, res=None, man=None, with_artifact=True,
                                / "test-only-order-view.json")
                               .read_text(encoding="utf-8"))
             view.update(ident)
+            # Skill 82's validators (DTY-18) take a link's expected URL and its
+            # independent-authorization flag from the S44 fulfillment map, never
+            # from the view. The translator hands them no map, so any block that
+            # carries a delivery_url is refused (delivery_url_mismatch, then
+            # missing_independent_authorization). A block with no delivery_url
+            # renders no link and is not checked, so the fixture view stages its
+            # access blocks link-free (entitlement and next_action kept).
+            for block in view.get("access_blocks") or []:
+                block.pop("delivery_url", None)
         res["order_view"] = view
         (td / "purchase-snapshot.json").write_text(
             json.dumps(snap, indent=2), encoding="utf-8")
@@ -163,6 +172,32 @@ def run(td: Path, author: str = AUTHOR):
         [sys.executable, str(TRANSLATOR), str(td / "page-request.json"),
          str(td / "page-result.json"), str(td), "--author-session", author],
         capture_output=True, text=True)
+
+
+def review_kw(out) -> dict:
+    """ENF-10: a result claiming independent_review counts only through a review
+    record whose reviewer session is in the dispatch ledger and which lists the
+    sha256 of every artifact (two session strings are not a review). The
+    collector's own inputs for that, built from the translated result."""
+    if not out.get("independent_review"):
+        return {}
+    reviewer = out["reviewer_session"]
+    return {"ledger": {"sessions": [{"session_id": reviewer,
+                                     "model": "fixture-reviewer-model"}]},
+            "review": {"schema": "signature-launch-review-record/v1",
+                       "reviewer_session": reviewer,
+                       "reviewer_model": "fixture-reviewer-model",
+                       "request_id": out["request_id"],
+                       "reviewed_artifacts": [
+                           {"path": a["path"], "sha256": a["sha256"]}
+                           for a in out["artifacts"]]}}
+
+
+def collect_kw(out) -> dict:
+    kw = review_kw(out)
+    return ({"ledger": kw["ledger"],
+             "review_records": {out["request_id"]: kw["review"]}}
+            if kw else {})
 
 
 def manifest_for(req):
@@ -203,7 +238,7 @@ def main() -> int:
                       "page-result 1.0 JSON Schema")
         except Exception as exc:  # noqa: BLE001
             say(False, f"happy path JSON Schema validation: {exc}")
-        fails = receipts.validate_result(out, req0)
+        fails = receipts.validate_result(out, req0, **review_kw(out))
         say(fails == [], f"happy path passes collect_launch_receipts."
                          f"validate_result (fails={fails})")
         manifest = {"launch_id": req0["launch_id"],
@@ -217,7 +252,7 @@ def main() -> int:
                                   "assigned_skill": 82,
                                   "input_hash": req0["input_hash"]}]}
         cp = receipts.collect(manifest, [out],
-                              {req0["request_id"]: req0})
+                              {req0["request_id"]: req0}, **collect_kw(out))
         say(cp["roles_reported"] == ["thank_you"] and not cp["problems"],
             f"happy path is counted by collect() (problems={cp['problems']})")
         say(out["independent_review"] is True and
@@ -264,7 +299,7 @@ def main() -> int:
         say(out["independent_review"] is False and
             out["reviewer_session"] is None,
             "status none yields independent_review false, reviewer null")
-        say(receipts.validate_result(out, req0) == [],
+        say(receipts.validate_result(out, req0, **review_kw(out)) == [],
             "review-none output still passes receipt validation")
 
     # Case 4: S82 errors non-empty yields status blocked with the
@@ -356,7 +391,7 @@ def main() -> int:
         say(out["native_bindings_ref"] is None,
             "no-envelope output carries envelope_ref null verbatim as "
             "native_bindings_ref")
-        say(receipts.validate_result(out, req0) == [],
+        say(receipts.validate_result(out, req0, **review_kw(out)) == [],
             "no-envelope output passes collect_launch_receipts."
             "validate_result with zero problems")
 
@@ -392,11 +427,12 @@ def main() -> int:
         say(out11 == out10,
             "1.1 translation output is identical to the 1.0 output "
             "(acceptance is the only effect of the 1.1 echo source)")
-        say(receipts.validate_result(out11, req11) == [],
+        say(receipts.validate_result(out11, req11, **review_kw(out11)) == [],
             "1.1 translation passes collect_launch_receipts."
             "validate_result against the 1.1 request with zero fails")
         cp = receipts.collect(manifest_for(req11), [out11],
-                              {req11["request_id"]: req11})
+                              {req11["request_id"]: req11},
+                              **collect_kw(out11))
         say(cp["roles_reported"] == ["thank_you"] and not cp["problems"],
             f"collect() rollup over the translated 1.1 result reports "
             f"thank_you with zero problems (got problems "
@@ -459,11 +495,13 @@ def main() -> int:
                 and out_real["reviewer_session"] == "SWARM",
                 "real-manifest translation carries the manifest's "
                 "recorded independent review")
-            say(receipts.validate_result(out_real, req11) == [],
+            say(receipts.validate_result(out_real, req11,
+                                         **review_kw(out_real)) == [],
                 "real-manifest translation passes validate_result "
                 "with zero fails")
             cp = receipts.collect(manifest_for(req11), [out_real],
-                                  {req11["request_id"]: req11})
+                                  {req11["request_id"]: req11},
+                                  **collect_kw(out_real))
             say(not cp["problems"],
                 f"collect() rollup over the real-manifest translation "
                 f"has zero problems (got {cp['problems']})")
@@ -594,7 +632,7 @@ def main() -> int:
         cp = receipts.collect(manifest_for(req11), [out11],
                               {req11["request_id"]: req11},
                               asset_receipts=[receipt],
-                              registry=registry)
+                              registry=registry, **collect_kw(out11))
         closed = cp["prompt_items"]["closed"]
         say(not cp["problems"] and len(closed) == 1
             and closed[0]["prompt_policy_id"] == "kie-rule-12-band",
