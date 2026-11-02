@@ -340,6 +340,7 @@ class ProcessGateTest(unittest.TestCase):
 
     def test_injected_simulation_never_becomes_production_evidence(self):
         ledger.init_run(self.kwargs["ledger_db"], "run", 1000)
+        (self.run / "fake.png").write_bytes(b"offline-bytes")  # F11: real bytes
         commands = []
         def fake(argv):
             command = argv[1]
