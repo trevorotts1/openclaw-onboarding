@@ -19,6 +19,11 @@ and required. What fails is a NEW pitch:
 - purchase authority claimed from a query string (e.g. vip=true);
 - a pending/failed/refunded purchase presented as confirmed
   ("You are all set");
+- an item whose status, currency or billing differs from the snapshot
+  line (status is recomputed from payment_status, never trusted);
+- an access block whose delivery_url is not https, carries identity
+  claims, differs from the S44 map URL, or lacks the S44 map's own
+  destination_independently_authorizes=true;
 - raw payment credential fields anywhere in the view.
 
 Stdlib only. Returns a list of error strings; empty means pass.
@@ -31,10 +36,12 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from thank_you_resolver import (  # noqa: E402
     FORBIDDEN_KEYS,
+    DISPLAY_STATUS,
     deduplicate_line_items,
     event_provenance_problem,
     ResolverError,
 )
+from validate_access import validate_view_access  # noqa: E402
 from validate_entitlements import validate_entitlements  # noqa: E402
 
 ALLOWED_CTA_CLASSIFICATIONS = {
@@ -192,6 +199,25 @@ def validate_thank_you(view, snapshot, fulfillment_map=None):
                 f"name_mismatch: {line['offer_id']} displayed name "
                 f"{item.get('display_name')!r} != verified {line['display_name']!r}"
             )
+        # DTY-19: status, currency and billing terms are recomputed from
+        # the verified snapshot line, never trusted from the view.
+        expected_status = DISPLAY_STATUS[line["payment_status"]]
+        if item.get("display_status") != expected_status:
+            errors.append(
+                f"status_mismatch: {line['offer_id']} displayed status "
+                f"{item.get('display_status')!r} != verified {expected_status!r} "
+                f"(snapshot payment_status {line['payment_status']!r})"
+            )
+        if item.get("currency") != line["currency"]:
+            errors.append(
+                f"currency_mismatch: {line['offer_id']} displayed currency "
+                f"{item.get('currency')!r} != verified {line['currency']!r}"
+            )
+        if item.get("billing") != line.get("billing"):
+            errors.append(
+                f"billing_mismatch: {line['offer_id']} displayed billing "
+                f"{item.get('billing')!r} != verified {line.get('billing')!r}"
+            )
     if sorted(displayed_refs) != sorted(verified_by_ref):
         errors.append(
             "item_set_mismatch: displayed lines "
@@ -261,21 +287,25 @@ def validate_thank_you(view, snapshot, fulfillment_map=None):
                     )
 
     # --- honest confirmation status -----------------------------------------
+    # DTY-19: expectations come from the snapshot's payment_status, so a
+    # view that relabels a pending item 'paid' cannot launder 'all set'.
     confirmation = view.get("confirmation") or {}
-    unresolved = [i for i in view.get("items") or []
-                  if i.get("display_status") in ("pending", "requires_customer_action",
-                                                 "failed", "unknown",
-                                                 "refunded", "partially_refunded")]
+    unresolved = [l for l in lines if DISPLAY_STATUS[l["payment_status"]] != "paid"]
     if unresolved and confirmation.get("all_set"):
         errors.append(
             "false_confirmation: 'all set' confirmation while items are "
-            f"unresolved: {[i.get('offer_id') for i in unresolved]}"
+            f"unresolved: {[i['offer_id'] for i in unresolved]}"
         )
     if unresolved and "all set" in str(confirmation.get("headline", "")).lower():
         errors.append(
             "false_confirmation: headline claims 'all set' while items are "
-            f"unresolved: {[i.get('offer_id') for i in unresolved]}"
+            f"unresolved: {[i['offer_id'] for i in unresolved]}"
         )
+
+    # --- access links (DTY-18) ----------------------------------------------
+    # The rendered delivery_url is checked directly: https only, claim-free,
+    # equal to S44's map URL, authorization flag read from S44's map.
+    errors.extend(validate_view_access(view, fulfillment_map))
 
     # --- entitlement equality (exact purchased set) -------------------------
     errors.extend(validate_entitlements(view, snapshot, fulfillment_map))

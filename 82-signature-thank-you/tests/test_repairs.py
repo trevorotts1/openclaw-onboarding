@@ -399,6 +399,7 @@ class RepairD05NextActionFailClosedTest(unittest.TestCase):
                     "base-a": {
                         "state": "granted",
                         "delivery_url": "https://example.test/access/base-a",
+                        "destination_independently_authorizes": True,
                         "next_action": action,
                     },
                 }

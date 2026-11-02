@@ -29,6 +29,11 @@ Rules enforced here (packet doc 12 sections 2, 3, 5, 6; doc 18 A13/A20):
   provenance may neither over-claim events no line carries nor
   under-claim lines the manifest omits, and two distinct lines may not
   share one event_id.
+- Every granted entitlement's delivery_url must be https, free of
+  identity/entitlement query claims; '//host' and http:// URLs fail
+  closed (DTY-18), so no view is built for them. The independent
+  validator additionally requires the S44 map's own
+  destination_independently_authorizes=true.
 - Raw payment credential fields anywhere in the input are rejected.
 - S44's order-level entitlement version (the ev1 value of CR-S82-002
   item 5) is carried through to the view's `entitlement_version` field
@@ -45,7 +50,12 @@ Stdlib only. Deterministic: no clock, no randomness, no network.
 """
 
 import copy
+import os
 import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from validate_access import validate_view_access  # noqa: E402
 
 SNAPSHOT_SOURCE = "verified_normalized_purchase_snapshot"
 
@@ -514,4 +524,15 @@ def resolve_order_view(snapshot, fulfillment_map=None, expected_identity=None,
         # view is identical to the pre-ev1 shape, and the confirmation
         # observation derives its fingerprint fallback (gap I6).
         view["entitlement_version"] = entitlement_version
+    # DTY-18: an access link the renderer would put in an href must pass
+    # the same https / claim-free / S44-authorized rules the validator
+    # applies; otherwise no view exists, so nothing renders an href.
+    # The S44 authorization attestation is enforced by the independent
+    # validator (validate_thank_you), not here.
+    link_errors = [e for e in validate_view_access(view, fulfillment_map)
+                   if not e.startswith("missing_independent_authorization")]
+    if link_errors:
+        raise ResolverError(
+            "invalid_access_link: " + "; ".join(link_errors)
+            + "; failing closed")
     return view

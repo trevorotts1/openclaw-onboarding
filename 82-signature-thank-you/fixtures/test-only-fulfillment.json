@@ -2,16 +2,19 @@
   "base-a": {
     "state": "granted",
     "delivery_url": "https://example.test/access/base-a",
+    "destination_independently_authorizes": true,
     "next_action": "access"
   },
   "workbook": {
     "state": "granted",
     "delivery_url": "https://example.test/access/workbook",
+    "destination_independently_authorizes": true,
     "next_action": "access"
   },
   "extra-full": {
     "state": "granted",
     "delivery_url": "https://example.test/access/extra-full",
+    "destination_independently_authorizes": true,
     "next_action": "access"
   }
 }

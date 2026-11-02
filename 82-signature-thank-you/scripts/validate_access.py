@@ -176,6 +176,13 @@ def validate_access(view, link_manifest):
                 )
             continue
 
+        if not parsed.netloc:
+            errors.append(
+                f"insecure_destination: {where} destination {url!r} "
+                "names no host"
+            )
+            continue
+
         if not is_access:
             continue
 
@@ -203,6 +210,44 @@ def validate_access(view, link_manifest):
                 "which is not in the verified order view"
             )
     return errors
+
+
+def validate_view_access(view, fulfillment_map):
+    """Run the access rules over the view's own access blocks (DTY-18).
+
+    The manifest is built from ``view["access_blocks"]`` — the URLs the
+    renderer will actually put in an href — never from a separate
+    caller-supplied list. The independent-authorization flag and the
+    expected URL come from the S44 fulfillment map entry for the
+    entitlement (``destination_independently_authorizes``,
+    ``delivery_url``); a view or caller boolean is never trusted. A block
+    with no delivery_url renders no link and is not checked here.
+    """
+    if not isinstance(view, dict):
+        return ["invalid_view: order view must be an object"]
+    fulfillment_map = fulfillment_map if isinstance(fulfillment_map, dict) else {}
+    links, errors = [], []
+    for idx, block in enumerate(view.get("access_blocks") or []):
+        url = block.get("delivery_url")
+        if not url:
+            continue
+        entitlement_id = block.get("entitlement_id")
+        entry = fulfillment_map.get(entitlement_id)
+        entry = entry if isinstance(entry, dict) else {}
+        if url != entry.get("delivery_url"):
+            errors.append(
+                f"delivery_url_mismatch: access_blocks[{idx}] url {url!r} "
+                "is not the S44 fulfillment map delivery_url for "
+                f"entitlement {entitlement_id!r}"
+            )
+        links.append({
+            "entitlement_id": entitlement_id,
+            "kind": block.get("next_action") or "access",
+            "url": url,
+            "destination_independently_authorizes":
+                entry.get("destination_independently_authorizes"),
+        })
+    return errors + validate_access(view, {"links": links})
 
 
 def _load(path):
