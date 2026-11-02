@@ -34,9 +34,13 @@ import unicodedata
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _CORE = os.path.dirname(_HERE)
-for _p in (_HERE, _CORE):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+# core/ only. Never _HERE: this package's own folder at the front of sys.path
+# makes every later bare `import music_styles` in the process bind the leaf
+# music_styles.py instead of this package, so a suite's imports depended on
+# which suite ran before it (catalog_calculator/test_card_render.py lost
+# batch_mode after test_agnes_price.py in one pytest process).
+if _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
 
 #: The original-records module, loaded BY FILE PATH (the same pattern
 #: core/music_styles/music_styles.py uses for duration_registry). A plain
