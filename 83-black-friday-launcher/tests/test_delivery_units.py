@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import importlib.util
 import json
 import sys
 import tempfile
@@ -43,6 +44,28 @@ def bound_plan() -> dict:
 
 def reader_hash(unit_id: str) -> str:
     return hashlib.sha256(f"reader:{unit_id}".encode()).hexdigest()
+
+
+def with_skill44_builds(plan: dict, run_dir: Path, deliveries: dict) -> dict:
+    """Swap each planned automation's delivery for a real Skill 44 build: the workflow export
+    (artifact) plus the reader's automation-builds.json in the package root. Used by every
+    test that assembles a full launch and expects `check` to pass."""
+    builds = []
+    for auto in plan.get("automations") or []:
+        unit_id = auto["id"]
+        body = {"workflow_id": f"wf-{unit_id}", "status": "draft", "produced_by": du.BUILD_COMMAND,
+                "unit_key": f"{plan['launch_id']}/{unit_id}",
+                "expected_graph_hash": reader_hash(unit_id), **GRAPH}
+        rel = f"automations/{unit_id}.json"
+        raw = write(Path(run_dir) / rel, body)
+        deliveries[unit_id] = {**deliveries.get(unit_id, {"state": "complete"}),
+                               "artifacts": [{"path": rel, "sha256": hashlib.sha256(raw).hexdigest(),
+                                              "size": len(raw)}],
+                               "lane_validation": {"lane": "S44", "contract": du.EXPORT_CONTRACT,
+                                                   "state": "passed"}}
+        builds.append({"id": unit_id, "state": "ready", "expected_graph_hash": reader_hash(unit_id)})
+    write(Path(run_dir) / du.BUILDS_DOC, {"launch_id": plan["launch_id"], "builds": builds})
+    return deliveries
 
 
 def write(path: Path, data) -> bytes:
@@ -131,6 +154,18 @@ class DeliveryUnitsTests(unittest.TestCase):
         manifest = self.package()
         (self.root / du.BUILDS_DOC).unlink()
         self.assertEqual(len(self.check(manifest)), len(self.automations))
+
+    def test_the_rule_loads_the_way_the_check_rules_seam_loads_it(self):
+        # U-launcher-core-02's seam loads every check_rules/*.py BY PATH under the name
+        # launcher_core.check_rules.<stem>; the relative imports must resolve that way too.
+        path = SKILL_ROOT / "launcher_core/check_rules/delivery_units.py"
+        spec = importlib.util.spec_from_file_location("launcher_core.check_rules.delivery_units", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertEqual(module.violations(self.package(), self.root, SKILL_ROOT), [])
+        thin = {**self.plan, "approved_plan_hash": "c" * 64}
+        self.assertTrue(any(f.startswith("AF-LAUNCH-PLAN-BIND")
+                            for f in module.violations(self.package(plan=thin), self.root, SKILL_ROOT)))
 
     # ---- CON-04: the plan is the approved launch, with the units a BF launch is ------
     def test_a_plan_that_differs_from_the_dispatched_launch_fails(self):
