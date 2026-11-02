@@ -227,7 +227,7 @@ def test_storyboard_studio_run_publishes_once():
         pub = fb.published[0]
         assert pub["stage"] == "storyboard" and pub["version"] == 1
         assert pub["order_id"] == "o-1" and pub["base_url"] == "https://studio.example"
-        assert pub["key"] == "test-key" and pub["choices"] == ["GO"]
+        assert pub["key"] == "test-key" and pub["choices"] == [{"n": 1, "label": "GO"}]
         assert "Storyboard: 3 shots" in pub["text"]
         assert [os.path.basename(f) for f in pub["files"]] == ["s1.png", "s2.png", "s3.png"]
         assert all(os.path.isfile(f) for f in pub["files"])

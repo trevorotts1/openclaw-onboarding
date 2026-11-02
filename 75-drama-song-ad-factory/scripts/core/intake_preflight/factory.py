@@ -373,6 +373,10 @@ def _studio_bump_version(run_dir, stage):
     return v[stage]
 
 
+# The approvals service stores choices as {n: whole number, label: string}.
+STUDIO_CHOICES = {"storyboard": ({"n": 1, "label": "GO"},)}
+
+
 def _studio_publish(run_dir, order, stage, text, files, choices=()):
     """One approval item on the studio page (approvals_bridge.publish). Returns
     the item dict, or None when the bridge module is not on this box."""
@@ -443,7 +447,7 @@ def cmd_storyboard(a):
         if studio:
             delivered = _studio_publish(run_dir, studio, "storyboard", message,
                                         [p for _n, p in images],
-                                        choices=["GO"]) is not None or delivered
+                                        choices=list(STUDIO_CHOICES["storyboard"])) is not None or delivered
         if target:
             ar.openclaw_sender(target)(message, images)
             delivered = True
