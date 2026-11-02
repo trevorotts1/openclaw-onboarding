@@ -450,6 +450,25 @@ def _offline_proof(value):
     return False
 
 
+def _order_violation(root, stage, states, registry, order):
+    """C01 ordering option B: a COMPLETE row whose declared artifacts are gone.
+
+    Independent of the governed history check -- it reads the raw state map and
+    only file existence, exactly the predecessor contradiction the owner's
+    order decision names. Returns the first (predecessor, artifact) the order
+    gate refuses, or None when it agrees the order is intact.
+    """
+    if stage not in order:
+        return None
+    for predecessor in order[:order.index(stage)]:
+        entry = registry.get(predecessor) or {}
+        if not entry.get("required", True) or states.get(predecessor) != "COMPLETE":
+            continue
+        for rel in entry.get("required_artifacts", []):
+            if not (root / rel).exists():
+                return predecessor, rel
+    return None
+
 def admit_production(run_dir, stage, *, run_id=None):
     """Admit exactly one current stage via the repository's validated graph.
 
@@ -487,6 +506,12 @@ def admit_production(run_dir, stage, *, run_id=None):
             for rel in registry[predecessor].get("required_artifacts", []):
                 path = (root / rel).resolve()
                 if not path.is_relative_to(root) or not path.is_file() or path.stat().st_size == 0:
+                    if _order_violation(root, stage, states, registry, order) == (predecessor, rel):
+                        return _result(False, "PRODUCTION_ORDER_VIOLATION",
+                                       "Required predecessor %s has no current %s artifact." % (predecessor, rel),
+                                       predecessor=predecessor,
+                                       governed_reason_code="PRODUCTION_PREDECESSOR_EVIDENCE_MISSING",
+                                       **context)
                     return _result(False, "PRODUCTION_PREDECESSOR_EVIDENCE_MISSING",
                                    "Required predecessor %s has no current %s artifact." % (predecessor, rel),
                                    predecessor=predecessor, **context)
