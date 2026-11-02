@@ -15,8 +15,12 @@ They pick "I'm not sure, help me". Run the engine's help path: colours from thei
 
 ## Progress and delivery
 
-- While pages build, show the status table: `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/progress_report.py --rows-file <rows.json> --harness claude-code`.
-- At the end, show `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/delivery_report.py --rows-file <rows.json> --answers-file <answers.json> --ledger-file <ledger.json> --harness claude-code`: every page with desktop and mobile wireframes and mockups, a "To confirm" list, and the image spend.
+The rows the client reads come from the checked package, never from a file written by hand. A rows file an agent authored is not evidence: it can say every page has desktop and mobile wireframes and mockups when the package does not.
+
+- While pages build, report only what `<run-dir>/dispatch-report.json` says (page labels, lane plan, `to_confirm`). Do not invent per-page status.
+- When the package is assembled, run `python3 -m launcher_core.cli check --manifest <package-dir>/package-manifest.json --root <package-dir>`. Only after it exits 0, generate the rows from `package-manifest.json` and bind the rows file to that manifest's hash (the generator and the refusal of an unbound file are tracked as CON-19). Never edit the rows by hand.
+- Show them with `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/progress_report.py --rows-file <rows.json> --harness claude-code` and, at the end, `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/delivery_report.py --rows-file <rows.json> --answers-file <answers.json> --ledger-file <ledger.json> --harness claude-code`: every page with desktop and mobile wireframes and mockups, a "To confirm" list, and the image spend. Never show a rows file that is not bound to the manifest.
+- If `check` fails, tell the client what is missing (the check names each gap) instead of showing a delivery report. A `--page-only` package is labeled page-only; say that it carries no Black Friday calendar, emails, texts or automations.
 
 ## Speed
 
