@@ -3250,6 +3250,22 @@ jobs:
             75-drama-song-ad-factory/scripts
           echo "✓ Skill 75 scripts/ pytest-collectable and green"
 
+      - name: Skill 75 final-view enforcement gate (X08)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # X08 fail-closed gate: every owed final view is an actual approved
+          # file whose bytes match, no identity or hash or path is shared
+          # across two (character, view) pairs, and every final reference is
+          # cited by a request record; malformed input fails closed. Proves
+          # the shipped gate bytes bite on planted violations (crossed
+          # reference, missing view, placeholder-as-final) plus the r6-removed
+          # + garbage discriminating controls, so CI would go red on a
+          # neutered gate.
+          bash 75-drama-song-ad-factory/scripts/qc-final-view-gate.sh
+          echo "✓ Skill 75 final-view gate: clean PASS, planted violations FAIL with named codes"
+
+
       - name: Skill 38 acquisition brief binding unit tests (T-06)
         shell: bash
         run: |
