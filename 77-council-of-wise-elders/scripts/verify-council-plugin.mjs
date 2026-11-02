@@ -63,9 +63,13 @@ function findCli(openclawRoot) {
   return null;
 }
 
-function loadedRecord(cli) {
+function loadedRecord(cli, openclawRoot) {
   if (!cli) return { known: false, detail: "openclaw CLI not found" };
-  const r = spawnSync(cli, ["plugins", "list", "--json"], { encoding: "utf8", timeout: 60000 });
+  const r = spawnSync(cli, ["plugins", "list", "--json"], {
+    encoding: "utf8",
+    timeout: 60000,
+    env: { ...process.env, OPENCLAW_ROOT: openclawRoot, OPENCLAW_STATE_DIR: openclawRoot },
+  });
   if (r.status !== 0) return { known: false, detail: `plugins list exited ${r.status}` };
   let parsed;
   try { parsed = JSON.parse(r.stdout); } catch { return { known: false, detail: "plugins list output unreadable" }; }
@@ -160,7 +164,7 @@ function main() {
   }
   checks.push({ result: "PASS", code: "PLUGIN_BINDING", detail: "registry config matches provision.mjs for this box" });
 
-  const loaded = loadedRecord(findCli(openclawRoot));
+  const loaded = loadedRecord(findCli(openclawRoot), openclawRoot);
   if (!loaded.known) {
     checks.push({ result: "WARN", code: "PLUGIN_HOOK_UNVERIFIED", detail: loaded.detail });
     return { schema: "council-plugin-box/v1", status: "DEGRADED", code: "PLUGIN_HOOK_UNVERIFIED", detail: loaded.detail, checks };
