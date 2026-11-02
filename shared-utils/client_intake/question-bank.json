@@ -89,6 +89,7 @@
     "brand_ref": "path of the brand file generated from the brand answers",
     "brand_hash": "sha256 of that brand file",
     "source_refs": "paths of the answers file and brand file",
+    "answers_file": "the client-intake-answers/v1 file this bank's answers are written to; set by the launch run, never asked",
     "test_only": "set by the run flags",
     "image_provider": "image_provider question",
     "journey_mode": "funnel_shape question",
