@@ -15,7 +15,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .constants import (
     COUNCIL_ENTRY_POINT,
@@ -790,7 +790,8 @@ def bridge_receipt_violations(receipt: Any, delivery: bool) -> List[str]:
         if receipt.get(f"{prefix}receipt_validation") == "vendored_schema_fallback":
             fails.append(f"{label} was validated by the vendored schema fallback, not Skill 49's own "
                          "validator")
-        if f"{prefix}pipeline_exit" in receipt or not prefix:
+        # a run that declares itself a draft has its gate open by design; only a delivery refuses that (below)
+        if (f"{prefix}pipeline_exit" in receipt or not prefix) and not (receipt.get("draft") is True and not delivery):
             if receipt.get(f"{prefix}pipeline_exit") != 0:
                 fails.append(f"{label}'s production stage gate exited "
                              f"{receipt.get(f'{prefix}pipeline_exit')!r}, not 0 (production is not closed)")
@@ -885,6 +886,37 @@ def _resolve_delivery_scope(requested: Optional[str],
             "AF-LAUNCH-SCOPE-CONFLICT",
             "a page-only package cannot carry a launch plan; assemble a full launch instead")
     return requested
+
+
+def _landing_run_roots(dispatch_root: Optional[Path]) -> List[Path]:
+    """The landing bridge's run folder(s), from the config the dispatch wrote beside its run. The bridge lists
+    its files relative to that folder (an opt-in run's carry its folder name, so they resolve from its parent)."""
+    if dispatch_root is None:
+        return []
+    try:
+        landing = json.loads((Path(dispatch_root) / "dispatch" / "landing-bridge.json")
+                             .read_text(encoding="utf-8")).get("landing")
+    except (OSError, ValueError, AttributeError):
+        return []
+    if not isinstance(landing, dict) or not landing.get("run_dir"):
+        return []
+    roots = [Path(landing["run_dir"])]
+    opt_in = landing.get("opt_in")
+    if isinstance(opt_in, dict) and opt_in.get("run_dir"):
+        roots.append(Path(opt_in["run_dir"]).parent)
+    return roots
+
+
+def _artifact_source(path: str, source_root: Path, landing_roots: Sequence[Path]) -> Path:
+    """Where a piece's artifact lives: absolute as given, else beside the run, else in the landing run folder."""
+    src = Path(path)
+    if src.is_absolute():
+        return src
+    if not (source_root / src).is_file():
+        src = next((r / src for r in landing_roots if (r / src).is_file()), src)
+        if src.is_absolute():
+            return src
+    return source_root / src
 
 
 def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
@@ -1092,17 +1124,12 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(src.read_bytes())
 
+    landing_roots = _landing_run_roots(root)
     for piece in ordered:
         copied: List[Dict[str, Any]] = []
-        sources = []
-        for art in piece["artifacts"]:
-            src = Path(art["path"])
-            sources.append(src if src.is_absolute() else source_root / src)
+        sources = [_artifact_source(art["path"], source_root, landing_roots) for art in piece["artifacts"]]
         base = Path(os.path.commonpath([str(p.parent) for p in sources])) if sources else source_root
-        for art in piece["artifacts"]:
-            src = Path(art["path"])
-            if not src.is_absolute():
-                src = source_root / src
+        for art, src in zip(piece["artifacts"], sources):
             if not src.is_file():
                 raise PackageError("AF-LAUNCH-PKG-ARTIFACT-MISSING",
                                    f"{piece['role']}: artifact {art['path']!r} does not exist")
