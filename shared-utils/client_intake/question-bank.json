@@ -1448,14 +1448,14 @@
       "why": "It is a ceiling, not a purchase, and it must cover the pages you chose or the last pages are skipped. Paid pictures also need your separate OK.",
       "answer_type": "number",
       "choices": [
-        "68",
-        "184",
+        "88",
+        "168",
         "264"
       ],
       "help": {
         "label": "I'm not sure, help me",
         "kind": "explain",
-        "explain": "Every image stage renders one image per copy section, per platform, so every section of every page gets 4 pictures (a desktop and a phone sketch, then a desktop and a phone design) and each page needs its full set and cannot be built with none. Pictures per page: opt-in page 60, sales page 48 (60 long-form), page where buyers choose 20, checkout 20, each upsell or smaller-offer page 32, thank-you 20. By page set: only the main page and checkout is 68 (80 long-form); every page my funnel needs is 88 for one offer with no extras and up to 264 for several packages with every extra and both landing pages. Pick a number at least as large as your page set. These are generated photography costs; logos and photos you send are placed as files for free, and paid pictures still need your separate OK.",
+        "explain": "Every image stage renders one image per copy section, per platform, so every section of every page gets 4 pictures (a desktop and a phone sketch, then a desktop and a phone design) and each page needs its full set and cannot be built with none. Pictures per page: opt-in page 60, sales page 48 (60 long-form), page where buyers choose 20, checkout 20, each upsell or smaller-offer page 32, thank-you 20. By page set: only the main page and checkout is 68 (80 long-form); every page my funnel needs is 88 for one offer with no extras, 168 for several packages or levels with no extras, 244 for one offer with every extra and 264 for several packages with every extra. Pick a number at least as large as your page set. These are generated photography costs; logos and photos you send are placed as files for free, and paid pictures still need your separate OK.",
         "examples": []
       },
       "default": {
@@ -1474,8 +1474,8 @@
         "71:image-cap"
       ],
       "choice_explanations": {
-        "68": "Only the main page and checkout (80 with the long-form sales page).",
-        "184": "One offer with every extra: sales page, checkout, two upsells, a smaller offer and thank-you.",
+        "88": "One offer with no extras: sales page, checkout and thank-you. It also covers only the main page and checkout (68, or 80 with the long-form sales page).",
+        "168": "Several packages or levels with no extras: both landing pages, the page where buyers choose, checkout and thank-you.",
         "264": "The full funnel: several packages, every extra and both landing pages."
       }
     },
