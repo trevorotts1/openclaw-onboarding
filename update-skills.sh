@@ -11312,7 +11312,17 @@ PYEOF
         # silently installed NO weekly cron. _oc_cron_silent_main probes the CLI,
         # emits the accepted form, and degrades gracefully (never hard-fails).
         _WEEKLY_DESC="Sunday 3am ET -- SILENT update-check: look for OpenClaw onboarding + command-center updates; ask the owner permission (via your own message send) before applying anything."
-        if _oc_cron_silent_main "weekly-onboarding-update" "main" "0 3 * * 0" "America/New_York" "$PROMPT_CONTENT" \
+        # Register under the box's DEFAULT agent, asked of the runtime. A hard-coded
+        # "main" is rejected wherever main is not the default ("sessionTarget main is
+        # only valid for the default agent" / "cron job agent is unavailable: main"),
+        # and every attempt above swallows that error -- 5 boxes silently had NO
+        # Sunday update cron at all (found 2026-11-02).
+        _WOU_AGENT="$(openclaw agents list --json 2>/dev/null | python3 -c 'import json,sys
+r=sys.stdin.read(); i=min([x for x in (r.find("{"),r.find("[")) if x>=0] or [0]); d=json.loads(r[i:])
+a=d if isinstance(d,list) else d.get("agents",[])
+print(([x.get("id") for x in a if isinstance(x,dict) and (x.get("default") or x.get("isDefault"))] or [""])[0])' 2>/dev/null || true)"
+        [ -n "$_WOU_AGENT" ] || _WOU_AGENT=main
+        if _oc_cron_silent_main "weekly-onboarding-update" "$_WOU_AGENT" "0 3 * * 0" "America/New_York" "$PROMPT_CONTENT" \
              --description "$_WEEKLY_DESC" --exact --light-context --thinking high --timeout-seconds 7200; then
           echo "  ✓ Sunday weekly update-check cron installed (Sundays 3am ET, SILENT main-session — no client auto-announce)"
         else
