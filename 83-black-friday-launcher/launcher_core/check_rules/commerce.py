@@ -76,6 +76,9 @@ def violations(manifest: Dict[str, Any], root: Path, skill_root: Path) -> List[s
         return []  # a page-only package predates the shared launch plan
     if "commerce_units" not in plan:
         pages = [p for p in plan.get("pages") or [] if isinstance(p, dict)]
-        if not any(p.get("kind") in CHECKOUT_PAGE_KINDS for p in pages):
-            return []  # nothing in the plan sells anything
+        sells = any(p.get("kind") in CHECKOUT_PAGE_KINDS for p in pages)
+        # ponytail: a test_only (offline) package is not claimed sellable, so it may omit
+        # the commerce list; a client delivery (test_only false) that sells may not.
+        if not sells or manifest.get("test_only") is not False:
+            return []
     return unit_violations(plan.get("commerce_units"))
