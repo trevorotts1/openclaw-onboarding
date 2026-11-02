@@ -26,6 +26,15 @@ import spend_ledger as L            # noqa: E402  (sibling, same core/ tree)
 
 MODULE = importlib.import_module("kie_dispatch.kie_dispatch")
 
+
+def _real_file(suffix=".bin", data=b"offline-output"):
+    """F11 refuses a missing or empty path as saved, so an 'ok' fixture must
+    materialize the bytes it claims."""
+    path = os.path.join(tempfile.mkdtemp(prefix="kie-out-"), "out" + suffix)
+    with open(path, "wb") as f:
+        f.write(data)
+    return path
+
 FAILS = []
 
 
@@ -228,7 +237,7 @@ def test_prose_request_reaches_submit():
         "wait": (0, {"state": "success", "task_id": "task-clean",
                      "credits_consumed": 7}),
         "save": (0, {"state": "success", "task_id": "task-clean",
-                     "saved_paths": ["/tmp/f10-clean.png"]}),
+                     "saved_paths": [_real_file(".png")]}),
     })
     env, db, fake, _ = run_case(script, "cleanflow", request=CLEAN_REQ)
     check("clean: outcome ok", env["outcome"] == "ok", str(env["outcome"]))
