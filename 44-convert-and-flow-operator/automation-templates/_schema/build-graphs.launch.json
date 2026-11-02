@@ -838,7 +838,7 @@
     },
     "attributes": {
      "condition": "purchased-[offer-id] OR buyer-[offer] present",
-     "ref": "purchased-[offer-id] or buyer-[offer] present → end"
+     "ref": "purchased-[offer-id] or buyer-[offer] present \u2192 end"
     }
    },
    {
@@ -1179,7 +1179,7 @@
     },
     "attributes": {
      "condition": "purchased-[offer-id] present",
-     "ref": "purchased-[offer-id] present → end"
+     "ref": "purchased-[offer-id] present \u2192 end"
     }
    },
    {
@@ -1246,7 +1246,7 @@
     },
     "attributes": {
      "condition": "ZHC-launch-ai-optout tag present",
-     "ref": "`ZHC-launch-ai-optout` present → Stop. No → continue"
+     "ref": "`ZHC-launch-ai-optout` present \u2192 Stop. No \u2192 continue"
     }
    },
    {
