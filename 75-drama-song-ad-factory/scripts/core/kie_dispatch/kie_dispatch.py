@@ -1244,7 +1244,8 @@ def check_script_approval_gate(model, request, save_dir=None):
     if rec is None:
         rec = _SA.record_near(req.get("run_dir"), save_dir)
     return _SA.check_script_approval(rec,
-                                     req.get("lyrics") or inp.get("lyrics") or "")
+                                     req.get("lyrics") or inp.get("lyrics") or "",
+                                     _SA.script_sha_near(req.get("run_dir"), save_dir))
 
 
 def _saved_hashes(paths):

@@ -190,7 +190,8 @@ def run_stage(run_dir, deliver, reply=None, apply_edit=None, checks=None,
         return {"outcome": "blocked", "problems": ["creative/script.json is missing or has no sheet"]}
     title, story, sheet, lyrics, elements = doc
     check = checks or (lambda s, h: _problems(run_dir))
-    if rec and rec.get("status") == "approved" and SA.check_script_approval(rec, lyrics) is None:
+    if rec and rec.get("status") == "approved" and \
+            SA.check_script_approval(rec, lyrics, SA.script_sha(title, story, sheet)) is None:
         return {"outcome": "go", "reason": "approved", "messages": []}
     if rec is None:                                       # first time: checks, record, send, pause
         problems = list(check(story, sheet))

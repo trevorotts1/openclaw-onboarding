@@ -257,7 +257,7 @@ def test_partial_invalidation_matrix_script_edit_keeps_character_approvals():
     # and re-approving both releases the music gate again
     r = reply(run, "approve both", context=ctx(reply_to_message_id="msg-80"))
     assert r["status"] == "approved"
-    assert SA.check_script_approval(SA.record_for(run), lyrics2) is None
+    assert SA.check_script_approval(SA.record_for(run), lyrics2, SA.script_sha(TITLE, STORY_EDIT, sheet2)) is None
 
 
 # --------------------------------------------------------------------------- #

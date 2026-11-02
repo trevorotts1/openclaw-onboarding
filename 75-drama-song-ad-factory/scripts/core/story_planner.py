@@ -141,6 +141,84 @@ SCENE_MIN_WORDS = 90
 OPENING = "opening"
 TIMING_BASIS_PROVISIONAL = "provisional_pending_selected_music"
 
+# --------------------------------------------------------------------------- #
+# storycraft: versioned AUTHORING instructions + a review RUBRIC (A06 reuse).
+#
+# Eight dimensions from the story-and-song study. Instructions carried INTO the
+# plan and a rubric an independent reviewer reads -- never a scoring function.
+# Nothing here classifies a plan: a present field, word count or self-authored
+# boolean is not evidence of any dimension. Only independent creative review
+# of the actual content is. Text components need no future audio/video; the
+# public production route still enforces owed earlier stills where the approved
+# creative order requires them.
+# --------------------------------------------------------------------------- #
+STORYCRAFT_VERSION = "blackceo.storycraft/v1"
+
+STORYCRAFT_INSTRUCTIONS = (
+    "OPENING: open inside the bad event or the consequential contradiction. Show "
+    "the person it affects, the immediate human cost, and the why still "
+    "unanswered. Biography, history and explanation follow the pressure; they "
+    "never replace it. Do not copy a prescribed plot.",
+
+    "CHARACTER AGENCY: give every included character a want, plus leverage or "
+    "knowledge, plus one consequential action -- carried by cast_roles.role and "
+    "cast_roles.consequence with obstacle, visible_action and "
+    "consequential_choice. A supporting character exists to apply pressure or to "
+    "change what is possible; a role that could be deleted without changing the "
+    "story is not needed. An intentional solo story is valid: when no supporting "
+    "cast is supplied, invent no character.",
+
+    "SCENE NECESSITY: causal_predecessor, causal_outcome, immediate_want, "
+    "obstacle and turn_trigger must each explain what pressure changed and why "
+    "the next action became necessary. A changed emotion label alone proves "
+    "nothing about why anything happened.",
+
+    "LINE AND DELIVERY PURPOSE: planned_dialogue_function names what the planned "
+    "exchange does and why that character speaks, sings, acts or stays silent. "
+    "sound_music_intention explains the proposed musical function of the moment "
+    "as an intention. Write no dialogue and no lyrics here, and assume no tempo, "
+    "instrument, voice count, speech ratio or other unverified acoustic fact.",
+
+    "CALLBACKS: where a callback is used, the existing prose names the exact "
+    "setup and payoff scene_id values and explains what the repeated element now "
+    "means. There is no callback quota; an intentional absence is valid.",
+
+    "RESOLUTION: the protagonist's own choice addresses the conflict the opening "
+    "actually showed. Show the changed behaviour and what it costs. Repair a "
+    "relationship only where the story promised repair; applause, a changed "
+    "appearance, or the product arriving never substitutes for the choice.",
+
+    "COMMERCIAL GROUNDING: mechanism, offer, availability, results and ending "
+    "stay inside the supplied research and the recorded purpose. DISTINGUISH the "
+    "narrative's first introduction of the mechanism from the closing offer and "
+    "call to action: explaining how something works is not the close, and the "
+    "close need not restate it. Story order and spacing decide where each sits; "
+    "no fixed position, share or timing ratio is imposed. Fiction does not prove "
+    "product efficacy. Import no supplement, medical, appearance-worth, discount "
+    "or guarantee claim.",
+
+    "DURATION: preserve the selected duration exactly. Scale the number and "
+    "weight of incidents, resistance, disclosure and payoff scope; never stretch "
+    "a short script linearly and never work to fixed percentages. No cast, "
+    "dialogue, chorus or scene quota is implied.",
+)
+
+STORYCRAFT_DIMENSIONS = (
+    "opening",
+    "character_agency",
+    "scene_necessity",
+    "line_and_delivery_purpose",
+    "callbacks",
+    "resolution",
+    "commercial_grounding",
+    "duration",
+)
+
+#: Exact six approved durations (seconds) and two shapes; single registry copy.
+#: Recovered from the duration registry; no replacement set invented here.
+SIX_DURATIONS_S = (60, 90, 120, 180, 300, 600)
+PLAN_SHAPES = ("9x16", "16x9")
+
 SCENE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
 

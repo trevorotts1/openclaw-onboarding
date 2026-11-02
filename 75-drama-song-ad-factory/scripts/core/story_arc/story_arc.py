@@ -61,6 +61,38 @@ def _res(outcome, reason_code, errors, story, ids, reveal):
     }
 
 
+#: Opening contract module (isolated lane file). Import is lazy so the base
+#: story validator keeps working with no opening module present.
+OPENING_MODULE = "opening_choices"
+
+
+def validate_opening_candidates(opening, review_channel=None):
+    """Validate three opening candidates via the isolated opening contract.
+
+    Returns [] when the package carries no opening block (judged as before);
+    otherwise delegates finite 0-5 scoring, highest-legitimate-total ranking,
+    veto, tie-break-open, and only-None-omission checks to opening_choices.
+    No weights or thresholds invented here: tie-break stays open per contract.
+    """
+    if not isinstance(opening, dict) or not opening:
+        return []
+    try:
+        mod = __import__(OPENING_MODULE)
+    except ImportError:
+        return [{"error": "opening-contract-missing",
+                 "detail": "opening block present but opening_choices unavailable"}]
+    wrapped = {"opening": opening}
+    problems = mod.problems(wrapped, kind="presented",
+                            channel=review_channel, maker="story-author")
+    out = []
+    for d in problems:
+        if isinstance(d, dict):
+            out.append({"error": d.get("error", "opening-invalid"), "detail": d})
+        else:
+            out.append({"error": "opening-invalid", "detail": d})
+    return out
+
+
 def validate_story(story, purpose=None):
     """Validate a twelve-beat story record.
 
