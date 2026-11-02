@@ -2,7 +2,7 @@
   "schema": "blackceo.launcher.entitlement-declaration/1",
   "declared_at": "2026-10-18",
   "source": "owner decision recorded in RECOVERY_2026-10-18 (LAUNCH-02b)",
-  "enforcement": "declaration_plus_fail_closed_attestation_gate",
+  "enforcement": "declaration_plus_ghl_contact_readback_gate",
   "no_billing": true,
   "creates_entitlements": false,
   "calls_billing_api": false,
@@ -42,5 +42,27 @@
       "requires_purchase": false,
       "note": "ZHC qualifies only together with Brand Management"
     }
-  ]
+  ],
+  "verification": {
+    "system_of_record": "ghl_contact_record",
+    "read_only": true,
+    "membership_evidence": "evidence_ref is the client's GHL contact id; the contact's tags must carry every tag listed under membership_tags for the basis",
+    "purchase_evidence": "purchase_reference is a GHL order id; the order must belong to the evidence_ref contact, be paid, and match the declared price",
+    "order_paid_statuses": [
+      "completed",
+      "paid",
+      "succeeded"
+    ],
+    "interview_choice": "Yes, it is included",
+    "tag_names_status": "UNCONFIRMED: owner must confirm these exact GHL tag names before a live run"
+  },
+  "membership_tags": {
+    "brand_management_membership": [
+      "brand-management-member"
+    ],
+    "zhc_with_brand_management": [
+      "brand-management-member",
+      "zhc-member"
+    ]
+  }
 }
