@@ -61,7 +61,7 @@ else bad "T2 update-skills.sh does not both --apply and --check oc_ensure_jsonsc
 if calls_ensure "${INSTALL//oc_ensure_jsonschema --apply/removed}"; then
   bad "T2 NON-DISCRIMINATING: detector passed install.sh with the --apply call removed"
 else ok "T2 detector discriminates (call removed from a copy is rejected)"; fi
-if has "$UPDATE" '--check|--prereqs-check)' && has "$INSTALL" '*" --check "*|*" --prereqs-check "*)'; then
+if has "$UPDATE" '*" --check "*|*" --prereqs-check "*)' && has "$INSTALL" '*" --check "*|*" --prereqs-check "*)'; then
   ok "T2 --check flag is parsed by both installers"
 else bad "T2 --check flag is not parsed by both installers"; fi
 
@@ -98,6 +98,23 @@ PYEOF
     bad "T3 precondition: the clean venv already imports jsonschema"
   else
     ok "T3 precondition: clean python cannot import jsonschema"
+
+    # T5: EXECUTE the real scripts. Clean python first on PATH, no bypass env vars:
+    # --check must need none, must exit before the update lock, and must not crash.
+    mkdir -p "$T/home"
+    t5_check() {   # t5_check <label> <bash-binary> <script>
+      local rc=0 out
+      out="$(cd "$T" && env -u ONBOARDING_DIR -u FLEET_PREFLIGHT_BYPASS -u FLEET_STANDING_GATE_BYPASS \
+          -u OPENCLAW_UPDATE_SKIP_SELF_SYNC -u OPENCLAW_RELEASE_PIN_MODE HOME="$T/home" OPENCLAW_UPDATE_LEASE="$T/upd.lock" \
+          "$2" "$REPO/$3" --check 2>&1)" || rc=$?
+      T5_RC=$rc; T5_OUT="$out"
+      if [ "$rc" -eq 2 ] && has "$out" '[prereq][83-black-friday-launcher][required] jsonschema' \
+         && ! has "$out" 'unbound variable' && [ ! -e "$T/upd.lock" ] && ! python3 -c 'import jsonschema' 2>/dev/null; then
+        ok "T5 $1: $3 --check flags missing jsonschema (rc=2), no crash, no lock, nothing installed"
+      else bad "T5 $1: $3 --check rc=$rc out=[$out]"; fi
+    }
+    for SH in update-skills.sh install.sh; do t5_check "bash" "$(command -v bash)" "$SH"; done
+    if [ -x /bin/bash ] && [ "$(command -v bash)" != "/bin/bash" ]; then t5_check "/bin/bash" /bin/bash update-skills.sh; fi
     # shellcheck source=/dev/null
     source "$LIB"
 
@@ -132,6 +149,12 @@ PYEOF
     if [ "$rc" -eq 0 ] && python3 -c 'import jsonschema'; then
       ok "T3 after --apply: rc=0 and python3 -c 'import jsonschema' exits 0"
     else bad "T3 apply rc=$rc out=[$out]"; fi
+    # T5 control: the same real command flips from rc 2 to rc 0 on the real prerequisite state.
+    rc=0; out="$(cd "$T" && env -u ONBOARDING_DIR -u FLEET_PREFLIGHT_BYPASS -u FLEET_STANDING_GATE_BYPASS \
+        -u OPENCLAW_UPDATE_SKIP_SELF_SYNC -u OPENCLAW_RELEASE_PIN_MODE HOME="$T/home" OPENCLAW_UPDATE_LEASE="$T/upd.lock" \
+        bash "$REPO/update-skills.sh" --check 2>&1)" || rc=$?
+    if [ "$rc" -eq 0 ]; then ok "T5 control: update-skills.sh --check rc=0 once jsonschema>=4.0 is installed"
+    else bad "T5 control: update-skills.sh --check after apply rc=$rc out=[$out]"; fi
     rc=0; out="$(oc_ensure_jsonschema --check 2>&1)" || rc=$?
     if [ "$rc" -eq 0 ]; then ok "T3 --check now reports satisfied (rc=0)"
     else bad "T3 --check after apply rc=$rc out=[$out]"; fi

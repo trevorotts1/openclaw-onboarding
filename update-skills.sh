@@ -185,6 +185,23 @@ _release_clone_source() {
 }
 # <<< RELEASE-PIN END <<<
 
+# CON-13: `update-skills.sh --check` (alias --prereqs-check) is a STANDALONE, read-only
+# prerequisite inspection. It runs BEFORE the release pin, self-sync, set -u, the fleet
+# gates and the update lock so a read-only check can never be swallowed by them.
+# Exit 0 = present, 2 = flagged missing/too old, 1 = cannot check.
+case " ${*:-} " in
+  *" --check "*|*" --prereqs-check "*)
+    if [ -f "$_SCRIPT_DIR/lib-onboarding-state.sh" ]; then
+      # shellcheck source=/dev/null
+      source "$_SCRIPT_DIR/lib-onboarding-state.sh" || true
+    fi
+    if command -v oc_ensure_jsonschema >/dev/null 2>&1; then
+      _oc_pc_rc=0; oc_ensure_jsonschema --check || _oc_pc_rc=$?; exit "$_oc_pc_rc"
+    fi
+    echo "update-skills.sh --check: lib-onboarding-state.sh with oc_ensure_jsonschema was not found next to this script; prerequisites NOT checked" >&2
+    exit 1 ;;
+esac
+
 # --help/-h performs no side effects; do not require a release identity to print usage.
 _oc_help_only=0
 for _oc_arg in "$@"; do
@@ -5290,13 +5307,8 @@ main() {
   # Standalone legacy-`agents.list` run (--agents-list-check/--agents-list-migrate).
   # Empty = not standalone; the gate still runs automatically inside the roll.
   AGENTS_LIST_STANDALONE=""
-  # CON-13: standalone, read-only prerequisite inspection (jsonschema).
-  PREREQS_CHECK_STANDALONE=0
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --check|--prereqs-check)
-        PREREQS_CHECK_STANDALONE=1
-        ;;
       --only)
         shift
         ONLY_SKILLS="${1:-}"
@@ -5393,27 +5405,6 @@ main() {
     local _al_rc=0
     agents_list_gate "$AGENTS_LIST_STANDALONE" || _al_rc=$?
     exit "$_al_rc"
-  fi
-
-  # CON-13 standalone prerequisite inspection (--check): report-only, exits
-  # before any install step. oc_ensure_jsonschema lives in
-  # lib-onboarding-state.sh; take it from the pulled bundle first.
-  if [ "$PREREQS_CHECK_STANDALONE" = "1" ]; then
-    local _pc_rc=0 _pc_lib
-    for _pc_lib in "$ONBOARDING_DIR/lib-onboarding-state.sh" "$_SCRIPT_DIR/lib-onboarding-state.sh"; do
-      if [ -f "$_pc_lib" ]; then
-        # shellcheck source=/dev/null
-        source "$_pc_lib" || true
-        command -v oc_ensure_jsonschema >/dev/null 2>&1 && break
-      fi
-    done
-    if command -v oc_ensure_jsonschema >/dev/null 2>&1; then
-      oc_ensure_jsonschema --check || _pc_rc=$?
-    else
-      echo "update-skills.sh --check: lib-onboarding-state.sh with oc_ensure_jsonschema was not found; prerequisites NOT checked" >&2
-      _pc_rc=1
-    fi
-    exit "$_pc_rc"
   fi
 
   # ============================================================
