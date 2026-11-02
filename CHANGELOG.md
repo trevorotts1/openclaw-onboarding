@@ -1,3 +1,8 @@
+## [v27.1.69]  -  2026-11-02  -  Batch cohort-20261102-2210-ctr219: Council front-door install, version-marker sync, binding validator, narrow binding and package newline (CTR-194, CTR-217, CTR-211, CTR-219)
+
+- Release record for the batch cohort-20261102-2210-ctr219 units: CTR-194 (Council front-door install, Skill 77 1.0.75; /version v27.1.68 -> v27.1.69), CTR-217 (docs/interview-launch-recovery.md paired onboarding marker v27.1.69), CTR-211 (Council binding validator, Skill 77 1.0.76) and CTR-219 (CTR-215/216 narrow binding over a wildcard account allowlist plus the restored trailing newline of the Skill 77 skill-version.txt, Skill 77 1.0.77).
+- Version stamps only (section 3.4): the repo version markers, README release tokens, release-cohort.json onb_version and the root-owned reaper and guard markers are rolled to v27.1.69; Skill 15 skill-version v7.1.8 -> v7.1.11 for the CTR-194 Remote Rescue template change (G3).
+
 ## [Unreleased]  -  2026-11-02  -  Box update runs Tuesday, Friday and Sunday at 2:00 AM Eastern as a silent command job
 
 - Change: the box's own update job (`weekly-onboarding-update`) is now an OpenClaw COMMAND cron job on `0 2 * * 0,2,5` `America/New_York` (Sunday, Tuesday and Friday at 2:00 AM Eastern wall-clock time). It runs `scripts/weekly-full-update.sh` from main directly: onboarding skills, 999-setup where installed, and the Command Center, with snapshot and automatic rollback. Its output goes to `~/.openclaw/skills/.update-log`. Delivery is `none`, so nothing is sent to the client's chat.

@@ -2914,7 +2914,15 @@ TRIGGER (case-insensitive) — the incoming owner message contains ANY of:
   "pitch our new offer" or "present the Q3 numbers" is NOT a presentation build. Route only on
   presentation/deck/slide-specific forms above, including "pitch deck" and "presentation deck".)
 
-WHEN TRIGGERED your FIRST and ONLY action is EXACTLY these three steps, in order — nothing before them:
+COUNCIL ASK EXCEPTION (narrow): if the message is an explicit request to convene or consult
+the Council of Wise Elders — for example "ask my Council of Wise Elders", "ask the council",
+"take this decision to the council", "review this plan with the council", or "ask the
+<named elder> seat" — this reflex does NOT fire. Run Skill 77's Council front door first,
+open a NEW session, and send the owner the exact `Chamber link:` line. If the same message
+also asks for a presentation build, route that separate build through STEP 1 AFTER the Council
+ask is handled. A message that only mentions a deck/slide is still a presentation request.
+
+WHEN TRIGGERED (and not a Council ask) your FIRST and ONLY action is EXACTLY these three steps, in order — nothing before them:
 
   ‼ Your VERY FIRST tool call is the STEP 1 mc-route.sh helper below — literally the first thing you do.
   Do NOT read any file, do NOT run sessions_list, do NOT "check" or "verify the department
@@ -3134,6 +3142,13 @@ pick the department — do NOT pass a department slug — then send ONE short
 acknowledgement. Do NOT self-intake, do NOT ask "which skill do you want?", and do NOT start the work
 yourself — the owning department's specialist reaches for the skill (dept-scoped) after routing.
 
+**COUNCIL ASK EXCEPTION (narrow).** An explicit request to convene or consult the Council of Wise
+Elders (for example "ask my Council of Wise Elders", "ask the council", "take this decision to the
+council", "review this plan with the council", or "ask the <named elder> seat") is NOT an
+intent-cluster route and is NOT routed through mc-route.sh. Use Skill 77's Council front door
+directly, open a NEW session, and send the owner the exact `Chamber link:` line. If the same
+message also matches an intent below, handle the Council ask first, then route the other work.
+
     MC_ROUTE_REQUESTER_CHAT_ID="<originating client chat id>" MC_ROUTE_REQUESTER_CHANNEL="telegram" \
       bash @@MC_ROUTE_PATH@@ task "<owner request, <=120 chars>" "<owner message, verbatim>"
 
@@ -3173,6 +3188,7 @@ reuse another client's chat id — pass ONLY the real originating chat id of the
 
 Notes:
 - Presentation/deck/slide requests are owned by REFLEX 0 (the strict presentation reflex) ABOVE — it fires first; do not double-route.
+- An explicit Council ask is owned by Skill 77's front door, never by this intent table. Convene the Council first; route any separate build in the same message afterwards.
 - Dept-scoped: the dispatched specialist is handed ONLY its department's skills (the Command Center ContextPack `matched_skills`). Rule-Zero paid-call approval (USD announce + budget cap) still applies.
 - Single-page vs multi-step: a focused BlackCEO single page (landing, opt-in, squeeze, webinar/event registration, 5-day challenge, booking, lead-generation) is Skill 71 `blackceo-signature-page`; a multi-step 3/5/7 Signature Funnel with checkout/upsell/downsell/OTO is Skill 49 `signature-funnel`; a direct-response/VSL/high-ticket/order-bump stack is Skill 56 `sales-page-assets`; a cinematic/scroll/animated page is Skill 62 `cinematic-web-funnel-engine`. A 'webinar page' / 'event registration page' / '5-day challenge page' / 'squeeze page' is a PAGE (Skill 71), never a deck and never REFLEX 0.
 - If the owner explicitly names a skill or types its slash command, that still works — this reflex is for plain-language intent the owner did NOT name.

@@ -34,6 +34,7 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { invalidInput } from './errors.js';
 
 export const DATA_DIR_ENV = 'BLACKCEO_COUNCIL_DATA_DIR';
@@ -67,6 +68,75 @@ export function councilRuntimePrefix(env: NodeJS.ProcessEnv = process.env, homeD
   const explicit = env[RUNTIME_PREFIX_ENV];
   if (explicit && explicit.trim().length > 0) return resolve(explicit);
   return join(openclawRoot(env, homeDir), 'council-runtime');
+}
+
+/**
+ * Is `dir` a skill folder, named positively?
+ *
+ * A SKILL.md alone is too weak a signature: any ordinary ancestor (a
+ * repository root, a home directory) may carry an unrelated SKILL.md,
+ * and the guard would then refuse data directories far outside the
+ * skill. A council skill folder carries all three of SKILL.md,
+ * advisors/ and manifest.json.
+ */
+export function isSkillFolder(dir: string): boolean {
+  return (
+    existsSync(join(dir, 'SKILL.md')) &&
+    existsSync(join(dir, 'advisors')) &&
+    existsSync(join(dir, 'manifest.json'))
+  );
+}
+
+/** The skill folder one install record in `dir` names, when it is readable. */
+function recordedSkillDir(dir: string): string | null {
+  const recordPath = join(dir, 'install-record.json');
+  if (!existsSync(recordPath)) return null;
+  try {
+    const record = JSON.parse(readFileSync(recordPath, 'utf8')) as { skill_dir?: unknown };
+    if (typeof record.skill_dir !== 'string' || record.skill_dir.length === 0) return null;
+    const candidate = resolve(record.skill_dir);
+    return existsSync(candidate) ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The ACTUAL skill folder, for assets (advisor packs, config) and for the
+ * data-directory boundary. Two mechanisms, in order:
+ *
+ * 1. The install record. Neither installed layout has a SKILL.md,
+ *    advisors/ or manifest.json above its module, so the record is the
+ *    install's own statement of which folder it was built from. Two
+ *    installers write it, one per layout:
+ *    - this repo's scripts/install-runtime.mjs (INSTALL.md Step 4)
+ *      installs <prefix>/releases/<id>/dist/blackceo-council.mjs and
+ *      writes <prefix>/releases/install-record.json;
+ *    - the 999-setup vendoring's scripts/council-runtime-install.sh
+ *      installs <prefix>/runtime/dist/council-entry.mjs and writes
+ *      <prefix>/install-record.json.
+ *    The record is found by walking up from this module rather than by a
+ *    fixed relative URL, because the service launcher imports
+ *    src/service/* and src/cli/* (two levels below the release root)
+ *    while the bundled CLI sits at dist/ (one level). Walking serves
+ *    every shipped layout with ONE rule and still refuses to guess.
+ * 2. A layout-independent walk to the nearest ancestor carrying the
+ *    skill signature (SKILL.md beside advisors/ and manifest.json).
+ *
+ * null when neither applies: the caller refuses rather than measuring a
+ * guessed boundary.
+ */
+export function skillFolderForAssets(moduleUrl: string | URL = import.meta.url): string | null {
+  let dir = dirname(fileURLToPath(moduleUrl));
+  for (let depth = 0; depth < 8; depth += 1) {
+    const recorded = recordedSkillDir(dir);
+    if (recorded) return recorded;
+    if (isSkillFolder(dir)) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
 }
 
 /**
