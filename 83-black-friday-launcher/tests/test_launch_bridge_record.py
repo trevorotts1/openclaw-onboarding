@@ -147,8 +147,18 @@ class DeliveryBindingTests(unittest.TestCase):
                          {e: launch["delivery_bindings"][e]["delivery_url"] for e in granted})
         self.assertTrue(all(v["delivery_url"].startswith("https://") for v in built.values()))
 
-    def test_an_intake_with_no_destinations_carries_no_bindings_key(self):
-        self.assertNotIn("delivery_bindings", record(payload()))
+    def test_a_validated_intake_always_carries_a_destination_per_offer_so_every_entitlement_is_bound(self):
+        # intake.validate now refuses an offer with no delivery (CHK-16), so a record built from a real
+        # intake always carries bindings; the "absent means no bindings" encoding is the bridge's, below.
+        launch = record(payload())
+        granted = {e for o in launch["offers"] for e in o["entitlement_ids"]}
+        self.assertEqual(set(launch["delivery_bindings"]), granted)
+
+    def test_a_normalized_intake_with_no_destinations_carries_no_bindings_key(self):
+        normalized = intake.validate(payload())
+        for offer in normalized["offers"]:
+            offer.pop("delivery")
+        self.assertNotIn("delivery_bindings", self.to_record(normalized))
 
     def test_a_missing_unconfirmed_or_non_https_destination_is_refused_by_name(self):
         for mutate in (lambda n: n["offers"][0].pop("delivery"),
@@ -227,7 +237,9 @@ class RunGateTests(unittest.TestCase):
         with mock.patch.object(launch_bridge.substrate, "front_door_check", gate, create=True):
             with self.assertRaises(launch_bridge.BridgeError):
                 self.run_bridge(payload(), {})
-            self.assertEqual([kind for kind, _ in self.calls], ["front_door", "dispatch"])
+            kinds = [kind for kind, _ in self.calls]  # the gate runs once per Skill 49 script the bridge loads
+            self.assertEqual((kinds[0], kinds[-1], kinds.count("dispatch")), ("front_door", "dispatch", 1))
+            self.assertEqual(set(kinds[:-1]), {"front_door"})  # nothing but the gate runs before dispatch
             self.calls.clear()
             gate.side_effect = SystemExit("ABORT [HASH-PIN]: a pinned file changed")
             with self.assertRaises(SystemExit):
@@ -262,6 +274,43 @@ class RunGateTests(unittest.TestCase):
         self.assertEqual(refused.exception.code, "AF-LAUNCH-BRIDGE-COPY-FORM")
 
 
+class ProvenanceInTheRecordTests(unittest.TestCase):  # PRD-03: prices carry the client's answer, never a constant
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def test_a_suggested_main_price_is_recommended_unapproved_in_launch_json(self):
+        answers = json.loads((FIXTURES / "elevation" / "answers.json").read_text(encoding="utf-8"))
+        answers["answers"]["packages"]["status"] = "suggested"
+        (self.root / "answers.json").write_text(json.dumps(answers), encoding="utf-8")
+        doc = payload()
+        doc["answers_file"] = str(self.root / "answers.json")
+        out = self.root / "run"
+        approval = {"approval_id": "APPR-TEST-1", "plan_hash": plan_hash(record(doc))}
+        with self.assertRaises(launch_bridge.BridgeError):  # no adapters: it stops after launch.json is written
+            launch_bridge.run(doc, out, approval=approval, client_identity_ref="c", worker_identity_ref="w")
+        launch = json.loads((out / "launch.json").read_text(encoding="utf-8"))
+        for o in launch["offers"]:
+            want = ("recommended_unapproved", "recommendation") if o["slot"] == "main" else ("provided", "owner")
+            self.assertEqual((o["prices"][0]["approval_status"], o["source_kind"]), want, o["offer_id"])
+            self.assertTrue(o["source_ref"].startswith("answers-file:"), o["offer_id"])
+        self.assertFalse([r for r in launch["source_refs"] if r.startswith("launcher-intake:")])
+
+    def test_an_offer_with_no_provenance_never_becomes_an_approved_record(self):
+        normalized = intake.validate(payload())
+        bare = {k: v for k, v in normalized["offers"][0].items() if k != "canonical"}
+        with self.assertRaises(launch_bridge.BridgeError) as ctx:
+            launch_bridge._offer(normalized, bare, {})
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-BRIDGE-PROVENANCE")
+
+    def test_billing_and_status_come_from_the_answers_entry_not_a_literal(self):
+        launch = record(payload())
+        for o in launch["offers"]:
+            self.assertEqual((o["prices"][0]["billing_type"], o["prices"][0]["approval_status"], o["source_kind"]),
+                             ("one_time", "provided", "owner"), o["offer_id"])
+
+
 class RunArtifactTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -280,6 +329,15 @@ class RunArtifactTests(unittest.TestCase):
         snapshot = self.out / "intake-at-dispatch.json"
         self.assertTrue(snapshot.is_file())
         self.assertEqual(json.loads(snapshot.read_text(encoding="utf-8")), intake.validate(payload()))
+
+
+    def test_the_approved_checkout_terms_are_staged_beside_the_launch_record(self):
+        doc = payload()
+        with self.assertRaises(launch_bridge.BridgeError):
+            launch_bridge.run(doc, self.out, approval=self.approval(doc), client_identity_ref="c",
+                              worker_identity_ref="w")
+        staged = json.loads((self.out / "checkout-terms.json").read_text(encoding="utf-8"))
+        self.assertEqual(staged, {"checkout_terms": doc["checkout_terms"]})  # verbatim, nothing added
 
 
 class AdapterAllowListTests(unittest.TestCase):  # ENF-08

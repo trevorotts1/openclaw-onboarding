@@ -83,7 +83,7 @@ def test_downsell_2_has_a_named_refusal_reason():
 
 
 def test_an_intake_with_a_downsell_2_offer_is_refused_not_dropped():
-    from test_decided_requirements import base_intake  # same fixture the decided tests use
+    from test_decided_requirements import base_intake, with_checkout_facts  # same fixture the decided tests use
 
     payload = base_intake()
     payload["offers"] += [
@@ -94,6 +94,8 @@ def test_an_intake_with_a_downsell_2_offer_is_refused_not_dropped():
         {"offer_id": "down-2", "name": "Down Two", "role": "downsell_2",
          "price": {"amount_minor": 2700, "currency": "USD"}},
     ]
+    del payload["answers_file"]  # the helper writes the client's answers for every inline offer, downsell_2 included
+    with_checkout_facts(payload)  # delivery, level and price source_ref on each: the named refusal is the role
     with pytest.raises(intake.IntakeError) as err:
         intake.validate(payload)
     assert err.value.field == "offers[3].role"

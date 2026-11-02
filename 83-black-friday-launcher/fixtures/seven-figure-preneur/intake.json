@@ -4,6 +4,7 @@
   "location_id": "TEST-LOCATION",
   "launch_id": "TEST-FIXTURE-7FIGUREPRENEUR",
   "revision": 1,
+  "answers_file": "fixtures/seven-figure-preneur/answers.json",
   "journey_mode": "folded_levels",
   "brand": {
     "ref": "TEST-ONLY-BRAND",
@@ -32,7 +33,7 @@
       "offer_id": "MAIN-A",
       "name": "TEST ONLY Level A",
       "role": "main",
-      "price": {"amount_minor": 9700, "currency": "USD"},
+      "price": {"amount_minor": 9700, "currency": "USD", "source_ref": "answers-file:packages[0]"},
       "level": {
         "state": "supplied",
         "name": "Level A",
@@ -44,7 +45,7 @@
       "offer_id": "MAIN-B",
       "name": "TEST ONLY Level B",
       "role": "main",
-      "price": {"amount_minor": 19700, "currency": "USD"},
+      "price": {"amount_minor": 19700, "currency": "USD", "source_ref": "answers-file:packages[1]"},
       "level": {
         "state": "supplied",
         "name": "Level B",
@@ -56,7 +57,7 @@
       "offer_id": "MAIN-C",
       "name": "TEST ONLY Level C",
       "role": "main",
-      "price": {"amount_minor": 29700, "currency": "USD"},
+      "price": {"amount_minor": 29700, "currency": "USD", "source_ref": "answers-file:packages[2]"},
       "level": {
         "state": "supplied",
         "name": "Level C",
@@ -68,7 +69,7 @@
       "offer_id": "BUMP",
       "name": "TEST ONLY Bump",
       "role": "bump",
-      "price": {"amount_minor": 2700, "currency": "USD"},
+      "price": {"amount_minor": 2700, "currency": "USD", "source_ref": "answers-file:bump"},
       "relationships": {"included_in": ["MAIN-B", "MAIN-C"]},
       "checkout": {"headline": "TEST ONLY bump headline", "benefit_explanation": "TEST ONLY bump benefit"},
       "delivery": {"destination": "https://delivery.test-only.invalid/seven-figure-preneur/bump", "owner_confirmed": true}
@@ -77,7 +78,7 @@
       "offer_id": "U1",
       "name": "TEST ONLY U1",
       "role": "upsell_1",
-      "price": {"amount_minor": 6700, "currency": "USD"},
+      "price": {"amount_minor": 6700, "currency": "USD", "source_ref": "answers-file:upsell_1"},
       "level": {
         "state": "supplied",
         "name": "U1",
@@ -89,7 +90,7 @@
       "offer_id": "D1",
       "name": "TEST ONLY D1",
       "role": "downsell_1",
-      "price": {"amount_minor": 3700, "currency": "USD"},
+      "price": {"amount_minor": 3700, "currency": "USD", "source_ref": "answers-file:downsell_1"},
       "level": {
         "state": "supplied",
         "name": "D1",
@@ -101,7 +102,7 @@
       "offer_id": "U2",
       "name": "TEST ONLY U2",
       "role": "upsell_2",
-      "price": {"amount_minor": 4700, "currency": "USD"},
+      "price": {"amount_minor": 4700, "currency": "USD", "source_ref": "answers-file:upsell_2"},
       "level": {
         "state": "supplied",
         "name": "U2",

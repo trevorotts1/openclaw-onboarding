@@ -9,6 +9,7 @@ palette must each stop before allow_paid can be True.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -144,6 +145,29 @@ class PaidSpendTests(unittest.TestCase):
         self.assertEqual((inputs["executor_provider"], inputs["allow_paid"]), ("stub", False))
         self.assertIsNone(inputs["paid_approval_id"])
         verifier.assert_not_called()
+
+    # ---- IMG-24: an Agnes plan resolves and draws placeholders only -----------------------------
+    def test_an_agnes_plan_resolves_and_draws_one_stub_section(self):
+        inputs, _ = image_plan.resolve({"brand_file": self.brand, "brand_owner": "TEST-ONLY Client",
+                                        "design_style": "A", "image_provider": "agnes"}, test_only=True)
+        self.assertEqual(inputs["executor_provider"], "stub")
+        self.assertIs(inputs["allow_paid"], False)
+        self.assertEqual(image_plan.image_inputs_file(inputs)["image_provider"], "stub")
+        sys.path.insert(0, str(SKILL_ROOT.parent / "71-blackceo-signature-page" / "tests"))
+        import board_fixture as bf  # noqa: E402  (Skill 71's own run fixture)
+        executor = SKILL_ROOT.parent / "71-blackceo-signature-page" / "scripts" / "stage_executor.py"
+        run_dir = self.tmp / "agnes-run"
+        run_dir.mkdir()
+        bf.make_run(run_dir, base_request={"model": "STUB-NO-MODEL", "sections": [
+            {"section_id": "hero", "section_name": "Hero", "copy": "New copy one.",
+             "slots": [{"slot_id": "IMG-001", "aspect_ratio": "16:9", "art_direction": "Window light."}]}]})
+        proc = subprocess.run([sys.executable, str(executor), str(run_dir), "--provider", inputs["executor_provider"],
+                               "--stages", "desktop-wireframe"], capture_output=True, text=True, env=bf.subprocess_env())
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        drawn = run_dir / "desktop-wireframe" / "section-01.png"
+        self.assertEqual(drawn.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
+        record = json.loads((run_dir / "desktop-wireframe" / "stage-executor-record.json").read_text(encoding="utf-8"))
+        self.assertEqual(record["provider"], "stub")
 
     # ---- IMG-08: a defaulted style is never paid for -------------------------------------------
     def test_a_paid_run_with_no_style_stops_until_the_client_picks_a_b_or_c(self):

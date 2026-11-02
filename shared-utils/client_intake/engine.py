@@ -1453,8 +1453,18 @@ def to_launch_known(doc):
 def image_inputs(doc):
     """The C3 image inputs these answers decide (the lanes add brand_file and refs)."""
     v = view(doc)
+    pra = v.get("paid_render_approval") or {}
+    approved = bool(pra.get("approved"))
+    # the money and the Command Center approval id go to image_plan.resolve as paid_render_approval_ref (+ cap and
+    # currency); 83 verifies the record itself. "No paid pieces" / "Decide later" carry no ref and allow nothing paid,
+    # and a free-text yes is never an approval ref.
+    ref = pra.get("approval_id") if approved and isinstance(pra.get("approval_id"), str) and pra["approval_id"].strip() else None
     return {"design_style": v.get("design_style"), "image_cap": v.get("image_cap"), "image_provider": v.get("image_provider"),
-            "paid_render_approved": bool((v.get("paid_render_approval") or {}).get("approved")), "page_set": v.get("page_set")}
+            "paid_render_approved": approved, "page_set": v.get("page_set"),
+            "paid_render_approval_ref": ref,
+            "image_cap_minor": pra.get("cap_minor") if ref else None,
+            "image_currency": pra.get("currency") if ref else None,
+            "allow_paid": ref is not None}
 
 
 # ---------------------------------------------------------------- CLI

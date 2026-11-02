@@ -50,6 +50,13 @@ class BridgeError(Exception):
 
 def _offer(normalized: Dict[str, Any], offer: Dict[str, Any], by_role: Dict[str, str],
            grants: Optional[Mapping[str, List[str]]] = None) -> Dict[str, Any]:
+    """The launch record offer. Billing, approval status, source kind and source ref come from the
+    canonical offer the intake resolved in the client's answers file, never from a constant here."""
+    canon = offer.get("canonical")
+    if not canon:
+        raise BridgeError("AF-LAUNCH-BRIDGE-PROVENANCE",
+                          f"offer {offer['offer_id']!r} carries no answers-file provenance; run the intake "
+                          "through intake.validate. Nothing was dispatched and nothing was spent.")
     grants = route.offer_entitlements(normalized) if grants is None else grants
     test_only = bool(normalized.get("test_only", True))
     excludes: List[str] = []
@@ -62,23 +69,15 @@ def _offer(normalized: Dict[str, Any], offer: Dict[str, Any], by_role: Dict[str,
         "offer_id": offer["offer_id"],
         "slot": offer["role"],
         "display_name": offer["name"],
-        "deliverables": list(level.get("deliverables") or []),
-        "exclusions": [],
+        "deliverables": list(level.get("deliverables") or canon.get("deliverables") or []),
+        "exclusions": list(canon["exclusions"]),
         "entitlement_ids": list(grants[offer["offer_id"]]),
         "requires": route.offer_requires(offer),
         "excludes": excludes,
-        "native_product_id": None,
-        "prices": [{
-            "price_choice_id": f"{offer['offer_id']}-{offer['price']['currency']}",
-            "currency": offer["price"]["currency"],
-            "amount_minor": offer["price"]["amount_minor"],
-            "billing_type": "one_time",
-            "native_price_id": None,
-            "schedule": [],
-            "approval_status": "approved",
-        }],
-        "source_kind": "test_fixture" if test_only else "owner",
-        "source_ref": f"launcher-intake:{normalized['launch_id']}:r{normalized['revision']}",
+        "native_product_id": canon["native_product_id"],
+        "prices": [{**p, "price_choice_id": f"{offer['offer_id']}-{p['currency']}"} for p in canon["prices"]],
+        "source_kind": canon["source_kind"],
+        "source_ref": canon["source_ref"],
         "test_only": test_only,
     }
 
@@ -167,7 +166,7 @@ def to_launch_record(normalized: Dict[str, Any], graph: Dict[str, Any],
         },
         "bump_enabled": "bump" in roles,
         "image_provider": inputs["image_provider"],
-        "source_refs": [f"launcher-intake:{launch_id}:r{revision}"],
+        "source_refs": sorted({o["source_ref"] for o in offers}),
         "test_only": bool(normalized.get("test_only", True)),
     }
     bindings = delivery_bindings(normalized)
@@ -412,6 +411,11 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
     order_inputs_path = out_dir / "order-page-inputs.json"
     launch_path = out_dir / "launch.json"
     launch_path.write_text(json.dumps(launch, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if normalized.get("checkout_terms"):
+        # the checkout wrapper reads the approved terms beside the launch record (the closed launch schema cannot carry them)
+        (out_dir / "checkout-terms.json").write_text(
+            json.dumps({"checkout_terms": normalized["checkout_terms"]}, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8")
     (out_dir / "intake-at-dispatch.json").write_text(json.dumps(normalized, indent=2, sort_keys=True) + "\n",
                                                      encoding="utf-8")  # the dispatch-time intake package.assemble binds to (package.INTAKE_SNAPSHOT_REL)
     inputs_path.write_text(json.dumps(image_plan.image_inputs_file(inputs), indent=2, sort_keys=True) + "\n",

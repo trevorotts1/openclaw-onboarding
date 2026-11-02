@@ -276,9 +276,30 @@ CHECKOUT_TERMS = {
 }
 
 
+_ANSWERS_DIR = tempfile.TemporaryDirectory()  # the client's answers files for the inline intakes below
+
+
+def _answers_doc(offers: list) -> dict:
+    """A client-intake-answers/v1 doc that says exactly what the inline offers say (every entry provided)."""
+    answers = {"billing": {"value": "one_time", "status": "provided"}}
+    mains = []
+    for o in offers:
+        item = {"offer_id": o["offer_id"], "display_name": o["name"],
+                "price": {"amount_minor": o["price"]["amount_minor"], "currency": o["price"]["currency"]},
+                "deliverables": list((o.get("level") or {}).get("deliverables") or [])}
+        if o["role"] == "main":
+            mains.append(item)
+        else:
+            answers[o["role"]] = {"value": item, "status": "provided"}
+    answers["packages"] = {"value": mains, "status": "provided"}
+    return {"schema": "client-intake-answers/v1", "answers": answers}
+
+
 def with_checkout_facts(payload: dict) -> dict:
-    """The owner-supplied checkout facts intake requires (CHK-16): terms block + delivery per offer."""
+    """The owner-supplied checkout facts intake requires (CHK-16): terms block + delivery per offer,
+    and the price provenance (source_ref per offer plus the answers file they resolve in)."""
     payload.setdefault("checkout_terms", dict(CHECKOUT_TERMS))
+    mains = 0
     for o in payload["offers"]:
         o.setdefault("delivery", {"destination": f"https://members.example.com/{o['offer_id']}",
                                   "owner_confirmed": True})
@@ -286,6 +307,16 @@ def with_checkout_facts(payload: dict) -> dict:
                 o["role"] == "main" and payload["journey_mode"] != "single_simple"):
             o.setdefault("level", {"state": "supplied", "name": o["name"],
                                    "deliverables": [f"{o['name']} access"]})
+        if o["role"] == "main":
+            o["price"].setdefault("source_ref", f"answers-file:packages[{mains}]")
+            mains += 1
+        else:
+            o["price"].setdefault("source_ref", f"answers-file:{o['role']}")
+    if "answers_file" not in payload:
+        text = json.dumps(_answers_doc(payload["offers"]), indent=1, sort_keys=True)
+        path = Path(_ANSWERS_DIR.name) / f"answers-{hashlib.sha256(text.encode()).hexdigest()[:16]}.json"
+        path.write_text(text, encoding="utf-8")
+        payload["answers_file"] = str(path)
     return payload
 
 

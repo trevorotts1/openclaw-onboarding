@@ -11,15 +11,21 @@ carries. Unknown or unqualified entitlement state fails closed.
 
 from __future__ import annotations
 
+import importlib.util
+import json
 import re
+import sys
+from pathlib import Path
 from typing import Any, Dict, List
 from urllib.parse import urlsplit
 
 from . import entitlement, image_plan
+from .launch_plan import SCOPE_WAIVERS
 from .constants import (
     JOURNEY_MODES,
     OFFER_RELATION_KEYS,
     OFFER_ROLES,
+    REPO_ROOT,
     SCHEMA_VERSION,
     UNSUPPORTED_OFFER_ROLES,
 )
@@ -38,6 +44,7 @@ REQUIRED_FIELDS = {
     "offers": "checkout cannot bind a price it was never given; inventing one is forbidden",
     "entitlement_attestation": "no build without an attested entitlement basis; unknown state fails closed",
     "checkout_terms": "the order form cannot show a guarantee, terms or consent line nobody approved",
+    "answers_file": "the client's answers file (client-intake-answers/v1) is the sole price authority, DECISIONS-NEEDED[35]",
 }
 
 # field -> operational default only. Nothing here changes an offer, a level,
@@ -53,12 +60,12 @@ PERMITTED_DEFAULTS = {
 
 # Optional intake blocks. image_plan carries the picture choices (style, brand file, owner, spend
 # cap, provider); it is shape-checked here and resolved, with flagged defaults, only at dispatch.
-OPTIONAL_FIELDS = ("image_plan",)
+OPTIONAL_FIELDS = ("image_plan", "client_choices", "promotion")
 
 OFFER_REQUIRED = ("offer_id", "name", "role", "price", "delivery")
 OFFER_OPTIONAL = ("level", "relationships", "checkout")
 PRICE_REQUIRED = ("amount_minor", "currency")
-PRICE_OPTIONAL = ("bounds_confirmed",)
+PRICE_OPTIONAL = ("bounds_confirmed", "source_ref")
 
 # Operational fields the intake forwards. Skill 49's dispatch knows three write targets;
 # this skill ends at approved local files, so approved_live_publication (a separate approved
@@ -251,6 +258,38 @@ def _validate_terms(raw: Any) -> Dict[str, str]:
     return {key: raw[key] for key in TERMS_FIELDS}  # text stays verbatim
 
 
+PROMOTION_KEYS = {"kind", "limitations", "buyers", "followup", "seat_limit", "seat_limit_state", "source_refs"}
+PROMOTION_KINDS = ("A discount", "A bonus", "A special bundle")
+
+
+def _validate_promotion(raw: Any) -> Dict[str, Any]:
+    """The client's promotion facts (kind, limits, seats). A fact record only: no page copy reads it this
+    release (DECISIONS-NEEDED[37]); discount and scarcity claims stay forbidden by the claim scanner."""
+    if not isinstance(raw, dict):
+        _fail("AF-LAUNCH-INTAKE-PROMOTION", "promotion", "must be an object")
+    extra = set(raw) - PROMOTION_KEYS
+    if extra:
+        _fail("AF-LAUNCH-INTAKE-PROMOTION", "promotion", f"undeclared field(s) {sorted(extra)!r}")
+    if raw.get("kind") is not None and raw["kind"] not in PROMOTION_KINDS:
+        _fail("AF-LAUNCH-INTAKE-PROMOTION", "promotion.kind", f"not one of {PROMOTION_KINDS!r}")
+    for key in ("limitations", "buyers", "followup"):
+        if raw.get(key) is not None and not isinstance(raw[key], str):
+            _fail("AF-LAUNCH-INTAKE-PROMOTION", f"promotion.{key}", "must be text or null")
+    seats = raw.get("seat_limit")
+    if seats is not None and (isinstance(seats, bool) or not isinstance(seats, int) or seats <= 0):
+        _fail("AF-LAUNCH-INTAKE-PROMOTION", "promotion.seat_limit", "must be a whole number above zero or null")
+    state = raw.get("seat_limit_state")
+    if state not in ("limited", "no_limit", "unknown") or (state == "limited") != (seats is not None):
+        _fail("AF-LAUNCH-INTAKE-PROMOTION", "promotion.seat_limit_state",
+              "must be limited (and only when seat_limit is set), no_limit or unknown")
+    refs = raw.get("source_refs")
+    if not (isinstance(refs, list) and refs and all(isinstance(r, str) and r.startswith("answers-file:bf_")
+                                                    for r in refs)):
+        _fail("AF-LAUNCH-INTAKE-PROMOTION", "promotion.source_refs",
+              "must be a non-empty list of answers-file:bf_* refs")
+    return {key: raw.get(key) for key in sorted(PROMOTION_KEYS)}
+
+
 def _validate_offer(index: int, offer: Any) -> Dict[str, Any]:
     field = f"offers[{index}]"
     if not isinstance(offer, dict):
@@ -371,6 +410,67 @@ def assert_no_commercial_defaults(normalized: Dict[str, Any]) -> None:
                   f"provenance {provenance!r} is not supplied/unknown/attested")
 
 
+ANSWERS_SCHEMA = "client-intake-answers/v1"
+_SKILL_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _offer_mapper():
+    """shared-utils/signature_launch_contract/offer_mapper.py, loaded once by path (stdlib only)."""
+    mod = sys.modules.get("offer_mapper")
+    if mod is not None:
+        return mod
+    path = REPO_ROOT / "shared-utils" / "signature_launch_contract" / "offer_mapper.py"
+    if not path.is_file():
+        _fail("AF-LAUNCH-INTAKE-PROVENANCE", "answers_file",
+              "the shared offer mapper is not installed, so no price can be checked against the client's answers")
+    spec = importlib.util.spec_from_file_location("offer_mapper", path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["offer_mapper"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _load_answers(raw: Any):
+    """The client's answers file: a relative path resolves against the Skill 83 root. Returns (path, doc)."""
+    if not _nonempty_str(raw):
+        _fail("AF-LAUNCH-INTAKE-PROVENANCE", "answers_file", "must be a path to the client's answers file")
+    path = Path(raw)
+    if not path.is_absolute():
+        path = _SKILL_ROOT / path
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        _fail("AF-LAUNCH-INTAKE-PROVENANCE", "answers_file",
+              f"the answers file cannot be read as JSON ({type(exc).__name__})")
+    if not isinstance(doc, dict) or doc.get("schema") != ANSWERS_SCHEMA:
+        _fail("AF-LAUNCH-INTAKE-PROVENANCE", "answers_file", f"schema must be {ANSWERS_SCHEMA!r}")
+    return path, doc
+
+
+def _bind_provenance(raw_offers: List[Any], offers: List[Dict[str, Any]], answers_doc: Dict[str, Any],
+                     test_only: bool) -> None:
+    """Every price names an entry of the client's answers file; the canonical record rides on the offer."""
+    om = _offer_mapper()
+    for i, (raw, offer) in enumerate(zip(raw_offers, offers)):
+        ref = (raw.get("price") or {}).get("source_ref")
+        try:
+            canon = om.resolve_offer(answers_doc, ref, slot=offer["role"], display_name=offer["name"],
+                                     amount_minor=offer["price"]["amount_minor"],
+                                     currency=offer["price"]["currency"], test_only=test_only)
+        except om.MapperError as exc:
+            _fail("AF-LAUNCH-INTAKE-PROVENANCE", f"offers[{i}].price.source_ref", exc.detail)
+        stated = raw.get("checkout") or {}
+        price0 = canon["prices"][0]
+        for key, want in (("billing_type", price0.get("billing_type")),
+                          ("native_product_id", canon.get("native_product_id")),
+                          ("native_price_id", price0.get("native_price_id"))):
+            if key in stated and stated[key] is not None and stated[key] != want:
+                _fail("AF-LAUNCH-INTAKE-PROVENANCE", f"offers[{i}].checkout.{key}",
+                      f"{stated[key]!r} is not what the client's answers say ({want!r})")
+        offer["price"]["source_ref"] = ref
+        offer["canonical"] = canon
+
+
 def validate(payload: Any) -> Dict[str, Any]:
     """Return a normalized launch intake or raise IntakeError. Fail-closed."""
     if not isinstance(payload, dict):
@@ -433,6 +533,8 @@ def validate(payload: Any) -> Dict[str, Any]:
     if not isinstance(offers, list) or not offers:
         _fail("AF-LAUNCH-INTAKE-OFFER", "offers", "at least one offer is required")
     clean_offers: List[Dict[str, Any]] = [_validate_offer(i, o) for i, o in enumerate(offers)]
+    answers_path, answers_doc = _load_answers(payload["answers_file"])
+    _bind_provenance(offers, clean_offers, answers_doc, payload.get("test_only", True) is not False)
     _check_relationship_targets(clean_offers)
     _check_offer_set(clean_offers, mode)
 
@@ -480,6 +582,13 @@ def validate(payload: Any) -> Dict[str, Any]:
         _fail("AF-LAUNCH-INTAKE-UNKNOWN", "<root>",
               f"undeclared field(s) {sorted(unknown)!r}; a new field must be declared required "
               "or a documented default, never accepted silently")
+    choices = payload.get("client_choices", [])
+    if (not isinstance(choices, list) or any(not isinstance(c, str) or c not in SCOPE_WAIVERS for c in choices)
+            or len(set(choices)) != len(choices)):
+        _fail("AF-LAUNCH-INTAKE-CHOICES", "client_choices",
+              f"client_choices must be a list drawn from {sorted(SCOPE_WAIVERS)}; "
+              "it records what the CLIENT chose to leave out of the launch")
+    promotion = _validate_promotion(payload["promotion"]) if payload.get("promotion") is not None else None
 
     provenance: Dict[str, str] = {k: "supplied" for k in payload}
     provenance["entitlement_attestation"] = "attested"
@@ -504,6 +613,7 @@ def validate(payload: Any) -> Dict[str, Any]:
         "offers": clean_offers,
         "checkout_terms": checkout_terms,
         "entitlement": entitled,
+        "answers_file": str(answers_path),
     }
     for name, (key, value, reason) in PERMITTED_DEFAULTS.items():
         if key in payload:
@@ -516,6 +626,9 @@ def validate(payload: Any) -> Dict[str, Any]:
         normalized["image_plan"] = image_plan.validate_raw(payload.get("image_plan")) or None
     except image_plan.ImagePlanError as exc:
         raise IntakeError(exc.code, exc.field, exc.detail) from exc
+    normalized["client_choices"] = list(choices)
+    if promotion is not None:
+        normalized["promotion"] = promotion
     normalized["provenance"] = provenance
     assert_no_commercial_defaults(normalized)
     return normalized

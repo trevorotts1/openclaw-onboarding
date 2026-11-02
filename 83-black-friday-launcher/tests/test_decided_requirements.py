@@ -191,14 +191,16 @@ class EntitlementGateTests(unittest.TestCase):
 
         Every qualifying basis, not just purchase: the label rides every result.
         """
+        # U-launcher-core-06: the gate now reads the client's GHL contact record back, so the evidence is a
+        # read-back, and only a purchase basis (a paid order resolved at the declared price) proves a purchase.
         for basis in ("purchase", "brand_management_membership",
                       "zhc_with_brand_management"):
             result = intake.validate(base_intake(basis=basis))["entitlement"]
-            self.assertEqual(result["evidence_kind"], "caller_attested_string", basis)
-            self.assertIs(result["proves_purchase"], False, basis)
+            self.assertEqual(result["evidence_kind"], "ghl_contact_readback", basis)
+            self.assertIs(result["proves_purchase"], basis == "purchase", basis)
             boundary = result["attestation_boundary"].lower()
-            self.assertIn("not proof of purchase", boundary, basis)
-            self.assertIn("declared", boundary, basis)
+            self.assertIn("read-only ghl lookup", boundary, basis)
+            self.assertIn("never trusted", boundary, basis)  # attested_by is recorded, not believed
 
 
 class DocumentationTests(unittest.TestCase):
@@ -296,23 +298,41 @@ class CheckoutMappingTests(unittest.TestCase):
         self.assertEqual(mapping["checkout_mode_state"], "resolved")
         self.assertEqual(mapping["supplied"]["main_offer_id"], "main-1")
 
-    def test_multiple_options_uses_post_selection_mode(self):
-        mapping = self.mapping("multiple_options")
-        self.assertEqual(mapping["checkout_mode"], "post_selection")
+    def assert_per_offer_instances(self, mapping):
+        """CARRIED 49: several main offers are realised as one native order form per price choice, each in
+        combined_single_offer mode. With no read-back, every instance is refused by name for what it lacks."""
+        self.assertEqual(mapping["realisation"], "per_offer_instances")
+        self.assertEqual(mapping["checkout_mode"], "combined_single_offer")
         self.assertEqual(mapping["checkout_mode_state"], "resolved")
+        self.assertEqual(len(mapping["instances"]), len(mapping["main_offers"]))
+        self.assertTrue(mapping["delivery_blocked"])
+        self.assertEqual(len(mapping["delivery_blockers"]), len(mapping["main_offers"]))
+        for blocker in mapping["delivery_blockers"]:
+            self.assertTrue(blocker.startswith("AF-LAUNCH-CHECKOUT-REJECTED"), blocker)
+            self.assertIn("native_capability_evidence_ref", blocker)  # named by the fact nobody supplied
+
+    def test_multiple_options_uses_post_selection_mode(self):
+        # the name is kept so the proof is found where it always was: post_selection is no longer how several
+        # mains are realised (CARRIED 49); each main price choice gets its own combined_single_offer instance.
+        mapping = self.mapping("multiple_options")
+        self.assert_per_offer_instances(mapping)
+        self.assertNotEqual(mapping["checkout_mode"], "post_selection")
 
     def test_folded_levels_records_a_contract_gap_not_a_guess(self):
+        # CARRIED 49 closed the gap: folded levels are realised per offer, so no mode is guessed and none is missing
         mapping = self.mapping("folded_levels")
-        self.assertIsNone(mapping["checkout_mode"])
-        self.assertEqual(mapping["checkout_mode_state"], "contract_gap")
-        self.assertNotIn("main_offer_id", mapping["supplied"])
+        self.assert_per_offer_instances(mapping)
+        self.assertNotIn("main_offer_id", mapping["supplied"])  # no single main is picked for the buyer
         self.assertEqual(len(mapping["main_offers"]), 2)
-        self.assertTrue(any("express neither" in n for n in mapping["notes"]))
+        self.assertFalse(any("express neither" in n for n in mapping["notes"]), mapping["notes"])
 
     def test_unknown_fields_are_named_and_never_defaulted(self):
         mapping = self.mapping("single_simple")
         self.assertIn("fulfillment_mapping_ref", mapping["unknown"])
-        self.assertIn("terms_ref", mapping["unknown"])
+        self.assertIn("native_capability_evidence_ref", mapping["unknown"])
+        # terms_ref is the client's own checkout_terms (intake requires them), so it is supplied, never unknown
+        self.assertNotIn("terms_ref", mapping["unknown"])
+        self.assertEqual(mapping["supplied"]["terms_ref"], "TEST-ONLY-TERMS-REF")
         self.assertNotIn("main_price", mapping["unknown"])
 
     def test_native_ids_are_explicit_null_not_invented(self):
@@ -423,6 +443,8 @@ class FoldedLevelsTests(unittest.TestCase):
     def test_folded_levels_refuses_identical_levels(self):
         payload = base_intake("folded_levels")
         payload["offers"][1]["price"]["amount_minor"] = 49700
+        del payload["answers_file"]  # the client's answers say the same (identical) price
+        with_checkout_facts(payload)
         with self.assertRaises(intake.IntakeError) as ctx:
             intake.validate(payload)
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-INTAKE-OFFER")
@@ -445,6 +467,7 @@ class CrossSaleTests(unittest.TestCase):
         p["offers"].append({"offer_id": "bump-1", "name": "Bump", "role": "bump",
                             "price": {"amount_minor": 2700, "currency": "USD"},
                             "relationships": {"included_in": ["main-2"]}})
+        del p["answers_file"]  # the client's answers must say the bump too
         return with_checkout_facts(p)
 
     def test_relationships_are_kept_and_surfaced_on_the_thank_you_page(self):
@@ -588,21 +611,23 @@ class PackageRecordTests(unittest.TestCase):
         self.assertNotIn("PASS package complete", shadowed.stdout)
 
     def test_the_folded_level_package_is_blocked_only_on_the_unresolved_mode(self):
-        # folded_levels has no mode in the Skill 79 contract (L25-BF-41): the
-        # package is otherwise clean, so the block must be exactly the one
-        # contract gap — never a silent pass, never a second defect hiding it.
+        # CARRIED 49 closed the L25-BF-41 contract gap: folded_levels is realised per offer, each instance in
+        # combined_single_offer mode, so with the Skill 06 read-back the package carries no mode block and no
+        # other defect. The check still proves it, never a silent pass: an unresolved mode would be named.
         fails = checks.check_package(self.manifest_path, self.run_dir)
-        self.assertEqual([f.split(":")[0] for f in fails],
-                         ["AF-LAUNCH-CHECKOUT-MODE"], fails)
+        self.assertEqual(fails, [])
         manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
-        self.assertIs(manifest["checkout"]["delivery_blocked"], True)
+        self.assertEqual((manifest["checkout"]["realisation"], manifest["checkout"]["checkout_mode"],
+                          manifest["checkout"]["checkout_mode_state"]),
+                         ("per_offer_instances", "combined_single_offer", "resolved"))
+        self.assertIs(manifest["checkout"]["delivery_blocked"], False)
 
     def test_the_manifest_carries_the_attestation_boundary_the_buyer_reads(self):
         """The label must survive assembly, the surface a buyer actually reads."""
         entitlement = self.out["manifest"]["entitlement"]
-        self.assertEqual(entitlement["evidence_kind"], "caller_attested_string")
-        self.assertIs(entitlement["proves_purchase"], False)
-        self.assertIn("Not proof of purchase", entitlement["attestation_boundary"])
+        self.assertEqual(entitlement["evidence_kind"], "ghl_contact_readback")
+        self.assertIs(entitlement["proves_purchase"], True)  # a purchase basis, resolved to a paid order on read-back
+        self.assertIn("Verified by read-only GHL lookup", entitlement["attestation_boundary"])
         on_disk = json.loads(self.manifest_path.read_text(encoding="utf-8"))
         self.assertEqual(on_disk["entitlement"]["attestation_boundary"],
                          entitlement["attestation_boundary"])
@@ -790,9 +815,30 @@ CHECKOUT_TERMS = {
 }
 
 
+_ANSWERS_DIR = tempfile.TemporaryDirectory()  # the client's answers files for the inline intakes below
+
+
+def _answers_doc(offers: list) -> dict:
+    """A client-intake-answers/v1 doc that says exactly what the inline offers say (every entry provided)."""
+    answers = {"billing": {"value": "one_time", "status": "provided"}}
+    mains = []
+    for o in offers:
+        item = {"offer_id": o["offer_id"], "display_name": o["name"],
+                "price": {"amount_minor": o["price"]["amount_minor"], "currency": o["price"]["currency"]},
+                "deliverables": list((o.get("level") or {}).get("deliverables") or [])}
+        if o["role"] == "main":
+            mains.append(item)
+        else:
+            answers[o["role"]] = {"value": item, "status": "provided"}
+    answers["packages"] = {"value": mains, "status": "provided"}
+    return {"schema": "client-intake-answers/v1", "answers": answers}
+
+
 def with_checkout_facts(payload: dict) -> dict:
-    """The owner-supplied checkout facts intake requires (CHK-16): terms block + delivery per offer."""
+    """The owner-supplied checkout facts intake requires (CHK-16): terms block + delivery per offer,
+    and the price provenance (source_ref per offer plus the answers file they resolve in)."""
     payload.setdefault("checkout_terms", dict(CHECKOUT_TERMS))
+    mains = 0
     for o in payload["offers"]:
         o.setdefault("delivery", {"destination": f"https://members.example.com/{o['offer_id']}",
                                   "owner_confirmed": True})
@@ -800,6 +846,16 @@ def with_checkout_facts(payload: dict) -> dict:
                 o["role"] == "main" and payload["journey_mode"] != "single_simple"):
             o.setdefault("level", {"state": "supplied", "name": o["name"],
                                    "deliverables": [f"{o['name']} access"]})
+        if o["role"] == "main":
+            o["price"].setdefault("source_ref", f"answers-file:packages[{mains}]")
+            mains += 1
+        else:
+            o["price"].setdefault("source_ref", f"answers-file:{o['role']}")
+    if "answers_file" not in payload:
+        text = json.dumps(_answers_doc(payload["offers"]), indent=1, sort_keys=True)
+        path = Path(_ANSWERS_DIR.name) / f"answers-{hashlib.sha256(text.encode()).hexdigest()[:16]}.json"
+        path.write_text(text, encoding="utf-8")
+        payload["answers_file"] = str(path)
     return payload
 
 
