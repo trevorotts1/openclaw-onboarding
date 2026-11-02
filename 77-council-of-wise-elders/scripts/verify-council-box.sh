@@ -19,6 +19,8 @@
 #   3. P/service.json exists and the manager (launchd: launchctl print;
 #      pm2: pm2 jlist) shows the job running   else NOT_READY SERVICE_NOT_REGISTERED
 #      (manager "external" skips the manager check)
+#   3b. the live pid's command execs the ACTIVE release, not an older one
+#                                              else NOT_READY SERVICE_RELEASE_MISMATCH
 #   4. GET http://127.0.0.1:<port>/status      else NOT_READY SERVICE_DOWN
 #   5. GET /api/council/routes lists a usable route
 #                                              else NOT_READY NO_USABLE_ROUTE
@@ -201,6 +203,24 @@ case "$MANAGER" in
     esac ;;
   external) skip "service-manager" "manager is external; no launchd or pm2 check" ;;
   *) nr SERVICE_NOT_REGISTERED "service-manager" "$P/service.json manager is '${MANAGER}', expected launchd, pm2 or external" ;;
+esac
+
+# ---- 3b. the live process must exec the ACTIVE release ----
+# A healthy /status from an old process is the observed "completed council has
+# no PDF" defect: the old release never served /report.pdf.
+SERVICE_PID=""
+case "$MANAGER" in
+  launchd) SERVICE_PID="$(launchctl print "gui/$(id -u)/$SVC_NAME" 2>/dev/null | sed -n 's/^[[:space:]]*pid = \([0-9][0-9]*\).*/\1/p' | head -1)" ;;
+  pm2)
+    if command -v pm2 >/dev/null 2>&1; then SERVICE_PID="$(pm2 pid "$SVC_NAME" 2>/dev/null | tail -1 | tr -dc '0-9')"; fi ;;
+esac
+case "$SERVICE_PID" in ''|0|*[!0-9]*) skip "release-process" "no live pid from the manager (service not running yet)" ;;
+  *)
+    RUN_CMD="$(ps -p "$SERVICE_PID" -o command= 2>/dev/null)"
+    case "$RUN_CMD" in
+      *"$RELEASE_PATH/scripts/service-launch.mjs"*) ok "release-process" "pid $SERVICE_PID execs the active release ${RELEASE_ID:-unknown}" ;;
+      *) nr SERVICE_RELEASE_MISMATCH "release-process" "pid $SERVICE_PID does not exec active release $RELEASE_PATH (command: ${RUN_CMD:-unreadable}); an old process can answer /status but lacks newer routes such as /report.pdf. Re-roll so wire.sh re-points and restarts the managed service" ;;
+    esac ;;
 esac
 
 # ---- 4. GET /status ----
