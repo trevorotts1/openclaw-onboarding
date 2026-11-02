@@ -1075,6 +1075,39 @@ function recordDataDir(activePath, active, dataDir) {
   }
 }
 
+// CTR-194: a NOOP release is not a reconciled box. This installer owns the
+// active pointer only; wire.sh owns service.json, the launcher and the managed
+// process. Report their disagreement in the install log instead of letting a
+// NOOP read as "installed". Read-only: wire.sh performs the repair.
+function serviceReconcileProblems(prefix, active) {
+  const problems = [];
+  const servicePath = join(prefix, "service.json");
+  if (existsSync(servicePath)) {
+    try {
+      const service = readJson(servicePath);
+      if (service.release_id !== active.releaseId) {
+        problems.push(`service.json release_id=${service.release_id ?? "missing"} != active ${active.releaseId}`);
+      }
+    } catch (error) {
+      problems.push(`service.json unreadable: ${formatError(error)}`);
+    }
+  }
+  const launcherPath = join(prefix, "bin", "council-service");
+  if (existsSync(launcherPath)) {
+    try {
+      const text = readFileSync(launcherPath, "utf8");
+      const match = text.match(/releases[\\/]+(rel-[A-Za-z0-9]+)[\\/]+scripts[\\/]+service-launch\.mjs/);
+      if (match && match[1] !== active.releaseId) {
+        problems.push(`launcher release=${match[1]} != active ${active.releaseId}`);
+      }
+      if (!match) problems.push("launcher does not name a release service-launch.mjs");
+    } catch (error) {
+      problems.push(`launcher unreadable: ${formatError(error)}`);
+    }
+  }
+  return problems;
+}
+
 function noopDetail(active, dataDir, recorded) {
   if (recorded) return `only active.json dataDir updated to ${dataDir}`;
   if (active.dataDir === dataDir) return "nothing changed";
@@ -1256,6 +1289,10 @@ export async function main(argv) {
         const checked = verifyRelease(prefix, active.releasePath, probe.executable);
         if (checked.ok) {
           const recorded = recordDataDir(activePath, active, dataDir);
+          const drift = serviceReconcileProblems(prefix, active);
+          if (drift.length > 0) {
+            console.log(`WARN reconcile: ${drift.join("; ")}; run the skill's wire.sh to re-point the launcher and restart the managed service`);
+          }
           console.log(`NOOP: release ${active.releaseId} already matches ${sourceManifest.digest} and verifies; ${noopDetail(active, dataDir, recorded)}`);
           return 0;
         }
@@ -1278,6 +1315,10 @@ export async function main(argv) {
       const checked = verifyRelease(prefix, finalDir, probe.executable);
       if (checked.ok) {
         const recorded = recordDataDir(activePath, active, dataDir);
+        const drift = serviceReconcileProblems(prefix, active);
+        if (drift.length > 0) {
+          console.log(`WARN reconcile: ${drift.join("; ")}; run the skill's wire.sh to re-point the launcher and restart the managed service`);
+        }
         console.log(`NOOP: release ${releaseId} is active and verifies; ${noopDetail(active, dataDir, recorded)}`);
         return 0;
       }
