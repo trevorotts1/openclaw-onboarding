@@ -44,7 +44,9 @@ class Trees(unittest.TestCase):
         shutil.copytree(REPO / "83-black-friday-launcher", cls.t83, ignore=SKIP)
         for name in ("signature_launch", "signature_launch_contract"):
             shutil.copytree(REPO / "shared-utils" / name, root / "shared-utils" / name, ignore=_top_files_only)
-        fd._write_pin_file(cls.t49, fd.compute_pin(cls.t49))  # the fixture's own mint; the repo pin is untouched
+        # the fixture's own mint, through the only legal path; the repo pin is untouched
+        fd.mint_pin_ci(cls.t49, env={"GITHUB_ACTIONS": "true", "GITHUB_EVENT_NAME": "push",
+                                     "GITHUB_REPOSITORY": "local/test", "GITHUB_RUN_ID": "0"})
         cls.pin_path = cls.t49 / PIN_REL
         cls.env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
         cls.key = root.parent / (root.name + "-operator.key")  # outside the copied checkout
@@ -315,6 +317,17 @@ class PinIsMintedOnlyByTheAuthority(Trees):
         self.assertIn("hashpin", verify_text)
         self.assertIn("trusted/", verify_text)  # the base branch judges the PR, not the PR itself
         self.assertNotIn("mint-pin", verify_text)
+        # the guard keys on commits, never on the human who opened the PR (that deadlocked the bootstrap PR)
+        self.assertNotIn("github.actor", verify_text)
+        self.assertNotIn("PR_ACTOR", verify_text)
+        self.assertNotIn("[skip ci]", json.dumps(mint))
+        self.assertIn("workflow_dispatch", mint["if"])
+        recompute = next(s["run"] for s in verify["steps"] if s.get("name", "").startswith("Recompute the pin"))
+        bootstrap, _, later = recompute.partition("fi\n")  # the bootstrap branch ends at the first fi
+        self.assertIn("bypass-scan", bootstrap)
+        self.assertNotIn("hashpin", bootstrap)
+        self.assertIn("hashpin", later)
+        self.assertIn('"$verifier"', later)  # the trusted verifier
         self.assertEqual(verify["permissions"] if "permissions" in verify else doc["permissions"],
                          {"contents": "read"})
         self.assertEqual(mint["permissions"], {"contents": "write"})
@@ -325,6 +338,54 @@ class PinIsMintedOnlyByTheAuthority(Trees):
                 text = other.read_text(encoding="utf-8")
                 self.assertNotIn("mint-pin", text, other.name)
                 self.assertNotIn("SF-PROVER-PIN", text, other.name)
+
+    def test_the_pin_guard_accepts_only_bot_minted_pin_commits(self):
+        import yaml
+        doc = yaml.safe_load((REPO / ".github/workflows/sf-prover-pin-authority.yml").read_text(encoding="utf-8"))
+        script = next(s["run"] for s in doc["jobs"]["verify"]["steps"] if s.get("name") == "Refuse a hand-edited pin file")
+        pin, bot = "49-signature-funnel/scripts/SF-PROVER-PIN.sha256", "41898282+github-actions[bot]@users.noreply.github.com"
+
+        def git(tree, *a, who=("Human", "human@example.com")):
+            env = dict(os.environ, GIT_AUTHOR_NAME=who[0], GIT_AUTHOR_EMAIL=who[1],
+                       GIT_COMMITTER_NAME=who[0], GIT_COMMITTER_EMAIL=who[1])
+            return subprocess.run(["git", "-C", str(tree), *a], check=True, text=True, capture_output=True,
+                                  env=env).stdout.strip()
+
+        def commit(tree, files, who):
+            for rel, text in files.items():
+                (tree / rel).write_text(text)
+            git(tree, "add", "-A")
+            git(tree, "commit", "-q", "-m", "c", who=who)
+            return git(tree, "rev-parse", "HEAD")
+
+        human, robot = ("Human", "human@example.com"), ("github-actions[bot]", bot)
+        cases = {}  # label -> (expected rc == 0, head sha)
+        with tempfile.TemporaryDirectory() as td:
+            tree = Path(td) / "tree"
+            (tree / "49-signature-funnel/scripts").mkdir(parents=True)
+            git(tree, "init", "-q")
+            git(tree, "config", "user.name", "x")
+            git(tree, "config", "user.email", "x@example.com")
+            (tree / pin).write_text("base\n")
+            (tree / "other.txt").write_text("base\n")
+            git(tree, "add", "-A")
+            git(tree, "commit", "-q", "-m", "base")
+            base = git(tree, "rev-parse", "HEAD")
+
+            def head_for(label, steps):
+                git(tree, "checkout", "-q", "-B", label, base)
+                for files, who in steps:
+                    sha = commit(tree, files, who)
+                cases[label] = sha
+
+            head_for("human", [({pin: "human\n"}, human)])
+            head_for("bot_only", [({pin: "bot\n"}, robot)])
+            head_for("bot_plus_other", [({pin: "bot\n", "other.txt": "x\n"}, robot)])
+            head_for("revert", [({pin: "human\n"}, human), ({pin: "base\n"}, human)])
+            for label, ok in (("human", False), ("bot_only", True), ("bot_plus_other", False), ("revert", True)):
+                p = subprocess.run(["bash", "-c", script], cwd=td, text=True, capture_output=True,
+                                   env=dict(os.environ, BASE_SHA=base, HEAD_SHA=cases[label]))
+                self.assertEqual(p.returncode == 0, ok, f"{label}: {p.stdout}{p.stderr}")
 
     def test_the_shell_entry_has_no_pin_writer_of_its_own(self):
         text = (SKILL / "signature-funnel-entry.sh").read_text(encoding="utf-8")
