@@ -92,6 +92,8 @@ SECTION_VOICE = "VOICE"
 IMAGE_INTRO = ("These four reference angles are what every shot of this character must "
                "match. Approve them before filming begins.")
 IMAGE_FOOTNOTE = "Same face, same build, same wardrobe in every shot."
+PREVIEW_LABEL = ("PREVIEW ONLY - not for approval; a missing angle shown as a "
+                 "placeholder is not a reference.")
 PLACEHOLDER_LINES = ("Not supplied yet", "Send a reference for this angle.")
 FOOTER_LEFT = "Character bible - prepared for your approval. Nothing is filmed until you say yes."
 PENDING = "Not answered yet."
@@ -299,33 +301,92 @@ def _section(doc, y, label, body, page_title):
     return y - 12
 
 
-def render(rec, images, out_path):
-    """Write the two-page bible (text, then the image bible) to ``out_path``."""
-    images = images or {}
+def missing_views(images):
+    """The four reference angles ``images`` cannot honestly supply, in order.
+
+    A view counts only when it maps to a real, non-empty file. This is the
+    completeness question the final delivery gate asks; a preview may still
+    render the absence as a labelled placeholder.
+    """
+    out = []
+    for view in IMAGE_VIEWS:
+        path = (images or {}).get(view)
+        if not path or not os.path.isfile(path) or os.path.getsize(path) <= 0:
+            out.append(view)
+    return out
+
+
+def render(rec, images, out_path, preview=False):
+    """Write the two-page bible (text, then the image bible) to ``out_path``.
+
+    ``preview`` labels the image page as a preview, so a placeholder can never
+    be read as an approved reference. Completeness is enforced by
+    ``write_delivery`` for a final delivery; ``render`` stays the raw layout.
+    """
+    doc = PW.Doc()
+    _render_character(doc, rec, images, preview=preview)
+    return _finish(doc, out_path)
+
+
+def _finish(doc, out_path):
+    doc.draw_footers(FOOTER_LEFT)
+    doc.save(out_path)
+    PW.check_font_floor(out_path)          # output-side gate, never the author's intent
+    return out_path
+
+
+def _check_views(images):
+    """Refuse a named angle whose file is gone, before anything is drawn."""
     for view in IMAGE_VIEWS:
         if images.get(view) and not os.path.isfile(images[view]):
             raise BibleError("IMAGE_NOT_FOUND: no %s reference at %s"
                              % (VIEW_LABELS[view], images[view]))
-    doc = PW.Doc()
+
+
+def _render_character(doc, rec, images, body=None, preview=False):
+    """Append ONE character's two pages to ``doc``: text, then the four angles."""
+    images = images or {}
+    _check_views(images)
 
     # --- page 1: the character ---------------------------------------------
     y = _header(doc, TITLE, SUBTITLE)
-    doc.text(X0, y, str(rec.get("character_name") or ""), 26, "bold", INK)
-    y -= 38
-    y = _section(doc, y, SECTION_WHO, rec.get("character_description") or PENDING, TITLE)
-    y = _section(doc, y, SECTION_BACKGROUND, rec.get("character_background") or PENDING, TITLE)
-    y = _section(doc, y, SECTION_ETHNICITY, rec.get("character_ethnicity") or PENDING, TITLE)
-    if str(rec.get("voice_notes") or "").strip():
-        y = _section(doc, y, SECTION_VOICE, rec["voice_notes"], TITLE)
+    if body is None:
+        doc.text(X0, y, str(rec.get("character_name") or ""), 26, "bold", INK)
+        y -= 38
+        y = _section(doc, y, SECTION_WHO, rec.get("character_description") or PENDING, TITLE)
+        y = _section(doc, y, SECTION_BACKGROUND, rec.get("character_background") or PENDING, TITLE)
+        y = _section(doc, y, SECTION_ETHNICITY, rec.get("character_ethnicity") or PENDING, TITLE)
+        if str(rec.get("voice_notes") or "").strip():
+            y = _section(doc, y, SECTION_VOICE, rec["voice_notes"], TITLE)
+    else:
+        # The approved card text: its own lines, wrapped and paginated one
+        # RENDERED line at a time, so a long background can never run over the
+        # footer or off the bottom of the page.
+        for line in str(body).splitlines():
+            if not line.strip():
+                y -= 10
+                continue
+            for wrapped in PW.wrap(line, 13, WIDTH, "regular"):
+                if y < 96:
+                    doc.page()
+                    y = _header(doc, TITLE, SUBTITLE)
+                doc.text(X0, y, wrapped, 13, "regular", INK)
+                y -= 18.4
+        y -= 12
 
     # --- page 2: the image bible -------------------------------------------
     doc.page()
     y = _header(doc, IMAGE_TITLE, SUBTITLE)
+    name = str(rec.get("character_name") or "").strip()
+    if body is not None and name:
+        # whose angles these are: a multi-character PDF has more than one page 2
+        doc.text(X0, y, name, 16, "bold", INK)
+        y -= 26
     y = doc.paragraph(X0, y, IMAGE_INTRO, 13, WIDTH, 18.4, "regular", INK) - 6
-    doc.text(X0, y, IMAGE_FOOTNOTE, 12, "regular", GREY)
+    doc.text(X0, y, PREVIEW_LABEL if preview else IMAGE_FOOTNOTE, 12, "regular", GREY)
 
     cell_w, cell_h, gap = 240.0, 236.0, 20.0
-    top = 630.0
+    top = min(630.0, y - 12.0)
     for i, view in enumerate(IMAGE_VIEWS):
         col, row = i % 2, i // 2
         cx = X0 + col * (cell_w + gap)
@@ -342,13 +403,8 @@ def render(rec, images, out_path):
             doc.placeholder(cx + 10, cy + 40, cell_w - 20, cell_h - 50, PLACEHOLDER_LINES)
         doc.text(cx + 12, cy + 16, VIEW_LABELS[view], 12, "bold", TEAL)
 
-    doc.draw_footers(FOOTER_LEFT)
-    doc.save(out_path)
-    PW.check_font_floor(out_path)          # output-side gate, never the author's intent
-    return out_path
 
-
-def write_delivery(delivery_dir, rec, images=None):
+def write_delivery(delivery_dir, rec, images=None, preview=False):
     """Render into the run's delivery folder; returns the PDF path.
 
     DEL-13 item 02 is BOTH contract files: the numbered PDF and the image
@@ -360,23 +416,22 @@ def write_delivery(delivery_dir, rec, images=None):
     refusal lands BEFORE any output file or directory exists: the whole
     ship plan is computed first, and the folder is only created once
     something real will go into it.
+
+    F7 four-view completeness: a FINAL delivery must carry all four reference
+    angles as real, non-empty files -- a partial set is refused by name
+    (``VIEWS_INCOMPLETE``) before anything is written, so a placeholder can
+    never pass as a complete image bible. A deliberate preview
+    (``preview=True``) may ship a partial set, but its image page is labelled
+    PREVIEW and can never be mistaken for the approved set.
     """
     if images is None:
         images = rec.get("reference_images") or []
     resolved = images if isinstance(images, dict) else resolve_images(images)
-    plan = []                                        # (view, src, ext), no writes yet
-    for view in sorted(resolved):
-        src = resolved.get(view)
-        if not src or not os.path.isfile(src) or os.path.getsize(src) <= 0:
-            continue
-        plan.append((view, src, os.path.splitext(src)[1].lower() or ".png"))
-    if not plan:
-        raise BibleError("NO_REFERENCE_IMAGES: %s has no reference picture "
-                         "to ship beside the bible PDF"
-                         % (rec.get("character_name") or "the character"))
+    plan = _ship_plan(resolved, preview=preview,
+                      label=rec.get("character_name") or "the character")
     os.makedirs(delivery_dir, exist_ok=True)
     path = os.path.join(delivery_dir, DELIVERY_PDF_NAME)
-    pdf = render(rec, resolved, path)
+    pdf = render(rec, resolved, path, preview=preview)
     img_dir = os.path.join(delivery_dir, _ITEMS["character_bible"].files[1])
     os.makedirs(img_dir, exist_ok=True)
     for view, src, ext in plan:
@@ -384,73 +439,31 @@ def write_delivery(delivery_dir, rec, images=None):
     return pdf
 
 
-# ---- WW-27: the ensemble cast model and the distinct-voice gate -------------
-#
-# WW-27 (2026-10-11): the CAST DECISION precedes drafting. Multiple characters
-# are the DEFAULT and the count follows the conflict; a single-voice cast is
-# legal only when the brief declares it. Every declared character carries a
-# complete treatment -- name, role, want, wound, relationships, consequential
-# action, voice -- and a Suno voice direction of register, timbre, articulation,
-# delivery, emotional progression and version treatment. At least one villain or
-# foil SPEAKS and receives a consequential reply; a non-person antagonist is
-# permitted only with a speaking foil. A bracket in the sheet that names a
-# character nobody declared is REFUSED, and an ensemble whose FINAL style still
-# commands a single voice ("A single female voice.") is REFUSED. One full-song
-# track is kept: a stitched voice pack is REFUSED.
-#
-# This is a PRE-GENERATION check on the script and the serialized payload --
-# never a delivered-audio gate. Audio gate D5 alone confirms the delivered
-# voices. Every number here is a NEW ACCEPTANCE RULE, not a measured limit and
-# never a number Trevor set. Same as before: a check that only fires on a
-# hand-built dictionary is not a guard, so the seam is checked at the real call
-# sites (suno_recipe.build_request, music_director.build_generate_request,
-# song_contract.check_sheet).
+def _ship_plan(resolved, preview=False, label="the character"):
+    """(view, src, ext) for every real, non-empty reference; no writes yet.
 
-CAST_SCHEMA = "blackceo.ensemble-cast/v1"
-
-TOOL_NAME = "character_bible"
-
-CAST_MODES = ("ensemble", "single")
-DEFAULT_CAST_MODE = "ensemble"      # PROPOSED: multiple characters by default
-MIN_ENSEMBLE = 2                    # PROPOSED: an ensemble is two or more
-CAST_ROLES = ("protagonist", "villain", "foil", "antagonist", "support", "narrator")
-#: A role that OPPOSES the protagonist; one of these must speak.
-OPPOSING_ROLES = ("villain", "foil", "antagonist")
-CAST_FIELDS = ("name", "role", "want", "wound", "relationships",
-               "consequential_action", "voice")
-#: The character's SUNO VOICE direction: register, timbre, articulation,
-#: delivery, emotional progression and version treatment. The brief key is
-#: ``voice_direction`` -- the name is scrubbed because this module's own
-#: client-safety walker refuses a PUBLIC string constant that carries a product
-#: or model name, and the recipe host's name is one of them.
-VOICE_DIRECTION_FIELDS = ("register", "timbre", "articulation", "delivery",
-                          "emotional_progression", "version_treatment")
-CHARACTER_FIELDS = CAST_FIELDS + ("voice_direction",)
-
-CODE_CAST_NOT_ENSEMBLE = "CAST_NOT_ENSEMBLE"
-CODE_CAST_INCOMPLETE = "CAST_INCOMPLETE"
-CODE_CAST_VOICE_INCOMPLETE = "CAST_VOICE_INCOMPLETE"
-CODE_CAST_ROLE_UNKNOWN = "CAST_ROLE_UNKNOWN"
-CODE_CAST_NO_OPPOSING_VOICE = "CAST_NO_OPPOSING_VOICE"
-CODE_CAST_OPPONENT_SILENT = "CAST_OPPONENT_SILENT"
-CODE_CAST_NO_CONSEQUENTIAL_REPLY = "CAST_NO_CONSEQUENTIAL_REPLY"
-CODE_CAST_VOICES_IDENTICAL = "CAST_VOICES_IDENTICAL"
-CODE_SPEAKER_UNDECLARED = "SPEAKER_UNDECLARED"
-CODE_ENSEMBLE_SINGLE_VOICE_STYLE = "ENSEMBLE_SINGLE_VOICE_STYLE"
-CODE_VOICE_PACK_STITCHED = "VOICE_PACK_STITCHED"
-
-#: A style that COMMANDS one voice is refused for an ensemble cast. Matched on
-#: the FINAL serialized request["input"]["style"]. The plan's literal case is
-#: "A single female voice."
-#: ponytail: this is the command class the plan names, not every possible
-#: single-voice phrasing; extend the alternation when a built style ships one.
-_SINGLE_VOICE_RE = re.compile(
-    r"\b(?:a|one|single|only\s+one|just\s+one)\s+(?:single\s+|only\s+|solo\s+)?"
-    r"(?:female|male|woman|man|woman's|man's|gender)?\s*(?:lead\s+|solo\s+)?"
-    r"(?:voice|vocal|singer)\b"
-    r"|\bsolo\s+(?:female|male|woman|man)\s+(?:voice|vocal)\b"
-    r"|\bsingle\s+(?:lead\s+)?voice\b"
-    r"|\bonly\s+one\s+voice\b", re.I)
+    The single-character completeness gate: a FINAL delivery needs all four
+    angles as real files, else it is refused by name before any write.
+    ``preview`` is the only permitted partial path. (Ensemble packaging is
+    ``ensemble_package.plan``, which enforces the same rule per character.)
+    """
+    plan = []
+    for view in sorted(resolved):
+        src = resolved.get(view)
+        if not src or not os.path.isfile(src) or os.path.getsize(src) <= 0:
+            continue
+        plan.append((view, src, os.path.splitext(src)[1].lower() or ".png"))
+    if not plan:
+        raise BibleError("NO_REFERENCE_IMAGES: %s has no reference picture "
+                         "to ship beside the bible PDF" % (label,))
+    if not preview:
+        missing = missing_views(resolved)
+        if missing:
+            raise BibleError(
+                "VIEWS_INCOMPLETE: %s has no %s reference angle(s); a final "
+                "bible ships all four angles, never a placeholder"
+                % (label, ", ".join(VIEW_LABELS[v] for v in missing)))
+    return plan
 
 
 def _present(v):
@@ -773,6 +786,8 @@ def main(argv=None):
     r.add_argument("--image", action="append", default=[],
                    help="VIEW=PATH, or a path; repeatable. Directories are scanned.")
     r.add_argument("--voice-notes", default="")
+    r.add_argument("--preview", action="store_true",
+                   help="permitted partial set: label the image page PREVIEW")
     a = ap.parse_args(argv)
     with open(a.brief, encoding="utf-8") as fh:
         brief = json.load(fh)
@@ -781,7 +796,7 @@ def main(argv=None):
         return 0
     if a.cmd == "render":
         rec = record(brief, voice_notes=a.voice_notes)
-        path = write_delivery(a.delivery, rec, a.image)
+        path = write_delivery(a.delivery, rec, a.image, preview=a.preview)
         print(json.dumps({"pdf": path, "views": sorted(resolve_images(a.image))}))
         return 0
     ap.print_help()
