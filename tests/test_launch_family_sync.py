@@ -1,0 +1,155 @@
+"""CON-06: the launch-family sync copies by allowlist and the parity gate reports
+every difference outside it. Fixtures are synthetic trees built from the
+declared FAMILIES, so the test needs no 999 clone and no network."""
+import importlib.util
+from pathlib import Path
+
+import pytest
+
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
+
+
+def _load(name, filename):
+    spec = importlib.util.spec_from_file_location(name, SCRIPTS / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+parity = _load("check_launch_family_parity", "check-launch-family-parity.py")
+sync = _load("sync_launch_family_to_999", "sync_launch_family_to_999.py")
+
+PLAIN = [n for n in parity.FAMILIES if n != "signature-page"]
+SEAM_TOKENS = {d: t for d, (_n, t) in parity.DIVERGENT.items()}
+
+
+def _write(path: Path, text: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def build(tmp: Path, family: str, drift: bool = True):
+    """Onboarding trees for the family; 999 trees behind them, with the declared
+    999-only and divergent files in place."""
+    onb, nine = tmp / "onb", tmp / "nine"
+    onb.mkdir(), nine.mkdir()
+    for onb_rel, nine_rel in parity.FAMILIES[family]:
+        _write(onb / onb_rel / "skill-version.txt", "2.0.0\n")
+        _write(onb / onb_rel / "sub" / "mod.py", "print('onboarding')\n")
+        _write(onb / onb_rel / "CHANGELOG.md", "onboarding changelog\n")
+        _write(nine / nine_rel / "CHANGELOG.md", "999 changelog\n")
+        if drift:
+            _write(nine / nine_rel / "skill-version.txt", "1.0.0\n")
+        else:
+            _write(nine / nine_rel / "skill-version.txt", "2.0.0\n")
+            _write(nine / nine_rel / "sub" / "mod.py", "print('onboarding')\n")
+    for dest in parity.NINE_ONLY:
+        if any(dest.startswith(n + "/") for _o, n in parity.FAMILIES[family]):
+            _write(nine / dest, "999 ONLY SENTINEL\n")
+    for dest, tokens in SEAM_TOKENS.items():
+        for onb_rel, nine_rel in parity.FAMILIES[family]:
+            if dest.startswith(nine_rel + "/"):
+                _write(nine / dest, "999 edition " + " ".join(tokens) + "\n")
+                _write(onb / onb_rel / dest[len(nine_rel) + 1:], "onboarding version\n")
+    return onb, nine
+
+
+def snapshot(root: Path):
+    return {p.relative_to(root).as_posix(): p.read_bytes()
+            for p in sorted(root.rglob("*")) if p.is_file()}
+
+
+def test_all_six_families_are_declared():
+    assert set(sync.FAMILY_CHOICES) == {"launcher", "signature-funnel", "signature-page",
+                                        "page-skills", "ghl-install-pages", "caf-email"}
+
+
+@pytest.mark.parametrize("family", PLAIN)
+def test_dry_run_lists_copies_and_writes_nothing(tmp_path, family, capsys):
+    onb, nine = build(tmp_path, family)
+    before = snapshot(nine)
+    assert sync.main(["--onboarding", str(onb), "--nine", str(nine),
+                      "--family", family, "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "DRY copy" in out and "skill-version.txt" in out
+    assert snapshot(nine) == before
+
+
+@pytest.mark.parametrize("family", PLAIN)
+def test_sync_never_touches_declared_999_only_files(tmp_path, family):
+    onb, nine = build(tmp_path, family)
+    before = snapshot(nine)
+    sync.main(["--onboarding", str(onb), "--nine", str(nine), "--family", family])
+    after = snapshot(nine)
+    kept = [d for d in list(parity.NINE_ONLY) + list(parity.DIVERGENT) if d in before]
+    if family in ("launcher", "ghl-install-pages", "caf-email"):  # the families with declared ones
+        assert kept, "fixture must carry 999-only and divergent files"
+    for dest in kept:
+        assert after[dest] == before[dest], dest
+    assert set(before) <= set(after), "the sync deleted a 999 file"
+    for rel, data in before.items():  # per-repo changelog is reported, never overwritten
+        if rel.endswith("CHANGELOG.md"):
+            assert after[rel] == data
+
+
+@pytest.mark.parametrize("family", PLAIN)
+def test_parity_reports_drift_then_passes_after_sync(tmp_path, family, capsys):
+    onb, nine = build(tmp_path, family)
+    args = ["--onboarding", str(onb), "--nine", str(nine), "--family", family]
+    assert parity.main(args) == 1
+    assert "FAIL" in capsys.readouterr().out
+    assert sync.main(args) == 0
+    assert parity.main(args) == 0
+
+
+def test_parity_reports_missing_tree_and_unclassified_999_only(tmp_path, capsys):
+    onb, nine = build(tmp_path, "launcher", drift=False)
+    contract = "shared-utils/signature_launch_contract"
+    _write(onb / contract / "schema.json", "{}\n")  # whole tree absent in 999
+    _write(nine / "shared-utils/client_intake/stray.py", "x = 1\n")
+    report = parity.check(onb, nine, ["launcher"])
+    text = "\n".join(report["failures"])
+    assert f"missing: {contract}/schema.json" in text
+    assert "unclassified_nine_only: shared-utils/client_intake/stray.py" in text
+
+
+def test_parity_fails_when_999_loses_a_declared_999_only_file(tmp_path):
+    onb, nine = build(tmp_path, "launcher", drift=False)
+    victim = next(d for d in parity.NINE_ONLY if d.startswith(".claude/skills/black-friday-launcher/"))
+    (nine / victim).unlink()
+    report = parity.check(onb, nine, ["launcher"])
+    assert any(f"nine_only_missing: {victim}" in f for f in report["failures"])
+
+
+def test_parity_fails_when_divergent_file_lacks_its_seam_tokens(tmp_path):
+    onb, nine = build(tmp_path, "launcher", drift=False)
+    cli = ".claude/skills/black-friday-launcher/launcher_core/cli.py"
+    _write(nine / cli, "an old 999 cli without the plan command\n")
+    report = parity.check(onb, nine, ["launcher"])
+    assert any("divergent_token_missing" in f and "def cmd_plan" in f for f in report["failures"])
+    # the divergence is allowed to differ in bytes: only the missing seam fails
+    assert not any("drift: " + cli in f for f in report["failures"])
+
+
+def test_excluded_pack_file_present_in_999_refuses_the_sync(tmp_path, capsys):
+    onb, nine = build(tmp_path, "ghl-install-pages", drift=False)
+    onb_rel, nine_rel = parity.FAMILIES["ghl-install-pages"][0]
+    _write(onb / onb_rel / "banned.txt", "x\n")
+    _write(nine / nine_rel / "banned.txt", "x\n")
+    manifest = onb / parity.PACK_MANIFEST_REL
+    _write(manifest, '{"files": [{"source": "%s/banned.txt", "dest": "%s/banned.txt", '
+                     '"verdict": "exclude", "class": "adapter"}]}' % (onb_rel, nine_rel))
+    before = snapshot(nine)
+    assert sync.main(["--onboarding", str(onb), "--nine", str(nine),
+                      "--family", "ghl-install-pages"]) == 1
+    assert "REFUSED" in capsys.readouterr().out
+    assert snapshot(nine) == before
+
+
+def test_gate_scripts_travel_with_the_signature_page_family(tmp_path):
+    onb, nine = tmp_path / "onb", tmp_path / "nine"
+    for rel in parity.GATE_TOOLS:
+        _write(onb / rel, "new gate\n")
+    _write(nine / parity.GATE_TOOLS[0], "old gate\n")
+    rows = {d: s for s, d, _ in parity.family_plan(onb, nine, "signature-page")}
+    assert rows == {parity.GATE_TOOLS[0]: "drift", parity.GATE_TOOLS[1]: "missing"}
