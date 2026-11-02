@@ -24,7 +24,7 @@
 # Env: DRAMA75_CORE=<scripts/core dir> (default: resolve from this file),
 # DRAMA75_RUN_DIRS=<colon-or-space-separated run folders> (default: none).
 # A listed entry that is itself a folder is ONE path even when it contains
-# spaces ("/Volumes/Work Disk/runs/..."); a named folder that does not exist is
+# spaces ("/mnt/Work Disk/runs/..."); a named folder that does not exist is
 # a usage error, never a silent skip (a skipped folder is an unscanned one).
 # Exit 0 = clean; 2 = offender found (paths printed); 1 = usage error.
 set -u

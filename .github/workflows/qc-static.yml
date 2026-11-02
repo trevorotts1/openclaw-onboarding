@@ -3233,12 +3233,16 @@ jobs:
       # at once, racing on its fixed paths.
       - name: Skill 75 pytest collection + run (no hidden failures)
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
           python3 -m pip install --quiet pytest
           HOME="$(mktemp -d)" python3 -m pytest -q \
             75-drama-song-ad-factory/scripts --collect-only
-          mapfile -t tests < <(find 75-drama-song-ad-factory/scripts -type f -name 'test_*.py' -not -path '*/__pycache__/*' | sort)
+          # Both of pytest's default file patterns (test_*.py and *_test.py),
+          # the same set the whole-tree run collects.
+          mapfile -t tests < <(find 75-drama-song-ad-factory/scripts -type f \( -name 'test_*.py' -o -name '*_test.py' \) -not -path '*/__pycache__/*' | sort)
           [ "${#tests[@]}" -gt 0 ] || { echo "✗ no skill 75 test files found"; exit 1; }
           logs="$(mktemp -d)"
           export logs
@@ -3264,6 +3268,27 @@ jobs:
             printf '✗ pytest FAIL: %s\n' "${failed[@]}"
             exit 1
           fi
+          echo "✓ Skill 75 scripts/ per-file pytest green"
+          # The whole tree must ALSO pass in ONE process (catches a suite that
+          # leaks state -- sys.path, env, cwd -- into a later suite, which the
+          # per-file run above cannot see). That run is the job below, on its
+          # own runner in parallel; this required check waits for it and goes
+          # red unless it concluded success. Fail-closed: not found, cancelled,
+          # skipped or still running at the deadline all fail.
+          job="Skill 75 whole-tree pytest (one process)"
+          deadline=$(( $(date +%s) + 40*60 ))
+          while :; do
+            row="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" \
+              --jq ".jobs[] | select(.name == \"$job\") | \"\(.status) \(.conclusion) \(.html_url)\"" 2>&1)" || row="api-error $row"
+            set -- $row
+            if [ "${1:-}" = completed ]; then
+              [ "${2:-}" = success ] || { echo "✗ $job concluded '${2:-}': ${3:-}"; exit 1; }
+              echo "✓ $job: success (${3:-})"
+              break
+            fi
+            [ "$(date +%s)" -lt "$deadline" ] || { echo "✗ $job not completed in 40 min (last: ${row:-not found})"; exit 1; }
+            sleep 20
+          done
           echo "✓ Skill 75 scripts/ pytest-collectable and green"
 
       - name: Skill 75 final-view enforcement gate (X08)
@@ -3715,3 +3740,36 @@ jobs:
           print("✓ T-16 reminder host self-check ran and passed (%d assertions)" % count)
           PY
           echo "✓ T-16 reminder host self-check ran and passed"
+
+  # The one-process whole-tree Skill 75 pytest run (the exact command the
+  # "Skill 75 pytest collection + run" step ran on one core before it went
+  # per-file), on its own runner so it overlaps the long qc-static job instead
+  # of adding ~11 minutes to it. qc-static's pytest step waits for this job
+  # and fails unless it succeeded, so it still gates "QC static invariants".
+  # Same tools the empty-home step installs, so no suite skips itself here.
+  skill75-one-process:
+    name: Skill 75 whole-tree pytest (one process)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Skill 75 whole-tree pytest, one process
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 -m pip install --quiet pytest numpy opencv-python-headless
+          pkgs=""
+          command -v ffmpeg >/dev/null || pkgs="$pkgs ffmpeg"
+          command -v tesseract >/dev/null || pkgs="$pkgs tesseract-ocr"
+          [ -z "$pkgs" ] || { sudo apt-get update -qq && sudo apt-get install -y -qq $pkgs; }
+          HOME="$(mktemp -d)" python3 -m pytest -q \
+            75-drama-song-ad-factory/scripts
