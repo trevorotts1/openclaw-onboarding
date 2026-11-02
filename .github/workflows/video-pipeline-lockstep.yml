@@ -21,7 +21,7 @@ name: Video pipeline lockstep (Movie Producer)
 #                                        phase-skip bypass -> AF-VID-PHASE-SKIPPED, exit 2.
 #                                      - BAD (paid Kie job, no KIE_API_KEY): SK1-67 fails
 #                                        EARLIEST at phase-0 -> AF-VID-KIE-BALANCE, exit 4.
-#   5. qc-assert-no-client-names.sh — fleet-wide privacy invariant.
+#   5. (client-name check removed from CI on Trevor's order, 2026-11-02.)
 #   6. qc-movie-producer.sh        — install QC stays green (no regression).
 
 on:
@@ -204,13 +204,6 @@ jobs:
             exit 1
           fi
           echo "BAD paid keyless run HARD-ABORTED with AF-VID-KIE-BALANCE (exit 4) as expected."
-
-      - name: qc-assert-no-client-names.sh — fleet privacy invariant (exit 0 required)
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/qc-assert-no-client-names.sh
-          echo "no-client-names: PASS."
 
       - name: qc-movie-producer.sh — install QC stays green (exit 0 required)
         shell: bash

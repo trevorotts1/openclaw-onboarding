@@ -118,17 +118,6 @@ class TestRepoSourceHygiene:
             txt = f.read_text(encoding="utf-8")
             assert "/Users/blackceomacmini" not in txt
 
-    def test_no_client_identifiers_in_new_files(self):
-        """DONE 7: run the repo's no-client-names guard scoped to the new files +
-        tests (fabricated ids must not trip it)."""
-        import subprocess
-        guard = _REPO_ROOT / "scripts" / "qc-assert-no-client-names.sh"
-        res = subprocess.run(["bash", str(guard), "--repo-root", str(_REPO_ROOT)],
-                             capture_output=True, text=True, timeout=120)
-        # The guard scans the whole repo; the new files must not introduce a hit.
-        assert res.returncode == 0, (
-            f"no-client-names guard FAILED (a new file may carry a client id):\n{res.stdout}")
-
 
 class TestFirebaseApiKeySync:
     """P3-2 (final-review Point 1 fix 2): the GoHighLevel/Convert-and-Flow
