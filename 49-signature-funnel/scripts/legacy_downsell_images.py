@@ -183,7 +183,7 @@ def draw(run, build_args, args, scripts):
     model = args.image_model
     py = sys.executable
     for stage in STAGES:
-        build = [py, str(scripts / "build_production_request.py"), *build_args, "--stage", stage,
+        build = [py, str(HERE / "build_production_request_with_layouts.py"), str(scripts), *build_args, "--stage", stage,
                  "--model", model, "--out", f"production-request-{stage}.json", "--run-dir", "."]
         if args.design_prose:
             build += ["--design-prose", str(args.design_prose.resolve())]

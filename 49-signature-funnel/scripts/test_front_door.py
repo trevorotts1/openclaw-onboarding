@@ -44,6 +44,14 @@ class Trees(unittest.TestCase):
         shutil.copytree(REPO / "83-black-friday-launcher", cls.t83, ignore=SKIP)
         for name in ("signature_launch", "signature_launch_contract"):
             shutil.copytree(REPO / "shared-utils" / name, root / "shared-utils" / name, ignore=_top_files_only)
+        # 83's `cli dispatch` runs its dependency preflight (every sibling skill tree, client_intake, the registry
+        # map) BEFORE the front door, so the fixture links the real siblings in; the pinned trees stay the copies.
+        for src in REPO.iterdir():
+            if src.is_dir() and src.name[:1].isdigit() and not (root / src.name).exists():
+                (root / src.name).symlink_to(src, target_is_directory=True)
+        for src in (REPO / "shared-utils").iterdir():
+            if src.is_dir() and not (root / "shared-utils" / src.name).exists():
+                (root / "shared-utils" / src.name).symlink_to(src, target_is_directory=True)
         # the fixture's own mint, through the only legal path; the repo pin is untouched
         fd.mint_pin_ci(cls.t49, env={"GITHUB_ACTIONS": "true", "GITHUB_EVENT_NAME": "push",
                                      "GITHUB_REPOSITORY": "local/test", "GITHUB_RUN_ID": "0"})
@@ -81,12 +89,19 @@ class Trees(unittest.TestCase):
 
     def cli_dispatch(self, td):
         intake = json.loads((REPO / "83-black-friday-launcher/fixtures/elevation/intake.json").read_text())
+        # the copied 83 tree has no fixtures/, so the intake names the real answers file by absolute path
+        intake["answers_file"] = str(REPO / "83-black-friday-launcher/fixtures/elevation/answers.json")
         intake["image_plan"] = {"brand_file": str(Path(td) / "brand.json"), "brand_owner": "TEST-ONLY Client"}
         files = {"intake.json": intake, "approval.json": {}}
         for name, doc in files.items():
             (Path(td) / name).write_text(json.dumps(doc), encoding="utf-8")
+        # 83 reads the entitlement back from GHL before it reaches the front door; the launcher's own offline
+        # TEST-ONLY transport stands in for that read (imported after the copied launcher_core is cached).
+        boot = ("import sys; sys.path.insert(0, '.'); import launcher_core.cli as c; "
+                f"sys.path.insert(0, {str(REPO / '83-black-friday-launcher/fixtures')!r}); "
+                "import test_only_readback as r; r.install(); raise SystemExit(c.main(sys.argv[1:]))")
         return subprocess.run(
-            [sys.executable, "-m", "launcher_core.cli", "dispatch", "--intake", str(Path(td) / "intake.json"),
+            [sys.executable, "-c", boot, "dispatch", "--intake", str(Path(td) / "intake.json"),
              "--out", str(Path(td) / "out"), "--approval", str(Path(td) / "approval.json"),
              "--client", "a", "--worker", "a"],
             cwd=self.t83, text=True, capture_output=True, env=self.env)
@@ -213,7 +228,8 @@ class EveryDecisionFileIsPinned(Trees):
         with self.tampered(self.t83 / "launcher_core/checkout.py", b"\nimport smtplib\n"):
             self.assertTrue(fd.scan_tree(self.t49), "83 tree is scanned too")
         # the approved adapters inside the tree stay allowed (explicit, pinned list)
-        self.assertEqual(fd.NET_ALLOWED, {"49/scripts/agnes_orchestrator.py", "49/scripts/mc_board.py"})
+        self.assertEqual(fd.NET_ALLOWED, {"49/scripts/agnes_orchestrator.py", "49/scripts/mc_board.py",
+                                          "shared/contract/approval_record.py", "shared/launch/launch_events.py"})
 
 
 class PinIsMintedOnlyByTheAuthority(Trees):

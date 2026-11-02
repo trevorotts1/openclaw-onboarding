@@ -100,11 +100,28 @@ run "full launch plan: pages + emails + texts + automations + AI (test_launch_pl
 # ---------------------------------------------------------------------------
 echo "-- golden reproduce (examples/golden-daybreak) --"
 if [ -d "$GOLDEN" ]; then
+  # The golden run dir. P5-P7 read what the TOOLS wrote under it (page fragments, a sealed Skill 6 verify run,
+  # the wireframe + mockup set), none of which can be committed (the verify run's nonce lives outside the tree),
+  # so prove_sf_build's own evidence fixture stages them in a throwaway dir; the committed golden fragments are
+  # restored over its generic ones so they are the fragments actually checked. Fixture only, never a real tool run.
+  TMP="$(mktemp -d "${TMPDIR:-/tmp}/sf49_golden.XXXXXX")"
+  trap 'rm -rf "$TMP"' EXIT
+  RD="$TMP/run-golden"
+  mkdir -p "$RD"
+  mkdir -m 700 "$TMP/ghl-nonces"; export GHL_VERIFY_NONCE_DIR="$TMP/ghl-nonces"
+  cp "$GOLDEN/brief.json" "$GOLDEN/copy_ledger.json" "$GOLDEN/prompt_ledger.json" "$GOLDEN/media_ledger.json" \
+     "$GOLDEN/persona-selection-log.md" "$RD/"   # FIX-XC-02a: persona grounding is P0 fail-closed
+  # P5-P8 artifacts (fragments + graph + build receipt + derived-page ledger)
+  cp "$GOLDEN/funnel_graph.json" "$GOLDEN/build_receipt.json" "$GOLDEN/derived_pages.json" "$RD/"
+  "$PY" -c 'import sys,json; sys.path.insert(0,sys.argv[1]); from pathlib import Path; import prove_sf_build as b; r=json.load(open(sys.argv[3])); b.write_valid_run_evidence(Path(sys.argv[2]), r["funnel_size"], r)' \
+     "$SCRIPTS" "$RD" "$GOLDEN/build_receipt.json" && cp "$GOLDEN"/pages/*.fragment.html "$RD/pages/" \
+     || { printf '  [FAIL] could not stage the golden build evidence\n'; fails=$((fails + 1)); }
+
   run "golden brief  -> prove_sf_intake"       "$PY" "$SCRIPTS/prove_sf_intake.py" "$GOLDEN/brief.json"
   run "golden copy   -> prove_sf_copy"         "$PY" "$SCRIPTS/prove_sf_copy.py" --ledger "$GOLDEN/copy_ledger.json"
   run "golden prompts-> prove_sf_prompt_floor" "$PY" "$SCRIPTS/prove_sf_prompt_floor.py" --ledger "$GOLDEN/prompt_ledger.json"
   run "golden graph  -> prove_sf_graph"        "$PY" "$SCRIPTS/prove_sf_graph.py" --graph "$GOLDEN/funnel_graph.json"
-  run "golden build  -> prove_sf_build"        "$PY" "$SCRIPTS/prove_sf_build.py" --receipt "$GOLDEN/build_receipt.json"
+  run "golden build  -> prove_sf_build"        "$PY" "$SCRIPTS/prove_sf_build.py" --receipt "$RD/build_receipt.json" --funnel-size 7 --run-dir "$RD"
   run "golden media  -> prove_sf_no_pitch"     "$PY" "$SCRIPTS/prove_sf_no_pitch.py" --ledger "$GOLDEN/media_ledger.json"
   # FIX-IMG-07 — the golden prompt AND media ledgers cover every required image slot.
   run "golden prompt coverage (--structure)" "$PY" "$SCRIPTS/prove_sf_prompt_floor.py" \
@@ -123,16 +140,7 @@ if [ -d "$GOLDEN" ]; then
     printf '  [FAIL] committed golden certificate missing at %s\n' "$CERT"; fails=$((fails + 1))
   fi
 
-  # reproduce through the canonical orchestrator in a throwaway run-dir (throwaway operator key)
-  TMP="$(mktemp -d "${TMPDIR:-/tmp}/sf49_golden.XXXXXX")"
-  trap 'rm -rf "$TMP"' EXIT
-  RD="$TMP/run-golden"
-  mkdir -p "$RD"
-  cp "$GOLDEN/brief.json" "$GOLDEN/copy_ledger.json" "$GOLDEN/prompt_ledger.json" "$GOLDEN/media_ledger.json" \
-     "$GOLDEN/persona-selection-log.md" "$RD/"   # FIX-XC-02a: persona grounding is P0 fail-closed
-  # P5-P8 artifacts (fragments + graph + build receipt + derived-page ledger)
-  cp "$GOLDEN/funnel_graph.json" "$GOLDEN/build_receipt.json" "$GOLDEN/derived_pages.json" "$RD/"
-  cp -R "$GOLDEN/pages" "$RD/pages"
+  # reproduce through the canonical orchestrator in the staged run-dir (throwaway operator key)
   # throwaway operator key OUTSIDE the run dir + a harness-style model receipt and stub provider receipts
   KEY="$TMP/operator/operator.key"; mkdir -p "$TMP/operator"
   ( umask 077; "$PY" -c 'import secrets;print(secrets.token_hex(32))' > "$KEY" ); chmod 600 "$KEY"
