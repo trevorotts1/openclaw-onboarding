@@ -155,17 +155,18 @@ class TestVerifiedHonestVerdict:
 
     def test_overall_fail_recorded_not_massaged(self, tmp_path):
         # The build ran and verified, but the canonical verifier says FAIL (e.g.
-        # markers didn't land). The dispatcher records verified-state WITH a False
-        # overall_pass — it does NOT massage it to pass.
+        # markers didn't land). S06-01: the dispatcher records STATE_FAILED with
+        # the honest counts - it never records verified and never massages it to pass.
         res = disp.dispatch_one(
             FAKE_TASK, str(tmp_path), builder=_builder_ok(),
             verifier=_fake_verifier(False, passed=1, total=6))
-        assert res.state == disp.STATE_VERIFIED
+        assert res.state == disp.STATE_FAILED
         assert bool(res) is False              # truthiness requires overall_pass
         assert res.verify["overall_pass"] is False
         rec = json.load(open(os.path.join(tmp_path, "routing", "task-record.json")))
         assert rec["verify_overall_pass"] is False
         assert rec["verify_passed"] == 1 and rec["verify_total"] == 6
+        assert rec["state"] == disp.STATE_FAILED
 
 
 # ── integration with the REAL ghl_verify (injected fetcher, no network) ───────
@@ -188,7 +189,7 @@ class TestWithRealVerifier:
         res = disp.dispatch_one(
             FAKE_TASK, str(tmp_path), builder=_builder_ok(pages=pages),
             verifier=_real_verifier)
-        assert res.state == disp.STATE_VERIFIED
+        assert res.state == disp.STATE_FAILED
         # 1/2 truth -> overall FAIL, reported honestly.
         assert res.verify["passed"] == 1 and res.verify["total"] == 2
         assert res.verify["overall_pass"] is False
