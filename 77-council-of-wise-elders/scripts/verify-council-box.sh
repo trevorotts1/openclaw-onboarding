@@ -209,6 +209,9 @@ esac
 # A healthy /status from an old process is the observed "completed council has
 # no PDF" defect: the old release never served /report.pdf.
 SERVICE_PID=""
+if [ -z "$RELEASE_PATH" ]; then
+  skip "release-process" "active.json has no releasePath; not checked"
+else
 case "$MANAGER" in
   launchd) SERVICE_PID="$(launchctl print "gui/$(id -u)/$SVC_NAME" 2>/dev/null | sed -n 's/^[[:space:]]*pid = \([0-9][0-9]*\).*/\1/p' | head -1)" ;;
   pm2)
@@ -222,6 +225,7 @@ case "$SERVICE_PID" in ''|0|*[!0-9]*) skip "release-process" "no live pid from t
       *) nr SERVICE_RELEASE_MISMATCH "release-process" "pid $SERVICE_PID does not exec active release $RELEASE_PATH (command: ${RUN_CMD:-unreadable}); an old process can answer /status but lacks newer routes such as /report.pdf. Re-roll so wire.sh re-points and restarts the managed service" ;;
     esac ;;
 esac
+fi
 
 # ---- 4. GET /status ----
 http() { # url -> sets HCODE, HBODY, HREDIR; never follows redirects
