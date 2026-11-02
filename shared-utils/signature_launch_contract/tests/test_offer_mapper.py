@@ -195,3 +195,46 @@ def test_unknown_or_amountless_prices_and_unapproved_plans_fail_closed():
     with pytest.raises(om.MapperError) as e:
         om.record_to_checkout_request(approved, "MAIN-1", checkout_mode="combined_single_offer", **CONTEXT)
     assert e.value.code == "AF-CHECKOUT-BILLING"
+
+
+# ---------------------------------------------------------------- Skill 83 intake: resolve_offer (PRD-03)
+FIXTURES_83 = REPO / "83-black-friday-launcher" / "fixtures"
+
+
+def _ref(role, mains_seen):
+    return f"answers-file:packages[{mains_seen}]" if role == "main" else f"answers-file:{role}"
+
+
+@pytest.mark.parametrize("fx", ["elevation", "seven-figure-preneur"])
+def test_every_83_fixture_offer_resolves_in_its_answers_file(fx):
+    d = json.loads((FIXTURES_83 / fx / "answers.json").read_text())
+    intake = json.loads((FIXTURES_83 / fx / "intake.json").read_text())
+    n = 0
+    for o in intake["offers"]:
+        got = om.resolve_offer(d, _ref(o["role"], n), slot=o["role"], display_name=o["name"],
+                               amount_minor=o["price"]["amount_minor"], currency=o["price"]["currency"])
+        n += o["role"] == "main"
+        assert got["offer_id"] == o["offer_id"]
+        assert (got["prices"][0]["approval_status"], got["source_kind"], got["prices"][0]["billing_type"]) == (
+            "provided", "owner", "one_time")
+
+
+def test_resolve_offer_refuses_an_unresolved_ref_and_a_made_up_price():
+    d = json.loads((FIXTURES_83 / "elevation" / "answers.json").read_text())
+    kw = dict(slot="main", display_name="TEST ONLY Essential", amount_minor=9700, currency="USD")
+    for bad in (None, "", "answers-file:made_up_price", "launcher-intake:L1:r1", "answers-file:packages[9]"):
+        with pytest.raises(om.MapperError) as e:
+            om.resolve_offer(d, bad, **kw)
+        assert e.value.code == "AF-OFFER-SOURCE-REF"
+    for field, value in (("amount_minor", 1), ("display_name", "Made Up"), ("slot", "bump"), ("currency", "EUR")):
+        with pytest.raises(om.MapperError) as e:
+            om.resolve_offer(d, "answers-file:packages[0]", **{**kw, field: value})
+        assert e.value.code == "AF-OFFER-PROVENANCE"
+
+
+def test_resolve_offer_carries_a_recommended_price_as_recommended_unapproved():
+    d = json.loads((FIXTURES_83 / "elevation" / "answers.json").read_text())
+    d["answers"]["packages"]["status"] = "suggested"
+    got = om.resolve_offer(d, "answers-file:packages[0]", slot="main", display_name="TEST ONLY Essential",
+                           amount_minor=9700, currency="USD")
+    assert (got["prices"][0]["approval_status"], got["source_kind"]) == ("recommended_unapproved", "recommendation")

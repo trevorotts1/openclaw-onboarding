@@ -8,6 +8,7 @@ renamed on a hop:
   record_to_plan(record)                       record -> Skill 78 selection plan (78's own builder)
   record_to_checkout_request(record, id, ...)  record -> Skill 79 checkout_request (schema-valid)
   verify_provenance(answers_doc, offers)       refuse any offer whose provenance does not resolve
+  resolve_offer(answers_doc, source_ref, ...)  the canonical offer a consumer's source_ref names (83 intake)
 
 Provenance is never a constant. Each offer's source_ref is ``answers-file:<answer key>[<index>]`` (the
 engine's own convention) and resolves to one entry of the answers file. The price's approval_status and the
@@ -185,6 +186,25 @@ def answers_to_record(doc: Mapping[str, Any], *, tenant_id: str, location_id: st
         "source_refs": sorted({o["source_ref"] for o in offers}),
         "test_only": test_only,
     }, to_confirm
+
+
+def resolve_offer(doc: Mapping[str, Any], source_ref: Any, *, slot: str, display_name: str, amount_minor: int,
+                  currency: str, test_only: bool = True) -> Dict[str, Any]:
+    """The canonical launch record offer that ``source_ref`` names in the answers file, for a consumer that holds
+    its own copy of the offer (Skill 83 intake). Refuses a ref that does not resolve (AF-OFFER-SOURCE-REF) and a
+    slot, name or price that is not what the answers entry says (AF-OFFER-PROVENANCE). Provenance, billing,
+    exclusions and native ids are returned from the answers entry, never taken from the caller."""
+    known = {o["source_ref"]: o for o in answers_to_offers(doc, test_only=test_only)[0]}
+    if not isinstance(source_ref, str) or not REF.match(source_ref) or source_ref not in known:
+        raise MapperError("AF-OFFER-SOURCE-REF", f"source_ref {source_ref!r} does not resolve to an entry in the "
+                          "client's answers file")
+    want = known[source_ref]
+    p = want["prices"][0]
+    for field, mine, theirs in (("slot", slot, want["slot"]), ("display_name", display_name, want["display_name"]),
+                                ("price", (amount_minor, currency), (p["amount_minor"], p["currency"]))):
+        if mine != theirs:
+            raise MapperError("AF-OFFER-PROVENANCE", f"{field} {mine!r} is not what {source_ref} says ({theirs!r})")
+    return want
 
 
 def verify_provenance(doc: Mapping[str, Any], offers: Sequence[Mapping[str, Any]]) -> None:
