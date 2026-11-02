@@ -17,7 +17,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { validateExistingEntry, REQUIRED_FIELDS as ENTRY_FIELDS } from "../extensions/council-before-dispatch/lib/entry-validate.mjs";
 
 const PLUGIN_ID = "council-before-dispatch";
-const REQUIRED = ["index.js", "openclaw.plugin.json", "package.json", "lib/core.mjs", "lib/entry-validate.mjs", "provision.mjs"];
+const REQUIRED = ["index.js", "openclaw.plugin.json", "package.json", "lib/core.mjs", "lib/entry-validate.mjs", "lib/binding-predicate.mjs", "provision.mjs"];
 
 function parseArgs(argv) {
   const out = { openclawRoot: null, prefix: null };

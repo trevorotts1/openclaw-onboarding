@@ -40,7 +40,7 @@ import { pathToFileURL } from "node:url";
 const PLUGIN_ID = "council-before-dispatch";
 const REQUIRED = [
   "index.js", "openclaw.plugin.json", "package.json", "lib/core.mjs",
-  "lib/entry-validate.mjs", "provision.mjs", "INSTALL.md", "CONTRACT.md",
+  "lib/entry-validate.mjs", "lib/binding-predicate.mjs", "provision.mjs", "INSTALL.md", "CONTRACT.md",
 ];
 const REQUIRED_FIELDS = [
   "channel", "accountId", "conversationId", "senderIds", "agentId",

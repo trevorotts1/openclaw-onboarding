@@ -1,6 +1,6 @@
 {
   "name": "@blackceo/openclaw-council-before-dispatch",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "type": "module",
   "description": "Authorized explicit Council ask handler for OpenClaw before_dispatch.",
@@ -10,7 +10,9 @@
     "index.js",
     "index.ts",
     "lib",
+    "lib/binding-predicate.mjs",
     "test",
+    "test/binding-predicate.test.mjs",
     "install",
     "fixtures",
     "provision.mjs",

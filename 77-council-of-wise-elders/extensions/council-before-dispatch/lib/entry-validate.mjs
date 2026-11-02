@@ -11,6 +11,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
+import { resolveCouncilBinding } from "./binding-predicate.mjs";
+
 export const PLUGIN_ID = "council-before-dispatch";
 export const REQUIRED_FIELDS = [
   "channel", "accountId", "conversationId", "senderIds", "agentId",
@@ -109,12 +111,14 @@ export function validateExistingEntry({ cfg, entry, openclawRoot, prefix }) {
     problems.push(`agent ${config.agentId} workspace disagrees with config.agentWorkspace`);
   }
 
-  const bindings = Array.isArray(cfg?.bindings) ? cfg.bindings : [];
-  const direct = bindings.filter((one) => isPlainObject(one) && one.agentId === config.agentId
-    && isPlainObject(one.match) && one.match.channel === "telegram" && isDirectPeer(one.match));
-  if (!direct.some((one) => peerId(one.match) === String(config.conversationId))) {
-    problems.push(`config.conversationId is not a direct telegram binding for ${config.agentId}`);
-  }
+  const route = resolveCouncilBinding({
+    cfg,
+    channel: config.channel,
+    accountId: config.accountId,
+    conversationId: config.conversationId,
+    agentId: config.agentId,
+  });
+  if (!route.ok) problems.push(`${route.detail} [${route.code}]`);
 
   if (!existsSync(normalizePath(config.councilAskPath))) problems.push("config.councilAskPath does not exist");
   const runtime = activeRuntime(config, prefix);
