@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import datetime
 import hashlib
 import io
 import json
@@ -28,8 +29,10 @@ import route_law  # noqa: E402
 import substrate  # noqa: E402
 sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
 from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402
-from launcher_core import check_rules, checks, cli, intake, package, page_designs, route  # noqa: E402
+from launcher_core import (check_rules, checks, cli, intake, launch_bridge, package,  # noqa: E402
+                           page_designs, route)
 from test_lane83_designs import COUNCIL, make_piece  # noqa: E402
+from test_page_designs_real import make_client_delivery  # noqa: E402
 
 PDF_AND_BOARD = ["wireframe_desktop_pdf", "wireframe_mobile_pdf", "mockup_desktop_pdf",
                  "mockup_mobile_pdf", "board"]
@@ -37,6 +40,50 @@ PDF_AND_BOARD = ["wireframe_desktop_pdf", "wireframe_mobile_pdf", "mockup_deskto
 
 def sha(path: Path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+IMAGE_STAGES = ("image-inventory-prompts", "image-generation-qc", "image-map-upload",
+                "design-board", "final-mockups")
+
+
+def close_image_stages(root, manifest):
+    """A paid run delivers finished pages (DECISIONS 2026-11-02 09:25, IMG-01): every page's image
+    stages closed by stage_gate and an image QC report with passing averages (check_rules/image_qc.py)."""
+    from launcher_core import graphics_hooks
+    root, pages = Path(root), []
+    for n, piece in enumerate(manifest["pieces"]):
+        run, state = root / "image-runs" / f"{n}-{piece['role']}", {"stages": {}}
+        for stage in IMAGE_STAGES:
+            art = run / stage / "artifact.txt"
+            art.parent.mkdir(parents=True, exist_ok=True)
+            art.write_text(stage, encoding="utf-8")
+            state["stages"][stage] = {"status": "closed", "receipt_status": "pass", "artifact_hashes": {
+                f"{stage}/artifact.txt": hashlib.sha256(art.read_bytes()).hexdigest()}}
+            receipt = run / "private" / "receipts" / f"{stage}.json"
+            receipt.parent.mkdir(parents=True, exist_ok=True)
+            receipt.write_text(json.dumps({"status": "pass"}), encoding="utf-8")
+        (run / "private" / "state.json").write_text(json.dumps(state), encoding="utf-8")
+        pages.append({"page": run.name, "role": piece["role"], "run_dir": str(run)})
+    (root / "qc").mkdir(exist_ok=True)
+    (root / "qc" / "image_stages_report.json").write_text(json.dumps({"pages": pages}), encoding="utf-8")
+    assets = [{"local_path": i["local_path"], "asset_id": i["asset_id"], "average": 9.0, "pass": True,
+               "triggered_autofails": []} for i in graphics_hooks.collect_images(manifest, root)]
+    (root / "qc" / "image_qc_report.json").write_text(json.dumps({"assets": assets}), encoding="utf-8")
+
+
+def store(ok=True, detail="verified"):
+    """A stand-in Skill 49 receipt module: verify_delivery_store answers as told, and the store it reads
+    holds one signed line (what package.assemble's own evidence step reads)."""
+    return types.SimpleNamespace(verify_delivery_store=lambda root: (ok, detail),
+                                 load=lambda root: [{"phase": "pages"}],
+                                 store_state=lambda root: "present" if ok else "unsigned")
+
+
+def verified_design_waiver(plan_hash: str) -> dict:
+    """The owner's design_waiver approval record (TEST-ONLY ids), bound to this plan hash, as
+    package._verify_design_waiver requires it. Never loosened: every field below is checked."""
+    return {"approval_ref": "APPR-WAIVE-TEST", "subject_type": "design_waiver", "subject_hash": plan_hash,
+            "owner_identity_ref": "client-test-1", "revoked": False}
 
 
 class PackageCase(unittest.TestCase):
@@ -59,6 +106,8 @@ class PackageCase(unittest.TestCase):
     def build(self, pieces=None, name="pkg", **kw):
         kw.setdefault("require_designs", True)
         kw.setdefault("checkout_readback", TEST_ONLY_CHECKOUT_READBACK)
+        if kw["require_designs"] is False:  # waiving designs needs the owner's recorded approval
+            kw.setdefault("design_waiver", verified_design_waiver(self.normalized["approval"]["hash"]))
         built = package.assemble(self.work / name, self.normalized, self.graph,
                                  pieces if pieces is not None else self.pieces(),
                                  source_root=self.work, council=COUNCIL, **kw)
@@ -171,8 +220,8 @@ class DesignLevelTests(PackageCase):
 
     def waived(self, record, label="designs waived"):
         built, root = self.build(require_designs=False)
-        path = self.reseal(root, lambda m: m.update(design_waiver=record, delivery_label=label)
-                           if record is not None else m.update(delivery_label=label))
+        # record None: the label claims a waiver the manifest does not carry (assemble always records one)
+        path = self.reseal(root, lambda m: m.update(design_waiver=record, delivery_label=label))
         return self.check({"manifest_path": path}, root), root
 
     def good_waiver(self, root):
@@ -215,20 +264,77 @@ class DesignLevelTests(PackageCase):
 
     def test_the_old_waiver_key_is_not_a_record(self):
         built, root = self.build(require_designs=False)
-        path = self.reseal(root, lambda m: m.update(
-            designs_waiver={"approval_ref": "owner-ok-2026-11-02"}))
+        path = self.reseal(root, lambda m: m.update(  # a manifest that carries only the old key and no waiver claim
+            designs_waiver={"approval_ref": "owner-ok-2026-11-02"}, design_waiver=None,
+            delivery_label=package.DELIVERY_LABELS[package.DELIVERY_SCOPE_FULL]))
         fails, printed = self.check({"manifest_path": path}, root)
         self.assertEqual(fails, [])
         self.assertIn("designs: not checked (designs_required is false)", printed)
 
 
-def store(ok=True, detail="verified"):
-    """A stand-in Skill 49 receipt module whose verify_delivery_store answers as told."""
-    return types.SimpleNamespace(verify_delivery_store=lambda root: (ok, detail))
+class _ClockedS79Validator:
+    """Skill 79's validator with `now` supplied, as a production-bound request requires it.
+
+    DEFECT NOT IN THIS LANE (checkout_instances.build calls validate_request(request) with no `now`, so every
+    per-offer request of a test_only-false launch is recorded `rejected`: "production-bound request requires
+    `now` to check mapping expiry"). This stand-in lets the paid-package checks below be proved against the
+    real validator; the missing argument is owned by the checkout lane and needs its own test there.
+    """
+
+    def __init__(self, real):
+        self._real = real
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def validate_request(self, request, now=None):
+        return self._real.validate_request(request, now=now or datetime.datetime.now(datetime.timezone.utc).isoformat())
 
 
 class PaidPackageTests(PackageCase):
     test_only = False
+
+    def setUp(self):
+        super().setUp()
+        # the build (checkout_instances) and the check's replay (checks._replay_checkout) both reach Skill 79
+        # without `now`; give both the same clocked validator so the record and its replay agree
+        clocked = _ClockedS79Validator(substrate.s79_validate_checkout())
+        for target, name in ((substrate, "s79_validate_checkout"), (checks, "_load_checkout_validator")):
+            patcher = mock.patch.object(target, name, return_value=clocked)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def build(self, pieces=None, name="pkg", **kw):
+        """A client delivery is assembled from a dispatch that happened (ENF-24, ENF-17).
+
+        The binding to a real dispatch run is proved against real dispatches in test_assemble_binding.py
+        (a live run cannot use the free fake consumer: Skill 49's allow-list refuses it). Here the binding
+        is a recorded stand-in carrying a good landing bridge receipt, and Skill 49's receipt store is the
+        stand-in `store()`, so these tests exercise what `check` holds a paid package to.
+        """
+        run = self.work / f"dispatch-run-{name}"
+        (run / "dispatch").mkdir(parents=True, exist_ok=True)
+        (run / "dispatch" / "result-landing.json").write_text("{}", encoding="utf-8")
+        (run / "dispatch" / "bridge-receipt-result-landing.json").write_text(json.dumps(
+            {"request_id": "req-landing", "draft": False, "receipt_validation": "schema",
+             "pipeline_exit": 0}), encoding="utf-8")
+        approved = self.normalized["approval"]["hash"]
+        # a production launch needs the native product and price ids the Skill 06 read-back returns
+        launch = launch_bridge.to_launch_record(self.normalized, self.graph,
+                                                {"image_provider": "other_explicit", "design_style": "A"})
+        kw.setdefault("checkout_readback", {**TEST_ONLY_CHECKOUT_READBACK, "native": {
+            price["price_choice_id"]: {"native_product_id": f"TEST-ONLY-PRODUCT-{offer['offer_id']}",
+                                       "native_price_id": f"TEST-ONLY-PRICE-{price['price_choice_id']}"}
+            for offer in launch["offers"] for price in offer["prices"]}})
+        binding = {"state": package.DISPATCH_STATE_BOUND, "root": run, "plan_document_hash": approved,
+                   "requests": {}, "plan_hash_matches": True, "to_confirm": [], "landing_pages": ["landing"],
+                   "landing_results": {"landing": run / "dispatch" / "result-landing.json"},
+                   "record": {"state": package.DISPATCH_STATE_BOUND, "plan_document_hash": approved}}
+        with mock.patch.object(package, "_find_dispatch_root", return_value=(run, True)), \
+                mock.patch.object(package, "_bind_dispatch", return_value=binding), \
+                mock.patch.object(package, "_bind_piece"), \
+                mock.patch.object(package, "_load_receipt_module", return_value=store()):
+            return super().build(pieces, name, **kw)
 
     def proven_paid(self, name="pkg", omit=(), provider="kie"):
         """A paid package that earned its pass: locally verified, L2, independently reviewed, a
@@ -242,12 +348,14 @@ class PaidPackageTests(PackageCase):
         def carry_reviewer(manifest):
             for piece in manifest["pieces"]:  # package.assemble carries it once U-launcher-core-01 lands
                 piece.setdefault("reviewer_session", "qc-session-1")
+            make_client_delivery(root, manifest)  # real design files and a closed stage_gate state (STR-25)
 
         path = self.reseal(root, carry_reviewer)
         paid = checks._paid_image_renders(json.loads(path.read_text(encoding="utf-8")))
         self.edit_receipt(root,  # the writer records the paid renders once U-launcher-core-01 lands
                           live_effects=f"paid_image_renders:{paid}" if paid else "none",
                           receipt_evidence={"state": "verified", "entries": 1})
+        close_image_stages(root, json.loads(path.read_text(encoding="utf-8")))
         return {"manifest_path": path, "manifest": built["manifest"]}, root
 
     def check_with_store(self, built, root, module=None):
@@ -314,6 +422,7 @@ class PaidPackageTests(PackageCase):
 
     def test_a_paid_package_with_no_receipt_store_fails_naming_the_recorded_state(self):
         built, root = self.build(self.pieces(provider="kie"))
+        self.edit_receipt(root, receipt_evidence={"state": "absent", "entries": 0})
         fails, _ = self.check(built, root)
         self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-RECEIPT: client delivery requires a verified "
                                          "Skill 49 receipt store, recorded state is ") for f in fails), fails)

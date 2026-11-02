@@ -547,6 +547,40 @@ def _to_confirm_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
     return fails
 
 
+def _bridge_receipt_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
+    """ENF-09: the same rule package.assemble applies. A landing result whose bridge-receipt sidecar
+    names a vendored-schema fallback, a non-zero pipeline exit or (for a client delivery) a draft fails;
+    so does a client delivery that carries no sidecar for a landing page."""
+    binding = manifest.get("dispatch_binding")
+    if not isinstance(binding, dict) or binding.get("state") != package_module.DISPATCH_STATE_BOUND:
+        return []
+    code = package_module.BRIDGE_RECEIPT_CODE
+    client = manifest.get("test_only") is not True
+    fails: List[str] = []
+    seen = set()
+    for entry in binding.get("bridge_receipts") or []:
+        slot = entry.get("slot") if isinstance(entry, dict) else None
+        target = _resolve(root, entry.get("path")) if isinstance(entry, dict) else None
+        if target is None or not target.is_file() or not target.is_relative_to(root):
+            fails.append(f"{code}: {slot}: the bridge receipt {entry!r} does not resolve inside the package")
+            continue
+        if _sha256_file(target) != entry.get("sha256"):
+            fails.append(f"{code}: {slot}: the bridge receipt {target.name} does not match its recorded hash")
+            continue
+        doc, error = _read_json_file(target)
+        if error:
+            fails.append(f"{code}: {slot}: the bridge receipt {target.name} is unreadable ({error})")
+            continue
+        seen.add(slot)
+        fails.extend(f"{code}: {slot}: {why}" for why in package_module.bridge_receipt_violations(doc, client))
+    if client:
+        for piece in manifest.get("pieces") or []:
+            if piece.get("role") == package_module.LANDING_REQUEST_ROLE and piece.get("slot") not in seen:
+                fails.append(f"{code}: {piece.get('slot')}: the landing result carries no bridge receipt, so a "
+                             "draft or a vendored-schema fallback cannot be ruled out")
+    return fails
+
+
 def _proof_floor_violations(manifest: Dict[str, Any]) -> List[str]:
     """A client delivery (test_only false) is locally verified, L2 or better, and independently
     reviewed; a claimed independent review always names its reviewer, in every scope."""
@@ -674,6 +708,9 @@ def check_package(manifest_path: Path, root: Path,
 
     # Defaults awaiting the client need a recorded confirmation and cannot be hidden.
     fails.extend(_to_confirm_violations(manifest, root))
+
+    # Landing results: no vendored-schema fallback, no open production gate, no draft (ENF-09).
+    fails.extend(_bridge_receipt_violations(manifest, root))
 
     # Rule modules dropped into launcher_core/check_rules/.
     fails.extend(check_rules.run(manifest, root, skill_root))

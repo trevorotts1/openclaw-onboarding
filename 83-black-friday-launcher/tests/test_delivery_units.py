@@ -11,10 +11,12 @@ import copy
 import hashlib
 import importlib.util
 import json
+import shutil
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = SKILL_ROOT.parent
@@ -23,7 +25,7 @@ CALENDAR_LAW = REPO_ROOT / "shared-utils/signature_launch_contract/calendar_law.
 
 sys.path.insert(0, str(SKILL_ROOT))
 
-from launcher_core import launch_plan  # noqa: E402
+from launcher_core import constants, launch_plan  # noqa: E402
 from launcher_core.check_rules import delivery_units as du  # noqa: E402
 
 APPROVED = "b" * 64
@@ -154,6 +156,22 @@ class DeliveryUnitsTests(unittest.TestCase):
         manifest = self.package()
         (self.root / du.BUILDS_DOC).unlink()
         self.assertEqual(len(self.check(manifest)), len(self.automations))
+
+    def test_the_validator_is_found_in_a_deployed_layout_and_never_assumed_when_absent(self):
+        # A 999 install has no 44- directory: the validator lives in .claude/skills/convert-and-flow-operator.
+        deployed = Path(tempfile.mkdtemp(dir=self.root))
+        (deployed / "shared-utils").mkdir()
+        skill = deployed / ".claude" / "skills" / "convert-and-flow-operator"
+        (skill / "tools").mkdir(parents=True)
+        (skill / "SKILL.md").write_text("# fixture\n", encoding="utf-8")
+        manifest = self.package()
+        with mock.patch.object(constants, "REPO_ROOT", deployed):
+            absent = self.check(manifest)  # fail closed, named: not installed
+            shutil.copy(REPO_ROOT / du.VALIDATOR_REF, skill / "tools" / "validate_graph.py")
+            found = self.check(manifest)
+        self.assertEqual(len(absent), len(self.automations), absent)
+        self.assertTrue(all("is not installed" in f for f in absent), absent)
+        self.assertEqual(found, [])
 
     def test_the_rule_loads_the_way_the_check_rules_seam_loads_it(self):
         # U-launcher-core-02's seam loads every check_rules/*.py BY PATH under the name

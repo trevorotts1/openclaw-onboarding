@@ -13,6 +13,7 @@ different hash.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -128,8 +129,6 @@ def cmd_assemble(args: argparse.Namespace) -> int:
         extra = pieces_dir / f"{slot}.json"
         if extra.is_file():
             pieces[slot] = _read_json(extra)
-    report_path = source_root / "dispatch-report.json"
-    report = _read_json(report_path) if report_path.is_file() else {}
     plan = _read_json(args.launch_plan) if args.launch_plan else None
     deliveries = _read_json(args.deliveries) if args.deliveries else None
     scope = package.DELIVERY_SCOPE_PAGE_ONLY if args.page_only else package.DELIVERY_SCOPE_FULL
@@ -137,8 +136,9 @@ def cmd_assemble(args: argparse.Namespace) -> int:
         out = package.assemble(Path(args.out), normalized, graph, pieces,
                                source_root=source_root, council=advice,
                                require_designs=not args.allow_no_designs,
-                               to_confirm=report.get("to_confirm"),
-                               landing_pages=report.get("landing_pages"),
+                               design_waiver=_read_json(args.design_waiver) if args.design_waiver else None,
+                               design_approvals=(_read_json(args.design_approvals)
+                                                 if args.design_approvals else None),
                                launch_plan=plan, deliveries=deliveries,
                                delivery_scope=scope)
     except package.PackageError as exc:
@@ -206,7 +206,40 @@ def cmd_plan(args: argparse.Namespace) -> int:
     return 0
 
 
+def _launcher_intake():
+    """shared-utils/client_intake/launcher_intake.py: the repo checkout, then any installed tree."""
+    if "launcher_intake" in sys.modules:
+        return sys.modules["launcher_intake"]
+    home = Path.home()
+    roots = [Path(__file__).resolve().parents[2]] + [
+        home / ".openclaw" / "skills", home / ".claude" / "skills",
+        home / ".claude-nine" / "skills", Path("/data/.openclaw/skills")]
+    for root in roots:
+        for d in (root / "shared-utils" / "client_intake", root / "client_intake"):
+            path = d / "launcher_intake.py"
+            if path.is_file():
+                spec = importlib.util.spec_from_file_location("launcher_intake", path)
+                module = importlib.util.module_from_spec(spec)
+                sys.modules["launcher_intake"] = module
+                spec.loader.exec_module(module)
+                return module
+    return None
+
+
 def cmd_dispatch(args: argparse.Namespace) -> int:
+    if args.answers:  # PRD-16: the intake must be the one built from this answers file
+        li = _launcher_intake()
+        if li is None:
+            print("FAIL shared-utils/client_intake/launcher_intake.py not found; an intake cannot be "
+                  "checked against its answers file", file=sys.stderr)
+            return 2
+        prov_path = Path(args.provenance) if args.provenance else Path(args.intake).with_name(li.PROVENANCE_NAME)
+        prov = _read_json(prov_path) if prov_path.is_file() else None
+        try:
+            li.verify(_read_json(args.intake), prov, _read_json(args.answers), Path(args.answers))
+        except li.AnswersError as exc:
+            print(f"FAIL {exc}", file=sys.stderr)
+            return 2
     dependencies.require()
     payload = _read_json(args.intake)
     approval = _read_json(args.approval)
@@ -364,8 +397,16 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--pieces", help="directory of <role>.json page results (default: <run-dir>/pieces)")
     a.add_argument("--out", required=True)
     a.add_argument("--allow-no-designs", action="store_true",
-                   help="assemble without requiring every page's wireframes and mockups; recorded "
-                        "in the manifest, never the default for a delivery")
+                   help="assemble without every page's wireframes and mockups; needs --design-waiver "
+                        "(an owner approval bound to this plan hash) and is never accepted for a client "
+                        "delivery (test_only false)")
+    a.add_argument("--design-waiver",
+                   help="the owner's design_waiver approval record (JSON: approval_ref, subject_type "
+                        "'design_waiver', subject_hash = the plan hash, owner_identity_ref, revoked)")
+    a.add_argument("--design-approvals",
+                   help='JSON {"design_board": {state, approval_ref, record_sha256}, "final_mockups": {...}}; '
+                        "an approved entry must resolve to a recorded Skill 71 Design Board approval "
+                        "(page_designs.approval_violations)")
     a.add_argument("--launch-plan",
                    help="the shared launch plan (U-CONTRACT); its Black Friday calendar and every "
                         "planned email, text, automation and requested AI must be delivered. "
@@ -391,6 +432,10 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument("--intake", required=True)
     x.add_argument("--out", required=True, help="run folder: launch.json, dispatch/, pieces/, dispatch-report.json")
     x.add_argument("--approval", required=True, help="the client's recorded plan approval (JSON record)")
+    x.add_argument("--answers", help="the client answers file (client-intake-answers/v1) this intake was built "
+                                     "from; dispatch refuses unless the intake is bound to it by hash")
+    x.add_argument("--provenance", help="the intake provenance file (default: intake.provenance.json "
+                                        "beside --intake)")
     x.add_argument("--client", required=True, help="the client's identity reference")
     x.add_argument("--worker", required=True, help="the identity running the build (never the approver)")
     x.add_argument("--adapters", help="ready Skill 49 adapter configuration (JSON)")
