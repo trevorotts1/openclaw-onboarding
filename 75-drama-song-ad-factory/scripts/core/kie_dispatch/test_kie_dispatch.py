@@ -49,6 +49,15 @@ def teardown_module(_module=None):
     _NO_REAL_RUNNER.stop()
 
 
+def _real_file(suffix=".bin", data=b"offline-output"):
+    """A real non-zero output file. F11 refuses to call a missing or empty
+    path saved, so an 'ok' fixture must materialize the bytes it claims."""
+    path = os.path.join(tempfile.mkdtemp(prefix="kie-out-"), "out" + suffix)
+    with open(path, "wb") as f:
+        f.write(data)
+    return path
+
+
 def check(name, cond, detail=""):
     print("%s: %s%s" % ("ok" if cond else "FAIL", name,
                         (" (%s)" % detail) if detail and not cond else ""))
@@ -192,7 +201,7 @@ BASE_SCRIPT = {
 
 def test_ok():
     tmp = tempfile.mkdtemp(prefix="kie-ok-")
-    shot = os.path.join(tmp, "shot.png")
+    shot = _real_file(".png", b"\x89PNG\r\n\x1a\n")
     script = dict(BASE_SCRIPT)
     script.update({
         "submit": (0, {"state": "queued", "task_id": "task-1",
@@ -236,7 +245,8 @@ def test_video_wait_budget():
         "wait": (0, {"state": "success", "task_id": "t-vid",
                      "raw_family": "market", "credits_consumed": 30}),
         "save": (0, {"state": "success", "task_id": "t-vid",
-                     "saved_paths": ["/tmp/x.mp4"], "credits_consumed": 30}),
+                     "saved_paths": [_real_file(".mp4")],
+                     "credits_consumed": 30}),
     })
     env, db, fake, _ = run_case(script, "vidwait",
                                 model="kling-3.0/video",
@@ -255,7 +265,7 @@ def test_request_timeout_overrides():
         "wait": (0, {"state": "success", "task_id": "t-ovr",
                      "credits_consumed": 5}),
         "save": (0, {"state": "success", "task_id": "t-ovr",
-                     "saved_paths": ["/tmp/y.png"]}),
+                     "saved_paths": [_real_file(".png")]}),
     })
     env, db, fake, _ = run_case(
         script, "ovrwait",
@@ -624,7 +634,8 @@ def test_sfx_default_run_zero_jobs_f4():
         "wait": (0, {"state": "success", "task_id": "t-song",
                      "raw_family": "market", "credits_consumed": 10}),
         "save": (0, {"state": "success", "task_id": "t-song",
-                     "saved_paths": ["/tmp/f4-song.mp3"], "credits_consumed": 10}),
+                     "saved_paths": [_real_file(".mp3")],
+                     "credits_consumed": 10}),
     })
     # WW-30: a music job rides the createTask ENVELOPE, so the fixture is a
     # COMPLETE one (outer model, top-level callBackUrl, every required
@@ -654,7 +665,8 @@ def test_sfx_default_run_zero_jobs_f4():
         "wait": (0, {"state": "success", "task_id": "t-sfx",
                      "raw_family": "market", "credits_consumed": 3}),
         "save": (0, {"state": "success", "task_id": "t-sfx",
-                     "saved_paths": ["/tmp/f4-sfx.mp3"], "credits_consumed": 3}),
+                     "saved_paths": [_real_file(".mp3")],
+                     "credits_consumed": 3}),
     })
     env3, _, _, tmp3 = run_case(
         ordered_script, "f4-sfx-ordered", model="ai-music-api/sounds", cost=50,

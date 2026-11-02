@@ -42,6 +42,12 @@ working file, and the working files themselves (Agnes prompts, chained
 last frames, mouth strips, venvs) have their own homes in the run, never
 here.
 
+What a run OWES is not the twelve display slots but the obligations its own
+saved answers derive (``required_items``): a 60, 90 or 120 second ad owes no
+clip files at all, and a campaign run owes its two trailers plus the two ad
+clips. The twelve slots stay in ``PACKAGE_ITEMS`` for the client map; no
+dummy file is ever written to fill a slot the run does not owe.
+
 An item opens only when it opens:
   pdf   -- a real PDF header (%PDF-), never a renamed text file;
   srt   -- a cue block: an index line then a timing line "HH:MM:SS,mmm --> ..."
@@ -50,7 +56,9 @@ An item opens only when it opens:
   images-- a directory of separate non-empty image files (an image bible or a
            character set -- never one sprite sheet standing in for the set).
 
-stdlib only, no network, no provider call, no client name, no operator path.
+No network, no provider call, no client name, no operator path. The one
+import outside this file is ``clip_cutdown.clips_for``, read lazily so the
+short-cut length rule keeps a single owner.
 
 Run: python3 delivery_package/test_delivery_package_contract.py
 """
@@ -61,7 +69,7 @@ import shutil
 from pathlib import Path
 from collections import namedtuple
 
-CONTRACT_VERSION = "1.1.0"
+CONTRACT_VERSION = "1.2.0"
 
 #: one package item: key, its 1-based number, the DEL unit that produces it,
 #: the human label, the canonical file names, one kind per file, and the
@@ -169,6 +177,47 @@ assert len(PACKAGE_ITEMS + OPTIONAL_ITEMS) == 13 == \
 #: the item's number, index-aligned with that item's own ``files``.
 METHOD_ITEM_FILES = {6: ("06 - Trailer 60s.mp4", "06 - Trailer 90s.mp4")}
 
+
+def short_cuts_owed(chosen_length_s):
+    """Whether this saved length owes the two short cuts (the ONE length rule).
+
+    ``clip_cutdown.clips_for`` is the existing threshold (180 seconds and up);
+    60, 90 and 120 seconds owe none, so their folder carries no clip files and
+    no dummy file is ever written to fill the slot.
+    """
+    from clip_cutdown import clips_for       # lazy: this file loads without core
+    return bool(clips_for(chosen_length_s))
+
+
+def required_items(chosen_length_s, *, campaign_run=False):
+    """The package items a run with this saved length and purpose owes.
+
+    Derived from the run's own recorded choice, never from a folder's
+    contents. ``PACKAGE_ITEMS`` keeps the twelve display slots; this tuple is
+    what delivery owes:
+
+      * 60/90/120 seconds -- the eleven file-bearing items (no clips at all);
+      * 180 seconds and up, ordinary or non-campaign method -- the twelve base
+        items, item 6 as the contract's two clips;
+      * 180 seconds and up, campaign method -- item 6 as the two trailers plus
+        item 13, the two ad clips (one render pass writes all four).
+    """
+    if not short_cuts_owed(chosen_length_s):
+        return tuple(item for item in PACKAGE_ITEMS if item.key != "clips")
+    if campaign_run:
+        return tuple(_campaign_clips(item) if item.key == "clips" else item
+                     for item in PACKAGE_ITEMS) + (AD_CLIPS_ITEM,)
+    return PACKAGE_ITEMS
+
+
+def _campaign_clips(item):
+    """Slot 06 as a campaign run names it: two trailers, same slot and kind."""
+    names = METHOD_ITEM_FILES.get(item.number)
+    if not names:
+        return item
+    return item._replace(files=names, label="60 and 90 SECOND TRAILERS")
+
+
 #: the clean-folder gate's failure code (SPEC B3b): the client folder holds
 #: deliverables only, so a top-level name outside the allow-list fails.
 DELIVERY_FOLDER_NOT_CLEAN = "DELIVERY_FOLDER_NOT_CLEAN"
@@ -181,25 +230,31 @@ EXTRA_ALLOWED = ("delivery-receipt.json", "README.md", "SONG-CHOICES")
 _SONG_PAIR = re.compile(r"^.+ - .+ - Song\.(mp3|wav)$")
 
 
-def allowed_top_level(method_run=False, campaign_run=False):
+def allowed_top_level(method_run=False, campaign_run=False, items=None):
     """The names a clean delivery folder may hold at its top level.
 
-    The 12 items' files plus the known extras, always. A method run adds the
-    trailer names for item 6; a campaign method run adds the ad clips. Both
-    default False, so an ordinary run gets exactly the old allow-list.
+    The items' own files plus the known extras, always. ``items`` is the
+    resolved obligation tuple (``required_items``): when it is given the
+    allow-list is exactly those files, so a slot the run does not owe -- the
+    clip names on a 60/90 second ad, the clip names on a campaign -- is a
+    stray. Without it: the 12 base items, the trailer names when method_run,
+    the ad clips when campaign_run, exactly as before.
     """
-    items = PACKAGE_ITEMS + ((AD_CLIPS_ITEM,) if campaign_run else ())
+    if items is None:
+        items = PACKAGE_ITEMS + ((AD_CLIPS_ITEM,) if campaign_run else ())
+        alternatives = METHOD_ITEM_FILES.values() if method_run else ()
+    else:
+        alternatives = ()
     names = {name for item in items for name in item.files}
-    if method_run:
-        for alt in METHOD_ITEM_FILES.values():
-            names.update(alt)
+    for alt in alternatives:
+        names.update(alt)
     names.update(EXTRA_ALLOWED)
     return frozenset(names)
 
 
-def is_allowed_top_level(name, method_run=False, campaign_run=False):
+def is_allowed_top_level(name, method_run=False, campaign_run=False, items=None):
     """True when this top-level folder name is a deliverable or a known extra."""
-    return name in allowed_top_level(method_run, campaign_run) or \
+    return name in allowed_top_level(method_run, campaign_run, items) or \
         bool(_SONG_PAIR.match(name))
 
 
@@ -256,27 +311,41 @@ def _problem(path, kind):
     return None
 
 
-def verify_folder(folder, method_run=False, campaign_run=False):
+def verify_folder(folder, method_run=False, campaign_run=False,
+                  chosen_length_s=None):
     """Check a delivery folder against the package items. Never raises.
 
-    Returns {"ok", "folder", "expected", "present", "missing", "problems",
-    "not_clean"} where missing holds the package keys, problems names item +
-    file + the sentence that failed, and not_clean holds every top-level name
-    outside the allow-list (each one also a problem, code
-    DELIVERY_FOLDER_NOT_CLEAN). A folder that does not exist misses all the
-    items owed.
+    Returns {"ok", "folder", "authority", "expected", "present", "missing",
+    "not_applicable", "problems", "not_clean"} where missing holds the package
+    keys, problems names item + file + the sentence that failed, and not_clean
+    holds every top-level name outside the allow-list (each one also a
+    problem, code DELIVERY_FOLDER_NOT_CLEAN). A folder that does not exist
+    misses all the items owed.
 
-    method_run (the run carries control/method.json) opens item 6's trailer
-    names and allows them at the top level; campaign_run (a campaign purpose
-    method run) also owes item 13, the ad clips, and allows those names.
-    expected is the 12 base items, +13 only for a campaign run. Both default
-    False: a caller that says nothing about the method gets the original
-    gate -- a trailer or an ad clip in an ordinary run is a stray.
+    chosen_length_s names the run's OWN saved length (with campaign_run its
+    purpose): the folder is then checked against exactly the items that run
+    owes (``required_items``), item 6 under its exact derived names, and a
+    slot the run owes nothing for is reported in ``not_applicable`` instead of
+    being demanded. That check is authoritative -- ``authority`` says
+    "resolved-run" -- and it cannot be satisfied by a neighbouring name.
+
+    Without chosen_length_s the check is structural only (``authority``
+    "structural-only"): the 12 base items, item 6 under the clip name (or the
+    trailer name when method_run), item 13 only when campaign_run, both
+    defaulting False. A folder's own name never decides which authority ran.
     """
     root = Path(folder)
-    items = PACKAGE_ITEMS + ((AD_CLIPS_ITEM,) if campaign_run else ())
+    authoritative = chosen_length_s is not None
+    if authoritative:
+        items = required_items(chosen_length_s, campaign_run=campaign_run)
+        not_applicable = () if short_cuts_owed(chosen_length_s) else ("clips",)
+    else:
+        items = PACKAGE_ITEMS + ((AD_CLIPS_ITEM,) if campaign_run else ())
+        not_applicable = ()
     report = {"contract_version": CONTRACT_VERSION, "folder": str(root),
+              "authority": "resolved-run" if authoritative else "structural-only",
               "expected": len(items), "present": [], "missing": [],
+              "not_applicable": list(not_applicable),
               "problems": [], "not_clean": [], "ok": False}
     if not root.is_dir():
         report["missing"] = [item.key for item in items]
@@ -286,7 +355,8 @@ def verify_folder(folder, method_run=False, campaign_run=False):
     for item in items:
         bad = []
         for index, kind in enumerate(item.kinds):
-            names = _slot_names(item, index, method_run)
+            names = ((item.files[index],) if authoritative
+                     else _slot_names(item, index, method_run))
             why = None
             for name in names:
                 why = _problem(root / name, kind)
@@ -300,8 +370,9 @@ def verify_folder(folder, method_run=False, campaign_run=False):
             report["missing"].append(item.key)
         else:
             report["present"].append(item.key)
+    allow = items if authoritative else None
     for entry in sorted(root.iterdir()):
-        if is_allowed_top_level(entry.name, method_run, campaign_run):
+        if is_allowed_top_level(entry.name, method_run, campaign_run, allow):
             continue
         report["not_clean"].append(entry.name)
         report["problems"].append(

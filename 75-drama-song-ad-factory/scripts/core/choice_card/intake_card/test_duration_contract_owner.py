@@ -23,7 +23,9 @@ QUESTION_SHA256 = {
     "character": "59fab7749a1131830aec78892073578bf9c137b3ab55bb176079392cb309ac2e",
     "photos": "691bfac5aa7f8ad6f630bf0300197c04d52363d6c35619f9da3fe45188fb7263",
     "models": "77817a30f601d05ff033e12fe60069b79c8d1c74ca104f2740143c8b1dff85eb",
-    "music": "ad10b92aba8fd3a08fecd35d8d341302b8e575a93e65a83e2cc8d06cb404cb55",
+    # Re-pinned for the intended eighteen-style music card (T03-corr / F8);
+    # same formula as the test below: sha256 of the compact sorted-key JSON.
+    "music": "1f8908db756f315a1300df905631ad2fdb2a66496e28c7914e6f05b696d0f340",
     "look": "0d828d83ec361f2f26f19ca0d5c9361cddf3f6ecbb74fbf590fbcae2764b58dd",
     "spend": "5cacf6bad2179a77011f9f7d865b36d7c08ecdcecda267968a9678a902091d85",
     "storyboard": "249a2ac08375b9b6e79ca85e0a0d46699fe18d20a90ada328d54423ec4bac042",
