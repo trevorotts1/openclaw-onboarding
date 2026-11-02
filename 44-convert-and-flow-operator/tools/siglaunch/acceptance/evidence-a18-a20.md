@@ -14,6 +14,23 @@ before building: `processor/processor.py`, `processor/test_processor.py`,
 **Level honesty: L1/L2 module-level proof with recording fakes at
 the native boundary; NOT native (L4) proof.**
 
+**Status correction (S49 repair, DTY-22): the L4 items below are
+PENDING a real declined payment and a delivered confirmation.** The
+cited L4 sandbox (S82 continuity contract, section 6, items 2 and 3)
+never used a real declined card (its "failure" was an unpaid draft
+invoice) or a real delivered confirmation, and no raw native payloads
+were saved:
+
+- Item 2 (extra-failure, A20(b)): PENDING a real declined payment.
+  The L1/L2 result below stands only as module-level proof.
+- Item 3 (single send, A20(c)): PENDING a delivered confirmation from
+  a real journey, with raw native payloads saved. The L1/L2 result
+  below models the page observation with a fake and stands only as
+  module-level proof.
+
+Re-run both with a real declined payment and a delivered confirmation
+before A20 is presented above L2.
+
 ## A18 — Rapid extra purchases not blocked by long waits
 
 Verdict: PROVEN at L1/L2.
