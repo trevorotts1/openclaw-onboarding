@@ -13,6 +13,7 @@ import json
 import sys
 import tempfile
 import textwrap
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -78,6 +79,15 @@ class PackageCase(unittest.TestCase):
         receipt["manifest"]["sha256"] = sha(manifest_path)
         receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return manifest_path
+
+
+    @staticmethod
+    def edit_receipt(root: Path, **changes):
+        """Change receipt.json fields only (the receipt seals the manifest hash, not itself)."""
+        path = root / "receipt.json"
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+        receipt.update(changes)
+        path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 class SeamTests(PackageCase):
@@ -156,45 +166,199 @@ class DesignLevelTests(PackageCase):
         self.assertEqual(fails, [])
         self.assertIn("full set (test package)", printed)
 
+    def waived(self, record, label="designs waived"):
+        built, root = self.build(require_designs=False)
+        path = self.reseal(root, lambda m: m.update(design_waiver=record, delivery_label=label)
+                           if record is not None else m.update(delivery_label=label))
+        return self.check({"manifest_path": path}, root), root
+
+    def good_waiver(self, root):
+        plan_hash = json.loads((root / "package-manifest.json").read_text())["approved_plan_hash"]
+        return {"approval_ref": "owner-ok-2026-11-02", "owner_identity_ref": "client-test-1",
+                "subject_hash": plan_hash}
+
+    def test_a_waiver_without_an_approval_ref_fails(self):
+        (fails, _), _ = self.waived({"approval_ref": "", "owner_identity_ref": "client-test-1",
+                                     "subject_hash": "x"})
+        self.assertIn("AF-LAUNCH-PAGE-DESIGNS: the design waiver is not an owner approval bound "
+                      "to this plan hash", fails)
+
+    def test_a_full_waiver_record_passes_and_the_label_is_printed(self):
+        built, root = self.build(require_designs=False)
+        path = self.reseal(root, lambda m: m.update(
+            design_waiver=self.good_waiver(root), delivery_label="designs waived"))
+        fails, printed = self.check({"manifest_path": path}, root)
+        self.assertEqual(fails, [])
+        self.assertIn("designs waived (owner approval owner-ok-2026-11-02)", printed)
+
+    def test_a_waiver_bound_to_another_plan_hash_fails(self):
+        built, root = self.build(require_designs=False)
+        record = dict(self.good_waiver(root), subject_hash="f" * 64)
+        path = self.reseal(root, lambda m: m.update(design_waiver=record))
+        fails, _ = self.check({"manifest_path": path}, root)
+        self.assertTrue(any("not an owner approval bound to this plan hash" in f for f in fails), fails)
+
+    def test_a_waiver_with_no_owner_identity_fails(self):
+        built, root = self.build(require_designs=False)
+        record = dict(self.good_waiver(root), owner_identity_ref="")
+        path = self.reseal(root, lambda m: m.update(design_waiver=record))
+        fails, _ = self.check({"manifest_path": path}, root)
+        self.assertTrue(any("not an owner approval bound to this plan hash" in f for f in fails), fails)
+
+    def test_a_label_that_claims_a_waiver_with_no_record_fails(self):
+        (fails, _), _ = self.waived(None)
+        self.assertIn("AF-LAUNCH-PAGE-DESIGNS: the delivery label claims designs waived but the "
+                      "manifest carries no design_waiver", fails)
+
+    def test_the_old_waiver_key_is_not_a_record(self):
+        built, root = self.build(require_designs=False)
+        path = self.reseal(root, lambda m: m.update(
+            designs_waiver={"approval_ref": "owner-ok-2026-11-02"}))
+        fails, printed = self.check({"manifest_path": path}, root)
+        self.assertEqual(fails, [])
+        self.assertIn("designs: not checked (designs_required is false)", printed)
+
+
+def store(ok=True, detail="verified"):
+    """A stand-in Skill 49 receipt module whose verify_delivery_store answers as told."""
+    return types.SimpleNamespace(verify_delivery_store=lambda root: (ok, detail))
+
 
 class PaidPackageTests(PackageCase):
     test_only = False
 
+    def proven_paid(self, name="pkg", omit=(), provider="kie"):
+        """A paid package that earned its pass: locally verified, L2, independently reviewed, a
+        verified receipt store, and live_effects naming the paid renders."""
+        pieces = self.pieces(provider=provider, omit=omit)
+        for piece in pieces.values():
+            piece.update(status="locally_verified", proof_class="L2", independent_review=True,
+                         reviewer_session="qc-session-1")
+        built, root = self.build(pieces, name=name)
+
+        def carry_reviewer(manifest):
+            for piece in manifest["pieces"]:  # package.assemble carries it once U-launcher-core-01 lands
+                piece.setdefault("reviewer_session", "qc-session-1")
+
+        path = self.reseal(root, carry_reviewer)
+        paid = checks._paid_image_renders(json.loads(path.read_text(encoding="utf-8")))
+        self.edit_receipt(root,  # the writer records the paid renders once U-launcher-core-01 lands
+                          live_effects=f"paid_image_renders:{paid}" if paid else "none",
+                          receipt_evidence={"state": "verified", "entries": 1})
+        return {"manifest_path": path, "manifest": built["manifest"]}, root
+
+    def check_with_store(self, built, root, module=None):
+        with mock.patch.object(package, "_load_receipt_module", return_value=module or store()):
+            return self.check(built, root)
+
     def test_a_paid_package_with_every_design_kind_passes_with_no_blanket_test_only_assertion(self):
-        built, root = self.build(self.pieces(provider="kie"))
+        built, root = self.proven_paid()
         self.assertIs(built["manifest"]["test_only"], False)
-        fails, printed = self.check(built, root)
+        fails, printed = self.check_with_store(built, root)
         self.assertEqual(fails, [])
         self.assertIn("full set (paid package)", printed)
 
     def test_a_paid_package_missing_a_kind_fails(self):
-        built, root = self.build(self.pieces(provider="kie", omit=["board"]))
-        fails, _ = self.check(built, root)
+        built, root = self.proven_paid(omit=["board"])
+        fails, _ = self.check_with_store(built, root)
         self.assertIn("AF-LAUNCH-PAGE-DESIGNS: landing is missing board", fails)
 
     def test_a_paid_package_with_stub_images_fails_the_provider_consistency_check(self):
-        built, root = self.build(self.pieces(provider="stub"))
-        fails, _ = self.check(built, root)
+        built, root = self.proven_paid(provider="stub")
+        fails, _ = self.check_with_store(built, root)
         self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-MANIFEST: test_only is false but")
                             and "stub provider" in f for f in fails), fails[:3])
 
-    def test_a_paid_package_cannot_skip_designs_without_a_waiver(self):
+    def test_a_paid_package_cannot_skip_designs(self):
         built, root = self.build(self.pieces(provider="kie"), require_designs=False)
         self.assertIs(built["manifest"]["designs_required"], False)
         fails, _ = self.check(built, root)
-        self.assertTrue(any("paid package must carry the full design set" in f for f in fails), fails)
+        self.assertIn("AF-LAUNCH-PAGE-DESIGNS: designs are never waived for a client delivery "
+                      "(test_only false); a paid package carries the full design set", fails)
 
-    def test_a_waiver_needs_an_owner_approval_ref_and_the_label_is_printed(self):
+    def test_a_valid_design_waiver_does_not_open_a_client_delivery(self):
         built, root = self.build(self.pieces(provider="kie"), require_designs=False)
-        manifest_path = self.reseal(root, lambda m: m.update(
-            designs_waiver={"approval_ref": ""}, delivery_label="designs waived"))
-        fails, printed = self.check({"manifest_path": manifest_path}, root)
-        self.assertTrue(any("waived with no owner approval reference" in f for f in fails), fails)
-        manifest_path = self.reseal(root, lambda m: m.update(
-            designs_waiver={"approval_ref": "owner-ok-2026-11-02"}, delivery_label="designs waived"))
-        fails, printed = self.check({"manifest_path": manifest_path}, root)
-        self.assertEqual(fails, [])
-        self.assertIn("designs waived (owner approval owner-ok-2026-11-02)", printed)
+        plan_hash = built["manifest"]["approved_plan_hash"]
+        path = self.reseal(root, lambda m: m.update(
+            design_waiver={"approval_ref": "owner-ok-2026-11-02", "owner_identity_ref": "client-test-1",
+                           "subject_hash": plan_hash}, delivery_label="designs waived"))
+        fails, _ = self.check({"manifest_path": path}, root)
+        self.assertTrue(any("designs are never waived for a client delivery" in f for f in fails), fails)
+
+    def test_a_paid_package_of_authored_pieces_fails_the_proof_floor(self):
+        built, root = self.build(self.pieces(provider="kie"))
+        fails, _ = self.check_with_store(built, root)
+        floor = [f for f in fails if f.startswith("AF-LAUNCH-PKG-PROOF-FLOOR")]
+        self.assertIn("AF-LAUNCH-PKG-PROOF-FLOOR: landing status authored is below locally_verified", floor)
+        self.assertIn("AF-LAUNCH-PKG-PROOF-FLOOR: landing proof_class L0 is below L2", floor)
+        self.assertIn("AF-LAUNCH-PKG-PROOF-FLOOR: landing has no independent review record", floor)
+
+    def test_a_proven_paid_package_has_no_proof_floor_violation(self):
+        built, root = self.proven_paid()
+        fails, _ = self.check_with_store(built, root)
+        self.assertEqual([f for f in fails if "PROOF-FLOOR" in f], [])
+
+    def test_a_test_package_is_not_held_to_the_client_proof_floor(self):
+        self.assertEqual([f for f in checks._proof_floor_violations(
+            {"test_only": True, "pieces": [{"role": "landing", "status": "authored", "proof_class": "L0",
+                                           "independent_review": False}]})], [])
+
+    def test_a_status_that_is_not_a_page_status_fails_the_floor(self):
+        fails = checks._proof_floor_violations(
+            {"test_only": False, "pieces": [{"role": "landing", "status": "shipped", "proof_class": "L2",
+                                            "independent_review": True, "reviewer_session": "s"}]})
+        self.assertEqual(fails, ["AF-LAUNCH-PKG-PROOF-FLOOR: landing status shipped is not a page status"])
+
+    def test_a_paid_package_with_no_receipt_store_fails_naming_the_recorded_state(self):
+        built, root = self.build(self.pieces(provider="kie"))
+        fails, _ = self.check(built, root)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-RECEIPT: client delivery requires a verified "
+                                         "Skill 49 receipt store, recorded state is ") for f in fails), fails)
+
+    def test_a_recorded_verified_state_is_not_trusted_without_the_live_store(self):
+        built, root = self.proven_paid()
+        for module, text in ((None, "Skill 49 receipt module unavailable"),
+                             (types.SimpleNamespace(), "has no verify_delivery_store"),
+                             (store(False, "AF-RECEIPT-UNSIGNED: no signature"), "AF-RECEIPT-UNSIGNED")):
+            with mock.patch.object(package, "_load_receipt_module", return_value=module):
+                fails, _ = self.check(built, root)
+            self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-RECEIPT") and text in f for f in fails),
+                            (text, fails))
+
+    def test_a_paid_package_with_a_verified_store_has_no_receipt_violation(self):
+        built, root = self.proven_paid()
+        fails, _ = self.check_with_store(built, root)
+        self.assertEqual([f for f in fails if f.startswith("AF-LAUNCH-PKG-RECEIPT")], [])
+
+    def test_the_receipt_must_name_the_paid_renders(self):
+        built, root = self.proven_paid()
+        self.edit_receipt(root, live_effects="none")
+        fails, _ = self.check_with_store(built, root)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-RECEIPT: receipt live_effects 'none' does not "
+                                         "match the package's paid picture renders ('paid_image_renders:")
+                            for f in fails), fails)
+
+
+class LiveEffectsTests(PackageCase):
+    def test_a_stub_package_records_no_live_effects(self):
+        built, root = self.build()
+        self.assertEqual([f for f in self.check(built, root)[0] if "live_effects" in f], [])
+
+    def test_paid_renders_claimed_on_a_stub_package_fail(self):
+        built, root = self.build()
+        self.edit_receipt(root, live_effects="paid_image_renders:1")
+        fails, _ = self.check(built, root)
+        self.assertTrue(any("live_effects 'paid_image_renders:1' does not match" in f for f in fails), fails)
+
+
+class ReviewRecordTests(PackageCase):
+    def test_a_claimed_independent_review_with_no_reviewer_fails_in_every_scope(self):
+        built, root = self.build()
+        path = self.reseal(root, lambda m: m["pieces"][0].update(independent_review=True,
+                                                                  reviewer_session=None))
+        fails, _ = self.check({"manifest_path": path}, root)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-REVIEW: ") and "no reviewer_session" in f
+                            for f in fails), fails)
 
 
 class ToConfirmTests(PackageCase):
@@ -274,8 +438,9 @@ class RouteGraphTests(PackageCase):
             graph["edges"] = graph["edges"][1:]
             return graph
 
+        law_errors = (route_law.RouteInvariantError, route.RouteError)
         with mock.patch.object(compiler, "compile_route", drop_an_edge):
-            with self.assertRaises(route_law.RouteInvariantError) as ctx:
+            with self.assertRaises(law_errors) as ctx:
                 route.compile_route(self.normalized)
             self.assertIn("missing contract edges", str(ctx.exception))
             intake_file = self.work / "intake.json"
@@ -283,10 +448,17 @@ class RouteGraphTests(PackageCase):
                 (FIXTURES / "elevation" / "intake.json").read_text(encoding="utf-8"))), encoding="utf-8")
             pieces_dir = self.work / "pieces-in"
             pieces_dir.mkdir()
+            stderr = io.StringIO()
             with mock.patch.object(cli.council, "planning_step", return_value=COUNCIL):
-                with self.assertRaises(route_law.RouteInvariantError):
-                    cli.main(["assemble", "--intake", str(intake_file), "--pieces", str(pieces_dir),
-                              "--out", str(self.work / "out"), "--page-only"])
+                try:
+                    with contextlib.redirect_stderr(stderr):
+                        rc = cli.main(["assemble", "--intake", str(intake_file), "--pieces", str(pieces_dir),
+                                       "--out", str(self.work / "out"), "--page-only"])
+                except route_law.RouteInvariantError as exc:  # before route.compile_route wraps it
+                    self.assertIn("missing contract edges", str(exc))
+                else:  # the CLI contract: exit 2 and name the law
+                    self.assertEqual(rc, 2)
+                    self.assertIn("missing contract edges", stderr.getvalue())
         self.assertFalse((self.work / "out" / "package-manifest.json").exists())
 
 

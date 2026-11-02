@@ -16,13 +16,14 @@ from typing import Any, Dict, List, Tuple
 
 from . import check_rules
 from . import launch_plan as launch_plan_module
+from . import package as package_module
 from . import page_designs
 from . import route as route_module
 from .package import (PROOF_BY_STATUS, PROOF_KEYS, RECEIPT_SCHEMA_VERSION,
                       RECEIPT_TYPE)
 from .constants import (CHECKOUT_SKILL_SLUG, CHECKOUT_VALIDATOR_REF,
-                        PLACEHOLDER_TOKENS, ROUTE_ROLES, SCHEMA_VERSION,
-                        repo_root_for, skill_path)
+                        PAGE_STATUSES, PLACEHOLDER_TOKENS, PROOF_CLASSES,
+                        ROUTE_ROLES, SCHEMA_VERSION, repo_root_for, skill_path)
 
 _SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 
@@ -427,19 +428,29 @@ def _design_level(manifest: Dict[str, Any], root: Path,
         return "designs: check skipped by the caller", []
     required = manifest.get("designs_required") is True if require_designs is None else True
     if not required:
-        waiver = manifest.get("designs_waiver")
-        waived = isinstance(waiver, dict) or "designs waived" in str(manifest.get("delivery_label", "")).lower()
-        if waived:
-            ref = (waiver or {}).get("approval_ref") if isinstance(waiver, dict) else None
-            if not _nonempty_str(ref):
-                return "designs waived (NO owner approval)", [
-                    f"{page_designs.CODE}: designs are waived with no owner approval reference; "
-                    "a waiver needs the owner's approval ref"]
-            return f"designs waived (owner approval {ref})", []
+        waiver = manifest.get("design_waiver")  # the record package.assemble writes
+        claims_waiver = "designs waived" in str(manifest.get("delivery_label", "")).lower()
         if not test_only:
-            return "designs: none", [
-                f"{page_designs.CODE}: a paid package must carry the full design set, or a "
-                "designs_waiver with an owner approval reference"]
+            # A client delivery never waives designs, with or without a waiver record.
+            return "designs: none (client delivery)", [
+                f"{page_designs.CODE}: designs are never waived for a client delivery "
+                "(test_only false); a paid package carries the full design set"]
+        if waiver is not None:
+            ref = waiver.get("approval_ref") if isinstance(waiver, dict) else None
+            bound = (isinstance(waiver, dict) and _nonempty_str(ref)
+                     and _nonempty_str(waiver.get("owner_identity_ref"))
+                     and _nonempty_str(manifest.get("approved_plan_hash"))
+                     and waiver.get("subject_hash") == manifest.get("approved_plan_hash"))
+            if not bound:
+                return "designs waived (NO valid owner approval)", [
+                    f"{page_designs.CODE}: the design waiver is not an owner approval bound "
+                    "to this plan hash"]
+            return f"designs waived (owner approval {ref})", []
+        if claims_waiver:
+            # A label is output, never evidence.
+            return "designs waived (NO waiver record)", [
+                f"{page_designs.CODE}: the delivery label claims designs waived but the "
+                "manifest carries no design_waiver"]
         return "designs: not checked (designs_required is false)", []
 
     spec, _ = page_designs.load_page_types()
@@ -536,6 +547,33 @@ def _to_confirm_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
     return fails
 
 
+def _proof_floor_violations(manifest: Dict[str, Any]) -> List[str]:
+    """A client delivery (test_only false) is locally verified, L2 or better, and independently
+    reviewed; a claimed independent review always names its reviewer, in every scope."""
+    fails: List[str] = []
+    client = manifest.get("test_only") is False
+    floor_status, floor_proof = PAGE_STATUSES.index("locally_verified"), 2
+    for piece in manifest.get("pieces") or []:
+        role = piece.get("role")
+        reviewed = piece.get("independent_review") is True
+        named = _nonempty_str(piece.get("reviewer_session"))
+        if reviewed and not named:
+            fails.append(f"AF-LAUNCH-PKG-REVIEW: {role} claims independent_review "
+                         "with no reviewer_session")
+        if not client:
+            continue
+        status, proof = piece.get("status"), piece.get("proof_class")
+        if status not in PAGE_STATUSES:
+            fails.append(f"AF-LAUNCH-PKG-PROOF-FLOOR: {role} status {status} is not a page status")
+        elif PAGE_STATUSES.index(status) < floor_status:
+            fails.append(f"AF-LAUNCH-PKG-PROOF-FLOOR: {role} status {status} is below locally_verified")
+        if proof not in PROOF_CLASSES or PROOF_CLASSES.index(proof) < floor_proof:
+            fails.append(f"AF-LAUNCH-PKG-PROOF-FLOOR: {role} proof_class {proof} is below L2")
+        if not (reviewed and named):
+            fails.append(f"AF-LAUNCH-PKG-PROOF-FLOOR: {role} has no independent review record")
+    return fails
+
+
 def check_package(manifest_path: Path, root: Path,
                   skill_root: Path | None = None,
                   require_designs: bool | None = None,
@@ -622,6 +660,8 @@ def check_package(manifest_path: Path, root: Path,
             actual = _sha256_file(target)
             if actual != digest:
                 fails.append(f"AF-LAUNCH-PKG-HASH: {role} artifact {path!r} sha256 {actual} != {digest}")
+
+    fails.extend(_proof_floor_violations(manifest))
 
     # Every page ships its full set of labeled desktop and mobile wireframes and mockups.
     label, design_fails = _design_level(manifest, root, require_designs)
@@ -765,6 +805,43 @@ def _unit_receipt_violations(row: Any, index: int, manifest: Dict[str, Any],
     return fails
 
 
+def _paid_image_renders(manifest: Dict[str, Any]) -> int:
+    """Picture files a real (non-stub) provider made; what the receipt's live_effects counts."""
+    count = 0
+    for piece in manifest.get("pieces") or []:
+        for art in piece.get("artifacts") or []:
+            kind, path = str(art.get("kind") or ""), str(art.get("path") or "").lower()
+            is_image = (kind.endswith("_section") or kind == "board"
+                        or path.endswith((".png", ".jpg", ".jpeg", ".webp")))
+            provider = art.get("provider") or piece.get("image_provider")
+            if is_image and provider and provider != "stub":
+                count += 1
+    return count
+
+
+def _client_receipt_violations(evidence: Dict[str, Any], root: Path) -> List[str]:
+    """A client delivery needs a verified Skill 49 receipt store, re-verified live, never trusted
+    from the recorded string."""
+    fails: List[str] = []
+    if evidence.get("state") != "verified":
+        fails.append("AF-LAUNCH-PKG-RECEIPT: client delivery requires a verified Skill 49 receipt "
+                     f"store, recorded state is {evidence.get('state')}")
+    module = package_module._load_receipt_module()
+    verify = getattr(module, "verify_delivery_store", None)
+    if module is None:
+        fails.append("AF-LAUNCH-PKG-RECEIPT: Skill 49 receipt module unavailable")
+    elif not callable(verify):
+        fails.append("AF-LAUNCH-PKG-RECEIPT: Skill 49 receipt module has no verify_delivery_store")
+    else:
+        try:
+            ok, detail = verify(root)
+        except Exception as exc:  # a verifier that cannot run is not a pass
+            ok, detail = False, f"verify_delivery_store raised {type(exc).__name__}: {exc}"
+        if not ok:
+            fails.append(f"AF-LAUNCH-PKG-RECEIPT: {detail}")
+    return fails
+
+
 def _receipt_violations(manifest: Dict[str, Any], manifest_path: Path,
                         root: Path) -> List[str]:
     """Revalidate the receipt and every typed per-unit receipt against the artifacts."""
@@ -781,12 +858,17 @@ def _receipt_violations(manifest: Dict[str, Any], manifest_path: Path,
     fails: List[str] = []
     if (receipt.get("manifest") or {}).get("sha256") != _sha256_file(manifest_path):
         fails.append("AF-LAUNCH-PKG-RECEIPT: receipt does not seal this manifest")
-    if receipt.get("live_effects") != "none":
-        fails.append("AF-LAUNCH-PKG-RECEIPT: receipt claims live effects in an offline build")
+    paid = _paid_image_renders(manifest)
+    expected_effects = f"paid_image_renders:{paid}" if paid else "none"
+    if receipt.get("live_effects") != expected_effects:
+        fails.append(f"AF-LAUNCH-PKG-RECEIPT: receipt live_effects {receipt.get('live_effects')!r} "
+                     f"does not match the package's paid picture renders ({expected_effects!r})")
     evidence = receipt.get("receipt_evidence") or {}
     if evidence.get("state") not in ("verified", "absent"):
         fails.append(f"AF-LAUNCH-PKG-RECEIPT: Skill 49 receipt store state "
                      f"{evidence.get('state')!r}")
+    if manifest.get("test_only") is not True:
+        fails.extend(_client_receipt_violations(evidence, root))
 
     if receipt.get("schema_version") != RECEIPT_SCHEMA_VERSION:
         fails.append(f"AF-LAUNCH-PKG-RECEIPT-SCHEMA: receipt schema_version is "
