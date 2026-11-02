@@ -14,8 +14,10 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+from . import check_rules
 from . import launch_plan as launch_plan_module
 from . import page_designs
+from . import route as route_module
 from .package import (PROOF_BY_STATUS, PROOF_KEYS, RECEIPT_SCHEMA_VERSION,
                       RECEIPT_TYPE)
 from .constants import (CHECKOUT_SKILL_SLUG, CHECKOUT_VALIDATOR_REF,
@@ -355,13 +357,195 @@ def _launch_plan_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
     return fails
 
 
+# Two honest design levels, never one blanket assertion:
+#   images only  - a stub (test_only) package carries the section images, counted against the
+#                  sections each page declares; PDFs and boards are not produced, so they are
+#                  render pending and the delivery says so.
+#   full set     - a paid package carries all nine kinds (page_designs.KINDS).
+SECTION_KINDS = tuple(k for k in page_designs.KINDS if k.endswith("_section"))
+RENDERED_KINDS = tuple(k for k in page_designs.KINDS if not k.endswith("_section"))
+LABEL_IMAGES_ONLY = "images only, render pending"
+_SECTION_NAME = re.compile(r"_s(\d+)-of-(\d+)_")
+# A client confirmation record: {"confirmations": [{"field": ..., "confirmation_ref": ...}]}.
+TO_CONFIRM_RECORD = "client-confirmations.json"
+DISPATCH_REPORT = "dispatch-report.json"
+
+
+def _design_artifacts(manifest: Dict[str, Any]):
+    """(piece, artifact, kind) for every classified design file the manifest lists."""
+    for piece in manifest.get("pieces") or []:
+        for art in piece.get("artifacts") or []:
+            kind = page_designs.classify(str(art.get("path") or ""), art.get("kind"))
+            if kind:
+                yield piece, art, kind
+
+
+def _provider_consistency_violations(manifest: Dict[str, Any]) -> List[str]:
+    """test_only and the image provider must agree: a paid package carries no placeholder pictures."""
+    test_only = manifest.get("test_only")
+    if not isinstance(test_only, bool):
+        return [f"AF-LAUNCH-PKG-MANIFEST: test_only is {test_only!r}; it must be true or false"]
+    if test_only:
+        return []
+    fails: List[str] = []
+    for piece, art, kind in _design_artifacts(manifest):
+        provider = art.get("provider") or piece.get("image_provider")
+        if provider == "stub" and kind != "board":
+            fails.append(f"AF-LAUNCH-PKG-MANIFEST: test_only is false but "
+                         f"{page_designs.page_key(piece)} {kind} {Path(str(art.get('path'))).name!r} "
+                         "was made by the stub provider; a paid package carries real renders")
+    return fails
+
+
+def _section_count_violations(manifest: Dict[str, Any]) -> List[str]:
+    """Each page's section images must be counted against the sections it declares (sNN-of-MM)."""
+    found: Dict[Tuple[str, str], List[Tuple[int, int]]] = {}
+    for piece, art, kind in _design_artifacts(manifest):
+        match = _SECTION_NAME.search(Path(str(art.get("path") or "")).name)
+        if kind in SECTION_KINDS and match:
+            found.setdefault((page_designs.page_key(piece), kind), []).append(
+                (int(match.group(1)), int(match.group(2))))
+    fails: List[str] = []
+    for (key, kind), pairs in sorted(found.items()):
+        totals = {m for _, m in pairs}
+        label = f"{page_designs.CODE}: {key} {kind.replace('_', ' ')}"
+        if len(totals) != 1:
+            fails.append(f"{label} files declare different section totals {sorted(totals)}")
+        else:
+            total, have = next(iter(totals)), sorted({n for n, _ in pairs})
+            if have != list(range(1, total + 1)):
+                fails.append(f"{label} has sections {have} of {total}")
+    return fails
+
+
+def _design_level(manifest: Dict[str, Any], root: Path,
+                  require_designs: bool | None) -> Tuple[str, List[str]]:
+    """(delivery label, violations) for the package's design proof."""
+    test_only = manifest.get("test_only") is True
+    pieces = manifest.get("pieces") or []
+    if require_designs is False:
+        return "designs: check skipped by the caller", []
+    required = manifest.get("designs_required") is True if require_designs is None else True
+    if not required:
+        waiver = manifest.get("designs_waiver")
+        waived = isinstance(waiver, dict) or "designs waived" in str(manifest.get("delivery_label", "")).lower()
+        if waived:
+            ref = (waiver or {}).get("approval_ref") if isinstance(waiver, dict) else None
+            if not _nonempty_str(ref):
+                return "designs waived (NO owner approval)", [
+                    f"{page_designs.CODE}: designs are waived with no owner approval reference; "
+                    "a waiver needs the owner's approval ref"]
+            return f"designs waived (owner approval {ref})", []
+        if not test_only:
+            return "designs: none", [
+                f"{page_designs.CODE}: a paid package must carry the full design set, or a "
+                "designs_waiver with an owner approval reference"]
+        return "designs: not checked (designs_required is false)", []
+
+    spec, _ = page_designs.load_page_types()
+    counts = _section_count_violations(manifest)
+    full = page_designs.design_violations(manifest, root, spec) + counts
+    if not full:
+        return ("full set (test package)" if test_only else "full set (paid package)"), []
+    if test_only and not any(kind in RENDERED_KINDS for _, _, kind in _design_artifacts(manifest)):
+        images_spec = {page_designs.page_key(p): list(SECTION_KINDS) for p in pieces}
+        images = page_designs.design_violations(manifest, root, images_spec) + counts
+        if not images:
+            return LABEL_IMAGES_ONLY, []
+        return "designs: failed", images
+    return "designs: failed", full
+
+
+def _read_json_file(path: Path) -> Tuple[Any, str]:
+    try:
+        return json.loads(path.read_text(encoding="utf-8")), ""
+    except (OSError, ValueError) as exc:
+        return None, str(exc)
+
+
+def _route_graph_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
+    """The carried route graph: every node has its piece, and the graph holds doc 02's edge law."""
+    refs = {}
+    for name in ("route_graph", "intake"):
+        path = (manifest.get(name) or {}).get("path")
+        target = _resolve(root, path) if path else None
+        if target is None or not target.is_file():
+            return []  # a missing or unhashed file is already named by check_package
+        refs[name], error = _read_json_file(target)
+        if error or not isinstance(refs[name], dict):
+            return [f"AF-LAUNCH-ROUTE-LAW: {name} at {path!r} is not readable JSON ({error})"]
+    graph, intake_doc = refs["route_graph"], refs["intake"]
+    fails: List[str] = []
+    delivered = {p.get("role"): p for p in manifest.get("pieces") or [] if not p.get("role_instance")}
+    for node in graph.get("nodes") or []:
+        piece = delivered.get(node.get("role"))
+        if piece is None:
+            fails.append(f"AF-LAUNCH-PKG-MISSING-ROLE: route node {node.get('role')!r} has no "
+                         "delivered piece in the package manifest")
+        elif piece.get("page_id") != node.get("page_id"):
+            fails.append(f"AF-LAUNCH-PKG-MANIFEST: {node.get('role')} piece page_id "
+                         f"{piece.get('page_id')!r} is not the route node's {node.get('page_id')!r}")
+    try:
+        launch = route_module.launch_record(intake_doc)
+        fails.extend(f"AF-LAUNCH-ROUTE-LAW: {v}"
+                     for v in route_module.route_law.graph_violations(launch, graph))
+    except Exception as exc:  # the law that cannot be evaluated is not a pass
+        fails.append(f"AF-LAUNCH-ROUTE-LAW: the route law could not be evaluated "
+                     f"({type(exc).__name__}: {exc})")
+    return fails
+
+
+def _to_confirm_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
+    """Defaults awaiting the client stay visible: each needs a recorded confirmation, and the
+    dispatch report beside the package cannot hide one from the manifest."""
+    fails: List[str] = []
+    items = manifest.get("to_confirm") or []
+    fields = [i.get("field") if isinstance(i, dict) else str(i) for i in items]
+    confirmed = set()
+    record = root / TO_CONFIRM_RECORD
+    if items and record.is_file():
+        doc, error = _read_json_file(record)
+        if error or not isinstance(doc, dict):
+            fails.append(f"AF-LAUNCH-TO-CONFIRM: {TO_CONFIRM_RECORD} is not readable ({error})")
+        else:
+            confirmed = {c["field"] for c in doc.get("confirmations") or []
+                         if isinstance(c, dict) and _nonempty_str(c.get("field"))
+                         and _nonempty_str(c.get("confirmation_ref"))}
+    for item, field in zip(items, fields):
+        inline = isinstance(item, dict) and _nonempty_str(item.get("confirmation_ref"))
+        if not inline and field not in confirmed:
+            fails.append(f"AF-LAUNCH-TO-CONFIRM: {field!r} is a default awaiting the client's "
+                         f"confirmation and no confirmation record names it ({TO_CONFIRM_RECORD})")
+
+    report_path = root / DISPATCH_REPORT
+    if report_path.is_file():
+        report, error = _read_json_file(report_path)
+        if error or not isinstance(report, dict):
+            fails.append(f"AF-LAUNCH-TO-CONFIRM: {DISPATCH_REPORT} is not readable ({error})")
+            return fails
+        for entry in report.get("to_confirm") or []:
+            field = entry.get("field") if isinstance(entry, dict) else str(entry)
+            if field not in fields:
+                fails.append(f"AF-LAUNCH-TO-CONFIRM: the dispatch report lists default {field!r} "
+                             "that the package manifest does not carry")
+        if set(report.get("landing_pages") or []) == {"landing", "sales"} and not any(
+                p.get("role") == "landing" and p.get("role_instance") == "sales"
+                for p in manifest.get("pieces") or []):
+            fails.append("AF-LAUNCH-PKG-MISSING: the dispatch report plans both landing pages but "
+                         "the package carries no signature sales page piece")
+    return fails
+
+
 def check_package(manifest_path: Path, root: Path,
                   skill_root: Path | None = None,
-                  require_designs: bool | None = None) -> List[str]:
+                  require_designs: bool | None = None,
+                  announce: bool = True) -> List[str]:
     """All package-completeness violations. Empty list means the package holds.
 
     AF-LAUNCH-PAGE-DESIGNS runs when the package was assembled as a designs-required delivery
     (manifest.designs_required) or when require_designs is True; require_designs=False skips it.
+    The design level reached (images only / full set / designs waived) is printed when announce
+    is true, so a delivery is never read as more than it proved.
     """
     manifest_path = Path(manifest_path)
     root = Path(root).resolve()
@@ -375,8 +559,8 @@ def check_package(manifest_path: Path, root: Path,
 
     if manifest.get("schema_version") != SCHEMA_VERSION:
         fails.append(f"AF-LAUNCH-PKG-MANIFEST: schema_version is {manifest.get('schema_version')!r}")
-    if not manifest.get("test_only"):
-        fails.append("AF-LAUNCH-PKG-MANIFEST: test_only must be true for an offline build")
+    # test_only and the image provider must agree; a paid (test_only false) package is allowed.
+    fails.extend(_provider_consistency_violations(manifest))
 
     # Required pieces: every enabled route role, exactly once.
     pieces = manifest.get("pieces") or []
@@ -440,9 +624,19 @@ def check_package(manifest_path: Path, root: Path,
                 fails.append(f"AF-LAUNCH-PKG-HASH: {role} artifact {path!r} sha256 {actual} != {digest}")
 
     # Every page ships its full set of labeled desktop and mobile wireframes and mockups.
-    needed = manifest.get("designs_required") is True if require_designs is None else require_designs
-    if needed:
-        fails.extend(page_designs.design_violations(manifest, root))
+    label, design_fails = _design_level(manifest, root, require_designs)
+    fails.extend(design_fails)
+    if announce:
+        print(f"delivery level: {label}")
+
+    # Route graph: every node has its piece (U1/U2 included) and doc 02's edge law holds.
+    fails.extend(_route_graph_violations(manifest, root))
+
+    # Defaults awaiting the client need a recorded confirmation and cannot be hidden.
+    fails.extend(_to_confirm_violations(manifest, root))
+
+    # Rule modules dropped into launcher_core/check_rules/.
+    fails.extend(check_rules.run(manifest, root, skill_root))
 
     # Decided-requirement records: every commercial fact is supplied or unknown,
     # the entitlement is attested, Council advice never blocks, checkout is native.
@@ -734,7 +928,7 @@ def verify_package_receipt(run_dir: Path, skill_root: Path | None = None) -> Dic
         report["violations"].append("AF-LAUNCH-PKG-MANIFEST: package-manifest.json is missing")
         return report
 
-    fails = check_package(manifest_path, run_dir, skill_root=skill_root)
+    fails = check_package(manifest_path, run_dir, skill_root=skill_root, announce=False)
     try:
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
