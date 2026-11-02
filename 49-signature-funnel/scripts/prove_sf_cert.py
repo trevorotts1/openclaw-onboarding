@@ -6,12 +6,14 @@ and passed its gate — no certificate, or a tampered one, means the funnel is N
 (AF-FUN-PROCESS-INTEGRITY, mirroring the presentations prove-deck certificate).
 
 The orchestrator (run_signature_funnel.py) emits a certificate signed with an HMAC-SHA256
-over the phase attestations, keyed by the run-scoped front-door nonce. This prover
-re-verifies:
+over the phase attestations, keyed by the OPERATOR KEY (ENF-16): a secret file named by
+SF_OPERATOR_KEY_FILE that lives outside the run dir and that the AI session is not given.
+No caller-supplied nonce keys anything, so a certificate cannot be self-minted with a key the
+AI chose. This prover re-verifies:
   * the certificate object is well-formed;                      -> AF-FUN-CERT-MISSING
   * phases are contiguous order 0..N with no gaps/dupes;        -> AF-FUN-CERT-PHASE-GAP
   * every phase status is "pass" and all_phases_pass is true;   -> AF-FUN-CERT-PHASE-FAIL
-  * the HMAC signature is valid for the provided nonce.         -> AF-FUN-CERT-SIGNATURE
+  * the HMAC signature is valid for the operator key.           -> AF-FUN-CERT-SIGNATURE
 
 Any failure => the funnel never reaches Complete (AF-FUN-PROCESS-INTEGRITY).
 
@@ -21,6 +23,7 @@ stdlib only. Exit 0 = valid, exit 2 = invalid/tampered, exit 3 = usage/fail-clos
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import hmac
 import json
@@ -57,9 +60,74 @@ EXECUTION_TIERS = {"content", "execution", "exec", "strong", "strongest",
                    "authoring", "primary", "tier-a", "tier_a", "a"}
 
 
-def evaluate_model_receipt(receipt: Any) -> List[Tuple[str, str]]:
+KEY_FILE_ENV = "SF_OPERATOR_KEY_FILE"
+MIN_KEY_CHARS = 32
+MODEL_RECEIPT_REL = os.path.join("routing", "model-content-receipt.json")
+MODEL_RECEIPT_SOURCE = "harness-routing-record"
+_MODEL_SIGNED_FIELDS = ("role", "model", "provider", "tier", "resolved_from", "run_id",
+                        "routing_record_sha256")
+
+
+def load_operator_key(run_dir: Optional[Path] = None) -> Tuple[Optional[str], str]:
+    """(key, reason). The operator key is a >=32-char secret in a file named by
+    SF_OPERATOR_KEY_FILE: mode 0600-or-tighter, and never inside the run dir (the run dir is
+    the AI-writable surface). Anything short of that returns (None, why) — fail-closed.
+    ponytail: same-uid read protection is a deployment property (the launcher account owns the
+    key; the AI tool process is not given the path). Upgrade path: a signing service."""
+    raw = os.environ.get(KEY_FILE_ENV, "").strip()
+    if not raw:
+        return None, f"{KEY_FILE_ENV} is not set — no operator key"
+    path = Path(raw).expanduser()
+    try:
+        path = path.resolve(strict=True)
+        if not path.is_file():
+            return None, "operator key path is not a regular file"
+        if run_dir is not None and Path(run_dir).resolve() in path.parents:
+            return None, "operator key lives inside the run dir — refused"
+        if path.stat().st_mode & 0o077:
+            return None, "operator key file is group/other accessible — refused"
+        key = path.read_text(encoding="utf-8").strip()
+    except (OSError, ValueError) as exc:
+        return None, f"operator key unreadable ({exc.__class__.__name__})"
+    if len(key) < MIN_KEY_CHARS:
+        return None, f"operator key shorter than {MIN_KEY_CHARS} characters"
+    return key, ""
+
+
+def _model_payload(receipt: Dict[str, Any]) -> bytes:
+    return json.dumps({k: receipt.get(k) for k in _MODEL_SIGNED_FIELDS},
+                      sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def mint_model_receipt(run_dir: Path, routing_record: Any, key: str) -> Dict[str, Any]:
+    """Write routing/model-content-receipt.json from the HARNESS routing record (role/model/
+    provider/tier the router resolved) and sign it with the operator key. The SF_CONTENT_*
+    environment variables are never read: a model the AI named is not a routing record."""
+    if not isinstance(routing_record, dict):
+        raise ValueError("harness routing record is not a JSON object")
+    receipt = {
+        "role": "content",
+        "model": str(routing_record.get("model") or routing_record.get("model_id") or "").strip(),
+        "provider": str(routing_record.get("provider") or "").strip().lower(),
+        "tier": str(routing_record.get("tier") or routing_record.get("role") or "").strip().lower(),
+        "resolved_from": MODEL_RECEIPT_SOURCE,
+        "run_id": Path(run_dir).resolve().name,
+        "routing_record_sha256": hashlib.sha256(
+            json.dumps(routing_record, sort_keys=True).encode("utf-8")).hexdigest(),
+        "resolved_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    receipt["harness_sig"] = sign(_model_payload(receipt), key)
+    out = Path(run_dir) / MODEL_RECEIPT_REL
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+    return receipt
+
+
+def evaluate_model_receipt(receipt: Any, key: Optional[str] = None,
+                           run_id: Optional[str] = None) -> List[Tuple[str, str]]:
     """Fail-closed: the run must record that the CLIENT's own execution-tier model wrote the
-    copy (routing/model-content-receipt.json)."""
+    copy (routing/model-content-receipt.json), AND the receipt must be the harness-minted,
+    operator-key-signed one (ENF-16) — an env-reported or unsigned receipt never passes."""
     fails: List[Tuple[str, str]] = []
     if not isinstance(receipt, dict):
         return [(AF_MODEL_TIER, "model-content-receipt is missing/not a JSON object — "
@@ -72,6 +140,18 @@ def evaluate_model_receipt(receipt: Any) -> List[Tuple[str, str]]:
         fails.append((AF_MODEL_TIER,
                       f"authoring tier {tier!r} is not an execution/content tier {sorted(EXECUTION_TIERS)} — "
                       "the client's OWN strongest model must write the copy"))
+    sig = receipt.get("harness_sig")
+    if receipt.get("resolved_from") != MODEL_RECEIPT_SOURCE or not isinstance(sig, str) or not sig:
+        fails.append((AF_MODEL_TIER,
+                      f"model-content-receipt is not a harness routing-record receipt "
+                      f"(resolved_from={receipt.get('resolved_from')!r}, signed={bool(sig)}) — "
+                      "a model named through the environment is self-reported, not routed"))
+    elif key is None:
+        fails.append((AF_MODEL_TIER, "no operator key to verify the model-content receipt signature"))
+    elif not hmac.compare_digest(sign(_model_payload(receipt), key), sig):
+        fails.append((AF_MODEL_TIER, "model-content receipt signature does not match the operator key — forged"))
+    elif run_id is not None and receipt.get("run_id") != run_id:
+        fails.append((AF_MODEL_TIER, f"model-content receipt is for run {receipt.get('run_id')!r}, not {run_id!r}"))
     return fails
 
 
@@ -82,11 +162,11 @@ def canonical_payload(cert: Dict[str, Any]) -> bytes:
     return json.dumps(c, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-def sign(payload: bytes, nonce: str) -> str:
-    return hmac.new(nonce.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+def sign(payload: bytes, key: str) -> str:
+    return hmac.new(key.encode("utf-8"), payload, hashlib.sha256).hexdigest()
 
 
-def verify(cert: Any, nonce: Optional[str]) -> List[Tuple[str, str]]:
+def verify(cert: Any, key: Optional[str]) -> List[Tuple[str, str]]:
     fails: List[Tuple[str, str]] = []
     if not isinstance(cert, dict):
         return [("AF-FUN-CERT-MISSING", "certificate is not a JSON object")]
@@ -121,22 +201,22 @@ def verify(cert: Any, nonce: Optional[str]) -> List[Tuple[str, str]]:
     sig = cert.get("signature")
     if not isinstance(sig, str) or not sig:
         fails.append(("AF-FUN-CERT-SIGNATURE", "certificate has no signature"))
-    elif nonce is None:
+    elif key is None:
         fails.append(("AF-FUN-CERT-SIGNATURE",
-                      "no nonce supplied to verify the signature (fail-closed: cannot trust an unverifiable cert)"))
+                      "no operator key to verify the signature (fail-closed: cannot trust an unverifiable cert)"))
     else:
-        expected = sign(canonical_payload(cert), nonce)
+        expected = sign(canonical_payload(cert), key)
         if not hmac.compare_digest(expected, sig):
             fails.append(("AF-FUN-CERT-SIGNATURE",
-                          "HMAC signature does not match the nonce — the certificate was tampered or forged"))
+                          "HMAC signature does not match the operator key — the certificate was tampered or forged"))
 
     if fails:
         fails.append(("AF-FUN-PROCESS-INTEGRITY", "process certificate invalid — funnel is NOT done"))
     return fails
 
 
-def evaluate_cert(cert: Any, nonce: Optional[str]) -> Tuple[int, List[Tuple[str, str]]]:
-    fails = verify(cert, nonce)
+def evaluate_cert(cert: Any, key: Optional[str]) -> Tuple[int, List[Tuple[str, str]]]:
+    fails = verify(cert, key)
     if not fails:
         return EXIT_OK, []
     # a purely structural absence is fail-closed; a tamper is a violation
@@ -161,7 +241,7 @@ def _report(code: int, fails) -> None:
 # ---------------------------------------------------------------------------
 # Self-test.
 # ---------------------------------------------------------------------------
-def _valid_cert(nonce: str) -> Dict[str, Any]:
+def _valid_cert(key: str) -> Dict[str, Any]:
     cert = {
         "certificate": CERT_KIND,
         "version": "1.0.0",
@@ -170,22 +250,23 @@ def _valid_cert(nonce: str) -> Dict[str, Any]:
         "funnel_size": 3,
         "skill_version": "1.0.0",
         "issued_at": "2026-07-02T00:00:00Z",
-        "nonce_fingerprint": hashlib.sha256(nonce.encode()).hexdigest()[:16],
+        "operator_key_fingerprint": hashlib.sha256(key.encode()).hexdigest()[:16],
         "phases": [
             {"id": pid, "prover": prover, "status": "pass", "order": i}
             for i, (pid, prover) in enumerate(EXPECTED_PHASES)
         ],
         "all_phases_pass": True,
     }
-    cert["signature"] = sign(canonical_payload(cert), nonce)
+    cert["signature"] = sign(canonical_payload(cert), key)
     return cert
 
 
 def self_test() -> int:
+    import tempfile
     ok = True
-    nonce = "selftest-nonce-abc123"
+    key = "selftest-operator-key-0123456789abcdef"
 
-    code, fails = evaluate_cert(_valid_cert(nonce), nonce)
+    code, fails = evaluate_cert(_valid_cert(key), key)
     if code == EXIT_OK:
         print("SELF-TEST ok: valid signed certificate PASSES (exit 0).")
     else:
@@ -194,50 +275,66 @@ def self_test() -> int:
 
     caught = 0
     # tampered field (breaks signature)
-    c = _valid_cert(nonce); c["funnel_size"] = 7
-    code, fails = evaluate_cert(c, nonce)
+    c = _valid_cert(key); c["funnel_size"] = 7
+    code, fails = evaluate_cert(c, key)
     if code == EXIT_VIOLATION and any(x == "AF-FUN-CERT-SIGNATURE" for x, _ in fails):
         caught += 1; print("SELF-TEST ok: tampered cert -> AF-FUN-CERT-SIGNATURE.")
     else:
         ok = False; print(f"SELF-TEST FAIL: tampered cert -> {fails}")
 
     # skipped phase (order gap)
-    c = _valid_cert(nonce); c["phases"] = c["phases"][:3] + c["phases"][4:]
-    c["signature"] = sign(canonical_payload(c), nonce)  # re-sign so we isolate the gap
-    code, fails = evaluate_cert(c, nonce)
+    c = _valid_cert(key); c["phases"] = c["phases"][:3] + c["phases"][4:]
+    c["signature"] = sign(canonical_payload(c), key)  # re-sign so we isolate the gap
+    code, fails = evaluate_cert(c, key)
     if code == EXIT_VIOLATION and any(x == "AF-FUN-CERT-PHASE-GAP" for x, _ in fails):
         caught += 1; print("SELF-TEST ok: skipped-phase cert -> AF-FUN-CERT-PHASE-GAP.")
     else:
         ok = False; print(f"SELF-TEST FAIL: skipped-phase cert -> {fails}")
 
     # a failing phase
-    c = _valid_cert(nonce); c["phases"][2]["status"] = "fail"
-    c["signature"] = sign(canonical_payload(c), nonce)
-    code, fails = evaluate_cert(c, nonce)
+    c = _valid_cert(key); c["phases"][2]["status"] = "fail"
+    c["signature"] = sign(canonical_payload(c), key)
+    code, fails = evaluate_cert(c, key)
     if code == EXIT_VIOLATION and any(x == "AF-FUN-CERT-PHASE-FAIL" for x, _ in fails):
         caught += 1; print("SELF-TEST ok: failing-phase cert -> AF-FUN-CERT-PHASE-FAIL.")
     else:
         ok = False; print(f"SELF-TEST FAIL: failing-phase cert -> {fails}")
 
-    # wrong nonce
-    code, fails = evaluate_cert(_valid_cert(nonce), "the-wrong-nonce")
-    if code == EXIT_VIOLATION and any(x == "AF-FUN-CERT-SIGNATURE" for x, _ in fails):
-        caught += 1; print("SELF-TEST ok: wrong-nonce -> AF-FUN-CERT-SIGNATURE.")
+    # wrong key, and NO key (ENF-16: a cert verifies only against the operator key)
+    code, fails = evaluate_cert(_valid_cert(key), "a-key-the-ai-chose-0123456789abcdef")
+    code2, fails2 = evaluate_cert(_valid_cert(key), None)
+    if code == EXIT_VIOLATION and code2 == EXIT_VIOLATION \
+            and all(any(x == "AF-FUN-CERT-SIGNATURE" for x, _ in f) for f in (fails, fails2)):
+        caught += 1; print("SELF-TEST ok: wrong key / no operator key -> AF-FUN-CERT-SIGNATURE.")
     else:
-        ok = False; print(f"SELF-TEST FAIL: wrong-nonce -> {fails}")
+        ok = False; print(f"SELF-TEST FAIL: wrong/absent key -> {fails} / {fails2}")
 
-    # FIX-XC-09e — model-content receipt fixtures
-    mr_ok = evaluate_model_receipt(
-        {"role": "content", "model": "deepseek-v3-chat", "provider": "deepseek", "tier": "content"})
+    # FIX-XC-09e + ENF-16 — model-content receipt fixtures (harness-minted, operator-signed)
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td) / "run-model"
+        rd.mkdir()
+        rid = rd.resolve().name
+        mint_model_receipt(rd, {"model": "deepseek-v3-chat", "provider": "deepseek", "tier": "content"}, key)
+        good = json.loads((rd / MODEL_RECEIPT_REL).read_text(encoding="utf-8"))
+        mr_ok = evaluate_model_receipt(good, key, rid)
+        mr_anthropic = evaluate_model_receipt(  # no vendor rule
+            mint_model_receipt(rd, {"model": "claude-opus-4", "provider": "anthropic",
+                                    "tier": "content"}, key), key, rid)
+        mint_model_receipt(rd, {"model": "some-mini", "provider": "openrouter", "tier": "simple"}, key)
+        mr_cheaptier = evaluate_model_receipt(
+            json.loads((rd / MODEL_RECEIPT_REL).read_text(encoding="utf-8")), key, rid)
+        # the pre-ENF-16 shell shape: named through SF_CONTENT_MODEL env, unsigned
+        mr_env = evaluate_model_receipt(
+            {"role": "content", "resolved_from": "client-provider-chain", "model": "deepseek-v3-chat",
+             "provider": "deepseek", "tier": "content"}, key, rid)
+        forged = dict(good, model="forged-model")
+        mr_forged = evaluate_model_receipt(forged, key, rid)
+        mr_other_run = evaluate_model_receipt(good, key, "some-other-run")
+    mr_absent = evaluate_model_receipt(None)
     if not mr_ok:
-        print("SELF-TEST ok: valid execution-tier model receipt PASSES.")
+        print("SELF-TEST ok: valid harness-minted execution-tier model receipt PASSES.")
     else:
         ok = False; print(f"SELF-TEST FAIL: valid model receipt -> {mr_ok}")
-    mr_absent = evaluate_model_receipt(None)
-    mr_anthropic = evaluate_model_receipt(
-        {"role": "content", "model": "claude-opus-4", "provider": "anthropic", "tier": "content"})  # NOT a failure: no vendor rule
-    mr_cheaptier = evaluate_model_receipt(
-        {"role": "content", "model": "some-mini", "provider": "openrouter", "tier": "simple"})
     if any(c == AF_MODEL_TIER for c, _ in mr_absent) \
             and not mr_anthropic \
             and any(c == AF_MODEL_TIER for c, _ in mr_cheaptier):
@@ -245,6 +342,11 @@ def self_test() -> int:
     else:
         ok = False
         print(f"SELF-TEST FAIL: model receipt negatives -> {mr_absent} / {mr_anthropic} / {mr_cheaptier}")
+    if mr_env and mr_forged and mr_other_run:
+        print("SELF-TEST ok: env-named (unsigned), forged and other-run model receipts FAIL.")
+    else:
+        ok = False
+        print(f"SELF-TEST FAIL: self-reported model receipt accepted -> {mr_env} / {mr_forged} / {mr_other_run}")
 
     print(f"SELF-TEST FIXTURES: 1 valid-pass, {caught}/4 tamper-catch + model-tier receipt")
     print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
@@ -254,30 +356,60 @@ def self_test() -> int:
 def main(argv: List[str]) -> int:
     ap = argparse.ArgumentParser(
         description="Fail-closed verifier for the Signature Funnel PROCESS-CERTIFICATE. "
-                    "Exit 0 valid, 2 invalid/tampered, 3 usage.")
+                    "Exit 0 valid, 2 invalid/tampered, 3 usage. The signature is checked against "
+                    f"the operator key named by {KEY_FILE_ENV} (never a caller-supplied nonce).")
     ap.add_argument("--cert", help="path to PROCESS-CERTIFICATE.json ('-' reads stdin)")
-    ap.add_argument("--nonce", help="the run-scoped front-door nonce (or set SF_RUN_NONCE)")
+    ap.add_argument("--nonce", help="REMOVED (ENF-16): refused; the operator key is the only signing key")
     ap.add_argument("--model-receipt", help="path to routing/model-content-receipt.json "
-                    "(FIX-XC-09e — proves the client's own execution-tier model wrote the copy)")
+                    "(FIX-XC-09e — proves the client's own execution-tier model wrote the copy; "
+                    "verified against the operator key)")
+    ap.add_argument("--mint-model-receipt", metavar="ROUTING_RECORD",
+                    help="HARNESS ONLY: write a signed routing/model-content-receipt.json into --run-dir "
+                         "from the harness routing record (role/model/provider/tier JSON)")
+    ap.add_argument("--run-dir", help="the run dir (for --mint-model-receipt / --model-receipt run binding)")
     ap.add_argument("--self-test", action="store_true", help="run built-in fixtures and assert")
     args = ap.parse_args(argv)
 
     if args.self_test:
         return self_test()
 
-    if not args.cert and not args.model_receipt:
-        print("USAGE ERROR: pass --cert <PROCESS-CERTIFICATE.json> and/or --model-receipt (or --self-test).")
+    if args.nonce is not None or os.environ.get("SF_RUN_NONCE"):
+        print("USAGE ERROR [AF-FUN-FRONT-DOOR]: --nonce / SF_RUN_NONCE are no longer accepted — "
+              f"certificates verify against the operator key ({KEY_FILE_ENV}) only.")
         return EXIT_FAILCLOSED
+
+    if not args.cert and not args.model_receipt and not args.mint_model_receipt:
+        print("USAGE ERROR: pass --cert <PROCESS-CERTIFICATE.json> and/or --model-receipt "
+              "(or --mint-model-receipt, or --self-test).")
+        return EXIT_FAILCLOSED
+
+    run_dir = Path(args.run_dir).expanduser().resolve() if args.run_dir else None
+    key, why = load_operator_key(run_dir)
+
+    if args.mint_model_receipt:
+        if run_dir is None or key is None:
+            print(f"USAGE ERROR [AF-FUN-MODEL-TIER]: --mint-model-receipt needs --run-dir and the operator key"
+                  f"{'' if key else ' (' + why + ')'}.")
+            return EXIT_FAILCLOSED
+        try:
+            mint_model_receipt(run_dir, _load_json(args.mint_model_receipt), key)
+        except Exception as exc:  # noqa: BLE001
+            print(f"USAGE/IO ERROR: cannot mint from routing record {args.mint_model_receipt!r}: {exc}")
+            return EXIT_FAILCLOSED
+        print(f"minted {MODEL_RECEIPT_REL} from the harness routing record.")
+        if not args.cert and not args.model_receipt:
+            return EXIT_OK
 
     code = EXIT_OK
     if args.cert:
-        nonce = args.nonce or os.environ.get("SF_RUN_NONCE")
         try:
             cert = _load_json(args.cert)
         except Exception as exc:  # noqa: BLE001
             print(f"USAGE/IO ERROR: cannot load certificate {args.cert!r}: {exc}")
             return EXIT_FAILCLOSED
-        code, fails = evaluate_cert(cert, nonce)
+        code, fails = evaluate_cert(cert, key)
+        if key is None:
+            fails = [("AF-FUN-CERT-SIGNATURE", f"operator key unavailable: {why}")] + list(fails)
         _report(code, fails)
 
     if args.model_receipt:
@@ -286,7 +418,7 @@ def main(argv: List[str]) -> int:
         except Exception as exc:  # noqa: BLE001
             print(f"USAGE/IO ERROR: cannot load model receipt {args.model_receipt!r}: {exc}")
             return EXIT_FAILCLOSED
-        mfails = evaluate_model_receipt(receipt)
+        mfails = evaluate_model_receipt(receipt, key, run_dir.name if run_dir else None)
         if mfails:
             print(f"FAIL: model-content receipt invalid ({len(mfails)} finding(s)) — funnel is NOT done.")
             for c, m in mfails:
