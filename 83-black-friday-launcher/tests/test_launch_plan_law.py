@@ -28,7 +28,8 @@ from launcher_core import (  # noqa: E402
 
 
 def plan_fixture() -> dict:
-    return json.loads(BF_PLAN.read_text(encoding="utf-8"))
+    from test_delivery_units import bound_plan
+    return bound_plan()  # bound to this file's intake: tenant-a, loc-a, revision 1, approval 'b'*64 (CON-04)
 
 
 def _base_intake_raw() -> dict:
@@ -114,7 +115,8 @@ def lane_deliveries(plan: dict, run_dir: Path, drop: str = "") -> dict:
                         "request_id": f"lane-{unit['id']}",
                         "input_hash": "d" * 64},
         }
-    return out
+    from test_delivery_units import with_skill44_builds
+    return with_skill44_builds(plan, run_dir, out)
 
 
 @unittest.skipUnless(BF_PLAN.is_file(), "shared launch-plan contract fixture is not installed")

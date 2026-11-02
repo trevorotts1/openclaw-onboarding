@@ -91,7 +91,8 @@ def pieces_for(run_dir: Path, graph: dict, normalized: dict) -> dict:
 
 
 def plan_fixture() -> dict:
-    return json.loads(BF_PLAN.read_text(encoding="utf-8"))
+    from test_delivery_units import bound_plan
+    return bound_plan()  # bound to this file's intake: tenant-a, loc-a, revision 1, approval 'b'*64 (CON-04)
 
 
 def all_delivered(plan: dict) -> dict:
@@ -125,7 +126,8 @@ def lane_deliveries(plan: dict, run_dir: Path, plan_sha: str | None = None) -> d
                         "request_id": f"lane-{unit['id']}",
                         "input_hash": "d" * 64},
         }
-    return out
+    from test_delivery_units import with_skill44_builds
+    return with_skill44_builds(plan, run_dir, out)
 
 
 class _RunFixture(unittest.TestCase):
