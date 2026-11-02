@@ -32,6 +32,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -1726,6 +1727,34 @@ def _mode_family(mode):
     return "unit" if str(mode or "").startswith("unit:") else "umbrella"
 
 
+def mode_refusal(run_dir, mode):
+    """Read-only: None when ``mode`` may run on this run dir, else the refusal.
+
+    No record yet = nothing chosen. A record that exists but cannot be read is
+    a refusal too -- a damaged record must never reopen the other family."""
+    path = os.path.join(run_dir, "music", "dispatch-mode.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+        current = doc.get("family") or (_mode_family(doc["mode"])
+                                        if "mode" in doc else None)
+    except (OSError, ValueError, AttributeError, KeyError):
+        current = None
+    if current not in ("unit", "umbrella"):
+        return ("REFUSED: the run's dispatch-mode record is unreadable; "
+                "refusing to choose a mode over it")
+    family = _mode_family(mode)
+    if current != family:
+        return ("REFUSED: this run already dispatches in the %r mode family; it "
+                "cannot also dispatch %r (%r family). Pick exactly ONE of umbrella "
+                "or orchestrated-unit per run -- mixing them is how nine paid "
+                "generations are bought for a three-variant run."
+                % (current, mode, family))
+    return None
+
+
 def _record_mode(run_dir, mode):
     """X07: persist the ONE chosen dispatch mode FAMILY before any paid call.
 
@@ -1735,35 +1764,44 @@ def _record_mode(run_dir, mode):
     sequential DISTINCT units on one run dir are the documented three-unit
     flow and are ALLOWED. A same-family restart is left to the
     ledger/acknowledged-task resume path, never a second family.
+
+    First selection is create-once (private temp file + fsync + ``os.link``):
+    two racing opposite-family first selections yield exactly one winner, the
+    loser is refused, and the record is never torn.
     """
     path = os.path.join(run_dir, "music", "dispatch-mode.json")
-    current = None
-    try:
-        with open(path, encoding="utf-8") as f:
-            doc = json.load(f) or {}
-        current = doc.get("family") or _mode_family(doc.get("mode"))
-    except (OSError, ValueError):
-        current = None
-    family = _mode_family(mode)
-    if current and current != family:
-        raise ChoiceError(
-            "REFUSED: this run already dispatches in the %r mode family; it "
-            "cannot also dispatch %r (%r family). Pick exactly ONE of umbrella "
-            "or orchestrated-unit per run -- mixing them is how nine paid "
-            "generations are bought for a three-variant run."
-            % (current, mode, family))
-    if current == family:
+    existed = os.path.exists(path)      # BEFORE the check: a record that appears
+    why = mode_refusal(run_dir, mode)   # after this is still judged by the check
+    if why:
+        raise ChoiceError(why)
+    if existed:
         return mode
-    partial = path + ".partial"
+    tmp = None
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(partial, "w", encoding="utf-8") as f:
-            json.dump({"mode": mode, "family": family}, f, sort_keys=True)
-        os.replace(partial, path)
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path),
+                                   prefix="dispatch-mode.", suffix=".partial")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"mode": mode, "family": _mode_family(mode)}, f,
+                      sort_keys=True)
+            f.flush()
+            os.fsync(f.fileno())
+        try:
+            os.link(tmp, path)
+        except FileExistsError:   # lost the race: the winner's record decides
+            why = mode_refusal(run_dir, mode)
+            if why:
+                raise ChoiceError(why)
     except OSError as exc:
         raise ChoiceError(
             "REFUSED: the dispatch mode could not be persisted before any paid "
             "call: %s" % exc) from exc
+    finally:
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
     return mode
 
 def _load_request(path, cli_run_dir=None):

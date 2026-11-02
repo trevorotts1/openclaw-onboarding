@@ -615,6 +615,14 @@ def _song_choices_next(run_dir, orchestrated=False):
         u["command"] = base + " --unit-id %s" % u["unit_id"]
         u["selected"] = bool(orchestrated)
     mode = "orchestrated" if orchestrated else "umbrella"
+    why = _sc.mode_refusal(rd, "unit:" if orchestrated else "umbrella")
+    if why:
+        # X07: the run already chose the OTHER mode family (or its record is
+        # unreadable): emit no command at all. Read-only; the executor persists.
+        return {"mode": mode, "orchestrated": bool(orchestrated),
+                "umbrella_command": "", "command": "", "units": units,
+                "selected_command": "", "refused": True,
+                "reason_code": "MODE_CONFLICT", "note": why}
     return {
         "mode": mode,
         "orchestrated": bool(orchestrated),
@@ -3005,6 +3013,9 @@ def _next_stage(a, *, boot_snapshot=None):
         # D2 item 1: SONG APPROVAL = Yes routes HERE, to the three-version
         # music runner, not the single dispatch runbook row.
         sc = _song_choices_next(run_dir, orchestrated=bool(getattr(a, "orchestrated", False)))
+        if sc is not None and sc.get("refused"):
+            return envelope("next", str(sid), "rejected", sc["reason_code"],
+                            sc["note"], data={"stage": next_stage, "song_choices": sc})
         if sc is not None:
             lane = lane_size_payload()
             data = {"stage": next_stage, "command": sc["command"],
