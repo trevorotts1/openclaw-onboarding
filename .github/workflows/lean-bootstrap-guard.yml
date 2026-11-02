@@ -74,7 +74,12 @@ concurrency:
 jobs:
   lean-bootstrap:
     name: compact core + pointer stamping contracts
-    runs-on: ubuntu-latest
+    # Pinned: the 3.9 interpreter below is a real guarantee (the fleet's oldest
+    # python3 is the Mac's 3.9.6, see docs/COMPACT-CORE-SOP.md), and setup-python
+    # ships no CPython 3.9 build for the ubuntu-26.04 image that ubuntu-latest now
+    # resolves to, so every run failed in "Set up Python" before any test ran.
+    # Same pin and reason as onboarding-reliability-contracts.yml.
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4

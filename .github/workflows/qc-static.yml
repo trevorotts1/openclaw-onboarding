@@ -2821,17 +2821,12 @@ jobs:
           # indentation issues in YAML" pitfall this file used to warn about
           # elsewhere, and it is not worth re-fighting per-runner quoting/embedding
           # fragility for.
-          # Same per-file call and rc mapping, run across all cores (~1,240 files).
-          git ls-files -z -- '*.json' | xargs -0 -r -n 1 -P "$(nproc)" bash -c '
-            rc=0
-            python3 scripts/qc-check-whatsapp-json.py "$1" 2>/dev/null || rc=$?
-            if [ "$rc" -eq 1 ]; then
-              echo "✗ $1: plugins.entries.whatsapp.enabled is true (fleet ban violation)"
-              exit 1
-            elif [ "$rc" -ne 0 ]; then
-              echo "✗ $1: unreadable or malformed non-empty JSON — failing closed (cannot verify fleet ban compliance)"
-              exit 1
-            fi' _ || fail=1
+          # Same per-file verdict and messages, but one interpreter per 300
+          # files instead of one per file (~2,650 files), batches across all
+          # cores. The script prints the ✗ line for each bad file and exits
+          # non-zero if any file is bad; any non-zero (a crash too) fails.
+          git ls-files -z -- '*.json' | xargs -0 -r -n 300 -P "$(nproc)" \
+            python3 scripts/qc-check-whatsapp-json.py || fail=1
 
           # 2. .env files: no uncommented WHATSAPP_NUMBER=
           while IFS= read -r f; do
@@ -3223,7 +3218,19 @@ jobs:
       # at import (sys.exit at module level made the whole-tree pytest run
       # INTERNALERROR, hiding every later failure). This step makes pytest
       # collection itself a red build: every test_*.py under scripts/ must be
-      # pytest-collectable, and the tree must run green in ONE process.
+      # pytest-collectable (the whole tree, in ONE process), and every
+      # collected test must run green.
+      # The run is spread over the runner's cores (it was 8+ minutes on one
+      # core): every test_*.py under scripts/ gets its own pytest process and
+      # its own fresh empty HOME, nproc files at a time, output buffered per
+      # file and printed in file order -- the same shape as the loop above.
+      # pythonpath = the file's own folder, as its documented
+      # `python3 <test>.py` run has (two suites import a sibling module by
+      # bare name and only found it in the one-process run because an
+      # earlier suite had left that folder on sys.path). Not pytest-xdist:
+      # xdist re-imports EVERY file in EVERY worker, and these script-style
+      # suites do their work at import, so each suite would run nproc times
+      # at once, racing on its fixed paths.
       - name: Skill 75 pytest collection + run (no hidden failures)
         shell: bash
         run: |
@@ -3231,8 +3238,32 @@ jobs:
           python3 -m pip install --quiet pytest
           HOME="$(mktemp -d)" python3 -m pytest -q \
             75-drama-song-ad-factory/scripts --collect-only
-          HOME="$(mktemp -d)" python3 -m pytest -q \
-            75-drama-song-ad-factory/scripts
+          mapfile -t tests < <(find 75-drama-song-ad-factory/scripts -type f -name 'test_*.py' -not -path '*/__pycache__/*' | sort)
+          [ "${#tests[@]}" -gt 0 ] || { echo "✗ no skill 75 test files found"; exit 1; }
+          logs="$(mktemp -d)"
+          export logs
+          printf '%s\0' "${tests[@]}" | xargs -0 -n 1 -P "$(nproc)" bash -c '
+            t="$1"; key="$(printf %s "$t" | tr / _)"
+            rc=0
+            HOME="$(mktemp -d)" python3 -m pytest -q -o pythonpath="$(dirname "$t")" "$t" </dev/null >"$logs/$key.out" 2>&1 || rc=$?
+            echo "$rc" >"$logs/$key.rc"' _ || true   # a file with no recorded exit code is counted as failed below
+          failed=()
+          for t in "${tests[@]}"; do
+            key="$(printf %s "$t" | tr / _)"
+            echo "── $t"
+            cat "$logs/$key.out" 2>/dev/null || true
+            rc="$(cat "$logs/$key.rc" 2>/dev/null || echo missing)"
+            # 5 = the file holds no test items (it still had to import
+            # cleanly), which the whole-tree run also passed.
+            if [ "$rc" != 0 ] && [ "$rc" != 5 ]; then
+              echo "✗ pytest FAIL: $t (exit $rc)"; failed+=("$t")
+            fi
+          done
+          echo "Skill 75 pytest: ${#tests[@]} files, $(( ${#tests[@]} - ${#failed[@]} )) passed, ${#failed[@]} failed"
+          if [ "${#failed[@]}" -gt 0 ]; then
+            printf '✗ pytest FAIL: %s\n' "${failed[@]}"
+            exit 1
+          fi
           echo "✓ Skill 75 scripts/ pytest-collectable and green"
 
       - name: Skill 75 final-view enforcement gate (X08)

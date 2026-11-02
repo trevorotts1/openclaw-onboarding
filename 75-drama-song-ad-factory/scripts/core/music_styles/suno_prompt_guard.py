@@ -51,6 +51,7 @@ stdlib only, no network, no provider calls, no credential reads.
 from __future__ import annotations
 
 import copy
+import functools
 import hashlib
 import json
 import re
@@ -157,6 +158,14 @@ def normalize(text, keep_hyphens=False):
     """
     if not isinstance(text, str):
         return ""
+    return _normalize_str(text, bool(keep_hyphens))
+
+
+# A pure str -> str fold, called for every alias form and twice per inspected
+# field on every guard() call, mostly on the same strings: memoized so the
+# guard (and its 17k-payload test sweep) stops re-folding identical text.
+@functools.lru_cache(maxsize=16384)
+def _normalize_str(text, keep_hyphens):
     folded = unicodedata.normalize("NFKD", _fold_compat(text))
     folded = "".join(ch for ch in folded if not unicodedata.combining(ch))
     folded = folded.casefold()

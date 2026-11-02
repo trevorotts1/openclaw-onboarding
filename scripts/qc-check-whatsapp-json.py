@@ -6,7 +6,8 @@ WhatsApp is permanently banned fleet-wide; the Hostinger wrapper auto-installs
 WhatsApp on every boot when it sees this shape, causing a QR-scan crash-loop
 that takes the entire gateway down).
 
-Usage: python3 scripts/qc-check-whatsapp-json.py <file.json>
+Usage: python3 scripts/qc-check-whatsapp-json.py <file.json> [<file.json> ...]
+  (several files: one line per bad file, exit code is the worst one)
   exit 0 — no violation: a ZERO-BYTE file (not applicable), OR the file
            parses as JSON and is NOT plugins.entries.whatsapp.enabled:true
   exit 1 — REAL violation: file parses as a dict AND
@@ -68,13 +69,25 @@ def has_whatsapp_enabled(path: str):
 
 
 def main(argv):
-    if len(argv) != 2:
-        print("usage: qc-check-whatsapp-json.py <file.json>", file=sys.stderr)
+    """One verdict per file; exit with the worst one (2 > 1 > 0), so a single
+    file keeps the exact 0/1/2 contract and a batch (one interpreter for
+    thousands of files, as qc-static.yml calls it) fails if any file does."""
+    if len(argv) < 2:
+        print("usage: qc-check-whatsapp-json.py <file.json> [<file.json> ...]",
+              file=sys.stderr)
         return 2
-    result = has_whatsapp_enabled(argv[1])
-    if result is MALFORMED:
-        return 2
-    return 1 if result else 0
+    worst = 0
+    for path in argv[1:]:
+        result = has_whatsapp_enabled(path)
+        if result is MALFORMED:
+            print("✗ %s: unreadable or malformed non-empty JSON — failing "
+                  "closed (cannot verify fleet ban compliance)" % path)
+            worst = 2
+        elif result:
+            print("✗ %s: plugins.entries.whatsapp.enabled is true "
+                  "(fleet ban violation)" % path)
+            worst = max(worst, 1)
+    return worst
 
 
 if __name__ == "__main__":
