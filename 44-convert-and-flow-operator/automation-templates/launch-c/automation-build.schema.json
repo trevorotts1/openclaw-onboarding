@@ -4,15 +4,27 @@
   "title": "Launch Automation Builds (launch-c v1)",
   "description": "Emitted by launch-c/plan_reader.py from the U-CONTRACT launch plan plus the Skill 50 P4 DRAFT-ONLY build plans. One entry per launch-plan automation unit, carrying the launch-plan fields unchanged and the Skill 50 workflows it waits on. DRAFT-ONLY: nothing here authorizes a send, a publish or a live switch-on.",
   "type": "object",
-  "required": ["schema_version", "launch_id", "draft_only", "sources", "builds", "unused_build_plan_workflows", "warnings"],
+  "required": ["schema_version", "launch_id", "draft_only", "owner_acknowledgement", "sources", "builds", "unused_build_plan_workflows", "warnings"],
   "additionalProperties": false,
   "properties": {
     "schema_version": { "type": "string", "const": "1.0.0" },
     "launch_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
     "draft_only": { "type": "boolean", "const": true },
+    "owner_acknowledgement": {
+      "type": "object",
+      "description": "Late start: promotional sends already in the past are DROPPED (their builds stay ready for the still-future steps). The owner acknowledges that exact list by passing dropped_sends_hash back (--acknowledge-dropped-sends).",
+      "required": ["required", "acknowledged", "dropped_sends_hash", "dropped_sends"],
+      "additionalProperties": false,
+      "properties": {
+        "required": { "type": "boolean" },
+        "acknowledged": { "type": "boolean" },
+        "dropped_sends_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "dropped_sends": { "type": "array", "items": { "type": "object" } }
+      }
+    },
     "calendar": {
       "type": "object",
-      "description": "L07 compiled launch calendar: normalized ISO instants, IANA zone, DST overlap flag and strict phase order.",
+      "description": "L07 compiled launch calendar: normalized ISO instants, IANA zone and DST overlap flag. Phase order is the shared calendar law's (validated by the shared launch-plan validator), including the Black Friday teaser, countdown, cyber_monday and last_call instants.",
       "required": ["timezone", "doors_open_at", "launch_at", "doors_close_at"],
       "additionalProperties": true,
       "properties": {
@@ -123,11 +135,11 @@
         "state": {
           "type": "string",
           "enum": ["ready", "blocked"],
-          "description": "blocked when any email_sequence this automation waits on has no bound Skill 50 build plan. A blocked build is never upgraded by assumption."
+          "description": "blocked when any email_sequence this automation waits on has no bound Skill 50 build plan, or nothing is left to build. A blocked build is never upgraded by assumption; the reader exits 4 when any build is blocked."
         },
         "blocked_by": {
           "type": "array",
-          "description": "Why the build is blocked. A bare id is a missing email_sequence build plan; prefixed reasons name page_url:, email_count:, text_set:, upstream:, guards: or schedule_suppressed: failures. A blocked build is never upgraded by assumption.",
+          "description": "Why the build is blocked. A bare id is a missing email_sequence build plan; prefixed reasons name page_url:, email_count:, text_set:, upstream:, guards: or schedule_suppressed: (send that cannot land before doors close) failures; no_future_sends and no_buildable_workflow mean nothing is left to build. Past sends never block: they are dropped (see dropped_sends). A blocked build is never upgraded by assumption.",
           "items": { "type": "string" }
         },
         "unit_key": {
@@ -173,7 +185,12 @@
         },
         "suppressed": {
           "type": "array",
-          "description": "Schedule nodes suppressed by past-time policy or close-time suppression.",
+          "description": "Schedule nodes suppressed by past-time policy or close-time suppression. A builder skips every step listed here.",
+          "items": { "type": "object" }
+        },
+        "dropped_sends": {
+          "type": "array",
+          "description": "The PAST-TIME-SUPPRESSED subset of suppressed: sends dropped because they were already in the past when the launch was compiled (late start), pending owner acknowledgement.",
           "items": { "type": "object" }
         }
       }
