@@ -218,6 +218,61 @@ def _read_adoption() -> Tuple[Dict[str, Dict[str, Any]], str]:
     return decisions, "loaded"
 
 
+def _find_events_file() -> Optional[Path]:
+    """shared-utils/signature_launch/launch_events.py, found by walking up from
+    this file: the repo checkout and an installed skills tree both resolve."""
+    for d in Path(__file__).resolve().parents:
+        f = d / "shared-utils" / "signature_launch" / "launch_events.py"
+        if f.is_file():
+            return f
+    return None
+
+
+_EVENTS_FILE = _find_events_file()
+_EVENTS_CACHE: Dict[str, Any] = {}
+
+
+def _load_launch_events():
+    """The shared launch-event emitter (loaded once), or None on an install
+    without it."""
+    if "mod" not in _EVENTS_CACHE:
+        mod = None
+        if _EVENTS_FILE is not None:
+            import importlib.util
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    "signature_launch_events", _EVENTS_FILE)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+            except Exception:  # noqa: BLE001 - visibility is never a gate
+                mod = None
+        _EVENTS_CACHE["mod"] = mod
+    return _EVENTS_CACHE["mod"]
+
+
+def _emit(launch_id: str, event: Any) -> None:
+    """CON-21: post one launch event to the Command Center (spooled on an
+    outage). NON-BLOCKING: nothing here can fail or slow a launch."""
+    try:
+        mod = _load_launch_events()
+        if mod is not None:
+            mod.emit(49, launch_id, event)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[launch_events] skipped: {exc}", file=sys.stderr)
+
+
+def _board(name: str, *args: Any, **kw: Any) -> Any:
+    """Command Center board card helpers (mc_board.launch_card / block_run /
+    complete_run). Absent on a tree without them; never raises."""
+    try:
+        import mc_board
+        fn = getattr(mc_board, name, None)
+        return fn(*args, **kw) if fn else None
+    except Exception as exc:  # noqa: BLE001
+        print(f"[launch_events] board {name} skipped: {exc}", file=sys.stderr)
+        return None
+
+
 def _canonical(obj: Any) -> bytes:
     return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()
 
@@ -332,7 +387,8 @@ def _check_scoped_approvals(launch: Dict[str, Any],
                               approvals: List[Dict[str, Any]],
                               target: str, *,
                               client_identity_ref: str,
-                              worker_identity_ref: str) -> None:
+                              worker_identity_ref: str,
+                              paid_images: bool = False) -> None:
     """Scoped side-effect approvals get the FULL gate discipline (doc 02 §9,
     doc 03 §9): separate type, scope containing the type, plan-hash binding,
     client identity, no worker self-approval, provenance reference,
@@ -343,6 +399,8 @@ def _check_scoped_approvals(launch: Dict[str, Any],
               "approved_test_location": ["test_location_use"],
               "approved_live_publication": ["test_location_use",
                                             "page_publication"]}[target]
+    if paid_images:  # IMG-03: a paid provider run is its own approval type
+        needed = needed + ["paid_asset_budget"]
     for need in needed:
         candidates = [a for a in approvals
                       if isinstance(a, dict)
@@ -390,6 +448,11 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
     image inputs (page_set.load_image_inputs); with the paid provider the
     spend cap and the KIE limiter apply (page_swarm). extra_pages: opted-in
     design pages that ride on a route request (today downsell_2)."""
+    simulated = bool(executor) and getattr(executor, "simulated", False)
+    if simulated and not launch.get("test_only"):
+        raise DispatchError(
+            "--simulate-executor fabricates results and is refused on a launch "
+            "that is not test_only; run the real adapters")
     fails = vlp.validate_launch(launch)
     if fails:
         raise DispatchError("launch record fails validation: " + "; ".join(fails))
@@ -404,9 +467,14 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
         raise DispatchError("re-compiled route graph hash does not match the "
                             "record's route_graph_hash — the approved plan and "
                             "its route disagree; re-plan, never dispatch")
+    # IMG-03: a paid kie launch that is not test_only needs paid_asset_budget,
+    # whatever the write target is.
+    paid = bool(image_inputs) and image_inputs.get("image_provider") == "kie" \
+        and launch.get("test_only") is not True
     _check_scoped_approvals(launch, scoped_approvals or [], allowed_write_target,
                             client_identity_ref=client_identity_ref,
-                            worker_identity_ref=worker_identity_ref)
+                            worker_identity_ref=worker_identity_ref,
+                            paid_images=paid)
     requests = build_requests(launch, graph, copy_profile=copy_profile,
                               allowed_write_target=allowed_write_target)
     for r in requests:
@@ -436,7 +504,8 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
         "route_graph_hash": launch["route_graph_hash"],
         "allowed_write_target": allowed_write_target,
         "prompt_policy_adoption": adoption_block,
-        "execution": "executed" if executor else "emitted_not_executed",
+        "execution": ("simulated" if simulated else "executed")
+                     if executor else "emitted_not_executed",
         "requests": [{"request_id": r["request_id"], "page_id": r["page_id"],
                       "page_role": r["page_role"],
                       "assigned_skill": r["assigned_skill"],
@@ -448,7 +517,10 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
                      "lane_plan": pset.lane_plan(page_set)},
         "results": [],
     }
+    task_id = None
     if out_dir:
+        _emit(launch["launch_id"], {"event_type": "run_initialized"})
+        task_id = _board("launch_card", out_dir, launch["launch_id"])
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "route-graph.json").write_bytes(clr.serialize_graph(graph))
         for r in requests:
@@ -462,6 +534,12 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
         manifest["swarm"] = run["swarm"]
         failed = [o for o in run["outcomes"] if o["status"] != "ok"]
         for o in run["outcomes"]:
+            if out_dir:
+                _emit(launch["launch_id"],
+                      {"event_type": "item_closed", "stage": "dispatch",
+                       "item": o["lane"]} if o["status"] == "ok" else
+                      {"event_type": "item_blocked", "stage": "dispatch",
+                       "item": o["lane"], "failures": [str(o["error"])]})
             if o["status"] != "ok":
                 continue
             extra = o["lane"] not in PAGE_ROLES
@@ -478,12 +556,23 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
             if out_dir:  # the pages that did finish are kept and named
                 (out_dir / "dispatch-manifest.json").write_text(
                     json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-            raise DispatchError(
-                "page(s) did not complete (every other page was still built): "
-                + "; ".join(f"{o['lane']} {o['status']}: {o['error']}" for o in failed))
+            reasons = [f"{o['lane']} {o['status']}: {o['error']}" for o in failed]
+            error = ("page(s) did not complete (every other page was still "
+                     "built): " + "; ".join(reasons))
+            if out_dir:
+                _emit(launch["launch_id"], {
+                    "event_type": "stage_blocked", "stage": "dispatch",
+                    "failures": reasons})
+                if task_id:
+                    _board("block_run", out_dir, task_id, note=error)
+            raise DispatchError(error)
     if out_dir:
         (out_dir / "dispatch-manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        if executor:
+            _emit(launch["launch_id"], "dispatch")
+            if task_id:
+                _board("complete_run", out_dir, task_id)
     return manifest
 
 
@@ -552,10 +641,14 @@ def executor_from_config(config: Dict[str, Any], work_dir: Path,
     def run(req: Dict[str, Any], lane: Optional[str] = None) -> Dict[str, Any]:
         role = req["page_role"]
         key = lane or role
-        spec = adapters.get(key) or (adapters.get(role) if lane else None)
+        # DTY-12: a lane takes ITS OWN entry only. An extra page (downsell_2)
+        # that fell back to its parent's command would rebuild the parent's
+        # piece under the extra page's file name.
+        spec = adapters.get(key)
         if not spec or not spec.get("command"):
             raise DispatchError(f"no consumer adapter configured for role "
-                                f"{key} — dispatch cannot execute it")
+                                f"{key} — dispatch cannot execute it (a lane "
+                                "never borrows another lane's adapter)")
         # An extra page rides on its parent's request bytes; its files are
         # named page-request-/page-result- so the route's request-*/result-*
         # collections never see a second answer for one request.
@@ -576,8 +669,11 @@ def executor_from_config(config: Dict[str, Any], work_dir: Path,
         proc = subprocess.run(cmd, capture_output=True, text=True,
                               timeout=float(spec.get("timeout_s", 600)))
         if proc.returncode != 0:
-            raise DispatchError(f"consumer adapter for {role} exited "
-                                f"{proc.returncode}: {proc.stderr.strip()[:400]}")
+            # DTY-28: a wrapper that prints its refusal to stdout would show
+            # as a blank cause; stdout stands in when stderr is empty.
+            why = proc.stderr.strip() or proc.stdout.strip()
+            raise DispatchError(f"consumer adapter for {key} exited "
+                                f"{proc.returncode}: {why[:400]}")
         if not res_path.is_file():
             raise DispatchError(f"consumer adapter for {role} produced no "
                                 f"result file at {res_path}")
@@ -602,6 +698,7 @@ def _simulated_executor(author: str):
                 "independent_review": False, "proof_class": "L0",
                 "blockers": [], "native_bindings_ref": None,
                 "test_only": True}
+    run.simulated = True  # ENF-26: dispatch labels and gates fabricated runs
     return run
 
 
@@ -769,8 +866,9 @@ def _self_test() -> int:
                   worker_identity_ref="worker-9",
                   allowed_write_target="approved_test_location",
                   scoped_approvals=scoped, executor=_simulated_executor("test"))
-    say(len(m3["results"]) == 7 and m3["execution"] == "executed",
-        "with the scoped approval + executor, dispatch executes and returns results")
+    say(len(m3["results"]) == 7 and m3["execution"] == "simulated",
+        "with the scoped approval + simulated executor, dispatch labels the "
+        "fabricated run 'simulated', never 'executed'")
     # Review probe D (D6): fabricated scoped approvals — worker as owner,
     # no provenance reference, recorded in 2020, class "none" — must NOT
     # authorize a live publication target.
