@@ -11097,6 +11097,23 @@ PYEOF
     echo "  weekly-onboarding-update is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove weekly-onboarding-update"
   elif command -v openclaw >/dev/null 2>&1; then
     #=== BEGIN WEEKLY-CRON-FULL-REGISTRATION-V1 ===
+    # Box update schedule (2026-11-02): Tue/Fri/Sun 2:00 AM Eastern as a COMMAND
+    # job that runs scripts/weekly-full-update.sh directly -- no model turn, no
+    # client message. See oc_box_update_cron_ensure in shared-utils/cron-lib.sh.
+    # The agent-prompt registration below runs only when that is unavailable
+    # (rc 1 = this OpenClaw has no command jobs, rc 2 = list/create failed).
+    command -v oc_box_update_cron_ensure >/dev/null 2>&1 || {
+      for _wou_lib in "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/shared-utils/cron-lib.sh" "${SKILLS_DIR:-/nonexistent}/shared-utils/cron-lib.sh"; do
+        if [ -f "$_wou_lib" ]; then
+          # shellcheck source=/dev/null
+          source "$_wou_lib"; break
+        fi
+      done
+    }
+    _WOU_CMD_RC=1
+    if command -v oc_box_update_cron_ensure >/dev/null 2>&1; then
+      oc_box_update_cron_ensure && _WOU_CMD_RC=0 || _WOU_CMD_RC=$?
+    fi
     #=== BEGIN WEEKLY-CRON-MESSAGE-REFRESH-V1 ===
     # refresh_weekly_cron_message <job_id> <job_kind> <new_content>
     #
@@ -11186,7 +11203,7 @@ PYEOF
     # skip leaves the leaking cron in place.  Fix: detect old delivery wiring
     # via openclaw cron list --json and delete the stale entry so the creation
     # block below always lands the SILENT main-session form.
-    if oc_cron_present "weekly-onboarding-update"; then
+    if [ "$_WOU_CMD_RC" -ne 0 ] && oc_cron_present "weekly-onboarding-update"; then
       _CRON_HAS_OLD_WIRING=false
       if command -v python3 >/dev/null 2>&1; then
         _OC_RAW_JSON=$(openclaw cron list --json 2>/dev/null) || _OC_RAW_JSON=""
@@ -11254,7 +11271,7 @@ PYEOF
     fi
     # Create cron only when it is absent (never existed, or just deleted above)
     # D10: register only on a definite "absent" (rc 1); rc 2 = cron list unreadable -> unknown, skip
-    if oc_cron_present "weekly-onboarding-update"; [ $? -eq 1 ]; then
+    if [ "$_WOU_CMD_RC" -ne 0 ] && { oc_cron_present "weekly-onboarding-update"; [ $? -eq 1 ]; }; then
       # ── SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons) ───────────
       # weekly-onboarding-update is a MAINTENANCE/update-check cron, NOT an
       # owner-facing announcement. The old form registered it
@@ -11311,7 +11328,7 @@ PYEOF
         # form only ever emitted `--session-target main --message`, so a rolled box
         # silently installed NO weekly cron. _oc_cron_silent_main probes the CLI,
         # emits the accepted form, and degrades gracefully (never hard-fails).
-        _WEEKLY_DESC="Sunday 3am ET -- SILENT update-check: look for OpenClaw onboarding + command-center updates; ask the owner permission (via your own message send) before applying anything."
+        _WEEKLY_DESC="Tue/Fri/Sun 2am ET -- SILENT update-check: look for OpenClaw onboarding + command-center updates; ask the owner permission (via your own message send) before applying anything."
         # Register under the box's DEFAULT agent, asked of the runtime. A hard-coded
         # "main" is rejected wherever main is not the default ("sessionTarget main is
         # only valid for the default agent" / "cron job agent is unavailable: main"),
@@ -11322,7 +11339,7 @@ r=sys.stdin.read(); i=min([x for x in (r.find("{"),r.find("[")) if x>=0] or [0])
 a=d if isinstance(d,list) else d.get("agents",[])
 print(([x.get("id") for x in a if isinstance(x,dict) and (x.get("default") or x.get("isDefault"))] or [""])[0])' 2>/dev/null || true)"
         [ -n "$_WOU_AGENT" ] || _WOU_AGENT=main
-        if _oc_cron_silent_main "weekly-onboarding-update" "$_WOU_AGENT" "0 3 * * 0" "America/New_York" "$PROMPT_CONTENT" \
+        if _oc_cron_silent_main "weekly-onboarding-update" "$_WOU_AGENT" "${OC_BOX_UPDATE_SCHEDULE:-0 2 * * 0,2,5}" "America/New_York" "$PROMPT_CONTENT" \
              --description "$_WEEKLY_DESC" --exact --light-context --thinking high --timeout-seconds 7200; then
           echo "  ✓ Sunday weekly update-check cron installed (Sundays 3am ET, SILENT main-session — no client auto-announce)"
         else
