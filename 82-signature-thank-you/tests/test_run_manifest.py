@@ -35,7 +35,9 @@ from run_manifest import (  # noqa: E402
     build_run_manifest,
     main as run_manifest_main,
 )
-from thank_you_resolver import resolve_order_view  # noqa: E402
+import os.path as _osp  # noqa: E402
+sys.path.insert(0, _osp.dirname(_osp.abspath(__file__)))
+from stamped_resolver import resolve_order_view  # noqa: E402
 
 # A well-formed ev1 value (CR-S82-002 item 5), TEST ONLY content.
 EV1 = "ev1:" + hashlib.sha256(b"TEST ONLY ev1 book state A").hexdigest()

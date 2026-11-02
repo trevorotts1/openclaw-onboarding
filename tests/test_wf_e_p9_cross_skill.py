@@ -86,6 +86,7 @@ import render_thank_you  # noqa: E402
 import route_law  # noqa: E402
 import s49_launch_shape  # noqa: E402
 import thank_you_resolver  # noqa: E402
+from purchase_event_adapter import snapshot_integrity  # noqa: E402
 from fixture_driver import FixtureDriver  # noqa: E402
 from launcher_core import (  # noqa: E402
     checkout as checkout83,
@@ -141,6 +142,15 @@ def launch_record(mode: str = "folded_levels") -> dict:
         "extras": {"upsell_1": True, "downsell_1": True, "upsell_2": True},
         "test_only": True,
     }
+
+
+def resolve_order_view(snap, *args, **kwargs):
+    """Stamp the fixture snapshot as the S82 adapter would (F-harden-01: the
+    resolver refuses unstamped or edited snapshots), then run the real
+    resolver. The refusal itself is covered by 82 tests/test_resolver_integrity.py."""
+    if isinstance(snap, dict):
+        snap = {**snap, "integrity": snapshot_integrity(snap)}
+    return thank_you_resolver.resolve_order_view(snap, *args, **kwargs)
 
 
 def snapshot() -> dict:
@@ -332,7 +342,7 @@ class TestB14U2Eligibility:
                 line_item("LINE-U1", "upsell_1", "EV-U1", status="pending"),
                 line_item("LINE-U2", "upsell_2", "EV-U2")]
         with pytest.raises(thank_you_resolver.ResolverError) as exc:
-            thank_you_resolver.resolve_order_view(with_lines(snapshot(), base))
+            resolve_order_view(with_lines(snapshot(), base))
         assert "u2_without_qualification" in str(exc.value)
         assert "no PAID" in str(exc.value)
 
@@ -341,21 +351,21 @@ class TestB14U2Eligibility:
                 line_item("LINE-BUMP", "bump", "EV-BUMP"),
                 line_item("LINE-U2", "upsell_2", "EV-U2")]
         with pytest.raises(thank_you_resolver.ResolverError) as exc:
-            thank_you_resolver.resolve_order_view(with_lines(snapshot(), base))
+            resolve_order_view(with_lines(snapshot(), base))
         assert "u2_without_qualification" in str(exc.value)
 
     def test_a_verified_paid_u1_qualifies_u2(self):
         base = [line_item("LINE-MAIN", "main", "EV-MAIN"),
                 line_item("LINE-U1", "upsell_1", "EV-U1"),
                 line_item("LINE-U2", "upsell_2", "EV-U2")]
-        view = thank_you_resolver.resolve_order_view(with_lines(snapshot(), base))
+        view = resolve_order_view(with_lines(snapshot(), base))
         assert [item["slot"] for item in view["items"]] == ["main", "upsell_1", "upsell_2"]
 
     def test_a_redelivered_u2_line_is_one_purchase_not_two(self):
         item = line_item("LINE-U2", "upsell_2", "EV-U2")
         base = [line_item("LINE-MAIN", "main", "EV-MAIN"),
                 line_item("LINE-U1", "upsell_1", "EV-U1"), item, copy.deepcopy(item)]
-        view = thank_you_resolver.resolve_order_view(with_lines(snapshot(), base))
+        view = resolve_order_view(with_lines(snapshot(), base))
         assert len([i for i in view["items"] if i["slot"] == "upsell_2"]) == 1
 
     def test_a_conflicting_redelivery_is_refused_not_merged(self):
@@ -365,7 +375,7 @@ class TestB14U2Eligibility:
         base = [line_item("LINE-MAIN", "main", "EV-MAIN"),
                 line_item("LINE-U1", "upsell_1", "EV-U1"), first, second]
         with pytest.raises(thank_you_resolver.ResolverError) as exc:
-            thank_you_resolver.resolve_order_view(with_lines(snapshot(), base))
+            resolve_order_view(with_lines(snapshot(), base))
         assert "duplicate_conflict" in str(exc.value)
 
     def test_the_graph_carries_exactly_one_canonical_u2_node(self):
@@ -396,7 +406,7 @@ class TestB14U2Eligibility:
 class TestB15ThankYouTenantChecks:
     def test_a_cross_tenant_order_reference_is_refused(self):
         with pytest.raises(thank_you_resolver.ResolverError) as exc:
-            thank_you_resolver.resolve_order_view(
+            resolve_order_view(
                 snapshot(),
                 expected_identity={"tenant_id": "OTHER-TENANT",
                                    "location_id": "TEST-LOCATION",
@@ -406,7 +416,7 @@ class TestB15ThankYouTenantChecks:
 
     def test_a_wrong_launch_scope_is_refused(self):
         with pytest.raises(thank_you_resolver.ResolverError) as exc:
-            thank_you_resolver.resolve_order_view(
+            resolve_order_view(
                 snapshot(),
                 expected_identity={"tenant_id": "TEST-TENANT",
                                    "location_id": "TEST-LOCATION",
@@ -417,7 +427,7 @@ class TestB15ThankYouTenantChecks:
         unverified = snapshot()
         unverified["verified"] = False
         with pytest.raises(thank_you_resolver.ResolverError) as exc:
-            thank_you_resolver.resolve_order_view(unverified)
+            resolve_order_view(unverified)
         assert "unverified_snapshot" in str(exc.value)
 
     @pytest.mark.parametrize("context", [
@@ -427,31 +437,31 @@ class TestB15ThankYouTenantChecks:
     ])
     def test_query_string_and_url_claims_are_never_authority(self, context):
         with pytest.raises(thank_you_resolver.ResolverError) as exc:
-            thank_you_resolver.resolve_order_view(snapshot(), request_context=context)
+            resolve_order_view(snapshot(), request_context=context)
         assert "query_string_authority_rejected" in str(exc.value)
 
     def test_access_is_granted_only_for_a_paid_item_with_granted_fulfillment(self):
-        granted = thank_you_resolver.resolve_order_view(
+        granted = resolve_order_view(
             snapshot(), fulfillment_map={"base-a": {"state": "granted",
                                                     "delivery_url": "https://test.invalid/a",
                                                     "next_action": "access"}})
         assert len(granted["access_blocks"]) == 1
-        pending = thank_you_resolver.resolve_order_view(
+        pending = resolve_order_view(
             snapshot(), fulfillment_map={"base-a": {"state": "pending"}})
         assert pending["access_blocks"] == []
-        missing = thank_you_resolver.resolve_order_view(snapshot())
+        missing = resolve_order_view(snapshot())
         assert missing["access_blocks"] == []
 
     def test_an_unapproved_fulfillment_action_is_refused_not_passed_through(self):
         with pytest.raises(thank_you_resolver.ResolverError) as exc:
-            thank_you_resolver.resolve_order_view(
+            resolve_order_view(
                 snapshot(),
                 fulfillment_map={"base-a": {"state": "granted",
                                             "next_action": "buy_more"}})
         assert "invalid_next_action" in str(exc.value)
 
     def test_the_rendered_error_discloses_no_order_data(self):
-        view = thank_you_resolver.resolve_order_view(
+        view = resolve_order_view(
             snapshot(), fulfillment_map={"base-a": {"state": "granted"}})
         for kind in render_thank_you.ERROR_KINDS:
             fragment = render_thank_you.render_error(kind)
