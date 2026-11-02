@@ -16,8 +16,9 @@ Checks:
   T4  a live DIFFERENT owner is refused (control: the fix did not weaken it)
   T5  one ledger instance re-claims its own live claim; a second instance with
       the same owner name is refused while that claim is live
-  T6  a claim whose process is DEAD is recovered without waiting for expiry,
-      with a new fence (recoverability is not wedged)
+  T6  a claim whose process is DEAD is NOT taken over while its lease is
+      live, and IS taken over — with a new fence — once that lease has
+      expired (Option A: takeover turns on the lease, never on a pid probe)
 
 Run: python3 -I checks/test_st10a_claim_fence.py
 Exit: 0 all pass, 1 any fail
@@ -196,7 +197,15 @@ def t5_same_instance_resume_other_instance_refused():
         a, again, b)
 
 
-def t6_dead_holder_recovered():
+def t6_dead_holder_not_taken_over_until_expiry():
+    """OPTION A (base contract changed by PR #2777).
+
+    A claim outlives its process. A dead holder's claim is NOT recovered while
+    its lease is live, and IS recovered — with a new fence and a new token —
+    once the lease has expired. Two asserts, so neither half can pass alone:
+    dropping the refusal would let a second materializer steal a live claim;
+    dropping the expiry takeover would wedge the order forever.
+    """
     WORK.joinpath("worker.py").write_text(WORKER, encoding="utf-8")
     go = WORK / "go6"
     if go.exists():
@@ -213,12 +222,26 @@ def t6_dead_holder_recovered():
     if not first.get("won"):
         return False, "worker did not win the fresh claim: %r" % (first,)
     with SC.ClaimLedger(db) as led:
-        recovered = led.claim_order("r_t6", "same-owner")  # NOW, lease still live
-        st = led.order_state("r_t6")
-    ok = (recovered is True and st is not None
-          and st["fence"] == int(first["fence"]) + 1)
-    return ok, "dead-holder recovered=%r fence %r->%r" % (
-        recovered, first.get("fence"), (st or {}).get("fence"))
+        st1 = led.order_state("r_t6") or {}
+        # lease STILL LIVE, holder pid DEAD -> refused (no pid probe)
+        refused = led.claim_order("r_t6", "same-owner")
+        st2 = led.order_state("r_t6") or {}
+        # lease EXPIRED -> taken over, new fence, new token
+        taken = led.claim_order(
+            "r_t6", "same-owner",
+            now=st1["lease_expires_at"] + 1.0, ttl_s=60.0)
+        st3 = led.order_state("r_t6") or {}
+    ok = (int(first["fence"]) == st1.get("fence") == st2.get("fence")
+          and refused is False
+          and st2.get("claim_token") == st1.get("claim_token")
+          and taken is True
+          and st3.get("fence") == st1.get("fence") + 1
+          and st3.get("claim_token") != st1.get("claim_token"))
+    return ok, ("dead-holder live-lease refused=%r fence %r->%r->%r; "
+                "expired-lease taken=%r token changed=%r"
+                % (refused, first.get("fence"), st2.get("fence"),
+                   st3.get("fence"), taken,
+                   st3.get("claim_token") != st1.get("claim_token")))
 
 
 CHECKS = (
@@ -227,7 +250,8 @@ CHECKS = (
     ("T3 stale ack refused", t3_stale_ack),
     ("T4 live other owner refused", t4_live_other_owner_refused),
     ("T5 same-instance resume", t5_same_instance_resume_other_instance_refused),
-    ("T6 dead holder recovered", t6_dead_holder_recovered),
+    ("T6 dead holder not taken over until expiry",
+     t6_dead_holder_not_taken_over_until_expiry),
 )
 
 
