@@ -57,6 +57,9 @@ def _build_plan(seq_id, count, tag, lifecycle=None):
 def make_document(post_sale_trigger="tag_added", lifecycle=AUTHORED_LIFECYCLE):
     plan = {
         "schema_version": "1.0.0", "launch_id": "bf-test",
+        "offer": {"name": "Synthetic", "price_usd": 1, "currency": "USD", "payment_plans": False},
+        "a2p_ready": False,
+        "conversation_ai": {"requested": False, "mode": "none"},
         "launch_calendar": {"launch_at": "2026-11-27T12:00:00-05:00",
                             "doors_open_at": "2026-11-27T09:00:00-05:00",
                             "doors_close_at": "2026-12-01T23:59:00-05:00",
@@ -69,9 +72,9 @@ def make_document(post_sale_trigger="tag_added", lifecycle=AUTHORED_LIFECYCLE):
              "email_count": 1, "draft_only": True, "waits_for": []}],
         "text_sets": [],
         "automations": [
-            {"id": "auto_pre_launch", "family": "pre_launch", "template": "new", "build_rail": "skill44_engine",
+            {"id": "auto_pre_launch", "family": "pre_launch", "template": "launch-a/launch-a-prelaunch-window", "build_rail": "skill44_engine",
              "draft_only": True, "trigger": {"type": "tag_added"}, "waits_for": ["email_pre_launch"]},
-            {"id": "auto_post_sale", "family": "post_sale", "template": "new", "build_rail": "skill44_engine",
+            {"id": "auto_post_sale", "family": "post_sale", "template": "launch-b/launch-post-sale-purchase", "build_rail": "skill44_engine",
              "draft_only": True, "trigger": {"type": post_sale_trigger}, "waits_for": ["email_welcome_access"]}],
     }
     parsed = plan_reader.read_launch_plan(plan)
@@ -102,8 +105,12 @@ class TemplateResolution(unittest.TestCase):
         self.assertTrue({"sms", "if_else", "workflow_goal"} <= types)
 
     def test_unbuildable_and_unknown_templates_are_named_blocks(self):
-        _spec, _key, reason = lsc.resolve_template({"family": "abandoned_checkout", "template": "new"})
-        self.assertTrue(reason.startswith("template_unbuildable:"))
+        # abandoned_checkout is a buildable family now; unbuildable is a family whose
+        # template key is absent from the manifest (here: a manifest without it).
+        manifest = {"launch-a/launch-a-prelaunch-window": {"path": "launch-a/prelaunch-window.json"}}
+        _spec, _key, reason = lsc.resolve_template(
+            {"family": "abandoned_checkout", "template": "new"}, manifest=manifest)
+        self.assertEqual(reason, "template_unbuildable:launch-b/abandoned-checkout-recovery")
         _spec, _key, reason = lsc.resolve_template({"family": "pre_launch", "template": "no-such-template"})
         self.assertEqual(reason, "template_unresolved:no-such-template")
 

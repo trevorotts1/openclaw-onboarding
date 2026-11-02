@@ -79,12 +79,14 @@ def ready_document(tmp_path):
         "schema_version": "1.0.0", "launch_id": "u44-05",
         "offer": {"name": "Synthetic", "price_usd": 1, "currency": "USD", "payment_plans": False},
         "launch_calendar": dict(CALENDAR),
+        "a2p_ready": False,
+        "conversation_ai": {"requested": False, "mode": "none"},
         "pages": [{"id": "page_landing", "kind": "landing", "url": "https://example.test",
                    "waits_for": []}],
         "email_sequences": [{"id": "email_pre_launch", "kind": "pre_launch", "provider": "skill50",
                              "email_count": 2, "draft_only": True, "waits_for": []}],
         "text_sets": [],
-        "automations": [{"id": "auto_pre_launch", "family": "pre_launch", "template": "new",
+        "automations": [{"id": "auto_pre_launch", "family": "pre_launch", "template": "launch-a/launch-a-prelaunch-window",
                          "build_rail": "skill44_engine", "draft_only": True,
                          "trigger": {"type": "tag_added"},
                          "waits_for": ["email_pre_launch", "page_landing"]}],
@@ -295,50 +297,141 @@ def test_creates_are_gated_by_the_safety_gate(monkeypatch, args):
 # ---- row 3: payments through shared-utils/ghl/products_prices.py ---------------
 
 class Catalog:
-    """Fake GHL products API behind ghl_client."""
+    """Stateful fake GHL products API behind ghl_client (read-first routes included)."""
 
     def __init__(self, price_amount=49.0):
         self.calls = []
         self.price_amount = price_amount
+        self.products, self.prices = [], []
 
     def post(self, path, data=None, version=None):
         self.calls.append(("POST", path, data))
         if path == "/products/":
-            return {"_id": "P1", "name": data["name"], "productType": data["productType"],
-                    "locationId": data["locationId"]}
+            created = {"_id": "P1", "name": data["name"], "productType": data["productType"],
+                       "locationId": data["locationId"]}
+            self.products.append(created)
+            return {"_id": "P1"}
+        created = {**data, "_id": "PR1", "product": "P1", "amount": self.price_amount}
+        self.prices.append(created)
         return {"_id": "PR1"}
 
     def get(self, path, params=None, version=None):
         self.calls.append(("GET", path, params))
-        if path == "/products/P1":
-            return {"_id": "P1", "name": "Seat", "productType": "SERVICE", "locationId": LOC}
-        return {"_id": "PR1", "product": "P1", "amount": self.price_amount, "currency": "USD",
-                "type": "one_time"}
+        route = path.split("?")[0]
+        if route == "/products/":
+            return {"products": list(self.products), "total": len(self.products)}
+        if route == "/products/P1/price":
+            return {"prices": list(self.prices), "total": len(self.prices)}
+        if route == "/products/P1":
+            return dict(self.products[0])
+        return dict(self.prices[0])  # /products/P1/price/PR1
+
+    def routes(self):
+        return [(c[0], c[1].split("?")[0]) for c in self.calls]
 
 
-def test_payments_create_product_and_price_route_through_the_shared_module():
+# TEST-ONLY approval: the CLI's verify hook is faked with the shape approval_record.verify
+# returns; no approval authority is contacted and nothing here is a real approval.
+APPROVAL = ["--approval-id", "TEST-ONLY-APPROVAL", "--plan-sha256", "0" * 64]
+
+
+@pytest.fixture
+def approved(monkeypatch):
+    monkeypatch.setattr(cli_mod, "_verify_automation_write", lambda *a: {
+        "ok": True, "approval_id": "TEST-ONLY-APPROVAL", "kind": "automation_write",
+        "client_identity": "test-only-client", "expires_at": "2999-01-01T00:00:00+00:00",
+        "authority": "local-test-record", "test_only": True})
+
+
+def _patched(catalog):
+    return patch.object(cli_mod.api, "post", catalog.post), patch.object(cli_mod.api, "get", catalog.get)
+
+
+def test_payments_create_product_and_price_route_through_the_shared_module(approved):
     shared = cli_mod._products_prices()
     assert Path(shared.__file__).resolve() == (REPO / "shared-utils" / "ghl" / "products_prices.py").resolve()
     catalog = Catalog()
-    with patch.object(cli_mod.api, "post", catalog.post), patch.object(cli_mod.api, "get", catalog.get):
-        product = run("payments", "create-product", "--name", "Seat")
+    post, get = _patched(catalog)
+    with post, get:
+        product = run("payments", "create-product", "--name", "Seat", *APPROVAL)
         price = run("payments", "create-price", "--product-id", "P1", "--name", "Seat",
-                    "--amount", "4900")
+                    "--amount", "4900", *APPROVAL)
     assert product.exit_code == 0 and price.exit_code == 0, product.output + price.output
-    assert [c[:2] for c in catalog.calls] == [
-        ("POST", "/products/"), ("GET", "/products/P1"),
-        ("POST", "/products/P1/price"), ("GET", "/products/P1/price/PR1")]
+    assert catalog.routes() == [
+        ("GET", "/products/"), ("POST", "/products/"), ("GET", "/products/P1"),
+        ("GET", "/products/P1/price"), ("POST", "/products/P1/price"),
+        ("GET", "/products/P1/price/PR1")]
     # the shared module's documented API amount (dollars), not the old raw cents
-    assert catalog.calls[2][2]["amount"] == 49.0
+    assert catalog.calls[4][2]["amount"] == 49.0
     assert json.loads(price.output)["amount_minor"] == 4900
     assert json.loads(product.output)["readback"] == "verified"
 
 
-def test_payments_price_readback_mismatch_fails():
-    catalog = Catalog(price_amount=4900.0)
-    with patch.object(cli_mod.api, "post", catalog.post), patch.object(cli_mod.api, "get", catalog.get):
+def test_payments_price_body_is_the_shared_builder_body(approved):
+    pp = cli_mod._products_prices()
+    catalog = Catalog()
+    post, get = _patched(catalog)
+    with post, get:
         result = run("payments", "create-price", "--product-id", "P1", "--name", "Seat",
-                     "--amount", "4900")
+                     "--amount", "4900", *APPROVAL)
+    assert result.exit_code == 0, result.output
+    post_body = next(c[2] for c in catalog.calls if c[0] == "POST")
+    assert post_body == pp.price_request_body(pp.PriceSpec("Seat", LOC, "one_time", "USD", 4900))
+    assert post_body["amount"] == 49.0
+
+
+def test_payments_create_product_twice_creates_once(approved):
+    catalog = Catalog()
+    post, get = _patched(catalog)
+    with post, get:
+        first = run("payments", "create-product", "--name", "Seat", *APPROVAL)
+        second = run("payments", "create-product", "--name", "Seat", *APPROVAL)
+    assert first.exit_code == 0 and second.exit_code == 0, first.output + second.output
+    assert [c for c in catalog.routes() if c == ("POST", "/products/")] == [("POST", "/products/")]
+    assert json.loads(second.output)["readback"] == "reconciled"
+
+
+def test_payments_create_refused_without_approval_id_posts_nothing():
+    catalog = Catalog()
+    post, get = _patched(catalog)
+    with post, get:
+        product = run("payments", "create-product", "--name", "Seat")
+        price = run("payments", "create-price", "--product-id", "P1", "--name", "Seat",
+                    "--amount", "4900")
+    assert product.exit_code != 0 and price.exit_code != 0
+    assert [c for c in catalog.calls if c[0] == "POST"] == []
+
+
+def test_payments_create_product_help_carries_no_zhc_hint():
+    assert "ZHC" not in run("payments", "create-product", "--help").output
+
+
+def test_payments_recurring_price_sends_interval_count_and_trial(approved):
+    catalog = Catalog()
+    post, get = _patched(catalog)
+    with post, get:
+        result = run("payments", "create-price", "--product-id", "P1", "--name", "Seat",
+                     "--amount", "4900", "--type", "recurring", "--interval", "month",
+                     "--interval-count", "3", "--trial-days", "7", *APPROVAL)
+    assert result.exit_code == 0, result.output
+    body = next(c[2] for c in catalog.calls if c[0] == "POST")
+    assert body["recurring"] == {"interval": "month", "intervalCount": 3} and body["trialPeriod"] == 7
+
+
+def test_payments_price_readback_mismatch_fails(approved):
+    catalog = Catalog()
+    post, get = _patched(catalog)
+    real_post = catalog.post
+
+    def wrong_amount(path, data=None, version=None):
+        out = real_post(path, data, version)
+        if path.endswith("/price"):
+            catalog.prices[0]["amount"] = 4900.0  # the old raw-cents bug read back
+        return out
+
+    with patch.object(cli_mod.api, "post", wrong_amount), get:
+        result = run("payments", "create-price", "--product-id", "P1", "--name", "Seat",
+                     "--amount", "4900", *APPROVAL)
     assert result.exit_code == 1
 
 

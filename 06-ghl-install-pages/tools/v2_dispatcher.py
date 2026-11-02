@@ -66,8 +66,10 @@ except Exception:  # noqa: BLE001
 
 # FAB-QC library-aware build-quality gate (shared scorer). Optional/best-effort: when the
 # build evidence carries a match-decision receipt + fab-artifact, the dispatcher refuses to
-# mark `verified` below 8.5. When that evidence is ABSENT (advisory not wired for this build),
-# it is a NO-OP — so builds/tests that don't emit it are completely unaffected.
+# mark `verified` below 8.5. For a FUNNEL job (and any production-path job outside the
+# survey/quiz/form/pipeline/community exemptions) the overlay is MANDATORY (S06-16): the
+# evidence being absent FAILS the dispatch ("FAB-QC GATE did not run"). For other test-path
+# jobs absent evidence is still a NO-OP.
 try:
     _SHARED_UTILS = os.path.normpath(os.path.join(_TOOLS_DIR, "..", "..", "shared-utils"))
     if _SHARED_UTILS not in sys.path:
@@ -212,6 +214,73 @@ def _fab_overlay(evidence_root: str) -> dict:
                 "lowest_dimension": res["lowest_dimension"], "hard_misses": res["hard_misses"]}
     except Exception as exc:  # noqa: BLE001 — overlay must not crash the dispatcher
         return {"ran": False, "reason": f"fab_qc error: {type(exc).__name__}: {exc}"}
+
+# Job types the FAB-QC overlay does not apply to on the production path (S06-16).
+_FAB_EXEMPT_JOB_TYPES = frozenset({"survey", "quiz", "form", "pipeline", "community"})
+
+
+def _load_approval_record():
+    """Load shared-utils/signature_launch_contract/approval_record.py by path
+    (stdlib only). Raises on any failure; callers fail closed."""
+    import importlib.util
+    path = os.path.join(os.path.dirname(_TOOLS_DIR), "..", "shared-utils",
+                        "signature_launch_contract", "approval_record.py")
+    spec = importlib.util.spec_from_file_location("_s06_approval_record", os.path.normpath(path))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _verify_copy_approval(task: dict, copy_path: str) -> bool:
+    """S06-15: True only when ``task['copy_approval_id']`` verifies, in the approval
+    store, as a ``copy`` approval bound to this copy.md's sha256 and the task's
+    location. Fail closed: no id, no approval_record, unreachable store or any
+    refusal -> False (the task stays WAITING). A self-written ``status: APPROVED``
+    header alone never clears the P2 dependency."""
+    try:
+        import hashlib
+        approval_id = task.get("copy_approval_id")
+        if not approval_id:
+            return False
+        with open(copy_path, "rb") as f:
+            plan_hash = hashlib.sha256(f.read()).hexdigest()
+        res = _load_approval_record().verify(
+            approval_id, kind="copy", plan_hash=plan_hash,
+            scope=str(task.get("location_id") or ""))
+        return bool(isinstance(res, dict) and res.get("ok") is True)
+    except Exception:  # noqa: BLE001 - ImportError / ApprovalUnavailable / refusal
+        return False
+
+
+def _run_capability_probe(capability_path: str) -> dict:
+    """S06-15: run the capability probe IN-PROCESS. ``task['reprobe']`` is only
+    honoured when this ran and reported no blockers."""
+    try:
+        import capability_probe as _cp
+        result = _cp.run_probe()
+        return {"ran": True, "blockers": list((result or {}).get("blockers") or [])}
+    except Exception as exc:  # noqa: BLE001
+        return {"ran": False, "reason": f"{type(exc).__name__}: {exc}"}
+
+
+def _rest_identity_readback(task: dict) -> dict:
+    """S06-15: read the task location's identity back through the location PIT
+    (GET /locations/<id>). Returns ``{locationId, companyId}``, or ``{}`` on any
+    failure (which the gate treats as NOT confirmed). Never logs the token."""
+    try:
+        import urllib.request
+        import ghl_auth
+        pit, _ = ghl_auth.resolve_location_pit()
+        req = urllib.request.Request(
+            "https://services.leadconnectorhq.com/locations/%s" % task["location_id"],
+            headers={"Authorization": "Bearer " + pit, "Version": "2021-07-28",
+                     "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            loc = json.loads(resp.read().decode("utf-8"))["location"]
+        return {"locationId": loc["id"], "companyId": loc.get("companyId")}
+    except Exception:  # noqa: BLE001
+        return {}
+
 
 # ── STEP 0 — template-first funnel matcher (env-gated; never blocks a build) ─
 # Import is lazy / optional so unit tests that do not set GHL_FUNNEL_CATALOG (or
@@ -373,12 +442,14 @@ def _approved_copy_exists(task: dict, evidence_root: str) -> bool:
 
     Checks an explicit ``task['copy_md_path']`` first, then the conventional
     locations under the run dir. A copy.md counts only when its header declares
-    status APPROVED — a PENDING-QC / REVISED-PENDING-QC doc does NOT satisfy the
-    dependency (mirrors v2-autonomous-build-sop.md P2 step 1)."""
+    status APPROVED (a PENDING-QC / REVISED-PENDING-QC doc does NOT satisfy the
+    dependency; mirrors v2-autonomous-build-sop.md P2 step 1) AND
+    ``_verify_copy_approval`` confirms it in the approval store (S06-15)."""
     # Explicitly-provided inline copy short-circuits the dependency.
     for k in ("copy_md_path", "approved_copy_path"):
         p = task.get(k)
-        if isinstance(p, str) and p.strip() and os.path.isfile(p) and _copy_md_is_approved(p):
+        if isinstance(p, str) and p.strip() and os.path.isfile(p) \
+                and _copy_md_is_approved(p) and _verify_copy_approval(task, p):
             return True
     candidates = [
         os.path.join(evidence_root, "copy.md"),
@@ -386,7 +457,8 @@ def _approved_copy_exists(task: dict, evidence_root: str) -> bool:
         os.path.join(evidence_root, "working", "copy", "copy.md"),
         os.path.join(evidence_root, "routing", "copy.md"),
     ]
-    return any(os.path.isfile(c) and _copy_md_is_approved(c) for c in candidates)
+    return any(os.path.isfile(c) and _copy_md_is_approved(c) and _verify_copy_approval(task, c)
+               for c in candidates)
 
 
 def _copy_md_is_approved(path: str) -> bool:
@@ -1065,6 +1137,7 @@ def dispatch_one(
     step0_matcher: "Callable[[dict, str], dict] | None" = None,
     capability_path: str | None = None,
     capability_max_age_h: float = DEFAULT_CAPABILITY_MAX_AGE_H,
+    identity_reader: "Callable[[dict], dict] | None" = None,
 ) -> DispatchResult:
     """Dispatch and run ONE department build task, bounded.
 
@@ -1079,8 +1152,12 @@ def dispatch_one(
             any other type → FAILED). The
             dept agent supplies the real builder (seed/activate + REST autosave +
             images + ecosystem per the SOP). It MUST return a dict with at least
-            ``{"pages": [...], "location_gate_ok": bool, "duration_s": float}``
-            and may write its own ledgers/logs under ``evidence_root`` as it goes.
+            ``{"pages": [...], "location_gate_ok": bool, "duration_s": float,
+            "identity_readback": {"locationId": ...}}``. ``location_gate_ok`` is only a
+            claim: the dispatcher computes the location gate itself from a token
+            read-back (``identity_reader``; ``_rest_identity_readback`` on the
+            production path) and never takes the builder's bool as the verdict
+            there. The builder may write its own ledgers/logs under ``evidence_root`` as it goes.
             A builder that raises is caught and the task is marked FAILED with the
             partial evidence intact.
         verifier: INJECTED canonical verifier; defaults to ``ghl_verify.verify_all``.
@@ -1113,9 +1190,13 @@ def dispatch_one(
             than ``capability_max_age_h`` (mtime-based) holds the task in
             ``STATE_WAITING`` BEFORE any intake/builder runs (never a build on
             a stale lane classification). ``task['reprobe']`` truthy skips the
-            freshness refusal (the caller has just re-run the probe).
+            freshness refusal ONLY when ``_run_capability_probe`` ran in-process
+            with no blockers; a flag alone never attests (S06-15).
         capability_max_age_h: max receipt age in hours (default
             ``DEFAULT_CAPABILITY_MAX_AGE_H`` = 24; mtime-based, wall-clock).
+        identity_reader: OPTIONAL ``(task) -> {"locationId", "companyId"?}`` token
+            read-back for the S06-15 location gate. Defaults to
+            ``_rest_identity_readback`` on the production path.
 
     Returns:
         ``DispatchResult`` (truthy only on verified + overall_pass True).
@@ -1152,7 +1233,14 @@ def dispatch_one(
     # never blocks ensure); THIS is the single planned blocking point, placed
     # BEFORE intake/builder so a build never starts on a stale lane
     # classification. A fresh receipt (or task['reprobe']) passes through.
-    _cap_task_flag = task.get("reprobe")
+    _cap_task_flag = False
+    _cap_reprobe: dict | None = None
+    if task.get("reprobe"):
+        _probe = _run_capability_probe(capability_path or DEFAULT_CAPABILITY_PATH)
+        _cap_task_flag = bool(_probe.get("ran")) and not _probe.get("blockers")
+        if not _cap_task_flag:
+            _cap_reprobe = {"requested": True, "ran": _probe.get("ran"),
+                            "blockers": len(_probe.get("blockers") or [])}
     if not _cap_task_flag:
         if not capability_path:
             capability_path = DEFAULT_CAPABILITY_PATH
@@ -1177,6 +1265,8 @@ def dispatch_one(
                                "age_hours": _cap_age_h,
                                "max_age_hours": capability_max_age_h},
             }
+            if _cap_reprobe is not None:
+                rec["capability"]["reprobe"] = _cap_reprobe
             rp = _rec_write(rec)
             return DispatchResult(task_id, STATE_WAITING, rec["reason"],
                                   evidence_root=evidence_root, record_path=rp)
@@ -1345,10 +1435,33 @@ def dispatch_one(
                               evidence_root=evidence_root, record_path=rp)
 
     # ── sub-account hard gate must have passed in the build ───────────────────
-    if not build.get("location_gate_ok", False):
+    # S06-15: the dispatcher computes this gate from a token read-back; the
+    # builder's bool is the verdict ONLY on the test path with no read-back.
+    _lg_reader = identity_reader or (_rest_identity_readback if _production_path else None)
+    _lg_readback = _lg_reader(task) if _lg_reader else build.get("identity_readback")
+    if _lg_readback is None and not _production_path:
+        _lg_ok, _lg_source = bool(build.get("location_gate_ok", False)), "builder_claim(test-path)"
+        _lg_reason = ("sub-account location gate did NOT pass in the build "
+                      "(NO-COMINGLING hard stop)")
+    else:
+        _lg_source = "dispatcher_readback"
+        _lg_reason = ("sub-account location gate: token read-back did not confirm the "
+                      "task location (NO-COMINGLING hard stop)")
+        try:
+            import ghl_auth
+            if not task.get("location_id"):
+                raise ValueError("task has no location_id")
+            ghl_auth.validate_location_identity(
+                _lg_readback, expected_location_id=task.get("location_id"),
+                expected_company_id=task.get("company_id"))
+            _lg_ok = True
+        except Exception:  # noqa: BLE001 - ImportError / AuthBridgeError / no location
+            _lg_ok = False
+    rec["location_gate"] = {"source": _lg_source,
+                            "builder_claim": build.get("location_gate_ok"), "ok": _lg_ok}
+    if not _lg_ok:
         rec.update({"state": STATE_FAILED, "build_duration_s": duration,
-                    "reason": "sub-account location gate did NOT pass in the build "
-                              "(NO-COMINGLING hard stop)"})
+                    "reason": _lg_reason})
         rp = _rec_write(rec)
         return DispatchResult(task_id, STATE_FAILED, rec["reason"],
                               evidence_root=evidence_root, record_path=rp)
@@ -1469,11 +1582,21 @@ def dispatch_one(
     _fab_emit = _emit_fab_artifact(evidence_root, task, build)
 
     # ── FAB-QC BUILD-QUALITY GATE (>= 8.5, library-aware) ─────────────────────
-    # SUPERSET overlay on top of the canonical ghl_verify floor. Binding ONLY when the
-    # build emitted FAB evidence (match-decision receipt + fab-artifact); otherwise a
-    # no-op. A definitive sub-8.5 verdict downgrades the task to FAILED — `verified`
+    # SUPERSET overlay on top of the canonical ghl_verify floor. MANDATORY for funnel
+    # jobs (and the production path, minus the exemptions): no FAB evidence = FAILED.
+    # For other test-path jobs it stays a no-op when absent. A definitive sub-8.5 verdict downgrades the task to FAILED — `verified`
     # requires BOTH ghl_verify overall_pass AND FAB-QC >= 8.5.
     _fab = _fab_overlay(evidence_root)
+    _job_type = str(task.get("job_type") or "").lower()
+    _fab_mandatory = _job_type == "funnel" or (
+        _production_path and _job_type not in _FAB_EXEMPT_JOB_TYPES)
+    if _fab_mandatory and not _fab.get("ran"):
+        rec.update({"state": STATE_FAILED, "build_duration_s": duration, "fab_qc": _fab,
+                    "reason": f"FAB-QC GATE did not run ({_fab.get('reason')}) - the >= 8.5 "
+                              "overlay is mandatory for funnel builds. Not done."})
+        rp = _rec_write(rec)
+        return DispatchResult(task_id, STATE_FAILED, rec["reason"],
+                              evidence_root=evidence_root, record_path=rp)
     if _fab.get("ran") and not _fab.get("passed"):
         rec.update({"state": STATE_FAILED, "build_duration_s": duration,
                     "fab_qc": _fab, "fab_artifact": _fab_emit,
@@ -1621,7 +1744,8 @@ def _selftest() -> int:
     ok = True
 
     def _stub_builder(task, root, *, duration=1.0, gate=True):
-        return {"pages": ["home"], "location_gate_ok": gate, "duration_s": duration}
+        return {"pages": ["home"], "location_gate_ok": gate, "duration_s": duration,
+                "identity_readback": {"locationId": task["location_id"]}}
 
     def _stub_verifier(root, pages, **kw):
         return {"overall_pass": True, "passed": len(pages), "total": len(pages)}

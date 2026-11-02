@@ -24,7 +24,29 @@ ABANDONED = FIXTURES / "build-plan-abandoned-checkout.json"
 WELCOME = FIXTURES / "build-plan-welcome-access.json"
 
 
-def run_reader(build_plans, plan_path=PLAN_FIXTURE, sequence_map=None):
+# Buildable template per family (Skill 49 TEMPLATE_BY_FAMILY; keys of _matcher/buildable-templates.json).
+FAMILY_TEMPLATE = {
+    "pre_launch": "launch-a/launch-a-prelaunch-window",
+    "post_sale": "launch-b/launch-post-sale-purchase",
+    "abandoned_checkout": "launch-b/abandoned-checkout-recovery",
+}
+
+
+def buildable_plan(source=PLAN_FIXTURE):
+    """A temp copy of the contract fixture whose automation templates are manifest keys
+    (its own ids predate the buildable manifest; the reader refuses those)."""
+    plan = json.loads(Path(source).read_text())
+    for item in plan["automations"]:
+        item["template"] = FAMILY_TEMPLATE[item["family"]]
+    path = Path(tempfile.mkdtemp()) / "plan.json"
+    path.write_text(json.dumps(plan))
+    return path
+
+
+BUILDABLE_PLAN = buildable_plan()
+
+
+def run_reader(build_plans, plan_path=BUILDABLE_PLAN, sequence_map=None):
     out = Path(tempfile.mkdtemp()) / "automation-builds.json"
     argv = ["--launch-plan", str(plan_path), "--out", str(out)]
     for path in build_plans:
@@ -77,7 +99,7 @@ class PlanReaderTests(unittest.TestCase):
                                 for reason in build["blocked_by"]), build["blocked_by"])
 
     def test_complete_and_count_matching_builds_are_ready(self):
-        plan = json.loads(PLAN_FIXTURE.read_text())
+        plan = json.loads(BUILDABLE_PLAN.read_text())
         counts = {seq["id"]: seq["email_count"] for seq in plan["email_sequences"]}
         temp = Path(tempfile.mkdtemp())
         paths = []
@@ -148,7 +170,7 @@ class PlanReaderTests(unittest.TestCase):
 
     def test_cycle_is_refused(self):
         temp = Path(tempfile.mkdtemp())
-        plan = json.loads(PLAN_FIXTURE.read_text())
+        plan = json.loads(BUILDABLE_PLAN.read_text())
         plan["automations"][0]["waits_for"] = ["auto_post_sale"]
         plan["automations"][1]["waits_for"] = ["auto_pre_launch"]
         cyclic = temp / "cyclic.json"
