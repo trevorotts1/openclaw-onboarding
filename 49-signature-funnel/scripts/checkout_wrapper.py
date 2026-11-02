@@ -171,6 +171,20 @@ def card_field_hits(text: str) -> list:
     return hits
 
 
+# legacy_downsell_images.py does `from checkout_wrapper import CARD_FIELDS` and calls CARD_FIELDS.search(text).group(0).
+# Keep that export: the base word list, plus every CHK-14 field construct card_field_hits finds.
+_LEGACY_CARD_WORDS = re.compile(r"card number|credit card|cvc|cvv|security code|expiry|expiration date", re.I)
+
+
+class _CardFields:
+    def search(self, text: str):
+        hits = card_field_hits(text)
+        return _LEGACY_CARD_WORDS.search(text) or (re.match(r"(?s).+", hits[0]) if hits else None)
+
+
+CARD_FIELDS = _CardFields()
+
+
 def scan_html(run_dir: Path) -> None:
     """Fail closed on a card field in any HTML the run produced (or Skill 06 installs from it)."""
     for p in sorted(Path(run_dir).rglob("*")):

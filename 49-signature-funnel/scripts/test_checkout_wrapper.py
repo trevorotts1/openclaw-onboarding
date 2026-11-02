@@ -282,5 +282,17 @@ class TestAdapterCommand(CheckoutWrapperCase):
         self.assertFalse(self.result_path.exists())
 
 
+class TestLegacyCardFieldsExport(unittest.TestCase):
+    """legacy_downsell_images.py imports CARD_FIELDS from this module; removing it broke that tool at import."""
+
+    def test_legacy_tool_imports(self):
+        import legacy_downsell_images  # noqa: F401
+
+    def test_card_fields_search_flags_fields_only(self):
+        for text in ("Card number field.", 'autocomplete="cc-exp"', "Expiry\ndate", "MM/YY"):
+            self.assertIsNotNone(cw.CARD_FIELDS.search(text), text)
+        self.assertIsNone(cw.CARD_FIELDS.search("Thank you for your order."))
+
+
 if __name__ == "__main__":
     unittest.main()
