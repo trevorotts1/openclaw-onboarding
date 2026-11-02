@@ -4,14 +4,17 @@
 """
 
 import copy
+import os
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SKILL_DIR / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from purchase_event_adapter import SNAPSHOT_KEY_ENV  # noqa: E402
 from thank_you_resolver import ResolverError, resolve_order_view  # noqa: E402
 from test_event_adapter import (  # noqa: E402
     FakeS44Store, ORDER_1, build, live_event, make_event)
@@ -19,6 +22,13 @@ from test_thank_you import IDENTITY, make_fulfillment, make_snapshot  # noqa: E4
 
 
 class ResolverIntegrityTest(unittest.TestCase):
+    def setUp(self):
+        # F-harden-02: live snapshots are signed and verified with a key.
+        patcher = mock.patch.dict(
+            os.environ, {SNAPSHOT_KEY_ENV: "fixture-hmac-key-for-tests-only"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def _resolve(self, snapshot):
         return resolve_order_view(snapshot, make_fulfillment(snapshot),
                                   expected_identity=IDENTITY)
