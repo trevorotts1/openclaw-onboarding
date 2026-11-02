@@ -218,21 +218,36 @@ def _read_adoption() -> Tuple[Dict[str, Dict[str, Any]], str]:
     return decisions, "loaded"
 
 
-_EVENTS_FILE = (Path(__file__).resolve().parent.parent.parent
-                / "shared-utils" / "signature_launch" / "launch_events.py")
+def _find_events_file() -> Optional[Path]:
+    """shared-utils/signature_launch/launch_events.py, found by walking up from
+    this file: the repo checkout and an installed skills tree both resolve."""
+    for d in Path(__file__).resolve().parents:
+        f = d / "shared-utils" / "signature_launch" / "launch_events.py"
+        if f.is_file():
+            return f
+    return None
+
+
+_EVENTS_FILE = _find_events_file()
+_EVENTS_CACHE: Dict[str, Any] = {}
 
 
 def _load_launch_events():
-    """The shared launch-event emitter, or None on an install without it."""
-    import importlib.util
-    try:
-        spec = importlib.util.spec_from_file_location(
-            "signature_launch_events", _EVENTS_FILE)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod
-    except Exception:  # noqa: BLE001 - visibility is never a gate
-        return None
+    """The shared launch-event emitter (loaded once), or None on an install
+    without it."""
+    if "mod" not in _EVENTS_CACHE:
+        mod = None
+        if _EVENTS_FILE is not None:
+            import importlib.util
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    "signature_launch_events", _EVENTS_FILE)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+            except Exception:  # noqa: BLE001 - visibility is never a gate
+                mod = None
+        _EVENTS_CACHE["mod"] = mod
+    return _EVENTS_CACHE["mod"]
 
 
 def _emit(launch_id: str, event: Any) -> None:
@@ -242,8 +257,20 @@ def _emit(launch_id: str, event: Any) -> None:
         mod = _load_launch_events()
         if mod is not None:
             mod.emit(49, launch_id, event)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        print(f"[launch_events] skipped: {exc}", file=sys.stderr)
+
+
+def _board(name: str, *args: Any, **kw: Any) -> Any:
+    """Command Center board card helpers (mc_board.launch_card / block_run /
+    complete_run). Absent on a tree without them; never raises."""
+    try:
+        import mc_board
+        fn = getattr(mc_board, name, None)
+        return fn(*args, **kw) if fn else None
+    except Exception as exc:  # noqa: BLE001
+        print(f"[launch_events] board {name} skipped: {exc}", file=sys.stderr)
+        return None
 
 
 def _canonical(obj: Any) -> bytes:
@@ -440,8 +467,10 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
         raise DispatchError("re-compiled route graph hash does not match the "
                             "record's route_graph_hash — the approved plan and "
                             "its route disagree; re-plan, never dispatch")
-    paid = bool(executor) and not simulated and bool(image_inputs) \
-        and image_inputs.get("image_provider") == "kie"
+    # IMG-03: a paid kie launch that is not test_only needs paid_asset_budget,
+    # whatever the write target is.
+    paid = bool(image_inputs) and image_inputs.get("image_provider") == "kie" \
+        and launch.get("test_only") is not True
     _check_scoped_approvals(launch, scoped_approvals or [], allowed_write_target,
                             client_identity_ref=client_identity_ref,
                             worker_identity_ref=worker_identity_ref,
@@ -488,8 +517,10 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
                      "lane_plan": pset.lane_plan(page_set)},
         "results": [],
     }
+    task_id = None
     if out_dir:
-        _emit(launch["launch_id"], "dispatch_requests")
+        _emit(launch["launch_id"], {"event_type": "run_initialized"})
+        task_id = _board("launch_card", out_dir, launch["launch_id"])
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "route-graph.json").write_bytes(clr.serialize_graph(graph))
         for r in requests:
@@ -503,6 +534,12 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
         manifest["swarm"] = run["swarm"]
         failed = [o for o in run["outcomes"] if o["status"] != "ok"]
         for o in run["outcomes"]:
+            if out_dir:
+                _emit(launch["launch_id"],
+                      {"event_type": "item_closed", "stage": "dispatch",
+                       "item": o["lane"]} if o["status"] == "ok" else
+                      {"event_type": "item_blocked", "stage": "dispatch",
+                       "item": o["lane"], "failures": [str(o["error"])]})
             if o["status"] != "ok":
                 continue
             extra = o["lane"] not in PAGE_ROLES
@@ -520,18 +557,22 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
                 (out_dir / "dispatch-manifest.json").write_text(
                     json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
             reasons = [f"{o['lane']} {o['status']}: {o['error']}" for o in failed]
+            error = ("page(s) did not complete (every other page was still "
+                     "built): " + "; ".join(reasons))
             if out_dir:
                 _emit(launch["launch_id"], {
-                    "event_type": "stage_blocked", "stage": "page_execution",
+                    "event_type": "stage_blocked", "stage": "dispatch",
                     "failures": reasons})
-            raise DispatchError(
-                "page(s) did not complete (every other page was still built): "
-                + "; ".join(reasons))
+                if task_id:
+                    _board("block_run", out_dir, task_id, note=error)
+            raise DispatchError(error)
     if out_dir:
         (out_dir / "dispatch-manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         if executor:
-            _emit(launch["launch_id"], "page_execution")
+            _emit(launch["launch_id"], "dispatch")
+            if task_id:
+                _board("complete_run", out_dir, task_id)
     return manifest
 
 
