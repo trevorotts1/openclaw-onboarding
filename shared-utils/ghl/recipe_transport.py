@@ -763,11 +763,11 @@ def self_check() -> None:
 
     # 8. No verified route -> the W2A contract error: incomplete, never as done.
     try:
-        r.run_step(req(ci.OpClass.CREATE, resource="products", payload={}))
+        r.run_step(req(ci.OpClass.EDIT, resource="products", payload={}))
     except ci.UnsupportedOperation as exc:
         assert "incomplete" in str(exc)
     else:
-        raise AssertionError("products create must be refused (W2A: reported incomplete)")
+        raise AssertionError("products edit must be refused (W2A: reported incomplete)")
 
     # 9. Write contract demands readback; without a probe it is never claimed done.
     r, ex, log, sleeps = runner([AttemptResult("ok", http_status=201, body='{"id":"c1"}', data={"id": "c1"}, sent=True)])
