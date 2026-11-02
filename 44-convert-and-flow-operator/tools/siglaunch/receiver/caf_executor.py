@@ -39,7 +39,11 @@ caf-cli-surface-raw-2026-10-17.txt):
 
 Dependency prechecks do NOT invent a CLI surface: they consult the
 Phase-A provisioning ledger (the receipts Phase A wrote), which is the
-input contract the two-stage handoff defines.
+input contract the two-stage handoff defines. The ledger is a plain file
+anyone can write, so a product dependency is never satisfied by the ledger
+alone (S44-20): the recorded native product and price ids are re-read
+through the injected `product_reader` (a live GET) and must match, or the
+product is reported missing.
 
 Fail-closed throughout: unparseable output is a failure with the raw
 evidence preserved in errors, never a success.
@@ -55,6 +59,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 Runner = Callable[[list[str], int], tuple[int, str, str]]
+ProductReader = Callable[[str, str], Optional[dict]]
 
 
 def _subprocess_runner(argv: list[str], timeout: int) -> tuple[int, str, str]:
@@ -268,8 +273,13 @@ class CafExecutor:
                  provisioning_ledger: Optional[str] = None,
                  snapshot_dir: Optional[str] = None,
                  timeout: int = 300,
-                 qc_script: Optional[str] = None):
+                 qc_script: Optional[str] = None,
+                 product_reader: Optional[ProductReader] = None):
         self.caf_path = caf_path
+        # live GET of one native product: (location_id, native_product_id) ->
+        # {"native_product_id","location_id","name","prices":[{"native_price_id",
+        # "amount_minor","currency"}]} or None. None here = products unverifiable.
+        self.product_reader = product_reader
         self.runner = runner
         self.provisioning_ledger = provisioning_ledger
         self.snapshot_dir = snapshot_dir or tempfile.mkdtemp(
@@ -317,12 +327,48 @@ class CafExecutor:
             return [f"provisioning ledger unreadable: {e}"]
         provisioned = ledger.get(location_id, {})
         missing = []
-        for kind in ("tags", "fields", "products"):
+        for kind in ("tags", "fields"):
             have = set(provisioned.get(kind, []))
             for want in requires.get(kind, []):
                 if want not in have:
                     missing.append(f"{kind[:-1]}:{want}")
+        for want in requires.get("products", []):
+            why = self._product_unverified(location_id, want, provisioned,
+                                           requires)
+            if why:
+                missing.append(f"product:{want} ({why})")
         return missing
+
+    def _product_unverified(self, location_id: str, want: str,
+                            provisioned: dict, requires: dict) -> str:
+        """Why a required product cannot be trusted, or "" when a live read
+        of its native object matches (location, ids, name, price). Plan
+        terms in requires["product_terms"][want] outrank the ledger's."""
+        entry = (provisioned.get("product_native") or {}).get(want)
+        if not isinstance(entry, dict) or not entry.get("native_product_id") \
+                or not entry.get("native_price_id"):
+            return "no native product/price id in the ledger"
+        if self.product_reader is None:
+            return "no live product reader; the ledger alone is not trusted"
+        try:
+            live = self.product_reader(location_id,
+                                       entry["native_product_id"])
+        except Exception as e:  # unreadable = unverifiable = missing
+            return f"live read failed: {e}"
+        if not isinstance(live, dict) \
+                or live.get("native_product_id") != entry["native_product_id"] \
+                or live.get("location_id") != location_id \
+                or live.get("name") != entry.get("name"):
+            return "live product does not match the ledger"
+        terms = (requires.get("product_terms") or {}).get(want) or entry
+        price = next((p for p in live.get("prices") or []
+                      if p.get("native_price_id")
+                      == entry["native_price_id"]), None)
+        if price is None \
+                or price.get("amount_minor") != terms.get("amount_minor") \
+                or price.get("currency") != terms.get("currency"):
+            return "live price does not match"
+        return ""
 
     # ── AC20 snapshot-or-abort: capture current location state first ─────
     def snapshot(self, location_id: str, workflow_slug: str) -> bool:
