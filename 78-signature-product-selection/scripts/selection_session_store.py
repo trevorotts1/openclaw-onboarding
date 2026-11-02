@@ -21,6 +21,9 @@ semantics are inherited verbatim and only persistence changes:
   cannot be persisted must fail loudly at create time instead of silently
   falling back to memory and vanishing at restart.
 
+STATUS: no host creates or resumes a session through this store yet (PRD-05). It is built and
+unit-tested but NOT part of the skill's "done" claim (see runtime-manifest.json "done_claim").
+
 No contact identity, card data, or price authority is stored; the stored
 selection is the same validated selection.json intent the core accepts.
 """

@@ -25,6 +25,12 @@ The provider is stub (free, placeholders) unless the inputs say kie and --allow-
 Package image slots: one per approved offer, in card order, "PKG-n" (circle 1:1 for
 design style B, the first one circle for C, 4:3 rectangles for A).
 
+Before anything is drawn the page copy is gated (validate_selection_content.validate_manuscript on the
+manuscript the plan produces and on the authored copy.json, and validate_catalog with production on when
+the launch record or the page request says test_only is false). A claim such as "most popular" or "only 50
+left", a price that is not the approved price, a hidden exclusion, an empty Compare section or a test_only
+offer in a live run is refused here (exit 2, nothing drawn, so the chain writes no page result).
+
 Operator values come from one inputs file (--inputs), so dispatch binds a single path:
   {"route_graph", "brand_file", "brand_owner", "image_cap", "design_style" (A|B|C),
    and optionally "copy", "design_prose", "design_board_spec", "model", "stages",
@@ -48,7 +54,10 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+from emit_section_manuscript import build as build_manuscript  # noqa: E402
 from emit_section_manuscript import write as write_manuscript  # noqa: E402
+from selection_core import Violation  # noqa: E402
+from validate_selection_content import production_run, validate_manuscript  # noqa: E402
 
 FORM = "product-selection"
 DEFAULT_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup")
@@ -110,11 +119,22 @@ def main(argv=None):
             raise SystemExit(f"REFUSED: the plan outcome is {plan.get('outcome')!r}; no order page is built")
         stages = cfg.get("stages") or list(DEFAULT_STAGES)
         style, provider = cfg.get("design_style"), cfg.get("provider", "stub")
+        if provider != "stub" and not (a.allow_paid or a.preflight):
+            # fail before any lane draws or spends, not after (IMG-05): the executor refuses the paid route without it
+            raise SystemExit(f"REFUSED: provider {provider!r} is a paid route and needs --allow-paid on this command line")
         # 1. admit the page into the shared image service (the one pipeline for every page role).
         # The service checks the launch record's identity, status, brand and route hashes against the frozen
         # packet schema, which closes every object; Skill 78's own launch fields (buyer, outcome, FAQ and the
         # like) belong to the plan, so the service is given the record cut down to the packet's fields.
         launch = json.loads(a.launch_record.read_text(encoding="utf-8"))
+        # 1a. the copy gate: what the buyer would read, checked before a single picture is drawn
+        authored = json.loads(Path(cfg["copy"]).read_text(encoding="utf-8")) if cfg.get("copy") else None
+        request = json.loads(a.request.read_text(encoding="utf-8"))
+        try:
+            validate_manuscript(build_manuscript(plan, authored)[0], launch,
+                                production=production_run(launch, request), authored=authored)
+        except Violation as exc:
+            raise SystemExit(f"REFUSED: [{exc.code}] {exc.message}")
         schema = json.loads((a.skill71_root / "references" / "launch.schema.json").read_text(encoding="utf-8"))
         view = conform(launch, schema)
         run_dir.mkdir(parents=True, exist_ok=True)
