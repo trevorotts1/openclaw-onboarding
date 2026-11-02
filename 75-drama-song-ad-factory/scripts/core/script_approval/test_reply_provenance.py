@@ -175,7 +175,9 @@ class ReplyProvenanceTest(unittest.TestCase):
         before = run_hashes(self.run)
         proof = production_process._script_proof(self.run, self.run.name)
         self.assertTrue(proof["ok"], proof)
-        self.assertIsNone(approval.check_script_approval(approval.record_for(self.run), self.doc["lyrics"]))
+        self.assertIsNone(approval.check_script_approval(
+            approval.record_for(self.run), self.doc["lyrics"],
+            approval.script_sha(self.doc["title"], self.doc["story"], self.doc["sheet"])))
         self.assertEqual(run_hashes(self.run), before)
 
     def test_existing_contextless_decision_pauses_without_rewriting_approval_or_script(self):
