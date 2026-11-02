@@ -22,7 +22,8 @@ import inspect
 import json
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
+from urllib.parse import urlsplit
 
 import sys
 
@@ -47,7 +48,9 @@ class BridgeError(Exception):
         self.detail = detail
 
 
-def _offer(normalized: Dict[str, Any], offer: Dict[str, Any], by_role: Dict[str, str]) -> Dict[str, Any]:
+def _offer(normalized: Dict[str, Any], offer: Dict[str, Any], by_role: Dict[str, str],
+           grants: Optional[Mapping[str, List[str]]] = None) -> Dict[str, Any]:
+    grants = route.offer_entitlements(normalized) if grants is None else grants
     test_only = bool(normalized.get("test_only", True))
     excludes: List[str] = []
     if offer["role"] == "upsell_1" and "downsell_1" in by_role:
@@ -61,8 +64,8 @@ def _offer(normalized: Dict[str, Any], offer: Dict[str, Any], by_role: Dict[str,
         "display_name": offer["name"],
         "deliverables": list(level.get("deliverables") or []),
         "exclusions": [],
-        "entitlement_ids": [offer["offer_id"].lower()],
-        "requires": [],
+        "entitlement_ids": list(grants[offer["offer_id"]]),
+        "requires": route.offer_requires(offer),
         "excludes": excludes,
         "native_product_id": None,
         "prices": [{
@@ -80,16 +83,70 @@ def _offer(normalized: Dict[str, Any], offer: Dict[str, Any], by_role: Dict[str,
     }
 
 
+STRUCTURE_PREFIX = "launcher-structure:"
+
+
+def structure_refs(normalized: Dict[str, Any], inputs: Dict[str, Any], landing_pages: Sequence[str],
+                   extra_pages: Sequence[str]) -> List[str]:
+    """The structure choices a client approves, as record source_refs so the plan hash binds them.
+
+    The plan hash covers every record key but status and plan_approval_ref, so a copy form, a landing
+    page set, a design style or an extra page that changes after approval is a re-approval, never a
+    silent edit. source_refs is the one free-form list the launch schema (closed) already allows."""
+    return [f"{STRUCTURE_PREFIX}copy_profile={normalized['copy_profile']}",
+            f"{STRUCTURE_PREFIX}landing_pages={','.join(sorted(set(landing_pages)))}",
+            f"{STRUCTURE_PREFIX}design_style={inputs['design_style']}",
+            f"{STRUCTURE_PREFIX}extra_pages={','.join(sorted(set(extra_pages)))}"]
+
+
+def _https_url(url: Any) -> bool:
+    parts = urlsplit(url) if isinstance(url, str) else None
+    return bool(parts and parts.scheme == "https" and parts.hostname and not parts.username
+                and not parts.password and not any(c.isspace() for c in url))
+
+
+def delivery_bindings(normalized: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """entitlement id -> {delivery_kind, delivery_url}, from each offer's owner-confirmed https destination.
+
+    All or none: an intake that states no destination for any offer yields no bindings (absence is the
+    record's one encoding of "no bindings"); one that states some but not all is refused, because a
+    buyer of the unbound item would read "being prepared" with no link."""
+    offers = normalized["offers"]
+    stated = [o for o in offers if o.get("delivery") is not None]
+    if not stated:
+        return {}
+    missing = [o["offer_id"] for o in offers if o.get("delivery") is None]
+    if missing:
+        raise BridgeError("AF-LAUNCH-BRIDGE-DELIVERY",
+                          f"no delivery destination for {', '.join(missing)}: every offer needs the https "
+                          "address where its buyer gets access. Nothing was dispatched and nothing was spent.")
+    out: Dict[str, Dict[str, Any]] = {}
+    for o in stated:
+        d = o["delivery"]
+        if not isinstance(d, dict) or d.get("owner_confirmed") is not True or not _https_url(d.get("destination")):
+            raise BridgeError("AF-LAUNCH-BRIDGE-DELIVERY",
+                              f"the delivery destination for {o['offer_id']} must be an https address the "
+                              "owner confirmed. Nothing was dispatched and nothing was spent.")
+        out[o["offer_id"].lower()] = {"delivery_kind": "access", "delivery_url": d["destination"]}
+    return out
+
+
 def to_launch_record(normalized: Dict[str, Any], graph: Dict[str, Any],
-                     inputs: Dict[str, Any]) -> Dict[str, Any]:
-    """The Skill 49 launch record for a validated intake. Schema-valid; proven by check_launch_record."""
+                     inputs: Dict[str, Any], *, landing_pages: Optional[Sequence[str]] = None,
+                     extra_pages: Sequence[str] = ()) -> Dict[str, Any]:
+    """The Skill 49 launch record for a validated intake. Schema-valid; proven by check_launch_record.
+
+    landing_pages and extra_pages are the client's page choices; without landing_pages the set Skill 49
+    recommends is recorded. Either way the set, the copy form and the design style are in the record, so
+    the approval hash covers them."""
     roles = {o["role"] for o in normalized["offers"]}
     by_role: Dict[str, str] = {o["role"]: o["offer_id"] for o in normalized["offers"]
                                if o["role"] in ("upsell_1", "downsell_1")}
     compiler = substrate.compiler()
-    offers = [_offer(normalized, o, by_role) for o in normalized["offers"]]
+    grants = route.offer_entitlements(normalized)
+    offers = [_offer(normalized, o, by_role, grants) for o in normalized["offers"]]
     launch_id, revision = normalized["launch_id"], normalized["revision"]
-    return {
+    launch = {
         "schema_version": LAUNCH_SCHEMA_VERSION,
         "tenant_id": normalized["tenant_id"],
         "location_id": normalized["location_id"],
@@ -113,6 +170,12 @@ def to_launch_record(normalized: Dict[str, Any], graph: Dict[str, Any],
         "source_refs": [f"launcher-intake:{launch_id}:r{revision}"],
         "test_only": bool(normalized.get("test_only", True)),
     }
+    bindings = delivery_bindings(normalized)
+    if bindings:
+        launch["delivery_bindings"] = bindings
+    planned = list(landing_pages) if landing_pages else substrate.dispatch().pset.recommended_landing_pages(launch)
+    launch["source_refs"] += structure_refs(normalized, inputs, planned, extra_pages)
+    return launch
 
 
 def check_launch_record(launch: Dict[str, Any]) -> List[str]:
@@ -203,6 +266,57 @@ def split_landing(result: Dict[str, Any], landing_pages: Sequence[str]) -> Dict[
                                         "artifacts": sales_arts}}
 
 
+def _bind_approval(launch: Dict[str, Any], normalized: Dict[str, Any], approval: Any) -> None:
+    """Take the approval ref from the verified --approval record, never from the intake.
+
+    The hash the client approved is the record's own plan hash (the dispatch gate checks the record's
+    subject_hash against it). A live intake that names a different approval is refused; a test-only
+    intake carries a placeholder, which is never an approval. A missing or malformed record is left for
+    Skill 49's gate to refuse by name."""
+    if not isinstance(approval, dict) or not approval.get("approval_id"):
+        return
+    ref, plan_hash = approval["approval_id"], substrate.dispatch().vlp.plan_document_hash(launch)
+    asked = normalized["approval"]
+    if not normalized.get("test_only", True) and (asked["ref"], asked["hash"]) != (ref, plan_hash):
+        raise BridgeError("AF-LAUNCH-BRIDGE-APPROVAL",
+                          "the intake names an approval that is not the one on record for this plan "
+                          f"(record {ref!r}, plan hash {plan_hash[:8]}). Nothing was dispatched and nothing "
+                          "was spent.")
+    launch["plan_approval_ref"] = ref
+
+
+def _bridge_config_path(adapters_config: Optional[Dict[str, Any]],
+                        adapter_inputs: Optional[Dict[str, Any]]) -> Optional[str]:
+    if adapter_inputs and adapter_inputs.get("bridge_config"):
+        return str(adapter_inputs["bridge_config"])
+    command = ((adapters_config or {}).get("adapters", {}).get("landing") or {}).get("command") or []
+    flag = "--bridge-config"
+    return str(command[command.index(flag) + 1]) if flag in command[:-1] else None
+
+
+def _check_copy_form(normalized: Dict[str, Any], adapters_config: Optional[Dict[str, Any]],
+                     adapter_inputs: Optional[Dict[str, Any]]) -> None:
+    """Refuse a landing page built in a different copy form than the client approved.
+
+    The approved copy_profile (Standard or Long-Form) is in the plan hash; the landing bridge config
+    carries its own page_version. When they disagree the sales page would be a form the client never
+    approved and every later check would still pass, so the run stops here. The opt-in page is
+    Long-Form only, so a config that adds it needs Long-Form too."""
+    path = _bridge_config_path(adapters_config, adapter_inputs)
+    try:
+        landing = json.loads(Path(path).read_text(encoding="utf-8")).get("landing") if path else None
+    except (OSError, ValueError, AttributeError):
+        return  # an unreadable config is the adapter builder's refusal to make, by name
+    if not isinstance(landing, dict) or "page_version" not in landing:
+        return
+    forms = {landing["page_version"], *(["long-form"] if landing.get("opt_in") else [])}
+    if forms != {normalized["copy_profile"]}:
+        raise BridgeError("AF-LAUNCH-BRIDGE-COPY-FORM",
+                          f"the intake approved copy form {normalized['copy_profile']!r} but the landing "
+                          f"bridge config builds {', '.join(sorted(map(str, forms)))!s}. Make them agree "
+                          "(or re-approve the plan). Nothing was dispatched and nothing was spent.")
+
+
 def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
         client_identity_ref: str, worker_identity_ref: str,
         adapters_config: Optional[Dict[str, Any]] = None,
@@ -225,7 +339,8 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
     inputs, to_confirm = image_plan.resolve(normalized.get("image_plan"),
                                             test_only=bool(normalized.get("test_only", True)))
     graph = route.compile_route(normalized)
-    launch = to_launch_record(normalized, graph, inputs)
+    launch = to_launch_record(normalized, graph, inputs, landing_pages=landing_pages, extra_pages=extra_pages)
+    _bind_approval(launch, normalized, approval)
     fails = check_launch_record(launch)
     if fails:
         raise BridgeError("AF-LAUNCH-BRIDGE-RECORD",
@@ -247,6 +362,7 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
 
     dl = substrate.dispatch()
     planned, landing_to_confirm = _plan_landing_pages(dl, launch, landing_pages, extra_pages)
+    _check_copy_form(normalized, adapters_config, adapter_inputs)
     dispatch_dir.mkdir(parents=True, exist_ok=True)  # the adapter builder needs the folder to exist
     if adapters_config is None:
         if adapter_inputs is None:
@@ -279,6 +395,9 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
                               f"Skill 49's dispatch cannot build {', '.join(extra_pages)} in this checkout. "
                               "Nothing was dispatched and nothing was spent.")
         kwargs["extra_pages"] = tuple(extra_pages)
+    front_door = getattr(substrate, "front_door_check", None)  # Skill 49's one front door, once the tree has it
+    if front_door is not None:
+        front_door()  # version, hash-pin and bypass scan: the same gates the shell entry runs, before any page
     try:
         manifest = dl.dispatch(
             launch, approval,
@@ -319,6 +438,7 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
         "lane_plan": lane_plan(graph, parallel, extra_pages, side_by_side=parallel_state.startswith("parallel")),
         "parallel": parallel_state,
         "pieces_dir": str(pieces_dir),
+        "design_only_pages": [r for r in written if r in ("upsell_1", "upsell_2")],
         "launch_record": str(launch_path),
         "image_inputs": str(inputs_path),
         "image_provider": inputs["image_provider"],
@@ -351,6 +471,15 @@ def summary_lines(report: Dict[str, Any]) -> List[str]:
         lines += [f"  - {line}" for line in to_confirm_lines(report["to_confirm"])]
     else:
         lines.append("Every choice came from you. Nothing is waiting for confirmation.")
+    readbacks = report.get("skill06_readbacks") or {}
+    for role, label in (("downsell_1", "Downsell (D1)"), ("thank_you", "Thank-you page")):
+        if role in report["pages"] and not readbacks.get(role):
+            lines.append(f"{label}: design only; not installed. Skill 6 has not recorded an install read-back "
+                         "for it (scheduled: S06-02 / UPS-08).")
+    for role, label in (("upsell_1", "Upsell 1 (U1)"), ("upsell_2", "Upsell 2 (U2)")):
+        if role in report["pages"]:
+            lines.append(f"{label}: design only. Skill 80 has no production page builder, so the approved "
+                         "upsell design is not a publishable page (see 80-signature-upsell/SKILL.md, Status).")
     return lines
 
 
