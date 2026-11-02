@@ -1899,12 +1899,22 @@ def _stage(prereqs, worker, entrypoint, idem, out_prod, qc_prod, evidence,
 #: is a concrete invocation.
 STAGE_REGISTRY = {
     "research": _stage(
-        [], "research-analyst", "scripts/core/research_engine/research.py gather",
+        [], "research-analyst",
+        # --governed is the runner's AUTHORITATIVE mode: admission, the
+        # verified receipt and the independent review that completes the row.
+        # The option-only authoring mode never moves a stage row.
+        'scripts/core/research_engine/research.py --governed '
+        '--brief "$RUN/brief.json" --outdir "$RUN"',
         "research/<request-digest>", "research/receipt.json",
-        "research/qc-record.json", ["research/receipt.json"],
-        "none", "research brief + sources on disk",
-        "scripts/core/research_engine/research.py resume",
-        "research-complete", artifacts=["research/receipt.json"]),
+        "research/qc-records.json",
+        ["research/receipt.json", "research/qc-records.json",
+         "research/claims.json", "research/captures.json"],
+        "none", "research brief + sources on disk + independent semantic review",
+        'scripts/core/research_engine/research.py --governed '
+        '--brief "$RUN/brief.json" --outdir "$RUN"',
+        "research-complete",
+        artifacts=["research/receipt.json", "research/claims.json",
+                   "research/captures.json"]),
     "creative-strategy": _stage(
         ["research"], "creative-strategist",
         "scripts/core/method_plan/method_plan.py build",
