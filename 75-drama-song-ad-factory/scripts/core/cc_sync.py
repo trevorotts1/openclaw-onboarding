@@ -53,6 +53,7 @@ import hashlib
 import hmac
 import json
 import os
+import socket
 import sqlite3
 import time
 import urllib.error
@@ -170,6 +171,12 @@ class AuthError(BoardSyncError):
     pass
 
 
+class WorkspaceBindingError(BoardSyncError):
+    """Configured binding does not cover this workspace on this host (XR4
+    step 3): the remote projection is refused. Local creation and durable
+    pending intent continue; nothing is guessed into another tenant."""
+
+
 class TransportOutage(BoardSyncError):
     """Network/5xx. dispatched=True means the bytes may have reached the
     server (timeout/5xx) -> row stays sent (UNKNOWN), reconcile-first."""
@@ -210,6 +217,61 @@ def default_outbox_path(workspace, run_id=None):
     return os.path.join(root, _slug(workspace), _slug(run) + ".sqlite3")
 
 
+def host_identity(env=None):
+    """Stable host id used by the binding check: CC_HOST_ID, else the short
+    hostname, else 'unknown-host'. Reads no secret and never raises."""
+    env = os.environ if env is None else env
+    given = (env.get("CC_HOST_ID") or "").strip()
+    if given:
+        return _slug(given)
+    try:
+        name = (socket.gethostname() or "").split(".")[0].strip()
+    except OSError:
+        name = ""
+    return _slug(name) if name else "unknown-host"
+
+
+def load_workspace_binding(source):
+    """Read the tenant/workspace/host binding before any projection (XR4
+    step 3), so a process workspace never proves the mapping by itself.
+
+    ``source``: mapping, or a JSON file path, or None. Accepted shape:
+    ``{"workspaces": {ws: tenant|None}, "hosts": [host, ...]|None}`` or the
+    single-pair form ``{"workspace": ws, "tenant": t, "host": h}``.
+    Returns ``{"workspaces": {...}, "hosts": [...]|None}``; a malformed
+    binding raises WorkspaceBindingError instead of defaulting open.
+    """
+    if source is None:
+        return {"workspaces": {}, "hosts": None}
+    if isinstance(source, (str, bytes, os.PathLike)):
+        try:
+            with open(source, "r", encoding="utf-8") as fh:
+                source = json.load(fh)
+        except (OSError, ValueError) as e:
+            raise WorkspaceBindingError("unreadable binding %r: %s" % (source, e))
+    if not isinstance(source, dict):
+        raise WorkspaceBindingError("binding must be a mapping")
+    workspaces = source.get("workspaces")
+    if workspaces is None:
+        ws = source.get("workspace")
+        if not isinstance(ws, str) or not ws:
+            raise WorkspaceBindingError("binding needs 'workspace' or 'workspaces'")
+        workspaces = {ws: source.get("tenant")}
+    if not isinstance(workspaces, dict) or not workspaces or not all(
+            isinstance(k, str) and k for k in workspaces):
+        raise WorkspaceBindingError("binding 'workspaces' must map non-empty names")
+    hosts = source.get("hosts")
+    if hosts is None:
+        h = source.get("host")
+        hosts = [_slug(h)] if h else None
+    if hosts is not None:
+        if not isinstance(hosts, list) or not hosts or not all(
+                isinstance(h, str) and h for h in hosts):
+            raise WorkspaceBindingError("binding 'hosts' must be a non-empty list")
+        hosts = [_slug(h) for h in hosts]
+    return {"workspaces": workspaces, "hosts": hosts}
+
+
 class Outbox:
     """Durable board outbox bound to ONE workspace (tenant isolation).
 
@@ -220,7 +282,7 @@ class Outbox:
     """
 
     def __init__(self, db_path=None, base_url=None, workspace=None, sender=None,
-                 run_id=None):
+                 run_id=None, binding=None):
         # CC_PORT is what Command Center's ecosystem.config.cjs exports; default stays 4000.
         # Env order matches every other fleet board client (mc_board.py,
         # cc_board.py): CC_BASE_URL, then COMMAND_CENTER_URL, then MISSION_CONTROL_URL.
@@ -233,8 +295,14 @@ class Outbox:
         self.workspace = workspace or os.environ.get("CC_WORKSPACE", "")
         if not self.workspace:
             raise BoardSyncError("workspace binding required (pass workspace= or set CC_WORKSPACE)")
+        # XR4 step 3: an explicit tenant/workspace/host binding is validated
+        # rather than assumed from the process workspace. No binding configured
+        # keeps the prior local-only-tolerant behavior.
+        self.run_id = run_id or os.environ.get("CC_RUN_ID") or "default"
+        source = binding if binding is not None else os.environ.get("CC_WORKSPACE_BINDING")
+        self.binding = load_workspace_binding(source) if source else None
         if db_path is None:
-            db_path = default_outbox_path(self.workspace, run_id)
+            db_path = default_outbox_path(self.workspace, self.run_id)
         if db_path != ":memory:":
             parent = os.path.dirname(os.path.abspath(db_path))
             if parent:
@@ -248,6 +316,32 @@ class Outbox:
     def _bind(self, workspace):
         if workspace != self.workspace:
             raise WrongCompanyError("event workspace %r != bound %r: rejected, nothing stored" % (workspace, self.workspace))
+
+    def binding_refusal(self, workspace=None):
+        """None when the remote projection of ``workspace`` may be attempted,
+        else the named refusal code (XR4 step 3). The local enqueue path never
+        consults this: local creation and pending intent continue during an
+        absent board or an unknown mapping."""
+        ws = self.workspace if workspace is None else workspace
+        if ws != self.workspace:
+            return "WRONG_COMPANY"
+        if self.binding is None:
+            return None  # no binding configured: prior behavior, local + remote
+        if ws not in self.binding["workspaces"]:
+            return "WORKSPACE_UNBOUND"
+        hosts = self.binding["hosts"]
+        if hosts is not None and host_identity() not in hosts:
+            return "HOST_UNBOUND"
+        return None
+
+    def binding_state(self):
+        """Visible binding state: {configured, workspace, tenant, host, bound,
+        code}. Never contacts the board."""
+        code = self.binding_refusal()
+        return {"configured": self.binding is not None,
+                "workspace": self.workspace, "run_id": self.run_id,
+                "tenant": (self.binding or {}).get("workspaces", {}).get(self.workspace),
+                "host": host_identity(), "bound": code is None, "code": code}
 
     def _insert(self, kind, job_id, stage_slug, workspace, payload):
         key = _key(kind, job_id, stage_slug, payload)
@@ -551,7 +645,8 @@ class Outbox:
     def flush(self):
         """Send pending/sent rows in id order. Order preserved: transport outage
         stops the flush; terminal rejections do not block later rows."""
-        report = {"acked": [], "pending": [], "rejected": [], "degraded": False, "auth_error": False}
+        report = {"acked": [], "pending": [], "rejected": [], "degraded": False,
+                  "auth_error": False, "refused": [], "refused_codes": []}
         rows = self.db.execute(
             "SELECT id,key,kind,job_id,stage_slug,workspace,payload,state,attempts FROM outbox"
             " WHERE state IN (?,?) ORDER BY id", (PENDING, SENT)).fetchall()
@@ -559,6 +654,19 @@ class Outbox:
             if ws != self.workspace:  # defense in depth: binding re-checked at send time
                 self._resolve(rid, REJECTED, {"code": "WRONG_COMPANY"})
                 report["rejected"].append(rid)
+                continue
+            refusal = self.binding_refusal(ws)
+            if refusal:
+                # Unknown/cross-workspace remote write refused: the row keeps
+                # its intent (stays pending, never sent) until a correct
+                # binding exists; local operation is unaffected.
+                self.db.execute("UPDATE outbox SET result=?,updated_at=? WHERE id=?",
+                                (json.dumps({"code": refusal}), _now(), rid))
+                self.db.commit()
+                report["refused"].append(rid)
+                if refusal not in report["refused_codes"]:
+                    report["refused_codes"].append(refusal)
+                report["degraded"] = True
                 continue
             body = json.loads(payload)
             try:
@@ -581,6 +689,10 @@ class Outbox:
                 report["degraded"] = True
                 report["pending"].append(rid)
                 break  # preserve order: nothing behind an outage goes out
+        if report["refused"]:
+            _loud("warn", "COMMAND_CENTER_BINDING_REFUSED",
+                  "%d row(s) refused remote projection (%s); local work continues"
+                  % (len(report["refused"]), ", ".join(report["refused_codes"])))
         if report["degraded"] or report["auth_error"]:
             # Documented fail-soft (board unreachable): never silent.
             _loud("warn", "COMMAND_CENTER_UNREACHABLE" if not report["auth_error"]
@@ -588,7 +700,7 @@ class Outbox:
                   "board sync degraded; %d row(s) stay queued, work continues"
                   % len(report["pending"]))
         for (sid, sstate) in self.db.execute("SELECT id,state FROM outbox WHERE state IN (?,?)", (PENDING, SENT)):
-            if sid not in report["acked"] and sid not in report["rejected"] and sid not in report["pending"]:
+            if sid not in report["acked"] and sid not in report["rejected"] and sid not in report["pending"] and sid not in report["refused"]:
                 report["pending" if sstate == PENDING else "pending"].append(sid)
         return report
 

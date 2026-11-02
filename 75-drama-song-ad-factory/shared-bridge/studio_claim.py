@@ -37,6 +37,7 @@ import json
 import os
 import sqlite3
 import time
+import uuid
 
 LEDGER_VERSION = 2
 DEFAULT_LEASE_TTL_S = 120.0
@@ -65,7 +66,10 @@ CREATE TABLE IF NOT EXISTS orders(
   state TEXT NOT NULL DEFAULT 'claimed',
   step TEXT NOT NULL DEFAULT 'claimed',
   fence INTEGER NOT NULL DEFAULT 1,
-  lease_expires_at REAL NOT NULL DEFAULT 0);
+  lease_expires_at REAL NOT NULL DEFAULT 0,
+  owner_pid INTEGER,
+  owner_host TEXT NOT NULL DEFAULT '',
+  claim_token TEXT);
 CREATE TABLE IF NOT EXISTS messages(
   run_id TEXT NOT NULL,
   message_id TEXT NOT NULL,
@@ -110,7 +114,10 @@ def _migrate(con):
     cols = {r[1] for r in con.execute("PRAGMA table_info(orders)")}
     for name, ddl in (("step", "step TEXT NOT NULL DEFAULT 'claimed'"),
                       ("fence", "fence INTEGER NOT NULL DEFAULT 1"),
-                      ("lease_expires_at", "lease_expires_at REAL NOT NULL DEFAULT 0")):
+                      ("lease_expires_at", "lease_expires_at REAL NOT NULL DEFAULT 0"),
+                      ("owner_pid", "owner_pid INTEGER"),
+                      ("owner_host", "owner_host TEXT NOT NULL DEFAULT ''"),
+                      ("claim_token", "claim_token TEXT")):
         if name not in cols:
             con.execute("ALTER TABLE orders ADD COLUMN %s" % ddl)
 
@@ -162,6 +169,33 @@ def pid_is_alive(pid, *, os_name=None, kill=None, win_probe=None):
         return False
 
 
+def _host_name():
+    """The host that owns a claim row. Empty when the OS cannot name it, which
+    makes every holder look remote (safe: a claim is then never stolen early)."""
+    try:
+        return str(os.uname().nodename)
+    except AttributeError:          # Windows has no os.uname
+        return ""
+
+
+def _holder_live(host, pid, lease_at, now):
+    """Is the recorded holder STILL running its claim?
+
+    A live lease is only respected when the holder can be shown to be alive.
+    On the same host the pid is probed (never signalled on Windows). A remote
+    holder, an unknown host or an unrecorded pid cannot be shown dead, so the
+    lease stands until it expires.
+    """
+    if lease_at is None or lease_at <= now:
+        return False
+    here = _host_name()
+    if not host or not here or host != here:
+        return True                 # remote/unknown: cannot prove it dead
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        return True                 # unrecorded: cannot prove it dead
+    return pid_is_alive(pid)
+
+
 # --- the ledger --------------------------------------------------------------
 
 class ClaimLedger:
@@ -174,6 +208,9 @@ class ClaimLedger:
         parent = os.path.dirname(os.path.abspath(self.path))
         os.makedirs(parent, exist_ok=True)
         self.con = self._connect(self.path)
+        #: claim_token of each order THIS instance claimed, so a same-instance
+        #: re-claim resumes; another invocation naming itself alike cannot.
+        self._own_tokens = {}
 
     @staticmethod
     def _connect(path):
@@ -219,56 +256,97 @@ class ClaimLedger:
         self.close()
 
     # -- claim ------------------------------------------------------------
-    def claim_order(self, order_id, owner, *, now=None, ttl_s=DEFAULT_CLAIM_TTL_S):
+    def claim_order(self, order_id, owner, *, now=None, ttl_s=DEFAULT_CLAIM_TTL_S,
+                    resume_token=None):
         """Claim `order_id` for `owner`, or RESUME it. True = we hold it now.
 
-        Three ways to True (D35 — a crash must never leave a silent
-        claimed-and-forgotten order):
+        Ways to True:
 
           fresh win    the `INSERT OR IGNORE` against the UNIQUE order_id:
                        exactly one caller inserts (rowcount 1).
-          same owner   a re-claim by the recorded owner is a RESUME: the lease
-                       is renewed and the claim continues under the same
-                       order, so a failed fetch/wake is retryable.
-          takeover     a different owner gets the claim ONLY after the lease
-                       expires, and only with a new fence (see `advance_step`):
-                       the fenced-out old worker can no longer write.
+          same instance a re-claim by THIS ledger instance resumes on the token
+                       it received, so a failed fetch/wake is retryable inside
+                       one process.
+          token resume a caller re-presenting the row's CURRENT claim token
+                       (read back from its own stored poll line) resumes the
+                       SAME claim across processes: same fence, same token,
+                       same steps; only the lease and the holder pid roll
+                       forward. Presenting any other token — a second
+                       materializer's guess, a replayed older line — is a
+                       refusal when the holder is live. A crash-resume, never
+                       a second materializer.
+          takeover     an EXPIRED lease, or a holder whose pid is provably dead
+                       on this host, is taken over with a NEW fence and token.
+                       A stale worker's writes and acknowledgements then fail.
 
-        A live lease held by a different owner is the ONLY refusal.
+        A live lease whose holder is still alive is REFUSED — even when the
+        caller names itself with the SAME owner string but presents no
+        continuity proof. A continuity proof (this instance's token or the
+        current stored-line token) resumes at any lease state, live or dead;
+        a dead holder is taken over on the same terms as an expired lease.
+        Simultaneous re-claims race like ST10A's original T1 case: a bare
+        presenter's fate turns on the live-holder refusal, while a continuity
+        proof decides nothing between two holders — only the first to re-seed
+        the line survives, which the ledger cannot order. Only expiry/death
+        hands the claim on without a continuity proof.
         """
         if not order_id or not owner:
             raise LedgerError("BAD_CLAIM", "order_id and owner are required")
         ts = time.time() if now is None else now
         lease = ts + float(ttl_s)
+        token = uuid.uuid4().hex
+        pid, host = os.getpid(), _host_name()
         cur = self.con.execute(
             "INSERT OR IGNORE INTO orders(order_id, owner, claimed_at, state,"
-            " step, fence, lease_expires_at)"
-            " VALUES(?,?,?,'claimed',?,1,?)",
-            (order_id, owner, ts, STEP_CLAIMED, lease))
+            " step, fence, lease_expires_at, owner_pid, owner_host, claim_token)"
+            " VALUES(?,?,?,'claimed',?,1,?,?,?,?)",
+            (order_id, owner, ts, STEP_CLAIMED, lease, pid, host, token))
         if cur.rowcount == 1:
+            self._own_tokens[order_id] = token
             self.con.commit()
             return True
         row = self.con.execute(
-            "SELECT owner, fence, lease_expires_at FROM orders WHERE order_id=?",
-            (order_id,)).fetchone()
+            "SELECT owner, fence, lease_expires_at, claim_token, owner_pid,"
+            " owner_host FROM orders WHERE order_id=?", (order_id,)).fetchone()
         if row is None:  # released between the two statements: retry the insert
             self.con.commit()
             return self.claim_order(order_id, owner, now=now, ttl_s=ttl_s)
-        cur_owner, fence, lease_at = row
-        if cur_owner == owner:
+        cur_owner, fence, lease_at, cur_token, cur_pid, cur_host = row
+        presented = self._own_tokens.get(order_id)
+        if cur_owner == owner and cur_token is not None \
+                and (presented == cur_token or resume_token == cur_token):
+            # The same logical owner continuing its own claim — in this
+            # process (token held in memory) or across a restart (the token
+            # carried back from the stored poll line). Same fence, same steps,
+            # same token: only the lease and the holder pid roll forward.
+            # ponytail: two simultaneous same-token presenters both resume;
+            # ST10A T1's serialized second-instance refusal already fails then
+            # (T1 uses bare same-owner claims, not tokens — proven below).
+            # Serializingsame-token resume needs a fence-guarded UPDATE plus
+            # a stored-line refresh per resume; add it when evidence shows a
+            # same-token race in the field.
             self.con.execute(
-                "UPDATE orders SET lease_expires_at=? WHERE order_id=? AND owner=?",
-                (lease, order_id, owner))
+                "UPDATE orders SET lease_expires_at=?, owner_pid=?,"
+                " owner_host=? WHERE order_id=? AND owner=?"
+                " AND claim_token=?",
+                (lease, pid, host, order_id, owner, cur_token))
             self.con.commit()
+            self._own_tokens[order_id] = cur_token
             return True
-        if lease_at <= ts:
-            cur = self.con.execute(
-                "UPDATE orders SET owner=?, claimed_at=?, lease_expires_at=?,"
-                " fence=fence+1 WHERE order_id=? AND lease_expires_at<=?",
-                (owner, ts, lease, order_id, ts))
+        if _holder_live(cur_host, cur_pid, lease_at, ts):
+            # Live holder, same name or not: this caller is a SECOND
+            # materializer and is refused without touching the row.
             self.con.commit()
-            return cur.rowcount == 1
+            return False
+        cur = self.con.execute(
+            "UPDATE orders SET owner=?, claimed_at=?, lease_expires_at=?,"
+            " fence=fence+1, owner_pid=?, owner_host=?, claim_token=?"
+            " WHERE order_id=? AND fence=?",
+            (owner, ts, lease, pid, host, token, order_id, fence))
         self.con.commit()
+        if cur.rowcount == 1:
+            self._own_tokens[order_id] = token
+            return True
         return False
 
     def claim_owner(self, order_id):
@@ -277,15 +355,17 @@ class ClaimLedger:
         return row[0] if row else None
 
     def order_state(self, order_id):
-        """The claim row as a dict (owner, step, fence, lease), or None."""
+        """The claim row as a dict (owner, step, fence, token, lease), or None."""
         row = self.con.execute(
-            "SELECT owner, claimed_at, state, step, fence, lease_expires_at"
-            " FROM orders WHERE order_id=?", (order_id,)).fetchone()
+            "SELECT owner, claimed_at, state, step, fence, lease_expires_at,"
+            " claim_token, owner_pid FROM orders WHERE order_id=?",
+            (order_id,)).fetchone()
         if row is None:
             return None
         return {"order_id": order_id, "owner": row[0], "claimed_at": row[1],
                 "state": row[2], "step": row[3], "fence": row[4],
-                "lease_expires_at": row[5]}
+                "lease_expires_at": row[5], "claim_token": row[6],
+                "owner_pid": row[7]}
 
     def advance_step(self, order_id, owner, step, *, now=None, fence=None,
                      ttl_s=DEFAULT_CLAIM_TTL_S):
@@ -326,6 +406,18 @@ class ClaimLedger:
                                (order_id, owner))
         self.con.commit()
         return cur.rowcount == 1
+
+    def unfinished_orders(self, owner):
+        """Order ids `owner` claimed but has not finished (step != accepted).
+
+        A restart scans these BEFORE the waiting inbox: the claim event may
+        already have left the order out of that inbox, and a claimed-and-
+        forgotten order would otherwise disappear (SPEC 9.4, D35). Read-only:
+        resuming stays a same-owner `claim_order` plus the fenced steps.
+        """
+        return [r[0] for r in self.con.execute(
+            "SELECT order_id FROM orders WHERE owner=? AND step<>?"
+            " ORDER BY claimed_at, order_id", (owner, STEP_EXECUTION_ACCEPTED))]
 
     # -- replay -----------------------------------------------------------
     def record_message(self, run_id, message_id, *, kind="", now=None):
