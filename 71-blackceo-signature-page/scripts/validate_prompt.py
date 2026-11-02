@@ -629,13 +629,15 @@ def load_inventory_entries(path):
 
 def is_supplied_entry(entry):
     """A run-context inventory entry is a supplied asset when its source
-    begins with "supplied" (e.g. "supplied-logo", "supplied-founder-photo"):
-    the asset already exists and no generation is performed for it
-    (Item 3 supplied-asset path)."""
+    begins with "supplied" (e.g. "supplied-logo", "supplied-founder-photo")
+    or is "stock": the asset already exists and no generation is performed
+    for it (Item 3 supplied-asset path; IMG-15 keeps stock on the same path
+    as the transport gate)."""
     if not isinstance(entry, dict):
         return False
     source = entry.get("source")
-    return isinstance(source, str) and source.strip().lower().startswith("supplied")
+    return isinstance(source, str) and (source.strip().lower().startswith("supplied")
+                                        or source.strip().lower() == "stock")
 
 
 def inventory_entry_ratio(entry):
@@ -1286,7 +1288,7 @@ def verbatim_checks(text, sections, ctx, errors, notes):
 # ------------------------------------------------------- inspect / main
 
 def inspect(text, model=IMAGE_MODEL_DEFAULT, sauce_only=False, ctx=None,
-            policy=None):
+            policy=None, max_chars=None):
     text = unicodedata.normalize("NFC", text)
     stripped = text.strip()
     chars = len(stripped)  # guide convention: NFC, trimmed, code points (N3)
@@ -1297,6 +1299,11 @@ def inspect(text, model=IMAGE_MODEL_DEFAULT, sauce_only=False, ctx=None,
 
     # --- telemetry + budget (Decision 1: the rule 12 band governs length)
     cap = cap_for_model(model, policy)
+    if isinstance(max_chars, int) and not isinstance(max_chars, bool) and max_chars > 0:
+        # The run's request records the model's live prompt-field maximum
+        # (IMG-14). It can only tighten the policy maximum, never loosen it.
+        recorded = cap.get("max_chars") if cap.get("unit") == "chars" else None
+        cap = dict(cap, unit="chars", max_chars=min(max_chars, recorded or max_chars))
     percent = None
     if cap.get("unit") == "chars" and cap.get("max_chars"):
         percent = round(100.0 * chars / cap["max_chars"], 2)
@@ -1522,6 +1529,14 @@ def discover_context(prompt_file, args):
     return ctx, errors
 
 
+def _opt_int(value):
+    """An integer, or None for a template placeholder a runner left unresolved."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Validate a production prompt: element completeness, the rule 12 "
@@ -1532,6 +1547,10 @@ def main():
     parser.add_argument("--model", default=IMAGE_MODEL_DEFAULT,
                         help="KIE image model id (band policy + ratio enum; "
                              "default %(default)s).")
+    parser.add_argument("--max-chars", type=_opt_int, default=None,
+                        help="The model's live prompt-field maximum as the run's production "
+                             "request records it; tightens the policy maximum, never loosens it. "
+                             "0 or absent: the policy maximum governs.")
     parser.add_argument("--runtime-max", type=int, default=None,
                         help="DEPRECATED and ignored: length verdicts follow the "
                              "rule 12 band (Decision 1), not a runtime max.")
@@ -1559,6 +1578,8 @@ def main():
                         help="Fail when no selection record governs this prompt.")
     parser.add_argument("--json", action="store_true", help="Emit JSON result.")
     args = parser.parse_args()
+    if args.model.startswith("{"):  # an unresolved {model} placeholder: no model was declared
+        args.model = IMAGE_MODEL_DEFAULT
 
     try:
         text = args.prompt_file.read_text(encoding="utf-8")
@@ -1593,7 +1614,7 @@ def main():
                   "validation performed.")
         return 1 if errors else 0
     result = inspect(text, args.model, sauce_only=args.sauce_only, ctx=ctx,
-                     policy=policy)
+                     policy=policy, max_chars=args.max_chars)
     result["errors"] = ctx_errors + result["errors"]
     if args.strict_runtime and result["warnings"]:
         result["errors"].extend(result["warnings"])

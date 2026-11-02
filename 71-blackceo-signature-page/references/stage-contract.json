@@ -254,7 +254,7 @@
       "validators": [
         "python3 scripts/validate_wireframe.py {run_dir} desktop-wireframe",
         "python3 scripts/design_style.py validate-inventory {run_dir}",
-        "python3 scripts/validate_production_record.py {run_dir}/desktop-wireframe/production-record.json",
+        "python3 scripts/validate_production_record.py {run_dir}/desktop-wireframe/production-record.json --ocr --model {model}",
         "python3 scripts/validate_review_pdf.py {run_dir} --stage desktop-wireframe"
       ],
       "review_required": true,
@@ -310,7 +310,7 @@
       ],
       "validators": [
         "python3 scripts/validate_wireframe.py {run_dir} mobile-tablet",
-        "python3 scripts/validate_production_record.py {run_dir}/mobile-tablet/production-record.json",
+        "python3 scripts/validate_production_record.py {run_dir}/mobile-tablet/production-record.json --ocr --model {model}",
         "python3 scripts/validate_review_pdf.py {run_dir} --stage mobile-tablet"
       ],
       "review_required": true,
@@ -362,10 +362,15 @@
         {
           "glob": "review-pdfs/*_MOBILE_MOCKUPS-VISUAL.pdf",
           "min_count": 1
+        },
+        {
+          "glob": "visual-mockup/production-record.json",
+          "min_count": 1
         }
       ],
       "validators": [
         "python3 scripts/validate_visual_direction.py {run_dir}",
+        "python3 scripts/validate_production_record.py {run_dir}/visual-mockup/production-record.json --ocr --model {model}",
         "python3 scripts/validate_page.py {run_dir}/visual-mockup/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}",
         "python3 scripts/validate_review_pdf.py {run_dir} --stage visual-mockup"
       ],
@@ -418,7 +423,7 @@
       "count_of": "desktop-wireframe/image-inventory.json",
       "count_glob": "image-inventory-prompts/IMG-*.txt",
       "validators": [
-        "python3 scripts/validate_prompt.py {file} {sauce}"
+        "python3 scripts/validate_prompt.py {file} {sauce} --model {model} --max-chars {max_chars}"
       ],
       "review_required": true,
       "min_scores": {
@@ -595,7 +600,7 @@
       "validators": [
         "python3 scripts/validate_page.py {run_dir}/final-mockups/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}",
         "python3 scripts/validate_mockup_slots.py {run_dir} final-mockups",
-        "python3 scripts/validate_production_record.py {run_dir}/final-mockups/production-record.json",
+        "python3 scripts/validate_production_record.py {run_dir}/final-mockups/production-record.json --ocr --model {model}",
         "python3 scripts/validate_review_pdf.py {run_dir} --stage final-mockups"
       ],
       "review_required": true,
