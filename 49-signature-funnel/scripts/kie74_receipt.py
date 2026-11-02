@@ -19,13 +19,15 @@ What it does, fail-closed:
      delegation_receipt.record(); `recorded_by` resolves to this module, which is not a certified
      subject, so the delegation requirer accepts it.
 
-Skill 49 and Skill 56 ship an identical copy of this file. stdlib only.
+Skill 56 ships the older copy without the transport binding (binding_problems / write_bound_receipt /
+store_problems); Skill 71's stage_executor loads this Skill 49 copy. stdlib only.
 Exit 0 = ok, 2 = violation, 3 = usage / fail-closed.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -52,7 +54,7 @@ def _real(value: Any) -> bool:
 ADAPTER_KEYS = frozenset({
     "provider", "adapter", "adapter_mode", "backend", "model_id", "capability", "schema_source",
     "schema_fetched_at", "task_id", "state", "result_urls", "saved_paths", "credits_consumed",
-    "warnings", "fallback_used", "raw_family", "error", "data"})
+    "warnings", "fallback_used", "raw_family", "error", "data", "binding"})
 ADAPTER_STATES = frozenset({"validated", "queued", "running", "success", "fail", "skipped"})
 
 
@@ -100,6 +102,100 @@ def dispatch_problems(obj: Any, text: str) -> List[str]:
     return problems
 
 
+# --- transport binding: the receipt, not the agent, ties one provider task to one set of saved bytes.
+_SHA = re.compile(r"[0-9a-f]{64}")
+
+
+def _number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value == value
+
+
+def _sha_of(run_dir: Path, rel: Any) -> Optional[str]:
+    root = Path(run_dir).resolve()
+    f = (root / str(rel)).resolve()
+    if root not in f.parents or not f.is_file():
+        return None
+    return hashlib.sha256(f.read_bytes()).hexdigest()
+
+
+def binding_problems(obj: Any, run_dir: Optional[Path] = None) -> List[str]:
+    """Problems with obj["binding"] = {task_id, sha256, file, credits_before, credits_after}.
+    With run_dir the saved bytes are re-hashed, so a swapped PNG or an invented task id fails."""
+    b = obj.get("binding") if isinstance(obj, dict) else None
+    if not isinstance(b, dict):
+        return ["no binding block {task_id, sha256, file, credits_before, credits_after}"]
+    problems: List[str] = []
+    if not _real(b.get("task_id")) or b.get("task_id") != obj.get("task_id"):
+        problems.append("binding.task_id does not match the result's task_id")
+    if not (isinstance(b.get("sha256"), str) and _SHA.fullmatch(b["sha256"])):
+        problems.append("binding.sha256 is not a 64-character hex digest")
+    before, after = b.get("credits_before"), b.get("credits_after")
+    if not (_number(before) and _number(after)):
+        problems.append("binding.credits_before and credits_after must both be numbers")
+    elif after > before:
+        problems.append(f"binding.credits_after {after} is above credits_before {before}")
+    if run_dir is not None and not problems:
+        pairs = [("file", "sha256")] + ([("delivered_file", "delivered_sha256")] if b.get("delivered_file") else [])
+        for rel_key, sha_key in pairs:
+            if _sha_of(run_dir, b.get(rel_key)) != b.get(sha_key):
+                problems.append(f"binding.{rel_key} {b.get(rel_key)!r} is missing or does not hash to "
+                                f"binding.{sha_key}")
+    return problems
+
+
+def write_bound_receipt(run_dir: Path, result: Dict[str, Any], file_rel: str,
+                        credits_before: Any, credits_after: Any) -> Path:
+    """Store one dispatched adapter result plus its binding under receipts/kie74/<task_id>.json.
+    Called by the code that ran the transport (stage_executor.py), never by an agent's hand."""
+    obj = dict(result)
+    obj["binding"] = {"task_id": obj.get("task_id"), "file": file_rel,
+                      "sha256": _sha_of(run_dir, file_rel) or "",
+                      "credits_before": credits_before, "credits_after": credits_after}
+    text = json.dumps(obj, sort_keys=True)
+    problems = dispatch_problems(obj, text) or binding_problems(obj, run_dir)
+    if problems:
+        raise ValueError("; ".join(problems))
+    safe = re.sub(r"[^A-Za-z0-9_-]", "", obj["task_id"].strip())[:80] or "task"
+    dest = Path(run_dir) / RECEIPT_SUBDIR / f"{safe}.json"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps(obj, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return dest
+
+
+def rebind_derived(receipt: Path, run_dir: Path, raw_rel: str, delivered_rel: str) -> None:
+    """A circle slot is masked in place after delivery: keep the proven provider bytes (raw_rel) as the
+    bound file and record the masked delivered file beside it."""
+    obj = json.loads(Path(receipt).read_text(encoding="utf-8"))
+    b = obj["binding"]
+    if _sha_of(run_dir, raw_rel) != b["sha256"]:
+        raise ValueError(f"{raw_rel} is not the bytes the provider returned")
+    b.update(file=raw_rel, delivered_file=delivered_rel, delivered_sha256=_sha_of(run_dir, delivered_rel))
+    Path(receipt).write_text(json.dumps(obj, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def store_problems(run_dir: Path, expect_files: Sequence[str] = ()) -> List[str]:
+    """The production gate: the receipt store must exist, every receipt must be a dispatched adapter
+    result with a binding whose bytes re-hash, and every file in expect_files must be bound."""
+    files = sorted((Path(run_dir) / RECEIPT_SUBDIR).glob("*.json")) if (Path(run_dir) / RECEIPT_SUBDIR).is_dir() else []
+    if not files:
+        return [f"receipt store {RECEIPT_SUBDIR} is absent or empty: nothing binds any image to a provider task"]
+    problems: List[str] = []
+    covered = set()
+    for f in files:
+        try:
+            text = f.read_text(encoding="utf-8")
+            obj = json.loads(text)
+        except (OSError, ValueError) as exc:
+            problems.append(f"{f.name}: unreadable or not JSON ({exc})")
+            continue
+        why = dispatch_problems(obj, text) or binding_problems(obj, run_dir)
+        problems += [f"{f.name}: {w}" for w in why]
+        if not why:
+            covered |= {obj["binding"].get("file"), obj["binding"].get("delivered_file")}
+    problems += [f"{rel}: no receipt binds this image" for rel in expect_files if rel not in covered]
+    return problems
+
+
 def check_file(path: Path) -> Tuple[bool, str]:
     try:
         text = path.read_text(encoding="utf-8")
@@ -107,6 +203,8 @@ def check_file(path: Path) -> Tuple[bool, str]:
     except (OSError, ValueError) as exc:
         return False, f"unreadable or not JSON ({exc})"
     problems = adapter_file_problems(obj, text)
+    if not problems and "binding" in obj:  # a bound receipt must still hash; unbound legacy files stay allowed here
+        problems = binding_problems(obj, path.resolve().parents[2] if len(path.resolve().parents) > 2 else None)
     return (not problems), "; ".join(problems)
 
 
@@ -178,6 +276,21 @@ def _self_test() -> int:
         f = Path(td) / "forged.json"
         f.write_text('{"note": "requests.post(api.kie.ai createTask)"}', encoding="utf-8")
         say(not check_file(f)[0], "--check rejects a non-adapter file")
+
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td)
+        (rd / "a.png").write_bytes(b"png-bytes")
+        res = json.loads(result())
+        say(bool(store_problems(rd)), "store_problems refuses an absent receipt store")
+        write_bound_receipt(rd, res, "a.png", 10, 6)
+        say(not store_problems(rd, ["a.png"]), "bound receipt accepted and covers its file")
+        (rd / "a.png").write_bytes(b"swapped")
+        say(bool(store_problems(rd)), "store_problems refuses a PNG whose hash differs from the receipt")
+        try:
+            write_bound_receipt(rd, res, "a.png", 5, 9)
+            say(False, "credits_after above credits_before must be refused")
+        except ValueError:
+            say(True, "credits_after above credits_before refused")
 
     print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
     return 0 if ok else 1
