@@ -185,8 +185,10 @@ def _holder_live(host, pid, lease_at, now):
     Takeover happens ONLY on lease expiry, never on a dead-pid probe. A
     live lease is therefore always respected, whatever the holder's pid
     state: simultaneous racers are refused deterministically. The cost is
-    that a dead holder's claim is not recoverable until its lease expires
-    (ST10A T6-strict no longer holds; see relaxed_t6.py).
+    that a dead holder's claim is not recoverable until its lease expires.
+    That is the contract checks/test_st10a_claim_fence.py T6 asserts: the
+    dead holder is refused while the lease is live, and taken over with a
+    new fence once it has expired.
     """
     if lease_at is None or lease_at <= now:
         return False
@@ -274,20 +276,21 @@ class ClaimLedger:
                        materializer's guess, a replayed older line — is a
                        refusal when the holder is live. A crash-resume, never
                        a second materializer.
-          takeover     an EXPIRED lease, or a holder whose pid is provably dead
-                       on this host, is taken over with a NEW fence and token.
-                       A stale worker's writes and acknowledgements then fail.
+          takeover     an EXPIRED lease, and ONLY an expired lease, is taken
+                       over with a NEW fence and token. A dead holder's pid is
+                       never probed (OPTION A): its claim stands until the
+                       lease lapses. A stale worker's writes and
+                       acknowledgements then fail.
 
-        A live lease whose holder is still alive is REFUSED — even when the
+        A live lease is REFUSED whatever the holder's pid state — even when the
         caller names itself with the SAME owner string but presents no
         continuity proof. A continuity proof (this instance's token or the
-        current stored-line token) resumes at any lease state, live or dead;
-        a dead holder is taken over on the same terms as an expired lease.
+        current stored-line token) resumes at any lease state, live or dead.
         Simultaneous re-claims race like ST10A's original T1 case: a bare
-        presenter's fate turns on the live-holder refusal, while a continuity
+        presenter's fate turns on the live-lease refusal, while a continuity
         proof decides nothing between two holders — only the first to re-seed
-        the line survives, which the ledger cannot order. Only expiry/death
-        hands the claim on without a continuity proof.
+        the line survives, which the ledger cannot order. Only expiry hands the
+        claim on without a continuity proof.
         """
         if not order_id or not owner:
             raise LedgerError("BAD_CLAIM", "order_id and owner are required")
