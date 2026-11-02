@@ -181,19 +181,18 @@ def _host_name():
 def _holder_live(host, pid, lease_at, now):
     """Is the recorded holder STILL running its claim?
 
-    A live lease is only respected when the holder can be shown to be alive.
-    On the same host the pid is probed (never signalled on Windows). A remote
-    holder, an unknown host or an unrecorded pid cannot be shown dead, so the
-    lease stands until it expires.
+    OPTION A contract (changed from base): a claim outlives its process.
+    Takeover happens ONLY on lease expiry, never on a dead-pid probe. A
+    live lease is therefore always respected, whatever the holder's pid
+    state: simultaneous racers are refused deterministically. The cost is
+    that a dead holder's claim is not recoverable until its lease expires
+    (ST10A T6-strict no longer holds; see relaxed_t6.py).
     """
     if lease_at is None or lease_at <= now:
         return False
-    here = _host_name()
-    if not host or not here or host != here:
-        return True                 # remote/unknown: cannot prove it dead
-    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
-        return True                 # unrecorded: cannot prove it dead
-    return pid_is_alive(pid)
+    # Lease live -> holder stands. No pid probe: the process may be dead,
+    # but the claim is still owned until the lease lapses.
+    return True
 
 
 # --- the ledger --------------------------------------------------------------
