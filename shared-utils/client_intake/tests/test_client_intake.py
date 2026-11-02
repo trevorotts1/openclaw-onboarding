@@ -14,11 +14,16 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 PKG = HERE.parent
 REPO = PKG.parents[1]
+
+def _skill(name):  # onboarding: 49-signature-funnel; 999: .claude/skills/signature-funnel
+    p = REPO / name
+    return p if p.is_dir() else REPO / ".claude/skills" / name.split("-", 1)[1]
+
 sys.path.insert(0, str(PKG))
 import engine as e  # noqa: E402
 import palette_help as ph  # noqa: E402
 
-BLACKCEO = json.loads((REPO / "71-blackceo-signature-page/assets/brand/blackceo-brand.json").read_text())["palette"]
+BLACKCEO = json.loads((_skill("71-blackceo-signature-page") / "assets/brand/blackceo-brand.json").read_text())["palette"]
 FIX = PKG / "fixtures"
 
 
@@ -86,16 +91,16 @@ class Bank(unittest.TestCase):
             for r in q["required_by"]:
                 covered.add(r.split(":", 1)[1])
         required = {}
-        sys.path.insert(0, str(REPO / "49-signature-funnel/scripts"))
+        sys.path.insert(0, str(_skill("49-signature-funnel") / "scripts"))
         vlp = importlib.import_module("validate_launch_plan")
         required["49 launch"] = set(vlp.REQUIRED_LAUNCH_FIELDS)
-        sys.path.insert(0, str(REPO / "83-black-friday-launcher"))
+        sys.path.insert(0, str(_skill("83-black-friday-launcher")))
         try:
             intake83 = importlib.import_module("launcher_core.intake")
             required["83 intake"] = set(intake83.REQUIRED_FIELDS)
         except ImportError:
             self.skipTest("Skill 83 not present in this checkout")
-        wi = (REPO / "71-blackceo-signature-page/scripts/write_intake.py").read_text()
+        wi = (_skill("71-blackceo-signature-page") / "scripts/write_intake.py").read_text()
         required["71 write_intake"] = {re.match(r'"--([a-z-]+)"', c).group(1) for c in wi.split("p.add_argument(")[1:] if "required=True" in c.split("p.add_argument(")[0].split("\n    p.")[0]}
         for who, fields in required.items():
             self.assertFalse(fields - covered, f"{who} fields with no question and no system reason: {sorted(fields - covered)}")
@@ -103,8 +108,8 @@ class Bank(unittest.TestCase):
         legacy = set()
         for q in bank["questions"]:
             legacy.update(q["legacy_ids"])
-        sf = json.loads((REPO / "49-signature-funnel/intake/sf-intake-questions.json").read_text())["questions"]
-        launch = json.loads((REPO / "49-signature-funnel/intake/launch-questions.json").read_text())["questions"]
+        sf = json.loads((_skill("49-signature-funnel") / "intake/sf-intake-questions.json").read_text())["questions"]
+        launch = json.loads((_skill("49-signature-funnel") / "intake/launch-questions.json").read_text())["questions"]
         want = {x["id"] for x in sf} | {x["id"] for x in launch}
         self.assertFalse(want - legacy, f"questions with no canonical id: {sorted(want - legacy)}")
 
@@ -480,7 +485,7 @@ class TopicsModesAndEstimates(unittest.TestCase):
 
 class LegacyMapping(unittest.TestCase):
     def test_legacy_answers_cover_what_the_sf_prover_requires(self):
-        sys.path.insert(0, str(REPO / "49-signature-funnel/scripts"))
+        sys.path.insert(0, str(_skill("49-signature-funnel") / "scripts"))
         psi = importlib.import_module("prove_sf_intake")
         d = e.new_doc("legacy")
         answered(d, [

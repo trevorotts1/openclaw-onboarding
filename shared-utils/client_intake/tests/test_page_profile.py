@@ -10,11 +10,16 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 PKG = HERE.parent
 REPO = PKG.parents[1]
+
+def _skill(name):  # onboarding: 49-signature-funnel; 999: .claude/skills/signature-funnel
+    p = REPO / name
+    return p if p.is_dir() else REPO / ".claude/skills" / name.split("-", 1)[1]
+
 sys.path.insert(0, str(PKG))
 import engine as e  # noqa: E402
 
-SKILL_MD = REPO / "71-blackceo-signature-page/SKILL.md"
-BRAND_INTAKE = REPO / "71-blackceo-signature-page/references/brand-intake.md"
+SKILL_MD = _skill("71-blackceo-signature-page") / "SKILL.md"
+BRAND_INTAKE = _skill("71-blackceo-signature-page") / "references/brand-intake.md"
 
 FUNNEL_ONLY = {
     "funnel_length", "bump", "upsell_1", "downsell_1", "upsell_2", "downsell_2",

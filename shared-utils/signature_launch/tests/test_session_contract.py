@@ -15,12 +15,17 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 PKG = HERE.parent
 REPO = PKG.parents[1]
+
+def _skill(name):  # onboarding: 49-signature-funnel; 999: .claude/skills/signature-funnel
+    p = REPO / name
+    return p if p.is_dir() else REPO / ".claude/skills" / name.split("-", 1)[1]
+
 CONTRACT = PKG / "session_contract.json"
 FIXTURE = PKG / "fixtures/session_contract.complete_plan.json"
 ANSWERS = REPO / "shared-utils/client_intake/fixtures"
 
 sys.path.insert(0, str(REPO / "shared-utils/client_intake"))
-sys.path.insert(0, str(REPO / "49-signature-funnel/scripts"))
+sys.path.insert(0, str(_skill("49-signature-funnel") / "scripts"))
 import engine as e  # noqa: E402
 
 li = importlib.import_module("launch_intake")

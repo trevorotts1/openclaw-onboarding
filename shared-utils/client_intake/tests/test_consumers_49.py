@@ -14,9 +14,14 @@ from pathlib import Path
 
 PKG = Path(__file__).resolve().parents[1]
 REPO = PKG.parents[1]
+
+def _skill(name):  # onboarding: 49-signature-funnel; 999: .claude/skills/signature-funnel
+    p = REPO / name
+    return p if p.is_dir() else REPO / ".claude/skills" / name.split("-", 1)[1]
+
 FIX = PKG / "fixtures"
 sys.path.insert(0, str(PKG))
-sys.path.insert(0, str(REPO / "49-signature-funnel/scripts"))
+sys.path.insert(0, str(_skill("49-signature-funnel") / "scripts"))
 import engine as e  # noqa: E402
 
 li = importlib.import_module("launch_intake")
@@ -110,14 +115,14 @@ class LegacyModeReadsTheSameFile(unittest.TestCase):
         self.assertIn("primary #0A7E8C", brief["q7_brand_colors"])
 
     def test_sf_spec_q7_asks_for_the_main_color_and_names_the_help(self):
-        spec = json.loads((REPO / "49-signature-funnel/intake/sf-intake-questions.json").read_text())
+        spec = json.loads((_skill("49-signature-funnel") / "intake/sf-intake-questions.json").read_text())
         q7 = next(q for q in spec["questions"] if q["id"] == "q7")
         self.assertIn("MAIN color", q7["prompt"])
         self.assertIn("help me", q7["prompt"])
         self.assertEqual(spec["canonical_bank"], "shared-utils/client_intake/question-bank.json")
 
     def test_prover_spec_and_self_test_still_pass(self):
-        self.assertEqual(psi.prove(str(REPO / "49-signature-funnel/intake/sf-intake-questions.json")), 0)
+        self.assertEqual(psi.prove(str(_skill("49-signature-funnel") / "intake/sf-intake-questions.json")), 0)
         self.assertEqual(psi.self_test(), 0)
 
 
