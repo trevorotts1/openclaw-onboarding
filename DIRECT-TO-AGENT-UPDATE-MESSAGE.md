@@ -21,7 +21,7 @@
 
 There is an update available for your OpenClaw / BlackCEO system. The latest version is **v27.1.68**; the operator supplies the target OpenClaw version `<V>` and the roll id `<ROLL_ID>`.
 
-This release pairs with Command Center v7.6.112. Presentations pipeline hardening, interview reliability (ILJ), provider-routing and Rescue Rangers hardening have landed, with native Linux and Docker topologies supported on Hostinger and Contabo.
+This release pairs with Command Center v7.6.126. Presentations pipeline hardening, interview reliability (ILJ), provider-routing and Rescue Rangers hardening have landed, with native Linux and Docker topologies supported on Hostinger and Contabo.
 
 Run exactly this two-line form, substituting the operator's `<V>` and `<ROLL_ID>`. Do not read a playbook, do not improvise, do not run any other updater:
 
