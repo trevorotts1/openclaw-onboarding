@@ -28,7 +28,7 @@ from launcher_core.constants import (  # noqa: E402
 )
 
 
-def base_intake(mode: str = "single_simple") -> dict:
+def _base_intake_raw(mode: str = "single_simple") -> dict:
     offers = [{"offer_id": "main-1", "name": "Black Friday Launch", "role": "main",
                "price": {"amount_minor": 49700, "currency": "USD"}}]
     if mode == "multiple_options":
@@ -64,7 +64,7 @@ def with_upsells(payload: dict) -> dict:
         {"offer_id": "u2", "name": "Upsell Two", "role": "upsell_2",
          "price": {"amount_minor": 29700, "currency": "USD"}},
     ]
-    return p
+    return with_checkout_facts(p)
 
 
 def make_pieces(run_dir: Path, graph: dict, normalized: dict) -> dict:
@@ -208,7 +208,7 @@ class IntakeTest(unittest.TestCase):
         payload["offers"].append({"offer_id": "u2", "name": "U2", "role": "upsell_2",
                                   "price": {"amount_minor": 100, "currency": "USD"}})
         with self.assertRaises(intake.IntakeError) as ctx:
-            intake.validate(payload)
+            intake.validate(with_checkout_facts(payload))
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-INTAKE-ROUTE")
 
 
@@ -386,6 +386,31 @@ class PackageTest(unittest.TestCase):
         self.assertTrue(checks.is_placeholder_path("skills/<name>/SKILL.md"))
         self.assertFalse(checks.is_placeholder_path("launcher_core/cli.py"))
         self.assertEqual(len(PLACEHOLDER_TOKENS), len(set(PLACEHOLDER_TOKENS)))
+
+
+
+CHECKOUT_TERMS = {
+    "guarantee_ref": "TEST-ONLY-GUARANTEE-REF", "guarantee_text": "Test-only guarantee text.",
+    "terms_ref": "TEST-ONLY-TERMS-REF", "terms_text": "Test-only terms text.",
+    "consent_ref": "TEST-ONLY-CONSENT-REF", "consent_text": "Test-only consent text.",
+}
+
+
+def with_checkout_facts(payload: dict) -> dict:
+    """The owner-supplied checkout facts intake requires (CHK-16): terms block + delivery per offer."""
+    payload.setdefault("checkout_terms", dict(CHECKOUT_TERMS))
+    for o in payload["offers"]:
+        o.setdefault("delivery", {"destination": f"https://members.example.com/{o['offer_id']}",
+                                  "owner_confirmed": True})
+        if o["role"] in ("upsell_1", "downsell_1", "upsell_2") or (
+                o["role"] == "main" and payload["journey_mode"] != "single_simple"):
+            o.setdefault("level", {"state": "supplied", "name": o["name"],
+                                   "deliverables": [f"{o['name']} access"]})
+    return payload
+
+
+def base_intake(*args, **kwargs) -> dict:
+    return with_checkout_facts(_base_intake_raw(*args, **kwargs))
 
 
 if __name__ == "__main__":
