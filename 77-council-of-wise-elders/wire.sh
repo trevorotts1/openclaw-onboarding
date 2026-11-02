@@ -40,6 +40,10 @@
 #   COUNCIL_CONNECTOR: READY|NOOP|DEFERRED_NO_GUI|NOT_READY <CODE> <detail>
 # plus the plugin line, always:
 #   COUNCIL_PLUGIN: READY|NOOP|NOT_READY <CODE> <detail>
+# plus, only when the active pointer, service.json or the live process disagree:
+#   COUNCIL_RECONCILE: release=<id> service_json=<id> running=<id|other> action=restart|update-receipt
+# A healthy /status from a process that does not exec the active release is
+# NOT_READY SERVICE_RELEASE_MISMATCH, never READY.
 # The store decision is announced on its own lines, and only when it needs
 # saying: COUNCIL_WIRE: STORE_AUTHORITY_RESOLVED <dir> (<source>; ...) when the
 # store this run will keep differs from what active.json recorded,
@@ -203,6 +207,23 @@ pm2_pid() { # [app] ; prints the app's pid digits, or empty when the app is unkn
 }
 mac_loaded() { launchctl print "gui/$UID_N/${1:-$LABEL}" >/dev/null 2>&1; }
 mac_gui()    { launchctl print "gui/$UID_N" >/dev/null 2>&1; }
+service_pid() { # the managed service's live pid, or empty
+  local _p
+  if [ "$PLATFORM" = "mac" ]; then
+    _p="$(launchctl print "gui/$UID_N/$LABEL" 2>/dev/null | sed -n 's/^[[:space:]]*pid = \([0-9][0-9]*\).*/\1/p' | head -1)"
+  else
+    _p="$(pm2_pid)"
+  fi
+  case "$_p" in ''|0|*[!0-9]*) return 1 ;; esac
+  printf '%s' "$_p"
+}
+running_release() { # prints the release path the live process actually execs, or empty
+  local _pid _cmd
+  _pid="$(service_pid)" || return 1
+  _cmd="$(ps -p "$_pid" -o command= 2>/dev/null)"
+  [ -n "$_cmd" ] || return 1
+  printf '%s' "$_cmd"
+}
 
 # ------------------------------------------- 3b. Council tunnel connector
 # Only for a box the operator gave a dedicated council-<slug> tunnel (its
@@ -708,6 +729,35 @@ wire_council_plugin
 LSHA="$(sha_file "$LAUNCHER")"
 PREV_SHA="$(jget "$P/service.json" launcher_sha256)"
 
+# ------------------------------------- 7c. active pointer / service / process
+# A NOOP build is not a reconciled box. The active pointer, service.json, the
+# generated launcher and the RUNNING process can disagree even when the release
+# bytes did not change: observed on the Leanne box, active.json named
+# rel-f39b7a232ccc while service.json and the live launchd process still ran
+# rel-1a68d8052f35, so the old process served no /report.pdf route. The running
+# command is the only witness that proves which release is actually serving.
+# Reconcile the managed process to the ACTIVE release here. This never changes
+# the store, environment, identity or model: it re-points the launcher, rewrites
+# service.json and restarts the same LaunchAgent/pm2 app when it is stale.
+SERVICE_REL="$(jget "$P/service.json" release_id)"
+RUNNING_CMD="$(running_release 2>/dev/null)" || RUNNING_CMD=""
+RUNNING_REL=""
+case "$RUNNING_CMD" in
+  *"$REL_PATH/scripts/service-launch.mjs"*) RUNNING_REL="$REL_ID" ;;
+esac
+FORCE_RESTART=0
+RECONCILE_ACTION="none"
+if [ -n "$RUNNING_CMD" ] && [ "$RUNNING_REL" != "$REL_ID" ]; then
+  FORCE_RESTART=1
+  RECONCILE_ACTION="restart"
+fi
+if [ -f "$P/service.json" ] && [ "${SERVICE_REL:-}" != "$REL_ID" ]; then
+  [ "$RECONCILE_ACTION" = none ] && RECONCILE_ACTION="update-receipt"
+  say "COUNCIL_RECONCILE: release=$REL_ID service_json=${SERVICE_REL:-missing} running=${RUNNING_REL:-other} action=$RECONCILE_ACTION"
+elif [ "$FORCE_RESTART" = 1 ]; then
+  say "COUNCIL_RECONCILE: release=$REL_ID service_json=${SERVICE_REL:-missing} running=${RUNNING_REL:-other} action=$RECONCILE_ACTION"
+fi
+
 link_shim() { # <bin dir> <name> <src> : symlink unless a foreign file owns the name
   local d="$1" n="$2" src="$3" t="$1/$2"
   mkdir -p "$d" 2>/dev/null || return 0
@@ -796,7 +846,7 @@ PL
     _i=0; while mac_loaded && [ "$_i" -lt 20 ]; do sleep 0.5; _i=$((_i+1)); done
     launchctl bootstrap "gui/$UID_N" "$PLIST" >>"$LOG" 2>&1 || notready SERVICE_UNHEALTHY "launchctl bootstrap failed for $LABEL after plist change"
     CHANGED=1
-  elif [ "$LSHA" != "$PREV_SHA" ]; then
+  elif [ "$LSHA" != "$PREV_SHA" ] || [ "$FORCE_RESTART" = "1" ]; then
     launchctl kickstart -k "gui/$UID_N/$LABEL" >>"$LOG" 2>&1
     CHANGED=1
   fi
@@ -806,7 +856,7 @@ else
   if [ -z "$_pid" ]; then
     "$PM2" start "$LAUNCHER" --name "$PM2_APP" --interpreter /bin/sh --time --cwd "$DATA_DIR" --output "$LOG" --error "$LOG" >>"$LOGDIR/council-pm2.log" 2>&1
     CHANGED=1
-  elif [ "$LSHA" != "$PREV_SHA" ] || [ "$_pid" = "0" ]; then
+  elif [ "$LSHA" != "$PREV_SHA" ] || [ "$_pid" = "0" ] || [ "$FORCE_RESTART" = "1" ]; then
     "$PM2" restart "$PM2_APP" --update-env >>"$LOGDIR/council-pm2.log" 2>&1
     CHANGED=1
   fi
@@ -829,6 +879,18 @@ if [ "$HEALTHY" != "1" ]; then
   tail -n 20 "$LOG" 2>/dev/null
   exit 0
 fi
+
+# Health alone is not release truth: an old process on the same port can answer
+# /status while serving an older release (the observed missing /report.pdf).
+# Require the live process to exec the ACTIVE release before reporting success.
+RUNNING_CMD_AFTER="$(running_release 2>/dev/null)" || RUNNING_CMD_AFTER=""
+case "$RUNNING_CMD_AFTER" in
+  *"$REL_PATH/scripts/service-launch.mjs"*) ;;
+  *)
+    write_service_json "$MANAGER" "$NAME" ""
+    say "NOT_READY SERVICE_RELEASE_MISMATCH $ORIGIN answered but the live process does not exec the active release $REL_ID (running: ${RUNNING_CMD_AFTER:-no pid}); the old process still serves"
+    exit 0 ;;
+esac
 
 write_service_json "$MANAGER" "$NAME" "$LSHA"
 if [ "$CHANGED" = "1" ]; then _state=READY; else _state=NOOP; fi

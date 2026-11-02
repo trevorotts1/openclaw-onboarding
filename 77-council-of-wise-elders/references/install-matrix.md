@@ -157,6 +157,13 @@ Result lines:
 | `COUNCIL_WIRE: DEFERRED_NO_GUI` | Mac with no logged-in GUI session, so the LaunchAgent cannot load yet | Have the client log in to the Mac, then re-roll |
 | `COUNCIL_WIRE: NOT_READY <code>` | Not built or not running; the code says why | See below |
 
+`COUNCIL_RECONCILE: release=<id> service_json=<id|missing> running=<id|other> action=restart|update-receipt`
+is printed when the active pointer, `service.json` or the live process disagree.
+It is not a warning to ignore: `action=restart` means the managed LaunchAgent or
+pm2 app was re-pointed and restarted to the active release; `update-receipt`
+means only `service.json` was stale. The authoritative store, environment,
+identity and model are never changed by this step.
+
 Not-ready codes:
 
 | Code | Cause | Fix |
@@ -168,6 +175,7 @@ Not-ready codes:
 | `PORT_IN_USE` | Something other than the Council service holds port 8787 | Find the holder with `lsof -nP -iTCP:8787 -sTCP:LISTEN`, decide with the operator, then re-roll. Never kill an unknown process blindly |
 | `SERVICE_UNHEALTHY` | The service started but `/status` did not answer in time | Read the service log (pm2 logs or the LaunchAgent log), fix the cause, re-roll |
 | `RUNTIME_BUILD_FAILED` | `install-runtime.mjs` failed (network for `npm ci`, disk space, build error) | Read its last `FAIL` line, fix the cause, re-roll. The previous release stays active |
+| `SERVICE_RELEASE_MISMATCH` | Something answers on the port, but the live process does not exec the active release (an old process can still answer `/status` and lack `/report.pdf`) | Re-roll: wire.sh re-points the launcher, rewrites `service.json` and restarts the managed process. If it persists, inspect the manager's real command line and the service log; never hand-edit a release |
 | `UNSUPPORTED_PLATFORM` | Neither a supported Mac nor a Linux container | Report to the operator; the Council service is not wired here |
 
 ## COUNCIL_PLUGIN codes (printed by wire.sh during the same roll)
