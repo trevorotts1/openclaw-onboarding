@@ -14,10 +14,32 @@ native records and return read-backs; nothing here talks to GHL.
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import jsonschema
+
+def _refuse_outside_tests() -> None:
+    """CHK-27: this module is a fixture model that self-attests payment. It
+    may be imported only from a tests/ or fixtures/ directory of this repo;
+    production payment truth is the Skill 44 normalizer."""
+    root = Path(__file__).resolve().parents[2]
+    frame = sys._getframe(1)
+    while frame is not None:
+        name = frame.f_code.co_filename
+        if not name.startswith("<"):
+            try:
+                if {"tests", "fixtures"} & set(Path(name).resolve().relative_to(root).parts[:-1]):
+                    return
+            except (ValueError, OSError):
+                pass
+        frame = frame.f_back
+    raise RuntimeError(f"{Path(__file__).name} is a test-only fixture and cannot be imported outside tests/fixtures")
+
+
+_refuse_outside_tests()
+
+import jsonschema  # noqa: E402
 
 PACKET_EVENT_SCHEMA = (Path(__file__).resolve().parents[1] / "fixtures" / "packet"
                        / "schemas" / "purchase-event.schema.json")

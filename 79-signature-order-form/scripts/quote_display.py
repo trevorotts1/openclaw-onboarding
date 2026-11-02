@@ -52,9 +52,19 @@ class DisplayPrice:
     shipping_policy_ref: str | None = None
     discount_policy_ref: str | None = None
     source_verified: bool = False
+    # Native read-back of the price object: {"native_price_id", "currency", "amount_minor"}.
+    # When supplied it is the proof of verification and must agree with this price (CHK-25).
+    native_readback: dict | None = None
 
     def __post_init__(self) -> None:
-        if not self.source_verified:
+        if self.native_readback is not None:
+            rb = self.native_readback
+            if not isinstance(rb, dict) or not rb.get("native_price_id"):
+                raise DisplayError("native read-back record must carry a native_price_id")
+            if (rb.get("currency"), rb.get("amount_minor")) != (self.currency, self.amount_minor):
+                raise DisplayError("display disagrees with the native read-back record")
+        elif not self.source_verified:
+            # ponytail: the bare flag stays for fixtures; production callers pass native_readback.
             raise DisplayError(
                 "display may only be built from verified native price objects (doc 09 section 3)")
         if not isinstance(self.amount_minor, int) or isinstance(self.amount_minor, bool):
@@ -62,8 +72,10 @@ class DisplayPrice:
         if self.amount_minor < 0:
             raise DisplayError("amount_minor cannot be negative (review defect B3)")
         if self.amount_due_now_minor is None:
+            # Only a trial defers the first charge; a recurring plan without a
+            # trial bills the full amount today (CHK-25).
             object.__setattr__(self, "amount_due_now_minor",
-                               self.amount_minor if self.billing_type == "one_time" else 0)
+                               0 if self.billing_type == "trial_then_recurring" else self.amount_minor)
         if self.amount_due_now_minor < 0:
             raise DisplayError("amount due now cannot be negative (review defect B3)")
         if any(entry[2] < 0 for entry in self.schedule):

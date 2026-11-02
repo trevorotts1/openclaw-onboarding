@@ -22,7 +22,30 @@ Rules enforced here (doc 09 section 8, doc 02 section 4, doc 18 section 4):
 """
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
+from pathlib import Path
+
+
+def _refuse_outside_tests() -> None:
+    """CHK-27: this module is a fixture model that self-attests payment. It
+    may be imported only from a tests/ or fixtures/ directory of this repo;
+    production payment truth is the Skill 44 normalizer."""
+    root = Path(__file__).resolve().parents[2]
+    frame = sys._getframe(1)
+    while frame is not None:
+        name = frame.f_code.co_filename
+        if not name.startswith("<"):
+            try:
+                if {"tests", "fixtures"} & set(Path(name).resolve().relative_to(root).parts[:-1]):
+                    return
+            except (ValueError, OSError):
+                pass
+        frame = frame.f_back
+    raise RuntimeError(f"{Path(__file__).name} is a test-only fixture and cannot be imported outside tests/fixtures")
+
+
+_refuse_outside_tests()
 
 
 class StateError(ValueError):
