@@ -91,6 +91,8 @@ DESIGN_CSS_REF = "shared-utils/signature_launch/design/design.css"
 DESIGN_CSS_SHA256 = "68f6084ba8e86cb32622bbf799b49b16a518c4c348481dcbe2f992200cda2cce"
 TOKENS_COMPONENT_REF = "shared-utils/signature_launch/design/tokens/tokens.py"
 TOKENS_COMPONENT_VERSION = "1.0.0"
+# The image-slot contract every renderer shares; validate_page.py loads it.
+IMAGE_SLOTS_REF = "shared-utils/signature_launch/design/image_slots.py"
 
 # Page-result next-role vocabulary for a landing page (packet doc 07
 # section 5): after a verified interest submission the launch advances to
@@ -468,19 +470,65 @@ def derive_next_role(request, graph, launch):
 # substitute output.
 # ---------------------------------------------------------------------------
 
-def tokens_component_path(skill_root):
-    candidates = _shared_candidates(skill_root, TOKENS_COMPONENT_REF)
+def shared_component_path(skill_root, rel):
+    """The first place a shared component file exists, else the canonical one."""
+    candidates = _shared_candidates(skill_root, rel)
     return next((c for c in candidates if c.is_file()), candidates[0])
 
 
-def emit_design_tokens(skill_root, brand_file):
-    """Return (css_text_or_None, record). Never raises for a missing
-    component; raises LaunchContextError when the component is present
-    but the brand cannot be resolved through it."""
+def tokens_component_path(skill_root):
+    return shared_component_path(skill_root, TOKENS_COMPONENT_REF)
+
+
+def verify_design_css(skill_root, token_driven=False):
+    """Compare design.css to the recorded SHA-256 (STR-22). Returns the record.
+
+    A file whose hash differs always raises: a modified stylesheet is not the
+    approved one. A file that is absent raises only for a token-driven page
+    (one whose colors and fonts come from the tokens); otherwise it is recorded
+    as component_not_in_tree.
+    """
+    path = shared_component_path(skill_root, DESIGN_CSS_REF)
+    record = {"component_file": DESIGN_CSS_REF, "sha256": DESIGN_CSS_SHA256}
+    if not path.is_file():
+        if token_driven:
+            raise LaunchContextError(
+                "the page's shared design files are not installed, so the import stopped "
+                "before writing anything. "
+                f"NEXT (operator, role: publishing check): design.css is not in the tree "
+                f"(searched {path}); a token-driven page cannot be built without it. "
+                "Install the shared design components beside this skill and rerun")
+        record.update({"status": "component_not_in_tree", "actual_sha256": None})
+        return record
+    actual = sha256_bytes(path.read_bytes())
+    record["actual_sha256"] = actual
+    if actual != DESIGN_CSS_SHA256:
+        raise LaunchContextError(
+            "the page's shared design files are not the approved ones, so the import stopped "
+            "before writing anything. "
+            f"NEXT (operator, role: publishing check): design.css hash mismatch: {path} is "
+            f"{actual}, the approved file is {DESIGN_CSS_SHA256}. Restore the approved "
+            "design.css and rerun")
+    record["status"] = "verified"
+    return record
+
+
+def emit_design_tokens(skill_root, brand_file, token_driven=False):
+    """Return (css_text_or_None, record). Raises LaunchContextError when the
+    component is present but the brand cannot be resolved through it, and,
+    for a token-driven page, when the component is not in the tree.
+    Otherwise a missing component is recorded as component_not_in_tree."""
     record = {"component": f"design-tokens@{TOKENS_COMPONENT_VERSION}",
               "component_ref": TOKENS_COMPONENT_REF}
     comp = tokens_component_path(skill_root)
     if not comp.is_file():
+        if token_driven:
+            raise LaunchContextError(
+                "the page's shared design files are not installed, so the import stopped "
+                "before writing anything. "
+                f"NEXT (operator, role: publishing check): component_not_in_tree: the design "
+                f"tokens component is not at {comp}; a token-driven page takes its colors and "
+                "fonts from it. Install the shared design components beside this skill and rerun")
         record.update({"status": "component_not_in_tree", "path": None,
                        "missing_tokens": None})
         return None, record
@@ -499,7 +547,7 @@ def emit_design_tokens(skill_root, brand_file):
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         resolution = mod.resolve_tokens(brand)
-        css = mod.tokens_to_css(resolution)
+        css = mod.page_css(resolution) if hasattr(mod, "page_css") else mod.tokens_to_css(resolution)
     except Exception as exc:
         raise LaunchContextError(
             f"design tokens: the tokens component at {comp} failed on the "
@@ -697,7 +745,10 @@ def prepare_import(skill_root, run_dir, request_path, launch_path=None,
         design_brand = _resolve_existing(skill_root, run_dir, brand_file)
     if design_brand is None:
         design_brand = brand_resolved
-    css, tokens_record = emit_design_tokens(skill_root, design_brand)
+    # Every page this profile produces is token-driven: a modified design.css
+    # or a missing component refuses the import (STR-22).
+    design_css_record = verify_design_css(skill_root, token_driven=True)
+    css, tokens_record = emit_design_tokens(skill_root, design_brand, token_driven=True)
 
     launch_block = {
         "schema_version": request["schema_version"],
@@ -734,8 +785,7 @@ def prepare_import(skill_root, run_dir, request_path, launch_path=None,
         "popup_config_ref": "launch/popup-config.json",
         "consent_source": "launch_context_import" if consent_supplied else None,
         "design_assets": {
-            "design_css": {"component_file": DESIGN_CSS_REF,
-                           "sha256": DESIGN_CSS_SHA256},
+            "design_css": design_css_record,
             "design_tokens_css": tokens_record,
         },
     }
