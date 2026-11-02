@@ -17,6 +17,7 @@ import unittest
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest import mock
 
 # Launch events spool to the home directory when no Command Center is configured;
 # a test run must never write there.
@@ -29,6 +30,7 @@ SKILL = HERE.parent
 CLIENT, WORKER = "client-1", "worker-9"
 sys.path.insert(0, str(HERE))
 import compile_launch_route as clr  # noqa: E402
+import front_door as fd  # noqa: E402
 import dispatch_launch as dl  # noqa: E402
 import validate_launch_plan as vlp  # noqa: E402
 from test_page_set import LAUNCH_EXAMPLE, approved_launch  # noqa: E402
@@ -96,16 +98,20 @@ def pinned_copy(td: Path) -> Path:
     """The whole skill copied beside Skill 71 with its own freshly minted pin.
 
     These tests are about what the entry DOES with an approved adapter table, not
-    about the enforcement-core pin (the integrator re-stamps SF-PROVER-PIN.sha256
-    after any pinned file changes; the pin itself is proven elsewhere). A copy
+    about the enforcement-core pin (CI re-mints SF-PROVER-PIN.sha256
+    after any pinned file changes; the pin itself is proven in test_front_door). A copy
     with its own pin keeps them true on every branch."""
     root = td / "skills"
     dst = root / "49-signature-funnel"
     shutil.copytree(SKILL, dst, ignore=shutil.ignore_patterns("__pycache__", "working"))
     (root / "71-blackceo-signature-page").symlink_to(
         SKILL.parent / "71-blackceo-signature-page", target_is_directory=True)
-    p = run(["bash", str(dst / "signature-funnel-entry.sh"), "--write-pin"])
-    assert p.returncode == 0, p.stdout + p.stderr
+    # the pin set also covers the Skill 83 launcher tree and the shared launch packages beside Skill 49
+    for sibling in ("83-black-friday-launcher", "shared-utils"):
+        (root / sibling).symlink_to(SKILL.parent / sibling, target_is_directory=True)
+    # the fixture's own mint, through the only legal path (CI); the repository pin is untouched
+    fd.mint_pin_ci(dst, env={"GITHUB_ACTIONS": "true", "GITHUB_EVENT_NAME": "push",
+                             "GITHUB_REPOSITORY": "local/test", "GITHUB_RUN_ID": "0"})
     return dst
 
 
@@ -265,16 +271,36 @@ def _flip(node, value):
 
 
 def live_launch():
-    """An approved launch that is NOT test_only, plus its plan approval."""
+    """An approved launch that is NOT test_only, plus its plan approval record (as Command Center holds it)."""
     launch = deepcopy(LAUNCH_EXAMPLE)
     _flip(launch, False)
     launch["journey_mode"], launch["bump_enabled"] = "multiple_options", True
     graph = clr.compile_route(launch)
     launch["route_graph_ref"] = f"route-graph:{launch['launch_id']}:rev{launch['revision']}"
     launch["route_graph_hash"] = clr.graph_hash(graph)
-    launch["status"], launch["plan_approval_ref"] = "approved", "APPR-1"
-    approval = dict(approved_launch()[1], subject_hash=vlp.plan_document_hash(launch))
+    launch["status"], launch["plan_approval_ref"] = "approved", "APPR-LIVE-1"
+    approval = dict(approved_launch()[1], approval_id="APPR-LIVE-1", plan_hash=vlp.plan_document_hash(launch))
     return launch, approval
+
+
+def command_center_holds(testcase, *records):
+    """A live (not test_only) approval is fetched from Command Center and a dict never stands in for it, so the
+    fetch is the one seam faked here: it answers with exactly these records and nothing else."""
+    held = {r["approval_id"]: r for r in records}
+    real = vlp._approval_verifier
+
+    def verifier():
+        mod = real()
+
+        def fetch(approval_id, env):
+            if approval_id not in held:
+                mod._refuse("APPROVAL-NOT-FROM-AUTHORITY", "Command Center has no such approval record")
+            return dict(held[approval_id])
+        mod._fetch = fetch
+        return mod
+    patcher = mock.patch.object(vlp, "_approval_verifier", verifier)
+    patcher.start()
+    testcase.addCleanup(patcher.stop)
 
 
 class APaidKieRunNeedsItsBudgetApproval(unittest.TestCase):
@@ -287,11 +313,18 @@ class APaidKieRunNeedsItsBudgetApproval(unittest.TestCase):
             tdp = Path(td)
             adapters = _adapters(tdp, *dl.PAGE_ROLES)
             pair = live_launch()
+            budget = dict(pair[1], approval_id="APPR-PAID-1", kind="paid_asset_budget",
+                          scope=["paid_asset_budget"], cap={"cap_minor": 8_000_000, "currency": "USD"})
+            command_center_holds(self, pair[1], budget)
             with self.assertRaises(dl.DispatchError) as ctx:
                 _dispatch(tdp, adapters, pair, image_inputs=self.INPUTS)
             self.assertIn("paid_asset_budget", str(ctx.exception))
-            budget = dict(pair[1], approval_id="APPR-P", subject_type="paid_asset_budget",
-                          scope=["paid_asset_budget"])
+            uncapped = {k: v for k, v in budget.items() if k != "cap"}
+            command_center_holds(self, pair[1], uncapped)
+            with self.assertRaises(dl.DispatchError) as ctx:  # a budget with no cap is no budget
+                _dispatch(tdp, adapters, pair, image_inputs=self.INPUTS, scoped_approvals=[uncapped])
+            self.assertIn("spend cap", str(ctx.exception))
+            command_center_holds(self, pair[1], budget)
             manifest, _ = _dispatch(tdp, adapters, pair, image_inputs=self.INPUTS,
                                     scoped_approvals=[budget])
             self.assertEqual(manifest["execution"], "executed")
