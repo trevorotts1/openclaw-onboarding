@@ -474,6 +474,11 @@ _CONVERSATIONS_CALENDARS: tuple[OperationRow, ...] = (
 # ---------------------------------------------------------------------------
 _PAYMENTS_ALT: tuple[str, ...] = ("2021-07-28",)
 
+# Product/price writes: ``amount`` in CreatePriceDto is a decimal in MAJOR units
+# (spec example 99.99, official apps/products.json). Callers never build that
+# body by hand: shared-utils/ghl/products_prices.py owns the one conversion
+# (ISO-4217 exponent aware) plus the read-first / read-back / approval discipline,
+# and the Skill 44 CLI product/price commands route through it.
 _PAYMENTS: tuple[OperationRow, ...] = (
     _R("products.list", "GET", "/products/", "v3", "D", PUB, PIT_OR_OAUTH,
        "query.locationId", False, False, "B-COMMUNITY-RAIL",
