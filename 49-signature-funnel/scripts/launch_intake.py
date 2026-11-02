@@ -1047,7 +1047,12 @@ def render_summary(session: Dict[str, Any]) -> str:
 
     def price_of(o):
         p = o["prices"][0]
-        return _money_display(p["amount_minor"], p["currency"])
+        shown = _money_display(p["amount_minor"], p["currency"])
+        code = str(p.get("currency") or "").upper()
+        sym = _selection_core().CURRENCY_SYMBOLS.get(code)
+        if code != "USD" and sym and shown.startswith(sym):
+            return f"{shown} = {code} {shown[len(sym):]}"  # a bare symbol is ambiguous (JPY/CNY)
+        return shown
 
     lines = ["Here is the launch I recommend."]
     lines.append("1. Your first page introduces the result. It does not show a price.")

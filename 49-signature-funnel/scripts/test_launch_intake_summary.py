@@ -57,6 +57,7 @@ class EveryOfferInTheSummary(unittest.TestCase):
         for name, minor in lv:
             self.assertIn(name, text)
             self.assertIn(f"${minor // 100:,}.00", text)
+        self.assertNotIn("USD ", text)
 
     def test_multiple_options_lists_billing_and_deliverable_count(self):
         lv = [("Basic", 19700), ("Plus", 49700)]
@@ -85,6 +86,7 @@ class EveryOfferInTheSummary(unittest.TestCase):
             offers__main__price=price(500000, "JPY")))
         text = li.render_summary(s)
         self.assertIn("¥500,000", text)
+        self.assertIn("JPY 500,000", text)
         self.assertEqual(li._money_display(50000, "JPY"), "¥50,000")
 
 
