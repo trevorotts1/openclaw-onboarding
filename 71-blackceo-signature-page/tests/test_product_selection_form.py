@@ -136,6 +136,30 @@ class FormTests(unittest.TestCase):
             self.assertGreaterEqual(budget["min_seen"], budget["target"], stage)
             self.assertLessEqual(budget["max_seen"], budget["max"], stage)
 
+    def test_two_or_three_package_slots_build_at_every_stage_without_padding(self):
+        # distinct slots must each get their own label text: a stock sentence repeated per slot is padding
+        def slots(*treatments):
+            return {"3": [{"slot_id": f"PKG-{i}", "aspect_ratio": "1:1", "art_direction": f"package {i} image",
+                           **({"treatment": t} if t else {})} for i, t in enumerate(treatments, 1)]}
+        shapes = {"two same": slots(None, None), "two distinct": slots("mask-circle", "mask-arch"),
+                  "three distinct": slots("mask-circle", "mask-arch", "mask-pill")}
+        for name, shape in shapes.items():
+            for stage in ("desktop-wireframe", "mobile-tablet", "visual-mockup", "final-mockups"):
+                with self.subTest(shape=name, stage=stage):
+                    request = stub_request(self.run, stage, slots=shape)
+                    self.assertEqual(len(request["sections"]), 5)
+
+    def test_each_wireframe_slot_label_line_is_specific_to_its_slot(self):
+        resolved = {"role": "selection-packages", "slots": [
+            {"slot": {"slot_id": f"PKG-{i}", "aspect_ratio": "1:1", "delivery_px": {"desktop": [600, 600]}},
+             "treatment": t} for i, t in ((1, "mask-circle"), (2, "mask-arch"))]}
+        lines = [l for l in comp.block("desktop-wireframe", resolved).split("\n") if l.startswith("SLOTS ")]
+        self.assertEqual(len(lines), 2)
+        printed = [l.split("Print", 1)[1] for l in lines]
+        self.assertEqual(len(set(printed)), 2)
+        for l, i, t in zip(lines, (1, 2), ("mask-circle", "mask-arch")):
+            self.assertIn(f"PKG-{i} 600 x 600 1:1 {t}", l.split("Print", 1)[1])
+
     def prompt(self, stage, index, width):
         request = stub_request(self.run, stage)
         request["_brand_block"] = exe.require_brand_colors(self.run)
