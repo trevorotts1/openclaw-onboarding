@@ -2,8 +2,11 @@
 // entry-validate.mjs.
 //
 // OpenClaw resolves an inbound direct message through these route tiers, in
-// order (dist/resolve-route-*.mjs): exact peer, peer wildcard, guild+roles,
-// guild, team, account, channel. A Council entry is valid only when the tier
+// order (dist/resolve-route-*.mjs): exact peer, peer.parent, peer wildcard,
+// guild+roles, guild, team, account, channel. A direct message carries no
+// parent, guild or team context, so those tiers cannot fire for a DM; the
+// predicate excludes them rather than guessing. A Council entry is valid only
+// when the tier
 // that actually resolves the entry's conversationId selects the entry's own
 // agentId, and conversationId is an authorized sender on that account.
 //
@@ -92,7 +95,12 @@ export function resolveCouncilBinding({ cfg, channel, accountId, conversationId,
   }
 
   const accounts = isPlainObject(cfg?.channels?.telegram?.accounts) ? cfg.channels.telegram.accounts : {};
-  const account = accounts[text(accountId)];
+  // OpenClaw resolves the account id through normalizeAccountId (trim, lower,
+  // or "default"). Match that normalization here so a differently-cased config
+  // key cannot turn a real route into a false negative.
+  const wantedAccount = normalizeAccountId(accountId);
+  const accountKey = Object.keys(accounts).find((key) => normalizeAccountId(key) === wantedAccount);
+  const account = accountKey === undefined ? undefined : accounts[accountKey];
   if (!isPlainObject(account)) {
     return { ok: false, code: "ACCOUNT_NOT_FOUND", detail: `telegram account ${text(accountId) || "(none)"} does not exist` };
   }
