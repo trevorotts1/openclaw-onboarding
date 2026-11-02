@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from .constants import (
     COUNCIL_ENTRY_POINT,
+    COUNCIL_NO_ADVICE_SUMMARY,
     COUNCIL_SKILL_SLUG,
     DECIDED,
     FUNNEL_SKILL_SLUG,
@@ -1113,6 +1114,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
             "entry_point": council["entry_point"],
             "status": council["status"],
             "advice_state": council["advice_state"],
+            "council_session_held": council.get("council_session_held") is True,
+            "client_summary": council.get("client_summary") or COUNCIL_NO_ADVICE_SUMMARY,
             "blocks_build": False,
             "is_permission": False,
             "advice_path": "council-advice.json",

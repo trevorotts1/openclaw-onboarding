@@ -69,7 +69,11 @@ _RUN_DIR_EXTRA = re.compile(r"urllib\.request", re.IGNORECASE)
 _NET_MODULES = ("urllib.request", "urllib3", "http.client", "http.server", "socket", "requests", "httpx",
                 "aiohttp", "smtplib", "ftplib", "telnetlib", "imaplib", "poplib", "websocket", "websockets",
                 "xmlrpc.client", "paramiko")
-NET_ALLOWED = {"49/scripts/agnes_orchestrator.py", "49/scripts/mc_board.py"}
+# The two Command Center clients (approval verification GET, launch-event POST) talk only to the client's own
+# Command Center, never GHL, mail or KIE; both are pinned. Integration fix: U-enforcement-01's scan met
+# U-approval-02 and U-cc-01 for the first time on integration/bfl-onboarding (see scratch/.../conflicts.md).
+NET_ALLOWED = {"49/scripts/agnes_orchestrator.py", "49/scripts/mc_board.py",
+               "shared/contract/approval_record.py", "shared/launch/launch_events.py"}
 # Files that must name the denylisted strings (they define or check them).
 STRING_ALLOWED = {"49/scripts/kie74_receipt.py", "49/scripts/front_door.py"}
 _SKIP_DIRS = {"__pycache__", "fixtures", "tests", "examples", "working"}

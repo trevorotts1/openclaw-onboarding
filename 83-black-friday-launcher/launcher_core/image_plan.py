@@ -28,7 +28,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 DESIGN_STYLES = ("A", "B", "C")
 # The launch record's image_provider vocabulary (Skill 49 schema). Only "kie" has an executor path
-# in Skill 71 today; the others are refused by name rather than silently rerouted.
+# in Skill 71 today. A practice run (test_only) works with every known provider: it draws stub pictures and
+# spends nothing. A paid run with any other provider is refused by name rather than silently rerouted.
 KNOWN_PROVIDERS = ("kie", "agnes", "other_explicit")
 EXECUTABLE_PROVIDERS = ("kie",)
 
@@ -281,12 +282,13 @@ def resolve(raw: Optional[Dict[str, Any]], *, test_only: bool,
     if provider not in KNOWN_PROVIDERS:
         raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-PROVIDER", "image_plan.image_provider",
                              f"{provider!r} is not a known image service ({list(KNOWN_PROVIDERS)!r}).")
-    if provider not in EXECUTABLE_PROVIDERS:
+    if provider not in EXECUTABLE_PROVIDERS and not test_only:
         raise ImagePlanError(
             "AF-LAUNCH-IMAGE-PLAN-PROVIDER", "image_plan.image_provider",
-            f"The {provider} image service cannot draw these pages yet (Skill 71's stage executor has no "
-            f"{provider} path). Nothing was sent and nothing was spent. Choose the standard service (kie) "
-            "or ask for the integration to be added.")
+            f"The {provider} image service cannot draw paid pages yet (Skill 71's stage executor has no "
+            f"{provider} path). Nothing was sent and nothing was spent. A practice run with placeholder "
+            "pictures works with any service; for paid pictures choose the standard service (kie) or ask "
+            "for the integration to be added.")
 
     # Spend: a free run may default the cap; a paid run never does. A paid run's cap is MONEY (cap_minor +
     # currency), the picture ceiling is derived from it, and the spend needs a verified paid_asset_budget.

@@ -131,3 +131,18 @@ def test_head_and_card_problems_reported_together():
     with pytest.raises(ValueError) as ei:
         rc.html_fragment(_doc(head='<link rel="stylesheet" href="site.css">', body='<input name="cvv">'))
     assert "card-data fields refused" in str(ei.value) and "site.css" in str(ei.value)
+
+
+def test_lint_refuses_79_review_only_drafts():
+    from pathlib import Path
+    comps = Path(__file__).resolve().parents[2] / "79-signature-order-form" / "references" / "components"
+    combined = rc.lint_ghl_fragment(rc.html_fragment((comps / "combined-checkout.html").read_text(encoding="utf-8"), base_dir=comps))
+    assert combined["ok"] is False
+    joined = " ".join(combined["errors"])
+    assert "TEST" in joined and "INCLUDE" in joined
+    for name, word in (("order-bump.html", "bump"), ("guarantee-terms.html", "consent")):
+        res = rc.lint_ghl_fragment(rc.html_fragment((comps / name).read_text(encoding="utf-8"), base_dir=comps))
+        assert res["ok"] is False
+        assert word in " ".join(res["errors"]).lower()
+    clean = rc.lint_ghl_fragment("<section><h2>Testimonials</h2><p>Hello</p></section>", require_ghl_media=False)
+    assert clean["ok"] is True

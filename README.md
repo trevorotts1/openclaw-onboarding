@@ -17,7 +17,7 @@
 >
 > **v27.1.42 - Council (Skill 77) v1.0.25: W27 hardening.** First-status pre-warm so the first Council status call answers from a warm cache, the service launcher upstreamed into the skill, the skill root resolved from the installed binary, and a live chamber view over real sessions. Existing compatibility pin: **v7.6.112**.
 >
-> **v26.4.18 - Batch MGB015: three Skill 75 units (Skill 75 v2.9.6).** A style-aware length plan where a rap style keeps the fixed closing call-to-action cap and spends the rest on rap, captions caught early (display spellings, intake, the sheet, on-screen text, grammar flags), and docs in lockstep with the prompt. Paired Command Center: **v7.6.112**.
+> **v26.4.18 - Batch MGB015: three Skill 75 units (Skill 75 v2.9.6).** A style-aware length plan where a rap style keeps the fixed closing call-to-action cap and spends the rest on rap, captions caught early (display spellings, intake, the sheet, on-screen text, grammar flags), and docs in lockstep with the prompt. Paired Command Center: **v7.6.126**.
 >
 > **v26.4.17 - Batch MGB012: eight Skill 75 units (Skill 75 v2.9.5).** One lyric tag grammar that knows rap, prompt caps at the caller for H3, Kling and Hailuo, per-style and per-length Suno V6 templates, the H3 assembler and its 5,000-6,800 band, Kling as the card's video model, the length-class table with prompt compliance at final QC, and voice tags checked against the cast. Paired Command Center: **v7.6.112**.
 >

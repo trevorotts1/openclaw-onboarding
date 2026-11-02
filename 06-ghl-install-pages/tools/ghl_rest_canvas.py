@@ -1347,6 +1347,12 @@ def lint_ghl_fragment(fragment: str, *, enforce_unverified_strip: bool = False,
       - a home-made card input (cc-number, cc-csc, cardnumber, cvv ... S06-10)
       - an ``<img>`` whose src is not a GHL media-storage URL (S06-11; on by
         default, ``require_ghl_media=False`` only for non-funnel callers)
+      - fixture copy: the word ``TEST`` (case-sensitive, word-bounded) in a
+        review-only draft (CHK-18)
+      - an unresolved ``<!-- INCLUDE:`` marker left by a review-only draft
+        assembly (CHK-18)
+      - an order-bump / consent checkbox input in custom code: bump and consent
+        are native order-form settings (CHK-18)
 
     enforce_unverified_strip (default ``False`` = SAFE):
         Reserved hook for strip rules a FUTURE live save round-trip proves. The
@@ -1398,6 +1404,15 @@ def lint_ghl_fragment(fragment: str, *, enforce_unverified_strip: bool = False,
     # external/temporary URLs break or expire after launch).
     if require_ghl_media:
         errors.extend(find_non_ghl_images(fragment, extra_hosts=media_hosts))
+
+    # Hard error 5 — review-only draft artefacts (Skill 79 components, CHK-18): never installable.
+    if re.search(r"\bTEST\b", fragment):
+        errors.append("fixture copy 'TEST' present: review-only draft, not installable (CHK-18)")
+    if "<!-- include:" in fragment.lower():
+        errors.append("unresolved '<!-- INCLUDE:' marker present: review-only draft assembly, not installable (CHK-18)")
+    if re.search(r"<input\b[^>]*\b(?:name|id)\s*=\s*[\"']?[\w-]*(?:order_bump|order-bump|bump|consent)", fragment, re.I):
+        errors.append("order bump / consent checkbox in custom code: bump and consent must be native order-form "
+                      "settings, a custom input adds nothing to the order and gates nothing (CHK-18)")
 
     # Transparency: which probe-confirmed-survivor constructs are present. These
     # are reported, never penalised — the lint exists partly to PROVE these are

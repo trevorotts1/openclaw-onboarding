@@ -4,8 +4,8 @@ description: >
   Composes the Black Friday launch from the separate page skills through the
   signature launch contracts. Validates the launch intake fail-closed behind an
   entitlement attestation gate, compiles the doc 02 route graph (including the
-  folded_levels shape), maps the native Skill 79 checkout contract, records
-  Council advice in planning, produces the 7FigurePreneur shape without a
+  folded_levels shape), maps the native Skill 79 checkout contract, runs a
+  Council planning step (a Skill 77 package check unless a live Council session returns advice), produces the 7FigurePreneur shape without a
   product-selection page, dispatches page requests through Skill 49, and
   assembles the delivered package with a manifest, a receipt and executable
   completeness checks. Enabled in 999: installed from CONTROL/bundled-skills.txt,
@@ -51,7 +51,7 @@ a numbered directory, so the same code runs in both layouts.
 4. **Council planning** (`launcher_core/council.py`). Invokes Skill 77 through
    its documented offline entry point, records the result in the launch record
    and the receipt, and continues whatever it says: advice never blocks and is
-   never permission.
+   never permission. Without a live Council session this is a package check only: the record and receipt carry council_session_held false and a client summary saying no Council advice was obtained; council_required=True refuses without a session.
 5. **Package and receipt assembly** (`launcher_core/package.py`). Every enabled
    route node must arrive with a valid shared page-result. Writes
    `package-manifest.json`, `receipt.json`, `council-advice.json` and

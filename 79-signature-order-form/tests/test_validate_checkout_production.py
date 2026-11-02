@@ -160,3 +160,10 @@ class FixturePurchasePathIsTestOnly(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+def test_schema_title_is_not_a_draft():
+    import json
+    from pathlib import Path
+    schema = json.loads((Path(__file__).resolve().parents[1] / "references" / "checkout.schema.json").read_text())
+    assert "DRAFT v0.1" not in schema["title"]

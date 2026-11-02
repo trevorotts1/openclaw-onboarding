@@ -143,9 +143,13 @@ def test_valid_calendar_passes_the_44_reader(name):
     assert not reader_refuses(plan_with(**VALID[name]))
 
 
-def test_44_reader_cli_exits_0_on_the_fixture(tmp_path):
+def test_44_reader_cli_accepts_the_fixture(tmp_path):
     out = tmp_path / "automation-builds.json"
-    assert reader.main(["--launch-plan", str(FIXTURE), "--out", str(out)]) == 0
+    rc = reader.main(["--launch-plan", str(FIXTURE), "--out", str(out)])
+    assert rc == reader.EXIT_BLOCKED
+    doc = json.loads(out.read_text())
+    assert {n["phase"] for n in doc["builds"][0]["schedule"]["calendar_nodes"]} >= {
+        "teaser", "countdown", "cyber_monday", "last_call"}
 
 
 @pytest.mark.parametrize("name", sorted(INVALID))

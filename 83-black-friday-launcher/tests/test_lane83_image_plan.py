@@ -118,10 +118,16 @@ class NeverDefaultedTests(unittest.TestCase):
             self.assertEqual(ctx.exception.code, "AF-LAUNCH-IMAGE-PLAN-CAP")
             verify.assert_called_once()
 
-    def test_an_unbuilt_provider_is_refused_by_name_with_nothing_spent(self):
+    def test_an_unbuilt_provider_draws_stub_pictures_on_a_practice_run_and_is_refused_for_paid_pictures(self):
         for name in ("agnes", "other_explicit"):
-            with self.assertRaises(ImagePlanError) as ctx:
-                resolve({**BASE, "image_provider": name}, test_only=True)
+            inputs, _ = resolve({**BASE, "image_provider": name}, test_only=True)
+            self.assertEqual(inputs["executor_provider"], "stub")
+            self.assertFalse(inputs["allow_paid"])
+            with mock.patch.object(image_plan, "_verify_paid_budget", return_value=None):
+                with self.assertRaises(ImagePlanError) as ctx:
+                    resolve({**BASE, "image_provider": name, "design_style": "A", "image_cap": 10,
+                             "image_cap_minor": 80, "image_currency": "USD",
+                             "paid_render_approval_ref": "TEST-APPROVAL-REF"}, test_only=False)
             self.assertEqual(ctx.exception.code, "AF-LAUNCH-IMAGE-PLAN-PROVIDER")
             self.assertIn(name, ctx.exception.detail)
             self.assertIn("nothing was spent", ctx.exception.detail.lower())

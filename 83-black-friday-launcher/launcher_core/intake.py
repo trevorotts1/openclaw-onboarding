@@ -21,6 +21,7 @@ from .constants import (
     OFFER_RELATION_KEYS,
     OFFER_ROLES,
     SCHEMA_VERSION,
+    UNSUPPORTED_OFFER_ROLES,
 )
 
 # field -> why the pages cannot be built without it. No product decision here.
@@ -266,6 +267,8 @@ def _validate_offer(index: int, offer: Any) -> Dict[str, Any]:
     if not _OFFER_ID.fullmatch(offer["offer_id"].strip()):
         _fail("AF-LAUNCH-INTAKE-OFFER", f"{field}.offer_id", "must match [A-Za-z0-9_-]+")
     role = offer["role"]
+    if role in UNSUPPORTED_OFFER_ROLES:
+        _fail("AF-LAUNCH-INTAKE-OFFER", f"{field}.role", f"{role}: {UNSUPPORTED_OFFER_ROLES[role]}")
     if role not in OFFER_ROLES:
         _fail("AF-LAUNCH-INTAKE-OFFER", f"{field}.role", f"not one of {OFFER_ROLES!r}")
     price = offer["price"]
