@@ -7387,7 +7387,14 @@ print(([x.get("id") for x in a if isinstance(x,dict) and (x.get("default") or x.
     # require --system-event") — so a fresh install on 6.11 registered NO weekly
     # cron. _oc_cron_silent_main probes `openclaw cron add --help` and emits the
     # accepted form (`--session main --system-event` on 6.11+), degrading gracefully.
-    if _oc_cron_silent_main "weekly-onboarding-update" "$CRON_AGENT" "0 3 * * 0" "America/New_York" "$PROMPT_CONTENT" --light-context; then
+    # Box update schedule (2026-11-02): Tue/Fri/Sun 2:00 AM Eastern command job
+    # (shared-utils/cron-lib.sh oc_box_update_cron_ensure); agent prompt below
+    # only when this OpenClaw has no command jobs or the create failed.
+    if command -v oc_box_update_cron_ensure >/dev/null 2>&1 && oc_box_update_cron_ensure; then
+        success "Box update cron installed — Tue/Fri/Sun 2:00 AM Eastern, silent command job"
+        return 0
+    fi
+    if _oc_cron_silent_main "weekly-onboarding-update" "$CRON_AGENT" "${OC_BOX_UPDATE_SCHEDULE:-0 2 * * 0,2,5}" "America/New_York" "$PROMPT_CONTENT" --light-context; then
         success "Sunday update-check cron installed — Sundays 3am ET, SILENT main-session (no client auto-announce)"
         return 0
     fi
@@ -7396,7 +7403,7 @@ print(([x.get("id") for x in a if isinstance(x,dict) and (x.get("default") or x.
     # --channel/--to/--announce in the manual command either).
     warn "Cron creation failed. Manual install command (SILENT — no client auto-announce):"
     warn "  openclaw cron create --name weekly-onboarding-update --agent $CRON_AGENT \\"
-    warn "    --cron '0 3 * * 0' --tz America/New_York \\"
+    warn "    --cron '0 2 * * 0,2,5' --tz America/New_York \\"
     warn "    --session main --system-event \"\$(cat $PROMPT_FILE)\"   # older CLIs: --session-target main --message"
     warn ""
     warn "If that fails too, send Trevor the EXACT error message (see $LOG_FILE)."

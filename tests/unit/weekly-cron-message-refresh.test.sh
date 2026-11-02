@@ -273,7 +273,8 @@ run_registration() {
 # stdout. An `|| echo 0` fallback would fire on that same "0 matches" exit
 # and print a SECOND "0" line, corrupting the count -- deliberately absent.
 edit_call_count() { grep -c '^cron edit ' "$CALLS" 2>/dev/null; }
-create_call_count() { grep -cE '^cron (add|create) ' "$CALLS" 2>/dev/null; }
+# A `cron add --help` capability probe (oc_box_update_cron_ensure) is not a create.
+create_call_count() { grep -E '^cron (add|create) ' "$CALLS" 2>/dev/null | grep -vc -- '--help'; }
 
 echo "== (a) job ABSENT -> created fresh from cron-prompt.txt =="
 : > "$CALLS"; seed_state '[]'
