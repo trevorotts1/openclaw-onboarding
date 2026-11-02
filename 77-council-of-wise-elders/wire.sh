@@ -8,7 +8,13 @@
 #      installer is a no-op when nothing changed),
 #   2. keeps the Council service running (Mac: LaunchAgent, VPS: pm2 app) and
 #      restarts it when the release changes,
-#   3. puts the blackceo-council CLI on PATH for the box's agent,
+#   3. puts the blackceo-council CLI on PATH for the box's agent, installs the
+#      council-before-dispatch extension package into
+#      $OPENCLAW_ROOT/extensions, validates its plugin API floor, provisions the
+#      PER-BOX Telegram binding (channel/account/conversation/sender/agent
+#      workspace from this box's own config), and registers it in openclaw.json
+#      with an atomic, validated write (a missing or ambiguous binding is a
+#      typed COUNCIL_PLUGIN: NOT_READY and no authorization fallback),
 #   4. when the operator delivered <OPENCLAW_ROOT>/secrets/tunnel-council.token
 #      (a box whose Command Center tunnel is local-managed gets its own
 #      remote-managed council-<slug> tunnel), keeps that tunnel's connector
@@ -24,12 +30,16 @@
 #      box with several copies the gate is given the folder the OpenClaw agent
 #      resolver serves (COUNCIL_AGENT_SKILL_DIR, else asked of the resolver).
 # It writes nothing inside the skill folder and touches no credential, model,
-# openclaw.json, AGENTS.md, gateway or Command Center.
+# AGENTS.md, gateway or Command Center. It does write openclaw.json, narrowly:
+# only plugins.entries.council-before-dispatch, plugins.load.paths and an
+# existing plugins.allow list, atomically and after `openclaw config validate`.
 #
 # One typed line is printed:
 #   COUNCIL_WIRE: READY|NOOP|ADOPTED_EXISTING|DEFERRED_NO_GUI|NOT_READY <CODE> <detail>
 # plus, only when the connector token file exists, one line before it:
 #   COUNCIL_CONNECTOR: READY|NOOP|DEFERRED_NO_GUI|NOT_READY <CODE> <detail>
+# plus the plugin line, always:
+#   COUNCIL_PLUGIN: READY|NOOP|NOT_READY <CODE> <detail>
 # The store decision is announced on its own lines, and only when it needs
 # saying: COUNCIL_WIRE: STORE_AUTHORITY_RESOLVED <dir> (<source>; ...) when the
 # store this run will keep differs from what active.json recorded,
@@ -656,6 +666,44 @@ ASK_SHIM="$P/bin/council-ask"
   [ -n "$PUBLIC" ] && printf 'WISE_ELDERS_PUBLIC_ORIGIN=%s; export WISE_ELDERS_PUBLIC_ORIGIN\n' "$(sq "$PUBLIC")"
   printf 'exec %s %s "$@"\n' "$(sq "$NODE_EXE")" "$(sq "$ASK_ENTRY")"
 } >"$ASK_SHIM.tmp.$$" && chmod 755 "$ASK_SHIM.tmp.$$" && mv -f "$ASK_SHIM.tmp.$$" "$ASK_SHIM"
+
+# --------------------------------------- 7b. deterministic Council interceptor
+# The explicit-ask handler runs BEFORE the model turn, so a routing policy can
+# never turn "ask the council" into a Command Center card. It is installed and
+# provisioned from THIS box's trusted config only; a missing or ambiguous
+# binding is a typed NOT_READY, never an operator fallback or a wildcard.
+psay() { printf 'COUNCIL_PLUGIN: %s\n' "$*"; }
+wire_openclaw() { # absolute openclaw CLI path, or rc 1
+  local c
+  if [ -n "${COUNCIL_OPENCLAW:-}" ]; then
+    [ -x "$COUNCIL_OPENCLAW" ] && { printf '%s' "$COUNCIL_OPENCLAW"; return 0; }
+    return 1
+  fi
+  for c in "$(command -v openclaw 2>/dev/null)" "$OC/bin/openclaw" "$HOME/.local/bin/openclaw" "$HOME/.npm-global/bin/openclaw" /opt/homebrew/bin/openclaw /usr/local/bin/openclaw /usr/bin/openclaw; do
+    case "$c" in /*) [ -x "$c" ] && { printf '%s' "$c"; return 0; } ;; esac
+  done
+  return 1
+}
+wire_council_plugin() {
+  local helper="$SKILL_DIR/scripts/install-council-plugin.mjs" _oc _out _rc
+  local _binding="$OC/council-before-dispatch/binding.json"
+  [ -f "$helper" ] || { psay "NOT_READY PLUGIN_INSTALL_FAILED helper missing at $helper"; return 0; }
+  _oc="$(wire_openclaw)" || _oc=""
+  # The optional per-box binding settles a box with several Telegram accounts
+  # or DMs. It is read only, validated by provision.mjs against this box, and
+  # never synthesized here; absent means derive from config or fail closed.
+  set -- --skill-dir "$SKILL_DIR" --openclaw-root "$OC" --prefix "$P"
+  [ -n "$_oc" ] && set -- "$@" --openclaw-cli "$_oc"
+  [ -f "$_binding" ] && set -- "$@" --binding "$_binding"
+  _out="$("$NODE" "$helper" "$@" 2>&1)"
+  _rc=$?
+  case "$_out" in
+    *COUNCIL_PLUGIN:*) printf '%s\n' "$_out" ;;
+    *) psay "NOT_READY PLUGIN_INSTALL_FAILED helper rc=$_rc ${_out:-no detail}" ;;
+  esac
+  return 0
+}
+wire_council_plugin
 
 LSHA="$(sha_file "$LAUNCHER")"
 PREV_SHA="$(jget "$P/service.json" launcher_sha256)"

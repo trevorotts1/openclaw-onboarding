@@ -170,6 +170,22 @@ Not-ready codes:
 | `RUNTIME_BUILD_FAILED` | `install-runtime.mjs` failed (network for `npm ci`, disk space, build error) | Read its last `FAIL` line, fix the cause, re-roll. The previous release stays active |
 | `UNSUPPORTED_PLATFORM` | Neither a supported Mac nor a Linux container | Report to the operator; the Council service is not wired here |
 
+## COUNCIL_PLUGIN codes (printed by wire.sh during the same roll)
+
+The interceptor runs before the model turn, so it must be installed, registered
+and provisioned from THIS box's own config. `READY` is a static-config claim,
+not a live Telegram proof.
+
+| Code | Cause | Fix |
+|---|---|---|
+| `COUNCIL_PLUGIN: READY` | Whole package copied, API floor met, binding derived, config written and validated | None. Activates on the next gateway start; run the verifier after that |
+| `COUNCIL_PLUGIN: NOOP` | Config already matches this box's derived binding | None |
+| `PLUGIN_API_UNKNOWN` | The installed OpenClaw version could not be read | Run the roll as a user whose `openclaw` CLI resolves, or set `COUNCIL_OPENCLAW` to its absolute path; never guess a version |
+| `PLUGIN_API_INCOMPATIBLE` | Installed OpenClaw is below the package's own `openclaw.compat` floor | Update OpenClaw through the supported path, then re-roll. The plugin files may be present but are not enabled |
+| `PLUGIN_BINDING_UNRESOLVED` | No unambiguous Telegram DM binding, empty or wildcard `allowFrom`, a missing runtime closure, or no `council-ask` | Fix the box's own binding through the supported onboarding flow, or supply the documented per-box `council-before-dispatch/binding.json` (validated against config, narrows only). Never use a wildcard or an operator identity |
+| `PLUGIN_CONFIG_INVALID` | The candidate `openclaw.json` failed the schema check or could not be written | Read the named error; the previous config is restored. Fix the box's config, then re-roll |
+| `PLUGIN_INSTALL_FAILED` | The package copy or a declared file failed | Re-roll; if it persists, the installed skill tree is incomplete |
+
 ## COUNCIL_BOX codes (printed by scripts/verify-council-box.sh)
 
 Last line: `COUNCIL_BOX: READY|DEGRADED|NOT_READY <codes>`. Exit 0 for READY
@@ -186,6 +202,14 @@ read-only and checks, in this order:
 | `NO_USABLE_ROUTE` | NOT_READY | `GET /api/council/routes` lists at least one usable route (ids and usable flags are printed) | The client's own model route is not usable (for example claude-nine or claude-configured is not set up). The client or operator fixes the route; never change client credentials, models or sovereignty to get past it |
 | `ACCESS_GATE_OPEN` | NOT_READY | `GET <public_origin>/status` without following redirects answered 2xx, or redirected to its own host | Security failure: the address works with no sign-in. Do not send any chamber link. The operator removes the council hostname route or repairs its Access app, then re-runs `provision-council-access.sh --apply` |
 | `CLI_SHIM_MISSING` | DEGRADED | `blackceo-council` on PATH, else `council-runtime/bin/blackceo-council` | Re-roll; meanwhile call the absolute path |
+| `PLUGIN_NOT_INSTALLED` | NOT_READY | `extensions/council-before-dispatch/` holds the declared package | Re-roll (wire.sh installs it); an explicit ask would otherwise reach the model and can be routed as board work |
+| `PLUGIN_NOT_REGISTERED` | NOT_READY | `plugins.entries["council-before-dispatch"].enabled` is true | Re-roll; read the `COUNCIL_PLUGIN:` line |
+| `PLUGIN_NOT_ALLOWED` | NOT_READY | An existing `plugins.allow` list contains the plugin id | Re-roll extends an existing allowlist only. Never create an allowlist where none existed |
+| `PLUGIN_LOAD_PATH_MISSING` | NOT_READY | `plugins.load.paths` contains `$OPENCLAW_ROOT/extensions` | Re-roll; the path is added idempotently |
+| `PLUGIN_BINDING_UNRESOLVED` | NOT_READY | This box's config derives one unambiguous DM binding with a non-empty, non-wildcard sender set and a complete runtime | Fix the box's own Telegram binding/runtime; supply the documented per-box binding file if several DMs exist. Never widen `allowFrom` or substitute an operator identity |
+| `PLUGIN_BINDING_DRIFT` | NOT_READY | The registry entry's identity fields equal `provision.mjs` for this box | Re-roll; an operator may have changed one field. The derived value wins |
+| `PLUGIN_NOT_LOADED` | NOT_READY | `openclaw plugins list --json` reports the plugin enabled and `status: loaded` | Restart the gateway through the coordinated path after the config change, then re-run the verifier |
+| `PLUGIN_HOOK_UNVERIFIED` | DEGRADED | The loaded-registry probe could not run or parse | Inspect `openclaw plugins list --json` manually. Never report this as loaded |
 | `PUBLIC_ORIGIN_UNSET` | DEGRADED | `public_origin` in `service.json` is not null | Nothing to run: the address is published automatically within about 30 minutes of the Command Center existing, and the next council carries the link (no re-roll). Until then tell the client the private Council link is still being set up; never send a 127.0.0.1 link. If it is still unset more than an hour after the Command Center existed, report the `COUNCIL_BOX:` line to the operator |
 | `ACCESS_GATE_MISSING` | DEGRADED | `GET <public_origin>/status` is a 3xx to `*.cloudflareaccess.com` | The address did not answer or redirects elsewhere: operator checks the tunnel route and Access app, re-runs `provision-council-access.sh --apply` |
 | `TUNNEL_NOT_IN_CONTAINER` | DEGRADED | VPS only: `pm2 jlist` lists a cloudflared app (`cloudflared-council` counts) | A host-side connector cannot reach the container's loopback. Run the connector inside the container as a pm2 app named cloudflared (Contabo: pending) |

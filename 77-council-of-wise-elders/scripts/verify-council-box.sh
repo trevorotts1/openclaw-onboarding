@@ -23,6 +23,11 @@
 #   5. GET /api/council/routes lists a usable route
 #                                              else NOT_READY NO_USABLE_ROUTE
 #   6. blackceo-council resolves               else DEGRADED CLI_SHIM_MISSING
+#   6b. council-before-dispatch package + registry entry + allow/load wiring +
+#      per-box trusted binding + loaded hook record. Missing package/entry/
+#      allow/load path/binding/drift/loaded state is NOT_READY with its own code
+#      (PLUGIN_*); an unavailable loaded-registry probe is DEGRADED
+#      PLUGIN_HOOK_UNVERIFIED, never a false PASS.
 #   7. public_origin set                       else DEGRADED PUBLIC_ORIGIN_UNSET
 #      GET <public_origin>/status without following redirects: a 3xx to
 #      *.cloudflareaccess.com passes; 200 is NOT_READY ACCESS_GATE_OPEN (a
@@ -243,6 +248,29 @@ elif [ -x "$P/bin/blackceo-council" ]; then
   ok "cli-shim" "$P/bin/blackceo-council is executable (not on PATH)"
 else
   dg CLI_SHIM_MISSING "cli-shim" "blackceo-council is not on PATH and $P/bin/blackceo-council is not executable (checked with command -v and test -x)"
+fi
+
+# ---- 6b. Council interceptor: package, registry, trusted binding, loaded hook ----
+PLUGIN_VERIFY="$SCRIPT_DIR/verify-council-plugin.mjs"
+if [ ! -f "$PLUGIN_VERIFY" ]; then
+  dg PLUGIN_NOT_INSTALLED "plugin" "verify-council-plugin.mjs is absent from $SCRIPT_DIR; the installed skill is incomplete"
+else
+  _pv_out="$("$NODE" "$PLUGIN_VERIFY" --openclaw-root "$ROOT" --prefix "$P" 2>&1)"
+  _pv_rc=$?
+  _pv_line="$(printf '%s\n' "$_pv_out" | tail -n 1)"
+  _pv_fmt="$(printf '%s' "$_pv_line" | "$NODE" -e '
+    let j = null; try { j = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (e) {}
+    if (j && j.code) process.stdout.write(String(j.code) + "\t" + String(j.detail || ""));
+    else process.stdout.write("PLUGIN_HOOK_UNVERIFIED\tverifier output was not JSON");' 2>/dev/null)"
+  _pv_code="${_pv_fmt%%	*}"
+  _pv_detail="${_pv_fmt#*	}"
+  case "$_pv_rc:$_pv_code" in
+    *:OK) ok "plugin" "package, registry, allow/load wiring, per-box binding and loaded hook verified" ;;
+    *:PLUGIN_HOOK_UNVERIFIED) dg PLUGIN_HOOK_UNVERIFIED "plugin" "${_pv_detail:-loaded registry unavailable}" ;;
+    *:PLUGIN_NOT_INSTALLED|*:PLUGIN_NOT_REGISTERED|*:PLUGIN_NOT_ALLOWED|*:PLUGIN_LOAD_PATH_MISSING|*:PLUGIN_BINDING_UNRESOLVED|*:PLUGIN_BINDING_DRIFT|*:PLUGIN_NOT_LOADED)
+      nr "$_pv_code" "plugin" "${_pv_detail:-see verify-council-plugin.mjs}" ;;
+    *) dg PLUGIN_HOOK_UNVERIFIED "plugin" "probe rc=$_pv_rc ${_pv_detail:-no detail}" ;;
+  esac
 fi
 
 # ---- 7. public origin and Access gate ----
