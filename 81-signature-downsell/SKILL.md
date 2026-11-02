@@ -6,7 +6,7 @@ version: 0.1.6
 
 # Signature Downsell Page (Skill 81)
 
-Status: BUILD CANDIDATE from the S81 room (Signature Launch packet v1.0, spec 11). Not merged, not installed, not live. Batch merge requires Trevor's explicit approval of an exact candidate.
+Status: design package (Signature Launch packet v1.0, spec 11), shipped in this repo at the version above. **Design only; not installed.** The package holds the copy contract, design profile, schemas, validators, fixtures and tests. It has no runtime: nothing here installs the D1 page or its one-click action, and Skill 6 has no D1 install step yet (scheduled Skill 06 work items S06-02 and UPS-08). Every D1 result and client summary line must read "design only; not installed" until Skill 6 records a binding read-back for D1.
 
 ## Route responsibility (packet 02 section 4, binding)
 

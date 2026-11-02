@@ -42,8 +42,8 @@ as launcher logic.
 | landing | `49-signature-funnel/scripts/landing_bridge.py::bridge` → S71 `launch_context.prepare_import` + `page_result.build_and_write` |
 | product_selection | `78-signature-product-selection/scripts/build_selection_plan.py::build_plan` then `emit_page_result.py::emit` |
 | upsell_1 / upsell_2 | `49-signature-funnel/scripts/upsell_wrapper.py::main` → `80-signature-upsell/components/adapters/produce.py::main` |
-| downsell_1 | `49-signature-funnel/scripts/downsell_wrapper.py::main` → `81-signature-downsell/validators/*` (pinned by the wrapper) |
-| thank_you | `49-signature-funnel/scripts/translate_thank_you_result.py::main` → S82 `run_manifest.build_run_manifest` + `thank_you_resolver.resolve_order_view` |
+| downsell_1 | `49-signature-funnel/scripts/downsell_wrapper.py::main` → `81-signature-downsell/validators/*` (pinned by the wrapper). Design only; not installed: Skill 6 has no D1 install step yet (S06-02, UPS-08) |
+| thank_you | `49-signature-funnel/scripts/translate_thank_you_result.py::main` translates the S82 result document and companion run manifest into a page-result. It does not call the S82 resolver or `build_run_manifest`; S82 produces those two inputs. Design only; not installed: no host runs the resolver at purchase time yet |
 | checkout | **native S79 order form installed by Skill 06; never a dispatch adapter for the form.** Its page design (wireframes and mockups) has a design-only adapter, `49-signature-funnel/scripts/checkout_wrapper.py`, wired by `build_dispatch_config(checkout_design=...)` |
 | bump | **checkout component; never a route node** |
 
@@ -85,7 +85,7 @@ advice: it never blocks a build and is never permission.
 ## Run
 
 ```bash
-TMPDIR=/Volumes/mac\ mini\ m4/Downloads/BLACKCEO_RECOVERY_2026-10-18/tmp \
+TMPDIR="$(mktemp -d)" \
 python3 -I -m unittest discover \
   -s 83-black-friday-launcher/routes/tests -v
 ```
