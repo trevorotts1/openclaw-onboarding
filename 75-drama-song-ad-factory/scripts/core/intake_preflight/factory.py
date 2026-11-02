@@ -2449,6 +2449,12 @@ def cmd_event(a):
         return envelope("event", str(getattr(a, "run_id", "") or ""),
                         "error", "state-file-missing",
                         "Create the run first; missing state file: %s" % db)
+    # Admission first: a store that holds no governed authority is refused
+    # before it is opened to resolve identity (opening a WAL store read-only
+    # creates a -shm sidecar, which would mutate a refused run).
+    authority = _production_admission(run_dir, run_id=getattr(a, "run_id", None))
+    if not authority["ok"]:
+        return _production_refusal("event", run_dir, authority)
     run_id, problem = resolved_run_id(run_dir, getattr(a, "run_id", None))
     if problem is not None:
         return envelope("event", "", "rejected", problem,
@@ -2460,9 +2466,6 @@ def cmd_event(a):
         return envelope("event", run_id,
                         "rejected", "unknown-event",
                         "event must be one of %s" % (", ".join(EVENT_KINDS),))
-    authority = _production_admission(run_dir, run_id=run_id)
-    if not authority["ok"]:
-        return _production_refusal("event", run_dir, authority)
     action = continuation_enqueue(run_dir, event, run_id=run_id)
     sid = action["run_id"]
     if action["verdict"] == "runnable":
