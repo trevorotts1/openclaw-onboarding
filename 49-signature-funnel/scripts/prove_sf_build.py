@@ -51,10 +51,14 @@ stdlib only. Exit 0 = pass, exit 2 = violation, exit 3 = usage / fail-closed.
 from __future__ import annotations
 
 import argparse
+import atexit
 import hashlib
 import json
+import os
+import shutil
 import sys
 import tempfile
+import uuid
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -486,21 +490,44 @@ def write_valid_run_evidence(run_dir: Path, size: int,
     (rd / "pages").mkdir(parents=True, exist_ok=True)
     for slug in required_page_types(size):
         (rd / "pages" / f"{slug}.fragment.html").write_text(_valid_fragment(slug), encoding="utf-8")
-    # Skill 6 verify evidence: raw records + the summary ghl_verify itself derives.
+    # Skill 6 verify evidence, sealed the way ghl_verify.verify_all leaves it: raw records, a render
+    # manifest naming a dom/png/console file per page (re-hashed by the gate), the summary ghl_verify
+    # derives, and the 0600 run-nonce file OUTSIDE the evidence tree (ghl_gate.require_pass reads all).
     sys.path.append(str(GHL_TOOLS))
     import ghl_verify  # noqa: E402
-    raw = [{"step": pg["page_type"], "page_id": f"p-{pg['page_type']}", "preview_url": pg["preview_url"],
-            "marker": "m", "http": 200, "http_code": 200, "marker_in_rendered_dom": True,
-            "marker_in_preview": True, "render_errors": [], "PASS": True}
-           for pg in receipt["pages"]]
+    nonce = str(uuid.uuid4())
     ev = rd / EVIDENCE_REL
     (ev / "scorecard").mkdir(parents=True, exist_ok=True)
     (ev / "logs").mkdir(parents=True, exist_ok=True)
+    (ev / "render").mkdir(parents=True, exist_ok=True)
+    raw: List[Dict[str, Any]] = []
+    manifest: Dict[str, Any] = {}
+    for pg in receipt["pages"]:
+        step, marker = pg["page_type"], f"sf-fixture-marker-{pg['page_type']}"
+        entry: Dict[str, Any] = {}
+        for key, ext, data in (("dom", "dom.html", f"<html><body><p>{marker}</p></body></html>".encode()),
+                               ("png", "png", b"\x89PNG\r\n\x1a\n" + b"x" * 64),
+                               ("console", "console.json", b"[]")):
+            path = ev / "render" / f"{step}.{ext}"
+            path.write_bytes(data)
+            entry[f"{key}_path"] = str(path)
+            entry[f"{key}_sha256"] = _sha256_file(path)
+        manifest[step] = entry
+        raw.append({"step": step, "page_id": f"p-{step}", "preview_url": pg["preview_url"],
+                    "marker": marker, "http": 200, "http_code": 200, "marker_in_rendered_dom": True,
+                    "marker_in_preview": True, "render_errors": [], "PASS": True})
     raw_bytes = json.dumps(raw).encode("utf-8")
     (ev / ghl_verify.RAW_REL).write_bytes(raw_bytes)
-    summary = ghl_verify.derive_summary(raw, run_id=rd.name, run_nonce="fixture-nonce")
+    (ev / ghl_verify.RENDER_MANIFEST_REL).write_text(json.dumps(manifest), encoding="utf-8")
+    summary = ghl_verify.derive_summary(raw, run_id=rd.name, run_nonce=nonce)
     summary["raw_sha256"] = hashlib.sha256(raw_bytes).hexdigest()
     (ev / ghl_verify.SUMMARY_REL).write_text(json.dumps(summary), encoding="utf-8")
+    if not os.environ.get(ghl_verify.NONCE_DIR_ENV):   # never write the fixture nonce into a real HOME
+        nd = tempfile.mkdtemp(prefix="sf_ghl_nonces_")
+        os.environ[ghl_verify.NONCE_DIR_ENV] = nd
+        atexit.register(shutil.rmtree, nd, True)
+    ghl_verify.write_run_nonce(str(rd), nonce, str(ev / ghl_verify.RAW_REL),
+                               str(ev / ghl_verify.RENDER_MANIFEST_REL))
     # legacy_downsell_images.py output shape: one record per page and stage, plus the receipt.
     out = rd / PAGE_IMAGES_REL
     pages: Dict[str, Any] = {}
@@ -535,7 +562,6 @@ def _evidence_cases():
                      encoding="utf-8")
 
     def drop_evidence(rd):
-        import shutil
         shutil.rmtree(rd / EVIDENCE_REL)
 
     def failing_summary(rd):
@@ -555,7 +581,6 @@ def _evidence_cases():
         p.write_text(json.dumps(d), encoding="utf-8")
 
     def drop_visuals(rd):
-        import shutil
         shutil.rmtree(rd / PAGE_IMAGES_REL)
 
     def drop_one_stage(rd):
