@@ -53,9 +53,11 @@ check shipped with). This check verifies, on the built page
 When intake records the missing input, a placeholder primary CTA is
 carried under that recorded flag (printed here, never silent) and this
 check passes; the flag is the run's own record, not this check's
-invention. The live proof (the button actually opens the named form, or
-the checkout page takes payment, and the journey lands and routes
-onward) is the funnel-completion receipt's, verified by
+invention. On the checkout route the flag carries only a placeholder
+primary CTA (an empty or fragment href, or no link at all); a live
+checkout link under it is still tied to the approved offer (CHK-28).
+The live proof (the button actually opens the named form, or the
+checkout page takes payment, and the journey lands and routes onward) is the funnel-completion receipt's, verified by
 scripts/validate_funnel_completion.py.
 
 Exit 0 pass, 1 fail, 2 usage error.
@@ -300,6 +302,7 @@ def validate(run_dir):
         return failures
     html = page_path.read_text(encoding="utf-8", errors="replace")
 
+    carried = None
     if handoff.get("status") == "missing_input":
         reason = handoff.get("reason")
         if not (isinstance(reason, str) and reason.strip()):
@@ -309,12 +312,13 @@ def validate(run_dir):
             return failures
         if failures:
             return failures
-        missing_what = "checkout destination" if checkout else "form identity"
-        print(f"PASS: funnel handoff carried under the recorded missing "
-              f"input ({missing_what} missing: {reason.strip()}); a "
-              f"placeholder primary CTA on this page is carried under that "
-              f"flag, never silently")
-        return []
+        if not checkout:
+            print(f"PASS: funnel handoff carried under the recorded missing "
+                  f"input (form identity missing: {reason.strip()}); a "
+                  f"placeholder primary CTA on this page is carried under "
+                  f"that flag, never silently")
+            return []
+        carried = reason.strip()
 
     form = handoff.get("form")
     if not checkout and (not isinstance(form, dict) or not form.get("name")
@@ -373,14 +377,22 @@ def validate(run_dir):
 
     if checkout:
         declared = declared_checkout(intake, handoff)
+        href = first_group(HREF_RE.search(attrs)) if tag == "a" else None
+        destination = href.strip() if isinstance(href, str) else ""
+        if carried is not None and (destination == ""
+                                    or destination.startswith("#")):
+            print(f"PASS: funnel handoff carried under the recorded missing "
+                  f"input (checkout destination missing: {carried}); the "
+                  f"placeholder primary CTA {label!r} on this page is "
+                  f"carried under that flag, never silently; a live checkout "
+                  f"link is never carried by it (CHK-28)")
+            return []
         if tag != "a":
             failures.append(
                 f"primary CTA {label!r} is a <{tag}>, not a link: a sales "
                 f"page's primary CTA is an anchor to the client's checkout "
                 f"page or payment link")
             return failures
-        href = first_group(HREF_RE.search(attrs))
-        destination = href.strip() if isinstance(href, str) else ""
         if destination == "" or destination.startswith("#"):
             failures.append(
                 f"primary CTA {label!r} is a placeholder link "

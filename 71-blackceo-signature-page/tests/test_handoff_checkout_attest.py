@@ -22,6 +22,12 @@ PAGE = ('<!doctype html><html><body><a class="cta" href="%s">Claim Your Seat'
 APPROVED = {"amount": "97", "currency": "USD"}
 ATTEST = {"url": URL, "attested_by": "client", "product": "Elevate",
           "price": {"amount": 97.00, "currency": "usd"}}
+MISSING = {"status": "missing_input", "missing": "form_identity",
+           "reason": "client checkout not sent yet",
+           "behavior": "form_pop",
+           "step_order": ["signature_page", "product_selection_page",
+                          "order_form_page"],
+           "approved_price": APPROVED}
 
 
 def run_dir(td, handoff, href=URL):
@@ -106,6 +112,17 @@ class CheckoutAttestTest(unittest.TestCase):
     def test_checkout_result_without_a_url_is_refused(self):
         self.refused({"checkout_result": {"status": "installed"}},
                      "no read_back_url or native_page_url")
+
+    def test_missing_input_flag_carries_only_a_placeholder(self):
+        # QC2-D1: the old $27 form under the skill's own missing-input flag.
+        self.refused(MISSING, "no checkout_result and no checkout_attestation",
+                     href=OLD)
+        code, out = self.check(MISSING, href="#checkout")
+        self.assertEqual(code, 0, out)
+        self.assertIn("recorded missing input", out)
+        code, out = self.check(dict(MISSING, checkout_attestation=ATTEST))
+        self.assertEqual(code, 0, out)
+        self.assertIn("attested product/price read-back", out)
 
 
 if __name__ == "__main__":
