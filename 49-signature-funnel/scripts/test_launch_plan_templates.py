@@ -7,6 +7,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import launch_plan  # noqa: E402
 
+assert launch_plan.BUILDABLE_MANIFEST.is_file()
 BUILDABLE = launch_plan.buildable_keys()
 LAUNCH = {
     "launch_id": "demo-2026-11", "journey_mode": "single_simple",
@@ -58,7 +59,8 @@ def test_named_decisions():
     assert by_family["pre_launch"] == "launch-a/launch-a-prelaunch-window"
     assert by_family["opt_in"] == "launch-a/launch-optin-register-login"
     assert by_family["abandoned_checkout"] == "launch-b/abandoned-checkout-recovery"
-    assert by_family["page_retargeting"] == "launch-b/retarget-visited-sales-no-checkout"
+    assert by_family["page_retargeting"] == "launch-b/launch-b-retarget-visited-sales-no-checkout"
+    assert by_family["onboarding_review"] == "launch-c/launch-c-onboarding-first-hour-day-week"
 
 
 def test_gate_refuses_unbuildable_and_unapproved_new():

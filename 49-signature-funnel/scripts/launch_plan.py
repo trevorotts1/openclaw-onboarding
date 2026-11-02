@@ -99,8 +99,12 @@ BUILD_RAIL = "skill44_engine"
 
 # S44-12: each family names a template key from Skill 44's buildable-templates.json,
 # never a prose-only name Skill 44 cannot build.
-BUILDABLE_MANIFEST = (HERE.parents[1] / "44-convert-and-flow-operator"
-                      / "automation-templates" / "_matcher" / "buildable-templates.json")
+# Repo layout names the skill folder 44-convert-and-flow-operator; the installed layout
+# (~/.claude/skills) drops the number prefix. First existing wins, else the repo path.
+_MANIFEST_CANDIDATES = [HERE.parents[1] / d / "automation-templates" / "_matcher"
+                        / "buildable-templates.json"
+                        for d in ("44-convert-and-flow-operator", "convert-and-flow-operator")]
+BUILDABLE_MANIFEST = next((c for c in _MANIFEST_CANDIDATES if c.is_file()), _MANIFEST_CANDIDATES[0])
 TEMPLATE_BY_FAMILY = {
     "pre_launch": "launch-a/launch-a-prelaunch-window",
     "opt_in": "launch-a/launch-optin-register-login",
@@ -108,8 +112,8 @@ TEMPLATE_BY_FAMILY = {
     "post_sale": "launch-b/launch-post-sale-purchase",
     "upsell_downsell": "launch-b/upsell-downsell-branch",
     "abandoned_checkout": "launch-b/abandoned-checkout-recovery",
-    "page_retargeting": "launch-b/retarget-visited-sales-no-checkout",
-    "onboarding_review": "launch-c/onboarding-first-hour-day-week",
+    "page_retargeting": "launch-b/launch-b-retarget-visited-sales-no-checkout",
+    "onboarding_review": "launch-c/launch-c-onboarding-first-hour-day-week",
     "win_back": "launch-c/launch-win-back-closed-no-purchase",
     "failed_payment": "launch-c/failed-payment-recovery",
     "conversation_ai_reply": "launch-ai/customer-replied-conversation-ai",
@@ -863,7 +867,8 @@ def template_problems(plan: Dict[str, Any], buildable: Optional[frozenset] = Non
 
     A template must be a buildable-templates.json key. 'new' is accepted only with
     an owner-approved reason and a compile spec on the unit; anything else blocks.
-    The Skill 44 reader and the validator call this before building."""
+    This is the generator-side gate; Skill 44's plan_reader enforces the same rule
+    against its own sibling manifest."""
     keys = buildable_keys() if buildable is None else buildable
     problems = []
     for unit in plan.get("automations", []):

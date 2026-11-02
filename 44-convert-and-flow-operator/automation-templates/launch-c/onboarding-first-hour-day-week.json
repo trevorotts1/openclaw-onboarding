@@ -190,5 +190,216 @@
       "The review and referral asks themselves — owned by review-referral-ask.json",
       "Win-back, failed payment and conversation AI — separate launch families"
     ]
-  }
+  },
+  "build_graph_resolution": "Authoring choices that clear the prose-only 'missing' reason: the optional SMS A1 is an if_else on SMS opt-in. The optional 1-hour follow-up is an if_else 'start link clicked'; a missing click signal counts as clicked (skip). B1 true=onboard-started goes to B2b, false goes to B2a. C2 true goes to review-eligible, false goes to onboard-help-needed plus task-notification; both join at workflow_goal onboard-week-1-complete.",
+  "build_graph": [
+    {
+      "id": "trg",
+      "type": "trigger",
+      "attributes": {
+        "event": "Tag Added purchase-onboard-ready",
+        "ref": "Tag Added `purchase-onboard-ready`"
+      }
+    },
+    {
+      "id": "n1",
+      "type": "email",
+      "after": "trg",
+      "attributes": {
+        "message": "A1 Access + start here",
+        "timing": "Immediately",
+        "ref": "1. Email A1"
+      }
+    },
+    {
+      "id": "n2",
+      "type": "if_else",
+      "after": "n1",
+      "branches": {
+        "true": "n3",
+        "false": "n4"
+      },
+      "attributes": {
+        "condition": "SMS opt-in present",
+        "ref": "1. optional SMS A1: sent only to SMS opt-ins, inside the 8 a.m.-9 p.m. send window"
+      }
+    },
+    {
+      "id": "n3",
+      "type": "sms",
+      "after": "n2",
+      "attributes": {
+        "message": "A1 access + start here",
+        "timing": "next eligible send window",
+        "ref": "1. SMS A1"
+      }
+    },
+    {
+      "id": "n4",
+      "type": "wait",
+      "after": [
+        "n2",
+        "n3"
+      ],
+      "attributes": {
+        "duration": "1 hour",
+        "kind": "duration",
+        "ref": "2. Wait 1 hour",
+        "join": true
+      }
+    },
+    {
+      "id": "n5",
+      "type": "if_else",
+      "after": "n4",
+      "branches": {
+        "true": "n7",
+        "false": "n6"
+      },
+      "attributes": {
+        "condition": "A1 start link clicked (no click signal counts as clicked: skip)",
+        "ref": "2. follow up only if the start link was not clicked"
+      }
+    },
+    {
+      "id": "n6",
+      "type": "email",
+      "after": "n5",
+      "attributes": {
+        "message": "A1 follow-up",
+        "ref": "2. Email follow-up"
+      }
+    },
+    {
+      "id": "n7",
+      "type": "update_contact_field",
+      "after": [
+        "n5",
+        "n6"
+      ],
+      "attributes": {
+        "field": "onboard_start_at",
+        "source": "purchase timestamp",
+        "ref": "3. Set event start time = purchase timestamp",
+        "join": true
+      }
+    },
+    {
+      "id": "n8",
+      "type": "wait",
+      "after": "n7",
+      "attributes": {
+        "until": "onboard_start_at + 1 day",
+        "kind": "until",
+        "ref": "3. Wait until +1 day"
+      }
+    },
+    {
+      "id": "n9",
+      "type": "if_else",
+      "after": "n8",
+      "branches": {
+        "true": "n10",
+        "false": "n11"
+      },
+      "attributes": {
+        "condition": "contact has tag `onboard-started`",
+        "ref": "3. If/Else onboard-started -> B2b or B2a"
+      }
+    },
+    {
+      "id": "n10",
+      "type": "email",
+      "after": "n9",
+      "attributes": {
+        "message": "B2b Started reinforcement",
+        "ref": "B2b"
+      }
+    },
+    {
+      "id": "n11",
+      "type": "email",
+      "after": "n9",
+      "attributes": {
+        "message": "B2a Not started nudge",
+        "ref": "B2a"
+      }
+    },
+    {
+      "id": "n12",
+      "type": "wait",
+      "after": [
+        "n10",
+        "n11"
+      ],
+      "attributes": {
+        "until": "onboard_start_at + 7 days",
+        "kind": "until",
+        "ref": "4. Wait until +7 days from the same start",
+        "join": true
+      }
+    },
+    {
+      "id": "n13",
+      "type": "email",
+      "after": "n12",
+      "attributes": {
+        "message": "C1 Week-one recap",
+        "ref": "4. Email C1"
+      }
+    },
+    {
+      "id": "n14",
+      "type": "if_else",
+      "after": "n13",
+      "branches": {
+        "true": "n15",
+        "false": "n16"
+      },
+      "attributes": {
+        "condition": "outcome met or product consumed",
+        "ref": "4. If/Else outcome met or consumed"
+      }
+    },
+    {
+      "id": "n15",
+      "type": "add_contact_tag",
+      "after": "n14",
+      "attributes": {
+        "tag": "review-eligible",
+        "ref": "4. Add review-eligible"
+      }
+    },
+    {
+      "id": "n16",
+      "type": "add_contact_tag",
+      "after": "n14",
+      "attributes": {
+        "tag": "onboard-help-needed",
+        "ref": "4. else Add onboard-help-needed"
+      }
+    },
+    {
+      "id": "n17",
+      "type": "task-notification",
+      "after": "n16",
+      "attributes": {
+        "task": "onboarding help needed: owner follow-up",
+        "ref": "4. + task-notification"
+      }
+    },
+    {
+      "id": "n18",
+      "type": "workflow_goal",
+      "after": [
+        "n15",
+        "n17"
+      ],
+      "attributes": {
+        "goal": "onboard-week-1-complete",
+        "ref": "5. workflow_goal onboard-week-1-complete",
+        "join": true
+      }
+    }
+  ]
 }

@@ -163,5 +163,127 @@
       "Buyers — suppressed here, handled by ascension ads",
       "Landing page visits without opt-in — owned by Audience A in the parent template"
     ]
-  }
+  },
+  "build_graph_resolution": "Authoring choices that clear the prose-only 'missing' reason: ONE trigger (Page Visit, sales page) carries the nudge workflow. Email #1 sends immediately on the tag, 60 minutes after the visit, per workflow_structure; that supersedes the Beat 2 'T+2h' figure. SMS is sent once, only inside the not-clicked arm, per Beat 3. The repeat-visit high-intent tag and the ad-audience sync stay Ads Manager / separate tag rules and are outside this graph. Checkout and purchase interrupts are the workflow_goal goal event g1.",
+  "build_graph": [
+    {
+      "id": "trg",
+      "type": "trigger",
+      "attributes": {
+        "event": "Page Visit (sales page)",
+        "ref": "sales_visit_delayed_tag: Page Visit (sales page)"
+      }
+    },
+    {
+      "id": "n1",
+      "type": "wait",
+      "after": "trg",
+      "attributes": {
+        "duration": "60 minutes",
+        "kind": "duration",
+        "ref": "Wait 60 min"
+      }
+    },
+    {
+      "id": "n2",
+      "type": "if_else",
+      "after": "n1",
+      "branches": {
+        "true": "g1",
+        "false": "n3"
+      },
+      "attributes": {
+        "condition": "checkout page visited within the wait",
+        "ref": "If/Else checkout page visited? Yes -> End"
+      }
+    },
+    {
+      "id": "n3",
+      "type": "add_contact_tag",
+      "after": "n2",
+      "attributes": {
+        "tag": "retarget-b-visited-sales",
+        "ref": "Add 'retarget-b-visited-sales'"
+      }
+    },
+    {
+      "id": "n4",
+      "type": "email",
+      "after": "n3",
+      "attributes": {
+        "message": "Email #1 proof (one testimonial with numbers, link to the sales page)",
+        "timing": "Immediately on the tag (60 minutes after the visit)",
+        "ref": "proof_nudge: Send Email #1 (testimonial)"
+      }
+    },
+    {
+      "id": "n5",
+      "type": "wait",
+      "after": "n4",
+      "attributes": {
+        "duration": "48 hours",
+        "kind": "duration",
+        "ref": "Wait 48h"
+      }
+    },
+    {
+      "id": "n6",
+      "type": "if_else",
+      "after": "n5",
+      "branches": {
+        "true": "g1",
+        "false": "n7"
+      },
+      "attributes": {
+        "condition": "clicked the Email #1 link",
+        "ref": "If/Else clicked link? Yes -> End"
+      }
+    },
+    {
+      "id": "n7",
+      "type": "email",
+      "after": "n6",
+      "attributes": {
+        "message": "Email #2 objection ('Still thinking about [offer]?')",
+        "ref": "No -> Send Email #2 (objection)"
+      }
+    },
+    {
+      "id": "n8",
+      "type": "if_else",
+      "after": "n7",
+      "branches": {
+        "true": "n9",
+        "false": "g1"
+      },
+      "attributes": {
+        "condition": "SMS opted in",
+        "ref": "Beat 3: SMS only if opted in and only once"
+      }
+    },
+    {
+      "id": "n9",
+      "type": "sms",
+      "after": "n8",
+      "attributes": {
+        "message": "short reminder with the sales page link",
+        "ref": "Send SMS once"
+      }
+    },
+    {
+      "id": "g1",
+      "type": "workflow_goal",
+      "after": [
+        "n2",
+        "n6",
+        "n8",
+        "n9"
+      ],
+      "attributes": {
+        "goal": "checkout page visited OR tag `purchased-[offer-id]` added (goal event: ends the nudge)",
+        "ref": "checkout_interrupt / purchase_interrupt -> End",
+        "join": true
+      }
+    }
+  ]
 }
