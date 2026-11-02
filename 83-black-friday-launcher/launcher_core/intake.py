@@ -11,7 +11,9 @@ carries. Unknown or unqualified entitlement state fails closed.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
+from urllib.parse import urlsplit
 
 from . import entitlement, image_plan
 from .constants import (
@@ -34,6 +36,7 @@ REQUIRED_FIELDS = {
     "approval": "contract section 9 approval reference + subject hash before any build",
     "offers": "checkout cannot bind a price it was never given; inventing one is forbidden",
     "entitlement_attestation": "no build without an attested entitlement basis; unknown state fails closed",
+    "checkout_terms": "the order form cannot show a guarantee, terms or consent line nobody approved",
 }
 
 # field -> operational default only. Nothing here changes an offer, a level,
@@ -51,14 +54,38 @@ PERMITTED_DEFAULTS = {
 # cap, provider); it is shape-checked here and resolved, with flagged defaults, only at dispatch.
 OPTIONAL_FIELDS = ("image_plan",)
 
-OFFER_REQUIRED = ("offer_id", "name", "role", "price")
-OFFER_OPTIONAL = ("level", "relationships")
+OFFER_REQUIRED = ("offer_id", "name", "role", "price", "delivery")
+OFFER_OPTIONAL = ("level", "relationships", "checkout")
 PRICE_REQUIRED = ("amount_minor", "currency")
+PRICE_OPTIONAL = ("bounds_confirmed",)
+
+# Operational fields the intake forwards. Skill 49's dispatch knows three write targets;
+# this skill ends at approved local files, so approved_live_publication (a separate approved
+# step) is refused here. A JSON file never executes a workflow (contract section 7).
+WRITE_TARGETS = ("local_only", "approved_test_location")
+AUTOMATION_EXECUTIONS = ("not_requested",)
+_LOCALE = re.compile(r"[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*")
+_OFFER_ID = re.compile(r"[A-Za-z0-9_-]+")
+
+# Price sanity: outside this range the client confirms the number (price.bounds_confirmed: true).
+PRICE_MIN_MINOR = 100
+PRICE_MAX_MINOR = 10_000_000
+
+# One order, one payment, one currency. Anything that implies instalments or recurring billing
+# is refused by name until the checkout contract can carry it.
+PAYMENT_PLANS_UNSUPPORTED = "payment plans are not supported in this release"
+_PAYMENT_PLAN_KEYS = ("installment", "installments", "payment_plan", "payment_plans",
+                      "recurring", "subscription", "billing_interval", "billing_cycle")
+CHECKOUT_OPTIONAL = ("billing_type", "schedule", "native_product_id", "native_price_id",
+                     "headline", "benefit_explanation")
+TERMS_FIELDS = ("guarantee_ref", "guarantee_text", "terms_ref", "terms_text",
+                "consent_ref", "consent_text")
+LEVELED_ROLES = ("upsell_1", "downsell_1", "upsell_2")
 
 # Provenance prefixes that may NEVER be a default. A commercial fact is either
 # supplied or explicitly unknown.
 COMMERCIAL_ROOTS = ("offers", "entitlement_attestation", "level",
-                    "cross_sales", "relationships")
+                    "cross_sales", "relationships", "checkout_terms")
 
 
 class IntakeError(Exception):
@@ -77,6 +104,26 @@ def _nonempty_str(value: Any) -> bool:
 
 def _fail(code: str, field: str, detail: str) -> None:
     raise IntakeError(code, field, detail)
+
+
+def _refuse_payment_plans(field: str, block: Any) -> None:
+    """Instalment and recurring answers are refused by name, wherever they appear."""
+    if not isinstance(block, dict):
+        return
+    for key in block:
+        if key in _PAYMENT_PLAN_KEYS and block[key] not in (None, False, [], {}, ""):
+            _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.{key}", PAYMENT_PLANS_UNSUPPORTED)
+    if block.get("billing_type") not in (None, "one_time"):
+        _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.billing_type",
+              f"{block['billing_type']!r}: {PAYMENT_PLANS_UNSUPPORTED}; only 'one_time' is accepted")
+    if block.get("schedule") not in (None, []):
+        _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.schedule", PAYMENT_PLANS_UNSUPPORTED)
+
+
+def _level_question(offer: Dict[str, Any]) -> str:
+    return (f"What exactly does the buyer receive with {offer['name']!r} ({offer['role']})? "
+            "Supply level.state 'supplied' with its name and every deliverable; "
+            "nothing is invented for you.")
 
 
 def _validate_level(index: int, offer: Dict[str, Any]) -> Dict[str, Any]:
@@ -145,16 +192,79 @@ def _validate_relationships(index: int, offer: Dict[str, Any]) -> Dict[str, List
     return clean
 
 
+def _validate_checkout(index: int, offer: Dict[str, Any]) -> Dict[str, Any]:
+    """Optional per-offer checkout facts. Native ids stay null until Skill 06 reads them back."""
+    field = f"offers[{index}].checkout"
+    raw = offer.get("checkout")
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        _fail("AF-LAUNCH-INTAKE-CHECKOUT", field, "must be an object")
+    extra = set(raw) - set(CHECKOUT_OPTIONAL)
+    if extra:
+        _fail("AF-LAUNCH-INTAKE-CHECKOUT", field, f"undeclared field(s) {sorted(extra)!r}")
+    clean: Dict[str, Any] = {"billing_type": "one_time", "schedule": []}
+    for key in ("native_product_id", "native_price_id", "headline", "benefit_explanation"):
+        value = raw.get(key)
+        if value is not None and not _nonempty_str(value):
+            _fail("AF-LAUNCH-INTAKE-CHECKOUT", f"{field}.{key}", "must be a non-empty string or absent")
+        clean[key] = value.strip() if value is not None else None
+    if (clean["headline"] is None) != (clean["benefit_explanation"] is None):
+        _fail("AF-LAUNCH-INTAKE-CHECKOUT", field, "headline and benefit_explanation go together")
+    if clean["headline"] is not None and offer["role"] != "bump":
+        _fail("AF-LAUNCH-INTAKE-CHECKOUT", field, "headline/benefit_explanation belong to a bump offer")
+    return clean
+
+
+def _validate_delivery(index: int, offer: Dict[str, Any]) -> Dict[str, Any]:
+    """Where each entitlement's buyer is sent: an https address the owner confirmed."""
+    field = f"offers[{index}].delivery"
+    raw = offer["delivery"]
+    if not isinstance(raw, dict):
+        _fail("AF-LAUNCH-INTAKE-DELIVERY", field, "must be an object")
+    extra = set(raw) - {"destination", "owner_confirmed"}
+    if extra:
+        _fail("AF-LAUNCH-INTAKE-DELIVERY", field, f"undeclared field(s) {sorted(extra)!r}")
+    destination = raw.get("destination")
+    parts = urlsplit(destination) if _nonempty_str(destination) else None
+    if (parts is None or parts.scheme != "https" or not parts.hostname
+            or parts.username or parts.password or any(c.isspace() for c in destination.strip())):
+        _fail("AF-LAUNCH-INTAKE-DELIVERY", f"{field}.destination",
+              "must be an https address (no credentials, no spaces) where the buyer receives this offer")
+    if raw.get("owner_confirmed") is not True:
+        _fail("AF-LAUNCH-INTAKE-DELIVERY", f"{field}.owner_confirmed",
+              "the owner must confirm this destination (true); it is never assumed")
+    return {"destination": destination.strip(), "owner_confirmed": True}
+
+
+def _validate_terms(raw: Any) -> Dict[str, str]:
+    """Guarantee, terms and consent: an approved reference AND the verbatim text, never invented."""
+    if not isinstance(raw, dict):
+        _fail("AF-LAUNCH-INTAKE-TERMS", "checkout_terms", "must be an object")
+    for key in TERMS_FIELDS:
+        if not _nonempty_str(raw.get(key)):
+            _fail("AF-LAUNCH-INTAKE-TERMS", f"checkout_terms.{key}", "must be a non-empty string")
+    extra = set(raw) - set(TERMS_FIELDS)
+    if extra:
+        _fail("AF-LAUNCH-INTAKE-TERMS", "checkout_terms", f"undeclared field(s) {sorted(extra)!r}")
+    return {key: raw[key] for key in TERMS_FIELDS}  # text stays verbatim
+
+
 def _validate_offer(index: int, offer: Any) -> Dict[str, Any]:
     field = f"offers[{index}]"
     if not isinstance(offer, dict):
         _fail("AF-LAUNCH-INTAKE-OFFER", field, "must be an object")
+    for block, name in ((offer, field), (offer.get("price"), f"{field}.price"),
+                        (offer.get("checkout"), f"{field}.checkout")):
+        _refuse_payment_plans(name, block)
     for key in OFFER_REQUIRED:
         if key not in offer:
             _fail("AF-LAUNCH-INTAKE-OFFER", f"{field}.{key}", "missing")
     for key in ("offer_id", "name"):
         if not _nonempty_str(offer[key]):
             _fail("AF-LAUNCH-INTAKE-OFFER", f"{field}.{key}", "must be a non-empty string")
+    if not _OFFER_ID.fullmatch(offer["offer_id"].strip()):
+        _fail("AF-LAUNCH-INTAKE-OFFER", f"{field}.offer_id", "must match [A-Za-z0-9_-]+")
     role = offer["role"]
     if role not in OFFER_ROLES:
         _fail("AF-LAUNCH-INTAKE-OFFER", f"{field}.role", f"not one of {OFFER_ROLES!r}")
@@ -171,6 +281,15 @@ def _validate_offer(index: int, offer: Any) -> Dict[str, Any]:
     if amount <= 0:
         _fail("AF-LAUNCH-INTAKE-PRICE", f"{field}.price.amount_minor",
               "must be positive; an unknown or zero price may not be invented here")
+    extra_price = set(price) - set(PRICE_REQUIRED) - set(PRICE_OPTIONAL)
+    if extra_price:
+        _fail("AF-LAUNCH-INTAKE-PRICE", f"{field}.price", f"undeclared field(s) {sorted(extra_price)!r}")
+    if not isinstance(price.get("bounds_confirmed", False), bool):
+        _fail("AF-LAUNCH-INTAKE-PRICE", f"{field}.price.bounds_confirmed", "must be true or false")
+    if not PRICE_MIN_MINOR <= amount <= PRICE_MAX_MINOR and price.get("bounds_confirmed") is not True:
+        _fail("AF-LAUNCH-INTAKE-OFFER", f"{field}.price.amount_minor",
+              f"{amount} is outside {PRICE_MIN_MINOR}..{PRICE_MAX_MINOR} minor units; "
+              "ask the owner to confirm this price, then set price.bounds_confirmed true")
     currency = price["currency"]
     if not _nonempty_str(currency) or len(currency) != 3 or not currency.isupper():
         _fail("AF-LAUNCH-INTAKE-PRICE", f"{field}.price.currency",
@@ -186,7 +305,37 @@ def _validate_offer(index: int, offer: Any) -> Dict[str, Any]:
         "price": {"amount_minor": amount, "currency": currency},
         "level": _validate_level(index, offer),
         "relationships": _validate_relationships(index, offer),
+        "delivery": _validate_delivery(index, offer),
+        "checkout": _validate_checkout(index, {**offer, "role": role}),
     }
+
+
+def _check_offer_set(offers: List[Dict[str, Any]], mode: str) -> None:
+    """One funnel, one cart: a single currency and no two offers that collide."""
+    currencies = sorted({o["price"]["currency"] for o in offers})
+    if len(currencies) > 1:
+        _fail("AF-LAUNCH-INTAKE-OFFER", "offers[*].price.currency",
+              f"one funnel is one cart in one currency, found {currencies!r}")
+    for what, key in (("offer id", lambda o: o["offer_id"].lower()),
+                      ("display name", lambda o: o["name"].casefold())):
+        seen: Dict[str, str] = {}
+        for o in offers:
+            k = key(o)
+            if k in seen:
+                _fail("AF-LAUNCH-INTAKE-OFFER", f"offers[{o['offer_id']}]",
+                      f"duplicate {what} (case-insensitive) with {seen[k]!r}; "
+                      "two offers would share one entitlement or one label")
+            seen[k] = o["offer_id"]
+    if mode == "multiple_options":
+        by_price: Dict[int, List[Dict[str, Any]]] = {}
+        for o in (o for o in offers if o["role"] == "main"):
+            by_price.setdefault(o["price"]["amount_minor"], []).append(o)
+        for amount, group in by_price.items():
+            looks = {(o["level"].get("name"), tuple(o["level"].get("deliverables", ()))) for o in group}
+            if len(group) > 1 and len(looks) < len(group):
+                _fail("AF-LAUNCH-INTAKE-OFFER", "offers",
+                      f"main offers share price {amount} and the same level; "
+                      "distinct options need distinct prices or distinct levels")
 
 
 def _check_relationship_targets(offers: List[Dict[str, Any]]) -> None:
@@ -262,11 +411,27 @@ def validate(payload: Any) -> Dict[str, Any]:
     if not _nonempty_str(payload["copy_profile"]):
         _fail("AF-LAUNCH-INTAKE-MISSING", "copy_profile", "must be a non-empty string")
 
+    _refuse_payment_plans("<root>", payload)
+    if "test_only" in payload and not isinstance(payload["test_only"], bool):
+        _fail("AF-LAUNCH-INTAKE-TEST-ONLY", "test_only",
+              "must be true or false; 0, null or '' never means live")
+    if "allowed_write_target" in payload and payload["allowed_write_target"] not in WRITE_TARGETS:
+        _fail("AF-LAUNCH-INTAKE-WRITE-TARGET", "allowed_write_target",
+              f"not one of {WRITE_TARGETS!r}; publication is a separate approved step")
+    if "automation_execution" in payload and payload["automation_execution"] not in AUTOMATION_EXECUTIONS:
+        _fail("AF-LAUNCH-INTAKE-AUTOMATION", "automation_execution",
+              f"not one of {AUTOMATION_EXECUTIONS!r}")
+    if "locale" in payload and not (isinstance(payload["locale"], str)
+                                    and _LOCALE.fullmatch(payload["locale"])):
+        _fail("AF-LAUNCH-INTAKE-LOCALE", "locale", "must be a BCP-47 language tag such as 'en' or 'en-US'")
+    checkout_terms = _validate_terms(payload["checkout_terms"])
+
     offers = payload["offers"]
     if not isinstance(offers, list) or not offers:
         _fail("AF-LAUNCH-INTAKE-OFFER", "offers", "at least one offer is required")
     clean_offers: List[Dict[str, Any]] = [_validate_offer(i, o) for i, o in enumerate(offers)]
     _check_relationship_targets(clean_offers)
+    _check_offer_set(clean_offers, mode)
 
     mains = [o for o in clean_offers if o["role"] == "main"]
     if mode == "single_simple" and len(mains) != 1:
@@ -282,6 +447,11 @@ def validate(payload: Any) -> Dict[str, Any]:
         if len({o["price"]["amount_minor"] for o in mains}) != len(mains):
             _fail("AF-LAUNCH-INTAKE-OFFER", "offers",
                   "folded_levels needs distinct levels; identical prices imply one offer")
+
+    for i, o in enumerate(clean_offers):
+        if (o["role"] in LEVELED_ROLES or (o["role"] == "main" and mode != "single_simple")) \
+                and o["level"]["state"] != "supplied":
+            _fail("AF-LAUNCH-INTAKE-LEVEL", f"offers[{i}].level", _level_question(o))
 
     for role in ("bump", "upsell_1", "downsell_1", "upsell_2"):
         count = sum(1 for o in clean_offers if o["role"] == role)
@@ -329,6 +499,7 @@ def validate(payload: Any) -> Dict[str, Any]:
         "approval": {"ref": payload["approval"]["ref"].strip(),
                      "hash": payload["approval"]["hash"].strip()},
         "offers": clean_offers,
+        "checkout_terms": checkout_terms,
         "entitlement": entitled,
     }
     for name, (key, value, reason) in PERMITTED_DEFAULTS.items():
