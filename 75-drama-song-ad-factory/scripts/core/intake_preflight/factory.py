@@ -2314,6 +2314,38 @@ EVENT_KINDS = ("approval", "provider-completion", "qc", "recovery",
                "restart", "user-revision")
 
 
+def resolved_run_id(run_dir, run_id=None):
+    """(run_id, problem): the store's recorded identity wins over the folder name.
+
+    A directory is a LOCATOR, never an identity (F14): a renamed run folder must
+    still target the run the store recorded, and a folder name that matches a
+    different run must never retarget it. An explicit id must be one the store
+    knows. Returns ``(None, reason)`` when identity cannot be resolved
+    unambiguously; the caller refuses rather than inventing a name.
+    """
+    ids = []
+    db = Path(run_dir) / "control" / "state.sqlite3"
+    if db.exists():
+        try:
+            con = _ro_connect(db, timeout=10)
+            try:
+                ids = sorted({str(r[0]) for r in con.execute(
+                    "SELECT DISTINCT run_id FROM stages")})
+            finally:
+                con.close()
+        except sqlite3.DatabaseError:
+            return None, "state-unreadable"
+    if run_id is not None and str(run_id):
+        if ids and str(run_id) not in ids:
+            return None, "run-id-unknown"
+        return str(run_id), None
+    if len(ids) == 1:
+        return ids[0], None
+    if not ids:
+        return None, "run-id-empty"
+    return None, "run-id-ambiguous"
+
+
 def continuation_enqueue(run_dir, event, run_id=None, stages=None,
                          registry=None, evidence=None, got=None):
     """Event-driven continuation (SPEC 8.1 / D02): compute THIS run's next
@@ -2321,11 +2353,14 @@ def continuation_enqueue(run_dir, event, run_id=None, stages=None,
 
     Called on approval / provider-completion / QC / recovery / restart, it
     records the next action durably so a successful event auto-continues the
-    correct run. Returns the enqueued action record (never a bare instruction
-    string for a runnable stage)."""
+    correct run. The run id comes from the store, never the folder name; an
+    unresolved identity RAISES instead of targeting an arbitrary run. Returns
+    the enqueued action record (never a bare instruction string for a runnable
+    stage)."""
     rd = Path(run_dir)
-    if run_id is None:
-        run_id = rd.name or "run"
+    run_id, problem = resolved_run_id(rd, run_id)
+    if problem is not None:
+        raise ValueError("%s: %s" % (problem, rd))
     if got is None:
         got = {}
         db = rd / "control" / "state.sqlite3"
@@ -2411,19 +2446,24 @@ def cmd_event(a):
     run_dir = Path(a.run_dir).expanduser().resolve()
     db = run_dir / "control" / "state.sqlite3"
     if not db.exists():
-        return envelope("event", str(getattr(a, "run_id", "") or run_dir.name),
+        return envelope("event", str(getattr(a, "run_id", "") or ""),
                         "error", "state-file-missing",
                         "Create the run first; missing state file: %s" % db)
+    run_id, problem = resolved_run_id(run_dir, getattr(a, "run_id", None))
+    if problem is not None:
+        return envelope("event", "", "rejected", problem,
+                        "Refuse to continue: the run identity is %s. Pass "
+                        "--run-id when the store holds more than one run."
+                        % problem)
     event = str(a.event)
     if event not in EVENT_KINDS:
-        return envelope("event", str(getattr(a, "run_id", "") or run_dir.name),
+        return envelope("event", run_id,
                         "rejected", "unknown-event",
                         "event must be one of %s" % (", ".join(EVENT_KINDS),))
-    authority = _production_admission(run_dir, run_id=getattr(a, "run_id", None))
+    authority = _production_admission(run_dir, run_id=run_id)
     if not authority["ok"]:
         return _production_refusal("event", run_dir, authority)
-    action = continuation_enqueue(run_dir, event,
-                                  run_id=getattr(a, "run_id", None))
+    action = continuation_enqueue(run_dir, event, run_id=run_id)
     sid = action["run_id"]
     if action["verdict"] == "runnable":
         return envelope("event", sid, "ok", "continuation-enqueued",
