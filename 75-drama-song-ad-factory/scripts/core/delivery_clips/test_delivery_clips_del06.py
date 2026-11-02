@@ -9,6 +9,7 @@ network: the ffmpeg runner and the audio gate are injected.
 
 Run: python3 delivery_clips/test_delivery_clips_del06.py
 """
+import io
 import json
 import os
 import shutil
@@ -16,6 +17,7 @@ import sys
 import tempfile
 import unittest
 import unittest.mock
+from contextlib import redirect_stderr
 from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -282,15 +284,15 @@ class Check(Base):
 
 
 class Cli(Base):
-    def test_check_exit_codes(self):
+    def test_check_requires_run_authority(self):
+        # A folder inspection alone can never grant a production PASS: the
+        # command line demands the run whose own saved answers own the set.
         self.build()
-        self.assertEqual(main(["x", "--length", "180", "--master", "m.mp4",
-                               "--delivery", str(self.delivery),
-                               "--check"]), 0)
-        (self.delivery / clip_file_name(60)).unlink()
-        self.assertEqual(main(["x", "--length", "180", "--master", "m.mp4",
-                               "--delivery", str(self.delivery),
-                               "--check"]), 5)
+        with self.assertRaises(SystemExit) as ctx:
+            with redirect_stderr(io.StringIO()):
+                main(["x", "--length", "180", "--master", "m.mp4",
+                      "--delivery", str(self.delivery), "--check"])
+        self.assertEqual(ctx.exception.code, 2)
 
     def test_cli_cut_path_writes_the_rows(self):
         tl = timeline()
