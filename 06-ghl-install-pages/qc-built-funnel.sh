@@ -23,7 +23,9 @@
 #   QC_FUNNEL_LEGACY_EVIDENCE=1  opt-out for PRE-SEO-era evidence: a MISSING seoMeta
 #                                is then a WARN instead of a hard miss. Current builds
 #                                leave it unset (a missing/blank §2 SEO panel is a
-#                                HARD FAIL per SOP §2.07).
+#                                HARD FAIL per SOP §2.07). The opt-out is never silent: it
+#                                is logged to stderr, recorded in scorecard/qc-alerts.jsonl
+#                                and posted to the CC card (when CC_TASK_ID is set).
 #
 # The shared scorer is shared-utils/fab_qc.py; the rubric is
 # universal-sops/funnel-automation-build-quality-rubric.md.
@@ -75,6 +77,14 @@ echo "evidence: $EVIDENCE"
 # receipts still WARN when no images were promised. QC_FUNNEL_LEGACY_EVIDENCE=1 is
 # the explicit, documented opt-out that keeps pre-SEO-era evidence at WARN.
 LEGACY_EVIDENCE="${QC_FUNNEL_LEGACY_EVIDENCE:-0}"
+if [ "$LEGACY_EVIDENCE" = "1" ]; then
+  echo "ALERT QC_FUNNEL_LEGACY_EVIDENCE=1: missing seoMeta is downgraded to WARN for this run (pre-SEO-era opt-out armed)" >&2
+  mkdir -p "$EVIDENCE/scorecard"
+  printf '{"alert":"legacy_seo_evidence","env":"QC_FUNNEL_LEGACY_EVIDENCE=1","ts":"%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$EVIDENCE/scorecard/qc-alerts.jsonl"
+  if [ -n "${CC_TASK_ID:-}" ] && [ -f "$SKILL_DIR/tools/cc_board.py" ]; then
+    TOOLS="$SKILL_DIR/tools" python3 -c 'import os,sys; sys.path.insert(0,os.environ["TOOLS"]); import cc_board; cc_board.post_activity(os.environ["CC_TASK_ID"],"updated","ALERT: QC_FUNNEL_LEGACY_EVIDENCE=1 downgraded the SEO hard gate",{"alert":"legacy_seo_evidence"})' >/dev/null 2>&1 || true
+  fi
+fi
 SEO_MEDIA_FAIL=0
 _seo_out="$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/seo-pregate.$$.out")"
 EVIDENCE="$EVIDENCE" TOOLS="$SKILL_DIR/tools" LEGACY="$LEGACY_EVIDENCE" \

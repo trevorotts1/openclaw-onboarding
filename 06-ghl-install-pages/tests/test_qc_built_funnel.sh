@@ -90,5 +90,20 @@ mk_tree "$WORK/t8" "$PRIVATE_SEO"
 OUT="$(bash "$WORK/lay/skill/qc-built-funnel.sh" "$WORK/t8" 2>&1)"; RC=$?
 check "missing fab_qc.py is FAILED" 1 "$RC" "$OUT" "FAB-QC overlay did not run"
 
+# 9. legacy env opt-out is logged and alerted
+mk_tree "$WORK/t9" "$PRIVATE_SEO"; rm -f "$WORK/t9/pages/"*.json
+printf '{"name":"landing"}\n' > "$WORK/t9/pages/plain.json"
+OUT="$(QC_FUNNEL_LEGACY_EVIDENCE=1 bash "$QC" "$WORK/t9" 2>&1)"; RC=$?
+check "legacy env opt-out logged" 0 "$RC" "$OUT" "ALERT QC_FUNNEL_LEGACY_EVIDENCE=1"
+if [ -f "$WORK/t9/scorecard/qc-alerts.jsonl" ] && [[ "$(cat "$WORK/t9/scorecard/qc-alerts.jsonl")" == *legacy_seo_evidence* ]]; then
+  echo "ok   legacy env opt-out recorded in qc-alerts.jsonl"
+else echo "FAIL legacy env opt-out: qc-alerts.jsonl missing legacy_seo_evidence"; FAILS=$((FAILS+1)); fi
+
+# 10. control: env unset -> missing seoMeta is a hard FAIL and no alert file
+mk_tree "$WORK/t10" "$PRIVATE_SEO"; rm -f "$WORK/t10/pages/"*.json
+printf '{"name":"landing"}\n' > "$WORK/t10/pages/plain.json"; run "$WORK/t10"
+check "no seoMeta without opt-out fails" 1 "$RC" "$OUT" "no seoMeta found"
+if [ -e "$WORK/t10/scorecard/qc-alerts.jsonl" ]; then echo "FAIL control wrote an alert file"; FAILS=$((FAILS+1)); else echo "ok   control: no alert file"; fi
+
 [ "$FAILS" -eq 0 ] && echo "ALL PASS" || echo "$FAILS FAILED"
 exit $((FAILS > 0))

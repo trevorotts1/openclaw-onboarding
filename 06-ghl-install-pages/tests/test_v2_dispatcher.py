@@ -833,8 +833,12 @@ class TestCopyDependency:
         assert dep["owning_department"] == "marketing"
         assert dep["mini_epic"] == ["p1-spec", "p2-copy", "p4-build"]
 
-    def test_write_it_for_me_page_proceeds_when_copy_approved(self, tmp_path):
+    def test_write_it_for_me_page_proceeds_when_copy_approved(self, tmp_path, monkeypatch):
         calls = []
+        # S06-15: approval is a record from the approval store, not a header. The seam
+        # is consulted once the dispatcher reads the store; until then it is unused.
+        monkeypatch.setattr(disp, "_verify_copy_approval",
+                            lambda task, path: True, raising=False)
         # An APPROVED copy.md present under the run dir clears the dependency.
         os.makedirs(os.path.join(str(tmp_path), "working", "copy"), exist_ok=True)
         with open(os.path.join(str(tmp_path), "working", "copy", "copy.md"), "w") as f:
@@ -842,7 +846,8 @@ class TestCopyDependency:
         task = {"id": "pageAPPROVED", "brand": "Fictional Soap Co",
                 "location_id": "LOCATIONfake0000",
                 "brief": "build me a landing page for a webinar",
-                "has_copy": "write it for me"}
+                "has_copy": "write it for me",
+                "copy_approval_id": "appr-test"}
         res = disp.dispatch_one(
             task, str(tmp_path), builder=self._tracking_builder(calls),
             verifier=_fake_verifier(True), live=False,
