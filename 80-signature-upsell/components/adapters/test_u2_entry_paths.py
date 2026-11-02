@@ -173,7 +173,7 @@ class ProductNameTests(unittest.TestCase):
 class ScarcityFactTests(unittest.TestCase):
     PHRASE = "Last chance: this offer ends Friday."
     FACT = {"family": "time_bound", "fact": "Promotion ends Friday 18:00",
-            "source_ref": "launch:promotion.ends_at"}
+            "source_ref": "ledger:promotion.ends_at"}
 
     def scarce_copy(self):
         copy_doc = copy.deepcopy(load(U2_COPY))

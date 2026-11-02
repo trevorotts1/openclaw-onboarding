@@ -778,6 +778,17 @@ def image_command(args: argparse.Namespace, request_path: Path, graph_path: Path
     if missing or not runner.is_file():
         raise EnrichmentError([f"image inputs / bridge config: {missing} missing" if missing
                                else f"skill71 root has no {runner.name}"])
+    # CARRIED 9: the page's own per-section image plan (Skill 80 upsell_image_plan.py), built from
+    # the enriched request (which carries the offer record), reaches Skill 71 through --slots, so
+    # U1 and U2 are not drawn from the heading-derived stock fallback.
+    planner = Path(args.produce).parent / "upsell_image_plan.py"
+    plan_path = work_dir / f"image-plan-{args.slot}.json"
+    planned = subprocess.run(
+        [sys.executable, str(planner), "--request", str(work_dir / f"upsell-request-{args.slot}.json"),
+         "--out", str(plan_path)], capture_output=True, text=True)
+    if planned.returncode != 0 or not plan_path.is_file():
+        raise EnrichmentError([f"upsell_image_plan.py exited {planned.returncode}: "
+                               f"{(planned.stdout + planned.stderr).strip()[:400]}"])
     # Dispatch stamps every request with one copy_profile; this page's is the consumer
     # constant, so Skill 71's intake records the upsell form. Nothing else is changed.
     images_request = work_dir / f"page-request-images-{args.slot}.json"
@@ -789,7 +800,8 @@ def image_command(args: argparse.Namespace, request_path: Path, graph_path: Path
            "--request", str(images_request), "--launch-record", args.launch,
            "--route-graph", str(graph_path), "--brand-file", str(pick("brand_file")),
            "--brand-owner", str(pick("brand_owner")), "--image-cap", str(pick("image_cap")),
-           "--run-dir", str(work_dir / f"images-{args.slot}"), "--provider", args.image_provider]
+           "--run-dir", str(work_dir / f"images-{args.slot}"), "--provider", args.image_provider,
+           "--slots", str(plan_path)]
     if pick("design_style"):
         cmd += ["--design-style", str(pick("design_style"))]
     if inputs.get("design_prose_ref"):

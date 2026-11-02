@@ -158,13 +158,20 @@ def test_derived_files_carry_a_wrapper_run_to_a_page_result(tmp_path):
     """DTY-05: only copy, journey and enrichment are staged by hand."""
     d, proc = run_cli(tmp_path, trial_launch(), page())
     assert proc.returncode == 0, proc.stderr
+    # spec 11 section 4: the sidecar cites the launch's recorded difference-table
+    # file and pins its sha256 (a relative ref resolves beside the sidecar)
+    table = d / "difference-table.json"
+    table.write_text(json.dumps({"difference_kind": SIDECAR["difference_kind"],
+                                 "rationale": SIDECAR["rationale"]}))
+    sidecar = dict(SIDECAR, difference_table_ref=table.name,
+                   difference_table_sha256=hashlib.sha256(table.read_bytes()).hexdigest())
     paths = {}
     for name, doc in (("request", REQUEST), ("launch", trial_launch()),
                       ("route-graph", None), ("copy", page()),
                       ("journey", {"main_purchased_verified": True,
                                    "u1_event": "explicit_decline",
                                    "u1_accepted": False}),
-                      ("enrichment", SIDECAR)):
+                      ("enrichment", sidecar)):
         paths[name] = d / (name + ".json")
         if doc is not None:
             paths[name].write_text(json.dumps(doc))
@@ -182,7 +189,12 @@ def test_derived_files_carry_a_wrapper_run_to_a_page_result(tmp_path):
          "--skill81-root", str(SKILL81)],
         capture_output=True, text=True, cwd=str(d))
     assert wrapper.returncode == 0, wrapper.stderr
-    assert json.loads(result.read_text())["status"] == "locally_verified"
+    # DTY-14 honesty ceiling: no --skill71-root, so no image stage ran; authored / L1, never verified
+    page_result = json.loads(result.read_text())
+    assert page_result["status"] == "authored" and page_result["proof_class"] == "L1"
+    # the cited difference table's sha256 is recorded among the result artifacts
+    assert {"path": str(table), "sha256": sidecar["difference_table_sha256"]} \
+        in page_result["artifacts"]
 
 
 def test_staged_one_time_label_on_a_trial_is_refused(tmp_path):
