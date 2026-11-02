@@ -13,9 +13,10 @@
       "action_line": "every call-to-action button leads to the client's checkout page or payment link",
       "handoff": {
         "primary_handoff_type": "external_link",
+        "checkout_proof": "checkout_result_or_attestation",
         "behavior": null,
         "step_order": null,
-        "note": "The handoff the sales page's built page must prove (scripts/validate_handoff.py, the responsive-html stage): its primary CTA is an anchor to an absolute http(s) checkout page or payment link, compared with the destination intake records when it records one. No form identity is required and no product-selection/order-form sequence applies, because the button leaves the page for the client's checkout."
+        "note": "The handoff the sales page's built page must prove (scripts/validate_handoff.py, the responsive-html stage): its primary CTA is an anchor to an absolute http(s) checkout page or payment link, compared with the destination intake records when it records one. No form identity is required and no product-selection/order-form sequence applies, because the button leaves the page for the client's checkout. The destination is tied to the approved offer: once intake records a checkout_result the link must equal its read_back_url (native page URL); until then a client-built checkout is allowed only with a checkout_attestation (url, attested_by, product, price, optional bump) whose price read-back matches the recorded approved_price."
       },
       "wireframe_head": "PAGE KIND — SIGNATURE SALES PAGE (page role landing, {form_label}, {total} sections). This page persuades toward a purchase: it reads as one long top-to-bottom persuasion stack, every call-to-action button is a checkout action, and the page closes on a checkout call-to-action panel. Layout family: the style reference attached to this request (structure only).",
       "closing_band": "CLOSING BAND — this is the last section of a sales page: under the section's content draw one full-width closing checkout panel on the dark brand ground, carrying one filled primary-colour button reading exactly \"{label}\". Draw no price, no card fields and no order form: the button leads to the client's checkout.",

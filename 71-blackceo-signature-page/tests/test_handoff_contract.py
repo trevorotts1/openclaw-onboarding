@@ -139,6 +139,10 @@ SALES_PAGE = """<!doctype html><html><body>
 </body></html>"""
 
 SALES_CHECKOUT = "https://pay.example.com/checkout/elevate"
+APPROVED_PRICE = {"amount": "97", "currency": "USD"}
+SALES_ATTESTED = {"approved_price": APPROVED_PRICE,
+                  "checkout_attestation": {"url": SALES_CHECKOUT, "attested_by": "client",
+                                           "product": "Elevate", "price": APPROVED_PRICE}}
 
 def sales_ctas(handoff_type="external_link"):
     return [{"section": "1", "label": "Claim Your Seat",
@@ -302,7 +306,7 @@ class ValidateHandoffTest(unittest.TestCase):
         # FAILS BEFORE the finding-16 fix: the validator required form_pop and
         # the fixed step order regardless of the page kind, so this sales page
         # (a real checkout link, no form at all) was refused twice.
-        run = make_page_run(self.td, {"checkout_url": SALES_CHECKOUT},
+        run = make_page_run(self.td, {"checkout_url": SALES_CHECKOUT, **SALES_ATTESTED},
                             page=SALES_PAGE, manifest_ctas=sales_ctas(),
                             page_kind="sales")
         proc = self.validate(run)
@@ -415,10 +419,10 @@ class ValidateHandoffTest(unittest.TestCase):
                       proc.stdout)
 
     def test_sales_page_without_a_recorded_destination_passes_printed(self):
-        # Deliberate while scripts/write_intake.py has no checkout flag:
-        # with nothing on record the page's own absolute link is accepted
-        # and the absence is printed, never silent.
-        run = make_page_run(self.td, {}, page=SALES_PAGE,
+        # With no destination on record the page's own absolute link is accepted
+        # only under a CHK-28 checkout attestation, and the absence is printed,
+        # never silent.
+        run = make_page_run(self.td, dict(SALES_ATTESTED), page=SALES_PAGE,
                             manifest_ctas=sales_ctas(), page_kind="sales")
         proc = self.validate(run)
         self.assertEqual(proc.returncode, 0, proc.stdout)
