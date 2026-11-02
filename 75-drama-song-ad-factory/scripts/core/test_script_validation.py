@@ -708,13 +708,30 @@ def test_silent_laundering_reads_every_performed_line_key():
 
 
 def test_silent_scene_still_proves_real_content():
-    """The shared base 4bd478de reading: silence exempts nothing."""
-    scene = _with(silent_scene=True, spoken_dialogue=[], sung_lyrics=[],
+    """C09: declared silence needs real action/outcome, never lines.
+
+    Supersedes the 4bd478de reading ("silence exempts nothing") for the line
+    floor only. Silence is never inferred from empty dialogue, and a declared
+    silent scene still owes every other content check.
+    """
+    silent = dict(silent_scene=True, spoken_dialogue=[], sung_lyrics=[],
                   performance_order=[], visible_lip_sync={"intervals": []})
-    verdict = V.validate_script(_single_scene_script(scene), world=WORLD,
-                                cast_manifest=CAST)
+    # undeclared empty dialogue is still a placeholder (the old assertion)
+    undeclared = {k: v for k, v in silent.items() if k != "silent_scene"}
+    verdict = V.validate_script(_single_scene_script(_with(**undeclared)),
+                                world=WORLD, cast_manifest=CAST)
     assert verdict["ok"] is False
     assert "PLACEHOLDER_SCENE" in _codes(verdict), verdict["defects"]
+    # declared silence with real causal action is accepted, no word quota
+    verdict = V.validate_script(_single_scene_script(_with(**silent)),
+                                world=WORLD, cast_manifest=CAST)
+    assert verdict["ok"] is True, verdict["defects"]
+    # declared silence with an empty action/outcome is refused
+    for field in ("visible_action", "causal_outcome"):
+        verdict = V.validate_script(
+            _single_scene_script(_with(**dict(silent, **{field: "..."}))),
+            world=WORLD, cast_manifest=CAST)
+        assert verdict["ok"] is False, field
 
 
 def test_duration_must_hold_the_words_the_scene_performs():
