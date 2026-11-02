@@ -430,8 +430,8 @@ def _approval_verifier():
 
 def _check_approval_record(launch: Dict[str, Any], approval: Any, *,
                            expected_type: str,
-                           client_identity_ref: Optional[str],
-                           worker_identity_ref: Optional[str],
+                           client_identity_ref: str,
+                           worker_identity_ref: str,
                            test_only: bool = False,
                            cap: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The single approval discipline (doc 03 §9, ENF-01), shared by the plan
@@ -447,7 +447,11 @@ def _check_approval_record(launch: Dict[str, Any], approval: Any, *,
         raise ApprovalError("test_only must be exactly True or False")
     if test_only and launch.get("test_only") is not True:
         raise ApprovalError("a local test approval can only back a test_only plan")
-    if client_identity_ref and client_identity_ref == worker_identity_ref:
+    if not isinstance(client_identity_ref, str) or not client_identity_ref.strip():
+        raise ApprovalError("approval names no client identity")
+    if not isinstance(worker_identity_ref, str) or not worker_identity_ref.strip():
+        raise ApprovalError("no worker identity")
+    if client_identity_ref == worker_identity_ref:
         raise ApprovalError("the worker operating the run cannot approve its own "
                             "work (self-approval is refused)")
     if isinstance(approval, dict):
@@ -478,8 +482,8 @@ def _check_approval_record(launch: Dict[str, Any], approval: Any, *,
 
 
 def assert_plan_build_approved(launch: Dict[str, Any], approval: Any, *,
-                               client_identity_ref: Optional[str] = None,
-                               worker_identity_ref: Optional[str] = None,
+                               client_identity_ref: str,
+                               worker_identity_ref: str,
                                test_only: bool = False) -> Dict[str, Any]:
     """Assert THIS launch plan may be built: a launch_plan_build approval
     verified against the platform record and bound to the current plan hash
@@ -492,8 +496,8 @@ def assert_plan_build_approved(launch: Dict[str, Any], approval: Any, *,
 
 def assert_scoped_approval(launch: Dict[str, Any], approval: Any,
                            approval_type: str, *,
-                           client_identity_ref: Optional[str] = None,
-                           worker_identity_ref: Optional[str] = None,
+                           client_identity_ref: str,
+                           worker_identity_ref: str,
                            test_only: bool = False,
                            cap: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Assert a SCOPED side-effect approval (test location use, page

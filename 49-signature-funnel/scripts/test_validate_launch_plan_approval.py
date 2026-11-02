@@ -105,11 +105,13 @@ def test_only_a_verified_record_passes(platform):
     assert out["verification_class"] == "authenticated_platform_record"
     # the caller's dict contents are never trusted, only its id
     with pytest.raises(vlp.ApprovalError, match="not verified"):
-        vlp.assert_plan_build_approved(plan, {"approval_id": "MINTED-9999"}, client_identity_ref=CLIENT)
+        vlp.assert_plan_build_approved(plan, {"approval_id": "MINTED-9999"}, client_identity_ref=CLIENT,
+                                       worker_identity_ref=WORKER)
     # a changed plan no longer matches the minted hash
     plan["revision"] = 2
     with pytest.raises(vlp.ApprovalError, match="not verified"):
-        vlp.assert_plan_build_approved(plan, "MINTED-0001", client_identity_ref=CLIENT)
+        vlp.assert_plan_build_approved(plan, "MINTED-0001", client_identity_ref=CLIENT,
+                                       worker_identity_ref=WORKER)
 
 
 def test_worker_cannot_self_approve(platform):
@@ -137,9 +139,26 @@ def test_paid_asset_budget_needs_verified_record_with_cap(platform):
                                    "paid_asset_budget", cap={"cap_minor": 1, "currency": "USD"}, **ask)
 
 
+def test_identities_are_required(platform):
+    plan = _plan()
+    platform["MINTED-0001"] = _record(plan, "launch_plan_build")
+    with pytest.raises(TypeError):
+        vlp.assert_plan_build_approved(plan, "MINTED-0001")
+    with pytest.raises(vlp.ApprovalError, match="no client identity"):
+        vlp.assert_plan_build_approved(plan, "MINTED-0001", client_identity_ref="",
+                                       worker_identity_ref=WORKER)
+    with pytest.raises(vlp.ApprovalError, match="no worker identity"):
+        vlp.assert_plan_build_approved(plan, "MINTED-0001", client_identity_ref=CLIENT,
+                                       worker_identity_ref=" ")
+    with pytest.raises(vlp.ApprovalError, match="self-approval"):
+        vlp.assert_plan_build_approved(plan, "MINTED-0001", client_identity_ref=CLIENT,
+                                       worker_identity_ref=CLIENT)
+
+
 def test_plan_build_approval_is_not_a_scoped_approval(platform):
     with pytest.raises(vlp.ApprovalError):
-        vlp.assert_scoped_approval(_plan(), "MINTED-0001", "launch_plan_build")
+        vlp.assert_scoped_approval(_plan(), "MINTED-0001", "launch_plan_build",
+                                   client_identity_ref=CLIENT, worker_identity_ref=WORKER)
 
 
 def test_local_test_record_needs_explicit_test_only_and_test_plan():
@@ -149,12 +168,14 @@ def test_local_test_record_needs_explicit_test_only_and_test_plan():
     rec = _record(plan, "launch_plan_build")
     # live mode: the dict is not an approval (Command Center would have to mint it)
     with pytest.raises(vlp.ApprovalError, match="not verified"):
-        vlp.assert_plan_build_approved(plan, rec, client_identity_ref=CLIENT)
-    out = vlp.assert_plan_build_approved(plan, rec, client_identity_ref=CLIENT, test_only=True)
+        vlp.assert_plan_build_approved(plan, rec, client_identity_ref=CLIENT, worker_identity_ref=WORKER)
+    out = vlp.assert_plan_build_approved(plan, rec, client_identity_ref=CLIENT,
+                                       worker_identity_ref=WORKER, test_only=True)
     assert out["verification_class"] == "local_test_record"
     plan["test_only"] = False
     with pytest.raises(vlp.ApprovalError, match="test_only"):
-        vlp.assert_plan_build_approved(plan, rec, client_identity_ref=CLIENT, test_only=True)
+        vlp.assert_plan_build_approved(plan, rec, client_identity_ref=CLIENT,
+                                       worker_identity_ref=WORKER, test_only=True)
 
 
 def test_u2_must_differ_from_u1_d1_and_main():
