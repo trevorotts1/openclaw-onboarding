@@ -166,6 +166,68 @@ class UpsellLayoutStampTests(unittest.TestCase):
             self.sections({"layouts": {"upsell_2": layout}})
 
 
+class SelectionStructureEnforcementTests(unittest.TestCase):
+    """PRD-23: a required section's rows must parse; an empty Compare is a failure, not a flag."""
+    SPEC = HERE.parent / "references" / "copy-specs" / "product-selection-v1.json"
+    SELECTION = (HERE / "fixtures" / "copy_examples" / "product-selection-path-b.md").read_text(encoding="utf-8")
+
+    def verdict(self, text):
+        import validate_copy_structure as v
+        units, order, notes = v.parse_manuscript(text)
+        return v.validate(units, order, notes, v.load_spec(self.SPEC)).fails
+
+    def compare_with(self, body):
+        head, rest = self.SELECTION.split("## Section 4: Compare\n", 1)
+        return head + "## Section 4: Compare\n" + body + "\n## Section 5:" + rest.split("## Section 5:", 1)[1]
+
+    def test_the_real_manuscript_still_passes(self):
+        self.assertEqual(self.verdict(self.SELECTION), [])
+
+    def test_an_empty_compare_fails_in_the_validator_and_exits_non_zero(self):
+        self.assertTrue(any("Compare" in f for f in self.verdict(self.compare_with(""))))
+        path = Path(tempfile.mkdtemp()) / "empty-compare.md"
+        path.write_text(self.compare_with(""), encoding="utf-8")
+        self.addCleanup(lambda: path.unlink(missing_ok=True))
+        proc = subprocess.run([sys.executable, str(SCRIPTS / "validate_copy_structure.py"), str(path),
+                               "--spec", str(self.SPEC)], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+
+    def test_prose_instead_of_rows_fails_and_a_matrix_table_passes(self):
+        self.assertTrue(self.verdict(self.compare_with("Everything is included in every package.\n")))
+        table = "| Item | Essential | Pro |\n|---|---|---|\n| Course | included | included |\n"
+        self.assertEqual(self.verdict(self.compare_with(table)), [])
+        self.assertTrue(self.verdict(self.compare_with("| Item | Essential | Pro |\n|---|---|---|\n")))
+
+
+class StructureRatificationTests(unittest.TestCase):
+    """STR-17: no copy spec still reads as a proposal, each carries its dated decision, and the page
+    handoff manifest carries a structure_approval field."""
+
+    def test_no_spec_status_says_proposed_or_awaiting(self):
+        specs = sorted((HERE.parent / "references" / "copy-specs").rglob("*.json"))
+        self.assertGreaterEqual(len(specs), 6)
+        for path in specs:
+            status = str(json.loads(path.read_text(encoding="utf-8")).get("status", "")).lower()
+            for word in ("proposed", "proposal", "awaiting", "pending"):
+                self.assertNotIn(word, status, path.name)
+
+    def test_each_ratified_spec_carries_the_dated_decision(self):
+        for rel in ("product-selection-v1.json", "thank-you-v1.json", "standard-v6.json", "roles/checkout.json"):
+            spec = json.loads((HERE.parent / "references" / "copy-specs" / rel).read_text(encoding="utf-8"))
+            self.assertEqual(spec["structure_approval"]["decision"], "ratified_as_built", rel)
+            self.assertRegex(spec["structure_approval"]["date"], r"^\d{4}-\d{2}-\d{2}$")
+
+    def test_the_page_handoff_manifest_carries_the_structure_approval(self):
+        import page_result
+        for request in ({"page_role": "thank_you"}, {"page_role": "checkout"}, {"page_role": "product_selection"},
+                        {"page_role": "landing", "copy_profile": "standard"}):
+            got = page_result.structure_approval(request)
+            self.assertEqual((got["decision"], got["date"]), ("ratified_as_built", "2026-11-02"), request)
+        # a page whose spec records no decision is labelled, never silently approved
+        self.assertEqual(page_result.structure_approval({"page_role": "downsell_1"})["decision"],
+                         "structure pending approval")
+
+
 class SecondDownsellLabelTests(unittest.TestCase):
     def setUp(self):
         self.run_dir = tempfile.mkdtemp()
