@@ -15,6 +15,8 @@ fi
 #   ./qc-built-workflow.sh <workflow-id> [--publish-intent DRAFT|LIVE] [--re-entry ONCE|ALLOW-MULTIPLE] \
 #                          [--fab] [--evidence <evidence_root>] [--conversational] [--json]
 #                          [--deps <dependency-manifest.json>] [--handoff <path>]
+#                          --plan-mode-file <path> --qc-model <model> --grades <path> \
+#                          [--launch | --launch-schedule <path>]
 #
 #   workflow-id       GHL workflow id (required)
 #   --publish-intent  Client's publish decision: DRAFT (default) or LIVE
@@ -24,6 +26,21 @@ fi
 #   --conversational  Run Skill 38 qc-trinity-registry.sh as a HARD gate; WF-19 FAILs
 #                     mechanically (not REQUIRES_HUMAN_REVIEW) on non-zero trinity exit
 #   --json            Emit per-item PASS/FAIL as JSON to stdout (for QC sub-agent parsing)
+#   --plan-mode-file  PLAN MODE run file (S44-24): JSON {approval_id, plan_hash, publish_intent,
+#                     re_entry, build_model}. Exit 0 needs it: its publish_intent/re_entry must equal
+#                     --publish-intent/--re-entry AND the approval flow's verifier
+#                     (shared-utils/signature_launch_contract/approval_record.py, kind
+#                     launch_plan_build, scope publish:<INTENT> + reentry:<DECISION>) must confirm the
+#                     Command Center record. A file the AI wrote itself cannot satisfy that check.
+#   --qc-model        Model that runs this QC (recorded in build-events; must differ from the
+#                     plan file's build_model). Required for exit 0.
+#   --grades          QC sub-agent grades for every REQUIRES_HUMAN_REVIEW item:
+#                     {"workflow_id": "<id>", "grades": {"WF-1": {"grade": "PASS|FAIL", "observed": "..."}, ...}}
+#                     Any ungraded item blocks exit 0 (exit 2).
+#   --launch          Launch (Skill 49/83) build: WF-9 becomes mechanical and needs --launch-schedule.
+#   --launch-schedule Compiled wait schedule JSON ({"waits":[{"kind":"until_date","until":"<ISO8601 with
+#                     offset>"} | {"kind":"delay","value":2,"unit":"days"}]}); implies --launch. WF-9
+#                     compares the export's wait nodes against it (S44-11).
 #
 # NOTE on export routing (Tier awareness): `caf workflows list` reads via the LOCATION
 # PIT (Tier 0, public API). `caf workflows get` / `caf workflows export` route through the
@@ -33,8 +50,12 @@ fi
 # (exit 2, REQUIRES_OPERATOR agent-browser read-back), never a silent pass.
 #
 # Exit codes:
-#   0  = ALL mechanically-checkable items PASS (and, when --fab, FAB-QC scored >= 8.5)
-#   1  = one or more items FAIL (or --fab and FAB-QC below 8.5 / unavailable — fail-closed)
+#   0  = ALL mechanically-checkable items PASS, every human-review item is graded PASS, the signed
+#        PLAN MODE file verifies, and a QC model is recorded (and, when --fab, FAB-QC scored >= 8.5)
+#   1  = one or more items FAIL (or --fab and FAB-QC below 8.5 / unavailable — fail-closed), a human
+#        grade is FAIL, or the PLAN MODE / QC-independence gate failed (file absent, intent differs,
+#        approval refused, QC model missing or equal to the build model)
+#   2 (also) = one or more human-review items are UNGRADED (not a pass: the caller must never see 0)
 #   2  = workflow not found, caf not available, or export blocked by a missing Firebase
 #        token on a Tier-4 build (hard prereq failure — REQUIRES_OPERATOR)
 #
@@ -74,6 +95,11 @@ FAB_EVIDENCE=""
 CONVERSATIONAL=0
 DEPS_MANIFEST=""
 HANDOFF_FILE=""
+PLAN_MODE_FILE=""
+QC_MODEL=""
+GRADES_FILE=""
+LAUNCH_MODE=0
+LAUNCH_SCHEDULE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -84,6 +110,11 @@ while [[ $# -gt 0 ]]; do
     --evidence)       FAB_EVIDENCE="${2:-}"; FAB_MODE=1; shift 2 ;;
     --deps)           DEPS_MANIFEST="${2:-}"; shift 2 ;;
     --handoff)        HANDOFF_FILE="${2:-}"; shift 2 ;;
+    --plan-mode-file) PLAN_MODE_FILE="${2:-}"; shift 2 ;;
+    --qc-model)       QC_MODEL="${2:-}"; shift 2 ;;
+    --grades)         GRADES_FILE="${2:-}"; shift 2 ;;
+    --launch)         LAUNCH_MODE=1; shift ;;
+    --launch-schedule) LAUNCH_SCHEDULE="${2:-}"; LAUNCH_MODE=1; shift 2 ;;
     --conversational) CONVERSATIONAL=1; shift ;;  # WF-19: exec Skill 38 qc-trinity-registry.sh as a HARD gate
     -*)               echo "Unknown option: $1" >&2; exit 2 ;;
     *)                WORKFLOW_ID="$1"; shift ;;
@@ -92,7 +123,7 @@ done
 
 if [ -z "$WORKFLOW_ID" ]; then
   echo "ERROR: workflow-id required" >&2
-  echo "Usage: $0 <workflow-id> [--publish-intent DRAFT|LIVE] [--re-entry ONCE|ALLOW-MULTIPLE] [--conversational] [--handoff <path>] [--json]" >&2
+  echo "Usage: $0 <workflow-id> [--publish-intent DRAFT|LIVE] [--re-entry ONCE|ALLOW-MULTIPLE] [--conversational] [--handoff <path>] [--plan-mode-file <path>] [--qc-model <model>] [--grades <path>] [--launch-schedule <path>] [--json]" >&2
   exit 2
 fi
 
@@ -824,7 +855,90 @@ fi
 record_human "WF-1"  "Workflow name must be verified against plan/outline by QC agent reading export output"
 record_human "WF-2"  "Tags must be verified by QC agent: check each tag in export against plan, GET-verify in GHL"
 record_human "WF-8"  "If/Else conditions (fields, operators, AND/OR logic) require QC agent review of export output"
-record_human "WF-9"  "Wait timing requires QC review: duration/event mode, source, Set event start time before dependent waits, offsets, timezone, past-due and re-entry; see references/workflow-timing.md"
+# WF-9 (S44-11): a launch build is compared MECHANICALLY against the compiled schedule
+# (absolute send dates compile to wait-until-date steps; a duration wait where a date was
+# compiled sends relative to enrollment, not on the date). Non-launch builds stay human review.
+if [ "$LAUNCH_MODE" -eq 1 ]; then
+  if [ -z "$LAUNCH_SCHEDULE" ] || [ ! -f "$LAUNCH_SCHEDULE" ]; then
+    record_fail "WF-9" "no_compiled_schedule" "export wait nodes equal the compiled launch schedule" "Launch build but no readable --launch-schedule file (${LAUNCH_SCHEDULE:-none}); wait timing is unproven. Fail-closed."
+  else
+    WF9_RESULT=$(python3 -I - "$TMP" "$LAUNCH_SCHEDULE" <<'WF9PY' 2>/dev/null || echo "FAIL|wf9_comparison_error"
+import json, sys
+from collections import Counter
+from datetime import datetime, timezone
+UNIT = {"minute": "minutes", "minutes": "minutes", "hour": "hours", "hours": "hours", "day": "days", "days": "days"}
+def iso(v):
+    try:
+        dt = datetime.fromisoformat(str(v).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%MZ") if dt.tzinfo else None
+def first_date(o):
+    if isinstance(o, str):
+        return iso(o)
+    for v in (o.values() if isinstance(o, dict) else o if isinstance(o, list) else []):
+        r = first_date(v)
+        if r:
+            return r
+    return None
+def delay(v, u):
+    return "delay %s %s" % (int(v), UNIT.get(str(u).lower(), str(u).lower()))
+try:
+    export = json.load(open(sys.argv[1], encoding="utf-8"))
+    sched = json.load(open(sys.argv[2], encoding="utf-8"))
+    sched = sched.get("waits") if isinstance(sched, dict) else sched
+    want = []
+    for w in sched:
+        if w.get("kind") == "until_date":
+            d = iso(w.get("until"))
+            if not d:
+                raise ValueError("schedule date has no UTC offset")
+            want.append("until " + d)
+        else:
+            want.append(delay(w["value"], w["unit"]))
+except Exception as e:
+    print("FAIL|schedule_or_export_unreadable (%s)" % type(e).__name__); sys.exit(0)
+seen, got = set(), []
+def walk(o):
+    if isinstance(o, dict):
+        if str(o.get("type", "")).lower() == "wait" and id(o) not in seen:
+            seen.add(id(o))
+            a = o.get("attributes") if isinstance(o.get("attributes"), dict) else {}
+            sa = a.get("startAfter")
+            if isinstance(sa, dict) and "value" in sa and "type" in sa:
+                try:
+                    got.append(delay(sa["value"], sa["type"]))
+                except (TypeError, ValueError):
+                    got.append("unreadable")
+            else:
+                d = first_date(a)
+                got.append("until " + d if d else "unreadable")
+        for v in o.values():
+            walk(v)
+    elif isinstance(o, list):
+        for v in o:
+            walk(v)
+walk(export)
+if not want:
+    print("FAIL|compiled_schedule_has_no_waits"); sys.exit(0)
+miss, extra = Counter(want) - Counter(got), Counter(got) - Counter(want)
+if miss or extra:
+    print("FAIL|expected %d waits, export has %d; missing=%s extra=%s" % (
+        len(want), len(got), sorted(miss.elements())[:5] or "none", sorted(extra.elements())[:5] or "none"))
+else:
+    print("PASS|%d waits match" % len(want))
+WF9PY
+)
+    WF9_STATE="${WF9_RESULT%%|*}"; WF9_DETAIL="${WF9_RESULT#*|}"
+    if [ "$WF9_STATE" = "PASS" ]; then
+      record_pass "WF-9" "$WF9_DETAIL" "export wait nodes equal the compiled launch schedule" "Compared against $LAUNCH_SCHEDULE (dates compared as UTC instants)."
+    else
+      record_fail "WF-9" "$WF9_DETAIL" "export wait nodes equal the compiled launch schedule" "Wait timing differs from the compiled schedule: a date-anchored send built as a duration wait fires relative to enrollment, not on the date."
+    fi
+  fi
+else
+  record_human "WF-9"  "Wait timing requires QC review: duration/event mode, source, Set event start time before dependent waits, offsets, timezone, past-due and re-entry; see references/workflow-timing.md"
+fi
 record_human "WF-10" "Custom fields (data type + exact name) require QC agent review of export output"
 record_human "WF-11" "Custom values (non-empty + exact name) require QC agent review of export output"
 record_human "WF-13" "Email From Name/From Email require QC agent review of export output"
@@ -1016,6 +1130,112 @@ for d in "D1:$D1" "D2:$D2" "D3:$D3" "D4:$D4" "D5:$D5" "D6:$D6" "D7:$D7" "D8:$D8"
   if [ "$v" -lt "$LOWEST_VAL" ]; then LOWEST_VAL="$v"; LOWEST_DIM="${d%%:*}"; fi
 done
 
+# ── EXIT GATES (S44-24): signed PLAN MODE answers, QC independence, graded human items ──
+# These never touch PASS_COUNT/FAIL_COUNT (the mechanical result) — they only decide whether
+# this run may exit 0. Before this gate the script exited 0 with PLAN MODE answers unrecorded
+# and 11+ human-review items ungraded, so a builder could run it itself and report "passed QC".
+PLAN_GATE="FAIL"
+PLAN_GATE_REASON=""
+PLAN_APPROVAL_ID="none"
+PLAN_BUILD_MODEL="none"
+QC_MODEL_OK=1
+if [[ "$QC_MODEL" =~ ^[A-Za-z0-9._:/@+-]{1,80}$ ]]; then
+  QC_MODEL_SAFE="$QC_MODEL"
+else
+  QC_MODEL_OK=0
+  QC_MODEL_SAFE="none"
+fi
+APPROVAL_VERIFIER="$SCRIPT_DIR/../shared-utils/signature_launch_contract/approval_record.py"
+PLAN_GATE_RAW=$(python3 -I - "$PLAN_MODE_FILE" "$PUBLISH_INTENT" "$RE_ENTRY_DECISION" "$APPROVAL_VERIFIER" "$QC_MODEL_SAFE" <<'PLANPY' 2>/dev/null || echo "FAIL|plan_gate_error|none|none"
+import importlib.util, json, os, sys
+path, publish, reentry, vpath, qc_model = sys.argv[1:6]
+def out(status, reason, aid="none", bm="none"):
+    print("|".join([status, reason.replace("|", "/").replace("\n", " ")[:300], aid, bm])); sys.exit(0)
+if not path or not os.path.isfile(path):
+    out("FAIL", "plan_mode_file_absent: no signed PLAN MODE run file (%s); the client's publish/re-entry answers were never recorded by the approval flow" % (path or "no --plan-mode-file"))
+try:
+    d = json.load(open(path, encoding="utf-8"))
+except Exception:
+    out("FAIL", "plan_mode_file_unreadable")
+if not isinstance(d, dict) or not all(isinstance(d.get(k), str) and d[k].strip() for k in ("approval_id", "plan_hash", "publish_intent", "re_entry")):
+    out("FAIL", "plan_mode_file_malformed: need approval_id, plan_hash, publish_intent, re_entry")
+bm = str(d.get("build_model") or "").strip()
+if d["publish_intent"].strip().upper() != publish:
+    out("FAIL", "publish_intent_differs: signed PLAN MODE file says %s, --publish-intent says %s" % (d["publish_intent"].strip().upper(), publish))
+if d["re_entry"].strip().upper() != reentry:
+    out("FAIL", "re_entry_differs: signed PLAN MODE file says %s, --re-entry says %s" % (d["re_entry"].strip().upper(), reentry))
+if bm and bm.lower() == qc_model.lower():
+    out("FAIL", "qc_not_independent: QC model equals the build model; QC must run on a different model", d["approval_id"], bm)
+if not os.path.isfile(vpath):
+    out("FAIL", "approval_verifier_missing: shared-utils/signature_launch_contract/approval_record.py not found; an unverifiable file is never a signature", d["approval_id"], bm)
+try:
+    spec = importlib.util.spec_from_file_location("approval_record", vpath)
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+    mod.verify(d["approval_id"], "launch_plan_build", d["plan_hash"], ["publish:" + publish, "reentry:" + reentry])
+except Exception as e:  # ApprovalRefused (has .code) or ApprovalUnavailable: both fail closed
+    out("FAIL", "approval_not_verified %s %s" % (getattr(e, "code", type(e).__name__), str(e)[:120]), d["approval_id"], bm)
+out("PASS", "signed PLAN MODE answers verified", d["approval_id"], bm)
+PLANPY
+)
+IFS='|' read -r PLAN_GATE PLAN_GATE_REASON PLAN_APPROVAL_ID PLAN_BUILD_MODEL <<< "$PLAN_GATE_RAW"
+if [ "$PLAN_GATE" = "PASS" ] && [ "$QC_MODEL_OK" -ne 1 ]; then
+  PLAN_GATE="FAIL"; PLAN_GATE_REASON="qc_model_missing_or_invalid: pass --qc-model <model that runs this QC> (recorded in build-events)"
+fi
+[ "$PLAN_GATE" = "PASS" ] || PLAN_GATE="FAIL"
+
+# Human-review items: each must carry an explicit PASS/FAIL grade (with observed text) from the
+# QC sub-agent. Ungraded = not a pass. Grades for another workflow id count as no grades.
+PENDING_HUMAN=()
+for _i in WF-3 WF-4 WF-5 WF-6 WF-7 WF-12 WF-22 WF-15 WF-18 WF-21 WF-23 WF-24 WF-19 WF-1 WF-2 WF-8 WF-9 WF-10 WF-11 WF-13 WF-14 WF-16 WF-17 WF-20; do
+  [ "${ITEM_STATUS[$_i]:-}" = "REQUIRES_HUMAN_REVIEW" ] && PENDING_HUMAN+=("$_i")
+done
+UNGRADED_ITEMS=()
+HUMAN_FAIL_COUNT=0
+GRADE_ROWS=""
+if [ "${#PENDING_HUMAN[@]}" -gt 0 ]; then
+  GRADE_ROWS=$(python3 -I - "$GRADES_FILE" "$WORKFLOW_ID" "${PENDING_HUMAN[@]}" <<'GRADEPY' 2>/dev/null || true
+import json, sys
+path, wid, items = sys.argv[1], sys.argv[2], sys.argv[3:]
+g = {}
+try:
+    d = json.load(open(path, encoding="utf-8"))
+    if isinstance(d, dict) and d.get("workflow_id") == wid and isinstance(d.get("grades"), dict):
+        g = d["grades"]
+except Exception:
+    pass
+clean = lambda v: " ".join(str(v).replace('"', "'").replace("\\", "/").split())[:200]
+for i in items:
+    r = g.get(i) if isinstance(g.get(i), dict) else {}
+    grade, obs = str(r.get("grade", "")).strip().upper(), clean(r.get("observed", ""))
+    print("\t".join(["G", i, grade, obs]) if grade in ("PASS", "FAIL") and obs else "\t".join(["U", i, "", ""]))
+GRADEPY
+)
+  _seen=" "
+  while IFS=$'\t' read -r _k _item _grade _obs; do
+    [ -n "$_k" ] || continue
+    _seen="$_seen$_item "
+    if [ "$_k" = "G" ]; then
+      ITEM_STATUS["$_item"]="HUMAN_$_grade"
+      ITEM_OBSERVED["$_item"]="$_obs"
+      ITEM_EXPECTED["$_item"]="QC sub-agent grade"
+      ITEM_NOTES["$_item"]="Graded by QC sub-agent ($QC_MODEL_SAFE)"
+      [ "$_grade" = "FAIL" ] && HUMAN_FAIL_COUNT=$((HUMAN_FAIL_COUNT + 1))
+    else
+      UNGRADED_ITEMS+=("$_item")
+    fi
+  done <<< "$GRADE_ROWS"
+  # A grader that printed nothing (crash, missing python) must not read as "nothing pending".
+  for _i in "${PENDING_HUMAN[@]}"; do
+    case "$_seen" in *" $_i "*) ;; *) UNGRADED_ITEMS+=("$_i") ;; esac
+  done
+fi
+UNGRADED_COUNT="${#UNGRADED_ITEMS[@]}"
+UNGRADED_LIST="${UNGRADED_ITEMS[*]:-}"
+UNGRADED_LIST="${UNGRADED_LIST// /,}"
+EXIT_GATE="PASS"
+if [ "$PLAN_GATE" != "PASS" ] || [ "$HUMAN_FAIL_COUNT" -gt 0 ]; then EXIT_GATE="FAIL"
+elif [ "$UNGRADED_COUNT" -gt 0 ]; then EXIT_GATE="UNGRADED"; fi
+
 # ── Output ─────────────────────────────────────────────────────────────────────
 # WF-19 is a MECHANICAL item on a --conversational build (trinity hard gate) and a
 # human-review item otherwise — place it in the right display bucket accordingly.
@@ -1025,6 +1245,10 @@ if [ "$CONVERSATIONAL" -eq 1 ]; then
 else
   MECHANICAL_ITEMS=("WF-3" "WF-4" "WF-5" "WF-6" "WF-7" "WF-12" "WF-22" "WF-15" "WF-18" "WF-21" "WF-23" "WF-24")
   HUMAN_ITEMS=("WF-1" "WF-2" "WF-8" "WF-9" "WF-10" "WF-11" "WF-13" "WF-14" "WF-16" "WF-17" "WF-19" "WF-20")
+fi
+if [ "$LAUNCH_MODE" -eq 1 ]; then
+  MECHANICAL_ITEMS+=("WF-9")
+  _h=(); for _i in "${HUMAN_ITEMS[@]}"; do [ "$_i" = "WF-9" ] || _h+=("$_i"); done; HUMAN_ITEMS=("${_h[@]}")
 fi
 
 if [ "$JSON_MODE" -eq 1 ]; then
@@ -1036,6 +1260,10 @@ if [ "$JSON_MODE" -eq 1 ]; then
   echo "  \"mechanical_pass\": $PASS_COUNT,"
   echo "  \"mechanical_fail\": $FAIL_COUNT,"
   echo "  \"overall_mechanical\": \"$([ "$FAIL_COUNT" -eq 0 ] && echo PASS || echo FAIL)\","
+  echo "  \"qc_model\": \"$QC_MODEL_SAFE\","
+  echo "  \"exit_gate\": \"$EXIT_GATE\","
+  echo "  \"plan_mode_gate\": {\"status\": \"$PLAN_GATE\", \"approval_id\": \"$PLAN_APPROVAL_ID\", \"reason\": \"$(printf '%s' "$PLAN_GATE_REASON" | sed 's/"/\\"/g')\"},"
+  echo "  \"ungraded_items\": \"$UNGRADED_LIST\","
   echo "  \"items\": {"
   ALL_ITEMS=("WF-3" "WF-4" "WF-5" "WF-6" "WF-7" "WF-12" "WF-22" "WF-15" "WF-18" "WF-21" "WF-23" "WF-24" \
              "WF-1" "WF-2" "WF-8" "WF-9" "WF-10" "WF-11" "WF-13" "WF-14" "WF-16" "WF-17" "WF-19" "WF-20")
@@ -1096,7 +1324,12 @@ else
   echo "── Items requiring QC agent review (not machine-assertable) ──"
   for item in "${HUMAN_ITEMS[@]}"; do
     NOTES="${ITEM_NOTES[$item]:-}"
-    printf "  %-6s REQUIRES_HUMAN_REVIEW | %s\n" "$item" "$NOTES"
+    STATUS="${ITEM_STATUS[$item]:-REQUIRES_HUMAN_REVIEW}"
+    if [ "$STATUS" = "REQUIRES_HUMAN_REVIEW" ]; then
+      printf "  %-6s UNGRADED REQUIRES_HUMAN_REVIEW | %s\n" "$item" "$NOTES"
+    else
+      printf "  %-6s %s | observed: %s\n" "$item" "$STATUS" "${ITEM_OBSERVED[$item]:-n/a}"
+    fi
   done
   echo ""
   echo "═══════════════════════════════════════════════════════════"
@@ -1108,6 +1341,7 @@ else
   else
     echo "  Mechanical QC PASSED — QC agent must still review human-review items above."
   fi
+  echo "  Exit gate: $EXIT_GATE | PLAN MODE: $PLAN_GATE ($PLAN_GATE_REASON) | QC model: $QC_MODEL_SAFE | ungraded: ${UNGRADED_COUNT}${UNGRADED_LIST:+ ($UNGRADED_LIST)}"
   echo ""
   # Weighted quality rubric (SUPERSET overlay — computed AFTER WF-1..21, never instead of)
   echo "── Weighted quality rubric (references/workflow-quality-rubric.md) ──"
@@ -1197,9 +1431,9 @@ fi
 # ── Append to build-events ledger ─────────────────────────────────────────────
 mkdir -p "$(dirname "$BUILD_EVENTS_LEDGER")" 2>/dev/null || true
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")
-VERDICT="$([ "$FAIL_COUNT" -eq 0 ] && [ "$FAB_RC" -eq 0 ] && echo PASS || echo FAIL)"
+VERDICT="$([ "$FAIL_COUNT" -eq 0 ] && [ "$FAB_RC" -eq 0 ] && [ "$EXIT_GATE" = "PASS" ] && echo PASS || echo FAIL)"
 cat >> "$BUILD_EVENTS_LEDGER" 2>/dev/null << LEDGER_EOF
-{"event":"qc_run","timestamp":"${TIMESTAMP}","workflow_id":"${WORKFLOW_ID}","publish_intent":"${PUBLISH_INTENT}","re_entry":"${RE_ENTRY_DECISION}","mechanical_pass":${PASS_COUNT},"mechanical_fail":${FAIL_COUNT},"verdict":"${VERDICT}","conversational":${CONVERSATIONAL},"fab_mode":${FAB_MODE},"fab_score":"${FAB_SCORE}","fab_status":"${FAB_STATUS}","rubric_weighted_floor":${RUBRIC_FLOOR},"rubric_weighted_ceiling":${RUBRIC_CEILING},"rubric_ship_threshold":8.5,"rubric_needs_human_grading":${RUBRIC_NEEDS_HUMAN},"rubric_lowest_dimension":"${LOWEST_DIM}"}
+{"event":"qc_run","timestamp":"${TIMESTAMP}","workflow_id":"${WORKFLOW_ID}","publish_intent":"${PUBLISH_INTENT}","re_entry":"${RE_ENTRY_DECISION}","mechanical_pass":${PASS_COUNT},"mechanical_fail":${FAIL_COUNT},"verdict":"${VERDICT}","conversational":${CONVERSATIONAL},"fab_mode":${FAB_MODE},"fab_score":"${FAB_SCORE}","fab_status":"${FAB_STATUS}","rubric_weighted_floor":${RUBRIC_FLOOR},"rubric_weighted_ceiling":${RUBRIC_CEILING},"rubric_ship_threshold":8.5,"rubric_needs_human_grading":${RUBRIC_NEEDS_HUMAN},"rubric_lowest_dimension":"${LOWEST_DIM}","qc_model":"${QC_MODEL_SAFE}","build_model":"${PLAN_BUILD_MODEL//[^A-Za-z0-9._:\/@+-]/}","plan_mode_gate":"${PLAN_GATE}","plan_approval_id":"${PLAN_APPROVAL_ID//[^A-Za-z0-9_-]/}","ungraded_items":"${UNGRADED_LIST}","human_grade_fail":${HUMAN_FAIL_COUNT},"exit_gate":"${EXIT_GATE}","launch":${LAUNCH_MODE}}
 LEDGER_EOF
 
 [ "$FAIL_COUNT" -gt 0 ] && exit 1
@@ -1224,6 +1458,18 @@ fi
 # — so this is a hard, no-false-positive FAIL. (When --fab ran, the FAB overlay above
 # is the authoritative >= 8.5 proof; this ceiling gate is the floor-side backstop for
 # the mechanical-only path that previously ignored the rubric entirely.)
+if [ "$PLAN_GATE" != "PASS" ]; then
+  echo "PER-BUILD QC FAILED — PLAN MODE gate: ${PLAN_GATE_REASON}. Exit 0 needs the approval-flow-signed PLAN MODE run file matching --publish-intent/--re-entry, and a QC model different from the build model." >&2
+  exit 1
+fi
+if [ "$HUMAN_FAIL_COUNT" -gt 0 ]; then
+  echo "PER-BUILD QC FAILED — $HUMAN_FAIL_COUNT human-review item(s) graded FAIL by the QC sub-agent. Fix and re-run QC." >&2
+  exit 1
+fi
+if [ "$UNGRADED_COUNT" -gt 0 ]; then
+  echo "PER-BUILD QC UNGRADED — $UNGRADED_COUNT human-review item(s) have no PASS/FAIL grade ($UNGRADED_LIST). Ungraded is not a pass: grade each in --grades and re-run." >&2
+  exit 2
+fi
 if [ "$RUBRIC_CEILING_X100" -lt 850 ]; then
   echo "PER-BUILD QC FAILED — weighted rubric ceiling ${RUBRIC_CEILING}/10 is below the 8.5 ship threshold; even perfect human grading of the ungraded dimensions cannot reach ship quality. Lowest dimension: ${LOWEST_DIM}. Fix it and re-run."
   exit 1
