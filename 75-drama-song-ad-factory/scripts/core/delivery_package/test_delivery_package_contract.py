@@ -21,8 +21,39 @@ _CORE = _HERE.parents[0]                       # .../scripts/core
 if str(_CORE) not in sys.path:
     sys.path.insert(0, str(_CORE))
 
+from choice_card.intake_card import intake_session as session  # noqa: E402
 import delivery_package.contract as C           # noqa: E402
 import delivery_package.packaging as P          # noqa: E402
+
+#: The real confirmed intake the packaging call now resolves before it writes.
+#: A plain 3-minute ad: twelve items, item 6 as the contract's two clips.
+INTAKE_REPLIES = {
+    "offer": "New Chapter Coaching", "link": "https://example.com/coaching",
+    "audience": "successful founders 45-60",
+    "character": "Christine, a lawyer", "photos": "Generate the photos",
+    "models": "deepseek-chain builds, opus-chain checks", "spend": "$25",
+    "script": "1", "song": "1", "storyboard": "1",
+    "length": "3 minutes + 60s and 90s clips",
+}
+
+
+def confirm_run(run_dir):
+    """Write a REAL confirmed intake (card session + stage store) into run_dir."""
+    turn = session.process([], run_dir=run_dir, purpose_flow=False,
+                           runtime="claude-nine")
+    for _ in range(40):
+        if turn.get("done"):
+            return turn["run_id"]
+        qid = turn.get("question_id")
+        raw = "yes" if qid == "recap" else INTAKE_REPLIES.get(qid, "1")
+        turn = session.process(
+            [raw], run_dir=run_dir, purpose_flow=False, runtime="claude-nine",
+            question_id=qid, question_digest=turn.get("question_digest"),
+            source="client", source_ref="w39-contract:" + str(qid))
+        if turn.get("outcome") == "error":
+            raise AssertionError(turn)
+    raise AssertionError("intake did not reach its confirmation: %r" % turn)
+
 
 PDF = b"%PDF-1.4\n1 0 obj\n<< >>\nendobj\n%%EOF\n"
 SRT_OK = "1\n00:00:00,000 --> 00:00:01,000\nline\n"
@@ -161,6 +192,7 @@ class PackagingEntryPoint(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.run = self.tmp / "run"
         self.run.mkdir()
+        confirm_run(self.run)
         self.out = self.tmp / "delivery"
 
     def test_full_packaging_path_writes_a_verifying_folder(self):
