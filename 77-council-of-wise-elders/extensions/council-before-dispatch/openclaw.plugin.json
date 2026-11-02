@@ -2,7 +2,7 @@
   "id": "council-before-dispatch",
   "name": "Council Before Dispatch",
   "description": "Runs the supported Council front door for an authorized explicit ask before the model turn.",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "activation": {
     "onStartup": true
   },

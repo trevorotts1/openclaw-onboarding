@@ -11,7 +11,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
-import { resolveCouncilBinding } from "./binding-predicate.mjs";
+import { authorizedSenderSelection, resolveCouncilBinding } from "./binding-predicate.mjs";
 
 export const PLUGIN_ID = "council-before-dispatch";
 export const REQUIRED_FIELDS = [
@@ -93,15 +93,16 @@ export function validateExistingEntry({ cfg, entry, openclawRoot, prefix }) {
 
   const accounts = isPlainObject(cfg?.channels?.telegram?.accounts) ? cfg.channels.telegram.accounts : {};
   const account = accounts[config.accountId];
+  let sendersOk = false;
   if (!isPlainObject(account)) problems.push(`account ${config.accountId} does not exist`);
   else {
     if (account.enabled === false) problems.push(`account ${config.accountId} is disabled`);
-    const allow = Array.isArray(account.allowFrom) ? account.allowFrom.map(String) : [];
-    if (allow.length === 0) problems.push(`account ${config.accountId} has no allowFrom`);
-    if (allow.some(isWildcard)) problems.push(`account ${config.accountId} allowFrom contains a wildcard`);
-    if (Array.isArray(config.senderIds) && config.senderIds.some((id) => !allow.includes(String(id)))) {
-      problems.push("config.senderIds is not a subset of the account allowFrom");
-    }
+    // Same shared predicate provision uses: the entry's senderIds may narrow to
+    // exact numeric allowFrom entries; an account wildcard authorizes nothing
+    // beyond the one enumerated id equal to the conversation.
+    const selection = authorizedSenderSelection(account, config.senderIds, config.conversationId);
+    if (selection.ok) sendersOk = true;
+    else problems.push(`${selection.detail} [${selection.code}]`);
   }
 
   const agents = isPlainObject(cfg?.agents?.entries) ? cfg.agents.entries : {};
@@ -111,14 +112,19 @@ export function validateExistingEntry({ cfg, entry, openclawRoot, prefix }) {
     problems.push(`agent ${config.agentId} workspace disagrees with config.agentWorkspace`);
   }
 
-  const route = resolveCouncilBinding({
-    cfg,
-    channel: config.channel,
-    accountId: config.accountId,
-    conversationId: config.conversationId,
-    agentId: config.agentId,
-  });
-  if (!route.ok) problems.push(`${route.detail} [${route.code}]`);
+  // Only ask the shared predicate once the sender set itself is valid; a
+  // second pass would report the same classification twice.
+  if (sendersOk) {
+    const route = resolveCouncilBinding({
+      cfg,
+      channel: config.channel,
+      accountId: config.accountId,
+      conversationId: config.conversationId,
+      agentId: config.agentId,
+      senderIds: config.senderIds,
+    });
+    if (!route.ok) problems.push(`${route.detail} [${route.code}]`);
+  }
 
   if (!existsSync(normalizePath(config.councilAskPath))) problems.push("config.councilAskPath does not exist");
   const runtime = activeRuntime(config, prefix);

@@ -15,6 +15,14 @@
 // "any sender". A peer wildcard is never evidence for one specific DM.
 // Conflicting agents in the winning tier are ambiguous and fail closed.
 //
+// CTR-215: an account allowFrom that contains a wildcard authorizes nothing on
+// its own. Automatic derivation still fails closed with
+// ACCOUNT_ALLOWLIST_WILDCARD. An explicit binding may pass exact numeric
+// senderIds; each must already be enumerated in that account's own allowFrom,
+// and (because the wildcard proves no identity) the binding must name exactly
+// one of them, equal to the conversation. The wildcard never becomes a Council
+// permission and never authorizes a sender that is not enumerated.
+//
 // Legacy scalar match.peer is not a route in OpenClaw 2026.10.8
 // (normalizePeerConstraint requires a kind), so it proves nothing here.
 
@@ -86,7 +94,85 @@ function tierOf(match, conversationId) {
 
 const TIERS = ["binding.peer", "binding.peer.wildcard", "binding.account", "binding.channel"];
 
-export function resolveCouncilBinding({ cfg, channel, accountId, conversationId, agentId }) {
+function stringList(value) {
+  if (!Array.isArray(value)) return [];
+  const out = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const trimmed = item.trim();
+    if (trimmed && !out.includes(trimmed)) out.push(trimmed);
+  }
+  return out;
+}
+
+export function isWildcardEntry(entry) {
+  const s = String(entry).trim().toLowerCase();
+  return s === "*" || s === "all" || s === "any" || s.includes("*");
+}
+
+function isNumericSenderId(value) {
+  return /^[0-9]+$/.test(String(value));
+}
+
+/**
+ * The authorized sender set for one account, shared by provision and the
+ * existing-entry validator so both classify identically.
+ *
+ * On its own, the account's allowFrom is the only authorization source: a
+ * wildcard entry is never expanded and an empty list authorizes nobody. An
+ * explicit binding list may narrow that set; every id must already be an exact
+ * enumerated allowFrom entry, must be a numeric sender id, must carry no
+ * wildcard, and must contain the conversation. When the account allowFrom has a
+ * wildcard, only the single enumerated id equal to the conversation is allowed.
+ *
+ * Returns { ok: true, senderIds, source } or { ok: false, code, detail }.
+ */
+export function authorizedSenderSelection(account, explicitSenderIds, conversationId) {
+  const entries = stringList(account?.allowFrom);
+  const chatId = text(conversationId);
+  if (entries.length === 0) {
+    return { ok: false, code: "NO_AUTHORIZED_SENDERS", detail: "allowFrom is empty or missing" };
+  }
+  const hasWildcard = entries.some(isWildcardEntry);
+  const explicit = stringList(explicitSenderIds);
+
+  if (explicit.length === 0) {
+    // Automatic derivation never reads a wildcard as permission.
+    if (hasWildcard) {
+      return { ok: false, code: "ACCOUNT_ALLOWLIST_WILDCARD", detail: "allowFrom contains a wildcard entry" };
+    }
+    if (!chatId || !entries.includes(chatId)) {
+      return { ok: false, code: "CONVERSATION_NOT_AUTHORIZED", detail: `conversation ${chatId || "(none)"} is not in allowFrom` };
+    }
+    return { ok: true, senderIds: entries, source: "allowFrom" };
+  }
+
+  // Explicit narrow binding: exact enumerated ids only, never a pattern.
+  if (explicit.some(isWildcardEntry)) {
+    return { ok: false, code: "BINDING_SENDER_WILDCARD", detail: "binding senderIds contains a wildcard entry" };
+  }
+  const notNumeric = explicit.filter((id) => !isNumericSenderId(id));
+  if (notNumeric.length > 0) {
+    return { ok: false, code: "BINDING_SENDER_NOT_NUMERIC", detail: `binding senderIds are not numeric sender ids: ${notNumeric.join(", ")}` };
+  }
+  const outside = explicit.filter((id) => !entries.includes(id));
+  if (outside.length > 0) {
+    return { ok: false, code: "BINDING_SENDER_NOT_AUTHORIZED", detail: `binding senderIds not enumerated in allowFrom: ${outside.join(", ")}`, outside };
+  }
+  if (!chatId || !explicit.includes(chatId)) {
+    return { ok: false, code: "BINDING_CONVERSATION_NOT_ENUMERATED", detail: `conversation ${chatId || "(none)"} is not one of the enumerated binding senderIds` };
+  }
+  if (hasWildcard && !(explicit.length === 1 && explicit[0] === chatId)) {
+    return {
+      ok: false,
+      code: "BINDING_SENDER_NOT_EXACT",
+      detail: `allowFrom contains a wildcard, so the binding must enumerate exactly one sender id equal to conversation ${chatId}`,
+    };
+  }
+  return { ok: true, senderIds: explicit, source: "binding" };
+}
+
+export function resolveCouncilBinding({ cfg, channel, accountId, conversationId, agentId, senderIds }) {
   const channelId = text(channel).toLowerCase();
   const chatId = text(conversationId);
   const wantedAgent = normalizeAgentId(agentId);
@@ -107,15 +193,9 @@ export function resolveCouncilBinding({ cfg, channel, accountId, conversationId,
   if (account.enabled === false) {
     return { ok: false, code: "ACCOUNT_DISABLED", detail: `telegram account ${text(accountId)} is disabled` };
   }
-  const allow = Array.isArray(account.allowFrom) ? account.allowFrom.map(String) : [];
-  if (allow.length === 0) {
-    return { ok: false, code: "NO_AUTHORIZED_SENDERS", detail: `telegram account ${text(accountId)} has no allowFrom` };
-  }
-  if (allow.some(isWildcard)) {
-    return { ok: false, code: "ACCOUNT_ALLOWLIST_WILDCARD", detail: `telegram account ${text(accountId)} allowFrom contains a wildcard` };
-  }
-  if (!allow.includes(chatId)) {
-    return { ok: false, code: "CONVERSATION_NOT_AUTHORIZED", detail: `conversation ${chatId} is not in telegram account ${text(accountId)} allowFrom` };
+  const selection = authorizedSenderSelection(account, senderIds, chatId);
+  if (!selection.ok) {
+    return { ok: false, code: selection.code, detail: `telegram account ${text(accountId)}: ${selection.detail}` };
   }
 
   const bindings = (Array.isArray(cfg?.bindings) ? cfg.bindings : [])
