@@ -94,8 +94,12 @@ class ContractWiring(unittest.TestCase):
             self.assertIn("--model", argv, stage)
             self.assertIn(f"visual-mockup/production-record.json" if stage == "visual-mockup"
                           else f"{stage}/production-record.json", cmds[0])
-        arts = [a["glob"] for a in CONTRACT["stages"]["visual-mockup"]["artifacts"]]
-        self.assertIn("visual-mockup/production-record.json", arts)
+        # visual-mockup never carried a production record; --if-present reads it back when one exists
+        (vm,) = [v for v in CONTRACT["stages"]["visual-mockup"]["validators"] if "validate_production_record" in v]
+        self.assertIn("--if-present", vm.split())
+        for stage in ("desktop-wireframe", "mobile-tablet", "final-mockups"):
+            (cmd,) = [v for v in CONTRACT["stages"][stage]["validators"] if "validate_production_record" in v]
+            self.assertNotIn("--if-present", cmd.split(), stage)
 
     def test_prompt_validator_names_the_model_and_its_maximum(self):
         (cmd,) = CONTRACT["stages"]["image-inventory-prompts"]["validators"]
@@ -194,6 +198,15 @@ class GeneratedImageTextAndLogo(Tmp):
         record, stage = self.build()
         self.assertEqual(validate_production_record.check_record(
             record, base_dir=stage, ocr=lambda path: "Welcome to Acme Coaching"), [])
+
+    def test_if_present_skips_an_absent_record_but_validates_one_that_exists(self):
+        import subprocess
+        cmd = [sys.executable, str(ROOT / "scripts" / "validate_production_record.py"),
+               str(self.run_dir / "final-mockups" / "production-record.json"), "--if-present"]
+        self.assertEqual(subprocess.run(cmd, capture_output=True, text=True).returncode, 0)
+        self.assertEqual(subprocess.run(cmd[:-1], capture_output=True, text=True).returncode, 2)
+        write_json(self.run_dir / "final-mockups" / "production-record.json", {"artifact": "mockup", "sections": []})
+        self.assertEqual(subprocess.run(cmd, capture_output=True, text=True).returncode, 1)
 
     def test_a_record_naming_another_model_than_the_run_fails(self):
         record, stage = self.build()

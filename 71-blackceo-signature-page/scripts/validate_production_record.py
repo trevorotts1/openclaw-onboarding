@@ -54,10 +54,13 @@ checks:
        a reason. A producer can no longer skip the check by leaving
        logo_expected off.
 
-Usage: validate_production_record.py <production-record.json> [--ocr] [--model ID]
+Usage: validate_production_record.py <production-record.json> [--ocr] [--model ID] [--if-present]
 
   --model ID   the model the run's production request names as the renderer
                (IMG-14); every section's generation.model_id must equal it.
+  --if-present exit 0 when the record file does not exist (the visual-mockup
+               layout proof, which has never carried a required record); a
+               record that exists is validated in full.
 
 Exit codes: 0 pass, 1 one named FAIL line per failure, 2 unreadable input.
 """
@@ -317,7 +320,8 @@ def check_record(data, base_dir=None, ocr=None, model=None):
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     use_ocr = "--ocr" in argv
-    argv = [a for a in argv if a != "--ocr"]
+    if_present = "--if-present" in argv
+    argv = [a for a in argv if a not in ("--ocr", "--if-present")]
     model = None
     if "--model" in argv:
         at = argv.index("--model")
@@ -326,9 +330,12 @@ def main(argv=None):
     if model is not None and model.startswith("{"):  # unresolved {model} placeholder: none declared
         model = None
     if len(argv) != 1 or model == "":
-        print("FAIL: usage: validate_production_record.py <production-record.json> [--ocr] [--model ID]")
+        print("FAIL: usage: validate_production_record.py <production-record.json> [--ocr] [--model ID] [--if-present]")
         return 2
     path = Path(argv[0])
+    if if_present and not path.exists():
+        print(f"PASS: no production record at {path.name}; nothing to read back at this stage.")
+        return 0
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
