@@ -206,6 +206,112 @@ def _nonempty_str(v):
     return isinstance(v, str) and bool(v.strip())
 
 
+#: X05: the dispatcher's materialization holds. A provider task that succeeded
+#: and charged but whose save produced no verified file is a HOLD, not a
+#: failure: it is resumed by RE-SAVING this same task id, never by generating
+#: again.
+SAVE_HOLD_PREFIX = "KIE_SAVE_"
+
+
+def _save_hold(env):
+    """X05: the dispatcher's save hold, read from the preserved attempt
+    envelope. None unless the attempt carries a resumable save-only recovery --
+    a hold nobody can resume by saving is not accepted as one."""
+    if not isinstance(env, dict):
+        return None
+    code = env.get("reason_code")
+    if not (isinstance(code, str) and code.startswith(SAVE_HOLD_PREFIX)):
+        return None
+    ev = env.get("evidence") if isinstance(env.get("evidence"), dict) else {}
+    resume = ev.get("resume") if isinstance(ev.get("resume"), dict) else {}
+    if resume.get("command") != "save" or not _nonempty_str(resume.get("task_id")):
+        return None
+    return {"reason_code": code, "detail": env.get("detail") or "",
+            "next_action": env.get("next_action") or "",
+            "task_id": resume["task_id"],
+            "save_dir": resume.get("save_dir"),
+            "info": resume.get("info"),
+            "counts": env.get("counts") or {},
+            "credits": ev.get("credits_consumed"),
+            "actual_cost": ev.get("actual_cost")}
+
+
+def _held_result(n, variant, env, hold):
+    """X05: ONE held attempt reported as itself -- never ``ok``, never
+    ``FAILED``. The paid task and its charge are retained, delivery is not
+    claimed, and ``recovery`` names the save-only resume: no resubmit."""
+    return {"n": n, "variant": variant, "status": "HELD", "take": None,
+            "heard": None, "concerns": [], "receipt": None,
+            "attempt": 1, "attempts": 1, "receipts": [],
+            "delivery": False, "resubmit": False,
+            "recovery": {"command": "save", "task_id": hold["task_id"],
+                         "save_dir": hold["save_dir"], "info": hold["info"]},
+            "hold": hold, "envelope": env, "counts": env["counts"]}
+
+
+def save_only_plan(env):
+    """X05: the exact adapter ``save`` command for a held attempt, or [] when
+    the envelope is not a resumable save hold. Generation is never in it."""
+    hold = _save_hold(env)
+    if not hold:
+        return []
+    argv = ["save", "--task-id", hold["task_id"], "--json"]
+    if hold["save_dir"]:
+        argv += ["--save-dir", str(hold["save_dir"])]
+    if hold["info"]:
+        argv += ["--info", str(hold["info"])]
+    return argv
+
+
+def resume_save_only(env, call):
+    """X05: resume ONE held attempt by RE-SAVING its existing task id.
+
+    ``call`` is the dispatcher's adapter call (``_call(runner, adapter, argv)``
+    shape): it takes argv and returns ``(rc, json_or_None, raw)``. Nothing here
+    can submit or generate, so a recovery adds ZERO provider submissions. The
+    re-saved files are verified (present, regular, non-empty) before any is
+    reported; a recovery that yields nothing usable stays a hold."""
+    argv = save_only_plan(env)
+    if not argv:
+        return {"ok": False, "reason_code": "NOT_A_SAVE_HOLD",
+                "detail": "the envelope carries no resumable save recovery",
+                "argv": [], "saved_paths": []}
+    try:
+        rc, v, raw = call(argv)
+    except Exception as exc:                     # noqa: BLE001 - reported, never raised
+        return {"ok": False, "reason_code": "KIE_SAVE_FAILED",
+                "detail": "the save command raised: %s" % exc,
+                "argv": argv, "saved_paths": []}
+    listed = v.get("saved_paths") if isinstance(v, dict) else None
+    if not isinstance(listed, list):
+        return {"ok": False, "reason_code": "KIE_SAVE_PATHS_UNSUPPORTED",
+                "detail": "saved_paths answered %s, not a list"
+                          % type(listed).__name__,
+                "argv": argv, "saved_paths": []}
+    good, missing, empty = [], [], []
+    for p in listed:
+        try:
+            if isinstance(p, str) and os.path.isfile(p):
+                if os.path.getsize(p) > 0:
+                    good.append(p)
+                else:
+                    empty.append(p)
+                continue
+        except OSError:
+            pass
+        missing.append(repr(p)[:80])
+    if listed and not (missing or empty):
+        return {"ok": True, "reason_code": "", "detail": "",
+                "argv": argv, "saved_paths": good, "rc": rc}
+    return {"ok": False,
+            "reason_code": ("KIE_SAVE_OUTPUT_MISSING" if missing else
+                            "KIE_SAVE_OUTPUT_EMPTY" if empty else "KIE_SAVE_EMPTY"),
+            "detail": ("no verified file: %s" % ", ".join(missing[:5])) if missing
+                      else ("zero-byte: %s" % ", ".join(empty[:5])) if empty
+                      else "the save command listed no output file",
+            "argv": argv, "saved_paths": good, "rc": rc}
+
+
 def _brief_refusals(variant):
     """WW-26: the ten-direction completeness of ONE variant brief. [] = complete.
 
@@ -735,6 +841,10 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
             ev["persistence_path"] = path or _envelope_path(str(envelope_run_dir),
                                                             variant["id"])
             env = dict(env, evidence=ev)
+        # X05: a save hold crossed this boundary too. It is still a hold.
+        hold = _save_hold(env)
+        if hold:
+            return _held_result(n, variant, env, hold)
         return {"n": n, "variant": variant, "status": status, "take": None,
                 "heard": held, "concerns": [], "receipt": held_rcpt,
                 "attempt": 1, "attempts": 1, "receipts": list(judged),
@@ -744,6 +854,11 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
     env = _finish_envelope(generate, variant, r, got, heard)
     if envelope_run_dir:
         _write_envelope(envelope_run_dir, variant["id"], env)
+    # X05: provider success + save failure is a named HOLD with a retained task
+    # id and charge -- never a failure that invites a resubmit.
+    hold = _save_hold(env)
+    if hold:
+        return _held_result(n, variant, env, hold)
     return {"n": n, "variant": variant,
             "status": got["verdict"] if got else "FAILED",
             "take": got["delivered"] if got else None,
