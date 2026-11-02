@@ -140,6 +140,8 @@ def synthetic_document():
     launch_plan = {
         "schema_version": "1.0.0",
         "launch_id": "l07-build",
+        "a2p_ready": False,
+        "conversation_ai": {"requested": False, "mode": "none"},
         "offer": {"name": "Synthetic", "price_usd": 1, "currency": "USD",
                   "payment_plans": False},
         "launch_calendar": dict(CALENDAR),
@@ -237,6 +239,8 @@ class CompileTests(unittest.TestCase):
             plan = {
                 "schema_version": "1.0.0",
                 "launch_id": "l07-build",
+                "a2p_ready": False,
+                "conversation_ai": {"requested": False, "mode": "none"},
                 "offer": {"name": "Synthetic", "price_usd": 1,
                           "currency": "USD", "payment_plans": False},
                 "launch_calendar": {
