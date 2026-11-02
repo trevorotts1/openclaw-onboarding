@@ -11,8 +11,9 @@ layout (`layout-and-copy-profiles.md`, preamble). The five sections below merge 
 order of parts with the thank-you bands in Skill 49 (`structure/funnel_structure.json`,
 `thank_you`): a welcome, 4 to 6 numbered next steps, a signed close of up to 170 characters, no
 offer button, exactly one celebration image. Change the JSON twin, not the code, when Trevor
-changes the layout; the test `tests/test_wireframe_mockup_layout.py` fails if this file and the
-twin drift apart.
+changes the layout; the test `test_wireframe_mockup_layout` in `tests/test_render_thank_you.py` fails if the
+built page and the twin drift apart (`render_thank_you.py` reads the section names, the step bounds
+and the signed-close cap from the twin).
 
 ## 1. The five sections (structure only)
 
