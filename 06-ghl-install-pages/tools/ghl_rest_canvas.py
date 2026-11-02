@@ -921,14 +921,141 @@ def funnel_delete_body(location_id: str, funnel_id: str, user_id: str) -> dict:
     return {"locationId": location_id, "funnelId": funnel_id, "userId": user_id}
 
 
+# ── Card-field refusal (S06-10) ───────────────────────────────────────────────
+# A page that carries its OWN card inputs collects card data outside the payment
+# processor (PCI exposure, no real charge). Only the processor's native order
+# form may take card data, so a raw <input>/<select>/<textarea> named like a card
+# field is refused at the splice boundary. Mirrors the key list of
+# skills/06-ghl-delivery/order_components.py ``_CARD_KEY_FRAGMENTS`` (kept as a
+# local copy: skills are installed as separate folders, so a cross-skill import
+# is not safe) plus the HTML ``autocomplete`` card tokens (cc-number, cc-csc, ...).
+_CARD_FIELD_FRAGMENTS = (
+    "cardnumber", "ccnumber", "cccsc", "ccexp", "cardcvc", "cardcvv", "cardexp",
+    "cardcode", "cvv", "cvc", "securitycode", "expmonth", "expyear", "expiry",
+    "track1", "track2",
+)
+_CARD_FIELD_EXACT = ("pan",)  # too short/common to match as a substring
+_FORM_FIELD_TAG_RE = re.compile(r"<(?:input|select|textarea)\b[^>]*>", re.IGNORECASE | re.DOTALL)
+_FIELD_ATTR_RE = re.compile(
+    r"""\b(name|id|autocomplete)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""",
+    re.IGNORECASE,
+)
+
+
+def find_card_fields(html: str) -> list[str]:
+    """Return a problem string for every raw card input in *html* (name / id /
+    autocomplete naming a card number, expiry or security code)."""
+    if not isinstance(html, str):
+        raise TypeError(f"find_card_fields: expected str, got {type(html).__name__}")
+    problems: list[str] = []
+    for tag in _FORM_FIELD_TAG_RE.findall(html):
+        for m in _FIELD_ATTR_RE.finditer(tag):
+            raw = next(g for g in m.groups()[1:] if g is not None)
+            norm = re.sub(r"[^a-z0-9]", "", raw.lower())
+            if norm and (norm in _CARD_FIELD_EXACT
+                         or any(f in norm for f in _CARD_FIELD_FRAGMENTS)):
+                problems.append(f"card field {m.group(1).lower()}={raw!r} in {tag.strip()[:120]!r}")
+                break
+    return problems
+
+
+def assert_no_card_fields(html: str) -> None:
+    """Raise ``ValueError`` when *html* carries a home-made card input."""
+    problems = find_card_fields(html)
+    if problems:
+        raise ValueError(
+            "card-data fields refused: card numbers, expiry and security codes are "
+            "collected ONLY by the payment processor's native order form, never by "
+            "a custom-code page:\n  - " + "\n  - ".join(problems)
+        )
+
+
+# ── Head-asset carry-over (S06-09) ────────────────────────────────────────────
+_HEAD_LINK_RE = re.compile(r"<link\b[^>]*>", re.IGNORECASE | re.DOTALL)
+_HEAD_SCRIPT_RE = re.compile(r"<script\b[^>]*>.*?</script\s*>", re.IGNORECASE | re.DOTALL)
+_HEAD_META_RE = re.compile(r"<meta\b[^>]*>", re.IGNORECASE | re.DOTALL)
+_ATTR_RE = r"""\b{n}\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))"""
+
+
+def _attr(tag: str, name: str) -> str | None:
+    m = re.search(_ATTR_RE.format(n=name), tag, re.IGNORECASE)
+    return None if m is None else next(g for g in m.groups() if g is not None)
+
+
+def _is_remote(url: str) -> bool:
+    return url.strip().lower().startswith(("http://", "https://", "//"))
+
+
+def _read_local_asset(ref: str, base_dir: Any, tag: str) -> str:
+    """Read a head asset that lives next to the source file. Raises ``ValueError``
+    naming the tag when it cannot be inlined (no *base_dir*, or the path leaves it)."""
+    if base_dir is None:
+        raise ValueError(
+            f"html_fragment: head asset {tag.strip()[:120]!r} is a local file and would be "
+            "dropped; pass base_dir=<folder of the source html> so it is inlined, or hoist "
+            "it to a remote URL"
+        )
+    base = Path(base_dir).resolve()
+    target = (base / ref.split("?", 1)[0].split("#", 1)[0]).resolve()
+    if base != target and base not in target.parents:
+        raise ValueError(f"html_fragment: head asset {ref!r} escapes base_dir; refused")
+    if not target.is_file():
+        raise ValueError(f"html_fragment: head asset {ref!r} not found under base_dir")
+    return target.read_text(encoding="utf-8")
+
+
+def _head_assets(head: str, base_dir: Any) -> str:
+    """Carry every head asset into the body fragment: <style> and inline <script>
+    verbatim; local stylesheets/scripts inlined; remote <link> (stylesheet, fonts,
+    preconnect, dns-prefetch, preload) and <script src> hoisted unchanged; the
+    viewport <meta> kept. A head <link> that cannot be carried raises. Other head
+    tags (<title>, charset, description) carry no render behaviour and are dropped
+    (page title/SEO are set through ``build_seo_meta``)."""
+    out: list[str] = []
+    for m in re.finditer(r"<style[^>]*>.*?</style>", head, re.IGNORECASE | re.DOTALL):
+        out.append(m.group(0))
+    scripts = _HEAD_SCRIPT_RE.findall(head)
+    # Scan tags outside <style>/<script> bodies so markup inside JS/CSS strings is not misread.
+    head = _HEAD_SCRIPT_RE.sub("", re.sub(r"<style[^>]*>.*?</style>", "", head, flags=re.IGNORECASE | re.DOTALL))
+    for tag in _HEAD_LINK_RE.findall(head):
+        href = _attr(tag, "href") or ""
+        rel = (_attr(tag, "rel") or "").lower()
+        if _is_remote(href):
+            out.append(tag)
+        elif "stylesheet" in rel and href:
+            out.append("<style>\n" + _read_local_asset(href, base_dir, tag) + "\n</style>")
+        else:
+            raise ValueError(
+                f"html_fragment: head <link> {tag.strip()[:120]!r} would be dropped "
+                "(only remote links and local stylesheets can be carried)"
+            )
+    for tag in scripts:
+        src = _attr(tag, "src")
+        if src is None or _is_remote(src):
+            out.append(tag)
+        else:
+            out.append("<script>\n" + _read_local_asset(src, base_dir, tag) + "\n</script>")
+    for tag in _HEAD_META_RE.findall(head):
+        if (_attr(tag, "name") or "").lower() == "viewport":
+            out.append(tag)
+    return "\n".join(out)
+
+
 def html_fragment(raw: str, *, require_ghl_media: bool = False,
-                  media_hosts: tuple[str, ...] = ()) -> str:
+                  media_hosts: tuple[str, ...] = (),
+                  base_dir: "str | os.PathLike | None" = None) -> str:
     """Normalise *raw* to a body-level HTML fragment.
 
     Strips ``<!DOCTYPE>``, ``<html>``, ``<head>``, ``<body>`` wrappers
-    case-insensitively.  ``<style>`` blocks found inside a ``<head>`` wrapper
-    are hoisted to the top of the returned fragment so that CSS survives
-    stripping.
+    case-insensitively.  Head assets are CARRIED, never silently dropped:
+    ``<style>`` blocks, inline and remote ``<script>``, remote
+    ``<link>`` (stylesheet, fonts, preconnect...) and the viewport ``<meta>`` are
+    hoisted to the top of the returned fragment; local stylesheets / scripts are
+    inlined from *base_dir* (the folder of the source file). A head ``<link>`` or
+    local asset that cannot be carried raises ``ValueError`` naming the tag.
+
+    Raw card inputs (``cc-number``, ``cc-csc``, ``cardnumber``, ``cvv`` ...) are
+    refused with ``ValueError`` on every return path (S06-10).
 
     Raises ``TypeError`` on non-string input, ``ValueError`` on empty or
     empty-after-strip result.
@@ -966,6 +1093,7 @@ def html_fragment(raw: str, *, require_ghl_media: bool = False,
     # If there are no document-structure wrappers, return the raw text immediately
     # (after the images-as-media-links gate, which must run on every return path).
     if not (has_doctype or has_html or has_head or has_body):
+        assert_no_card_fields(text)
         if require_ghl_media:
             assert_images_are_ghl_media(text, media_hosts=media_hosts)
         return text
@@ -978,13 +1106,7 @@ def html_fragment(raw: str, *, require_ghl_media: bool = False,
     )
     hoisted_styles = ""
     if head_match:
-        head_content = head_match.group(1)
-        styles = re.findall(
-            r"<style[^>]*>.*?</style>",
-            head_content,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
-        hoisted_styles = "\n".join(styles)
+        hoisted_styles = _head_assets(head_match.group(1), base_dir)
 
     # Extract <body> content if present.
     body_match = re.search(
@@ -1017,6 +1139,7 @@ def html_fragment(raw: str, *, require_ghl_media: bool = False,
             "html_fragment: stripping full-document wrappers produced an empty result"
         )
 
+    assert_no_card_fields(fragment)
     if require_ghl_media:
         assert_images_are_ghl_media(fragment, media_hosts=media_hosts)
 
@@ -1173,7 +1296,9 @@ def normalize_entities(fragment: str) -> str:
     return cur
 
 
-def lint_ghl_fragment(fragment: str, *, enforce_unverified_strip: bool = False) -> dict:
+def lint_ghl_fragment(fragment: str, *, enforce_unverified_strip: bool = False,
+                      require_ghl_media: bool = True,
+                      media_hosts: tuple[str, ...] = ()) -> dict:
     """Pre-save lint for a body-level HTML fragment bound for a GoHighLevel
     custom-code element. Returns a result dict — it does NOT raise on content
     findings (only ``TypeError`` on a non-string input).
@@ -1194,11 +1319,14 @@ def lint_ghl_fragment(fragment: str, *, enforce_unverified_strip: bool = False) 
     hatch and msgsndr tracking, so the ban-list for those constructs is EMPTY by
     design and must stay that way until a live probe proves otherwise.
 
-    Hard errors (block; ``ok=False``) are limited to TWO uncontested, render-
-    verified failures that are NOT "GHL strips X" claims:
+    Hard errors (block; ``ok=False``) are limited to uncontested failures that
+    are NOT "GHL strips X" claims:
       - an empty / blank fragment (renders nothing — mirrors invariant 6)
       - a full-document wrapper left un-stripped (starts with ``<!doctype`` /
         ``<html`` — mirrors invariant 7; run ``html_fragment()`` first)
+      - a home-made card input (cc-number, cc-csc, cardnumber, cvv ... S06-10)
+      - an ``<img>`` whose src is not a GHL media-storage URL (S06-11; on by
+        default, ``require_ghl_media=False`` only for non-funnel callers)
 
     enforce_unverified_strip (default ``False`` = SAFE):
         Reserved hook for strip rules a FUTURE live save round-trip proves. The
@@ -1242,6 +1370,14 @@ def lint_ghl_fragment(fragment: str, *, enforce_unverified_strip: bool = False) 
             "fragment is a full HTML document (starts with <!DOCTYPE / <html), not "
             "a body-level fragment — run html_fragment() first (mirrors invariant 7)."
         )
+
+    # Hard error 3 — raw card inputs collect card data outside the processor.
+    errors.extend(find_card_fields(fragment))
+
+    # Hard error 4 — images must be GHL media-storage links (relative paths and
+    # external/temporary URLs break or expire after launch).
+    if require_ghl_media:
+        errors.extend(find_non_ghl_images(fragment, extra_hosts=media_hosts))
 
     # Transparency: which probe-confirmed-survivor constructs are present. These
     # are reported, never penalised — the lint exists partly to PROVE these are
@@ -1609,6 +1745,9 @@ def new_page_blob(
     allow_row_max_width: bool = False,
     primary_color: str | None = None,
     secondary_color: str | None = None,
+    require_ghl_media: bool | None = None,
+    media_hosts: tuple[str, ...] = (),
+    base_dir: "str | os.PathLike | None" = None,
 ) -> dict:
     """Build a complete native ``pageData`` blob for a freshly-created page.
 
@@ -1669,6 +1808,14 @@ def new_page_blob(
         secondary_color: Client brand secondary color as a CSS hex string.
             Replaces the ``Secondary`` palette entry and ``--secondary`` in
             ``pageStyles``. ``None`` (default) keeps ``#188bf6``.
+        require_ghl_media: every ``<img>`` must be a GHL media-storage URL
+            (``html_fragment`` raises naming each offender, e.g. ``images/hero.png``).
+            ``None`` (default) = ON for ``surface="funnel"`` (funnel builds must
+            never ship local mockup paths or expiring KIE temp URLs), off for
+            ``"website"``. Pass ``False`` to opt out explicitly.
+        media_hosts: extra allowed GHL media hosts (custom media domain).
+        base_dir: folder of the source html, so local head stylesheets/scripts
+            are inlined by ``html_fragment`` (see its docstring).
 
     Returns:
         A complete ``pageData`` blob ASSEMBLED FROM THE INLINED ``_FLAT_*`` /
@@ -1699,7 +1846,12 @@ def new_page_blob(
     # collapse any double-escaped entity so the stored rawCustomCode is the
     # canonical single-escape form (P2 idempotency: re-runs cannot compound
     # &amp; -> &amp;amp;).
-    fragment = normalize_entities(html_fragment(raw_custom_code))
+    if require_ghl_media is None:
+        require_ghl_media = surface == "funnel"
+    fragment = normalize_entities(html_fragment(
+        raw_custom_code, require_ghl_media=require_ghl_media,
+        media_hosts=media_hosts, base_dir=base_dir,
+    ))
 
     # ── NESTED section -> row -> col -> custom-code blob (the renderable shape) ─
     #
