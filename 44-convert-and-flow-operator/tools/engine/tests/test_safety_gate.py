@@ -18,6 +18,7 @@ import os
 import socket
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 from io import StringIO
 from unittest.mock import patch, MagicMock
 
@@ -57,6 +58,28 @@ def _fresh_safety_gate():
     if mod_name in sys.modules:
         del sys.modules[mod_name]
     return importlib.import_module(mod_name)
+
+
+_PLAN = "a" * 64
+_APPROVAL_ENV = ("CAF_APPROVAL_ID", "CAF_WRITE_ACTION", "CAF_PLAN_SHA256", "CAF_OBJECT_KEY",
+                 "GHL_LOCATION_ID")
+
+
+def _approve(location_id, object_key, kind="automation_write", action="workflows.build"):
+    """Set the approval env and return a matching verified record (S44-16)."""
+    os.environ.update(CAF_APPROVAL_ID="appr_12345678", CAF_WRITE_ACTION=action,
+                      CAF_PLAN_SHA256=_PLAN, CAF_OBJECT_KEY=object_key)
+    return {
+        "kind": kind, "location_id": location_id, "action": action,
+        "object_key": object_key, "plan_sha256": _PLAN, "approver": "owner@client",
+        "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+        "revoked": False, "verification_class": "authenticated_platform_record",
+    }
+
+
+def _clear_approval_env():
+    for k in _APPROVAL_ENV:
+        os.environ.pop(k, None)
 
 
 # ---------------------------------------------------------------------------
@@ -201,20 +224,30 @@ class TestWhitelistEnforced(unittest.TestCase):
             )
 
     def test_listed_location_with_approval_passes(self):
-        os.environ["CAF_APPROVAL_TOKEN"] = "test-token"
-        # Should raise SafetyRefused only when location is not in list
-        # With correct location and token, no exception should be raised
+        """A matching automation_write record (not an env token) opens the gate."""
+        self.addCleanup(_clear_approval_env)
+        rec = _approve("ALLOWED_LOC", "contacts-plan")
         try:
+            with patch.object(self.sg, "_fetch_record", return_value=rec):
+                self.sg.check_write(
+                    method="POST",
+                    url="https://services.leadconnectorhq.com/contacts/",
+                    payload={},
+                    location_id="ALLOWED_LOC",
+                )
+        except self.sg.SafetyRefused:
+            self.fail("SafetyRefused raised for whitelisted location with a matching approval record")
+
+    def test_listed_location_with_env_token_only_refused(self):
+        """S44-16: CAF_APPROVAL_TOKEN alone is not approval."""
+        os.environ["CAF_APPROVAL_TOKEN"] = "test-token"
+        with self.assertRaises(self.sg.SafetyRefused):
             self.sg.check_write(
                 method="POST",
                 url="https://services.leadconnectorhq.com/contacts/",
                 payload={},
                 location_id="ALLOWED_LOC",
             )
-        except self.sg.SafetyRefused:
-            self.fail("SafetyRefused raised for whitelisted location with approval token")
-        finally:
-            os.environ.pop("CAF_APPROVAL_TOKEN", None)
 
 
 class TestNoneLocationFailClosed(unittest.TestCase):
@@ -259,22 +292,24 @@ class TestNoneLocationFailClosed(unittest.TestCase):
 
 
 class TestZHCStandingApproval(unittest.TestCase):
-    """ZHC-prefixed workflow names must pass approval without a token."""
+    """ZHC- is NOT standing approval any more (S44-16): only a verified record opens a write."""
 
     def setUp(self):
         os.environ.pop("CAF_DRY_RUN", None)
         os.environ["CAF_ALLOWED_LOCATION_IDS"] = "ZHC_LOC"
         os.environ.pop("CAF_APPROVAL_TOKEN", None)
+        _clear_approval_env()
         self.sg = _fresh_safety_gate()
         socket.socket.connect = _guarded_connect
 
     def tearDown(self):
         os.environ.pop("CAF_DRY_RUN", None)
         os.environ.pop("CAF_ALLOWED_LOCATION_IDS", None)
+        _clear_approval_env()
         socket.socket.connect = _original_connect
 
-    def test_zhc_prefix_passes(self):
-        try:
+    def test_zhc_prefix_alone_refused(self):
+        with self.assertRaises(self.sg.SafetyRefused):
             self.sg.check_write(
                 method="POST",
                 url="https://services.leadconnectorhq.com/contacts/",
@@ -282,8 +317,20 @@ class TestZHCStandingApproval(unittest.TestCase):
                 location_id="ZHC_LOC",
                 workflow_name="ZHC-onboarding",
             )
+
+    def test_zhc_prefix_with_record_passes(self):
+        rec = _approve("ZHC_LOC", "ZHC-onboarding")
+        try:
+            with patch.object(self.sg, "_fetch_record", return_value=rec):
+                self.sg.check_write(
+                    method="POST",
+                    url="https://services.leadconnectorhq.com/contacts/",
+                    payload={},
+                    location_id="ZHC_LOC",
+                    workflow_name="ZHC-onboarding",
+                )
         except self.sg.SafetyRefused:
-            self.fail("ZHC-prefixed workflow_name must receive standing approval")
+            self.fail("a matching approval record must open the gate for a ZHC- workflow")
 
     def test_empty_workflow_name_refused_without_token(self):
         with self.assertRaises(self.sg.SafetyRefused):
@@ -297,16 +344,15 @@ class TestZHCStandingApproval(unittest.TestCase):
 
 
 class TestZHCFolderApprovalGate(unittest.TestCase):
-    """Bug 2a gate-side contract: a ZHC- *folder* name passed as workflow_name
-    must receive standing approval with NO token — exactly like a ZHC- workflow
-    name.  This is the gate behaviour CampaignBuilder relies on once the folder
-    POST forwards folder_name as workflow_name.
+    """Bug 2a gate-side contract: a folder name passed as workflow_name is the object
+    key the approval record must name. A ZHC- prefix is no standing approval (S44-16).
     """
 
     def setUp(self):
         os.environ.pop("CAF_DRY_RUN", None)
         os.environ["CAF_ALLOWED_LOCATION_IDS"] = "ZHC_LOC"
         os.environ.pop("CAF_APPROVAL_TOKEN", None)
+        _clear_approval_env()
         self.sg = _fresh_safety_gate()
         socket.socket.connect = _guarded_connect
 
@@ -314,31 +360,35 @@ class TestZHCFolderApprovalGate(unittest.TestCase):
         os.environ.pop("CAF_DRY_RUN", None)
         os.environ.pop("CAF_ALLOWED_LOCATION_IDS", None)
         os.environ.pop("CAF_APPROVAL_TOKEN", None)
+        _clear_approval_env()
         socket.socket.connect = _original_connect
 
-    def test_zhc_folder_name_passes_without_token(self):
-        """A ZHC- folder name (as workflow_name) is standing-approved, no token."""
+    def _post_folder(self, name):
+        self.sg.check_write(
+            method="POST",
+            url="https://backend.leadconnectorhq.com/workflow/ZHC_LOC",
+            payload={"name": name, "type": "directory"},
+            location_id="ZHC_LOC",
+            workflow_name=name,
+        )
+
+    def test_zhc_folder_name_alone_refused(self):
+        """A ZHC- folder name with no approval record is refused."""
+        with self.assertRaises(self.sg.SafetyRefused):
+            self._post_folder("ZHC-Onboarding-Folder")
+
+    def test_zhc_folder_name_with_record_passes(self):
+        rec = _approve("ZHC_LOC", "ZHC-Onboarding-Folder")
         try:
-            self.sg.check_write(
-                method="POST",
-                url="https://backend.leadconnectorhq.com/workflow/ZHC_LOC",
-                payload={"name": "ZHC-Onboarding-Folder", "type": "directory"},
-                location_id="ZHC_LOC",
-                workflow_name="ZHC-Onboarding-Folder",
-            )
+            with patch.object(self.sg, "_fetch_record", return_value=rec):
+                self._post_folder("ZHC-Onboarding-Folder")
         except self.sg.SafetyRefused:
-            self.fail("ZHC- folder name must receive standing approval without a token")
+            self.fail("a matching approval record must open the gate for a ZHC- folder")
 
     def test_non_zhc_folder_name_refused_without_token(self):
-        """A non-ZHC folder name still requires a token (gate unchanged)."""
+        """A non-ZHC folder name still requires approval (gate unchanged)."""
         with self.assertRaises(self.sg.SafetyRefused):
-            self.sg.check_write(
-                method="POST",
-                url="https://backend.leadconnectorhq.com/workflow/ZHC_LOC",
-                payload={"name": "random-folder", "type": "directory"},
-                location_id="ZHC_LOC",
-                workflow_name="random-folder",
-            )
+            self._post_folder("random-folder")
 
 
 class TestDraftOnlyFlag(unittest.TestCase):
@@ -346,10 +396,12 @@ class TestDraftOnlyFlag(unittest.TestCase):
 
     def setUp(self):
         os.environ.pop("CAF_DRAFT_ONLY", None)
+        _clear_approval_env()
         self.sg = _fresh_safety_gate()
 
     def tearDown(self):
         os.environ.pop("CAF_DRAFT_ONLY", None)
+        _clear_approval_env()
 
     def test_default_is_draft_only(self):
         """No env var: default is True → active flag returns False."""
@@ -359,9 +411,17 @@ class TestDraftOnlyFlag(unittest.TestCase):
         os.environ["CAF_DRAFT_ONLY"] = "true"
         self.assertFalse(self.sg.draft_only_active_flag())
 
-    def test_false_returns_active(self):
+    def test_false_alone_stays_inactive(self):
+        """S44-16: the env toggle alone never goes live."""
         os.environ["CAF_DRAFT_ONLY"] = "false"
-        self.assertTrue(self.sg.draft_only_active_flag())
+        self.assertFalse(self.sg.draft_only_active_flag())
+
+    def test_false_with_publish_record_returns_active(self):
+        os.environ["CAF_DRAFT_ONLY"] = "false"
+        rec = _approve("GOOD_LOC", "promo-plan", kind="publish", action="publish")
+        os.environ["GHL_LOCATION_ID"] = "GOOD_LOC"
+        with patch.object(self.sg, "_fetch_record", return_value=rec):
+            self.assertTrue(self.sg.draft_only_active_flag())
 
 
 # ---------------------------------------------------------------------------

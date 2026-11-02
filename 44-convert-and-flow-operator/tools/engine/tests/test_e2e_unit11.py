@@ -40,6 +40,7 @@ import tempfile
 import threading
 import time
 import unittest
+from datetime import datetime, timedelta, timezone
 from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -1712,9 +1713,9 @@ class TestZHCFolderStandingApprovalAndFolderKeyPlan(unittest.TestCase):
     """Regression for Bug 2a (ZHC- folder approval) and Bug 2b (folder plan key).
 
     All tests must FAIL on pre-fix main and PASS after the fix:
-      TEST A — ZHC- folder name builds with NO CAF_APPROVAL_TOKEN; the folder POST
-               carries workflow_name=<ZHC folder> (pre-fix: SAFETY GATE refusal,
-               non-zero exit).
+      TEST A — a ZHC- folder build passes with a verified approval record (a ZHC-
+               name alone is refused, S44-16); the folder POST carries
+               workflow_name=<ZHC folder>.
       TEST B — a top-level "folder": "<name>" plan key builds (no TypeError) and is
                consumed as the folder name, not iterated as a workflow.
       TEST C — --folder wins over the plan folder key when both are present.
@@ -1726,8 +1727,34 @@ class TestZHCFolderStandingApprovalAndFolderKeyPlan(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         os.environ["CAF_DATA_DIR"] = self.tmp
         os.environ["CAF_ALLOWED_LOCATION_IDS"] = SANDBOX_LOCATION_ID
-        # NO CAF_APPROVAL_TOKEN — standing approval must come from the ZHC- prefix.
+        # S44-16: no env token / ZHC- standing approval. One verified record (served
+        # by a faked Command Center) covers every write of this plan via CAF_OBJECT_KEY.
         os.environ.pop("CAF_APPROVAL_TOKEN", None)
+        os.environ.update(
+            MISSION_CONTROL_URL="https://cc.example.test", MC_API_TOKEN="test-mc-token",
+            CAF_APPROVAL_ID="appr_12345678", CAF_WRITE_ACTION="workflows.build",
+            CAF_PLAN_SHA256="a" * 64, CAF_OBJECT_KEY="unit11-plan")
+        rec = {
+            "kind": "automation_write", "location_id": SANDBOX_LOCATION_ID,
+            "action": "workflows.build", "object_key": "unit11-plan",
+            "plan_sha256": "a" * 64, "approver": "owner@client",
+            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+            "revoked": False, "verification_class": "authenticated_platform_record",
+        }
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return json.dumps({"approval": rec}).encode()
+
+        p = patch("urllib.request.urlopen", side_effect=lambda req, timeout=None: _Resp())
+        p.start()
+        self.addCleanup(p.stop)
         os.environ["GHL_FIREBASE_REFRESH_TOKEN"] = "sandbox-refresh-token"
         os.environ["CAF_STEP_BACKOFF_MS"] = "0"
         os.environ["CAF_INTERNAL_STEP_BACKOFF_MS"] = "0"
@@ -1738,6 +1765,8 @@ class TestZHCFolderStandingApprovalAndFolderKeyPlan(unittest.TestCase):
             "CAF_DATA_DIR", "CAF_ALLOWED_LOCATION_IDS", "CAF_APPROVAL_TOKEN",
             "GHL_FIREBASE_REFRESH_TOKEN", "CAF_STEP_BACKOFF_MS",
             "CAF_INTERNAL_STEP_BACKOFF_MS", "CAF_DRY_RUN",
+            "MISSION_CONTROL_URL", "MC_API_TOKEN", "CAF_APPROVAL_ID",
+            "CAF_WRITE_ACTION", "CAF_PLAN_SHA256", "CAF_OBJECT_KEY",
         ):
             os.environ.pop(k, None)
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -1764,8 +1793,20 @@ class TestZHCFolderStandingApprovalAndFolderKeyPlan(unittest.TestCase):
                 *extra_args,
             ])
 
-    def test_a_zhc_folder_name_passes_standing_approval(self):
-        """TEST A: ZHC- folder name builds with no token; folder POST carries it."""
+    def test_a0_zhc_folder_name_alone_is_refused(self):
+        """S44-16: a ZHC- folder name with no approval record is refused before any write."""
+        os.environ.pop("CAF_APPROVAL_ID")
+        request_log = []
+        result = self._run_build(
+            FIXTURE_PLAN, ["--folder", "ZHC-Client-Onboarding"],
+            request_log=request_log,
+        )
+        self.assertNotEqual(result.exit_code, 0, result.output)
+        self.assertIn("WRITE REFUSED", result.output)
+        self.assertEqual([r for r in request_log if r["method"] != "GET"], [])
+
+    def test_a_zhc_folder_build_with_record_passes(self):
+        """TEST A: ZHC- folder build passes with a record; folder POST carries the name."""
         request_log = []
         result = self._run_build(
             FIXTURE_PLAN, ["--folder", "ZHC-Client-Onboarding"],
@@ -1773,8 +1814,7 @@ class TestZHCFolderStandingApprovalAndFolderKeyPlan(unittest.TestCase):
         )
         self.assertEqual(
             result.exit_code, 0,
-            f"[Bug2a] ZHC- folder build must exit 0 WITHOUT a token (standing "
-            f"approval). Got exit {result.exit_code}.\nOutput:\n{result.output}",
+            f"[Bug2a] ZHC- folder build must exit 0 with an approval record. Got exit {result.exit_code}.\nOutput:\n{result.output}",
         )
         # The folder-creation POST (directory type) must carry the ZHC folder name.
         folder_posts = [
@@ -1789,8 +1829,7 @@ class TestZHCFolderStandingApprovalAndFolderKeyPlan(unittest.TestCase):
         )
         self.assertEqual(
             folder_posts[0]["workflow_name"], "ZHC-Client-Onboarding",
-            "[Bug2a] folder POST must forward folder_name as workflow_name so the "
-            "ZHC- standing-approval check sees the ZHC- prefix.",
+            "[Bug2a] folder POST must forward folder_name as workflow_name.",
         )
 
     def test_b_top_level_folder_key_does_not_crash(self):
