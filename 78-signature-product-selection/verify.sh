@@ -20,6 +20,8 @@ done
 front_ver="$("$PY" -c "import re,pathlib; t=pathlib.Path('$ROOT/SKILL.md').read_text(); print(re.search(r'^version:\s*(\S+)', t, re.M).group(1))")"
 file_ver="$(tr -d '[:space:]' < "$ROOT/skill-version.txt")"
 if [ "$front_ver" = "$file_ver" ]; then printf '  [PASS] version lockstep %s\n' "$front_ver"; else printf '  [FAIL] version drift %s != %s\n' "$front_ver" "$file_ver"; fails=$((fails+1)); fi
+manifest_ver="$("$PY" -c 'import json,sys; print(json.load(open(sys.argv[1])).get("skill_version"))' "$ROOT/runtime-manifest.json" 2>/dev/null)"
+if [ "$manifest_ver" = "$file_ver" ]; then printf '  [PASS] runtime-manifest version lockstep %s\n' "$manifest_ver"; else printf '  [FAIL] runtime-manifest version drift %s != %s\n' "$manifest_ver" "$file_ver"; fails=$((fails+1)); fi
 run "runtime descriptor claims no installation" "$PY" - "$ROOT" <<'PYEOF'
 import json, sys
 from pathlib import Path
