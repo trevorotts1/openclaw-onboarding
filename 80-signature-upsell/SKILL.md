@@ -187,7 +187,7 @@ verified components are kept in their exact sibling layout under
 
 Run once per instance (`upsell_1`, then `upsell_2`; separate invocations).
 Skill 49 dispatch normally drives these steps; the commands are shown so an
-agent can follow the chain by hand. Paths are relative to the repo root.
+agent can follow the chain by hand. Commands are run from the repo root; file paths named in prose are relative to the skill folder (`80-signature-upsell/`).
 
 1. **Copy.** Author the eight-section copy document for the instance from the
    derived profile above (`components/80-signature-upsell/profiles/upsell-profile.json`).
@@ -279,10 +279,6 @@ python3 verify.py         # all suites (validator, adapters incl. wiring,
                           # renderer determinism + schema validation of
                           # the examples; exits non-zero on any failure
 ```
-
-Known follow-up: `verify.py` still calls `render_pages.py` without
-`--test-only` (two calls, in its staged mirror), so its renderer step reports
-FAIL (exit 2, the design-only refusal) until `verify.py` passes the flag.
 
 ## Result handoff (spec §7)
 
