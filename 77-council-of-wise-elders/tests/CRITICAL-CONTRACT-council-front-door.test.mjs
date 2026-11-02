@@ -112,6 +112,8 @@ assert.ok(verify.includes("SERVICE_RELEASE_MISMATCH"),
 const launcher = readSkill("wire.sh");
 assert.ok(launcher.includes("COUNCIL_SERVICE_DATA_DIR") && launcher.includes("COUNCIL_SERVICE_PORT"),
   "launcher reconciliation must preserve the authoritative store and port");
+assert.ok(readSkill("runtime/src/service/front-door.ts").includes("/report.pdf"),
+  "the served runtime must keep the PDF report route the reconciled process has to expose");
 
 // 9. Packaging can reuse an unchanged runtime build without recompiling it.
 assert.ok(readSkill("scripts/build-bundles.mjs").includes("COUNCIL_PACKAGE_REUSE_RUNTIME"),
