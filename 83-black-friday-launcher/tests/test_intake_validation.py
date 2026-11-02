@@ -240,8 +240,10 @@ class CheckoutFacts(IntakeCase):  # CHK-16
         offer(payload, "U1")["checkout"] = {"headline": "h", "benefit_explanation": "b"}
         self.refuses(payload, "AF-LAUNCH-INTAKE-CHECKOUT", "checkout", "bump")
 
-    def test_full_checkout_block_yields_an_accepted_s79_probe(self):
-        """The intake's checkout facts, mapped to a Skill 79 request, pass Skill 79's own validator.
+    def test_intake_carries_every_fact_a_s79_request_needs(self):
+        """Proves the intake carries the facts, and that Skill 79's validator accepts a request built from them plus fixed read-back constants.
+
+        83's own S79 probe acceptance is U-checkout-commerce-07's carried row (checkout.py).
 
         Fields Skill 79 reads back or derives (capability evidence, fulfillment rule, component
         ids, currency exponent) are fixed test constants; the terms, consent, bump copy, entitlement

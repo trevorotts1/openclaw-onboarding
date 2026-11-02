@@ -31,7 +31,7 @@ def plan_fixture() -> dict:
     return json.loads(BF_PLAN.read_text(encoding="utf-8"))
 
 
-def base_intake() -> dict:
+def _base_intake_raw() -> dict:
     return {
         "schema_version": "1.0",
         "tenant_id": "tenant-a",
@@ -263,6 +263,31 @@ class PackagePlanTests(unittest.TestCase):
                              council=self.advice, launch_plan=plan,
                              deliveries=lane_deliveries(plan, self.run_dir))
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-PLAN-LAUNCH")
+
+
+
+CHECKOUT_TERMS = {
+    "guarantee_ref": "TEST-ONLY-GUARANTEE-REF", "guarantee_text": "Test-only guarantee text.",
+    "terms_ref": "TEST-ONLY-TERMS-REF", "terms_text": "Test-only terms text.",
+    "consent_ref": "TEST-ONLY-CONSENT-REF", "consent_text": "Test-only consent text.",
+}
+
+
+def with_checkout_facts(payload: dict) -> dict:
+    """The owner-supplied checkout facts intake requires (CHK-16): terms block + delivery per offer."""
+    payload.setdefault("checkout_terms", dict(CHECKOUT_TERMS))
+    for o in payload["offers"]:
+        o.setdefault("delivery", {"destination": f"https://members.example.com/{o['offer_id']}",
+                                  "owner_confirmed": True})
+        if o["role"] in ("upsell_1", "downsell_1", "upsell_2") or (
+                o["role"] == "main" and payload["journey_mode"] != "single_simple"):
+            o.setdefault("level", {"state": "supplied", "name": o["name"],
+                                   "deliverables": [f"{o['name']} access"]})
+    return payload
+
+
+def base_intake(*args, **kwargs) -> dict:
+    return with_checkout_facts(_base_intake_raw(*args, **kwargs))
 
 
 if __name__ == "__main__":
