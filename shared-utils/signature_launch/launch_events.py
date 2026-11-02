@@ -205,13 +205,17 @@ def emit(skill, launch_id, event, env=None, post=None):
             timeout = float(env.get("LAUNCH_EVENTS_TIMEOUT") or 3)
         except ValueError:
             timeout = 3.0
+        if url and _count(_spool_dir(env) / SPOOL_FILE):
+            # A backlog exists: queue behind it so the CC sees events oldest first.
+            _spool(_spool_dir(env), body)
+            result["sent"] = drain(env, post)["left"] == 0
+            result["spooled"] = not result["sent"]
+            return result
         if url:
             try:
                 status = (post or _post)(url, _token(env), [body], timeout)
                 if 200 <= status < 300:
                     result["sent"] = True
-                    if _count(_spool_dir(env) / SPOOL_FILE):
-                        drain(env, post)  # CC is back: flush the backlog
                     return result
                 if status == 422:  # contract rejection: retrying cannot help
                     _log("CC rejected event %s (HTTP 422); kept in rejected spool" % body["event_id"])

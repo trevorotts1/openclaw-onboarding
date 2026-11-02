@@ -153,8 +153,28 @@ class LaunchEventsTest(unittest.TestCase):
         cc = _FakeCC()
         self.addCleanup(cc.close)
         le.emit(83, LAUNCH, "assemble", env=dict(self.env, COMMAND_CENTER_URL=cc.url))
-        self.assertEqual([e["stage"] for e in cc.events()], ["assemble", "dispatch", "pieces"])
+        self.assertEqual([e["stage"] for e in cc.events()], ["dispatch", "pieces", "assemble"])
         self.assertEqual(self._spooled(), [])
+
+    def test_backlog_is_sent_before_a_new_event(self):
+        env = dict(self.env, COMMAND_CENTER_URL="http://cc.test")
+
+        def down(*a):
+            raise OSError("down")
+        le.emit(83, LAUNCH, {"event_type": "run_initialized"}, env=env, post=down)
+        out = le.emit(83, LAUNCH, "dispatch", env=env, post=down)  # still down
+        self.assertEqual((out["sent"], out["spooled"]), (False, True))
+        self.assertEqual([e["event_type"] for e in self._spooled()], ["run_initialized", "stage_closed"])
+        seen = []
+
+        def up(url, token, events, timeout):
+            seen.extend(e["event_type"] for e in events)
+            return 200
+        out = le.emit(83, LAUNCH, "assemble", env=env, post=up)
+        self.assertEqual(seen, ["run_initialized", "stage_closed", "stage_closed"])
+        self.assertTrue(out["sent"] and not out["spooled"])
+        self.assertEqual(self._spooled(), [])
+        self.assertFalse((self.spool / le.SPOOL_FILE).exists())
 
     def test_422_is_not_retried_forever(self):
         cc = _FakeCC(status=422)
