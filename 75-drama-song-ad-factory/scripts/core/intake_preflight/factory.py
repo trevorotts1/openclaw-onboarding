@@ -2709,6 +2709,17 @@ def _next_stage(a, *, boot_snapshot=None):
                                                      for n in decision["not_runnable"]}))),
                         data=data)
     if decision["verdict"] == "waiting":
+        # ST6: a verified studio answer is a decision to APPLY, not a stage to
+        # wait for. Route it before reporting the wait, or a WAITING_APPROVAL
+        # video-generation row never sees the client's reply (the storyboard
+        # branch below is unreachable from this return).
+        if decision["next_stage"] == "video-generation":
+            _ar = _approval_runner()
+            if _ar is not None and not _ar.gate_open(str(run_dir)):
+                _ans = _studio_answer(run_dir, "storyboard")
+                if _ans:
+                    return _studio_apply("next", str(sid), run_dir,
+                                         decision["next_stage"], "storyboard", _ans)
         return envelope("next", str(sid), "waiting", "awaiting-" + str(decision["wake_event"]),
                         "Stage %r is %s; it advances on the %r event, not by "
                         "calling next again."

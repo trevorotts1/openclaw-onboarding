@@ -270,6 +270,24 @@ def test_next_storyboard_answer_becomes_storyboard_reply():
             fb.answered[-1]["order_id"] == "o-1"
 
 
+def test_next_storyboard_answer_routes_when_planner_is_waiting_approval():
+    """ST6: after `storyboard` presents the package the row is WAITING_APPROVAL;
+    `next` must route a verified studio GO, not report awaiting-approval."""
+    with tmpdir("ds-state-") as tmp:
+        run = make_state_run(tmp, "video-generation")
+        (run / "control" / "studio-order.json").write_text(json.dumps(
+            {"order_id": "o-1", "base_url": "https://studio.example"}), "utf-8")
+        with bridge():
+            F.cmd_storyboard(ns(run_dir=str(run)))
+        with bridge(), observed_studio_apply() as routed:
+            F.cmd_next(ns(run_dir=str(run)))
+            assert routed == []                           # no answer: still waits
+        with bridge(answer="GO"), observed_studio_apply() as routed:
+            F.cmd_next(ns(run_dir=str(run)))
+        assert len(routed) == 1 and routed[0]["data"]["approval"] == "storyboard", routed
+        assert "--reply GO" in routed[0]["data"]["command"], routed
+
+
 def test_next_storyboard_gate_still_waits_without_an_answer():
     with tmpdir("ds-state-") as tmp, bridge() as fb:
         run = make_state_run(tmp, "video-generation")     # no studio order at all
@@ -357,6 +375,7 @@ TESTS = [
     test_storyboard_studio_run_publishes_once,
     test_storyboard_second_send_is_a_new_version,
     test_next_storyboard_answer_becomes_storyboard_reply,
+    test_next_storyboard_answer_routes_when_planner_is_waiting_approval,
     test_next_storyboard_gate_still_waits_without_an_answer,
     test_next_song_pick_answer_becomes_song_pick,
     test_next_song_gate_still_refuses_without_an_answer,
