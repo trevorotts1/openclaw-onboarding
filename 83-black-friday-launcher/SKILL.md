@@ -14,7 +14,6 @@ description: >
   model session.
 version: 0.2.12
 priority: HIGH
-depends_on: [44-convert-and-flow-operator, 49-signature-funnel, 50-email-engine, 71-blackceo-signature-page, 77-council-of-wise-elders, 78-signature-product-selection, 79-signature-order-form, 80-signature-upsell, 81-signature-downsell, 82-signature-thank-you, shared-utils/signature_launch]
 ---
 
 # Black Friday Launcher (skill 83)
@@ -83,6 +82,8 @@ Read in this order. Each step names the file, so nothing here depends on guessin
    build plans, then `44-convert-and-flow-operator/automation-templates/launch-c/plan_reader.py` reads them,
    and `44-convert-and-flow-operator/tools/siglaunch/` is the pipeline that builds and receipts them. See
    "Launch mode" below. Skill 83 depends on Skill 44 and Skill 50 for this reason.
+   The machine-readable record of that dependency is `skill.json` and `registration.json` `depends_on`
+   plus the `launcher_core/dependencies.json` preflight.
 
 ## Entry
 
@@ -171,7 +172,7 @@ guesswork and never skip the picture step. Full rules are in `DISPATCH.md`.
 `paid_render_approval_ref`, `design_prose_ref` and `visual_bible_ref` (creative direction). An unknown field is
 refused.
 
-**Never-default spend rule.** Money is never defaulted and never inferred. A practice run (`test_only`) draws
+**Never-default spend rule.** Money is never defaulted and never inferred. A practice run (the intake's top-level `test_only` flag; it is not an `image_plan` field) draws
 placeholders and costs nothing. A paid run needs the client's own ceiling (`image_cap`) AND a recorded
 paid approval record (`paid_render_approval_ref`), or it stops before anything is sent
 (`AF-LAUNCH-IMAGE-PLAN-CAP`, `AF-LAUNCH-IMAGE-PLAN-APPROVAL`). Design style and provider may be defaulted but
