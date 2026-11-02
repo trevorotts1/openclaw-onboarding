@@ -138,16 +138,11 @@ def test_valid_calendar_passes_law_validator_and_skill83(name):
     assert not skill83_refuses(plan)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "S44-01: plan_reader.py is outside this unit and still carries its private read_calendar "
-    "order (teaser after doors_open, launch strictly after doors_open). When the reader "
-    "imports calendar_law this XPASSes; strict=True then forces removing this mark."))
 @pytest.mark.parametrize("name", sorted(VALID))
 def test_valid_calendar_passes_the_44_reader(name):
     assert not reader_refuses(plan_with(**VALID[name]))
 
 
-@pytest.mark.xfail(strict=True, reason="S44-01 proof row: reader rc=0 on the fixture; see the xfail above.")
 def test_44_reader_cli_exits_0_on_the_fixture(tmp_path):
     out = tmp_path / "automation-builds.json"
     assert reader.main(["--launch-plan", str(FIXTURE), "--out", str(out)]) == 0

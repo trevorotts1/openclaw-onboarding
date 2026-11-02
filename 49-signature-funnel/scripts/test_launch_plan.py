@@ -143,6 +143,9 @@ def test_choices() -> None:
         "payment plans add the failed-payment automation")
 
     bf = dict(ANSWERS, **{
+        "launch.launch_at": "2026-11-27T00:00:00-05:00",
+        "launch.doors_open_at": "2026-11-27T00:00:00-05:00",
+        "launch.doors_close_at": "2026-12-01T00:00:00-05:00",
         "launch.black_friday.teaser_at": "2026-11-20T09:00:00-05:00",
         "launch.black_friday.countdown_at": "2026-11-24T09:00:00-05:00",
         "launch.black_friday.cyber_monday_at": "2026-11-30T00:00:00-05:00",
