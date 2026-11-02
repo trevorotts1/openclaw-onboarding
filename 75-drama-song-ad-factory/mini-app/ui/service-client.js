@@ -84,6 +84,44 @@ async function call(method, path, body) {
   return data;
 }
 
+/** One exact approval file route: stage, version and presentation digest named. */
+const EXACT_MEDIA_ROUTE =
+  /^\/api\/studio\/orders\/[^/]+\/approvals\/[^/]+\/[1-9][0-9]*\/[0-9a-f]{64}\/file\/[A-Za-z0-9._-]{1,80}$/;
+
+/**
+ * Authenticated read of one approval file. `url` is the exact media route the
+ * listing gives (`.../<stage>/<version>/<presentation-digest>/file/<name>`);
+ * the key rides in x-ds-key, never the query. Resolves the blob plus the
+ * service's declared digest so a caller can verify what it was served.
+ * Any other origin or path is refused before a request is made.
+ */
+export async function fetchApprovalMedia(url) {
+  if (typeof url !== "string" || !EXACT_MEDIA_ROUTE.test(url)) {
+    const err = new Error("That media address is not this studio's approval route.");
+    err.code = "APPROVAL_MEDIA_REFUSED";
+    throw err;
+  }
+  const res = await fetch(url, { headers: { "x-ds-key": key }, cache: "no-store" });
+  if (!res.ok) {
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+    const err = new Error(
+      (data && data.message) || `The studio answered ${res.status} for that file.`,
+    );
+    err.code = (data && data.code) || `AF-DS-HTTP-${res.status}`;
+    throw err;
+  }
+  return {
+    blob: await res.blob(),
+    sha256: res.headers.get("x-ds-sha256") || null,
+    contentType: res.headers.get("content-type") || null,
+  };
+}
+
 const service = {
   getSession: () => call("GET", "/api/studio/session"),
 
@@ -113,6 +151,8 @@ const service = {
       `/api/studio/orders/${encodeURIComponent(orderId)}/approvals/${encodeURIComponent(stage)}/answer`,
       { version, value },
     ),
+
+  fetchApprovalMedia: (url) => fetchApprovalMedia(url),
 
   requestUpload: (body) => call("POST", "/api/studio/uploads", body),
 
