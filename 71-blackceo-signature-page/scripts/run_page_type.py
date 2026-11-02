@@ -143,6 +143,9 @@ def main(argv=None) -> int:
           f"own (the executor refuses the two stages together): build its request first, then "
           f"run it: {fmt(build_final)} && "
           f"{fmt([sys.executable, executor, run_dir, '--stages', 'final-mockups', '--request', final.name])}")
+    print("LAYOUT PROOF ONLY: the stages above draw wireframes and a layout-proof mockup with solid image "
+          "blocks; no photography, image QC, image map, Design Board or final mockup exists yet. A Black "
+          "Friday launch drives those stages with: python3 -m launcher_core.image_stages --run-dir <launch run folder>")
     return 0
 
 

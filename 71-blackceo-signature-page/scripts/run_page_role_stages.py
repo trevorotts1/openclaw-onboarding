@@ -24,6 +24,7 @@ Exit codes: 0 every stage ran; 1 a named refusal from the builder or the executo
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import shlex
 import subprocess
@@ -35,7 +36,24 @@ sys.path.insert(0, str(HERE))
 import page_role  # noqa: E402
 
 DEFAULT_STAGES = "desktop-wireframe,mobile-tablet,visual-mockup"
-DEFAULT_MODEL = "gpt-image-2-5-sunburst-image-to-image"
+STUB_MODEL = "STUB-NO-MODEL"
+IMAGE_MODEL_PATH = HERE.parents[1] / "shared-utils" / "signature_launch" / "image_model.py"
+
+
+def resolve_model(provider: str) -> str:
+    """The model id a run draws with: never a literal in this file (IMG-19).
+
+    The stub provider draws placeholders and names no model. A real provider asks Skill 66 through
+    shared-utils/signature_launch/image_model.py (loaded by path); when that cannot answer this
+    raises RuntimeError and the caller stops before anything is drawn or paid for."""
+    if provider == "stub":
+        return STUB_MODEL
+    if not IMAGE_MODEL_PATH.is_file():
+        raise RuntimeError(f"the Skill 66 model resolver is missing at {IMAGE_MODEL_PATH}")
+    spec = importlib.util.spec_from_file_location("signature_launch_image_model", IMAGE_MODEL_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.resolve()
 
 
 def main(argv=None) -> int:
@@ -45,7 +63,8 @@ def main(argv=None) -> int:
                    help="default <run_dir>/copy/internal-manuscript.md")
     p.add_argument("--stages", default=DEFAULT_STAGES)
     p.add_argument("--design-prose", type=Path, default=None)
-    p.add_argument("--model", default=DEFAULT_MODEL)
+    p.add_argument("--model", default=None,
+                   help="default: Skill 66's current image-to-image model (the stub provider names none)")
     p.add_argument("--provider", choices=["stub", "kie"], default="stub")
     p.add_argument("--allow-paid", action="store_true")
     p.add_argument("--preflight", action="store_true",
@@ -64,11 +83,16 @@ def main(argv=None) -> int:
               f"({', '.join(page_role.role_specs()) or 'none'}); a landing run is driven by stage_gate.py")
         return 2
     manuscript = a.manuscript or run_dir / "copy" / "internal-manuscript.md"
+    try:
+        model = a.model or resolve_model(a.provider)
+    except Exception as exc:  # a model that cannot be resolved is a refusal, never a literal
+        print(f"FAIL: no image model: {exc}. Nothing was drawn.")
+        return 1
     for stage in (s.strip() for s in a.stages.split(",") if s.strip()):
         request = run_dir / "production-request.json"
         build = [sys.executable, str(HERE / "build_production_request.py"),
                  "--copy-version", version, "--manuscript", str(manuscript), "--stage", stage,
-                 "--out", str(request), "--model", a.model, "--run-dir", str(run_dir)]
+                 "--out", str(request), "--model", model, "--run-dir", str(run_dir)]
         if a.design_prose:
             build += ["--design-prose", str(a.design_prose)]
         run = [sys.executable, str(HERE / "stage_executor.py"), str(run_dir), "--stages", stage,
@@ -101,13 +125,16 @@ def main(argv=None) -> int:
     final = run_dir / "production-request-final-mockups.json"
     build_final = [sys.executable, str(HERE / "build_production_request.py"), "--copy-version", version,
                    "--manuscript", str(manuscript), "--stage", "final-mockups", "--out", str(final),
-                   "--model", a.model, "--run-dir", str(run_dir)]
+                   "--model", model, "--run-dir", str(run_dir)]
     if a.design_prose:
         build_final += ["--design-prose", str(a.design_prose)]
     print("NEXT 2, final-mockups, only after the client's approval is recorded, in a run of its "
           "own (the executor refuses the two stages together): build its request first, then "
           "run it: " + fmt(build_final) + " && "
           + fmt([sys.executable, executor, run_dir, "--stages", "final-mockups", "--request", final.name]))
+    print("LAYOUT PROOF ONLY: the stages above draw wireframes and a layout-proof mockup with solid image "
+          "blocks; no photography, image QC, image map, Design Board or final mockup exists yet. A Black "
+          "Friday launch drives those stages with: python3 -m launcher_core.image_stages --run-dir <launch run folder>")
     return 0
 
 
