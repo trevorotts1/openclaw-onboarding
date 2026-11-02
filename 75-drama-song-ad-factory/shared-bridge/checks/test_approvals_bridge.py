@@ -160,8 +160,8 @@ class ApprovalsBridgeTests(unittest.TestCase):
 
     def publish(self, files=None, key=KEY, stage="song", version=1):
         return AB.publish(self.st.base_url, key, ORDER, stage, version,
-                          "Which cut?", [{"n": "1", "label": "Cut A"},
-                                         {"n": "2", "label": "Cut B"}],
+                          "Which cut?", [{"n": 1, "label": "Cut A"},
+                                         {"n": 2, "label": "Cut B"}],
                           [self.song, self.still] if files is None else files)
 
     # 1 ------------------------------------------------------------------
@@ -171,7 +171,7 @@ class ApprovalsBridgeTests(unittest.TestCase):
         body = self.st.published[0]
         self.assertEqual(body, {
             "stage": "song", "version": 1, "text": "Which cut?",
-            "choices": [{"n": "1", "label": "Cut A"}, {"n": "2", "label": "Cut B"}],
+            "choices": [{"n": 1, "label": "Cut A"}, {"n": 2, "label": "Cut B"}],
             "files": [{"name": "pick1.mp3",
                        "content_type": body["files"][0]["content_type"],
                        "bytes": self.song.stat().st_size},
