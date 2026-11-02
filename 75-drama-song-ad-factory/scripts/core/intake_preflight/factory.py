@@ -206,11 +206,26 @@ def _admit_stage(run_dir, stage, run_id=None, got=None):
     """C01: governed authority AND the required production order. Both paths --
     ``next`` and the continuation controller -- admit through this one call, so
     a run can never reach a later stage with an earlier required stage missing
-    and the two paths can never disagree about it."""
+    and the two paths can never disagree about it.
+
+    Ordering option B: governed authority is still consulted first. The shadow
+    is narrowed only for the exact overlap -- governed refuses because a
+    COMPLETE predecessor has no current evidence -- where the order gate names
+    the same contradiction. In that one case VIOLATION wins; every other
+    governed refusal keeps its precedence."""
     result = _production_admission(run_dir, stage, run_id=run_id)
-    if not result.get("ok"):
-        return result
     ok, code, detail, missing = production_order_gate(run_dir, stage, got=got)
+    if not result.get("ok"):
+        if (result.get("reason_code") ==
+                "PRODUCTION_PREDECESSOR_EVIDENCE_MISSING"
+                and not ok and code == "PRODUCTION_ORDER_VIOLATION"):
+            return {"ok": False, "reason_code": code, "detail": detail,
+                    "next_action": "Produce the named predecessor artifacts first: %s."
+                                   % (", ".join(missing) or detail),
+                    "run_dir": str(run_dir), "run_id": run_id, "stage": stage,
+                    "missing_artifacts": list(missing),
+                    "governed_admission": result}
+        return result
     if ok:
         return result
     return {"ok": False, "reason_code": code, "detail": detail,
