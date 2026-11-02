@@ -513,6 +513,20 @@ def _script_gate(run_dir, a, reply):
     from script_approval import script_approval as _approval  # noqa: PLC0415
     from script_approval import approval_events as _events  # noqa: PLC0415
     out = []
+    publisher = None
+    order = _studio_order(str(run_dir))
+    if order is not None:
+        # ST11A: a studio-configured run publishes the script presentation
+        # through the same approvals seam the storyboard step uses, with the
+        # same protections (fail closed, no gate opened on outage).
+        def publisher(run_d, msgs, _order=order):
+            text = "\n\n".join(str(m) for m in msgs)
+            try:
+                return _studio_publish(str(run_d), _order, "script", text,
+                                       [], choices=[{"n": 1,
+                                                     "label": "Approve both"}])
+            except Exception:  # noqa: BLE001 - outage keeps waiting, no false sent
+                return None
     context = _script_reply_context(a) if reply is not None else {}
     if reply is not None:
         try:
@@ -533,7 +547,8 @@ def _script_gate(run_dir, a, reply):
         if admission.get("ok") and admission.get("run_id"):
             context["run_id"] = admission["run_id"]
     try:
-        r = _stage.run_stage(str(run_dir), _deliverer(a, out), reply=reply, context=context)
+        r = _stage.run_stage(str(run_dir), _deliverer(a, out), reply=reply,
+                             context=context, studio_publish=publisher)
     except Exception as e:  # noqa: BLE001 - delivery failed: stay paused, resume re-sends
         return {"outcome": "error", "problems": [str(e)[:200]], "messages": out}
     r["delivered"] = out
