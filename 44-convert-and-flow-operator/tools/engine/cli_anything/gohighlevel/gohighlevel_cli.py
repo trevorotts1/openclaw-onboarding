@@ -1304,63 +1304,169 @@ def workflows_update(ctx, workflow_id, json_file, allow_deletions=False):
         _handle_error(e)
 
 
-@workflows.command("build")
-@click.option("--from-plan", "plan_file", required=True, type=click.Path(exists=True),
-              help="JSON plan file describing the workflow(s) to build")
-@click.option("--folder", default=None, help="Folder name override (defaults to plan folder key or 'caf-build')")
-@click.pass_context
-def workflows_build(ctx, plan_file, folder):
-    """Build a workflow from a plan JSON file (internal API, write-gated).
+def _refuse_launch_profile(meta) -> None:
+    """Refuse a Skill 50 launch-profile plan on the plain --from-plan path.
 
-    Requires --experimental. Supports conversational and mechanical workflows.
+    A launch plan's purchase suppression, schedule suppression and unit keys
+    live in the automation-build document the launch-c reader emits. Building
+    the raw plan would drop them silently, so it is refused and pointed at
+    --from-automation-build, which compiles them (S44-03 / S44-06).
+    """
+    profile = meta.get("profile") if isinstance(meta, dict) else None
+    if profile:
+        click.echo(
+            f"REFUSED: this plan carries _meta.profile {profile!r} (a launch "
+            "profile). --from-plan would drop its stop-promotion-after-purchase "
+            "and suppression guards, schedule suppression and unit keys. Run "
+            "the launch-c plan reader and build its automation-build document "
+            "instead:\n  caf workflows build --from-automation-build "
+            "<automation-builds.json> --journal <path>",
+            err=True,
+        )
+        sys.exit(2)
+
+
+def _campaign_from_plan(plan, folder):
+    """Plan dict -> (campaign, folder_name). Pops the non-workflow keys.
+
+    Bug 2b — a top-level "folder": "<name>" key is a folder NAME, not a
+    workflow definition, and Skill 50 plans also carry a "_meta" block. Both
+    are popped before the build iterates the plan (each remaining entry is
+    treated as a workflow dict). --folder wins over the plan's folder key.
+    """
+    if not isinstance(plan, dict):
+        click.echo("Error: plan must be a JSON object.", err=True)
+        sys.exit(1)
+    plan_folder = plan.pop("folder", None)
+    _refuse_launch_profile(plan.pop("_meta", None))
+    if folder:
+        folder_name = folder
+    elif isinstance(plan_folder, str) and plan_folder.strip():
+        folder_name = plan_folder
+    else:
+        folder_name = "caf-build"
+
+    bad = [
+        f"{k!r} ({type(v).__name__})"
+        for k, v in plan.items()
+        if not isinstance(v, dict)
+    ]
+    if bad:
+        click.echo(
+            "Error: plan contains non-workflow entries — every top-level "
+            "key (other than 'folder' and '_meta') must map to a workflow "
+            "object.\n"
+            f"Offending entries: {', '.join(bad)}",
+            err=True,
+        )
+        sys.exit(1)
+    return plan, folder_name
+
+
+def _campaign_from_automation_build(doc, folder):
+    """automation-build doc -> (campaign, folder_name) via compile_launch_builds.
+
+    require_ready=True: a blocked build, a missing required output or a missing
+    suppression guard refuses the whole document, never a partial build.
+    """
+    from cli_anything.gohighlevel.utils.workflow_builder import (
+        WorkflowCompileError,
+        compile_launch_builds,
+    )
+    blocking = [
+        w for w in (doc.get("warnings") or [] if isinstance(doc, dict) else [])
+        if isinstance(w, dict) and w.get("blocking")
+    ]
+    if blocking:
+        click.echo(
+            "REFUSED: the automation-build document carries blocking "
+            "warning(s): " + ", ".join(str(w.get("code")) for w in blocking),
+            err=True,
+        )
+        sys.exit(1)
+    try:
+        campaign = compile_launch_builds(doc, require_ready=True)
+    except WorkflowCompileError as exc:
+        click.echo(f"REFUSED: {exc}", err=True)
+        sys.exit(1)
+    launch_id = doc.get("launch_id") if isinstance(doc, dict) else None
+    folder_name = folder or (f"launch-{launch_id}" if launch_id else "caf-build")
+    return campaign, folder_name
+
+
+@workflows.command("build")
+@click.option("--from-plan", "plan_file", default=None, type=click.Path(exists=True),
+              help="JSON plan file describing the workflow(s) to build")
+@click.option("--from-automation-build", "automation_file", default=None,
+              type=click.Path(exists=True),
+              help="Launch automation-build document (launch-c plan reader output); "
+                   "compiled with its guards, schedule suppression and unit keys")
+@click.option("--journal", "journal_path", default=None, type=click.Path(),
+              help="Build journal (JSONL receipts) path; required with --from-automation-build")
+@click.option("--folder", default=None, help="Folder name override (defaults to plan folder key or 'caf-build')")
+@click.option("--dry-run", "check_only", is_flag=True, default=False,
+              help="Validate and compile only; print the workflows that would be "
+                   "built and exit. No client, no network, no write.")
+@click.pass_context
+def workflows_build(ctx, plan_file, automation_file, journal_path, folder, check_only):
+    """Build workflows from a plan or an automation-build document (internal API, write-gated).
+
+    Requires --experimental (except --dry-run). Supports conversational and
+    mechanical workflows. --from-automation-build runs
+    compile_launch_builds(require_ready=True) and journals every phase.
     NOTE: build performs NO TRINITY check. Conversational plans are gated at
     Step 9 QC via qc-built-workflow.sh <wf-id> --conversational (WF-19), which
     executes Skill 38's qc-trinity-registry.sh; a non-zero result fails QC.
     """
-    _require_experimental(ctx)
+    if bool(plan_file) == bool(automation_file):
+        click.echo("Error: pass exactly one of --from-plan or --from-automation-build.",
+                   err=True)
+        sys.exit(2)
+    if automation_file and not journal_path:
+        click.echo("Error: --from-automation-build requires --journal <path> "
+                   "(the build receipts that make a re-run safe).", err=True)
+        sys.exit(2)
+    if not check_only:
+        _require_experimental(ctx)
     try:
-        from cli_anything.gohighlevel.utils.workflow_builder import CampaignBuilder
+        from cli_anything.gohighlevel.utils.workflow_builder import (
+            CampaignBuilder,
+            _contract_errors,
+            validate_campaign,
+        )
         from cli_anything.gohighlevel.utils.write_lock import WriteLock
-        with open(plan_file) as f:
-            campaign = json.load(f)
+        with open(automation_file or plan_file) as f:
+            doc = json.load(f)
+        if automation_file:
+            campaign, folder_name = _campaign_from_automation_build(doc, folder)
+        else:
+            campaign, folder_name = _campaign_from_plan(doc, folder)
+
+        if check_only:
+            errors = validate_campaign(campaign) + _contract_errors(campaign)
+            report = {
+                "dry_run": True,
+                "source": "automation-build" if automation_file else "plan",
+                "folder": folder_name,
+                "journal": journal_path,
+                "errors": errors,
+                "workflows": [
+                    {"key": k, "name": v.get("name"), "unit_key": v.get("unit_key"),
+                     "phase": v.get("phase"), "steps": len(v.get("templates") or [])}
+                    for k, v in campaign.items()
+                ],
+            }
+            _output(ctx, report, "Build check (dry run, nothing written)")
+            if errors:
+                sys.exit(1)
+            return
+
         client = _get_internal_client(ctx)
         location_id = _loc(ctx)
-
-        # Bug 2b — a top-level "folder": "<name>" key in the plan is a folder
-        # NAME, not a workflow definition.  CampaignBuilder.build() iterates the
-        # dict treating every value as a workflow dict (wf_def["name"]); the
-        # bare string folder value crashed the build with
-        # `TypeError: string indices must be integers`.  POP the folder key out
-        # of the plan before iterating: use it as the folder name when --folder
-        # was not given; --folder wins when both are present.  After the pop,
-        # every remaining entry MUST be a workflow dict — fail loud with a clear
-        # message on any non-dict entry instead of a raw TypeError downstream.
-        plan_folder = campaign.pop("folder", None)
-        if folder:
-            folder_name = folder
-        elif isinstance(plan_folder, str) and plan_folder.strip():
-            folder_name = plan_folder
-        else:
-            folder_name = "caf-build"
-
-        bad = [
-            f"{k!r} ({type(v).__name__})"
-            for k, v in campaign.items()
-            if not isinstance(v, dict)
-        ]
-        if bad:
-            click.echo(
-                "Error: plan contains non-workflow entries — every top-level "
-                "key (other than 'folder') must map to a workflow object.\n"
-                f"Offending entries: {', '.join(bad)}",
-                err=True,
-            )
-            sys.exit(1)
-
         with WriteLock(location_id):
             v4, _route_reason = _get_public_v4(ctx)
             builder = CampaignBuilder(client, v4=v4)
-            stats = builder.build(campaign, folder_name)
+            stats = builder.build(campaign, folder_name, journal=journal_path)
         _emit_build_result(ctx, builder, stats)
     except Exception as e:
         _handle_error(e)
@@ -1389,6 +1495,7 @@ def workflows_precheck(ctx, plan_file):
         with open(plan_file) as f:
             campaign = json.load(f)
         campaign.pop("folder", None)
+        campaign.pop("_meta", None)  # Skill 50 plans carry _meta; it is not a workflow
         client = _get_internal_client(ctx)
         location_id = _loc(ctx)
         builder = CampaignBuilder(client)
@@ -1933,36 +2040,116 @@ def payments_create_invoice(ctx, contact_id, name, amount, due_date):
         _handle_error(e)
 
 
+def _products_prices():
+    """Load shared-utils/ghl/products_prices.py (the one products/prices adapter).
+
+    The directory name has a hyphen, so it is loaded by file path. Searched in
+    order: $CAF_SHARED_UTILS_DIR, then the sibling of the skill folders (repo
+    checkout and the installed skills folder share this layout).
+    """
+    import importlib.util
+    name = "_caf_shared_products_prices"
+    if name in sys.modules:
+        return sys.modules[name]
+    candidates = []
+    override = os.environ.get("CAF_SHARED_UTILS_DIR", "").strip()
+    if override:
+        candidates.append(os.path.join(override, "ghl", "products_prices.py"))
+    candidates.append(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..", "..", "..", "..", "..", "shared-utils", "ghl", "products_prices.py"))
+    for path in candidates:
+        path = os.path.normpath(path)
+        if os.path.isfile(path):
+            spec = importlib.util.spec_from_file_location(name, path)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module  # dataclasses resolve annotations via sys.modules
+            spec.loader.exec_module(module)
+            return module
+    raise RuntimeError(
+        "shared-utils/ghl/products_prices.py not found (looked in: %s). Set "
+        "CAF_SHARED_UTILS_DIR to the shared-utils folder." % ", ".join(candidates))
+
+
+class _GhlApiTransport:
+    """products_prices Transport over ghl_client, so every write keeps the safety gate.
+
+    The adapter only needs ``request(method, path, body) -> Response``. A
+    non-2xx answer becomes a Response (the adapter owns denial/uncertain-write
+    handling); a connection failure is an UNCERTAIN outcome, never a retry.
+    """
+
+    def __init__(self, pp):
+        self._pp = pp
+
+    def request(self, method, path, body=None):
+        pp = self._pp
+        try:
+            if method == "GET":
+                data = api.get(path, params=body or None)
+            elif method == "POST":
+                data = api.post(path, data=body)
+            else:
+                raise pp.SpecError("unsupported method %s" % method)
+        except requests.exceptions.HTTPError as exc:
+            resp = exc.response
+            try:
+                parsed = resp.json()
+            except Exception:  # noqa: BLE001 - non-JSON error body
+                parsed = {"raw": (resp.text or "")[:500]}
+            return pp.Response(resp.status_code, parsed if isinstance(parsed, dict) else {"raw": parsed})
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            raise pp.TransportTimeout("%s %s: no authoritative outcome" % (method, path))
+        return pp.Response(200, data if isinstance(data, dict) else {})
+
+
+def _products_prices_adapter(pp):
+    # ponytail: run-scoped store; wire shared-utils/delivery/checkpoints.py for
+    # cross-run read-before-create when the durable store lands.
+    return pp.ProductsPricesAdapter(_GhlApiTransport(pp), pp.InMemoryStore())
+
+
 @payments.command("create-product")
-@click.option("--name", required=True, help="Product name (ZHC-prefixed for standing approval)")
+@click.option("--name", required=True, help="Product name")
 @click.option("--type", "product_type", default="SERVICE",
               type=click.Choice(["SERVICE", "PHYSICAL", "DIGITAL"]),
               help="Product type (default SERVICE)")
 @click.option("--description", default=None, help="Product description")
-@click.option("--image-url", default=None, help="Public image URL for the product")
+@click.option("--image-url", default=None,
+              help="REFUSED: the shared products adapter carries no image field.")
 @click.pass_context
 def payments_create_product(ctx, name, product_type, description, image_url):
-    """Create a product (POST /products/, Version 2021-07-28).
+    """Create a product through shared-utils/ghl/products_prices.py.
 
-    A product is the catalog entry; attach one or more prices with
-    ``payments create-price --product-id <id>``. The safety gate runs inside
-    ``api.post``. ``locationId`` targets the sub-account (also the gate's
-    whitelist key). Per the GHL Products API the product lives under
-    ``/products/`` (NOT ``/payments/``, which only holds orders/transactions/
-    coupons) and takes ``locationId`` — not the payments-API altId/altType.
+    POST /products/ (Version 2021-07-28), then GET /products/{id} read-back of
+    name, type and location; a mismatch is a failure, never a success. A product
+    is the catalog entry; attach prices with ``payments create-price``. The
+    safety gate runs inside ``api.post``.
     """
     try:
-        body = {
-            "locationId": _loc(ctx),
-            "name": name,
-            "productType": product_type,
-        }
-        if description:
-            body["description"] = description
         if image_url:
-            body["image"] = image_url
-        data = api.post("/products/", data=body)
-        _output(ctx, data, "Product Created")
+            click.echo(
+                "REFUSED: --image-url is not part of the shared products adapter "
+                "(unsupported fields are refused, never silently dropped). Set the "
+                "product image in the product editor after the product exists.",
+                err=True,
+            )
+            sys.exit(2)
+        pp = _products_prices()
+        loc = _loc(ctx)
+        product, op = _products_prices_adapter(pp).ensure_product(
+            pp.LogicalKey(loc, "product", name),
+            pp.ProductSpec(name=name, location_id=loc, product_type=product_type,
+                           description=description),
+        )
+        _output(ctx, {
+            "native_product_id": product.native_product_id,
+            "name": product.name,
+            "product_type": product.product_type,
+            "location_id": product.location_id,
+            "route": op.route,
+            "readback": op.readback,
+        }, "Product Created")
     except Exception as e:
         _handle_error(e)
 
@@ -1975,27 +2162,41 @@ def payments_create_product(ctx, name, product_type, description, image_url):
 @click.option("--type", "price_type", default="one_time",
               type=click.Choice(["one_time", "recurring"]),
               help="Price type (default one_time)")
+@click.option("--interval", default=None,
+              type=click.Choice(["day", "week", "month", "year"]),
+              help="Billing interval (required for --type recurring)")
+@click.option("--trial-days", default=None, type=int,
+              help="Trial days before the first charge (recurring only)")
 @click.pass_context
-def payments_create_price(ctx, product_id, name, amount, currency, price_type):
-    """Create a price on a product (POST /products/{id}/price).
+def payments_create_price(ctx, product_id, name, amount, currency, price_type,
+                          interval, trial_days):
+    """Create a price on a product through shared-utils/ghl/products_prices.py.
 
-    ``amount`` is in the smallest currency unit (cents) — $49.00 = 4900. The
-    safety gate runs inside ``api.post``. Returns the created price record
-    (carries its own ``_id``). Per the GHL Products API the price endpoint is
-    SINGULAR ``/products/{id}/price`` and takes ``locationId`` + ``product`` —
-    not the payments-API altId/altType.
+    ``amount`` is in the smallest currency unit (cents): $49.00 = 4900. The
+    adapter converts to the documented API amount, POSTs
+    /products/{id}/price, and reads the price back (amount, currency, type,
+    interval, trial); a mismatch is a failure. The safety gate runs inside
+    ``api.post``.
     """
     try:
-        body = {
-            "locationId": _loc(ctx),
-            "product": product_id,
-            "name": name,
-            "type": price_type,
-            "currency": currency,
-            "amount": amount,
-        }
-        data = api.post(f"/products/{product_id}/price", data=body)
-        _output(ctx, data, "Price Created")
+        pp = _products_prices()
+        loc = _loc(ctx)
+        if price_type == "recurring":
+            billing = "trial_then_recurring" if trial_days is not None else "recurring"
+        else:
+            billing = "one_time"
+        spec = pp.PriceSpec(
+            name=name, location_id=loc, billing_type=billing, currency=currency,
+            amount_minor=amount, recurring_interval=interval, trial_days=trial_days)
+        product = pp.NativeProduct(product_id, loc, "", "")
+        price, op = _products_prices_adapter(pp).ensure_price(
+            pp.LogicalKey(loc, "price", name, parent_logical_id=product_id), spec, product)
+        _output(ctx, {
+            **price.as_price_ref_fields(),
+            "name": price.name,
+            "route": op.route,
+            "readback": op.readback,
+        }, "Price Created")
     except Exception as e:
         _handle_error(e)
 
@@ -2457,6 +2658,152 @@ def locations_custom_values(ctx):
     try:
         data = api.get(f"/locations/{_loc(ctx)}/customValues")
         _output(ctx, data, "Custom Values")
+    except Exception as e:
+        _handle_error(e)
+
+
+# ===========================================================================
+# CUSTOM FIELDS + PIPELINES (create, gated, read-back verified)
+# ===========================================================================
+
+def _record(data, *keys) -> dict:
+    """The record dict inside an API answer: under one of ``keys`` or the answer itself."""
+    if isinstance(data, dict):
+        for key in keys:
+            if isinstance(data.get(key), dict):
+                return data[key]
+        return data
+    return {}
+
+
+def _verify_failed(what: str, why: str, fix: str) -> None:
+    """A write whose read-back disagrees is NOT done: say so and exit 3."""
+    click.echo(f"VERIFY FAILED: {what} — {why}. DO NOT report this as done. {fix}",
+               err=True)
+    sys.exit(3)
+
+
+def _read_back(path: str, *keys):
+    """GET the record just created; one read-only retry, never a second POST."""
+    last = None
+    for _attempt in range(2):
+        try:
+            return _record(api.get(path), *keys), None
+        except Exception as exc:  # noqa: BLE001 - transient read, retry once
+            last = exc
+    return None, last
+
+
+@cli.group("custom-fields")
+@click.pass_context
+def custom_fields(ctx):
+    """Custom fields — create (gated, read-back verified)."""
+    pass
+
+
+@custom_fields.command("create")
+@click.option("--name", required=True, help="Field name")
+@click.option("--data-type", "data_type", default="TEXT",
+              help="GHL dataType, e.g. TEXT, LARGE_TEXT, NUMERICAL, MONETORY, DATE, "
+                   "SINGLE_OPTIONS (default TEXT)")
+@click.option("--object-key", "object_key", default="contact",
+              help="Object the field belongs to (default contact)")
+@click.option("--placeholder", default=None, help="Placeholder text")
+@click.option("--parent-id", default=None, help="Custom field folder id")
+@click.option("--option", "options", multiple=True,
+              help="Choice for *_OPTIONS data types (repeatable)")
+@click.pass_context
+def custom_fields_create(ctx, name, data_type, object_key, placeholder, parent_id, options):
+    """Create a custom field (POST /custom-fields/, Version 2021-07-28), then read it back.
+
+    Use this for a purchase flag or any field a launch needs. The safety gate
+    (location whitelist + approval) runs inside ``api.post``. The field is read
+    back by id (GET /custom-fields/{id}); a missing or different name/dataType
+    exits 3 and is never reported as done. A failed read-back never re-POSTs.
+    """
+    try:
+        data_type = data_type.upper()
+        body = {"locationId": _loc(ctx), "name": name,
+                "dataType": data_type, "objectKey": object_key}
+        if placeholder:
+            body["placeholder"] = placeholder
+        if parent_id:
+            body["parentId"] = parent_id
+        if options:
+            body["options"] = list(options)
+        created = _record(api.post("/custom-fields/", data=body), "customField", "field")
+        field_id = created.get("id") or created.get("_id")
+        if not field_id:
+            _verify_failed("POST /custom-fields/ returned no field id", "nothing to read back",
+                           "Check `caf locations custom-fields` before any retry.")
+        seen, err = _read_back(f"/custom-fields/{field_id}", "customField", "field")
+        if seen is None:
+            _verify_failed(f"GET /custom-fields/{field_id} failed ({err})",
+                           "the write is unconfirmed",
+                           "Do NOT re-run create; list the fields first.")
+        bad = [k for k, want in (("name", name), ("dataType", data_type))
+               if str(seen.get(k) or "").upper() != str(want).upper()]
+        if bad:
+            _verify_failed(f"field {field_id} read back with different {', '.join(bad)}",
+                           "the saved field is not what was requested",
+                           "Inspect it before any retry.")
+        _output(ctx, {"id": field_id, "name": seen.get("name"),
+                      "dataType": seen.get("dataType"), "verified": True},
+                "Custom Field Created + VERIFIED (read back from GHL)")
+    except Exception as e:
+        _handle_error(e)
+
+
+@cli.group("pipelines")
+@click.pass_context
+def pipelines(ctx):
+    """Opportunity pipelines — create (gated, read-back verified)."""
+    pass
+
+
+@pipelines.command("create")
+@click.option("--name", required=True, help="Pipeline name")
+@click.option("--stage", "stages", multiple=True, required=True,
+              help="Stage name, in order (repeatable, at least one)")
+@click.pass_context
+def pipelines_create(ctx, name, stages):
+    """Create a pipeline (POST /opportunities/pipelines), then read it back.
+
+    The safety gate runs inside ``api.post``. The pipeline is read back by id
+    and its name and ordered stage names are compared; a difference exits 3.
+    If GHL refuses the public route (403/404/405), create the pipeline through
+    the managed browser step instead, then confirm it with `caf opportunities
+    pipelines`.
+    """
+    try:
+        body = {"locationId": _loc(ctx), "name": name,
+                "stages": [{"name": s, "position": i} for i, s in enumerate(stages)]}
+        try:
+            created = _record(api.post("/opportunities/pipelines", data=body), "pipeline")
+        except requests.exceptions.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code in (403, 404, 405):
+                click.echo("NOTE: the public pipeline-create route was refused; create "
+                           "the pipeline through the managed browser step.", err=True)
+            raise
+        pipeline_id = created.get("id") or created.get("_id")
+        if not pipeline_id:
+            _verify_failed("POST /opportunities/pipelines returned no pipeline id",
+                           "nothing to read back",
+                           "Check `caf opportunities pipelines` before any retry.")
+        seen, err = _read_back(f"/opportunities/pipelines/{pipeline_id}", "pipeline")
+        if seen is None:
+            _verify_failed(f"GET /opportunities/pipelines/{pipeline_id} failed ({err})",
+                           "the write is unconfirmed",
+                           "Do NOT re-run create; list the pipelines first.")
+        saved = [st.get("name") for st in sorted(
+            (st for st in (seen.get("stages") or []) if isinstance(st, dict)),
+            key=lambda st: st.get("position", 0))]
+        if seen.get("name") != name or saved != list(stages):
+            _verify_failed(f"pipeline {pipeline_id} read back as name={seen.get('name')!r} "
+                           f"stages={saved!r}", "the saved pipeline is not what was requested",
+                           "Inspect it before any retry.")
+        _output(ctx, {"id": pipeline_id, "name": name, "stages": saved, "verified": True},
+                "Pipeline Created + VERIFIED (read back from GHL)")
     except Exception as e:
         _handle_error(e)
 
