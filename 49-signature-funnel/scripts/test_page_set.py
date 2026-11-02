@@ -4,6 +4,7 @@
 inputs. Run: python3 test_page_set.py (from scripts/). No network, no provider, no paid call.
 """
 import copy
+import fnmatch
 import itertools
 import json
 import sys
@@ -127,10 +128,30 @@ class EveryShapeEveryPage(unittest.TestCase):
             self.assertEqual(labels.page_type(role), page["label"], key)
             self.assertEqual(labels.pdf_name(role, "desktop", "desktop-wireframe"),
                              ps.slug_of(key) + "_DESKTOP_WIREFRAMES.pdf")
-            self.assertEqual(labels.pdf_name(role, "mobile", "visual-mockup"),
-                             ps.slug_of(key) + "_MOBILE_MOCKUPS-VISUAL.pdf")
+            self.assertEqual(labels.pdf_name(role, "mobile", "final-mockups"),
+                             ps.slug_of(key) + "_MOBILE_MOCKUPS-FINAL.pdf")
             self.assertEqual(labels.board_name(role, "combined", "visual-mockup"),
                              ps.slug_of(key) + "_DESKTOP-and-MOBILE_MOCKUP-VISUAL-BOARD")
+
+    def test_labeled_globs_match_the_file_names_skill_71_writes_and_the_launcher_classifies(self):
+        """U-designs-seam: each section-image deliverable names the labeled client copy (FINAL for mockups)."""
+        stage_of = {"wireframe": None, "mockup": "final-mockups"}
+        for key, page in ps.page_types()["pages"].items():
+            for d in ps.deliverables_for(key):
+                if "labeled_glob" not in d:
+                    continue
+                stage = stage_of[d["kind"]] or d["stage"]
+                name = labels.image_name(page["label_role"], d["device"], stage, 3, 8, "Offer and price")
+                with self.subTest(page=key, deliverable=d["id"]):
+                    self.assertTrue(fnmatch.fnmatchcase(f"{labels.folder(d['device'], stage)}/{name}",
+                                                        d["labeled_glob"].split("/", 1)[1]), (name, d["labeled_glob"]))
+                    self.assertTrue(d["labeled_glob"].startswith("review-pdfs/"))
+                    self.assertTrue(page_designs.classify(name), name)
+        for key in ps.page_types()["pages"]:  # the render deliverables are the FINAL PDFs and the boards
+            pdfs = {d["id"]: d["glob"] for d in ps.deliverables_for(key) if d["id"].endswith("_pdf")}
+            self.assertEqual(pdfs["desktop_mockup_pdf"], f"review-pdfs/{ps.slug_of(key)}_DESKTOP_MOCKUPS-FINAL.pdf")
+            for glob in pdfs.values():
+                self.assertTrue(page_designs.classify(glob.rsplit("/", 1)[1]), glob)
 
     def test_legacy_three_five_seven_step_funnels_are_the_same_page_entries(self):
         legacy = {n: [p["page_key"] for p in ps.legacy_page_set(n)["pages"]] for n in (3, 5, 7)}
@@ -175,10 +196,13 @@ class Deliverables(unittest.TestCase):
             if d["id"] in skip or (d["needs"] == "render" and not render):
                 continue
             n = (counts or {}).get(d["id"], ps.section_counts(page_key)[0]) if d["needs"] == "images" else 1
-            for i in range(1, n + 1):
-                target = run / d["glob"].replace("*", f"{i:02d}")
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(d["id"].encode())
+            for key in ("glob", "labeled_glob"):  # the raw proof, and the labeled client copy a paid run adds
+                if key not in d or (key == "labeled_glob" and not render):
+                    continue
+                for i in range(1, n + 1):
+                    target = run / d[key].replace("*", f"{i:02d}")
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(d["id"].encode())
         for stage in ((provider or {}).get("stages") or ()):
             (run / stage).mkdir(exist_ok=True)
             (run / stage / "stage-executor-record.json").write_text(
@@ -198,6 +222,19 @@ class Deliverables(unittest.TestCase):
         self.assertFalse(got["complete"])
         self.assertEqual(got["missing"], [])
         self.assertEqual(len(got["render_pending"]), 5)
+
+    def test_a_paid_run_before_final_mockups_closed_lacks_the_labeled_final_copies_and_is_not_complete(self):
+        run = self.make_run("upsell_1")
+        for path in (run / "review-pdfs").rglob("*_mockup-final_*.png"):  # final-mockups has not closed yet
+            path.unlink()
+        got = ps.check_deliverables("upsell_1", run, rendered=True)
+        self.assertEqual(got["labeled_missing"], ["desktop_mockup_sections", "mobile_mockup_sections"])
+        self.assertEqual(got["missing"], [])
+        self.assertFalse(got["complete"])
+        names = {Path(f).name for f in got["files"]}
+        self.assertTrue(any("_desktop_wireframe_s01-of-" in n for n in names))
+        self.assertFalse(any("mockup-final" in n for n in names))
+        self.assertEqual(ps.check_deliverables("upsell_1", run, rendered=False)["labeled_missing"], [])
 
     def test_a_missing_mobile_mockup_is_named(self):
         run = self.make_run("sales", skip=("mobile_mockup_sections",))

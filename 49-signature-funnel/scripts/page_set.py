@@ -75,7 +75,8 @@ def slug_of(page_key: str) -> str:
 def deliverables_for(page_key: str) -> List[Dict[str, Any]]:
     """The page's deliverables with {slug} resolved (a copy; callers may not mutate the file)."""
     slug = slug_of(page_key)
-    return [dict(d, glob=d["glob"].format(slug=slug)) for d in page_types()["deliverables"]]
+    return [dict(d, **{k: d[k].format(slug=slug) for k in ("glob", "labeled_glob") if k in d})
+            for d in page_types()["deliverables"]]
 
 
 def images_per_section() -> int:
@@ -242,13 +243,20 @@ def check_deliverables(page_key: str, run_dir: Path, *, rendered: bool,
     A section-image kind is present only with one image per section of the page's copy form
     (section_counts; `long_form` None accepts either) and the same count in every kind. A kind with
     any other count (1 of 15 landing sections, a set from the other copy form) is named in
-    `wrong_count` and in `missing`, so it is never complete."""
+    `wrong_count` and in `missing`, so it is never complete.
+
+    A deliverable with a `labeled_glob` also has the labeled client copies Skill 71 writes to
+    review-pdfs/<device>-<kind>s/ on the paid provider: these are the files the launcher's design check
+    counts, so they are listed in `files`, and a `rendered` run without them names the deliverable in
+    `labeled_missing` and is not complete. (The mockup ones exist only after final-mockups closes.)"""
     run_dir = Path(run_dir)
     present, missing, render_pending, files = [], [], [], []
     allowed = section_counts(page_key, long_form)
     found_by = {d["id"]: sorted(p for p in run_dir.glob(d["glob"]) if p.is_file())
                 for d in deliverables_for(page_key)}
     counts = {d["id"]: len(found_by[d["id"]]) for d in deliverables_for(page_key) if d["needs"] == "images"}
+    labeled = {d["id"]: sorted(p for p in run_dir.glob(d["labeled_glob"]) if p.is_file())
+               for d in deliverables_for(page_key) if "labeled_glob" in d}
     reference = max(counts.values(), default=0)
     wrong_count = [i for i, n in counts.items() if n and (n not in allowed or n != reference)]
     for d in deliverables_for(page_key):
@@ -263,12 +271,14 @@ def check_deliverables(page_key: str, run_dir: Path, *, rendered: bool,
             render_pending.append(d["id"])
         else:
             missing.append(d["id"])
-    return {"page_key": page_key, "present": present, "missing": missing,
+    files += [p for found in labeled.values() for p in found]
+    labeled_missing = [i for i, found in labeled.items() if rendered and not found]
+    return {"page_key": page_key, "present": present, "missing": missing, "labeled_missing": labeled_missing,
             "section_counts": counts, "expected_sections": allowed, "wrong_count": wrong_count,
             "render_pending": render_pending, "files": [str(f) for f in files],
             "images_complete": not any(d["id"] in missing for d in deliverables_for(page_key)
                                        if d["needs"] == "images"),
-            "complete": not missing and not render_pending}
+            "complete": not missing and not render_pending and not labeled_missing}
 
 
 def _record_provider(path: Path, key: str = "provider") -> Optional[str]:

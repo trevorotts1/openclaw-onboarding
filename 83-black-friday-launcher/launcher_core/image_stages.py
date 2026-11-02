@@ -18,6 +18,11 @@ what is missing. Two stops are by design:
 * the Design Board stops for the client's recorded approval (``design_board.py approve``);
   final-mockups never starts without it.
 
+When a page's final-mockups stage closes, its labeled final mockups, review PDF and boards exist for the
+first time. Dispatch listed the page's files before that, so ``refresh_pieces`` lists them again in the
+page's piece and in the dispatch's stored result the package binds the piece to; without it the package
+check would never see the final mockups of a real run.
+
 ``python3 -m launcher_core.image_stages --run-dir <launch run folder>`` exits 0 only when every page
 has all five stages closed, and always writes ``qc/image_stages_report.json``. The package check
 (check_rules/image_qc.py) re-reads each page's own stage state, so the report is never trusted.
@@ -47,6 +52,7 @@ _SKIP_DIRS = {"private", ".git", "node_modules", "__pycache__"}
 _MAX_DEPTH = 5
 
 Runner = Callable[[List[str]], Tuple[int, str]]
+_ROUTES_DIR = Path(__file__).resolve().parent.parent / "routes"
 
 
 class Stop(Exception):
@@ -239,6 +245,81 @@ class _Page:
         return {s: "closed" if stage_closed(self.run, s) else "open" for s in STAGES}
 
 
+def _page_set():
+    """Skill 49's page_set (the one list of a page's design files), loaded through the substrate."""
+    if str(_ROUTES_DIR) not in sys.path:
+        sys.path.insert(0, str(_ROUTES_DIR))
+    import substrate
+    return substrate.load("49-signature-funnel/scripts/page_set.py", "launcher_page_set",
+                          "49-signature-funnel/scripts")
+
+
+def _upsert(result: Dict[str, Any], fresh: List[Dict[str, Any]], old: set) -> bool:
+    """Put ``fresh`` artifacts into ``result`` (replace the same path, else append) when it lists any of ``old``."""
+    arts = result.get("artifacts")
+    if not isinstance(arts, list) or not any(isinstance(a, dict) and (a.get("path"), a.get("sha256")) in old
+                                             for a in arts):
+        return False
+    by_path = {a["path"]: a for a in fresh}
+    result["artifacts"] = [by_path.pop(a["path"], a) if isinstance(a, dict) else a for a in arts] + list(by_path.values())
+    return True
+
+
+def _file_in(folder: Path, path: Any) -> bool:
+    """True when ``path`` (absolute, or relative to ``folder``) is an existing file inside ``folder``."""
+    if not isinstance(path, str) or not path:
+        return False
+    target = Path(path) if Path(path).is_absolute() else folder / path
+    return target.is_file() and target.resolve().is_relative_to(folder)
+
+
+def _write_json(path: Path, doc: Any) -> None:
+    path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+
+
+def refresh_pieces(run_dir: Path, page_run: Path) -> List[str]:
+    """Re-list one page's design files in its piece after its final-mockups stage closed. Returns the slots refreshed.
+
+    A piece (``pieces/<slot>.json``, slot = a Skill 49 page_key) belongs to the page run when one of its
+    artifacts is a file inside it. The run's files are listed again with Skill 49's own
+    ``page_set.design_artifacts`` in the form the piece already uses (absolute, or relative to the run;
+    with the provider when the piece names one) and merged by path. The piece must stay one of the
+    dispatch's own artifacts (``package._bind_piece``), so every stored dispatch result that lists the
+    piece's files, and the dispatch manifest's copy of it, takes the same files.
+    """
+    run_dir, page_run = Path(run_dir), Path(page_run).resolve()
+    page_set = _page_set()
+    keys = set(page_set.page_types()["pages"])
+    stored = [p for p in sorted((run_dir / "dispatch").glob("*result-*.json"))]
+    manifest_path = run_dir / "dispatch" / "dispatch-manifest.json"
+    manifest = _read(manifest_path)
+    refreshed: List[str] = []
+    for piece_path in sorted((run_dir / "pieces").glob("*.json")):
+        piece = _read(piece_path)
+        if piece_path.stem not in keys or not isinstance(piece, dict):
+            continue
+        owned = [a for a in piece.get("artifacts") or [] if isinstance(a, dict) and _file_in(page_run, a.get("path"))]
+        if not owned:
+            continue
+        fresh = page_set.design_artifacts(piece_path.stem, page_run, relative=not Path(owned[0]["path"]).is_absolute(),
+                                          with_provider=any("provider" in a for a in owned))
+        old = {(a.get("path"), a.get("sha256")) for a in piece["artifacts"] if isinstance(a, dict)}
+        _upsert(piece, fresh, old)
+        _write_json(piece_path, piece)
+        for path in stored:
+            doc = _read(path)
+            if isinstance(doc, dict) and _upsert(doc, fresh, old):
+                _write_json(path, doc)
+        if isinstance(manifest, dict):
+            for doc in list(manifest.get("results") or []) + list((manifest.get("page_results") or {}).values()):
+                if isinstance(doc, dict):
+                    _upsert(doc, fresh, old)
+        refreshed.append(piece_path.stem)
+    if refreshed and isinstance(manifest, dict):
+        _write_json(manifest_path, manifest)
+    return refreshed
+
+
 def layout_approval(run_dir: Path, path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
     """The client's recorded approval of the layout proofs, or None. A record names an approval_ref;
     this is recorded consent, not an authenticated signature (the approval units own that)."""
@@ -277,6 +358,8 @@ def drive(run_dir: Path, *, runner: Runner = default_runner, provider: str = "st
         else:
             page = _Page(run, scripts, runner, provider, allow_paid)
             stages = page.advance()
+            if stages.get("final-mockups") == "closed":  # the labeled final files exist now: list them in the piece
+                entry["pieces_refreshed"] = refresh_pieces(run_dir, run)
             done = all(v == "closed" for v in stages.values())
             entry.update(status="complete" if done else (page.stop.status if page.stop else "blocked"),
                          stages=stages, reason=None if done else (page.stop.reason if page.stop else "a stage is still open"),
