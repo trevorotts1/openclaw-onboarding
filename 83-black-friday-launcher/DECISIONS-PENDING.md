@@ -165,3 +165,18 @@ node.
 
 **Ceiling:** no teaching content, no page and no offer is invented. When the
 owner supplies the material, the teaching state changes in one place.
+
+## Carried to owners (after this unit merges)
+
+The Council label and the downsell_2 refusal text land here as constants and tests. These edits sit in
+files other units own, so they are carried to those owners. The receipt.json label, the by-name intake
+refusal and the SKILL.md wording land with them once this unit has merged. No advice is obtained from a
+live Council session until the owner supplies the live path.
+
+- C1 U-launcher-core-01, `launcher_core/package.py`: receipt council block gains `council_session_held` (is True) and `client_summary` (default `COUNCIL_NO_ADVICE_SUMMARY`).
+- C2 U-launcher-core-01, `tests/test_assemble_binding.py`: receipt.json asserts both keys (fresh and legacy council dict).
+- C3 U-products-01, `launcher_core/intake.py`: refuse a role in `UNSUPPORTED_OFFER_ROLES` by name before the generic `OFFER_ROLES` check.
+- C4 U-products-01, `tests/test_intake_validation.py`: a priced downsell_2 offer is refused with "a second downsell is not supported in this release".
+- C5 U-products-05, `shared-utils/client_intake/launcher_intake.py`: an answers-file downsell_2 (not "none") is refused with the same text.
+- C6 U-products-05, `shared-utils/client_intake/tests/test_launcher_intake.py`: refusal and "none" pass-through tests.
+- C7 U-launcher-core-07, `SKILL.md`: description line 8 and step 4 say package check, no advice without a live session.
