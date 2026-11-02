@@ -24,20 +24,13 @@ scene, with no flag that exempts any part of it:
      wrong about the scene. Silence therefore exempts nothing: a silent scene
      still has to prove it is a real scene with real content, and a flag can
      never launder performed dialogue into an empty lip-sync schedule.
-  3. a scene that performs words carries real performed lines: at least
-     MIN_SCENE_LINES of them, at least MIN_SCENE_LINE_WORDS written words across
-     them, and no placeholder among them. A scene that instead uses the existing
-     explicit staging declaration ``silent_scene: true`` and performs nothing
-     anywhere owes no dialogue floor -- and still owes every other check in this
-     list. Silence is never inferred from empty dialogue. A PERFORMED LINE IS
-     READ FROM EVERY KEY THAT CAN CARRY ONE, not only from ``spoken_dialogue``
-     and ``sung_lyrics``: a line parked under "dialogue", "lyrics" or
-     "voiceover_text" is still a line, so it cannot be laundered past the
-     dialogue requirement by choosing a different key (SILENT_SCENE_LAUNDERED).
-     A key that explicitly names voiceover or dialogue is speech on ONE word.
-     The exemption also requires the delivery fields a scene writes to be
-     actual lists: a falsey scalar, a dict or a tuple is a malformed container
-     (SILENT_SCENE_CONTAINER), never an empty performance.
+  3. the scene carries real performed lines: at least MIN_SCENE_LINES of them,
+     at least MIN_SCENE_LINE_WORDS written words across them, and no
+     placeholder among them. A PERFORMED LINE IS READ FROM EVERY KEY THAT CAN
+     CARRY ONE, not only from ``spoken_dialogue`` and ``sung_lyrics``: a line
+     parked under "dialogue", "lyrics" or "voiceover_text" is still a line, so
+     it cannot be laundered past the dialogue requirement by choosing a
+     different key (SILENT_SCENE_LAUNDERED).
   4. every written statement in the scene states something. ONE content test
      (``_statement_defects``) is defined once and every written field routes
      through it: written text, never a number, bool, list or null; long enough
@@ -52,40 +45,28 @@ scene, with no flag that exempts any part of it:
 
 THE SILENCE RULE, AND WHICH READING THIS MODULE IMPLEMENTS
 ----------------------------------------------------------
-Silence is a staging decision, and this module reads it exactly as the shared
-record contract already does. ``story_first_contracts.validate_scene`` states
-the rule the pipeline is built on: a scene with no spoken or sung line is
-refused unless it declares ``silent_scene``, and a scene that declares silence
-is not asked for lines. That declaration IS the explicit existing staging
-contract. This module reuses it rather than adding a second switch.
+Two readings of a declared-silent scene were in the artefacts and neither was
+marked superseded, so this is stated here rather than left implicit.
 
-  * A scene that declares ``silent_scene: true`` -- the exact boolean -- and
-    performs no words anywhere (no line field, no parked line, no performance
-    order, no lip-sync interval) is a deliberate action-led silent scene. It is
-    exempt from the dialogue line floor and from nothing else. Every other rule
-    still applies: purpose, time, action, choice, turn, subtext, framing,
-    transition, sound, emotion change, duration, causality, cast, world,
-    placeholder, repetition and claim checks all still run. The scene has to be
-    authored content, never an empty label.
-  * Silence is never inferred from empty dialogue. An absent flag with no lines
-    is still PLACEHOLDER_SCENE, and a non-boolean or other truthy value is
-    still SILENT_SCENE_FLAG. Empty dialogue alone authorises nothing.
-  * A scene that declares silence and still performs words is a contradiction
-    and keeps its named refusal (SILENT_SCENE_CONTRADICTION /
-    SILENT_SCENE_LAUNDERED). It is never accepted as "silent" while text is
-    uttered; the declaration is the thing refused.
-  * A scene that performs words keeps the line floor and the line content test
-    unchanged. There is no relaxation for spoken or sung scenes.
+  * The shared base (4bd478de, this module's ancestor) says: "Silence exempts
+    NOTHING else: a silent scene still has to prove it is a real scene with
+    real content", and its ponytail comment on MIN_SCENE_LINES says the line
+    floor "applies to silent scenes too -- silence is a staging decision, never
+    a content exemption". Under that reading a declared-silent scene owes the
+    same performed content as any other, and a silent scene that carries no
+    lines is refused as a placeholder.
+  * Round-4 candidate B's docstring says the opposite: "a scene that is
+    genuinely designed with no dialogue carries no lines at all and is
+    accepted".
 
-This supersedes the base reading that made the line floor apply to a
-declared-silent scene as well. That reading was the fail-closed answer while no
-staging contract had been read; ``story_first_contracts.validate_scene`` is
-that contract, and it admits a declared-silent scene with no lines. The floor
-still does its job where it belongs -- on scenes that perform words.
-
-A pure validator cannot certify semantic quality. This module proves structure
-and authored-content shape; content-bound independent review remains mandatory
-and is not replaced by the silence rule.
+THIS MODULE IMPLEMENTS THE BASE READING. Reasons, in order: it is the rule
+the shared ancestor states, in the module's own normative section AND in the
+constant that enforces it; B's sentence is a later claim about an inherited
+artefact that does not mark the base text superseded; and the base reading is
+the fail-closed one -- it is what refuses the silent-scene short-circuit
+(``{"silent_scene": true}`` with nothing else) that A already refuses. The
+round-4 contradiction between the two readings is therefore resolved toward
+the base, and superseding it is a decision for a reviewer, not for this module.
 
 THE CONTENT TEST
 ----------------
@@ -161,13 +142,10 @@ import story_first_contracts as C  # noqa: E402
 ORIGIN_NEW = "NEW"
 ORIGIN_LEGACY = "LEGACY"
 
-# ponytail: a scene that performs words must carry at least this many written
-# words across its spoken/sung lines, and at least two real lines, to count as
-# authored rather than a placeholder. A scene that instead uses the existing
-# explicit staging declaration `silent_scene: true` and performs nothing
-# anywhere owes no dialogue floor; it still owes every other scene-content
-# check. Silence is never inferred from empty dialogue. Raise with reviewer
-# evidence.
+# ponytail: a scene must carry at least this many written words across its
+# spoken/sung lines, and at least two real lines, to count as authored rather
+# than a placeholder. This applies to silent scenes too -- silence is a
+# staging decision, never a content exemption. Raise with reviewer evidence.
 MIN_SCENE_LINE_WORDS = 8
 MIN_SCENE_LINES = 2
 
@@ -1228,18 +1206,6 @@ spoken_dialogue sung_lyrics
 """.split())
 
 
-# Keys that explicitly name a performed line or song. ONE non-empty string
-# under an alias is speech: "Stop!" is a word the audience hears, not a short
-# label. The word-count guess below is only for keys nobody named -- a short
-# string under an unrelated metadata key is not treated as speech by this
-# list, so every metadata string is not classified as dialogue.
-_PERFORMED_LINE_ALIASES = frozenset("""
-voiceover voiceover_text voice_over voice_over_text vo vo_text
-dialogue dialogues dialogue_lines voiceover_lines narration narrations
-lyrics lyric sung sung_lines spoken spoken_lines
-""".split())
-
-
 def _nested_texts(value):
     """Every string inside a value, at any depth, in any container shape.
 
@@ -1280,13 +1246,9 @@ def _parked_line_texts(scene):
     for key, value in scene.items():
         if key in _NOT_PERFORMED_LINE_FIELDS:
             continue
-        alias = key in _PERFORMED_LINE_ALIASES
         for text in _nested_texts(value):
-            text = text.strip()
-            if not text:
-                continue
-            if alias or C._words(text) >= MIN_SCENE_LINES:
-                texts.append(text)
+            if C._words(text.strip()) >= MIN_SCENE_LINES:
+                texts.append(text.strip())
     return texts
 
 
@@ -1295,40 +1257,14 @@ def _performed_line_texts(scene):
     return _line_texts(scene) + _parked_line_texts(scene)
 
 
-# Delivery fields are typed list containers in the shared record contract. A
-# falsey scalar (False, None, ""), a dict or a tuple is not an empty
-# performance: it is a malformed container. The readers normalise those
-# through `or []`, so without this check a declared-silent scene could buy the
-# dialogue floor with the wrong type instead of an empty list.
-_DELIVERY_LIST_FIELDS = ("spoken_dialogue", "sung_lyrics", "performance_order")
-
-
-def _delivery_container_defects(scene):
-    """Named refusals for a delivery field written as anything but a list."""
-    defects = []
-    if not isinstance(scene, dict):
-        return defects
-    for field in _DELIVERY_LIST_FIELDS:
-        if field not in scene:
-            continue
-        value = scene[field]
-        if not isinstance(value, list):
-            defects.append(_defect("SILENT_SCENE_CONTAINER", field,
-                                   {"reason": "%s must be a list when written" % field,
-                                    "got": type(value).__name__}))
-    return defects
-
-
 def _silence_defects(scene):
-    """Silence is a typed staging declaration, never a bypass switch.
+    """Silence is a declaration with content, never a bypass switch.
 
     A scene that declares ``silent_scene=true`` while carrying performed lines --
     in the line fields or parked under any other key -- a performance order, or
-    an on-screen lip-sync claim, is laundering: it removes a requirement in
+    an on-screen lip-sync claim, is laundering: it removes the requirement in
     order to get past it. Content beats declaration, so the declaration is the
-    thing refused. A declared-silent scene that performs nothing anywhere is a
-    legitimate action-led scene; it is exempt from the dialogue floor only (see
-    ``_silence_authorized``) and still owes every other scene-content check.
+    thing refused.
     """
     defects = []
     silence = scene.get("silent_scene")
@@ -1339,7 +1275,6 @@ def _silence_defects(scene):
                                 "got": type(silence).__name__}))
     if silence is not True:
         return defects
-    defects.extend(_delivery_container_defects(scene))
     performed = [t for t in _performed_line_texts(scene) if t]
     if performed:
         defects.append(_defect("SILENT_SCENE_LAUNDERED", "silent_scene",
@@ -1358,32 +1293,6 @@ def _silence_defects(scene):
                                "scene declares silence and declares visible lip sync; "
                                "moving lips are performed words"))
     return defects
-
-
-def _silence_authorized(scene):
-    """True only for the existing explicit silent staging declaration.
-
-    Reuses the rule ``story_first_contracts.validate_scene`` already states -- a
-    scene with no spoken or sung line is refused unless it declares
-    ``silent_scene`` -- without adding a second switch. It holds only when the
-    declaration is the exact boolean ``True`` and the scene performs no words
-    anywhere: no line field, no parked line (including a one-word voiceover or
-    dialogue alias), no performance order, no lip-sync interval. The delivery
-    fields it writes must be actual lists; a falsey scalar, a dict or a tuple is
-    malformed container and never authorises silence. Empty dialogue alone never
-    reaches here, because the flag must be declared. When this is True the
-    dialogue floor is skipped; every other scene-content check still runs.
-    """
-    if scene.get("silent_scene") is not True:
-        return False
-    if _delivery_container_defects(scene):
-        return False
-    if scene.get("performance_order"):
-        return False
-    lip = scene.get("visible_lip_sync")
-    if isinstance(lip, dict) and lip.get("intervals"):
-        return False
-    return not [t for t in _performed_line_texts(scene) if t]
 
 
 # ponytail: a scene in this product is seconds long. Raise the ceiling with
@@ -1494,12 +1403,10 @@ def _scene_content_defects(scene):
     defects.extend(_silence_defects(scene))
     silence = scene.get("silent_scene")
 
-    # 3. real performed lines for scenes that perform words, and no placeholder
-    #    among them. The line floor is counted in the line fields only, so lines
-    #    parked out of them cannot pad it; the placeholder test reads every key
-    #    that can carry a performed line, so a parked stub is still refused. A
-    #    declared-silent scene that performs nothing (`_silence_authorized`)
-    #    owes no dialogue floor; it still owes every other check below.
+    # 3. real performed lines, and no placeholder among them. The line floor is
+    #    counted in the line fields only, so lines parked out of them cannot pad
+    #    it; the placeholder test reads every key that can carry a performed
+    #    line, so a parked stub is still refused.
     texts = _line_texts(scene)
     performed = [t for t in texts if t]
     if silence is True and performed:
@@ -1510,9 +1417,7 @@ def _scene_content_defects(scene):
     if any(_is_placeholder_text(t) for t in texts):
         defects.append(_defect("PLACEHOLDER_SCENE", "scenes",
                                sid or "unstructured scene"))
-    if not _silence_authorized(scene) and (
-            len(placeholder_free) < MIN_SCENE_LINES
-            or _line_words(scene) < MIN_SCENE_LINE_WORDS):
+    if len(placeholder_free) < MIN_SCENE_LINES or _line_words(scene) < MIN_SCENE_LINE_WORDS:
         defects.append(_defect("PLACEHOLDER_SCENE", "scenes",
                                sid or "unstructured scene"))
     for field in ("spoken_dialogue", "sung_lyrics"):
