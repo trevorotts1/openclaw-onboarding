@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
-SIGLAUNCH = SKILL_ROOT.parent / "44-convert-and-flow-operator/tools/siglaunch"
+if str(SKILL_ROOT) not in sys.path:
+    sys.path.insert(0, str(SKILL_ROOT))
+
+from launcher_core.constants import resolve_ref  # noqa: E402
+
+SIGLAUNCH = resolve_ref("44-convert-and-flow-operator/tools/siglaunch")
 
 
 def _load(name: str, path: Path):

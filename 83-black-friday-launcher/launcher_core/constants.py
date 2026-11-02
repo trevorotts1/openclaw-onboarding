@@ -125,6 +125,8 @@ SKILL_SLUGS = (
     "signature-upsell",
     "signature-downsell",
     "signature-thank-you",
+    "convert-and-flow-operator",
+    "email-engine",
     "black-friday-launcher",
 )
 

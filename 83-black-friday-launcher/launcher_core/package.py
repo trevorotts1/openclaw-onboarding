@@ -42,6 +42,7 @@ from . import launch_bridge
 from . import launch_plan as launch_plan_module
 from . import page_designs
 from . import route as route_module
+from .check_rules import delivery_units
 from .intake import offer_facts
 
 # A second page of a role that the route graph does not repeat. The piece is keyed by its slot
@@ -83,6 +84,12 @@ SEAM_NATIVE_CHECKOUT_INSTALL = "native_checkout_install"
 # ENF-03: the dispatch run this package is bound to. launch_bridge.run lays these down.
 DISPATCH_MANIFEST_REL = "dispatch/dispatch-manifest.json"
 LAUNCH_RECORD_REL = "launch.json"
+# ENF-07: launch_bridge.run writes the run's own report; a bound package takes its to_confirm and
+# landing_pages from it, never from the caller.
+DISPATCH_REPORT_REL = "dispatch-report.json"
+# ENF-09: landing_bridge.py writes bridge-receipt-<result stem>.json beside each landing result.
+BRIDGE_RECEIPT_DIR = "bridge-receipts"
+LANDING_REQUEST_ROLE = "landing"
 # launch_bridge.run writes this (the writer half is carried to U-products-03); a strict binding requires it,
 # so a changed entitlement basis or approval is caught. A non-strict run (found beside the pieces,
 # test_only intake) verifies it when present and records 'absent' otherwise.
@@ -290,7 +297,8 @@ def _page_deliveries(plan: Dict[str, Any], pieces: Dict[str, Any]) -> Dict[str, 
 
 
 def _launch_plan_record(plan: Optional[Dict[str, Any]], deliveries: Optional[Dict[str, Any]],
-                        pieces: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+                        pieces: Dict[str, Any],
+                        launch: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """The calendar + completeness record, or a named refusal when a planned unit is missing."""
     if plan is None:
         return None
@@ -298,7 +306,7 @@ def _launch_plan_record(plan: Optional[Dict[str, Any]], deliveries: Optional[Dic
     try:
         for unit_id, result in _page_deliveries(plan, pieces).items():
             supplied.setdefault(unit_id, result)
-        record = launch_plan_module.record(plan, supplied)
+        record = launch_plan_module.record(plan, supplied, intake=launch)
         launch_plan_module.assert_complete(record["completeness"])
     except launch_plan_module.LaunchPlanError as exc:
         raise PackageError(exc.code, exc.detail) from exc
@@ -489,6 +497,17 @@ def _unit_receipts(ordered: List[Dict[str, Any]], intake: Dict[str, Any],
                                           run_dir, unit_type="page",
                                           delivery_marker="declared"))
         else:
+            if unit["type"] == "automation":
+                # S44-21: a done.txt and three free-text strings never seal an automation.
+                try:
+                    builds = json.loads((run_dir / delivery_units.BUILDS_DOC).read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    builds = {}
+                fails = delivery_units.automation_violations(
+                    unit["id"], lane_deliveries.get(unit["id"]), plan.get("launch_id"),
+                    delivery_units.reader_hashes(builds, plan.get("launch_id")), run_dir)
+                if fails:
+                    raise PackageError(delivery_units.CODE_AUTOMATION, "; ".join(fails))
             rows.append(_lane_receipt(unit, lane_deliveries.get(unit["id"]), intake,
                                       approved, plan_ref["sha256"], plan_ref["path"],
                                       run_dir))
@@ -612,6 +631,11 @@ def _bind_dispatch(root: Path, intake: Dict[str, Any], route: Dict[str, Any],
                                                                  launch.get("revision")):
         raise PackageError("AF-LAUNCH-PKG-DISPATCH-PLAN",
                            "dispatch-manifest.json is for another launch or revision than launch.json")
+    report = _read_run_json(root, DISPATCH_REPORT_REL, "AF-LAUNCH-PKG-DISPATCH-REPORT", "dispatch report")
+    if not (isinstance(report, dict) and isinstance(report.get("to_confirm"), list)
+            and isinstance(report.get("landing_pages"), list)):
+        raise PackageError("AF-LAUNCH-PKG-DISPATCH-REPORT",
+                           "the dispatch report must carry to_confirm and landing_pages lists")
     expected = _expected_launch(intake, launch)
     if _canonical(expected) != _canonical(launch):
         raise PackageError("AF-LAUNCH-PKG-PLAN-DRIFT",
@@ -673,7 +697,11 @@ def _bind_dispatch(root: Path, intake: Dict[str, Any], route: Dict[str, Any],
     return {
         "state": DISPATCH_STATE_BOUND, "root": root, "plan_document_hash": plan_hash,
         "requests": requests, "plan_hash_matches": plan_hash_matches,
+        "to_confirm": report["to_confirm"], "landing_pages": report["landing_pages"],
+        "landing_results": {},
         "record": {
+            "dispatch_report": {"path": DISPATCH_REPORT_REL,
+                                "sha256": _sha256_file(root / DISPATCH_REPORT_REL)},
             "state": DISPATCH_STATE_BOUND,
             "dispatch_manifest": {"path": DISPATCH_MANIFEST_REL,
                                   "sha256": _sha256_file(root / DISPATCH_MANIFEST_REL)},
@@ -731,6 +759,8 @@ def _bind_piece(binding: Dict[str, Any], raw: Any, request_role: str, slot: str,
         stored = json.loads(stored_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise PackageError("AF-LAUNCH-PKG-RESULT", f"{slot}: stored result unreadable ({exc})") from exc
+    if request_role == LANDING_REQUEST_ROLE:
+        binding["landing_results"][slot] = stored_path
     drifted = [k for k in _REQUEST_RESULT_KEYS if raw.get(k) != stored.get(k)]
     if drifted:
         raise PackageError("AF-LAUNCH-PKG-RESULT",
@@ -743,6 +773,63 @@ def _bind_piece(binding: Dict[str, Any], raw: Any, request_role: str, slot: str,
             raise PackageError("AF-LAUNCH-PKG-RESULT",
                                f"{slot}: artifact {art.get('path') if isinstance(art, dict) else art!r} "
                                "is not one the dispatch produced")
+
+
+BRIDGE_RECEIPT_CODE = "AF-LAUNCH-PKG-BRIDGE-RECEIPT"
+
+
+def bridge_receipt_violations(receipt: Any, delivery: bool) -> List[str]:
+    """ENF-09: why a landing result's bridge-receipt sidecar (landing_bridge.py) is not a finished
+    page. Plain sentences; the caller prefixes the code. Shared by assemble and check."""
+    if not isinstance(receipt, dict):
+        return ["the bridge receipt is not a JSON object"]
+    fails: List[str] = []
+    for prefix, label in (("", "the landing page"), ("opt_in_", "the opt-in landing page")):
+        if prefix and not any(k.startswith(prefix) for k in receipt):
+            continue
+        if receipt.get(f"{prefix}receipt_validation") == "vendored_schema_fallback":
+            fails.append(f"{label} was validated by the vendored schema fallback, not Skill 49's own "
+                         "validator")
+        if f"{prefix}pipeline_exit" in receipt or not prefix:
+            if receipt.get(f"{prefix}pipeline_exit") != 0:
+                fails.append(f"{label}'s production stage gate exited "
+                             f"{receipt.get(f'{prefix}pipeline_exit')!r}, not 0 (production is not closed)")
+    if delivery and receipt.get("draft") is not False:
+        fails.append("the landing page is a draft (its production gate is open), and a delivery "
+                     "package is never a draft")
+    return fails
+
+
+def _bind_bridge_receipts(binding: Dict[str, Any], delivery: bool) -> List[Tuple[Path, bytes]]:
+    """Read the sidecar beside every landing result the dispatch stored and refuse a bad one.
+
+    A sidecar that is present is always judged. One that is absent refuses a client delivery
+    only: a hand-built test run has none (its consumer is a free fake, not landing_bridge.py).
+    Returns the (package-relative path, bytes) pairs assemble copies into the package.
+    """
+    kept: List[Dict[str, Any]] = []
+    files: List[Tuple[Path, bytes]] = []
+    for slot, result_path in sorted(binding["landing_results"].items()):
+        sidecar = result_path.with_name(f"bridge-receipt-{result_path.stem}.json")
+        if not sidecar.is_file():
+            if delivery:
+                raise PackageError(BRIDGE_RECEIPT_CODE,
+                                   f"{slot}: the landing result has no {sidecar.name}, so a draft or a "
+                                   "vendored-schema fallback cannot be ruled out")
+            continue
+        raw = sidecar.read_bytes()
+        try:
+            doc = json.loads(raw.decode("utf-8"))
+        except (OSError, ValueError) as exc:
+            raise PackageError(BRIDGE_RECEIPT_CODE, f"{slot}: {sidecar.name} is unreadable ({exc})") from exc
+        fails = bridge_receipt_violations(doc, delivery)
+        if fails:
+            raise PackageError(BRIDGE_RECEIPT_CODE, f"{slot}: " + "; ".join(fails))
+        rel = Path(BRIDGE_RECEIPT_DIR) / sidecar.name
+        kept.append({"slot": slot, "path": str(rel), "sha256": _sha256_bytes(raw)})
+        files.append((rel, raw))
+    binding["record"]["bridge_receipts"] = kept
+    return files
 
 
 def _verify_design_waiver(waiver: Any, approved_hash: str) -> Dict[str, Any]:
@@ -866,6 +953,12 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     Hand-built fixtures with no dispatch run keep assembling only for a test_only intake and are
     recorded ``dispatch_binding.state = "unbound_fixture"``; a live intake without one refuses.
 
+    A bound package takes ``to_confirm`` and ``landing_pages`` from the run's dispatch-report.json and
+    refuses without it (AF-LAUNCH-PKG-DISPATCH-REPORT); a caller's list that differs is refused too.
+    Each landing result's bridge-receipt sidecar is judged (AF-LAUNCH-PKG-BRIDGE-RECEIPT): a vendored-schema
+    fallback or a non-zero pipeline exit refuses, a draft refuses a delivery, and a missing sidecar refuses a
+    client delivery. A client delivery (test_only false) also needs Skill 49's live receipt store to verify.
+
     Open page blockers travel with each piece into the manifest and receipt units. A full launch
     refuses to assemble while any are open (AF-LAUNCH-PKG-BLOCKERS); a page-only package is labelled
     design-only. ``require_designs=False`` needs a verified ``design_waiver`` bound to the plan hash.
@@ -875,6 +968,11 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
     source_root = Path(source_root).resolve() if source_root else run_dir.resolve()
+    # ENF-24: a graph handed straight to assemble must hold doc 02 section 4 before anything is written.
+    law = route_module.route_law.graph_violations(route_module.launch_record(intake), route)
+    if law:
+        raise PackageError("AF-LAUNCH-ROUTE-LAW",
+                           "the route graph breaks doc 02 section 4: " + "; ".join(law))
     scope = _resolve_delivery_scope(delivery_scope, launch_plan)
     open_raw = {slot: piece["blockers"] for slot, piece in pieces.items()
                 if isinstance(piece, dict) and isinstance(piece.get("blockers"), list)
@@ -892,6 +990,14 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         binding = _bind_dispatch(root, intake, route, strict=explicit or not test_only)
         approved = binding["plan_document_hash"]
         dispatch_record = binding["record"]
+        # ENF-07: the run's own dispatch-report.json is authoritative for what was defaulted and which
+        # landing pages were planned; a caller's list that differs is refused, never believed.
+        for name, given, run_value in (("to_confirm", to_confirm, binding["to_confirm"]),
+                                       ("landing_pages", landing_pages, binding["landing_pages"])):
+            if given is not None and list(given) != run_value:
+                raise PackageError("AF-LAUNCH-PKG-DISPATCH-REPORT",
+                                   f"{name} differs from the dispatch run's {DISPATCH_REPORT_REL}")
+        to_confirm, landing_pages = binding["to_confirm"], binding["landing_pages"]
     else:
         if not test_only:
             raise PackageError("AF-LAUNCH-PKG-DISPATCH-MISSING",
@@ -904,6 +1010,16 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     if evidence["state"] in ("malformed", "unavailable"):
         raise PackageError("AF-LAUNCH-PKG-RECEIPTS",
                            f"Skill 49 receipt store is {evidence['state']}: {evidence.get('detail', '')}")
+    if not test_only:
+        # ENF-17: the live store must verify (every line harness-signed), never the recorded word.
+        module = _load_receipt_module()
+        verify = getattr(module, "verify_delivery_store", None)
+        if not callable(verify):
+            raise PackageError("AF-LAUNCH-PKG-RECEIPTS",
+                               "Skill 49's receipt module has no verify_delivery_store")
+        store_ok, store_detail = verify(run_dir)
+        if not store_ok:
+            raise PackageError("AF-LAUNCH-PKG-RECEIPTS", store_detail)
     client_delivery = (binding is not None and scope == DELIVERY_SCOPE_FULL) or not test_only
     if client_delivery and (evidence["state"] != "verified" or not evidence.get("entries")):
         raise PackageError("AF-LAUNCH-PKG-RECEIPTS",
@@ -918,7 +1034,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         raise PackageError("AF-LAUNCH-PLAN-LAUNCH",
                            f"the launch plan is for {launch_plan.get('launch_id')!r}, not "
                            f"{intake['launch_id']!r}")
-    plan_record = _launch_plan_record(launch_plan, deliveries, pieces)
+    plan_record = _launch_plan_record(launch_plan, deliveries, pieces,
+                                      {**intake, "approved_plan_hash": approved})
 
     ordered: List[Dict[str, Any]] = []
     for node in route["nodes"]:
@@ -946,10 +1063,34 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         if binding is not None:
             _bind_piece(binding, pieces[slot], parent, slot, True)
 
+    bridge_files: List[Tuple[Path, bytes]] = []
+    if binding is not None:
+        bridge_files = _bind_bridge_receipts(binding, delivery=client_delivery)
+
     designs_required = require_designs if require_designs is not None else (binding is not None or not test_only)
     waiver = None
     if require_designs is False:
         waiver = _verify_design_waiver(design_waiver, approved)
+    if design_approvals is not None:
+        # STR-25: an approved Design Board must resolve to a recorded Skill 71 approval, and a relative
+        # reference is copied byte-for-byte into the package so `check` re-resolves the same record.
+        bad = page_designs.approval_violations(design_approvals, source_root)
+        if bad:
+            raise PackageError(page_designs.CODE, "; ".join(bad))
+        for entry in design_approvals.values():
+            ref = entry.get("approval_ref") if isinstance(entry, dict) else None
+            if not (isinstance(entry, dict) and entry.get("state") == "approved" and _nonempty_str(ref)):
+                continue
+            if Path(ref).is_absolute():
+                continue  # recorded unchanged
+            src = (source_root / ref).resolve()
+            if not src.is_relative_to(source_root):
+                raise PackageError(page_designs.CODE,
+                                   f"approval record {ref!r} resolves outside the run it came from")
+            dest = run_dir / ref
+            if src != dest.resolve():
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(src.read_bytes())
 
     for piece in ordered:
         copied: List[Dict[str, Any]] = []
@@ -989,6 +1130,9 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
             copied.append({"path": rel, "sha256": actual, **entry})
         piece["artifacts"] = copied
 
+    for rel, raw in bridge_files:
+        (run_dir / rel).parent.mkdir(parents=True, exist_ok=True)
+        (run_dir / rel).write_bytes(raw)
     intake_path = run_dir / "intake.json"
     route_path = run_dir / "route-graph.json"
     council_path = run_dir / "council-advice.json"
@@ -1031,7 +1175,7 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "launcher": {"skill": SKILL_NAME, "version": SKILL_VERSION,
-                     "skill_number_working": SKILL_NUMBER, "skill_number_final": False},
+                     "skill_number_working": SKILL_NUMBER, "skill_number_final": True},
         "tenant_id": intake["tenant_id"],
         "location_id": intake["location_id"],
         "launch_id": intake["launch_id"],

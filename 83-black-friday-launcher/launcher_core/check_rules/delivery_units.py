@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
 from .. import launch_plan as lp
-from ..constants import REPO_ROOT
+from ..constants import SkillResolutionError, resolve_ref
 
 CODE_PLAN = "AF-LAUNCH-UNIT-PLAN"
 CODE_AUTOMATION = "AF-LAUNCH-UNIT-AUTOMATION"
@@ -102,7 +102,10 @@ def automation_violations(unit_id: str, row: Any, launch_id: Any, expected: Mapp
     if wrong:
         return [f"{label} export is not the Skill 44 build: " + "; ".join(wrong)]
 
-    validator = REPO_ROOT / VALIDATOR_REF
+    try:
+        validator = resolve_ref(VALIDATOR_REF)
+    except SkillResolutionError:
+        return [f"{label} cannot be validated: {VALIDATOR_REF} is not installed"]
     if not validator.is_file():
         return [f"{label} cannot be validated: {VALIDATOR_REF} is not installed"]
     try:
