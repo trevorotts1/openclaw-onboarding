@@ -289,7 +289,7 @@ This section states, for each consumer, what that consumer does on main, re-chec
 
 ### Skill 83: 83-black-friday-launcher (launch plan checker and package assembler)
 
-- Skill 83 validates the launch plan's calendar and completeness (`python3 -m launcher_core.cli plan --plan <launch-plan.json> [--deliveries <dir>]`, code in `launcher_core/launch_plan.py`), lists every planned unit including the automations, and fails the package when a planned unit was not delivered. It never builds a workflow and never invents a unit, date or price.
+- Skill 83 validates the launch plan's calendar and completeness (`python3 -m launcher_core.cli plan --plan <launch-plan.json> [--deliveries <deliveries.json>]`, where `--deliveries` is one JSON file (an object of unit id to delivery result); omit it to see what is missing, code in `launcher_core/launch_plan.py`), lists every planned unit including the automations, and fails the package when a planned unit was not delivered. It never builds a workflow and never invents a unit, date or price.
 - It does not run this skill. An agent asked to set up the Black Friday automations reaches this skill through Launch mode (Skill 49/83) above, not through Skill 83's own entry commands.
 
 ### Skill 6: 06-ghl-install-pages (P4 to P5 funnel seam)
