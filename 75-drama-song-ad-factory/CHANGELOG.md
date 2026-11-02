@@ -4,6 +4,14 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.155 - 2026-11-02 - chore(batch): version stamp for batch PR #2784 (ST2, X01, F14, PR #2779)
+
+- **G3 version stamp, skill 75 v2.9.154 -> v2.9.155.** Batch PR #2784 combines ST2, X01,
+  F14 and PR #2779 and changes skill 75 content (delivery checklist, clips, package,
+  intake preflight, lane size) without a `skill-version.txt` bump, which fails G3. Bumped
+  to the next patch and kept the `SKILL.md` frontmatter `version:` in agreement. No
+  release or tag is created here.
+
 ## v2.9.138 - 2026-11-01 - fix(enroll): hand the studio receipt to the runtime user
 
 - **G3 version stamp, skill 75 v2.9.137 -> v2.9.138.** `shared-bridge/enroll-on-install.sh`

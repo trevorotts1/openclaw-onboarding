@@ -135,6 +135,28 @@ def _preferences(rows):
     return out
 
 
+def current_script_election(run_dir):
+    """X06 step 4: the CURRENT saved script-approval election, or None.
+
+    Dispatch gates ask this instead of trusting an approval record's own
+    legacy ``required`` flag. None (no authoritative saved answer for this
+    run) leaves the record's own governed shape in force; True means the
+    client's persisted Yes elects script approval, so only a current
+    event-backed decision for these exact lyrics may proceed.
+    """
+    from script_approval import card_answers
+    try:
+        saved = card_answers.load(str(run_dir))
+        if saved.get("state") != card_answers.OK:
+            return None
+        row = (saved.get("by_id") or {}).get("script")
+        if not isinstance(row, dict) or type(row.get("n")) is not int or row["n"] not in (1, 2):
+            return None
+        return row["n"] == 1
+    except (ImportError, OSError, ValueError, TypeError, KeyError) as exc:
+        raise ValueError("the current script election is unreadable: %s" % exc) from exc
+
+
 def _session_authority(run_dir, state, run_id, live_model):
     from choice_card.intake_card import intake_card as card
     from choice_card.intake_card import intake_session
