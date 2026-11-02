@@ -68,7 +68,7 @@ class Bank(unittest.TestCase):
         sys.path.insert(0, str(_skill("49-signature-funnel") / "scripts"))
         vlp = importlib.import_module("validate_launch_plan")
         required["49 launch"] = set(vlp.REQUIRED_LAUNCH_FIELDS)
-        sys.path.insert(0, str(REPO / "83-black-friday-launcher"))
+        sys.path.insert(0, str(_skill("83-black-friday-launcher")))
         try:
             intake83 = importlib.import_module("launcher_core.intake")
             required["83 intake"] = set(intake83.REQUIRED_FIELDS)
