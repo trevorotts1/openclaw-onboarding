@@ -14,7 +14,9 @@ no network calls and open no browser), so the assertions cover the EMITTED PLAN
 SHAPE only:
 
   * the ORDERED steps each plan emits (and that the autosave defaults to DRAFT);
-  * the publish gate (``may_publish``) flipping the autosave + ledger target;
+  * the publish gate: the flip of the autosave + ledger target needs a launcher
+    approval record (an approval_ref read from the launch store) PLUS a
+    ``ghl_gate`` pass for the page; a free string never publishes;
   * the sub-account hard gate (``subaccount_matches``) REFUSING on MISMATCH
     (zero steps, ``ok=False`` — a hard stop, never an advisory);
   * the BYTE-IDENTICAL revert contract (the md5 the re-read must match);
@@ -39,6 +41,7 @@ import json
 import os
 import subprocess
 import sys
+import uuid
 
 # Ensure ghl_builder (and its ghl_rest_canvas sibling) are importable regardless
 # of working directory — same convention as the other tests in this suite.
@@ -52,6 +55,7 @@ import pytest
 
 import browser_manager  # SINGLETON POOLED BROWSER gateway (session bracket)
 import ghl_builder as b
+import ghl_publish_approval
 import ghl_rest_canvas as rc
 
 
@@ -155,25 +159,82 @@ class TestRestSavePlanOrder:
         assert edit["locator"] == {"section_idx": 0, "element_idx": 0}
         assert edit["marker_in_value"] is True
 
-    def test_verify_step_uses_verify_url_contract(self):
+    def test_verify_step_uses_verify_all_contract(self):
         plan = b.emit_rest_save_plan(**_save_kwargs())
         verify = next(s for s in plan["steps"] if s["step"] == "verify_preview")
-        assert verify["action"] == "verify_url"
+        assert verify["action"] == "verify_all"
+        assert "ghl_verify.verify_all" in verify["call"]
+        assert "render_check" in verify["call"]
         assert verify["url"] == FAKE_PREVIEW
         assert verify["marker"] == MARKER
-        assert verify["expect"] == {"ok": True, "http": 200, "marker_found": True}
+        assert verify["page_id"] == FAKE_PAGE_ID
+        assert verify["expect"] == {"PASS": True, "http": 200,
+                                    "marker_in_rendered_dom": True,
+                                    "render_errors": []}
+        assert verify["action"] != "verify_url"  # raw-body check never advances 'previewed'
 
 
-# ── emit_rest_save_plan — publish gate (may_publish) ──────────────────────────
+# ── emit_rest_save_plan — publish gate (launcher record + ghl_gate) ───────────
 
 class TestRestSavePlanPublishGate:
     @pytest.mark.parametrize("approval", ["live", "publish", "yes", "approved", "go"])
-    def test_explicit_live_answer_publishes(self, approval):
+    def test_free_string_live_answer_stays_draft(self, approval):
         plan = b.emit_rest_save_plan(**_save_kwargs(approval=approval))
+        assert plan["publish"] is False
+        save = next(s for s in plan["steps"] if s["step"] == "page_autosave")
+        assert save["body"]["pageType"] == "draft"
+        assert plan["ledger_targets"]["page_autosave"] == "page-saved"
+        assert isinstance(plan.get("publish_refused"), list) and plan["publish_refused"]
+
+    @staticmethod
+    def _store(tmp_path, ref="APPR-LIVE", **over):
+        rec = {"approval_ref": ref,
+               "allowed_write_target": "approved_live_publication",
+               "test_only": False, "location_id": FIXTURE_LOC,
+               "page_ids": [FAKE_PAGE_ID]}
+        rec.update(over)
+        d = tmp_path / "launch-store"
+        d.mkdir(exist_ok=True)
+        (d / f"{ref}.json").write_text(json.dumps(rec))
+        return str(d)
+
+    @staticmethod
+    def _evidence(tmp_path):
+        root = tmp_path / "evidence"
+        (root / "scorecard").mkdir(parents=True)
+        (root / "logs").mkdir()
+        (root / "scorecard" / "verify-summary.json").write_text(json.dumps({
+            "overall_pass": True, "passed": 1, "total": 1, "failed": 0,
+            "writer": "ghl_verify.verify_all", "run_nonce": str(uuid.uuid4())}))
+        (root / "logs" / "final-preview-verify.json").write_text(json.dumps(
+            [{"step": "home", "page_id": FAKE_PAGE_ID, "PASS": True, "http_code": 200}]))
+        return str(root)
+
+    def test_launcher_record_and_gate_pass_publishes(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(ghl_publish_approval.STORE_ENV, self._store(tmp_path))
+        ev = self._evidence(tmp_path)
+        plan = b.emit_rest_save_plan(**_save_kwargs(approval="APPR-LIVE", evidence_root=ev))
         assert plan["publish"] is True
         save = next(s for s in plan["steps"] if s["step"] == "page_autosave")
         assert save["body"]["pageType"] == "published"
         assert plan["ledger_targets"]["page_autosave"] == "published"
+        # Same record, gate not passed (no evidence) => no publish before verify.
+        pre = b.emit_rest_save_plan(**_save_kwargs(approval="APPR-LIVE"))
+        assert pre["publish"] is False
+        assert pre["publish_refused"]
+        assert next(s for s in pre["steps"] if s["step"] == "page_autosave")[
+            "body"]["pageType"] == "draft"
+
+    def test_test_only_record_stays_draft(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(ghl_publish_approval.STORE_ENV, self._store(
+            tmp_path, "APPR-TEST", test_only=True,
+            allowed_write_target="approved_test_location"))
+        plan = b.emit_rest_save_plan(**_save_kwargs(
+            approval="APPR-TEST", evidence_root=self._evidence(tmp_path)))
+        assert plan["publish"] is False
+        save = next(s for s in plan["steps"] if s["step"] == "page_autosave")
+        assert save["body"]["pageType"] == "draft"
+        assert plan["publish_refused"]
 
     @pytest.mark.parametrize("approval", [None, "", "no", "draft", "maybe", "later"])
     def test_absent_or_ambiguous_stays_draft(self, approval):

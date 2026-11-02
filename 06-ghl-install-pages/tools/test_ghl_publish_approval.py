@@ -234,7 +234,7 @@ def test_graphics_push_refuses_without_record(store, tmp_path, monkeypatch):
 
     test_rec = store("APPR-TEST", test_only=True, allowed_write_target="approved_test_location")
     for ref in (None, "yes", True, test_rec, "APPR-MISSING"):
-        with pytest.raises(RuntimeError):
+        with pytest.raises(RuntimeError, match="REFUSE live write"):
             g.push_graphics_media(job, opener=opener, approval_ref=ref)
     assert uploads == [] and not (job / "media_library.json").exists()
 
