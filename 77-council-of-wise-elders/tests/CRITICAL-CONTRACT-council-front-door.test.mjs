@@ -84,6 +84,14 @@ for (const needle of ["provision.mjs", "plugins.entries", "plugins.load.paths", 
 assert.ok(installer.includes("for (const field of REQUIRED_FIELDS) nextConfig[field] = derived[field]"),
   "installer does not take sender/identity values from the box's own provision output");
 assert.ok(!installer.includes("allowFrom"), "installer must never write allowFrom");
+const provision = readSkill("extensions/council-before-dispatch/provision.mjs");
+for (const needle of ["function peerId", "isDirectPeer", "accountNames.length === 1",
+  "authorizedPeers", "AMBIGUOUS_CONVERSATION"]) {
+  assert.ok(provision.includes(needle), `provision.mjs lacks the 2026.10.8 binding rule: ${needle}`);
+}
+const pluginPkg = JSON.parse(readSkill("extensions/council-before-dispatch/package.json"));
+const pluginManifest = JSON.parse(readSkill("extensions/council-before-dispatch/openclaw.plugin.json"));
+assert.equal(pluginPkg.version, pluginManifest.version, "plugin package and manifest versions disagree");
 
 // 7. Readiness names the missing hook/binding/origin precisely.
 const verify = readSkill("scripts/verify-council-box.sh");
