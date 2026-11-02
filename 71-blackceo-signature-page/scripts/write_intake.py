@@ -128,7 +128,6 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import brand_colors
 import copy_forms
 import design_style
 import launch_context
@@ -782,10 +781,14 @@ def main(argv=None):
 
     # IMG-09: carry the palette status so a proposal palette is never read back as a confirmed one
     if answers_doc is not None:
+        import brand_colors  # lazy: a launch-context run copies only the scripts it needs
         if brand_colors._answer(answers_doc, "brand_primary"):
             intake["palette_status"] = brand_colors.brand_extras_from_answers(answers_doc)["palette_status"]
     elif brand_path is not None:
-        palette_status = (brand_colors._json(brand_path) or {}).get("palette_status")
+        try:
+            palette_status = json.loads(brand_path.read_text(encoding="utf-8")).get("palette_status")
+        except (OSError, ValueError, AttributeError):
+            palette_status = None
         if palette_status:
             intake["palette_status"] = palette_status
 
