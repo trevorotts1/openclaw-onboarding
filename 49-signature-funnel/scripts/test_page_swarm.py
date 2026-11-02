@@ -255,19 +255,15 @@ class CommandLine(unittest.TestCase):
         launch, approval = approved_launch(mode)
         (td / "launch.json").write_text(json.dumps(launch), encoding="utf-8")
         (td / "approval.json").write_text(json.dumps(approval), encoding="utf-8")
-        consumer = td / "consumer.py"
-        consumer.write_text(
-            "import json,sys,time\n"
-            f"time.sleep({sleep})\n"
-            "req=json.load(open(sys.argv[1]))\n"
-            "res={'schema_version':'1.0','tenant_id':req['tenant_id'],'location_id':req['location_id'],"
-            "'launch_id':req['launch_id'],'revision':req['revision'],'request_id':req['request_id'],"
-            "'input_hash':req['input_hash'],'page_id':req['page_id'],'status':'authored','artifacts':[],"
-            "'author_session':'cli-test','reviewer_session':None,'independent_review':False,"
-            "'proof_class':'L0','blockers':[],'native_bindings_ref':None,'test_only':req['test_only']}\n"
-            "json.dump(res,open(sys.argv[2],'w'))\n", encoding="utf-8")
-        cfg = {"adapters": {r: {"command": [sys.executable, str(consumer), "{request}", "{result}"]}
-                            for r in (*dl.PAGE_ROLES, *extra_adapters)}}
+        consumer = HERE.parents[1] / "83-black-friday-launcher" / "tests" / "lane83_fake_consumer.py"
+        labels = HERE.parents[1] / "71-blackceo-signature-page" / "scripts" / "deliverable_labels.py"
+
+        def cmd(r):
+            return ([sys.executable, str(consumer), "{request}", "{result}", str(labels), "--sleep", str(sleep)]
+                    + (["--pages", "{landing_pages}"] if r == "landing" else [])
+                    + (["--instance", "downsell_2"] if r == "downsell_2" else []))
+
+        cfg = {"adapters": {r: {"command": cmd(r)} for r in (*dl.PAGE_ROLES, *extra_adapters)}}
         (td / "adapters.json").write_text(json.dumps(cfg), encoding="utf-8")
         inputs = td / "image_inputs.json"
         inputs.write_text(json.dumps({"design_style": "A", "brand_file": "/x/b.json", "brand_owner": "Acme",
