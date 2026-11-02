@@ -634,7 +634,7 @@ def _write_valid_run(rd: Path, key: str, size: int = 3, receipts: bool = True) -
     (rd / "persona-selection-log.md").write_text(
         "# persona-selection-log\nselector_ran: true\n- selected_persona: hormozi-100m-offers\n",
         encoding="utf-8")
-    (rd / "copy_ledger.json").write_text(json.dumps(prove_sf_copy._valid_ledger()), encoding="utf-8")
+    (rd / "copy_ledger.json").write_text(json.dumps(prove_sf_copy._valid_ledger(size)), encoding="utf-8")
     # FIX-IMG-07: the prompt ledger must cover every required (page_type, section)
     # slot for this size (each prompt still clears the two-floor gate) or P2 fails-closed.
     (rd / "prompt_ledger.json").write_text(
@@ -644,16 +644,13 @@ def _write_valid_run(rd: Path, key: str, size: int = 3, receipts: bool = True) -
     media = prove_sf_no_pitch._valid_ledger()
     media["images"] = _full_coverage_images(size)
     (rd / "media_ledger.json").write_text(json.dumps(media), encoding="utf-8")
-    # P5-HTML — a non-empty fragment per matrix page; P6 graph; P7 build receipt; P8 derived ledger.
-    pages = prove_sf_graph.funnel_pages(size)
-    (rd / "pages").mkdir(exist_ok=True)
-    for profile in pages:
-        (rd / "pages" / f"{profile}.fragment.html").write_text(
-            f"<section data-page=\"{profile}\"><h1>{profile} fragment</h1></section>\n", encoding="utf-8")
+    # P6 graph; P8 derived ledger.
     (rd / "funnel_graph.json").write_text(json.dumps(prove_sf_graph._valid_graph(size)), encoding="utf-8")
-    (rd / "build_receipt.json").write_text(json.dumps(prove_sf_build._valid_receipt(size)), encoding="utf-8")
     (rd / "derived_pages.json").write_text(
         json.dumps(prove_sf_graph._valid_derived_ledger(size)), encoding="utf-8")
+    # P5-HTML + P7-BUILD read what the TOOLS wrote, not the receipt (STR-18 / S06-08 / IMG-16): parsed
+    # page fragments, a sealed Skill 6 verify run (ghl_gate.require_pass) and the wireframe + mockup set.
+    prove_sf_build.write_valid_run_evidence(rd, size)
     # ENF-16 — the authoring model comes from the HARNESS routing record, signed by the operator key.
     prove_sf_cert.mint_model_receipt(
         rd, {"model": "selftest-strong-model", "provider": "selftest", "tier": "content"}, key)

@@ -10,6 +10,7 @@ IMG-16  P7, which the orchestrator runs before it certifies, needs wireframes an
 Run: python3 -m pytest 49-signature-funnel/scripts/test_legacy_structure_proofs.py -q
 """
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -29,7 +30,7 @@ import prove_sf_copy as copy_  # noqa: E402
 import run_signature_funnel as runner  # noqa: E402
 
 STRUCTURE = copy_._load_structure(None)
-NONCE = "structure-proofs-nonce"
+OPERATOR_KEY = "structure-proofs-operator-key-0123456789abcdef"
 
 
 def codes(violations):
@@ -41,6 +42,23 @@ class Tmp(unittest.TestCase):
         d = tempfile.mkdtemp(prefix="sf_structure_proofs_")
         self.addCleanup(shutil.rmtree, d, ignore_errors=True)
         return pathlib.Path(d)
+
+    def isolate_gate_state(self, with_operator_key=False):
+        """Keep the Skill 6 run-nonce files (and, for the orchestrator, the operator key) in a
+        throwaway dir outside every run dir, never in the real HOME."""
+        state = self.tmp()
+        env = {"GHL_VERIFY_NONCE_DIR": str(state / "nonces")}
+        if with_operator_key:
+            key_file = state / "operator.key"
+            key_file.write_text(OPERATOR_KEY + "\n", encoding="utf-8")
+            key_file.chmod(0o600)
+            env["SF_OPERATOR_KEY_FILE"] = str(key_file)
+        patcher = mock.patch.dict(os.environ, env)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def setUp(self):
+        self.isolate_gate_state()
 
     def run_dir(self, size):
         rd = self.tmp()
@@ -231,15 +249,18 @@ class VisualDirectionTests(Tmp):
 class OrchestratorCertifyTests(Tmp):
     """run_signature_funnel certify, end to end: each broken input aborts with NO certificate."""
 
+    def setUp(self):
+        self.isolate_gate_state(with_operator_key=True)
+
     def orchestrate(self, rd):
         with mock.patch.object(runner, "_mc_board_phase", lambda *a, **k: None), \
                 mock.patch.object(runner, "_resolve_persona", lambda *a, **k: None):
             with mock.patch("sys.stdout"):
-                return runner.orchestrate(rd, NONCE)
+                return runner.orchestrate(rd, OPERATOR_KEY)
 
     def run_for(self, size=3):
         rd = self.tmp()
-        runner._write_valid_run(rd, NONCE, size=size)
+        runner._write_valid_run(rd, OPERATOR_KEY, size=size)
         (rd / "copy_ledger.json").write_text(json.dumps(copy_._valid_ledger(size)))
         build.write_valid_run_evidence(rd, size)
         return rd

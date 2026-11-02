@@ -109,6 +109,7 @@ REPO_ROOT = HERE.parents[1]  # scripts -> 49-signature-funnel -> repo root
 FIXTURES = HERE / "fixtures"
 S49_SCRIPTS = HERE
 SKILL71_MAIN = REPO_ROOT / "71-blackceo-signature-page"
+SHARED_DESIGN_REL = Path("shared-utils") / "signature_launch" / "design"
 PY = sys.executable
 
 sys.path.insert(0, str(S49_SCRIPTS))
@@ -178,6 +179,12 @@ class LandingBridgeCase(unittest.TestCase):
             [PY, str(HERE / "make_fake_skill71.py"), str(self.fake)],
             capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        # The shared design components (U-structure-02: design.css, tokens, image slots) sit beside
+        # the skill tree, as in the repository layouts; a token-driven page cannot be imported
+        # without them, so the tmp layout carries the real files.
+        shutil.copytree(REPO_ROOT / SHARED_DESIGN_REL,
+                        self.td / SHARED_DESIGN_REL,
+                        ignore=shutil.ignore_patterns("__pycache__", "tests"))
         # Fixture inputs.
         self.launch, self.approval = fixture_launch()
         self.launch_path = self.td / "launch.json"
@@ -519,6 +526,28 @@ class TestLandingDrawsItsImages(RealTreeCase):
             self.assertEqual(len([n for n in names if n.startswith(f"{stage}/section-")]), 12, stage)
         for device in ("desktop", "mobile"):
             self.assertEqual(len([n for n in names if n.startswith(f"visual-mockup/{device}/part-")]), 12)
+
+    def test_the_clients_creative_direction_reaches_skill_71_intake(self):
+        # IMG-07 dispatch path: a direction the client named in the shared image inputs lands in the
+        # run's intake.json through the bridge, not only through a direct write_intake call.
+        direction = "like the Acme homepage"
+        self.inputs.write_text(json.dumps({
+            "design_style": "A", "design_style_source": "client_choice", "creative_direction": direction,
+            "brand_file": str(self.brand_path), "brand_owner": "blackceo",
+            "image_cap": 12, "image_provider": "stub"}), encoding="utf-8")
+        self.config()
+        manifest, out = self.emit_dispatch()
+        self.run_landing_adapter(out)
+        intake = json.loads((self.run_dir / "intake.json").read_text(encoding="utf-8"))
+        self.assertEqual(intake["creative_direction"], direction)
+        self.assertEqual(intake["creative_direction_source"], "client_choice")
+
+    def test_without_a_creative_direction_intake_records_none(self):
+        self.config()  # the shared image inputs carry no creative_direction key
+        manifest, out = self.emit_dispatch()
+        self.run_landing_adapter(out)
+        intake = json.loads((self.run_dir / "intake.json").read_text(encoding="utf-8"))
+        self.assertIsNone(intake["creative_direction"])
 
     def test_a_planned_two_page_set_draws_both_pages_side_by_side(self):
         import landing_bridge as lb
