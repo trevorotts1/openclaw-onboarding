@@ -58,6 +58,11 @@ Contract (references/native-order-summary-integration.md):
   is verified only when that store check ran. Each snapshot carries an
   "integrity" sha256 over its canonical content; verify_snapshot_integrity
   lets a consumer reject a hand-assembled or edited snapshot.
+  The "integrity" value is an HMAC-SHA256 keyed from the environment
+  variable S82_SNAPSHOT_HMAC_KEY, so recomputing the hash is not enough
+  to forge a snapshot. Without that key a live (non-test_only) snapshot
+  is refused; a test_only snapshot falls back to an explicit, public
+  test key (it proves nothing about live purchases).
 - Accepted event versions: "1.0", "1.1" (CR-S44-001) and "1.2"
   (CR-S44-003, S49 ruling;
   shared-utils/signature_launch/domain/purchase-event.schema.json v1.2).
@@ -84,6 +89,7 @@ Stdlib only. Deterministic: no clock, no randomness, no network.
 
 import copy
 import hashlib
+import hmac
 import json
 import os
 import sys
@@ -162,6 +168,11 @@ REFUND_TRANSITIONS = {
     ("partially_refunded", "refunded"),
     ("partially_refunded", "partially_refunded"),
 }
+
+
+SNAPSHOT_KEY_ENV = "S82_SNAPSHOT_HMAC_KEY"
+# Public on purpose: signs test_only snapshots when no real key is set.
+TEST_ONLY_SNAPSHOT_KEY = b"s82-test-only-snapshot-key-not-a-secret"
 
 
 class AdapterError(ValueError):
@@ -387,20 +398,40 @@ def _merge_order_lines(order_events, offer_catalog):
         raise AdapterError(str(exc)) from exc
 
 
+def _snapshot_key(snapshot):
+    """Env key if set; else the test key for test_only; else refuse."""
+    key = os.environ.get(SNAPSHOT_KEY_ENV, "").strip()
+    if key:
+        return key.encode("utf-8")
+    if snapshot.get("test_only") is True:
+        return TEST_ONLY_SNAPSHOT_KEY
+    raise AdapterError(
+        f"snapshot_key_required: set {SNAPSHOT_KEY_ENV} to sign or verify a "
+        "live snapshot; no key, no live snapshot")
+
+
 def snapshot_integrity(snapshot):
-    """sha256 over the snapshot's canonical content, excluding itself."""
+    """HMAC-SHA256 over the snapshot's canonical content, excluding itself."""
     body = {k: v for k, v in snapshot.items() if k != "integrity"}
-    return hashlib.sha256(_canonical(body).encode("utf-8")).hexdigest()
+    return hmac.new(_snapshot_key(snapshot), _canonical(body).encode("utf-8"),
+                    hashlib.sha256).hexdigest()
 
 
 def verify_snapshot_integrity(snapshot):
-    """True only for a snapshot whose integrity hash matches its content.
+    """True only for a snapshot whose keyed integrity matches its content.
 
-    ponytail: unkeyed hash catches edits and hand-typed snapshots, not a
-    forger who recomputes it; sign with a tenant key if that threat matters.
+    Fails closed (False) when no key is available for a live snapshot.
+    ponytail: one deployment-wide key; per-tenant keys if tenants must not
+    be able to vouch for each other's snapshots.
     """
-    return (isinstance(snapshot, dict)
-            and snapshot.get("integrity") == snapshot_integrity(snapshot))
+    if not isinstance(snapshot, dict):
+        return False
+    try:
+        expected = snapshot_integrity(snapshot)
+    except AdapterError:
+        return False
+    given = snapshot.get("integrity")
+    return isinstance(given, str) and hmac.compare_digest(given, expected)
 
 
 def _order_roots(events):
