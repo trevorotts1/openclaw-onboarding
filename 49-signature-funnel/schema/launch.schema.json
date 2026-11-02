@@ -5,7 +5,11 @@
   "title": "Signature Launch approved-domain record",
   "properties": {
     "schema_version": {
-      "const": "1.2"
+      "enum": [
+        "1.0",
+        "1.1",
+        "1.2"
+      ]
     },
     "tenant_id": {
       "type": "string",
