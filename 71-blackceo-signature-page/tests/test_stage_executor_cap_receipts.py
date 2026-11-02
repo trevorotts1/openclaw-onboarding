@@ -202,6 +202,34 @@ class ProductionRunNeedsReceipts(base.ZeroImageGenerationIsFailure):
         proc = self.run_service("--pipeline-command", self.pipeline(True))
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
+    def stub_pipeline(self, entry_provider="stub", ledger=False):
+        """The record the stub executor writes (provider and mode 'stub' on the record and every image)."""
+        script = self.td / "stub_pipeline.py"
+        script.write_text(textwrap.dedent(f'''
+            import json
+            from pathlib import Path
+            run = Path.cwd()
+            png = run / "desktop-wireframe" / "section-01.png"
+            png.parent.mkdir(parents=True, exist_ok=True)
+            png.write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + b"one")
+            (png.parent / "stage-executor-record.json").write_text(json.dumps(
+                {{"provider": "stub", "mode": "stub", "images": [{{"file": "desktop-wireframe/section-01.png",
+                  "provider": {entry_provider!r}, "mode": "stub"}}]}}))
+            if {ledger!r}:
+                (run / "image-spend-ledger.json").write_text(json.dumps({{"calls": []}}))
+        '''), encoding="utf-8")
+        return shlex.join([sys.executable, str(script)])
+
+    def test_stub_placeholder_run_needs_no_receipts_but_a_provider_claim_does(self):
+        self.seal_fixtures()
+        proc = self.run_service("--pipeline-command", self.stub_pipeline())
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)  # Skill 49 downsell stub path
+        for kwargs in ({"entry_provider": "kie"}, {"ledger": True}):  # a provider claim or a paid spend
+            shutil.rmtree(self.run_dir)
+            proc = self.run_service("--pipeline-command", self.stub_pipeline(**kwargs))
+            self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertIn("receipt store", proc.stdout)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

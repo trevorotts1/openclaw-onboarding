@@ -19,7 +19,8 @@ What it does, fail-closed:
      delegation_receipt.record(); `recorded_by` resolves to this module, which is not a certified
      subject, so the delegation requirer accepts it.
 
-Skill 49 and Skill 56 ship an identical copy of this file. stdlib only.
+Skill 56 ships the older copy without the transport binding (binding_problems / write_bound_receipt /
+store_problems); Skill 71's stage_executor loads this Skill 49 copy. stdlib only.
 Exit 0 = ok, 2 = violation, 3 = usage / fail-closed.
 """
 

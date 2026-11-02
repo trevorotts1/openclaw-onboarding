@@ -32,7 +32,8 @@ Modes:
       pipeline command merely exiting 0. Zero images is FAILED. Unless
       --test-run, each delivered image must also be bound to a provider task
       by a transport receipt (receipts/kie74/) whose PNG bytes re-hash; an
-      absent receipt store is FAILED.
+      absent receipt store is FAILED (a run of stub placeholders only, with
+      no spend ledger, claims no provider and is exempt).
   validation-only (--validation-only): admits and stages the request,
       runs write_intake.py, generates nothing, and says so with the
       MODE=validation-only line. It can never read as a generated run.

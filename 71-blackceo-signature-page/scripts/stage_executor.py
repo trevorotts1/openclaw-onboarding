@@ -1249,15 +1249,20 @@ def _json_out(text: str) -> dict:
 def receipt_gate_problems(run_dir: Path) -> list:
     """The production gate: every image the executor delivered must be bound to a provider task by a
     transport receipt whose PNG bytes re-hash; an absent receipt store fails."""
-    delivered = []
+    delivered, claims_provider = [], False
     for rec in sorted(run_dir.glob(f"*/{RECORD}")):
         try:
             data = json.loads(rec.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return [f"{rec.relative_to(run_dir)} is unreadable"]
-        delivered += [e["file"] for e in (data.get("images") or []) + (data.get("items") or [])
-                      if isinstance(e, dict) and e.get("file")]
-    problems = _kie74_receipt().store_problems(run_dir, delivered)
+        entries = [e for e in (data.get("images") or []) + (data.get("items") or [])
+                   if isinstance(e, dict) and e.get("file")]
+        delivered += [e["file"] for e in entries]
+        claims_provider |= any((x.get("provider"), x.get("mode")) != ("stub", "stub") for x in [data] + entries)
+    if delivered and not claims_provider and not (run_dir / LEDGER).exists() \
+            and not (run_dir / "receipts" / "kie74").exists():
+        return []  # stub placeholders only: nothing claims a provider, nothing was spent, nothing to bind
+    problems =_kie74_receipt().store_problems(run_dir, delivered)
     try:  # the ledger can never show more paid renders than the approved ceiling
         used = len(json.loads((run_dir / LEDGER).read_text(encoding="utf-8"))["calls"])
         cap = image_ceiling(run_dir)
