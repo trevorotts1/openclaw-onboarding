@@ -198,6 +198,87 @@
   {
    "if": {
     "properties": {
+     "disclosure": {
+      "properties": {
+       "billing_type": {
+        "const": "installment"
+       }
+      },
+      "required": [
+       "billing_type"
+      ]
+     }
+    },
+    "required": [
+     "disclosure"
+    ]
+   },
+   "then": {
+    "properties": {
+     "disclosure": {
+      "properties": {
+       "recurring_terms": {
+        "properties": {
+         "cycles": {
+          "minimum": 2,
+          "type": "integer"
+         }
+        },
+        "required": [
+         "cycles"
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "disclosure": {
+      "properties": {
+       "billing_type": {
+        "const": "trial"
+       }
+      },
+      "required": [
+       "billing_type"
+      ]
+     }
+    },
+    "required": [
+     "disclosure"
+    ]
+   },
+   "then": {
+    "properties": {
+     "disclosure": {
+      "properties": {
+       "recurring_terms": {
+        "properties": {
+         "trial_amount_minor": {
+          "minimum": 0,
+          "type": "integer"
+         },
+         "trial_period": {
+          "minLength": 1,
+          "type": "string"
+         }
+        },
+        "required": [
+         "trial_amount_minor",
+         "trial_period"
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "if": {
+    "properties": {
      "schema_version": {
       "const": "1.1"
      }
@@ -325,6 +406,14 @@
       "cycles": {
        "type": [
         "integer",
+        "null"
+       ]
+      },
+      "first_recurring_charge": {
+       "description": "UPS-19: when the first recurring charge happens, exactly as it is to be shown to the buyer (a calendar date such as 2026-12-01, or a relative statement such as '7 days after you accept'). Optional; when absent the disclosure states the first charge relative to acceptance or to the end of the trial. Never invented by the adapter.",
+       "minLength": 1,
+       "type": [
+        "string",
         "null"
        ]
       },
