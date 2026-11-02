@@ -9,18 +9,32 @@ forbid-real-runner patch). In one pytest process the first-imported copy wins
 sys.modules, so later suites would silently judge the WRONG module -- exactly
 the hiding the per-file CI loop masks.
 
-Before pytest collects each test file this hook drops every skill-tree module
+Before pytest collects each test FILE this hook drops every skill-tree module
 imported so far, so each suite binds its own sys.path / its own module file
 exactly as a solo `python3 <test>.py` run does.
+
+Two rules keep that from creating a SECOND copy of a module inside one suite:
+  * only a file's own (Module) collector drops modules. Class/unittest
+    collectors start AFTER the file was imported, and dropping then would
+    orphan every module the file already bound.
+  * pytest collects every file before running any, so by run time the modules
+    a file imported are long gone from sys.modules. The ones it imported are
+    snapshotted when its collection ends and put back before its first test,
+    so a lazy `from pkg import mod` inside the code under test resolves to the
+    SAME module object the test holds (assertRaises(mod.Error), patch.object
+    (mod, ...) then act on the one real module, as in a solo run).
 """
 import os
 import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__)) + os.sep
 _KEEP = frozenset(sys.modules) | {"conftest", "sys", "os"}
+_SNAPSHOTS = {}          # test file nodeid -> {module name: module} it imported
+_ACTIVE = [None]         # the test file whose modules are currently installed
 
 
-def pytest_collectstart(collector):
+def _skill_modules():
+    found = {}
     for name in list(sys.modules):
         if name in _KEEP or name.startswith("conftest"):
             continue
@@ -30,9 +44,33 @@ def pytest_collectstart(collector):
             continue
         try:
             if os.path.abspath(f).startswith(ROOT):
-                del sys.modules[name]
+                found[name] = mod
         except (OSError, ValueError):
             pass
+    return found
+
+
+def pytest_collectstart(collector):
+    if not isinstance(collector, pytest.Module):
+        return
+    for name in _skill_modules():
+        del sys.modules[name]
+
+
+def pytest_collectreport(report):
+    nodeid = report.nodeid
+    if nodeid.endswith(".py") and "::" not in nodeid:
+        _SNAPSHOTS[nodeid] = _skill_modules()
+
+
+def pytest_runtest_setup(item):
+    nodeid = item.nodeid.split("::", 1)[0]
+    if _ACTIVE[0] == nodeid or nodeid not in _SNAPSHOTS:
+        return
+    for name in _skill_modules():
+        del sys.modules[name]
+    sys.modules.update(_SNAPSHOTS[nodeid])
+    _ACTIVE[0] = nodeid
 
 
 import pytest
