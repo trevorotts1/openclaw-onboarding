@@ -1439,6 +1439,317 @@
    }
   ]
  },
+ "automation-templates/launch-b/abandoned-checkout-recovery.json": {
+  "kind": "sequence_stack",
+  "build_graph": [
+   {
+    "id": "trg",
+    "type": "trigger",
+    "attributes": {
+     "event": "Form Submitted (Step 1 order form)",
+     "ref": "1. Trigger: Form Submitted (Step 1 order form)"
+    }
+   },
+   {
+    "id": "n1",
+    "type": "wait",
+    "after": "trg",
+    "attributes": {
+     "duration": "30 minutes",
+     "kind": "duration",
+     "ref": "2. Wait 30 minutes"
+    }
+   },
+   {
+    "id": "n2",
+    "type": "if_else",
+    "after": "n1",
+    "branches": {
+     "true": "x1",
+     "false": "n3"
+    },
+    "attributes": {
+     "condition": "contact has tag `purchased-[offer-id]`",
+     "ref": "3. If/Else purchased? Yes -> exit; No -> continue"
+    }
+   },
+   {
+    "id": "n3",
+    "type": "add_contact_tag",
+    "after": "n2",
+    "attributes": {
+     "tag": "cart-abandon-started",
+     "ref": "4. Add Tag cart-abandon-started"
+    }
+   },
+   {
+    "id": "n4",
+    "type": "email",
+    "after": "n3",
+    "attributes": {
+     "message": "CA-01 You Left Something Behind",
+     "timing": "Immediately",
+     "ref": "5. Email CA-01"
+    }
+   },
+   {
+    "id": "n5",
+    "type": "wait",
+    "after": "n4",
+    "attributes": {
+     "duration": "2 hours",
+     "kind": "duration",
+     "ref": "6. Wait 2 hours"
+    }
+   },
+   {
+    "id": "n6",
+    "type": "if_else",
+    "after": "n5",
+    "branches": {
+     "true": "x1",
+     "false": "n7"
+    },
+    "attributes": {
+     "condition": "contact has tag `purchased-[offer-id]`",
+     "ref": "7. If/Else purchased? Yes -> exit"
+    }
+   },
+   {
+    "id": "n7",
+    "type": "if_else",
+    "after": "n6",
+    "branches": {
+     "true": "n12",
+     "false": "n8"
+    },
+    "attributes": {
+     "condition": "email CA-01 opened",
+     "ref": "7. If email opened in 2h? Yes -> skip to the 22-hour wait (node 8)"
+    }
+   },
+   {
+    "id": "n8",
+    "type": "if_else",
+    "after": "n7",
+    "branches": {
+     "true": "n9",
+     "false": "n10"
+    },
+    "attributes": {
+     "condition": "contact has tag `sms-subscribed`",
+     "ref": "7. SMS CA-S01 gated on sms-subscribed"
+    }
+   },
+   {
+    "id": "n9",
+    "type": "sms",
+    "after": "n8",
+    "attributes": {
+     "message": "CA-S01",
+     "ref": "7. SMS CA-S01"
+    }
+   },
+   {
+    "id": "n10",
+    "type": "if_else",
+    "after": [
+     "n8",
+     "n9"
+    ],
+    "branches": {
+     "true": "n11",
+     "false": "n12"
+    },
+    "attributes": {
+     "condition": "contact has tag `messenger-subscribed`",
+     "ref": "7. (if messenger-subscribed) Messenger CA-M01; not subscribed -> continue to node 8",
+     "join": true
+    }
+   },
+   {
+    "id": "n11",
+    "type": "messenger",
+    "after": "n10",
+    "attributes": {
+     "message": "CA-M01",
+     "ref": "7. Messenger CA-M01"
+    }
+   },
+   {
+    "id": "n12",
+    "type": "wait",
+    "after": [
+     "n7",
+     "n10",
+     "n11"
+    ],
+    "attributes": {
+     "duration": "22 hours",
+     "kind": "duration",
+     "ref": "8. Wait 22 hours",
+     "join": true
+    }
+   },
+   {
+    "id": "n13",
+    "type": "if_else",
+    "after": "n12",
+    "branches": {
+     "true": "x1",
+     "false": "n14"
+    },
+    "attributes": {
+     "condition": "contact has tag `purchased-[offer-id]`",
+     "ref": "9. If/Else purchased? Yes -> exit"
+    }
+   },
+   {
+    "id": "n14",
+    "type": "email",
+    "after": "n13",
+    "attributes": {
+     "message": "CA-02 Story/Objection Handle",
+     "ref": "9. Email CA-02"
+    }
+   },
+   {
+    "id": "n15",
+    "type": "wait",
+    "after": "n14",
+    "attributes": {
+     "duration": "24 hours",
+     "kind": "duration",
+     "ref": "10. Wait 24 hours"
+    }
+   },
+   {
+    "id": "n16",
+    "type": "if_else",
+    "after": "n15",
+    "branches": {
+     "true": "x1",
+     "false": "n17"
+    },
+    "attributes": {
+     "condition": "contact has tag `purchased-[offer-id]`",
+     "ref": "11. If/Else purchased? Yes -> exit"
+    }
+   },
+   {
+    "id": "n17",
+    "type": "if_else",
+    "after": "n16",
+    "branches": {
+     "true": "n18",
+     "false": "n19"
+    },
+    "attributes": {
+     "condition": "contact has tag `sms-subscribed`",
+     "ref": "11. SMS CA-S02 gated on sms-subscribed"
+    }
+   },
+   {
+    "id": "n18",
+    "type": "sms",
+    "after": "n17",
+    "attributes": {
+     "message": "CA-S02",
+     "ref": "11. SMS CA-S02"
+    }
+   },
+   {
+    "id": "n19",
+    "type": "if_else",
+    "after": [
+     "n17",
+     "n18"
+    ],
+    "branches": {
+     "true": "n20",
+     "false": "n21"
+    },
+    "attributes": {
+     "condition": "contact has tag `messenger-subscribed`",
+     "ref": "11. (if subscribed) Messenger CA-M02",
+     "join": true
+    }
+   },
+   {
+    "id": "n20",
+    "type": "messenger",
+    "after": "n19",
+    "attributes": {
+     "message": "CA-M02",
+     "ref": "11. Messenger CA-M02"
+    }
+   },
+   {
+    "id": "n21",
+    "type": "wait",
+    "after": [
+     "n19",
+     "n20"
+    ],
+    "attributes": {
+     "duration": "24 hours",
+     "kind": "duration",
+     "ref": "12. Wait 24 hours",
+     "join": true
+    }
+   },
+   {
+    "id": "n22",
+    "type": "if_else",
+    "after": "n21",
+    "branches": {
+     "true": "x1",
+     "false": "n23"
+    },
+    "attributes": {
+     "condition": "contact has tag `purchased-[offer-id]`",
+     "ref": "13. If/Else purchased? Yes -> exit"
+    }
+   },
+   {
+    "id": "n23",
+    "type": "email",
+    "after": "n22",
+    "attributes": {
+     "message": "CA-03 Last Call",
+     "ref": "13. Email CA-03"
+    }
+   },
+   {
+    "id": "x1",
+    "type": "remove_contact_tag",
+    "after": [
+     "n2",
+     "n6",
+     "n13",
+     "n16",
+     "n22",
+     "n23"
+    ],
+    "attributes": {
+     "tags": [
+      "cart-abandon-started"
+     ],
+     "ref": "14. Remove Tag cart-abandon-started (also the purchase exit)",
+     "join": true
+    }
+   },
+   {
+    "id": "x2",
+    "type": "workflow_goal",
+    "after": "x1",
+    "attributes": {
+     "goal": "tag `purchased-[offer-id]` added (goal event: stops the lane at any point)",
+     "ref": "Purchase interrupt: stop all lane nodes; buyer onboarding starts from the post-sale family"
+    }
+   }
+  ]
+ },
  "automation-templates/launch-b/post-sale-purchase.json": {
   "kind": "sequence_stack",
   "build_graph": [
@@ -1523,6 +1834,130 @@
     "attributes": {
      "goal": "handler closed",
      "ref": "6. Close the handler - End"
+    }
+   }
+  ]
+ },
+ "automation-templates/launch-b/retarget-visited-sales-no-checkout.json": {
+  "kind": "sequence_stack",
+  "build_graph": [
+   {
+    "id": "trg",
+    "type": "trigger",
+    "attributes": {
+     "event": "Page Visit (sales page)",
+     "ref": "sales_visit_delayed_tag: Page Visit (sales page)"
+    }
+   },
+   {
+    "id": "n1",
+    "type": "wait",
+    "after": "trg",
+    "attributes": {
+     "duration": "60 minutes",
+     "kind": "duration",
+     "ref": "Wait 60 min"
+    }
+   },
+   {
+    "id": "n2",
+    "type": "if_else",
+    "after": "n1",
+    "branches": {
+     "true": "g1",
+     "false": "n3"
+    },
+    "attributes": {
+     "condition": "checkout page visited within the wait",
+     "ref": "If/Else checkout page visited? Yes -> End"
+    }
+   },
+   {
+    "id": "n3",
+    "type": "add_contact_tag",
+    "after": "n2",
+    "attributes": {
+     "tag": "retarget-b-visited-sales",
+     "ref": "Add 'retarget-b-visited-sales'"
+    }
+   },
+   {
+    "id": "n4",
+    "type": "email",
+    "after": "n3",
+    "attributes": {
+     "message": "Email #1 proof (one testimonial with numbers, link to the sales page)",
+     "timing": "Immediately on the tag (60 minutes after the visit)",
+     "ref": "proof_nudge: Send Email #1 (testimonial)"
+    }
+   },
+   {
+    "id": "n5",
+    "type": "wait",
+    "after": "n4",
+    "attributes": {
+     "duration": "48 hours",
+     "kind": "duration",
+     "ref": "Wait 48h"
+    }
+   },
+   {
+    "id": "n6",
+    "type": "if_else",
+    "after": "n5",
+    "branches": {
+     "true": "g1",
+     "false": "n7"
+    },
+    "attributes": {
+     "condition": "clicked the Email #1 link",
+     "ref": "If/Else clicked link? Yes -> End"
+    }
+   },
+   {
+    "id": "n7",
+    "type": "email",
+    "after": "n6",
+    "attributes": {
+     "message": "Email #2 objection ('Still thinking about [offer]?')",
+     "ref": "No -> Send Email #2 (objection)"
+    }
+   },
+   {
+    "id": "n8",
+    "type": "if_else",
+    "after": "n7",
+    "branches": {
+     "true": "n9",
+     "false": "g1"
+    },
+    "attributes": {
+     "condition": "SMS opted in",
+     "ref": "Beat 3: SMS only if opted in and only once"
+    }
+   },
+   {
+    "id": "n9",
+    "type": "sms",
+    "after": "n8",
+    "attributes": {
+     "message": "short reminder with the sales page link",
+     "ref": "Send SMS once"
+    }
+   },
+   {
+    "id": "g1",
+    "type": "workflow_goal",
+    "after": [
+     "n2",
+     "n6",
+     "n8",
+     "n9"
+    ],
+    "attributes": {
+     "goal": "checkout page visited OR tag `purchased-[offer-id]` added (goal event: ends the nudge)",
+     "ref": "checkout_interrupt / purchase_interrupt -> End",
+     "join": true
     }
    }
   ]
@@ -1810,6 +2245,219 @@
      "goal": "payment recovered or recovery exhausted",
      "join": true,
      "ref": "5./8. end - goal_event: successful payment -> `payment-recovered` tag"
+    }
+   }
+  ]
+ },
+ "automation-templates/launch-c/onboarding-first-hour-day-week.json": {
+  "kind": "sequence_stack",
+  "build_graph": [
+   {
+    "id": "trg",
+    "type": "trigger",
+    "attributes": {
+     "event": "Tag Added purchase-onboard-ready",
+     "ref": "Tag Added `purchase-onboard-ready`"
+    }
+   },
+   {
+    "id": "n1",
+    "type": "email",
+    "after": "trg",
+    "attributes": {
+     "message": "A1 Access + start here",
+     "timing": "Immediately",
+     "ref": "1. Email A1"
+    }
+   },
+   {
+    "id": "n2",
+    "type": "if_else",
+    "after": "n1",
+    "branches": {
+     "true": "n3",
+     "false": "n4"
+    },
+    "attributes": {
+     "condition": "SMS opt-in present",
+     "ref": "1. optional SMS A1: sent only to SMS opt-ins, inside the 8 a.m.-9 p.m. send window"
+    }
+   },
+   {
+    "id": "n3",
+    "type": "sms",
+    "after": "n2",
+    "attributes": {
+     "message": "A1 access + start here",
+     "timing": "next eligible send window",
+     "ref": "1. SMS A1"
+    }
+   },
+   {
+    "id": "n4",
+    "type": "wait",
+    "after": [
+     "n2",
+     "n3"
+    ],
+    "attributes": {
+     "duration": "1 hour",
+     "kind": "duration",
+     "ref": "2. Wait 1 hour",
+     "join": true
+    }
+   },
+   {
+    "id": "n5",
+    "type": "if_else",
+    "after": "n4",
+    "branches": {
+     "true": "n7",
+     "false": "n6"
+    },
+    "attributes": {
+     "condition": "A1 start link clicked (no click signal counts as clicked: skip)",
+     "ref": "2. follow up only if the start link was not clicked"
+    }
+   },
+   {
+    "id": "n6",
+    "type": "email",
+    "after": "n5",
+    "attributes": {
+     "message": "A1 follow-up",
+     "ref": "2. Email follow-up"
+    }
+   },
+   {
+    "id": "n7",
+    "type": "update_contact_field",
+    "after": [
+     "n5",
+     "n6"
+    ],
+    "attributes": {
+     "field": "onboard_start_at",
+     "source": "purchase timestamp",
+     "ref": "3. Set event start time = purchase timestamp",
+     "join": true
+    }
+   },
+   {
+    "id": "n8",
+    "type": "wait",
+    "after": "n7",
+    "attributes": {
+     "until": "onboard_start_at + 1 day",
+     "kind": "until",
+     "ref": "3. Wait until +1 day"
+    }
+   },
+   {
+    "id": "n9",
+    "type": "if_else",
+    "after": "n8",
+    "branches": {
+     "true": "n10",
+     "false": "n11"
+    },
+    "attributes": {
+     "condition": "contact has tag `onboard-started`",
+     "ref": "3. If/Else onboard-started -> B2b or B2a"
+    }
+   },
+   {
+    "id": "n10",
+    "type": "email",
+    "after": "n9",
+    "attributes": {
+     "message": "B2b Started reinforcement",
+     "ref": "B2b"
+    }
+   },
+   {
+    "id": "n11",
+    "type": "email",
+    "after": "n9",
+    "attributes": {
+     "message": "B2a Not started nudge",
+     "ref": "B2a"
+    }
+   },
+   {
+    "id": "n12",
+    "type": "wait",
+    "after": [
+     "n10",
+     "n11"
+    ],
+    "attributes": {
+     "until": "onboard_start_at + 7 days",
+     "kind": "until",
+     "ref": "4. Wait until +7 days from the same start",
+     "join": true
+    }
+   },
+   {
+    "id": "n13",
+    "type": "email",
+    "after": "n12",
+    "attributes": {
+     "message": "C1 Week-one recap",
+     "ref": "4. Email C1"
+    }
+   },
+   {
+    "id": "n14",
+    "type": "if_else",
+    "after": "n13",
+    "branches": {
+     "true": "n15",
+     "false": "n16"
+    },
+    "attributes": {
+     "condition": "outcome met or product consumed",
+     "ref": "4. If/Else outcome met or consumed"
+    }
+   },
+   {
+    "id": "n15",
+    "type": "add_contact_tag",
+    "after": "n14",
+    "attributes": {
+     "tag": "review-eligible",
+     "ref": "4. Add review-eligible"
+    }
+   },
+   {
+    "id": "n16",
+    "type": "add_contact_tag",
+    "after": "n14",
+    "attributes": {
+     "tag": "onboard-help-needed",
+     "ref": "4. else Add onboard-help-needed"
+    }
+   },
+   {
+    "id": "n17",
+    "type": "task-notification",
+    "after": "n16",
+    "attributes": {
+     "task": "onboarding help needed: owner follow-up",
+     "ref": "4. + task-notification"
+    }
+   },
+   {
+    "id": "n18",
+    "type": "workflow_goal",
+    "after": [
+     "n15",
+     "n17"
+    ],
+    "attributes": {
+     "goal": "onboard-week-1-complete",
+     "ref": "5. workflow_goal onboard-week-1-complete",
+     "join": true
     }
    }
   ]
