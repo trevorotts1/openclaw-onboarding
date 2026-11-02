@@ -24,8 +24,13 @@ own pipeline. Nothing here duplicates that pipeline:
 
 The manuscript is a staged input (--manuscript, "## Section N: name" headings, written from the
 approved references in the Skill 79 checkout request: offer, price display, bump, guarantee,
-terms and consent). The wrapper never writes copy; a manuscript that names card, expiry or
-security-code fields is refused, because the payment form is native only.
+terms and consent). The wrapper never writes copy, but it CHECKS it (CHK-13): sections 2-4 must
+carry exactly the launch record's main price and bump name and price, and exactly the approved
+guarantee, terms and consent text of the 83 intake's checkout_terms block (--checkout-terms FILE, or
+checkout-terms.json beside the launch record); the block is required. A manuscript or produced
+HTML that holds a card number, expiry or security-code FIELD (label, placeholder, input, cc-*
+autocomplete) is refused (CHK-14), because the payment form is native only; reassurance prose
+such as "we never store your credit card" is not a field and passes.
 
 HONESTY CEILING: status authored, proof L0, native_bindings_ref null. The result names its
 standing blockers: the form is still installed by Skill 06, the design board and final mockups
@@ -39,11 +44,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html.parser
 import json
 import os
 import re
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -55,7 +62,21 @@ EXIT_OK, EXIT_FAILCLOSED, EXIT_USAGE = 0, 2, 3
 ROLE, SKILL = "checkout", 79
 STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup")
 DELIVERABLE_DIRS = (*STAGES, "review-pdfs")
-CARD_FIELDS = re.compile(r"card number|credit card|cvc|cvv|security code|expiry|expiration date", re.I)
+TERMS_KEYS = ("guarantee_ref", "guarantee_text", "terms_ref", "terms_text", "consent_ref", "consent_text")
+# CHK-14: a card FIELD is a label, placeholder, input or autocomplete token, never the prose word "credit card".
+# Names are matched on the label squeezed of spaces, hyphens, underscores and dots.
+_FIELD_NAME = re.compile(
+    r"(?:credit|debit)?card(?:number|num|no|#|pan|holder(?:name)?|name|exp\w*|security(?:code)?|"
+    r"verification\w*|cvc2?|cvv2?|csc)|cc(?:number|num|no|#|exp\w*|name|csc|cvc|cvv|type)|"
+    r"(?:expiry|expiration|expires|exp)(?:date|month|year)?|mm/?y{2,4}|cvc2?|cvv2?|csc|cid|"
+    r"securitycode|nameoncard|pan")
+_ATTR_NAME = re.compile(r"card(?:number|no|num|holder|exp)|cc(?:number|num|exp|csc|cvc|cvv|name)|cvc|cvv|csc|"
+                        r"securitycode|expir(?:y|ation)|expdate|nameoncard|mm/?y{2,4}")
+_MMYY = re.compile(r"\bmm\s*[/\-]\s*yy(?:yy)?\b", re.I)
+_ASK = re.compile(r"(?:^|[.!?]\s+)(?:please\s+)?(?:enter|type|provide|input|fill in|put in|key in)\b[^.!?]{0,40}?"
+                  r"\b(?:card[\s_\-]*(?:number|no)|cvc|cvv|csc|security[\s_\-]*code|exp\w*[\s_\-]*date|expiry|mm/yy)",
+                  re.I)
+_PLACEHOLDER = re.compile(r"[\s_\u2022*xX#0-9\-\[\]()/.]*")
 BLOCKERS = (
     "the native checkout form is installed by Skill 06; this result carries the page's design "
     "stages only and no native binding",
@@ -87,6 +108,150 @@ def load(path, what):
         raise WrapperError(f"{what}: cannot read {path}: {exc}")
 
 
+def _squeeze(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text).lower()
+    return re.sub(r"[\s_.\-‐-―­​-‏⁠﻿]+", "", text)
+
+
+def _is_field_label(text: str) -> bool:
+    return bool(_FIELD_NAME.fullmatch(_squeeze(re.sub(r"[*`:()\[\]]|required|optional", "", text, flags=re.I))))
+
+
+class _FieldParser(html.parser.HTMLParser):
+    """Collects the card-field constructs of HTML: cc-* autocomplete tokens, inputs named or labelled as a
+    card, expiry or security-code field, and any text node that is nothing but such a field name."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.hits = []
+
+    def handle_starttag(self, tag, attrs):
+        a = {k: (v or "") for k, v in attrs}
+        if any(t.startswith("cc-") for t in a.get("autocomplete", "").lower().split()):
+            self.hits.append(f"autocomplete={a['autocomplete']!r}")
+        if tag in ("input", "select", "textarea"):
+            for key in ("name", "id", "placeholder", "aria-label", "title"):
+                if _ATTR_NAME.search(_squeeze(a.get(key, ""))):
+                    self.hits.append(f"{tag} {key}={a[key]!r}")
+
+    def handle_data(self, data):
+        if _is_field_label(data) or _MMYY.search(data):
+            self.hits.append(data.strip())
+
+
+def card_field_hits(text: str) -> list:
+    """Card number / expiry / security-code field constructs in manuscript text or HTML (CHK-14); also what
+    Skill 06's install path calls on the page it installs. Prose such as 'credit card' is not a field."""
+    parser = _FieldParser()
+    parser.feed(text)
+    parser.close()
+    hits = parser.hits
+    for line in text.splitlines():
+        line = re.sub(r"<[^>]*>", " ", unicodedata.normalize("NFKC", line)).strip()
+        if _MMYY.search(line) or _ASK.search(line):
+            hits.append(line)
+            continue
+        pieces = {line, *(g for m in re.findall(r"\[([^\]]*)\]|\(([^)]*)\)", line) for g in m if g)}
+        label, _, rest = line.partition(":")
+        if _PLACEHOLDER.fullmatch(rest):  # "Card number: ____" is a field; "Card number: we never..." is prose
+            pieces.add(label)
+        pieces.update(p for piece in list(pieces) for p in piece.split(":"))
+        if any(_is_field_label(re.sub(r"^[\s>#*+\-\d.]+", "", p)) for p in pieces):
+            hits.append(line)
+    return hits
+
+
+def scan_html(run_dir: Path) -> None:
+    """Fail closed on a card field in any HTML the run produced (or Skill 06 installs from it)."""
+    for p in sorted(Path(run_dir).rglob("*")):
+        if p.is_file() and p.suffix.lower() in (".html", ".htm"):
+            hits = card_field_hits(p.read_text(encoding="utf-8", errors="replace"))
+            if hits:
+                raise WrapperError(f"produced HTML {p} holds a card, expiry or security-code field; the payment "
+                                   f"form is the native checkout form only ({hits[0]!r})")
+
+
+def sections(text: str) -> dict:
+    """The manuscript's '## Section N: name' bodies, by number."""
+    parts = re.split(r"^##\s+Section\s+(\d+)\b[^\n]*\n", text, flags=re.M)
+    return {int(parts[i]): parts[i + 1] for i in range(1, len(parts) - 1, 2)}
+
+
+def _flat(text: str) -> str:
+    return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", text).replace("’", "'").replace(
+        "“", '"').replace("”", '"')).strip()
+
+
+def _dollars(text: str) -> set:
+    return {int(w.replace(",", "")) * 100 + int(c or 0)
+            for w, c in re.findall(r"\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?", text)}
+
+
+def _record_amounts(offer: dict) -> set:
+    out = set()
+    for price in offer.get("prices") or []:
+        for row in [price, *(price.get("schedule") or [])]:
+            if isinstance(row, dict) and isinstance(row.get("amount_minor"), int):
+                out.add(row["amount_minor"])
+    return out
+
+
+def check_copy(text: str, launch: dict, request: dict, terms: dict) -> None:
+    """CHK-13: sections 2-4 carry exactly what the launch record and the approved checkout_terms say."""
+    if not isinstance(terms, dict) or any(not isinstance(terms.get(k), str) or not terms[k].strip()
+                                          for k in TERMS_KEYS):
+        raise WrapperError("the approved checkout_terms block (guarantee, terms and consent: ref and verbatim "
+                           f"text, {', '.join(TERMS_KEYS)}) is required; pass --checkout-terms FILE or stage "
+                           "checkout-terms.json beside the launch record")
+    body = sections(text)
+    if sorted(body) != [1, 2, 3, 4, 5]:
+        raise WrapperError(f"the manuscript needs the 5 canonical sections 1-5, found {sorted(body)}")
+    refs = request.get("offer_refs")
+    offers = [o for o in launch.get("offers") or [] if isinstance(o, dict) and (refs is None or o.get("offer_id") in refs)]
+    mains = [o for o in offers if o.get("slot") == "main"]
+    bumps = [o for o in offers if o.get("slot") == "bump"]
+    for o in mains + bumps:
+        if any(p.get("currency") != "USD" for p in o.get("prices") or []) or not _record_amounts(o):
+            raise WrapperError(f"offer {o.get('offer_id')!r} has no USD price in the launch record to check "
+                               "the checkout copy against")
+
+    def names_and_prices(label, section, group):
+        flat, found = _flat(section).lower(), _dollars(section)
+        allowed = set().union(*(_record_amounts(o) for o in group)) if group else set()
+        stray = sorted(found - allowed)
+        if stray:
+            raise WrapperError(f"{label} shows ${stray[0] / 100:,.2f}, which the launch record does not price")
+        if group and not any(_flat(o.get("display_name", "")).lower() in flat and
+                             found & {p["amount_minor"] for p in o["prices"] if isinstance(p.get("amount_minor"), int)}
+                             for o in group):
+            raise WrapperError(f"{label} must show an approved offer's name and price; the launch record has "
+                               f"{[(o.get('display_name'), sorted(_record_amounts(o))) for o in group]}")
+
+    names_and_prices("section 2 (price)", body[2], mains)
+    names_and_prices("section 3 (order bump)", body[3], bumps)
+    left = _flat(body[4])
+    for key in sorted(("guarantee_text", "terms_text", "consent_text"), key=lambda k: -len(terms[k])):
+        want = _flat(terms[key])
+        if want not in left:
+            raise WrapperError(f"section 4 does not carry the approved {key.split('_')[0]} text exactly "
+                               f"({terms[key.replace('_text', '_ref')]})")
+        left = left.replace(want, " ", 1)
+    left = re.sub(r"\[[A-Z][A-Z _-]*:[^\]]*\]", " ", left).strip()
+    if left:
+        raise WrapperError(f"section 4 carries copy that is not in the approved checkout_terms: {left[:80]!r}")
+
+
+def terms_block(args) -> dict:
+    """The approved checkout_terms (the 83 intake's block; the closed launch-record schema cannot carry it):
+    --checkout-terms FILE, else checkout-terms.json beside the launch record, as the adapter command stages
+    design-prose-checkout.json. The file is the block or a document holding it as "checkout_terms"."""
+    path = Path(args.checkout_terms) if args.checkout_terms else Path(args.launch).parent / "checkout-terms.json"
+    if not path.is_file():
+        return None  # check_copy refuses it by name
+    doc = load(path, "checkout_terms")
+    return doc.get("checkout_terms", doc) if isinstance(doc, dict) else None
+
+
 def artifacts(run_dir: Path) -> list:
     """Every design file of the page (section images, PDFs, boards, stage records, visual bible)
     plus the production requests, sorted by path."""
@@ -110,9 +275,11 @@ def produce(args, request) -> dict:
     if text is None:
         raise WrapperError(f"manuscript {manuscript} is missing; the checkout copy is written from the "
                            "approved references in the Skill 79 checkout request, never by this wrapper")
-    if CARD_FIELDS.search(text):
-        raise WrapperError("the manuscript names card, expiry or security-code fields; the payment form is "
-                           f"the native checkout form only ({CARD_FIELDS.search(text).group(0)!r})")
+    hits = card_field_hits(text)
+    if hits:
+        raise WrapperError("the manuscript holds a card, expiry or security-code field; the payment form is "
+                           f"the native checkout form only ({hits[0]!r})")
+    check_copy(text, load(args.launch, "launch record"), request, terms_block(args))
     s71 = Path(args.skill71_root) / "scripts"
     for name in ("shared_page_service.py", "build_production_request.py", "stage_executor.py"):
         if not (s71 / name).is_file():
@@ -138,6 +305,7 @@ def produce(args, request) -> dict:
         execute = [sys.executable, s71 / "stage_executor.py", run_dir, "--stages", stage, "--request", name,
                    "--provider", args.provider] + (["--allow-paid"] if args.allow_paid else [])
         run(execute, f"stage_executor.py ({stage})")
+    scan_html(run_dir)
     return {"artifacts": artifacts(run_dir),
             "blockers": list(BLOCKERS) + ([STUB_BLOCKER] if args.provider == "stub" else [])}
 
@@ -148,6 +316,9 @@ def main(argv=None) -> int:
         ap.add_argument(f"--{flag}", required=True)
     for flag in ("brand-file", "brand-owner", "image-cap"):  # or one --image-inputs file
         ap.add_argument(f"--{flag}")
+    ap.add_argument("--checkout-terms", help="JSON with the approved guarantee, terms and consent text and refs "
+                                             "(the 83 intake's checkout_terms block); default: "
+                                             "checkout-terms.json beside --launch")
     ap.add_argument("--image-inputs", help="the shared image inputs file (design style, brand file, owner, "
                                            "image cap, provider); a flag typed here still wins")
     ap.add_argument("--skill71-root", default=str(HERE.parents[1] / "71-blackceo-signature-page"))
