@@ -41,6 +41,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { RUNTIME_CLOSURE_ENTRIES, runtimeClosureProblems } from "./lib/core.mjs";
+import { resolveCouncilBinding } from "./lib/binding-predicate.mjs";
 
 const SCHEMA = "blackceo.council-before-dispatch.provision/v1";
 const BINDING_SCHEMA = "blackceo.council-before-dispatch.binding/v1";
@@ -438,6 +439,25 @@ function main(argv) {
           : `channels.telegram.accounts.${accountId}.allowFrom`,
         value: senderIds.join(","),
       });
+    }
+  }
+
+  // ---- route: the entry's conversation must actually resolve to this agent ----
+  // Same fail-closed predicate the existing-entry validator uses. Explicit
+  // binding/--conversation values do not bypass the box's own routing.
+  if (agentId && accountId && conversationId) {
+    const route = resolveCouncilBinding({
+      cfg: config,
+      channel: "telegram",
+      accountId,
+      conversationId,
+      agentId,
+    });
+    if (!route.ok) {
+      notReady(route.code, route.detail,
+        "Fix the existing telegram route through the supported routing config; provision will not add or rewrite a client binding.");
+    } else {
+      derivation.push({ field: "route", source: `${route.matchedBy} for ${conversationId}`, value: route.agentId });
     }
   }
 
