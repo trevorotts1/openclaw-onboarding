@@ -11320,7 +11320,7 @@ PYEOF
         _WOU_AGENT="$(openclaw agents list --json 2>/dev/null | python3 -c 'import json,sys
 r=sys.stdin.read(); i=min([x for x in (r.find("{"),r.find("[")) if x>=0] or [0]); d=json.loads(r[i:])
 a=d if isinstance(d,list) else d.get("agents",[])
-print(([x.get("id") for x in a if isinstance(x,dict) and (x.get("default") or x.get("isDefault"))] or [""])[0])' 2>/dev/null)"
+print(([x.get("id") for x in a if isinstance(x,dict) and (x.get("default") or x.get("isDefault"))] or [""])[0])' 2>/dev/null || true)"
         [ -n "$_WOU_AGENT" ] || _WOU_AGENT=main
         if _oc_cron_silent_main "weekly-onboarding-update" "$_WOU_AGENT" "0 3 * * 0" "America/New_York" "$PROMPT_CONTENT" \
              --description "$_WEEKLY_DESC" --exact --light-context --thinking high --timeout-seconds 7200; then

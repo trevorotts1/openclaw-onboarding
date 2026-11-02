@@ -7378,7 +7378,7 @@ print(f'{account}|{agent_id}')
     local CRON_AGENT="$(openclaw agents list --json 2>/dev/null | python3 -c 'import json,sys
 r=sys.stdin.read(); i=min([x for x in (r.find("{"),r.find("[")) if x>=0] or [0]); d=json.loads(r[i:])
 a=d if isinstance(d,list) else d.get("agents",[])
-print(([x.get("id") for x in a if isinstance(x,dict) and (x.get("default") or x.get("isDefault"))] or [""])[0])' 2>/dev/null)"
+print(([x.get("id") for x in a if isinstance(x,dict) and (x.get("default") or x.get("isDefault"))] or [""])[0])' 2>/dev/null || true)"
     [ -n "$CRON_AGENT" ] || CRON_AGENT="${DEFAULT_AGENT:-main}"
 
     # Runtime-compatible SILENT main-session cron (fix/cron-flag-skew). The old
