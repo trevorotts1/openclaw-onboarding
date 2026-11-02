@@ -22,6 +22,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "store"))
 from caf_executor import CafExecutor
 from receiver import EXIT_OK, Receiver, judge_receipt, plan_hash
 from store import Store
+
+
+def _cc_approved(ref, kind, phash, scope, **kw):
+    """Stub approval_record.verify: the approval gate itself is proven in
+    test_receiver_approval.py; these suites test everything after the gate."""
+    return {"ok": True, "authority": "test-stub"}
 from test_caf_executor import (BUILD_OK, DOCTOR_PASS, DOCTOR_TOKEN_WARN,
                                QC_OK, _classify, export_writes,
                                scripted_runner)
@@ -87,7 +93,8 @@ class DryRunTests(unittest.TestCase):
         ex = CafExecutor(runner=full_script(DOCTOR_PASS),
                          snapshot_dir=self.tmp.name,
                          qc_script=str(self.qc_path))
-        rx = Receiver(self.store, ex, configured_location="LOC1")
+        rx = Receiver(self.store, ex, configured_location="LOC1",
+                      approval_verifier=_cc_approved)
         code, receipt = rx.dispatch(make_request())
         self.assertEqual(code, EXIT_OK)
         self.assertEqual(receipt["status_claimed"], "verified")
@@ -111,7 +118,8 @@ class DryRunTests(unittest.TestCase):
 
         ex = CafExecutor(runner=run, snapshot_dir=self.tmp.name,
                          qc_script=str(self.qc_path))
-        rx = Receiver(self.store, ex, configured_location="LOC1")
+        rx = Receiver(self.store, ex, configured_location="LOC1",
+                      approval_verifier=_cc_approved)
         code, receipt = rx.dispatch(make_request())
         self.assertNotEqual(code, EXIT_OK)
         self.assertEqual(receipt["status_claimed"], "blocked-auth")
