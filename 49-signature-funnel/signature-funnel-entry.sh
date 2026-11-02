@@ -8,10 +8,12 @@
 #   1. DEPS        — python3 present (else abort).
 #   2. VERSION     : skill-version.txt is present, vMAJOR.MINOR.PATCH on the pinned
 #                    major (2), and equals the SKILL.md frontmatter version.
-#   3. HASH-PIN    — recompute the sha256 of the enforcement core (provers +
-#                    structure + orchestrator) and compare to SF-PROVER-PIN.sha256.
-#                    A tampered prover / structure ledger dies here.
-#   4. BYPASS-SCAN — refuse a run whose working files hand-roll GHL REST calls or
+#   3. HASH-PIN    — recompute the sha256 of every file the dispatch/launch path
+#                    executes or reads for decisions (scripts/front_door.py generates
+#                    the list: provers, wrappers, page types, the 83 launcher tree, the
+#                    shared contract validator) and compare to SF-PROVER-PIN.sha256.
+#                    The pin is CI-minted only. Skill 83's launcher runs the same gate.
+#   4. BYPASS-SCAN — refuse a run (or a skill tree) whose files hand-roll GHL REST calls or
 #                    mail/senders instead of delegating to Skill 6 / Skill 66 + Skill 74.
 #                    Skill 74 (74-kie-live-adapter) is the ONE approved KIE path: its own
 #                    result files under <RUN_DIR>/receipts/kie74/ are allow-listed (each is
@@ -54,61 +56,12 @@ PY="${PYTHON:-python3}"
 # and this skill is on major 2 (SKILL.md frontmatter version: v2.x). Bump only on a breaking 3.0.0 release.
 EXPECTED_MAJOR="2"
 
-# Files whose integrity is pinned (the enforcement core). Order-independent: we
-# hash each file's own sha256, then hash the sorted list of "sha256  name" lines.
-PINNED_FILES=(
-  "scripts/prove_sf_intake.py"
-  "scripts/prove_sf_copy.py"
-  "scripts/prove_sf_prompt_floor.py"
-  "scripts/prove_sf_graph.py"
-  "scripts/prove_sf_build.py"
-  "scripts/prove_sf_no_pitch.py"
-  "scripts/prove_sf_cert.py"
-  "scripts/gate_integrity_check.py"
-  "structure/funnel_structure.json"
-  "run_signature_funnel.py"
-  # A10 / T0-09, T0-10 — the delegated-phase receipt contract is enforcement core:
-  # the P-IMAGES/-MEDIA/-DOCS/-DELIVER/-HANDOFF seams call require()/validate_if_present(),
-  # so an unpinned copy could be swapped for a permissive one without tripping the pin.
-  "scripts/delegation_receipt.py"
-  # Skill 74 evidence writer + allow-list check used by the bypass scan below.
-  "scripts/kie74_receipt.py"
-  # The launch dispatch chain: these decide which pages, routes and prompts are
-  # built and dispatched, so a swapped copy changes behaviour without touching
-  # any prover above.
-  "scripts/dispatch_launch.py"
-  "scripts/compile_launch_route.py"
-  "scripts/page_set.py"
-  "scripts/page_swarm.py"
-  "scripts/validate_launch_plan.py"
-  "scripts/agnes_dispatch.py"
-  "scripts/agnes_gates.py"
-  "scripts/agnes_orchestrator.py"
-  "scripts/agnes_response.py"
-)
-
-# Forbidden patterns in a run's working files — a hand-rolled GHL/sender bypass.
-# Extended regex; matched case-insensitively across the run dir (NOT the skill dir).
-BYPASS_PATTERNS='services\.leadconnectorhq\.com|rest\.gohighlevel\.com|api\.gohighlevel\.com|smtplib|sendgrid|mailgun|nodemailer|ses\.send_email|send_raw_email|jobs/createtask|api\.kie\.ai|kie_generate\.py|kie_image\.py'
+# The pin list, the hash-pin gate and the bypass scan live in scripts/front_door.py - the ONE front door
+# Skill 83's launcher also calls - so this shell and the launcher cannot drift apart. The pin is minted only
+# by CI (.github/workflows/sf-prover-pin-authority.yml); --write-pin below needs a signed pin_rotation record.
+FRONT_DOOR="$SCRIPTS_DIR/front_door.py"
 
 die() { printf 'ABORT [%s]: %s\n' "$1" "$2" >&2; exit 1; }
-
-compute_pin() {
-  # Print the canonical pin digest for the current PINNED_FILES content.
-  local line acc=""
-  for rel in "${PINNED_FILES[@]}"; do
-    local f="$SKILL_DIR/$rel"
-    [ -f "$f" ] || die "HASH-PIN" "pinned file missing: $rel"
-    if command -v shasum >/dev/null 2>&1; then
-      line="$(shasum -a 256 "$f" | awk '{print $1}')  $rel"
-    else
-      line="$(sha256sum "$f" | awk '{print $1}')  $rel"
-    fi
-    acc+="$line"$'\n'
-  done
-  printf '%s' "$acc" | LC_ALL=C sort | { \
-    if command -v shasum >/dev/null 2>&1; then shasum -a 256; else sha256sum; fi; } | awk '{print $1}'
-}
 
 step_deps() {
   command -v "$PY" >/dev/null 2>&1 || die "DEPS" "python3 not found on PATH"
@@ -129,33 +82,13 @@ step_version() {
 }
 
 step_hashpin() {
-  local now; now="$(compute_pin)"
-  if [ ! -f "$PIN_FILE" ]; then
-    die "HASH-PIN" "pin file missing: $PIN_FILE (run: bash signature-funnel-entry.sh --write-pin to mint it)"
-  fi
-  local pinned; pinned="$(tr -d '[:space:]' < "$PIN_FILE")"
-  [ "$now" = "$pinned" ] || die "HASH-PIN" "enforcement-core hash mismatch (a prover/structure/orchestrator was modified). expected=$pinned got=$now"
+  "$PY" "$FRONT_DOOR" hashpin >/dev/null || exit 1
 }
 
 step_bypass_scan() {
   local rd="$1"
-  [ -d "$rd" ] || return 0
-  local hits kept="" f
-  hits="$(grep -rIl -E -i "$BYPASS_PATTERNS" "$rd" 2>/dev/null || true)"
-  while IFS= read -r f; do
-    [ -n "$f" ] || continue
-    # Allow-list: only Skill 74's own result files, directly inside receipts/kie74/, and only
-    # when kie74_receipt.py --check proves each is a real adapter result (no token, right adapter).
-    if [ "$(dirname "$f")" = "$rd/receipts/kie74" ] && [[ "$f" == *.json ]] \
-       && "$PY" "$SCRIPTS_DIR/kie74_receipt.py" --check "$f" >/dev/null 2>&1; then
-      continue
-    fi
-    kept+="$f"$'\n'
-  done <<< "$hits"
-  if [ -n "$kept" ]; then
-    printf 'BYPASS-SCAN hits:\n%s' "$kept" >&2
-    die "BYPASS-SCAN" "run working files hand-roll GHL REST / a mail sender / a raw Kie createTask or a KIE client script. All GHL build+media go through Skill 6; all image and video generation goes through Skill 66 (policy) then Skill 74 (transport). Delete the hand-rolled path."
-  fi
+  # Scans the skill tree (strings + AST network check) and, when the run dir exists, the run dir.
+  "$PY" "$FRONT_DOOR" bypass-scan --run-dir "$rd" >/dev/null || exit 1
 }
 
 step_nonce() {
@@ -291,13 +224,15 @@ self_test() {
 }
 
 write_pin() {
+  # Refuses (pin file untouched, exit non-zero) unless --rotation-record is a pin_rotation approval signed
+  # with the operator key for this exact tree. CI mints the pin on merge; nothing else may.
   step_deps
-  compute_pin > "$PIN_FILE"
-  echo "wrote pin: $PIN_FILE = $(tr -d '[:space:]' < "$PIN_FILE")"
+  local rec=("$@")
+  "$PY" "$FRONT_DOOR" write-pin "${rec[@]+"${rec[@]}"}" || exit 1
 }
 
 main() {
-  local mode="" rd="" req_mode=""
+  local mode="" rd="" req_mode="" rotation=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --run-dir) rd="${2:-}"; shift 2 ;;
@@ -305,6 +240,7 @@ main() {
       --self-test) mode="selftest"; shift ;;
       --check-version) mode="checkversion"; shift ;;
       --write-pin) mode="writepin"; shift ;;
+      --rotation-record) rotation="${2:-}"; shift 2 ;;
       --scan-only) mode="scanonly"; shift ;;
       --version-only) mode="versiononly"; shift ;;
       -h|--help) grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -321,7 +257,7 @@ main() {
   case "$mode" in
     checkversion) step_deps; step_version; echo "VERSION OK" ;;
     selftest) self_test ;;
-    writepin) write_pin ;;
+    writepin) if [ -n "$rotation" ]; then write_pin --rotation-record "$rotation"; else write_pin; fi ;;
     versiononly) step_version; echo "VERSION ok" ;;
     scanonly)
       [ -n "$rd" ] && [ -d "$rd" ] || die "USAGE" "--scan-only needs an existing --run-dir"
