@@ -1,0 +1,11 @@
+; F10 sandbox profile TEMPLATE (CANDIDATE, lane-local, not applied).
+; Semantics identical to proven V work/producer/f10.sb (sha256
+; d192ab358537ea8ea459c122007768e48a62d7c8245601847d61a85584a38381,
+; 215 B): allow default; deny file-write* to the trusted store; deny
+; network*. The trusted caller substitutes ___STORE_SUBPATH___ with the
+; concrete run control/store path before passing to sandbox-exec.
+; See candidate sandbox_wrapper.py PROFILE_TEMPLATE.
+(version 1)
+(allow default)
+(deny file-write* (subpath "___STORE_SUBPATH___"))
+(deny network*)

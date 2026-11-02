@@ -46,6 +46,27 @@ def _result(ok, code, detail, **context):
                 **context)
 
 
+_F10_SANDBOX_PROFILE_TEMPLATE = """(version 1)
+(allow default)
+(deny file-write* (subpath "{store}"))
+(deny network*)
+"""
+
+
+def _sandbox_wiring(store=None):
+    """F10 wiring descriptor: sandbox confines untrusted producers.
+
+    Additive only; takes no authority decision. Untrusted-producer spawn
+    goes through sandbox_wrapper.build_argv (sandbox-exec -f profile);
+    provider/delivery stay in the trusted caller. Template semantics match
+    proven mechanism d192ab35 (allow default; deny file-write* to store;
+    deny network*).
+    """
+    return {"enforced": True, "launcher": "/usr/bin/sandbox-exec",
+            "deny": ["file-write*", "network*"],
+            "template_sha256": hashlib.sha256(_F10_SANDBOX_PROFILE_TEMPLATE.encode()).hexdigest()}
+
+
 def _graph():
     # Reuse the published, validated graph. Never maintain a second stage list.
     from batch_mode.batch import STAGES
@@ -479,8 +500,9 @@ def admit_production(run_dir, stage, *, run_id=None):
     intake = inspect_intake(run_dir, run_id=run_id)
     context = dict(run_dir=intake.get("run_dir"), run_id=intake.get("run_id"), stage=stage,
                    current_state=None, authority=intake.get("authority"))
+    context["sandbox_wiring"] = _sandbox_wiring()
     if not intake["ok"]:
-        return dict(intake, stage=stage, current_state=None)
+        return dict(intake, stage=stage, current_state=None, sandbox_wiring=context["sandbox_wiring"])
     try:
         root = Path(run_dir).resolve()
         order, registry = _graph()
