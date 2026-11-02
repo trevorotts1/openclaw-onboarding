@@ -96,7 +96,8 @@ class Fake74:
                         "credits_consumed": 6})
         if sub == "save":
             path = os.path.join(tempfile.gettempdir(), "f2-out.mp3")
-            open(path, "w").close()
+            with open(path, "wb") as f:
+                f.write(b"x")  # F11: a zero-byte output is not materialized
             return (0, {"state": "success", "task_id": "t-f2",
                         "saved_paths": [path], "credits_consumed": 6})
         raise AssertionError("unexpected Skill 74 call: %r" % sub)
