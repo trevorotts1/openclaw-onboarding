@@ -136,6 +136,21 @@ class TypedAdapters(unittest.TestCase):
 def collected_transcript():
     """A realistic client conversation through the real engine, saved and reloaded —
     no hand-edited answers file."""
+    said = {}
+
+    def say(text):  # a CLIENT message in a local transcript store; returns its id
+        ref = f"rt-{len(said) + 1}"
+        said[ref] = {"role": "client", "text": str(text)}
+        return ref
+
+    prev, e.TRANSCRIPT_LOOKUP = e.TRANSCRIPT_LOOKUP, said.get
+    try:
+        return _collect(say)
+    finally:
+        e.TRANSCRIPT_LOOKUP = prev
+
+
+def _collect(say):
     d = e.new_doc("launch", harness="claude-nine")
     for qid, value in (
             ("interview_mode", "I know what I want"), ("business_name", "Bright Path Studio"),
@@ -157,7 +172,13 @@ def collected_transcript():
             ("access_url", "https://brightpath.example/access"),
             ("payment_plans", "Paid in full"), ("sender_name", "Bright Path Studio"),
             ("reply_to_email", "hello@brightpath.example"), ("a2p_ready", "No, not yet")):
-        assert e.record(d, qid, value).get("ok"), (qid, value)
+        if qid in e.CITED_QUESTIONS:
+            r = e.record(d, qid, value, source_message_ref=say(value))
+            if r.get("action") == "confirm_price":
+                r = e.record(d, qid, "yes", source_message_ref=say("yes"))
+        else:
+            r = e.record(d, qid, value)
+        assert r.get("ok"), (qid, value)
     e.finalize(d)
     return d
 

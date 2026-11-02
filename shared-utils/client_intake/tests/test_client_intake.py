@@ -22,9 +22,35 @@ BLACKCEO = json.loads((REPO / "71-blackceo-signature-page/assets/brand/blackceo-
 FIX = PKG / "fixtures"
 
 
+_SAID = {}
+
+
+def _say(text):  # stores a CLIENT message, returns its id
+    ref = f"t-{len(_SAID) + 1}"
+    _SAID[ref] = {"role": "client", "text": str(text)}
+    return ref
+
+
+def cite(doc, qid, value):
+    """Record a commercial answer the way a harness must: citing the client's message; a price
+    is echoed and then confirmed by the client's yes."""
+    r = e.record(doc, qid, value, source_message_ref=_say(value))
+    if r.get("action") == "confirm_price":
+        r = e.record(doc, qid, "yes", source_message_ref=_say("yes"))
+    return r
+
+
+def setUpModule():
+    e.TRANSCRIPT_LOOKUP = _SAID.get
+
+
+def tearDownModule():
+    e.TRANSCRIPT_LOOKUP = None
+
+
 def answered(doc, pairs):
     for q, v in pairs:
-        r = e.record(doc, q, v)
+        r = cite(doc, q, v) if q in e.CITED_QUESTIONS else e.record(doc, q, v)
         assert r.get("ok") or r.get("action"), (q, v, r)
     return doc
 
@@ -161,7 +187,7 @@ class NotKnowing(unittest.TestCase):
 
     def test_price_unknown_stays_blocked_and_cannot_be_defaulted(self):
         d = e.new_doc()
-        e.record(d, "funnel_shape", "One offer")
+        cite(d, "funnel_shape", "One offer")
         for _ in range(3):
             r = e.record(d, "price", "I don't know")
             self.assertEqual(r["action"], "blocked")
@@ -173,11 +199,11 @@ class NotKnowing(unittest.TestCase):
 
     def test_suggested_price_is_blocking_until_approved(self):
         d = e.new_doc()
-        e.record(d, "funnel_shape", "One offer")
+        cite(d, "funnel_shape", "One offer")
         e.record(d, "price", {"amount_minor": 49700, "currency": "USD", "rationale": "Similar programs charge 400 to 600."})
         self.assertEqual(e.get(d, "price")["status"], "suggested")
         self.assertIn("price", [b["id"] for b in e.check(d)["blocking"]])
-        e.record(d, "price", "$497")
+        cite(d, "price", "$497")
         self.assertNotIn("price", [b["id"] for b in e.check(d)["blocking"]])
 
     def test_finalize_defaults_the_rest_but_never_the_facts(self):
@@ -436,7 +462,7 @@ class TopicsModesAndEstimates(unittest.TestCase):
         e.record(d, "interview_mode", "Help me choose")
         before = e.next_question(d)
         self.assertIsNone(before["estimate"]["note"])
-        e.record(d, "funnel_shape", "One offer")  # opens the price question, closes packages
+        cite(d, "funnel_shape", "One offer")  # opens the price question, closes packages
         after = e.next_question(d)
         self.assertEqual(after["estimate"]["questions"], before["estimate"]["questions"] + 1)
         self.assertIn("was", after["estimate"]["note"])
