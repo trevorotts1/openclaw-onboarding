@@ -96,7 +96,24 @@ const pluginVerify = readSkill("scripts/verify-council-plugin.mjs");
 assert.ok(pluginVerify.includes("provision.mjs"), "binding verifier does not compare provision.mjs");
 assert.ok(pluginVerify.includes("plugins"), "binding verifier does not read the loaded registry");
 
-// 8. Packaging can reuse an unchanged runtime build without recompiling it.
+// 8. A NOOP build cannot pass as a reconciled box: the active pointer, the
+//    service receipt, the launcher and the LIVE process are compared, and a
+//    healthy old process is refused.
+for (const needle of ["running_release", "COUNCIL_RECONCILE:", "FORCE_RESTART",
+  "SERVICE_RELEASE_MISMATCH", "service-launch.mjs"]) {
+  assert.ok(wire.includes(needle), `wire.sh lacks ${needle}`);
+}
+assert.ok(readSkill("scripts/install-runtime.mjs").includes("serviceReconcileProblems"),
+  "install-runtime NOOP does not report service/launcher drift");
+assert.ok(readSkill("scripts/install-runtime.mjs").includes("WARN reconcile:"),
+  "install-runtime NOOP does not emit the reconcile warning");
+assert.ok(verify.includes("SERVICE_RELEASE_MISMATCH"),
+  "verify-council-box.sh does not verify the live process release");
+const launcher = readSkill("wire.sh");
+assert.ok(launcher.includes("COUNCIL_SERVICE_DATA_DIR") && launcher.includes("COUNCIL_SERVICE_PORT"),
+  "launcher reconciliation must preserve the authoritative store and port");
+
+// 9. Packaging can reuse an unchanged runtime build without recompiling it.
 assert.ok(readSkill("scripts/build-bundles.mjs").includes("COUNCIL_PACKAGE_REUSE_RUNTIME"),
   "build-bundles has no unchanged-runtime reuse path");
 
