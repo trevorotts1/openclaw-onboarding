@@ -33,6 +33,7 @@ for entry in (SKILL_ROOT, SKILL_ROOT / "routes", HERE):
 import substrate  # noqa: E402
 import lane83_fake_consumer  # noqa: E402  only for its marker constants: proves we did NOT use it
 import test_lane83_dispatch as dispatch_tests  # noqa: E402  run_dispatch carries the approval and plan choices
+from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402  (its path is added by test_lane83_dispatch)
 from launcher_core import cli  # noqa: E402
 
 S71 = REPO_ROOT / "71-blackceo-signature-page"
@@ -99,6 +100,8 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         doc = dispatch_tests.payload("elevation", design_style="B", image_provider="kie", image_cap=200,
                                      brand_file=str(self.brand_file), brand_owner=BRAND_OWNER)
         doc["brand"]["hash"] = _sha256(self.brand_file)  # the landing build re-hashes the brand file
+        # every price names an entry of the client's answers file, which must say what this launch's offers say
+        answers = json.loads((SKILL_ROOT / doc["answers_file"]).read_text(encoding="utf-8"))
         for offer in doc["offers"]:
             offer["name"] = OFFER_NAMES.get(offer["role"], offer["name"])
             if offer["role"] == "downsell_1":
@@ -106,6 +109,13 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
             if offer["role"] in DELIVERABLES:  # the upsell and downsell pages refuse to invent deliverables
                 offer["level"] = {"state": "supplied", "name": offer["name"],
                                   "deliverables": DELIVERABLES[offer["role"]]}
+                entry = answers["answers"][offer["role"]]["value"]
+                entry["display_name"] = offer["name"]
+                entry["price"]["amount_minor"] = offer["price"]["amount_minor"]
+                entry["deliverables"] = DELIVERABLES[offer["role"]]
+        self.answers_file = self.root / "answers.json"
+        self.answers_file.write_text(json.dumps(answers), encoding="utf-8")
+        doc["answers_file"] = str(self.answers_file)
         return doc
 
     def _checkout_manuscript(self, doc: dict) -> str:
@@ -221,7 +231,10 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
             self.assertNotEqual(piece.get("author_session"), "lane83-fake-consumer", role)
             self.assertTrue(piece["artifacts"], f"{role} came back with no files at all")
             for art in piece["artifacts"]:
-                path = out / art["path"]  # a relative path is relative to the folder holding pieces/, as assemble reads it
+                # a relative path is relative to the folder holding pieces/, or (the landing bridge lists its files
+                # run-relative) to the landing run folder: the two places assemble looks
+                path = next((b / art["path"] for b in (out, self.root / "landing-run") if (b / art["path"]).is_file()),
+                            out / art["path"])
                 self.assertTrue(path.is_file(), f"{role}: {path} was listed but never written")
                 self.assertEqual(_sha256(path), art["sha256"], f"{role}: {path.name} does not match its recorded hash")
                 self.assertNotEqual(path.read_bytes(), fake_png, f"{role}: {path.name} is the fake consumer's picture")
@@ -230,8 +243,10 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         intake_path = self.root / "intake.json"
         intake_path.write_text(json.dumps(doc), encoding="utf-8")
         package_dir = self.root / "package"
+        readback = self.root / "checkout-readback.json"  # what the Skill 06 install read-back records for the order form
+        readback.write_text(json.dumps(TEST_ONLY_CHECKOUT_READBACK), encoding="utf-8")
         code, shown = self._cli("assemble", "--intake", str(intake_path), "--pieces", str(out / "pieces"),
-                                "--out", str(package_dir), "--page-only")
+                                "--out", str(package_dir), "--page-only", "--checkout-readback", str(readback))
         self.assertEqual(code, 0, shown)
         manifest_path = package_dir / "package-manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))

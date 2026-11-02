@@ -87,7 +87,10 @@ def _price_choice(offer: Dict[str, Any], price: Dict[str, Any], test_only: bool)
         "billing_type": price["billing_type"],
         "native_product_id": offer.get("native_product_id"),
         "native_price_id": price.get("native_price_id"),
-        "approval_status": "test_only" if test_only else price["approval_status"],
+        # the checkout contract knows approved / recommended_unapproved / test_only; the record's "provided" is the
+        # client's own price, i.e. approved (the same mapping shared-utils offer_mapper.record_to_checkout_request makes)
+        "approval_status": "test_only" if test_only else (
+            "recommended_unapproved" if price["approval_status"] == "recommended_unapproved" else "approved"),
     }
 
 

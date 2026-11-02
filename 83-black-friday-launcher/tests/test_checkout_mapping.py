@@ -37,6 +37,39 @@ READBACK = {  # a TEST-ONLY Skill 06 read-back: everything intake does not own
 }
 
 
+_ANSWERS_DIR = tempfile.TemporaryDirectory()  # the client's answers each intake below names (every price has a source)
+
+
+def _answered(value: dict) -> dict:
+    return {"value": value, "status": "provided", "source": "client"}
+
+
+def write_answers(offers: list) -> str:
+    """The client's answers file for these offers; each offer's price names its entry (price.source_ref).
+    Several mains are the packages list; one main is the price and offer_name answers."""
+    def item(o):
+        return {"offer_id": o["offer_id"], "display_name": o["name"], "price": dict(o["price"]),
+                "deliverables": list(o["level"]["deliverables"])}
+    mains = [o for o in offers if o["role"] == "main"]
+    answers = {}
+    if len(mains) == 1:
+        answers.update(offer_name=_answered(mains[0]["name"]), price=_answered(dict(mains[0]["price"])),
+                       deliverables=_answered(list(mains[0]["level"]["deliverables"])))
+        mains[0]["price"]["source_ref"] = "answers-file:price"
+    else:
+        answers["packages"] = _answered([item(o) for o in mains])
+        for i, o in enumerate(mains):
+            o["price"]["source_ref"] = f"answers-file:packages[{i}]"
+    for o in offers:
+        if o["role"] != "main":
+            answers[o["role"]] = _answered(item(o))
+            o["price"]["source_ref"] = f"answers-file:{o['role']}"
+    text = json.dumps({"schema": "client-intake-answers/v1", "answers": answers}, sort_keys=True)
+    path = Path(_ANSWERS_DIR.name) / f"answers-{hashlib.sha256(text.encode()).hexdigest()[:16]}.json"
+    path.write_text(text, encoding="utf-8")
+    return str(path)
+
+
 def raw_intake(mode: str = "single_simple", rich: bool = True, bump: bool = False) -> dict:
     def offer(offer_id, role, amount):
         out = {"offer_id": offer_id, "name": f"Offer {offer_id}", "role": role,
@@ -62,6 +95,7 @@ def raw_intake(mode: str = "single_simple", rich: bool = True, bump: bool = Fals
                                 "amount_minor": 49700, "currency": "USD"},
         "offers": offers,
     }
+    payload["answers_file"] = write_answers(offers)
     if rich:
         payload["checkout_terms"] = {"guarantee_ref": "g", "guarantee_text": "g",
                                      "terms_ref": "TEST-TERMS", "terms_text": "t",
@@ -73,10 +107,7 @@ def normalized(mode: str = "single_simple", complete: bool = False, bump: bool =
     """A validated intake. ``complete`` carries the owner checkout facts (terms, consent,
     delivery); otherwise they are stripped, so the case is the same whichever intake
     generation this tree validates."""
-    try:
-        n = intake.validate(raw_intake(mode, bump=bump))
-    except intake.IntakeError:  # an intake that predates the owner checkout facts
-        n = intake.validate(raw_intake(mode, rich=False, bump=bump))
+    n = intake.validate(raw_intake(mode, bump=bump))
     if complete:
         n.setdefault("checkout_terms", {"terms_ref": "TEST-TERMS", "consent_ref": "TEST-CONSENT"})
         for o in n["offers"]:

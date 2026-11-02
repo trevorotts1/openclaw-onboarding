@@ -106,6 +106,58 @@ class PlanTests(_Tmp):
             self.assertIn("AF-LAUNCH-PLAN-ARGS", err)
 
 
+class PlanBindsThePageChoiceTests(_Tmp):
+    """APPROVAL-HASH: the plan a client approves must hash the same inputs dispatch binds, landing choice
+    included. A choice changed after approval is a new plan, so dispatch refuses the old approval."""
+
+    def plan_hash(self, *flags):
+        rc, out, err = run_cli("plan", "--intake", self.write("i.json", intake_doc()), *flags)
+        self.assertEqual(rc, 0, err)
+        return next(line.split(": ", 1)[1] for line in out.splitlines() if line.startswith("plan_document_hash: ")), out
+
+    def dispatch(self, approved_hash, *flags):
+        doc = intake_doc()
+        record = {"approval_id": "APPR-TEST", "plan_hash": approved_hash}
+        argv = ["dispatch", "--intake", self.write("intake.json", doc), "--out", self.dir / "run",
+                "--approval", self.write("approval.json", record), "--client", CLIENT, "--worker", WORKER, *flags]
+        with mock.patch.object(cli.launch_bridge, "run", return_value={}) as run, \
+                mock.patch.object(cli.launch_bridge, "summary_lines", return_value=[]):
+            rc, _out, err = run_cli(*argv)
+        return rc, err, run
+
+    def test_the_landing_choice_changes_the_hash_plan_shows(self):
+        default, _ = self.plan_hash()
+        sales, shown = self.plan_hash("--landing-pages", "sales")
+        both, _ = self.plan_hash("--landing-pages", "landing,sales")
+        self.assertNotEqual(default, sales)
+        self.assertEqual(default, both)  # Skill 49's recommended set for this funnel is both pages
+        self.assertIn("Landing pages: sales", shown)
+        self.assertNotEqual(sales, self.plan_hash("--landing-pages", "sales", "--extra-page", "downsell_2")[0])
+
+    def test_plan_then_approve_that_hash_then_dispatch_succeeds(self):
+        for flags in ((), ("--landing-pages", "sales"), ("--landing-pages", "landing,sales", "--extra-page", "downsell_2")):
+            with self.subTest(flags=flags):
+                approved, _ = self.plan_hash(*flags)
+                rc, err, run = self.dispatch(approved, *flags)
+                self.assertEqual(rc, 0, err)
+                kw = run.call_args.kwargs
+                want = [k for k in (flags[1].split(",") if flags else [])]
+                self.assertEqual((kw["landing_pages"], kw["extra_pages"]),
+                                 (want or None, ("downsell_2",) if "--extra-page" in flags else ()))
+
+    def test_a_landing_choice_changed_after_approval_is_refused_by_name(self):
+        for approved_flags, dispatch_flags in (((), ("--landing-pages", "sales")),
+                                               (("--landing-pages", "sales"), ()),
+                                               (("--landing-pages", "sales"), ("--landing-pages", "landing")),
+                                               (("--landing-pages", "sales"), ("--landing-pages", "sales", "--extra-page", "downsell_2"))):
+            with self.subTest(approved=approved_flags, dispatched=dispatch_flags):
+                approved, _ = self.plan_hash(*approved_flags)
+                rc, err, run = self.dispatch(approved, *dispatch_flags)
+                self.assertEqual((rc, "AF-LAUNCH-APPROVAL-HASH" in err), (2, True), err)
+                run.assert_not_called()
+                self.assertFalse((self.dir / "run").exists())
+
+
 class ApprovalBindingTests(_Tmp):
     def dispatch(self, doc, record, out=None):
         argv = ["dispatch", "--intake", self.write("intake.json", doc), "--out", out or self.dir / "run",
