@@ -23,6 +23,7 @@ failures remain, 2 usage or config error.
 """
 import argparse
 import importlib.util
+import re
 import shutil
 import subprocess
 import sys
@@ -81,7 +82,8 @@ def main(argv=None):
         cmd = [sys.executable, str(HERE / "sync_skill71_to_999.py"),
                "--onb-root", str(onb), "--nine-root", str(nine)] + (["--dry-run"] if dry else [])
         proc = subprocess.run(cmd, text=True, capture_output=True)
-        print(proc.stdout, end="")
+        for line in proc.stdout.splitlines():  # prefixed so its own PASS line is never read as the verdict
+            print(f"[skill71] {line}")
         if proc.returncode != 0:
             print(proc.stderr, file=sys.stderr, end="")
             print(f"REFUSED OR FAILED: skill 71 sync exit {proc.returncode}")
@@ -92,6 +94,10 @@ def main(argv=None):
     report = _parity.check(onb, nine, families)
     for f in report["failures"]:
         print(f"FAIL {f}")
+        m = re.search(r"divergent_token_missing: (\S+) \((.*)\)$", f)
+        if m:
+            print(f"HAND-MERGE NEEDED: {m.group(1)} lacks '{m.group(2)}'; "
+                  f"the sync never overwrites a declared divergence")
     if report["failures"]:
         print(f"SYNC DONE, PARITY FAILURES REMAIN: {len(report['failures'])} "
               f"(declared divergences are reported, not synced)")

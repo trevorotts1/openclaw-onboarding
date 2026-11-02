@@ -153,3 +153,25 @@ def test_gate_scripts_travel_with_the_signature_page_family(tmp_path):
     _write(nine / parity.GATE_TOOLS[0], "old gate\n")
     rows = {d: s for s, d, _ in parity.family_plan(onb, nine, "signature-page")}
     assert rows == {parity.GATE_TOOLS[0]: "drift", parity.GATE_TOOLS[1]: "missing"}
+
+
+def test_failing_sync_never_prints_unprefixed_pass(tmp_path, monkeypatch, capsys):
+    onb, nine = build(tmp_path, "launcher", drift=False)
+    for onb_rel, nine_rel in parity.FAMILIES["signature-page"]:
+        _write(onb / onb_rel / "skill-version.txt", "2.0.0\n")
+        _write(nine / nine_rel / "skill-version.txt", "2.0.0\n")
+    for rel in parity.GATE_TOOLS:
+        _write(onb / rel, "gate\n")
+        _write(nine / rel, "gate\n")
+    cli = ".claude/skills/black-friday-launcher/launcher_core/cli.py"
+    _write(nine / cli, "an old 999 cli without the plan command\n")
+    ok = type("P", (), {"returncode": 0, "stdout": "SYNC DONE, PARITY PASS\n", "stderr": ""})()
+    monkeypatch.setattr(sync.subprocess, "run", lambda *a, **k: ok)
+    rc = sync.main(["--onboarding", str(onb), "--nine", str(nine),
+                    "--family", "launcher", "--family", "signature-page"])
+    lines = capsys.readouterr().out.splitlines()
+    assert rc == 1
+    assert "SYNC DONE, PARITY PASS" not in lines
+    assert "[skill71] SYNC DONE, PARITY PASS" in lines
+    assert any(l.startswith("HAND-MERGE NEEDED: ") and "def cmd_plan" in l for l in lines)
+    assert lines[-1].startswith("SYNC DONE, PARITY FAILURES REMAIN")

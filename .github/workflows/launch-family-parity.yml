@@ -6,7 +6,9 @@ name: launch-family-parity
 # allowlist; this job runs scripts/check-launch-family-parity.py over this
 # checkout and a fresh 999-setup checkout and fails on any difference outside
 # the declared 999-only allowlist. It also runs the sync's own tests.
-# 999-setup carries the same checker and runs it from its own workflow.
+# The 999 workflow step and the 999 copy of the checker are delivered by
+# U-sync-999-03. This job goes green only once the 999 sync units (the
+# U-sync-999-01 launcher_core/cli.py hand merge included) are on 999-setup main.
 
 on:
   push:
