@@ -65,14 +65,14 @@ The entry shell runs five fail-closed guards (deps → version → hash-pin → 
 
 ```
 P0 Intake      -> prove_sf_intake.py         (locked brief)
-P1 Copy        -> prove_sf_copy.py           (SACRED 12-section bands, all profiles)
+P1 Copy        -> prove_sf_copy.py           (SACRED 12-section bands, all profiles; a page type the locked 3/5/7 size requires but the ledger lacks = AF-FUN-SECTION-MISSING)
 P2 Prompts     -> prove_sf_prompt_floor.py   (two-floor gate; length budget per kie-common-rules rule 12)
 P3 Images      -> Skill 66 policy -> Skill 74 transport (text-to-image default + reference_images hook;
                                               record each result with scripts/kie74_receipt.py)
 P4 Media       -> Skill 6 ghl_media.py       (media folder + upload)
-P5 HTML        -> per-page fragment assembly    (pages/<profile>.fragment.html per matrix page; AF-FUN-HTML-FRAGMENT)
+P5 HTML        -> per-page fragment assembly    (pages/<profile>.fragment.html per matrix page, PARSED for the profile's data-section markers: 12 main, 8 derived, TY-1..TY-3 thank-you; AF-FUN-HTML-FRAGMENT / AF-FUN-HTML-SECTIONS)
 P6 Compose     -> prove_sf_graph.py              (funnel_graph.json vs MASTERDOC §3: nodes/branch/reachability)
-P7 Build       -> prove_sf_build.py              (build_receipt.json: QC >= 8.5 + preview URL per page)
+P7 Build       -> prove_sf_build.py              (build_receipt.json: QC >= 8.5 + preview URL per page, read against the TOOL evidence: see below)
 P8 Derive      -> derived_pages.json ledger      (U1/D1/U2/D2/TY derived-page set; AF-FUN-DERIVE-LEDGER)
 P9 Certify     -> prove_sf_no_pitch.py + prove_sf_cert.py  (signed PROCESS-CERTIFICATE)
 P10 Email      -> optional handoff to the Email Skill project (10 promo emails)
@@ -88,12 +88,29 @@ raw Kie `createTask`, a copied KIE client script) is the ungoverned path and is 
 
 After P1 copy passes, run `python3 scripts/legacy_downsell_images.py --ledger <RUN_DIR>/copy_ledger.json --skill71-root <71 dir> --brand-file <brand.json> --brand-owner <client> --out-dir <dir>`. It builds every page the funnel size carries (7-step: `main`, `upsell`, `downsell`, `upsell-2`, `downsell-2`, `thank-you`; 5-step: the same without `downsell-2`; 3-step: `main`, `upsell`, `thank-you`), plus the design-only `checkout` of a 7-step funnel when the owner stages the approved five-section checkout manuscript with `--checkout-manuscript <file>` (the legacy copy ledger has no checkout copy, so without it the receipt lists `checkout` as not built and names the flag; the real order form stays the native Skill 06 form), offline stub provider unless the owner approves `--image-provider kie --allow-paid`. Each page is checked against `structure/page_types.json`; a page missing its images is refused. It writes `page-images-receipt.json`. The image inventory, generation, Design Board and final mockups stay client-gated downstream of it.
 
+Run it with `--out-dir <RUN_DIR>/page-images`. That folder is the funnel's **visual direction**, and P7 refuses to clear without it: every page of the funnel size (the design-only `checkout` may be named in the receipt's `not_built` instead) needs its `desktop-wireframe`, `mobile-tablet` and `visual-mockup` `stage-executor-record.json` with images, matching the receipt's sha256 (`AF-FUN-BUILD-VISUAL`). A funnel with copy and prompt ledgers but no wireframes or mockups cannot be certified.
+
+## What P7 reads: tool evidence, never the receipt's word
+
+The copy ledger and `build_receipt.json` are written by the run's own agent, so `prove_sf_build.py` also reads what the tools wrote under the run dir (`--run-dir`, default the receipt's folder):
+
+- `pages/<profile>.fragment.html` is parsed for the profile's `data-section` markers, in order, each around real text, plus a `data-page="<profile>"` (or `data-stage`) root marker. A fragment holding only `x` fails (`AF-FUN-HTML-SECTIONS`).
+- `build/evidence/` is Skill 6's verify run (`scorecard/verify-summary.json`, `logs/final-preview-verify.json`). P7 re-runs Skill 6's `ghl_gate.require_pass` on it and recomputes the QC score as 10 x passing pages / total raw page records. A receipt that says `qc_score` 9.0 with no tool-run record, a failing or tampered run, a recomputed score under 8.5, or a receipt score above the recomputed one fails (`AF-FUN-BUILD-QC-RECORD`).
+- Every receipt `preview_url` must be a URL a passing raw verify record checked (`AF-FUN-BUILD-PREVIEW-UNBOUND`).
+
+`prove_sf_build.write_valid_run_evidence(run_dir, size)` writes a passing set of all three for tests and the golden sample; it is a fixture, not a substitute for a real tool run.
+
 ## Fail-closed provers (exit 0 pass / 2 violation / 3 fail-closed)
 
 - **`prove_sf_intake.py`** — funnel_type, required answers (size-gated), size ∈ {3,5,7}, offer ledger,
   representation-never-assumed, truth gate, brief locked.
 - **`prove_sf_copy.py`** — the SACRED 12-section contract across all six profiles; stripped char/word
-  bands; the replacement Section 8 name + 7-item count; the Thank-You TY-1/TY-2/TY-3 bands.
+  bands; the replacement Section 8 name + 7-item count; the Thank-You TY-1/TY-2/TY-3 bands; and
+  page-set completeness: the ledger must carry every page type the locked funnel size requires
+  (size from `--funnel-size`, else the brief.json beside the ledger; the checkout carries no ledger copy).
+- **`prove_sf_build.py`** — the build receipt (QC >= 8.5, a preview URL per page, the full page set) read
+  against the tool evidence above: parsed fragments, the recomputed Skill 6 verify run, and the
+  wireframe + mockup set for every page.
 - **`prove_sf_prompt_floor.py`** — stripped-length gate (the prompt length budget is `07-kie-setup/references/kie-common-rules.md` rule 12; SOP-FUNNEL-03 states how the prover and `prompt-budget --check` combine) + distinct-word density + Signature
   Grade Block + negative block + em-dash ban + typography discipline.
 - **`prove_sf_no_pitch.py`** — the thank-you page carries no offer name / price / sale CTA, and every
