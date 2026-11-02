@@ -863,7 +863,7 @@ def compile_settings(*, sender: Mapping[str, Any], lifecycle: Mapping[str, Any],
                      promotional: bool) -> dict:
     settings: dict[str, Any] = {
         "phase": phase,
-        "marketing": not promotional,
+        "marketing": bool(promotional),
         "suppression": {
             "stopOnUnsubscribe": True,
             "stopOnVerifiedPurchase": bool(promotional),
@@ -962,8 +962,10 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
 
     workflows = build.get("workflows") or []
     if not workflows:
-        raise WorkflowCompileError("BUILD-NO-WORKFLOWS",
-                                   "build %r carries no workflows" % build.get("id"))
+        raise WorkflowCompileError(
+            NO_BUILDABLE_WORKFLOW,
+            "build %r is marked ready but carries no workflows" % build.get("id"),
+            detail={"unit_key": build.get("unit_key")})
     schedule = build.get("schedule") or {}
     sequences = schedule.get("sequences") or {}
     lifecycle = build.get("lifecycle") or {}
@@ -1041,12 +1043,43 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
     return compiled
 
 
-def compile_launch_builds(document: Mapping[str, Any], *, require_ready: bool = True) -> dict:
+NO_BUILDABLE_WORKFLOW = "no_buildable_workflow"
+
+
+class CompiledLaunch(dict):
+    """Campaign dict of the builds that compiled, plus ``refusals`` for the rest.
+
+    Each refusal is ``{"id", "unit_key", "state": "blocked", "code", "reason",
+    "detail"}``. ``CampaignBuilder.build`` reports every refusal as a build
+    error, so a partial campaign can never look like a clean one.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self.refusals: list = []
+
+
+def _refusal(build: Any, exc: WorkflowCompileError) -> dict:
+    build = build if isinstance(build, Mapping) else {}
+    return {
+        "id": build.get("id"),
+        "unit_key": build.get("unit_key"),
+        "state": "blocked",
+        "code": exc.code,
+        "reason": exc.code if exc.code == NO_BUILDABLE_WORKFLOW else exc.message,
+        "detail": exc.detail,
+    }
+
+
+def compile_launch_builds(document: Mapping[str, Any], *, require_ready: bool = True) -> CompiledLaunch:
     """Compile a whole launch-c automation-build document into a campaign dict.
 
-    Refuses (WorkflowCompileError) on a blocked/invalid build, a missing
-    required output, or a missing suppression guard. Never sends and never
-    publishes.
+    Compiles PER BUILD: a blocked build, a zero-workflow build, a missing
+    required output or a missing suppression guard is recorded in
+    ``result.refusals`` and the remaining builds still compile; a build that
+    waits on a refused build is refused too. Only a document-level defect
+    (not an object, not draft_only, no builds list) raises. Never sends and
+    never publishes.
     """
     if not isinstance(document, Mapping):
         raise WorkflowCompileError("DOCUMENT-SHAPE", "automation-build document is not an object")
@@ -1057,44 +1090,58 @@ def compile_launch_builds(document: Mapping[str, Any], *, require_ready: bool = 
     if not isinstance(builds, list):
         raise WorkflowCompileError("DOCUMENT-SHAPE", "builds must be a list")
 
-    campaign: dict[str, Any] = {}
+    campaign = CompiledLaunch()
+    refused_ids: set = set()
     for build in builds:
-        if not isinstance(build, Mapping):
-            raise WorkflowCompileError("BUILD-SHAPE", "build entry is not an object")
-        if require_ready and (build.get("state") != "ready" or build.get("blocked_by")):
-            raise WorkflowCompileError(
-                "BUILD-BLOCKED",
-                "build %r is blocked: %s" % (build.get("id"), build.get("blocked_by")),
-                detail={"unit_key": build.get("unit_key"),
-                        "blocked_by": build.get("blocked_by")})
-        required_outputs = build.get("required_outputs") or []
-        for output in required_outputs:
-            if output == "workflows" and not build.get("workflows"):
-                raise WorkflowCompileError("REQUIRED-OUTPUT-MISSING",
-                                           "build %r has no workflows" % build.get("id"))
-            if output == "schedule" and not (build.get("schedule") or {}).get("nodes"):
-                raise WorkflowCompileError("REQUIRED-OUTPUT-MISSING",
-                                           "build %r has no schedule nodes" % build.get("id"))
-            if output == "guards" and build.get("lifecycle") is None:
-                raise WorkflowCompileError("REQUIRED-OUTPUT-MISSING",
-                                           "build %r has no lifecycle guards" % build.get("id"))
+        try:
+            if not isinstance(build, Mapping):
+                raise WorkflowCompileError("BUILD-SHAPE", "build entry is not an object")
+            if require_ready and (build.get("state") != "ready" or build.get("blocked_by")):
+                raise WorkflowCompileError(
+                    "BUILD-BLOCKED",
+                    "build %r is blocked: %s" % (build.get("id"), build.get("blocked_by")),
+                    detail={"unit_key": build.get("unit_key"),
+                            "blocked_by": build.get("blocked_by")})
+            upstream = [dep for dep in build.get("depends_on") or [] if dep in refused_ids]
+            if upstream:
+                raise WorkflowCompileError(
+                    "BUILD-UPSTREAM-REFUSED",
+                    "build %r waits on refused build(s): %s" % (build.get("id"), upstream),
+                    detail={"unit_key": build.get("unit_key"), "upstream": upstream})
+            if not build.get("workflows"):
+                raise WorkflowCompileError(
+                    NO_BUILDABLE_WORKFLOW,
+                    "build %r carries no workflows" % build.get("id"),
+                    detail={"unit_key": build.get("unit_key")})
+            for output in build.get("required_outputs") or []:
+                if output == "schedule" and not (build.get("schedule") or {}).get("nodes"):
+                    raise WorkflowCompileError("REQUIRED-OUTPUT-MISSING",
+                                               "build %r has no schedule nodes" % build.get("id"))
+                if output == "guards" and build.get("lifecycle") is None:
+                    raise WorkflowCompileError("REQUIRED-OUTPUT-MISSING",
+                                               "build %r has no lifecycle guards" % build.get("id"))
 
-        # Provider-visible dependencies: the workflows bound to dependency
-        # email sequences. External unit dependencies were enforced by the
-        # plan reader (a missing page URL / text set / count blocks the build).
-        dependency_keys = []
-        for dep in build.get("depends_on") or []:
-            for candidate_key, wf_def in campaign.items():
-                if wf_def.get("source_unit") == dep:
-                    dependency_keys.append(candidate_key)
-        external = [dep for dep in (build.get("depends_on") or [])
-                    if not any(wf.get("source_unit") == dep for wf in campaign.values())]
-        compiled = compile_automation_build(
-            build, external_deps=external, depends_on=dependency_keys)
-        for key, wf_def in compiled.items():
-            if key in campaign:
-                raise WorkflowCompileError("DUPLICATE-WORKFLOW-KEY", key)
-            campaign[key] = wf_def
+            # Provider-visible dependencies: the workflows bound to dependency
+            # email sequences. External unit dependencies were enforced by the
+            # plan reader (a missing page URL / text set / count blocks the build).
+            dependency_keys = []
+            for dep in build.get("depends_on") or []:
+                for candidate_key, wf_def in campaign.items():
+                    if wf_def.get("source_unit") == dep:
+                        dependency_keys.append(candidate_key)
+            external = [dep for dep in (build.get("depends_on") or [])
+                        if not any(wf.get("source_unit") == dep for wf in campaign.values())]
+            compiled = compile_automation_build(
+                build, external_deps=external, depends_on=dependency_keys)
+            clash = next((key for key in compiled if key in campaign), None)
+            if clash is not None:
+                raise WorkflowCompileError("DUPLICATE-WORKFLOW-KEY", clash)
+        except WorkflowCompileError as exc:
+            campaign.refusals.append(_refusal(build, exc))
+            if isinstance(build, Mapping):
+                refused_ids.add(build.get("id"))
+            continue
+        campaign.update(compiled)
     return campaign
 
 
@@ -1583,6 +1630,12 @@ class CampaignBuilder:
         # create contract has no folder-id field, so that request keeps the
         # named private fallback (a name-based folder can be passed instead).
         requested_folder_id = folder_id
+
+        # Builds the compiler refused must never vanish from a partial campaign.
+        for refusal in getattr(campaign, "refusals", None) or []:
+            self.stats["errors"].append(
+                "build %s refused at compile (%s): %s" % (
+                    refusal.get("id"), refusal.get("code"), refusal.get("reason")))
 
         # Pre-flight validation
         errors = validate_campaign(campaign)
