@@ -47,7 +47,7 @@ class _Base(unittest.TestCase):
         self.sg = importlib.import_module(mod)
 
     def tearDown(self):
-        for k in list(self.ENV) + ["CAF_APPROVAL_TOKEN", "CAF_DRAFT_ONLY", "GHL_LOCATION_ID"]:
+        for k in list(self.ENV) + ["CAF_APPROVAL_TOKEN", "CAF_DRAFT_ONLY", "GHL_LOCATION_ID", "CAF_OBJECT_KEY"]:
             os.environ.pop(k, None)
 
     def write(self, rec, **kw):
@@ -99,6 +99,16 @@ class TestWriteNeedsRecord(_Base):
 
     def test_get_still_passes(self):
         self.sg.check_write("GET", URL, None, location_id=None)
+
+    def test_object_key_env_covers_every_write_of_one_plan(self):
+        os.environ["CAF_OBJECT_KEY"] = OBJ
+        self.write(_rec(), workflow_name="ZHC-Folder")
+        self.write(_rec(), workflow_name="")
+
+    def test_object_key_env_mismatch_refused(self):
+        os.environ["CAF_OBJECT_KEY"] = OBJ
+        with self.assertRaises(self.sg.SafetyRefused):
+            self.write(_rec(object_key="Other Promo"), workflow_name="Other Promo")
 
 
 class TestDraftOff(_Base):

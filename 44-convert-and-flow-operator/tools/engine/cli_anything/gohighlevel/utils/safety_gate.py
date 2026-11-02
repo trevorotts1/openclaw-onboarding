@@ -200,8 +200,8 @@ def check_write(
     # Rule 3 — APPROVAL GATE: a verified automation_write record bound to this
     # location, action, object and plan (S44-16). No env token or name opens it.
     # ponytail: one Command Center GET per write; cache per process if a build is too slow.
-    act, obj, plan = _current(action, object_key or workflow_name, plan_sha256)
-    _require_approval("automation_write", location_id, act, obj, plan)
+    act, obj, plan = _current(action, object_key, plan_sha256)
+    _require_approval("automation_write", location_id, act, obj or workflow_name, plan)
 
 
 def draft_only_active_flag(location_id: Optional[str] = None, object_key: str = "",
