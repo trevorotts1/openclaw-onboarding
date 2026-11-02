@@ -10,6 +10,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -62,11 +63,12 @@ class ElevationBuildsAValidIntake(unittest.TestCase):
         src = {s["offer_id"]: s for s in res["provenance"]["offers"]}
         self.assertEqual(set(src), {o["offer_id"] for o in res["intake"]["offers"]})
         for o in res["intake"]["offers"]:
-            self.assertRegex(src[o["offer_id"]]["source_ref"], r"^answers-file:[a-z0-9_]+$")
+            self.assertRegex(src[o["offer_id"]]["source_ref"], r"^answers-file:([A-Za-z0-9_.]+)(?:\[(\d+)\])?$")  # 83 offer_mapper grammar
         packages = ELEVATION["answers"]["packages"]["value"]
         mains = [o for o in res["intake"]["offers"] if o["role"] == "main"]
         self.assertEqual([(o["name"], o["price"]) for o in mains], [(p["display_name"], p["price"]) for p in packages])
-        self.assertEqual({src[o["offer_id"]]["source_ref"] for o in mains}, {"answers-file:packages"})
+        self.assertEqual([src[o["offer_id"]]["source_ref"] for o in mains], [f"answers-file:packages[{i}]" for i in range(len(mains))])
+        self.assertEqual([src[o["offer_id"]]["index"] for o in mains], list(range(len(mains))))
         by_role = {o["role"]: o for o in res["intake"]["offers"]}
         self.assertEqual(by_role["upsell_1"]["price"], ELEVATION["answers"]["upsell_1"]["value"]["price"])
         self.assertEqual(src[by_role["downsell_1"]["offer_id"]]["source_ref"], "answers-file:downsell_1")
@@ -186,6 +188,75 @@ class TheIntakeIsBoundToTheAnswers(unittest.TestCase):
                 run83.assert_not_called()
 
 
+TERMS = {"guarantee_ref": "g", "guarantee_text": "30-day money-back", "terms_ref": "t", "terms_text": "Terms apply",
+         "consent_ref": "c", "consent_text": "I agree"}
+
+
+def future83(**over):
+    """A stand-in for Skill 83's intake after it grows answers_file, checkout_terms and a price source_ref."""
+    base = dict(REQUIRED_FIELDS=dict(intake83.REQUIRED_FIELDS, answers_file="x", checkout_terms="x"),
+                OPTIONAL_FIELDS=intake83.OPTIONAL_FIELDS, PERMITTED_DEFAULTS=intake83.PERMITTED_DEFAULTS,
+                PRICE_REQUIRED=intake83.PRICE_REQUIRED, PRICE_OPTIONAL=("bounds_confirmed", "source_ref"))
+    return types.SimpleNamespace(**dict(base, **over))
+
+
+class GeneratorFollowsWhatSkill83Declares(unittest.TestCase):
+    def _terms_doc(self, value=TERMS):
+        doc = elevation()
+        e._set(doc, "checkout_terms", value, "provided", "client")
+        return doc
+
+    def test_a_field_83_does_not_declare_is_not_emitted(self):
+        intake = built(self._terms_doc())["intake"]  # base 83 declares none of the three
+        for k in ("answers_file", "checkout_terms"):
+            self.assertNotIn(k, intake)
+        self.assertNotIn("source_ref", intake["offers"][0]["price"])
+        intake83.validate(intake)
+
+    def test_a_declared_answers_file_checkout_terms_and_price_source_ref_are_built_from_the_answers(self):
+        res = li.to_launcher_intake(self._terms_doc(), SYSTEM, answers_path=Path("/x/answers.json"), intake_module=future83())
+        intake, src = res["intake"], {s["offer_id"]: s["source_ref"] for s in res["provenance"]["offers"]}
+        self.assertEqual(intake["answers_file"], "/x/answers.json")
+        self.assertEqual(intake["checkout_terms"], TERMS)
+        self.assertEqual(res["provenance"]["checkout_terms"], {"source_ref": "answers-file:checkout_terms"})
+        for o in intake["offers"]:
+            self.assertEqual(o["price"]["source_ref"], src[o["offer_id"]])
+        # the intake still verifies against the answers although each price now carries its source
+        li.verify(intake, res["provenance"], self._terms_doc())
+
+    def test_declared_terms_are_never_defaulted_and_all_six_parts_are_needed(self):
+        mod = future83()
+        build = lambda doc: li.to_launcher_intake(doc, SYSTEM, answers_path=Path("a.json"), intake_module=mod)  # noqa: E731
+        refused(self, "AF-LAUNCH-ANSWERS-MISSING", build, elevation())
+        err = refused(self, "AF-LAUNCH-ANSWERS-TERMS", build, self._terms_doc("30-day guarantee, see my terms page"))
+        self.assertIn("consent_text", err.detail)
+        refused(self, "AF-LAUNCH-ANSWERS-TERMS", build, self._terms_doc({k: v for k, v in TERMS.items() if k != "terms_text"}))
+        doc = self._terms_doc()
+        doc["answers"]["checkout_terms"]["status"] = "suggested"
+        refused(self, "AF-LAUNCH-ANSWERS-UNAPPROVED", build, doc)
+        refused(self, "AF-LAUNCH-ANSWERS-SYSTEM", li.to_launcher_intake, self._terms_doc(), SYSTEM, intake_module=mod)  # no answers path
+
+    def test_the_pass_throughs_cannot_replace_what_the_answers_build(self):
+        refused(self, "AF-LAUNCH-ANSWERS-SYSTEM", built, extra_root={"offers": []})
+        refused(self, "AF-LAUNCH-ANSWERS-SYSTEM", built, extra_root={"journey_mode": "single_simple"})
+        refused(self, "AF-LAUNCH-ANSWERS-SYSTEM", built, extra_offer={"MAIN-X": {"price": {"amount_minor": 1, "currency": "USD"}}})
+        first = built()["intake"]["offers"][0]["offer_id"]
+        refused(self, "AF-LAUNCH-ANSWERS-SYSTEM", built, extra_offer={first: {"name": "Cheaper"}})
+        ok = built(extra_offer={first: {"delivery": {"kind": "x"}}})["intake"]["offers"][0]
+        self.assertEqual(ok["delivery"], {"kind": "x"})  # what no answer can carry still passes through
+
+    def test_creative_direction_rides_the_image_plan_only_when_83_accepts_it(self):
+        named = elevation("Like an outside style: warm editorial magazine")
+        with mock.patch.object(li, "_plan_accepts", return_value=True):
+            self.assertEqual(built(named)["intake"]["image_plan"]["creative_direction"], "warm editorial magazine")
+            self.assertNotIn("creative_direction", built()["intake"]["image_plan"])  # the house look names nothing
+        with mock.patch.object(li, "_plan_accepts", return_value=False):
+            plan = built(named)["intake"]["image_plan"]
+            self.assertNotIn("creative_direction", plan)
+            self.assertNotIn("design_style_source", plan)  # kept only when 83 accepts it
+        intake83.validate(built(named)["intake"])
+
+
 class VisualDirection(unittest.TestCase):  # IMG-07
     def _run_71(self, doc, d):
         ans = d / "answers.json"
@@ -257,16 +328,34 @@ class VisualDirection(unittest.TestCase):  # IMG-07
 class ProviderAndBank(unittest.TestCase):
     bank = {q["id"]: q for q in e.load_bank()["questions"]}
 
-    def test_agnes_is_refused_at_intake_with_the_kie_requirement(self):  # IMG-24: documented at intake
+    def test_agnes_reaches_83s_image_plan_which_refuses_paid_pictures(self):  # IMG-24
         doc = elevation()
         e._set(doc, "image_provider", "agnes", "provided", "client")
+        res = built(doc, brand_file="brand/client-brand.json")  # no refusal here: 83's image plan decides
+        plan = res["intake"]["image_plan"]
+        self.assertEqual(plan["image_provider"], "agnes")
+        intake83.validate(res["intake"])
+        self.assertTrue(any("KIE" in w and "agnes" in w for w in res["provenance"]["warnings"]), res["provenance"]["warnings"])
+        ip = importlib.import_module("launcher_core.image_plan")
+        with self.assertRaises(ip.ImagePlanError) as cm:  # a paid run: refused by name, nothing spent
+            ip.resolve(dict(plan, paid_render_approval_ref="approval:images"), test_only=False)
+        self.assertEqual(cm.exception.code, "AF-LAUNCH-IMAGE-PLAN-PROVIDER")
+        self.assertIn("nothing was spent", cm.exception.detail.lower())
+
+    def test_the_provider_answer_maps_like_the_launch_record_and_an_unknown_one_is_refused_by_name(self):
+        for said, want in (("connected", "kie"), ("kie", "kie"), ("none", "other_explicit")):
+            doc = elevation()
+            e._set(doc, "image_provider", said, "provided", "client")
+            self.assertEqual(built(doc)["intake"]["image_plan"]["image_provider"], want, said)
+        doc = elevation()
+        e._set(doc, "image_provider", "midjourney", "provided", "client")
         err = refused(self, "AF-LAUNCH-ANSWERS-PROVIDER", built, doc)
-        self.assertIn("KIE only", err.detail)
-        self.assertIn("nothing was spent", err.detail.lower())
+        self.assertIn("kie, agnes, other_explicit", err.detail)
 
     def test_the_bank_states_the_kie_only_requirement_and_asks_the_visual_direction(self):
         q = self.bank["image_provider"]
         self.assertIn("KIE only", q["why"])
+        self.assertIn("practice run", q["why"])
         self.assertIn("KIE", q["choice_explanations"]["My connected service"])
         v = self.bank["visual_direction"]
         self.assertEqual(v["choices"][0], HOUSE)

@@ -32,7 +32,9 @@ Exit 0 ok, 2 refused. stdlib only; reads no secret.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
+import importlib
 import json
 import re
 import sys
@@ -49,6 +51,10 @@ JOURNEY_MODES = ("single_simple", "multiple_options", "folded_levels")
 EXTRA_SLOTS = (("bump", "BUMP", "bump"), ("upsell_1", "U1", "upsell_1"),
                ("downsell_1", "D1", "downsell_1"), ("upsell_2", "U2", "upsell_2"))
 _UNAPPROVED = ("suggested", "default_to_confirm")
+IMAGE_PROVIDERS = ("kie", "agnes", "other_explicit")  # the launch record's image_provider vocabulary
+TERMS_FIELDS = ("guarantee_ref", "guarantee_text", "terms_ref", "terms_text", "consent_ref", "consent_text")
+ANSWER_BUILT_ROOTS = ("journey_mode", "offers", "copy_profile", "checkout_terms", "answers_file", "image_plan")
+OFFER_ANSWER_FIELDS = ("offer_id", "name", "role", "price", "level")
 IMAGES_PER_SECTION = 4  # Skill 49 page_set.image_estimate: desktop + mobile wireframe and mockup
 
 
@@ -123,7 +129,7 @@ def _offer(offer_id: str, role: str, name: Any, price: Any, qid: str, deliverabl
     items = _deliverables(deliverables)
     if items:  # a level is supplied from the client's own deliverables, never invented
         offer["level"] = {"state": "supplied", "name": name.strip(), "deliverables": items}
-    src = {"offer_id": offer_id, "role": role, "question_id": qid, "source_ref": f"answers-file:{qid}"}
+    src = {"offer_id": offer_id, "role": role, "question_id": qid, "source_ref": field}  # Skill 83 offer_mapper grammar
     if index is not None:
         src["index"] = index
     return offer, src
@@ -252,7 +258,7 @@ def _promotion(doc: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------- the intake
-def _image_plan(doc: Dict[str, Any], system: Dict[str, Any]) -> Dict[str, Any]:
+def _image_plan(doc: Dict[str, Any], system: Dict[str, Any], warnings: List[str]) -> Dict[str, Any]:
     plan: Dict[str, Any] = {}
     ds = _entry(doc, "design_style")
     if ds and ds.get("status") == "provided" and ds.get("value") in ("A", "B", "C"):
@@ -263,13 +269,15 @@ def _image_plan(doc: Dict[str, Any], system: Dict[str, Any]) -> Dict[str, Any]:
     prov = _entry(doc, "image_provider")
     if prov and prov.get("status") != "unknown":
         v = str(prov.get("value") or "").strip().lower()
-        if v == "agnes" or v not in ("kie", "connected"):
+        mapped = {"connected": "kie", "none": "other_explicit"}.get(v, v)  # same map as engine.to_launch_known
+        if mapped not in IMAGE_PROVIDERS:
             _fail("AF-LAUNCH-ANSWERS-PROVIDER", "answers-file:image_provider",
-                  f"The launcher draws pictures with KIE only today; {v or 'this service'!r} cannot draw "
-                  "these pages yet. Nothing was sent and nothing was spent. Use KIE, or ask for that "
-                  "service to be added before the launch")
+                  f"{v or 'this service'!r} is not a known image service; the launch record knows {', '.join(IMAGE_PROVIDERS)}")
         if prov["status"] == "provided":
-            plan["image_provider"] = "kie"
+            plan["image_provider"] = mapped
+            if mapped != "kie":  # Skill 83's image plan decides at dispatch; it stops before anything is spent
+                warnings.append(f"{mapped} cannot draw paid pictures for the launcher (paid pictures are KIE only); "
+                                "Skill 83's image plan decides at dispatch and stops before anything is sent or spent.")
     owner = _entry(doc, "business_name")
     if owner and owner.get("status") == "provided" and str(owner.get("value") or "").strip():
         plan["brand_owner"] = str(owner["value"]).strip()
@@ -278,15 +286,86 @@ def _image_plan(doc: Dict[str, Any], system: Dict[str, Any]) -> Dict[str, Any]:
     return plan
 
 
-def to_launcher_intake(doc: Dict[str, Any], system: Dict[str, Any], *, answers_sha256: Optional[str] = None) -> Dict[str, Any]:
+# ---------------------------------------------------------------- what Skill 83's own intake declares
+def _roots83() -> List[Path]:
+    return [REPO / "83-black-friday-launcher", Path.home() / ".claude" / "skills" / "83-black-friday-launcher",
+            Path.home() / ".openclaw" / "skills" / "83-black-friday-launcher"]
+
+
+def _load83(name: str) -> Any:
+    """launcher_core.<name> from the first root that has it, else None. Not cached, so tests can pass a module."""
+    for d in _roots83():
+        if (d / "launcher_core" / f"{name}.py").is_file():
+            if str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+            try:
+                return importlib.import_module(f"launcher_core.{name}")
+            except ImportError:
+                return None
+    return None
+
+
+def _intake83() -> Any:
+    return _load83("intake")
+
+
+def _declared(mod: Any, name: str) -> bool:
+    """True when 83's intake declares the field (required, optional or defaultable); never emit one it does not."""
+    return mod is not None and any(name in getattr(mod, k, ()) for k in ("REQUIRED_FIELDS", "OPTIONAL_FIELDS", "PERMITTED_DEFAULTS"))
+
+
+def _price_keys(mod: Any) -> tuple:
+    return tuple(getattr(mod, "PRICE_REQUIRED", ())) + tuple(getattr(mod, "PRICE_OPTIONAL", ()))
+
+
+def _plan_accepts(key: str) -> Optional[bool]:
+    """Does 83's image_plan.validate_raw accept this key? None when Skill 83 is not beside this one."""
+    ip = _load83("image_plan")
+    if ip is None:
+        return None
+    try:
+        ip.validate_raw({key: "x"})
+        return True
+    except ip.ImagePlanError:
+        return False
+
+
+def _checkout_terms(doc: Dict[str, Any]) -> Dict[str, Any]:
+    """The client's own guarantee, terms and consent wording, verbatim. Never defaulted, never written for them."""
+    v = _provided(doc, "checkout_terms")
+    if not isinstance(v, dict) or not all(isinstance(v.get(k), str) and v[k].strip() for k in TERMS_FIELDS):
+        _fail("AF-LAUNCH-ANSWERS-TERMS", "answers-file:checkout_terms",
+              "needs all six parts as the client's own words or links: " + ", ".join(TERMS_FIELDS))
+    return copy.deepcopy(v)
+
+
+def _guard_system(system: Dict[str, Any]) -> None:
+    """The pass-throughs may add what no answer can carry; they may not replace what the answers build."""
+    bad = sorted(set(system.get("extra_root") or {}) & set(ANSWER_BUILT_ROOTS))
+    if bad:
+        _fail("AF-LAUNCH-ANSWERS-SYSTEM", "system.extra_root", f"{bad} are built from the answers file; they cannot be set here")
+    for oid, fields in (system.get("extra_offer") or {}).items():
+        bad = sorted(set(fields or {}) & set(OFFER_ANSWER_FIELDS))
+        if bad:
+            _fail("AF-LAUNCH-ANSWERS-SYSTEM", f"system.extra_offer.{oid}", f"{bad} come from the answers file; they cannot be set here")
+
+
+def to_launcher_intake(doc: Dict[str, Any], system: Dict[str, Any], *, answers_sha256: Optional[str] = None,
+                       answers_path: Optional[Path] = None, intake_module: Any = None) -> Dict[str, Any]:
     """The Skill 83 intake from the answers, with provenance. `system` carries what no answer can: tenant_id,
     location_id, launch_id, [revision], brand {ref, hash}, approval {ref, hash}, entitlement_attestation, and
-    optionally brand_file, test_only, locale, extra_root / extra_offer (fields a newer intake requires)."""
+    optionally brand_file, test_only, locale, extra_root / extra_offer (fields a newer intake requires, never
+    ones the answers build). A field is emitted only when Skill 83's intake (`intake_module`, default the
+    sibling skill) declares it, so the result validates before and after that intake grows."""
     if (doc.get("meta") or {}).get("mode") == "legacy" or doc.get("schema") != "client-intake-answers/v1":
         _fail("AF-LAUNCH-ANSWERS-SCHEMA", "answers-file", "not a client-intake-answers/v1 launch answers file")
     for key in ("tenant_id", "location_id", "launch_id", "brand", "approval", "entitlement_attestation"):
         if not system.get(key):
             _fail("AF-LAUNCH-ANSWERS-SYSTEM", f"system.{key}", "comes from verified account access, not from the interview")
+    _guard_system(system)
+    mod = intake_module if intake_module is not None else _intake83()
+    if _declared(mod, "answers_file") and answers_path is None:
+        _fail("AF-LAUNCH-ANSWERS-SYSTEM", "answers_file", "Skill 83 records the answers file path; build from the file, not from a parsed copy")
     if _provided(doc, "plan_approval") != "approve":
         _fail("AF-LAUNCH-ANSWERS-APPROVAL", "answers-file:plan_approval", "the client has not approved this plan")
     if _provided(doc, "entitlement") != "attested":
@@ -294,21 +373,33 @@ def to_launcher_intake(doc: Dict[str, Any], system: Dict[str, Any], *, answers_s
     mode, offers, sources = derive_offers(doc)
     direction = creative_direction(doc)
     extra = system.get("extra_offer") or {}
+    offers = [dict(copy.deepcopy(o), **extra.get(o["offer_id"], {})) for o in offers]
+    if "source_ref" in _price_keys(mod):  # the price carries the answers-file question it came from
+        refs = {s["offer_id"]: s["source_ref"] for s in sources}
+        for o in offers:
+            o["price"]["source_ref"] = refs[o["offer_id"]]
     intake = {
         "schema_version": "1.0", "tenant_id": system["tenant_id"], "location_id": system["location_id"],
         "launch_id": system["launch_id"], "revision": system.get("revision", 1), "journey_mode": mode,
         "brand": system["brand"], "copy_profile": _provided(doc, "copy_profile"), "approval": system["approval"],
-        "entitlement_attestation": system["entitlement_attestation"],
-        "offers": [dict(o, **extra.get(o["offer_id"], {})) for o in offers],
+        "entitlement_attestation": system["entitlement_attestation"], "offers": offers,
     }
+    if _declared(mod, "answers_file"):
+        intake["answers_file"] = str(answers_path)
+    if _declared(mod, "checkout_terms"):
+        intake["checkout_terms"] = _checkout_terms(doc)
     for k in ("test_only", "allowed_write_target", "locale", "automation_execution"):
         if k in system:
             intake[k] = system[k]
-    plan = _image_plan(doc, system)
+    ceiling, warnings = image_ceiling(doc), []
+    plan = _image_plan(doc, system, warnings)
+    if "design_style_source" in plan and _plan_accepts("design_style_source") is False:
+        del plan["design_style_source"]
+    if direction["value"] is not None and _plan_accepts("creative_direction"):
+        plan["creative_direction"] = direction["value"]  # 83's image plan carries the client's look to Skill 71
     if plan:
         intake["image_plan"] = plan
     intake.update(system.get("extra_root") or {})
-    ceiling, warnings = image_ceiling(doc), []
     if ceiling and plan.get("image_cap") is not None and plan["image_cap"] < ceiling["images"]:
         warnings.append(f"image_cap {plan['image_cap']} is below the {ceiling['images']} pictures the chosen page "
                         "set needs; the last pages would be skipped")
@@ -319,10 +410,25 @@ def to_launcher_intake(doc: Dict[str, Any], system: Dict[str, Any], *, answers_s
             "journey_mode": {"source_ref": "answers-file:funnel_shape"},
             "offers": sources, "creative_direction": direction, "promotion": _promotion(doc),
             "image_ceiling": ceiling, "warnings": warnings}
+    if "checkout_terms" in intake:
+        prov["checkout_terms"] = {"source_ref": "answers-file:checkout_terms"}
     return {"intake": intake, "provenance": prov}
 
 
 # ---------------------------------------------------------------- the refusal
+def _same_offer(have: Dict[str, Any], want: Dict[str, Any]) -> bool:
+    """Every answers-built field matches. A price may also carry its source_ref, so it is compared on amount and currency."""
+    for k, v in want.items():
+        got = have.get(k)
+        if k == "price":
+            ok = isinstance(got, dict) and all(got.get(f) == v[f] for f in ("amount_minor", "currency"))
+        else:
+            ok = got == v
+        if not ok:
+            return False
+    return True
+
+
 def verify(intake: Any, provenance: Any, answers: Any, answers_path: Optional[Path] = None) -> None:
     """Raise AnswersError unless the intake was built from exactly these answers. `answers` is the parsed
     answers file; `answers_path` (when given) is hashed as file bytes if the provenance says so."""
@@ -344,7 +450,7 @@ def verify(intake: Any, provenance: Any, answers: Any, answers_path: Optional[Pa
     mode, offers, _ = derive_offers(answers)
     have = {o.get("offer_id"): o for o in intake.get("offers") or []}
     same = (intake.get("journey_mode") == mode and set(have) == {o["offer_id"] for o in offers}
-            and all(all(have[o["offer_id"]].get(k) == v for k, v in o.items()) for o in offers))
+            and all(_same_offer(have[o["offer_id"]], o) for o in offers))
     if not same:
         _fail("AF-LAUNCH-ANSWERS-HASH-MISMATCH", "offers",
               "the intake's offers, prices or journey mode do not match the answers file")
@@ -357,8 +463,7 @@ def _read(path: Any) -> Any:
 
 def _delegate(argv: List[str]) -> int:
     """Skill 83's own CLI. Kept apart so the refusal above runs first and is testable alone."""
-    for d in (REPO / "83-black-friday-launcher", Path.home() / ".claude" / "skills" / "83-black-friday-launcher",
-              Path.home() / ".openclaw" / "skills" / "83-black-friday-launcher"):
+    for d in _roots83():
         if (d / "launcher_core" / "cli.py").is_file():
             sys.path.insert(0, str(d))
             from launcher_core import cli  # noqa: E402
@@ -386,7 +491,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.cmd == "build":
             doc = _read(args.answers)
             out = Path(args.out)
-            res = to_launcher_intake(doc, _read(args.system), answers_sha256=_file_hash(Path(args.answers)))
+            res = to_launcher_intake(doc, _read(args.system), answers_sha256=_file_hash(Path(args.answers)),
+                                     answers_path=Path(args.answers).resolve())
             out.mkdir(parents=True, exist_ok=True)
             (out / "intake.json").write_text(json.dumps(res["intake"], indent=2) + "\n", encoding="utf-8")
             (out / PROVENANCE_NAME).write_text(json.dumps(res["provenance"], indent=2) + "\n", encoding="utf-8")

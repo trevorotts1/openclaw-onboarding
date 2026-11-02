@@ -406,6 +406,7 @@
       ],
       "legacy_ids": [
         "a4_deliverables",
+        "a4b_exclusions",
         "q5"
       ],
       "required_by": []
@@ -1406,7 +1407,7 @@
       "id": "image_provider",
       "group": "images",
       "text": "Which image service should make your pictures?",
-      "why": "I only name a service after checking it works for you. Every page needs its generated pictures; there is no no-images option. The Black Friday launcher draws pictures with KIE only today: if your only image service is Agnes or another one, say so now, because it cannot draw with it yet and I stop before anything is sent or spent.",
+      "why": "I only name a service after checking it works for you. Every page needs its generated pictures; there is no no-images option. The Black Friday launcher draws paid pictures with KIE only today. If your image service is Agnes or another one, a practice run with placeholder pictures still works, but paid pictures need KIE; I stop before anything is sent or spent.",
       "answer_type": "choice",
       "choices": [
         "My connected service",
@@ -1932,6 +1933,34 @@
         "Please check for me": "I verify it against your account record before anything runs.",
         "No": "This launch needs its own arrangement."
       }
+    },
+    {
+      "id": "checkout_terms",
+      "group": "launch",
+      "text": "What guarantee, terms and checkout consent wording should your order form show? Send the exact words, or links to the pages where they live.",
+      "why": "The order form shows these word for word. I never write a guarantee, terms or consent line for you.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "The guarantee is your refund promise. The terms are the rules of the purchase. The consent line is what the buyer agrees to when paying. If you have none yet, say so and we settle them together before anything is built.",
+        "examples": [
+          "30-day money-back guarantee; terms at yoursite.com/terms",
+          "I agree to the terms and to receive emails about my purchase."
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode == bf",
+      "targets": [
+        "checkout_terms"
+      ],
+      "legacy_ids": [],
+      "required_by": [
+        "83:checkout_terms"
+      ]
     },
     {
       "id": "bf_promotion",
