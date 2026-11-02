@@ -1,14 +1,24 @@
 # council-before-dispatch — distribution and per-box provisioning
 
-This directory is the plugin's distribution home in `trevorotts1/openclaw-onboarding`
-(`extensions/<plugin-id>/`, the same convention as `extensions/ceo-routing-doctrine`
-and `extensions/agent-exchange-telemetry`).
+This directory is the plugin's distribution home inside Skill 77
+(`77-council-of-wise-elders/extensions/<plugin-id>/`). The root `extensions/`
+directory holds independently rolled plugins; the Council plugin travels with
+its skill so the same package that builds the runtime also ships the
+interceptor and its provisioning surface. File ownership and the exact surface
+are recorded in `CONTRACT.md`.
 
 It ships the packaging, the plugin runtime (`index.js`, `index.ts`,
-`lib/core.mjs`, `test/`), and the provisioning surface in one directory. File
-ownership and the exact surface are recorded in `CONTRACT.md`.
+`lib/core.mjs`, `test/`), and the provisioning surface in one directory.
 
-Nothing here enables a plugin, edits `openclaw.json`, or touches credentials.
+The official install path is the skill's `wire.sh`, which runs on every fresh
+install and every fleet update. It copies this whole declared package to
+`$OPENCLAW_ROOT/extensions/council-before-dispatch`, validates the OpenClaw
+version against `openclaw.compat`, runs `provision.mjs`, and writes only the
+derived per-box entry (`plugins.entries`, `plugins.load.paths` and an existing
+`plugins.allow`). It never creates an allowlist, widens `allowFrom`, or
+substitutes an operator fallback. The manual steps below remain the audit
+trail and the recovery path; running them by hand is never required on a box
+that received a normal roll.
 
 ## Preconditions (checked, never assumed)
 
@@ -48,7 +58,9 @@ they are. Never install with a synchronise/`--delete` mode: the extension
 directory holds box-owned edits this repository does not track.
 
 Then make sure the plugin id is present in the box's `plugins.allow` list. That
-list is the box owner's; provisioning never edits it.
+list is the box owner's: `wire.sh` only EXTENDS an existing allowlist and never
+creates one; `provision.mjs` never edits it. A box with no `plugins.allow` needs
+no list.
 
 ## 2. Provision: derive this box's entry
 
@@ -119,12 +131,14 @@ An account that does not exist, a workspace that disagrees, or either sender
 refusal above is a typed `NOT_READY` (`ACCOUNT_NOT_FOUND`, `BINDING_CONFLICT`).
 The binding file is never merged silently.
 
-## 3. Merge the printed entry (owner action)
+## 3. Merge the printed entry (wire.sh does this; manual recovery only)
 
-Take `entry` from the `READY` output and place it at
-`plugins.entries["council-before-dispatch"]` in `openclaw.json`. Keep every
-pre-existing key the box already had. `install/plugins-entry.example.json` shows
-the shape with placeholders only.
+`wire.sh` takes `entry` from the `READY` output and places it at
+`plugins.entries["council-before-dispatch"]` in `openclaw.json` atomically,
+after `openclaw config validate`. For a hand recovery, do the same: keep every
+pre-existing key the box already had, keep an operator-set optional value, and
+replace only the eight required identity fields from `entry`.
+`install/plugins-entry.example.json` shows the shape with placeholders only.
 
 Do **not** add `runtimeRoot`. The plugin follows `<prefix>/active.json`, where
 `<prefix>` is the parent of `dirname(councilAskPath)`. If an existing config

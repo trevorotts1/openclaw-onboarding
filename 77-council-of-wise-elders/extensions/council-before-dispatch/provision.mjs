@@ -115,6 +115,35 @@ function stringList(value) {
   return out;
 }
 
+// OpenClaw 2026.10.8 writes `match.peer` as `{kind:"direct"|"group", id:"…"}`.
+// Older configs and the documented binding file use a scalar id. Normalize both
+// without inventing an id: a shape this function cannot read returns null.
+function peerId(match) {
+  const peer = match?.peer;
+  if (typeof peer === "string" || typeof peer === "number") {
+    const value = String(peer).trim();
+    return value || null;
+  }
+  if (isPlainObject(peer) && (typeof peer.id === "string" || typeof peer.id === "number")) {
+    const value = String(peer.id).trim();
+    return value || null;
+  }
+  return null;
+}
+
+function peerKind(match) {
+  const peer = match?.peer;
+  if (!isPlainObject(peer)) return null;
+  return typeof peer.kind === "string" ? peer.kind.trim().toLowerCase() : null;
+}
+
+function isDirectPeer(match) {
+  const kind = peerKind(match);
+  // A scalar legacy peer has no kind and is treated as the DM it historically
+  // was. An explicit "group" or "channel" is never a Council DM.
+  return kind === null || kind === "direct" || kind === "dm" || kind === "private";
+}
+
 /**
  * The authorized sender set for one account.
  *
@@ -281,7 +310,7 @@ function main(argv) {
   let agentId = explicitAgent;
   if (!agentId) {
     const candidates = Object.keys(agents).filter((id) =>
-      telegramBindings(bindings, id).some((one) => typeof one.match.peer === "string" || typeof one.match.peer === "number")
+      telegramBindings(bindings, id).some((one) => peerId(one.match) !== null && isDirectPeer(one.match))
     );
     if (candidates.length === 1) {
       agentId = candidates[0];
@@ -322,50 +351,63 @@ function main(argv) {
       "Correct the binding file or the box config. Provision will not override either.");
   }
 
-  // ---- conversation + account from the trusted binding ----
+  // ---- account from the trusted binding/config ----
   const agentTelegram = agentId ? telegramBindings(bindings, agentId) : [];
-  const peerBindings = agentTelegram.filter(
-    (one) => typeof one.match.peer === "string" || typeof one.match.peer === "number"
-  );
-  const explicitConversation = binding?.telegram?.conversationId ?? options.conversation ?? null;
-  let conversationId = explicitConversation ? String(explicitConversation).trim() : null;
-  if (!conversationId) {
-    if (peerBindings.length === 1) {
-      conversationId = String(peerBindings[0].match.peer);
-      derivation.push({ field: "conversationId", source: `bindings[agentId=${agentId}].match.peer`, value: conversationId });
-    } else if (peerBindings.length === 0) {
-      notReady("NO_DM_BINDING", `agent ${agentId} has no telegram binding carrying match.peer`,
-        "Add the DM binding through the supported routing config, or pass --conversation with the box's own DM chat id.");
-    } else {
-      notReady("AMBIGUOUS_CONVERSATION",
-        `agent ${agentId} has ${peerBindings.length} telegram peer bindings: ${peerBindings.map((one) => String(one.match.peer)).join(", ")}`,
-        "Pass --conversation (the DM chat id) or --binding. A group chat is never a Council DM.");
-    }
-  } else {
-    derivation.push({ field: "conversationId", source: binding ? "binding file" : "operator flag", value: conversationId });
-  }
-
   const explicitAccount = binding?.telegram?.accountId ?? options.account ?? null;
+  const accountNames = Object.keys(accounts);
   const boundAccounts = [...new Set(agentTelegram
-    .map((one) => (typeof one.match.accountId === "string" ? one.match.accountId : null))
+    .map((one) => (typeof one.match.accountId === "string" ? one.match.accountId.trim() : null))
     .filter(Boolean))];
-  let accountId = explicitAccount ? String(explicitAccount).trim() : (boundAccounts.length === 1 ? boundAccounts[0] : null);
+  // OpenClaw 2026.10.8 omits match.accountId on Telegram bindings. A box with
+  // exactly one Telegram account is therefore unambiguous; several accounts
+  // without a binding that names one stays a typed refusal.
+  let accountId = explicitAccount
+    ? String(explicitAccount).trim()
+    : (boundAccounts.length === 1 ? boundAccounts[0] : (boundAccounts.length === 0 && accountNames.length === 1 ? accountNames[0] : null));
   if (!accountId) {
     notReady("AMBIGUOUS_ACCOUNT",
       boundAccounts.length === 0
-        ? `agent ${agentId}'s telegram bindings record no match.accountId and this box has ${Object.keys(accounts).length} telegram account(s): ${Object.keys(accounts).sort().join(", ")}`
+        ? `agent ${agentId}'s telegram bindings record no match.accountId and this box has ${accountNames.length} telegram account(s)`
         : `agent ${agentId}'s telegram bindings name more than one account: ${boundAccounts.join(", ")}`,
       "Pass --account with the exact account id from this box's channels.telegram.accounts, or use --binding.");
   } else if (!accounts[accountId]) {
     notReady("ACCOUNT_NOT_FOUND", `telegram account ${accountId} is not in channels.telegram.accounts`,
       "Pass an account id that exists on this box.");
   } else {
-    derivation.push({ field: "accountId", source: explicitAccount ? (binding ? "binding file" : "operator flag") : "binding match.accountId", value: accountId });
+    derivation.push({ field: "accountId", source: explicitAccount ? (binding ? "binding file" : "operator flag") : "binding match.accountId or the sole telegram account", value: accountId });
     const account = accounts[accountId];
     if (isPlainObject(account) && account.enabled === false) {
       notReady("ACCOUNT_DISABLED", `channels.telegram.accounts.${accountId}.enabled is false`,
         "Enable the account through the supported installer; provision will not change it.");
     }
+  }
+
+  // ---- conversation: a DIRECT binding only, preferring an authorized sender ----
+  // A Telegram DM is the object peer {kind:"direct", id}; a group peer is never
+  // a Council DM. Several DMs that cannot be narrowed to one are a typed
+  // refusal, never a guess: the owner supplies --binding for that box.
+  const peerBindings = agentTelegram.filter((one) => peerId(one.match) !== null && isDirectPeer(one.match));
+  const allowFrom = stringList(accounts[accountId]?.allowFrom);
+  const authorizedPeers = peerBindings.filter((one) => allowFrom.includes(peerId(one.match)));
+  const explicitConversation = binding?.telegram?.conversationId ?? options.conversation ?? null;
+  let conversationId = explicitConversation ? String(explicitConversation).trim() : null;
+  if (!conversationId) {
+    if (peerBindings.length === 1) {
+      conversationId = peerId(peerBindings[0].match);
+      derivation.push({ field: "conversationId", source: `bindings[agentId=${agentId}].match.peer`, value: conversationId });
+    } else if (authorizedPeers.length === 1) {
+      conversationId = peerId(authorizedPeers[0].match);
+      derivation.push({ field: "conversationId", source: "the one direct binding whose peer is in the account allowFrom", value: conversationId });
+    } else if (peerBindings.length === 0) {
+      notReady("NO_DM_BINDING", `agent ${agentId} has no direct telegram binding carrying a peer id`,
+        "Add the DM binding through the supported routing config, or pass --conversation with the box's own DM chat id.");
+    } else {
+      notReady("AMBIGUOUS_CONVERSATION",
+        `agent ${agentId} has ${peerBindings.length} direct telegram bindings and ${authorizedPeers.length} intersect the account allowFrom; one Council conversation cannot be chosen safely`,
+        "Pass --conversation (the DM chat id) or --binding with this box's own client DM. A group chat is never a Council DM.");
+    }
+  } else {
+    derivation.push({ field: "conversationId", source: binding ? "binding file" : "operator flag", value: conversationId });
   }
 
   // ---- authorized senders: only the account's own allowFrom ----

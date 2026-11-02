@@ -85,15 +85,21 @@ test('doctor accepts a data dir outside the skill folder', async () => {
   assert.match(guardLine(c.all()), /\[ok\]/);
 });
 
-// The two shipped layouts, each a single esbuild bundle (the toolchain's
+// The shipped layouts, each a single esbuild bundle (the toolchain's
 // own `bundle` step) with no SKILL.md, advisors/ or manifest.json above it:
 //   onboarding: <prefix>/releases/<id>/dist/blackceo-council.mjs, record at
 //               <prefix>/releases/install-record.json (scripts/install-runtime.mjs)
 //   999-setup:  <prefix>/runtime/dist/council-entry.mjs, record at
 //               <prefix>/install-record.json (council-runtime-install.sh)
+//   service:    <prefix>/releases/<id>/src/service/probe.mjs, record at
+//               <prefix>/releases/install-record.json — the depth the
+//               service launcher imports (release/src/service/*) and the
+//               layout whose packs probe emitted PACKS_NOT_RESOLVED
+//               (CTR-199). The walk, not a fixed `../../`, must find it.
 const LAYOUTS = {
   onboarding: { entry: 'releases/rel-0123456789ab/dist/blackceo-council.mjs', record: 'releases/install-record.json' },
   '999': { entry: 'runtime/dist/council-entry.mjs', record: 'install-record.json' },
+  service: { entry: 'releases/rel-0123456789ab/src/service/probe.mjs', record: 'releases/install-record.json' },
 } as const;
 
 let bundleDir: string | null = null;
