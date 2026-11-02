@@ -110,6 +110,14 @@ _MUSIC_SENTENCE = {
     "soul-ballad": "slow, heartfelt singing; builds to a big emotional chorus.",
     "rnb-flow": "rhythmic rap verses, then a smooth sung hook you remember.",
     "soul-rise": "starts slow and sad, then lifts into an upbeat, hopeful groove.",
+    # The card's own short line (4-12 words) for the five styles whose owner
+    # catalog description is longer than the card allows. The catalog text is
+    # unchanged and still feeds help; every other style shows it as-is.
+    "trap-rap": "punchy rap over deep bass and rolling hi-hats.",
+    "cinematic-orchestral-song": "sweeping strings and a powerful, film-style chorus.",
+    "contemporary-gospel": "faith-centered singing with piano, organ, and a powerful choir.",
+    "urban-gospel": "faith-centered singing with R&B and hip-hop grooves, plus choir.",
+    "country-rap": "country storytelling meets rock power and hip-hop rhythm.",
 }
 
 
@@ -138,9 +146,10 @@ def _look_links():
 
 
 def _musics():
-    from music_styles import music_styles as MS
-    labels = {k: MS.style(k)["label"] for k in _MUSIC_SENTENCE}
-    return _menu(list(_MUSIC_SENTENCE), labels, _MUSIC_SENTENCE)
+    """The eighteen canonical styles, from the catalog owner of record."""
+    from music_styles import catalog as CAT
+    return [(row["label"], _MUSIC_SENTENCE.get(row["style_id"], row["description"]))
+            for row in CAT.choice_rows()]
 
 
 def _usd(x):
@@ -1115,16 +1124,22 @@ def format_questions(texts):
 
 
 def _split_long(block, limit):
-    """A block over the limit splits on line boundaries, never mid-line."""
-    out, cur = [], ""
-    for line in block.split("\n"):
-        cand = cur + "\n" + line if cur else line
-        if len(cand) > limit and cur:
-            out.append(cur)
-            cur = line
+    """A block over the limit splits on line boundaries, never mid-line.
+
+    A question that does not fit one message (the eighteen-style MUSIC STYLE
+    menu) continues in the next message under its own header plus
+    "(continued)", so no message opens with option lines and no context.
+    """
+    lines = block.split("\n")
+    cont = lines[0] + " (continued)" if lines[0].startswith("Question ") else None
+    out, cur = [], []
+    for line in lines:
+        if cur and len("\n".join(cur + [line])) > limit:
+            out.append("\n".join(cur))
+            cur = ([cont] if cont else []) + [line]
         else:
-            cur = cand
-    return out + ([cur] if cur else [])
+            cur.append(line)
+    return out + (["\n".join(cur)] if cur else [])
 
 
 def render_messages(questions=None, limit=TELEGRAM_LIMIT, book_plan=None,
