@@ -76,7 +76,8 @@ class BuilderStampsFoldedLevelsTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
 
     def write_run_launch(self, mode, mains):
-        offers = [{"offer_id": f"M{i}", "role": "main"} for i in range(mains)] + [{"offer_id": "U1", "role": "upsell_1"}]
+        # the shape 83 to_launch_record really writes: an offer's place in the journey is "slot"
+        offers = [{"offer_id": f"M{i}", "slot": "main"} for i in range(mains)] + [{"offer_id": "U1", "slot": "upsell_1"}]
         (self.run / "launch.json").write_text(json.dumps({"journey_mode": mode, "offers": offers}), encoding="utf-8")
 
     def request(self, kind="sales"):
@@ -90,6 +91,22 @@ class BuilderStampsFoldedLevelsTests(unittest.TestCase):
         last = request["sections"][-1]
         block = w.prompt_block("desktop-wireframe", last, len(request["sections"]), len(request["sections"]), 1440, request)
         self.assertIn("exactly 3 level cards", block)
+
+    def test_the_real_83_seven_figure_preneur_record_yields_three_levels(self):
+        # the record 83 to_launch_record builds from its seven-figure-preneur fixture, built in a child
+        # process so 83's modules never touch this test's import path
+        root = HERE.parents[1] / "83-black-friday-launcher"
+        code = ("import json,sys;from pathlib import Path;sys.path.insert(0,'.');"
+                "from launcher_core import intake,route,launch_bridge as lb;"
+                "n=intake.validate(json.loads(Path('fixtures/seven-figure-preneur/intake.json').read_text()));"
+                "print(json.dumps(lb.to_launch_record(n,route.compile_route(n),{'image_provider':'kie'})))")
+        proc = subprocess.run([sys.executable, "-I", "-c", code], cwd=root, text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        record = json.loads(proc.stdout)
+        self.assertTrue(all("slot" in o and "role" not in o for o in record["offers"]))
+        (self.run / "launch.json").write_text(json.dumps(record), encoding="utf-8")
+        self.assertEqual(builder.folded_levels(self.run), 3)
+        self.assertEqual(self.request()["folded_levels"], 3)
 
     def test_no_launch_record_a_single_offer_or_an_opt_in_page_is_unchanged(self):
         self.assertNotIn("folded_levels", self.request())
@@ -115,6 +132,101 @@ class BuilderStampsFoldedLevelsTests(unittest.TestCase):
         proc = subprocess.run([sys.executable, str(SCRIPTS / "stage_executor.py"), str(self.run), "--preflight",
                                "--stages", "desktop-wireframe"], text=True, capture_output=True)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+
+class UpsellLayoutStampTests(unittest.TestCase):
+    """UPS-20/21 (carried from U-upsell-05): with page-structures.json `layouts` declared, an upsell
+    section carries its layout tag and an image plate from the layout, never one derived from its heading."""
+    SKILL80 = HERE.parents[1] / "80-signature-upsell"
+    COPY = SKILL80 / "components/80-signature-upsell/fixtures/copy-upsell1-public.valid.json"
+    BUNDLE = SKILL80 / "examples/upsell-result-bundle-upsell1.example.json"
+
+    def sections(self, structures):
+        path = Path(tempfile.mkdtemp()) / "page-structures.json"
+        path.write_text(json.dumps(structures), encoding="utf-8")
+        self.addCleanup(lambda: path.unlink(missing_ok=True))
+        old, executor.STRUCTURES_FILE = executor.STRUCTURES_FILE, path
+        self.addCleanup(lambda: setattr(executor, "STRUCTURES_FILE", old))
+        spec = json.loads((executor.SPEC_DIR / "upsell-v6.json").read_text(encoding="utf-8"))
+        load = lambda f: json.loads(f.read_text(encoding="utf-8"))
+        return builder.sections_from_copy_json(load(self.COPY), load(self.BUNDLE), spec, {})
+
+    def test_layout_tag_and_plate_come_from_the_declared_layout(self):
+        if not self.COPY.is_file():
+            self.skipTest("Skill 80 is not installed beside Skill 71")
+        layout = {"sections": [{"id": str(i), "layout_tag": f"tag-{i}", "geometry": f"Band {i} geometry.",
+                                "slot": {"slot_id": f"IMG-{i:03d}", "aspect_ratio": "4:3"}} for i in range(1, 9)]}
+        out = self.sections({"layouts": {"note": "x", "upsell_1": layout}})
+        self.assertEqual([s["layout_tag"] for s in out], [f"tag-{i}" for i in range(1, 9)])
+        for s in out:
+            art = s["slots"][0]["art_direction"]
+            self.assertNotIn("illustrates", art)
+            self.assertTrue(art.startswith(f"Band {s['section_id']} geometry."))
+        with self.assertRaises(builder.BuildError):  # layouts declared, but none for this instance
+            self.sections({"layouts": {"upsell_2": layout}})
+
+
+class SelectionStructureEnforcementTests(unittest.TestCase):
+    """PRD-23: a required section's rows must parse; an empty Compare is a failure, not a flag."""
+    SPEC = HERE.parent / "references" / "copy-specs" / "product-selection-v1.json"
+    SELECTION = (HERE / "fixtures" / "copy_examples" / "product-selection-path-b.md").read_text(encoding="utf-8")
+
+    def verdict(self, text):
+        import validate_copy_structure as v
+        units, order, notes = v.parse_manuscript(text)
+        return v.validate(units, order, notes, v.load_spec(self.SPEC)).fails
+
+    def compare_with(self, body):
+        head, rest = self.SELECTION.split("## Section 4: Compare\n", 1)
+        return head + "## Section 4: Compare\n" + body + "\n## Section 5:" + rest.split("## Section 5:", 1)[1]
+
+    def test_the_real_manuscript_still_passes(self):
+        self.assertEqual(self.verdict(self.SELECTION), [])
+
+    def test_an_empty_compare_fails_in_the_validator_and_exits_non_zero(self):
+        self.assertTrue(any("Compare" in f for f in self.verdict(self.compare_with(""))))
+        path = Path(tempfile.mkdtemp()) / "empty-compare.md"
+        path.write_text(self.compare_with(""), encoding="utf-8")
+        self.addCleanup(lambda: path.unlink(missing_ok=True))
+        proc = subprocess.run([sys.executable, str(SCRIPTS / "validate_copy_structure.py"), str(path),
+                               "--spec", str(self.SPEC)], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+
+    def test_prose_instead_of_rows_fails_and_a_matrix_table_passes(self):
+        self.assertTrue(self.verdict(self.compare_with("Everything is included in every package.\n")))
+        table = "| Item | Essential | Pro |\n|---|---|---|\n| Course | included | included |\n"
+        self.assertEqual(self.verdict(self.compare_with(table)), [])
+        self.assertTrue(self.verdict(self.compare_with("| Item | Essential | Pro |\n|---|---|---|\n")))
+
+
+class StructureRatificationTests(unittest.TestCase):
+    """STR-17: no copy spec still reads as a proposal, each carries its dated decision, and the page
+    handoff manifest carries a structure_approval field."""
+
+    def test_no_spec_status_says_proposed_or_awaiting(self):
+        specs = sorted((HERE.parent / "references" / "copy-specs").rglob("*.json"))
+        self.assertGreaterEqual(len(specs), 6)
+        for path in specs:
+            status = str(json.loads(path.read_text(encoding="utf-8")).get("status", "")).lower()
+            for word in ("proposed", "proposal", "awaiting", "pending"):
+                self.assertNotIn(word, status, path.name)
+
+    def test_each_ratified_spec_carries_the_dated_decision(self):
+        for rel in ("product-selection-v1.json", "thank-you-v1.json", "standard-v6.json", "long-form-v6.json", "roles/checkout.json"):
+            spec = json.loads((HERE.parent / "references" / "copy-specs" / rel).read_text(encoding="utf-8"))
+            self.assertEqual(spec["structure_approval"]["decision"], "ratified_as_built", rel)
+            self.assertRegex(spec["structure_approval"]["date"], r"^\d{4}-\d{2}-\d{2}$")
+
+    def test_the_page_handoff_manifest_carries_the_structure_approval(self):
+        import page_result
+        for request in ({"page_role": "thank_you"}, {"page_role": "checkout"}, {"page_role": "product_selection"},
+                        {"page_role": "landing", "copy_profile": "standard"},
+                        {"page_role": "landing", "copy_profile": "long_form"}):
+            got = page_result.structure_approval(request)
+            self.assertEqual((got["decision"], got["date"]), ("ratified_as_built", "2026-11-02"), request)
+        # a page whose spec records no decision is labelled, never silently approved
+        self.assertEqual(page_result.structure_approval({"page_role": "downsell_1"})["decision"],
+                         "structure pending approval")
 
 
 class SecondDownsellLabelTests(unittest.TestCase):
