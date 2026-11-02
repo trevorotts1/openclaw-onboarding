@@ -12,8 +12,8 @@ import {
   resolveCouncilBinding,
 } from "../lib/binding-predicate.mjs";
 
-const OWNER_DM = "8487";
-const OTHER_DM = "1679";
+const OWNER_DM = "1000000001";
+const OTHER_DM = "1000000002";
 
 function config(bindings, allowFrom) {
   return {
@@ -51,7 +51,7 @@ function resolveWith(senderIds, { allowFrom = ["*", OWNER_DM], agentId = "dept-m
   });
 }
 
-test("Monique shape: owner DM enumerated in allowFrom + wildcard account, explicit binding works", () => {
+test("an enumerated owner DM plus wildcard account resolves through the catch-all binding", () => {
   const result = resolveWith([OWNER_DM]);
   assert.equal(result.ok, true, result.detail);
   assert.equal(result.matchedBy, "binding.channel");
