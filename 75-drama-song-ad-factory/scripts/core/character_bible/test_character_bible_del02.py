@@ -12,6 +12,7 @@ tests or the rendered PDF. The suite renders a real PDF and proves:
   * the finished file is bright, readable and nothing is under 12 pt;
   * no product name, no money amount and no income promise reaches the client.
 """
+import json
 import os
 import re
 import shutil
@@ -30,9 +31,14 @@ for _p in (CORE, os.path.join(CORE, "character_bible"),
         sys.path.insert(0, _p)
 
 from character_bible import character_bible as CB  # noqa: E402
+from character_bible import character_approval as CA  # noqa: E402
 from character_bible import pdf_writer as PW       # noqa: E402
 from character_library import character_library as CL  # noqa: E402
+from choice_card.intake_card import delivery_outbox as DO  # noqa: E402
+from delivery_package import contract as DC        # noqa: E402
 import intake as I  # noqa: E402  (intake_preflight.intake)
+
+ITEM = DC.ITEMS_BY_KEY["character_bible"]
 
 #: The generic fixture character every DEL-02 test builds. Never a client.
 FIXTURE = {
@@ -398,16 +404,204 @@ class RefuseBeforeAnyWrite(unittest.TestCase):
         self._assert_nothing_written()
 
     def test_clean_case_still_delivers_pdf_and_images_dir(self):
-        img = _png(os.path.join(self.t, "close-up.png"), 80, 120, (60, 120, 180))
-        pdf = CB.write_delivery(self.delivery, CB.record(FIXTURE),
-                                {"close-up": img})
+        # A final bible ships all four angles: F7 completeness, not one picture.
+        imgs = {}
+        for i, view in enumerate(CB.IMAGE_VIEWS):
+            imgs[view] = _png(os.path.join(self.t, view + ".png"),
+                              80, 120, (60 + 20 * i, 120, 180))
+        pdf = CB.write_delivery(self.delivery, CB.record(FIXTURE), imgs)
         self.assertEqual(pdf, os.path.join(self.delivery, CB.DELIVERY_PDF_NAME))
         self.assertTrue(os.path.isfile(pdf))
         self.assertTrue(_read(pdf).startswith(b"%PDF"))
         img_dir = os.path.join(self.delivery, "02 - Character Bible Images")
         self.assertTrue(os.path.isdir(img_dir))
-        self.assertEqual(os.listdir(img_dir), ["close-up.png"])
-        self.assertGreater(os.path.getsize(os.path.join(img_dir, "close-up.png")), 0)
+        self.assertEqual(sorted(os.listdir(img_dir)),
+                         sorted(view + ".png" for view in CB.IMAGE_VIEWS))
+        for name in os.listdir(img_dir):
+            self.assertGreater(os.path.getsize(os.path.join(img_dir, name)), 0, name)
+
+
+class FourViewCompleteness(unittest.TestCase):
+    """F7: a final image bible is four angles, never a placeholder set."""
+
+    def setUp(self):
+        self.t = tempfile.mkdtemp(prefix="del02-complete-")
+        self.delivery = os.path.join(self.t, "delivery")
+        self.two = {}
+        for i, view in enumerate(("close-up", "side-profile")):
+            self.two[view] = _png(os.path.join(self.t, view + ".png"),
+                                  80, 120, (60 + 20 * i, 120, 180))
+
+    def tearDown(self):
+        shutil.rmtree(self.t, ignore_errors=True)
+
+    def test_a_partial_view_set_is_refused_by_name_before_any_write(self):
+        with self.assertRaises(CB.BibleError) as caught:
+            CB.write_delivery(self.delivery, CB.record(FIXTURE), self.two)
+        message = str(caught.exception)
+        self.assertIn("VIEWS_INCOMPLETE", message)
+        self.assertIn("Three-Quarter View", message)
+        self.assertIn("Full Standing", message)
+        self.assertNotIn("Close-Up", message)
+        self.assertFalse(os.path.exists(self.delivery))
+
+    def test_a_zero_byte_angle_is_missing_not_supplied(self):
+        four = dict(self.two)
+        four["three-quarter"] = _png(os.path.join(self.t, "three-quarter.png"))
+        four["full-standing"] = os.path.join(self.t, "full-standing.png")
+        open(four["full-standing"], "wb").close()
+        with self.assertRaises(CB.BibleError) as caught:
+            CB.write_delivery(self.delivery, CB.record(FIXTURE), four)
+        self.assertIn("VIEWS_INCOMPLETE", str(caught.exception))
+        self.assertIn("Full Standing", str(caught.exception))
+        self.assertFalse(os.path.exists(self.delivery))
+
+    def test_a_labelled_preview_may_ship_a_partial_set(self):
+        pdf = CB.write_delivery(self.delivery, CB.record(FIXTURE), self.two,
+                                preview=True)
+        self.assertTrue(os.path.isfile(pdf))
+        self.assertIn(b"PREVIEW", _read(pdf))
+        img_dir = os.path.join(self.delivery, "02 - Character Bible Images")
+        self.assertEqual(sorted(os.listdir(img_dir)),
+                         sorted(view + ".png" for view in self.two))
+
+
+class ApprovedPartialViewSetRefuses(unittest.TestCase):
+    """F7: the real approved path cannot ship a two-angle final bible.
+
+    ``character_approval`` accepts any non-empty reference set, so the
+    completeness gate has to live on the deliver path that consumes the
+    locked bytes -- and refuse before any output exists.
+    """
+
+    def setUp(self):
+        self.t = tempfile.mkdtemp(prefix="del02-approved-")
+        self.run = os.path.join(self.t, "run")
+        os.makedirs(os.path.join(self.run, "character"))
+
+    def tearDown(self):
+        shutil.rmtree(self.t, ignore_errors=True)
+
+    def _approved(self, views):
+        images = {view: _png(os.path.join(self.t, view + ".png"))
+                  for view in views}
+        DO.save_origin(self.run, DO.origin_record(
+            tenant_id="tenant-8", account_id="bot-8", channel="app",
+            conversation_id="conv-8", thread_id="thread-8"))
+        CA.save_bible(self.run, CA.bible_from_entries([{
+            "name": FIXTURE["character_name"], "role": "protagonist",
+            "slug": "sample", "background": FIXTURE["character_background"],
+            "appearance": FIXTURE["character_ethnicity"],
+            "voice_notes": FIXTURE["character_voice_notes"], "images": images}]))
+        CA.present(self.run, run_id="run-8")
+        self.assertEqual(CA.approve(self.run, "approve", approved_by="client-8",
+                                    run_id="run-8")["status"], CA.APPROVED)
+        with open(os.path.join(self.run, "character", "brief.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump(FIXTURE, fh)
+
+    def test_two_approved_angles_refuse_the_final_delivery(self):
+        self._approved(("close-up", "side-profile"))
+        with self.assertRaises(CB.BibleError) as caught:
+            CB.produce_delivery(self.run, ITEM)
+        self.assertIn("VIEWS_INCOMPLETE", str(caught.exception))
+        self.assertIn("Three-Quarter View", str(caught.exception))
+        self.assertFalse(os.path.exists(os.path.join(self.run, "delivery")))
+
+    def test_four_approved_angles_ship_all_four(self):
+        views = ("close-up", "side-profile", "three-quarter", "full-standing")
+        self._approved(views)
+        staged = CB.produce_delivery(self.run, ITEM)
+        out = os.path.dirname(str(staged[0]))
+        img_dir = os.path.join(out, ITEM.files[1])
+        self.assertEqual(sorted(os.listdir(img_dir)),
+                         sorted(view + ".png" for view in views))
+
+
+class Ww27CastBlockSurvivesF7(unittest.TestCase):
+    """The F7 port must not drop main's WW-27 cast block (a missing constant
+    only shows when the cast path runs, which no render test does)."""
+
+    def test_cast_constants_exist_and_cast_path_runs(self):
+        for name in ("CAST_SCHEMA", "TOOL_NAME", "CAST_MODES", "DEFAULT_CAST_MODE",
+                     "MIN_ENSEMBLE", "CAST_ROLES", "OPPOSING_ROLES", "CAST_FIELDS",
+                     "VOICE_DIRECTION_FIELDS", "CHARACTER_FIELDS",
+                     "CODE_SPEAKER_UNDECLARED", "CODE_ENSEMBLE_SINGLE_VOICE_STYLE",
+                     "CODE_VOICE_PACK_STITCHED", "_SINGLE_VOICE_RE"):
+            self.assertTrue(hasattr(CB, name), name)
+        self.assertEqual(CB.cast_decision({})["schema"], CB.CAST_SCHEMA)
+        CB.check_cast({})          # must run, not raise NameError
+
+
+class EnsemblePerCharacterGate(unittest.TestCase):
+    """F7 cross-character: one short character is refused BY NAME in final
+    mode, and every character's files keep their own bytes."""
+
+    def setUp(self):
+        self.t = tempfile.mkdtemp(prefix="del02-ens-")
+        self.run = os.path.join(self.t, "run")
+        os.makedirs(os.path.join(self.run, "character"))
+
+    def tearDown(self):
+        shutil.rmtree(self.t, ignore_errors=True)
+
+    def _approved(self, short_views, measured=True):
+        full = CB.IMAGE_VIEWS
+        entries = []
+        for n, (name, views) in enumerate((("Alpha Person", full),
+                                           ("Bravo Person", short_views))):
+            imgs = {v: _png(os.path.join(self.t, "%s-%s.png" % (name[:5], v)),
+                            rgb=(40 + 70 * n, 30 * i + 20, 90))
+                    for i, v in enumerate(views)}
+            entries.append({
+                "name": name, "role": "protagonist" if n == 0 else "foil",
+                "slug": name.split()[0].lower(),
+                "background": FIXTURE["character_background"],
+                "appearance": FIXTURE["character_ethnicity"],
+                "voice_notes": FIXTURE["character_voice_notes"], "images": imgs})
+        DO.save_origin(self.run, DO.origin_record(
+            tenant_id="tenant-9", account_id="bot-9", channel="app",
+            conversation_id="conv-9", thread_id="thread-9"))
+        CA.save_bible(self.run, CA.bible_from_entries(entries))
+        CA.present(self.run, run_id="run-9")
+        self.assertEqual(CA.approve(self.run, "approve", approved_by="client-9",
+                                    run_id="run-9")["status"], CA.APPROVED)
+        if measured:
+            os.makedirs(os.path.join(self.run, "audio"))
+            with open(os.path.join(self.run, "audio", "timing.json"), "w") as fh:
+                json.dump({"measured": True}, fh)
+        return entries
+
+    def test_final_refuses_the_short_character_by_name_and_writes_nothing(self):
+        self._approved(("close-up", "side-profile"))
+        with self.assertRaises(Exception) as caught:
+            CB.produce_delivery(self.run, ITEM)
+        msg = str(caught.exception)
+        self.assertIn("Bravo Person", msg)
+        self.assertNotIn("Alpha Person", msg)
+        self.assertFalse(os.path.exists(os.path.join(self.run, "delivery")))
+
+    def test_complete_cast_keeps_each_characters_own_hashes(self):
+        import hashlib
+        entries = self._approved(CB.IMAGE_VIEWS)
+        staged = CB.produce_delivery(self.run, ITEM)
+        img_dir = os.path.join(os.path.dirname(str(staged[0])), ITEM.files[1])
+
+        def sha(p):
+            with open(p, "rb") as fh:
+                return hashlib.sha256(fh.read()).hexdigest()
+        for e in entries:
+            for view, src in e["images"].items():
+                self.assertEqual(sha(os.path.join(img_dir, e["slug"], view + ".png")),
+                                 sha(src), (e["slug"], view))
+        self.assertNotEqual(sha(entries[0]["images"]["close-up"]),
+                            sha(entries[1]["images"]["close-up"]))
+
+    def test_unmeasured_short_cast_is_a_labelled_preview(self):
+        self._approved(("close-up", "side-profile"), measured=False)
+        staged = CB.produce_delivery(self.run, ITEM)
+        pdf = os.path.join(os.path.dirname(str(staged[0])), CB.DELIVERY_PDF_NAME)
+        self.assertIn(b"PREVIEW", _read(pdf))
 
 
 if __name__ == "__main__":
