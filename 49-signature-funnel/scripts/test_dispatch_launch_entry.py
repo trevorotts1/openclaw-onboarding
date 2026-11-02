@@ -32,6 +32,7 @@ sys.path.insert(0, str(HERE))
 import compile_launch_route as clr  # noqa: E402
 import front_door as fd  # noqa: E402
 import dispatch_launch as dl  # noqa: E402
+import page_set as pset  # noqa: E402
 import validate_launch_plan as vlp  # noqa: E402
 from test_page_set import LAUNCH_EXAMPLE, approved_launch  # noqa: E402
 
@@ -255,6 +256,56 @@ class ARefusalPrintedToStdoutStillShowsItsCause(unittest.TestCase):
                 _dispatch(tdp, adapters)
             self.assertIn("exited 2: cannot read /x/thank-you-result.json",
                           str(ctx.exception))
+
+
+class AnImageCapBelowThePlanIsRefusedBeforeAnythingStarts(unittest.TestCase):
+    """F8: a launch whose pages need more images than the client's cap used to run every page on the
+    stub (reserved 204 of a 200 cap, enforced false) and only skip a page on the paid provider."""
+    def dispatch_with_cap(self, cap):
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            rd = make_run_dir(tdp, adapters=False, parallel=1)
+            inputs = tdp / "image-inputs.json"
+            inputs.write_text(json.dumps({"design_style": "B", "brand_file": "/x/brand.json", "brand_owner": "Acme",
+                                          "image_cap": cap, "image_provider": "stub"}), encoding="utf-8")
+            p = run([sys.executable, str(HERE / "dispatch_launch.py"), "--run-dir", str(rd),
+                     "--simulate-executor", "--image-inputs", str(inputs)])
+            return p, rd
+
+    def need(self):
+        launch, _approval = approved_launch()
+        return pset.offered_image_ceilings(pset.build_page_set(launch))["total"]
+
+    def test_a_cap_one_image_short_refuses_and_starts_nothing(self):
+        p, rd = self.dispatch_with_cap(self.need() - 1)
+        self.assertEqual(p.returncode, dl.EXIT_VIOLATION, p.stdout + p.stderr)
+        self.assertIn("smaller than this launch needs", p.stdout)
+        self.assertIn("Nothing was started", p.stdout)
+        self.assertFalse(list((rd / "dispatch").glob("result-*.json")))
+
+    def test_a_cap_that_covers_the_pages_runs_every_page(self):
+        p, rd = self.dispatch_with_cap(self.need())
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+
+class ALongRefusalKeepsItsTail(unittest.TestCase):
+    """F4: wrappers print progress first and the refusal last; the head-only cut hid the cause."""
+    def test_the_last_line_of_a_long_stderr_reaches_the_error(self):
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            refuser = tdp / "refuser.py"
+            refuser.write_text("import sys\n"
+                               "for i in range(60):\n"
+                               "    print('progress line %d: building the page set' % i, file=sys.stderr)\n"
+                               "print('FAIL-CLOSED: launch profile signature_launch pads the page set',\n"
+                               "      file=sys.stderr)\n"
+                               "sys.exit(2)\n", encoding="utf-8")
+            adapters = _adapters(tdp, *dl.PAGE_ROLES)
+            adapters["thank_you"] = {"command": [sys.executable, str(refuser)]}
+            with self.assertRaises(dl.DispatchError) as ctx:
+                _dispatch(tdp, adapters)
+            self.assertIn("pads the page set", str(ctx.exception))
+            self.assertLess(len(str(ctx.exception)), 2500)  # bounded, not the whole log
 
 
 def _flip(node, value):

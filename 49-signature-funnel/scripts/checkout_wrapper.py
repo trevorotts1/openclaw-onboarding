@@ -228,12 +228,16 @@ def check_copy(text: str, launch: dict, request: dict, terms: dict) -> None:
                            f"text, {', '.join(TERMS_KEYS)}) is required; pass --checkout-terms FILE or stage "
                            "checkout-terms.json beside the launch record")
     body = sections(text)
-    if sorted(body) != [1, 2, 3, 4, 5]:
-        raise WrapperError(f"the manuscript needs the 5 canonical sections 1-5, found {sorted(body)}")
     refs = request.get("offer_refs")
     offers = [o for o in launch.get("offers") or [] if isinstance(o, dict) and (refs is None or o.get("offer_id") in refs)]
     mains = [o for o in offers if o.get("slot") == "main"]
     bumps = [o for o in offers if o.get("slot") == "bump"]
+    # Section 3 is the order bump: required only when the launch has a bump offer. Without one, 1,2,4,5 is the
+    # correct manuscript (an unused section 3 may stay, but it may not price anything: see names_and_prices).
+    if not {1, 2, 4, 5} <= set(body) <= {1, 2, 3, 4, 5} or (bumps and 3 not in body):
+        raise WrapperError("the manuscript needs the 5 canonical sections 1-5 (section 3, the order bump, only when "
+                           f"the launch has a bump offer; this launch has {'one' if bumps else 'none'}), "
+                           f"found {sorted(body)}")
     for o in mains + bumps:
         if any(p.get("currency") != "USD" for p in o.get("prices") or []) or not _record_amounts(o):
             raise WrapperError(f"offer {o.get('offer_id')!r} has no USD price in the launch record to check "
@@ -252,7 +256,7 @@ def check_copy(text: str, launch: dict, request: dict, terms: dict) -> None:
                                f"{[(o.get('display_name'), sorted(_record_amounts(o))) for o in group]}")
 
     names_and_prices("section 2 (price)", body[2], mains)
-    names_and_prices("section 3 (order bump)", body[3], bumps)
+    names_and_prices("section 3 (order bump)", body.get(3, ""), bumps)
     left = _flat(body[4])
     for key in sorted(("guarantee_text", "terms_text", "consent_text"), key=lambda k: -len(terms[k])):
         want = _flat(terms[key])

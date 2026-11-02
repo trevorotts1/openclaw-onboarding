@@ -36,7 +36,8 @@ invocable command dispatch runs for the downsell_1 role:
      schema check, no third-party dependency, no silent skip); the
      entry guard over the record's extras plus the fixed design-time
      journey marker (a staged journey file is never evaluated); validate_copy over the staged page with
-     its approved_amounts_minor set from the record's approved prices;
+     its approved_amounts_minor set from D1's own approved prices (never
+     another offer's), and a one-time D1 held to no recurring-charge copy;
      validate_offer_difference over the record's U1/D1 offers with
      difference_kind and rationale folded in; and, for a non-one-time
      D1 price, validate_trial_disclosure over the staged disclosure.
@@ -866,12 +867,15 @@ def _page_object(copy_doc: Any) -> Dict[str, Any]:
     return copy_doc if isinstance(copy_doc, dict) else {}
 
 
-def _record_amounts(launch: Mapping[str, Any]) -> List[int]:
+def _record_amounts(launch: Mapping[str, Any],
+                    slot: Optional[str] = None) -> List[int]:
     """Every approved price figure in the record: each price entry's
-    amount plus every schedule row's amount, across all offers."""
+    amount plus every schedule row's amount, across all offers (or, with
+    `slot`, across that slot's offers only: the D1 page is checked against
+    D1's own price, never another offer's)."""
     amounts = set()
     for offer in launch.get("offers") or []:
-        if not isinstance(offer, dict):
+        if not isinstance(offer, dict) or (slot and offer.get("slot") != slot):
             continue
         for price in offer.get("prices") or []:
             if not isinstance(price, dict):
@@ -886,6 +890,35 @@ def _record_amounts(launch: Mapping[str, Any]) -> List[int]:
                             and not isinstance(row_amount, bool):
                         amounts.add(row_amount)
     return sorted(amounts)
+
+
+_RECURRING_PHRASE = re.compile(
+    r"\$\s?\d[\d,]*(?:\.\d+)?\s*(?:/|per\b|a\b|each\b|every\b)\s*(?:mo|month|yr|year|wk|week)"
+    r"|\brenew\w*\s+(?:monthly|weekly|annually|yearly|every)", re.I)
+
+
+def _strings(node: Any):
+    if isinstance(node, str):
+        yield node
+    elif isinstance(node, dict):
+        for v in node.values():
+            yield from _strings(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _strings(v)
+
+
+def _billing_mismatch(page: Mapping[str, Any],
+                      price: Optional[Mapping[str, Any]]) -> List[str]:
+    """A one-time D1 price never promises a recurring charge in its copy.
+    (Trial, recurring and installment D1 prices are held to the staged
+    disclosure by validate_trial_disclosure instead.)"""
+    if not price or price.get("billing_type") != "one_time":
+        return []
+    hit = next((m.group(0) for s in _strings(page)
+                for m in [_RECURRING_PHRASE.search(s)] if m), None)
+    return [f"D1-COPY-BILLING-MISMATCH: the D1 price is one_time but the "
+            f"page promises a recurring charge ({hit!r})"] if hit else []
 
 
 def guard_state(launch: Mapping[str, Any]) -> Dict[str, Any]:
@@ -1148,8 +1181,10 @@ def run(args) -> Dict[str, Any]:
     # 3. The staged page under validate_copy, its approved amounts set
     #    from the record's approved prices.
     page = copy.deepcopy(_page_object(copy_doc))
-    page["approved_amounts_minor"] = _record_amounts(launch)
+    page["approved_amounts_minor"] = _record_amounts(launch, ROLE)
     codes = vd.validate_copy(page)
+    codes += _billing_mismatch(page, _approved_price(
+        _select_offer(launch, ROLE, []) or {}, "page copy", []))
     if codes:
         raise WrapperError([f"page copy: {c}" for c in codes])
     # 4. The offer difference, sidecar values folded onto the record's

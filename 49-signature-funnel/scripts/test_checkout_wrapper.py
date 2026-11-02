@@ -195,6 +195,41 @@ class TestCopyMatchesTheApprovedRecord(CheckoutWrapperCase):
         self.refused(self.wrap(extra=("--checkout-terms", str(terms))), "guarantee")
 
 
+class TestOrderBumpSectionFollowsTheBump(CheckoutWrapperCase):
+    """F5: section 3 (order bump) is required only when the launch record has a bump offer."""
+
+    def setUp(self):
+        super().setUp()
+        self.text = MANUSCRIPT.read_text(encoding="utf-8")
+        self.launch = json.loads(self.launch_path.read_text(encoding="utf-8"))
+        self.no_bump_text = "".join(
+            part for part in __import__("re").split(r"(?m)^(?=##\s+Section\s+\d+)", self.text)
+            if not part.startswith("## Section 3"))
+        self.no_bump_launch = dict(self.launch, offers=[o for o in self.launch["offers"] if o.get("slot") != "bump"])
+        self.assertNotIn("## Section 3", self.no_bump_text)
+        self.assertEqual(sorted(cw.sections(self.no_bump_text)), [1, 2, 4, 5])
+        self.assertTrue(any(o.get("slot") == "bump" for o in self.launch["offers"]))
+
+    def test_a_funnel_without_a_bump_needs_no_section_3(self):
+        cw.check_copy(self.no_bump_text, self.no_bump_launch, self.request, TERMS)
+
+    def test_a_funnel_with_a_bump_still_needs_section_3(self):
+        with self.assertRaises(cw.WrapperError) as ctx:
+            cw.check_copy(self.no_bump_text, self.launch, self.request, TERMS)
+        self.assertIn("section 3", str(ctx.exception))
+
+    def test_a_missing_section_other_than_3_is_still_refused(self):
+        gone = self.no_bump_text.replace("## Section 4", "## Part 4")
+        with self.assertRaises(cw.WrapperError) as ctx:
+            cw.check_copy(gone, self.no_bump_launch, self.request, TERMS)
+        self.assertIn("canonical sections", str(ctx.exception))
+
+    def test_an_unpriced_bump_price_in_a_no_bump_funnel_is_refused(self):
+        with self.assertRaises(cw.WrapperError) as ctx:
+            cw.check_copy(self.text, self.no_bump_launch, self.request, TERMS)
+        self.assertIn("section 3", str(ctx.exception))
+
+
 class TestCardFieldGuard(unittest.TestCase):
     """CHK-14 (probe4): field-like variants are blocked, reassurance sentences pass."""
     FIELDS = ("Card number", "Card-number:", "cardnumber", "CC number", "Card no.", "Card #", "PAN", "Exp. date",

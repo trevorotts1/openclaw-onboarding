@@ -445,6 +445,7 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
              landing_pages: Optional[List[str]] = None,
              extra_pages: Tuple[str, ...] = (),
              limiter: Any = None,
+             strict_cap: bool = False,
              ) -> Dict[str, Any]:
     """Full dispatch. Returns the manifest dict; writes requests (+ results
     when an executor ran) under out_dir when given.
@@ -453,7 +454,9 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
     results). Every page, the landing page too, runs side by side. image_inputs: the shared
     image inputs (page_set.load_image_inputs); with the paid provider the
     spend cap and the KIE limiter apply (page_swarm). extra_pages: opted-in
-    design pages that ride on a route request (today downsell_2)."""
+    design pages that ride on a route request (today downsell_2). strict_cap: refuse the
+    whole run, before any page starts, when the image cap is below what the page set needs
+    (stub or paid); the command line always sets it."""
     simulated = bool(executor) and getattr(executor, "simulated", False)
     if simulated and not launch.get("test_only"):
         raise DispatchError(
@@ -541,7 +544,7 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
         run = swarm.execute(requests, executor, page_set=page_set,
                             out_dir=out_dir, launch_id=launch["launch_id"],
                             workers=parallel, image_inputs=image_inputs,
-                            limiter=limiter)
+                            limiter=limiter, strict_cap=strict_cap)
         manifest["swarm"] = run["swarm"]
         failed = [o for o in run["outcomes"] if o["status"] != "ok"]
         for o in run["outcomes"]:
@@ -683,8 +686,10 @@ def executor_from_config(config: Dict[str, Any], work_dir: Path,
             # DTY-28: a wrapper that prints its refusal to stdout would show
             # as a blank cause; stdout stands in when stderr is empty.
             why = proc.stderr.strip() or proc.stdout.strip()
+            if len(why) > 2000:  # wrappers print progress first and the refusal LAST: keep both ends
+                why = why[:500] + " [...] " + why[-1500:]
             raise DispatchError(f"consumer adapter for {key} exited "
-                                f"{proc.returncode}: {why[:400]}")
+                                f"{proc.returncode}: {why}")
         if not res_path.is_file():
             raise DispatchError(f"consumer adapter for {role} produced no "
                                 f"result file at {res_path}")
@@ -1062,7 +1067,8 @@ def main(argv: List[str]) -> int:
                      image_inputs=inputs,
                      landing_pages=args.landing_pages.split(",")
                      if args.landing_pages else None,
-                     extra_pages=tuple(args.extra_page), limiter=limiter)
+                     extra_pages=tuple(args.extra_page), limiter=limiter,
+                     strict_cap=True)
     except (DispatchError, pset.PageSetError, swarm.SwarmError,
             vlp.ApprovalError, clr.RouteError, OSError, ValueError) as exc:
         print(f"FAIL: {exc}")
