@@ -35,7 +35,9 @@ def _packet_reference_dir():
     ``S82_PACKET_REFERENCE`` env override, then a tolerant ancestor
     walk from the skill directory up to the first ancestor carrying
     ``packet/reference`` (the tolerant-walk shape INTEGRATION
-    suggested in CR-INT-S82-001, mirroring S78's CR-INT-S78-001 fix).
+    suggested in CR-INT-S82-001, mirroring S78's CR-INT-S78-001 fix),
+    then this repository's vendored packet copy at
+    ``79-signature-order-form/fixtures/packet``.
     The suite asserts identically in every layout whose tree carries
     the packet at any ancestor depth.
     """
@@ -47,6 +49,13 @@ def _packet_reference_dir():
         if (candidate / "launch-example.json").is_file() and \
                 (candidate / "acceptance-cases.json").is_file():
             return candidate
+        # Vendored packet copy shipped in this repository (same fallback
+        # as Skill 81's CR-INT-S81-001): the repo layout has no
+        # ancestor packet/reference, so the suite must collect without env.
+        vendored = ancestor / "79-signature-order-form" / "fixtures" / "packet"
+        if (vendored / "launch-example.json").is_file() and \
+                (vendored / "acceptance-cases.json").is_file():
+            return vendored
     raise ImportError(
         "S82 tests: packet/reference (launch-example.json + "
         "acceptance-cases.json) not found in any ancestor of "
@@ -56,6 +65,10 @@ def _packet_reference_dir():
 
 
 REF = _packet_reference_dir()
+# Shared test corpus: sibling modules that carry their own copy of the
+# packet lookup (test_render) honour this override, so publishing the
+# resolved directory lets them collect in the repo layout with no env var.
+os.environ.setdefault("S82_PACKET_REFERENCE", str(REF))
 LAUNCH = json.loads((REF / "launch-example.json").read_text())
 CASES = json.loads((REF / "acceptance-cases.json").read_text())["cases"]
 OFFERS = {o["offer_id"]: o for o in LAUNCH["offers"]}
