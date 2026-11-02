@@ -75,7 +75,7 @@ class Fake74:
                         "credits_consumed": self.credits})
         if sub == "save":
             path = os.path.join(tmp, "f5-%d.png" % len(self.calls))
-            open(path, "w").close()
+            open(path, "wb").write(b"f5-bytes")
             return (0, {"state": "success", "task_id": "t-x",
                         "saved_paths": [path],
                         "credits_consumed": self.credits})

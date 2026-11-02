@@ -39,6 +39,15 @@ import spend_ledger as L               # noqa: E402
 
 MODULE = importlib.import_module("kie_dispatch.kie_dispatch")
 
+
+def _real_file(suffix=".bin", data=b"offline-output"):
+    """F11 refuses a missing or empty path as saved, so an 'ok' fixture must
+    materialize the bytes it claims."""
+    path = os.path.join(tempfile.mkdtemp(prefix="kie-out-"), "out" + suffix)
+    with open(path, "wb") as f:
+        f.write(data)
+    return path
+
 FAILS = []
 
 
@@ -89,7 +98,7 @@ BASE_SCRIPT = {
     "wait": (0, {"state": "success", "task_id": "t-u7", "raw_family": "market",
                  "credits_consumed": 16}),
     "save": (0, {"state": "success", "task_id": "t-u7",
-                 "saved_paths": ["/tmp/u7.mp4"], "credits_consumed": 16}),
+                 "saved_paths": [_real_file(".mp4")], "credits_consumed": 16}),
 }
 
 STAMPED_CARD = {"answers": {"video_style": "Lifelike 3D",

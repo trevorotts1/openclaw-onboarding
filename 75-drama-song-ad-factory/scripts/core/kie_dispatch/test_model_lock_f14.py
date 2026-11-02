@@ -27,6 +27,15 @@ CORE = os.path.dirname(HERE)
 sys.path.insert(0, CORE)
 
 MODULE = importlib.import_module("kie_dispatch.kie_dispatch")
+
+
+def _real_file(suffix=".bin", data=b"offline-output"):
+    """F11 refuses a missing or empty path as saved, so an 'ok' fixture must
+    materialize the bytes it claims."""
+    path = os.path.join(tempfile.mkdtemp(prefix="kie-out-"), "out" + suffix)
+    with open(path, "wb") as f:
+        f.write(data)
+    return path
 import kie_dispatch as D            # noqa: E402
 import kie_dispatch.model_lock as ML  # noqa: E402
 import spend_ledger as L            # noqa: E402
@@ -156,7 +165,7 @@ def test_locked_model_passes():
         "wait": (0, {"state": "success", "task_id": "t-h3",
                      "credits_consumed": 30}),
         "save": (0, {"state": "success", "task_id": "t-h3",
-                     "saved_paths": ["/tmp/h3.mp4"], "credits_consumed": 30}),
+                     "saved_paths": [_real_file(".mp4")], "credits_consumed": 30}),
     })
     # member of the locked family: hailuo/02-image-to-video-standard
     env, fake, db = disp(script, "h3ok", "hailuo/02-image-to-video-standard",
