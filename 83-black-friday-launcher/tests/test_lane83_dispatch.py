@@ -100,7 +100,7 @@ class BridgeRecordTests(unittest.TestCase):
         self.assertEqual(launch["status"], "approved")
         self.assertEqual(launch["image_provider"], "kie")
         self.assertEqual(len(launch["route_graph_hash"]), 64)
-        self.assertEqual(launch["plan_approval_ref"], "TEST-ONLY-APPROVAL")
+        self.assertEqual(launch["plan_approval_ref"], "APPR-TEST")  # the verified approval ref payload() records
 
     def test_the_record_carries_every_offer_and_price_from_the_intake_unchanged(self):
         doc = payload("elevation")
@@ -567,8 +567,10 @@ class CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             doc = payload("elevation")
-            (tmp / "intake.json").write_text(json.dumps(doc), encoding="utf-8")
             (tmp / "approval.json").write_text(json.dumps(approval_for(doc)), encoding="utf-8")
+            # the CLI takes a test fixture's TEST-ONLY placeholder ref and records the approval record's verified ref
+            doc["approval"]["ref"] = json.loads((FIXTURES / "elevation" / "intake.json").read_text())["approval"]["ref"]
+            (tmp / "intake.json").write_text(json.dumps(doc), encoding="utf-8")
             (tmp / "adapters.json").write_text(json.dumps(consumer_config()), encoding="utf-8")
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):

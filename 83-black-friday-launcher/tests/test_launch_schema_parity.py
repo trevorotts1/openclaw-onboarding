@@ -13,6 +13,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -121,14 +122,30 @@ class LaunchSchemaParity(unittest.TestCase):
             launch_path = td / "launch.json"
             launch_path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
             fake71 = td / "skill71"
+            # a token-driven page needs the shared design components installed beside the Skill 71 tree
+            shutil.copytree(REPO / "shared-utils" / "signature_launch" / "design",
+                            td / "shared-utils" / "signature_launch" / "design",
+                            ignore=shutil.ignore_patterns("tests", "__pycache__"))
             made = subprocess.run([PY, str(S49 / "scripts" / "make_fake_skill71.py"), str(fake71)],
                                   capture_output=True, text=True)
             self.assertEqual(made.returncode, 0, made.stdout + made.stderr)
+            # the landing lane must draw its pages: the shared image inputs file of the approved image plan
+            image_inputs = {"design_style": "B", "design_style_source": "client_choice",
+                            "creative_direction": "TEST-ONLY creative direction: calm, bold, editorial",
+                            "brand_file": str(brand), "brand_owner": "TEST-ONLY Client", "image_cap": 12,
+                            "image_provider": "stub", "test_only": True}
+            inputs_path = td / "image_inputs.json"
+            inputs_path.write_text(json.dumps(image_inputs), encoding="utf-8")
             (td / "bridge.json").write_text(json.dumps({
                 "skill71": {"root": str(fake71), "python": PY},
                 "landing": {"run_dir": str(td / "run"), "page_version": "standard", "page_kind": "sales",
                             "brand_owner": "TEST-ONLY Client", "image_cap": 12,
-                            "launch_record": str(launch_path), "brand_file": str(brand)}}), encoding="utf-8")
+                            "launch_record": str(launch_path), "brand_file": str(brand),
+                            "draft": True,  # the stubbed 14-stage gate never closes: a fixture run is a declared draft
+                            "image_inputs": str(inputs_path),
+                            "image_plan": {"image_inputs": str(inputs_path), "image_cap": 12,
+                                           "brand_owner": "TEST-ONLY Client", "design_style": "B",
+                                           "image_provider": "stub"}}}), encoding="utf-8")
             proc = subprocess.run(
                 [PY, str(S49 / "scripts" / "landing_bridge.py"), "--request", str(out / "request-landing.json"),
                  "--result", str(td / "result.json"), "--work-dir", str(out),

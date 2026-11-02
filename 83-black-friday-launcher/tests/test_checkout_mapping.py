@@ -18,9 +18,12 @@ from unittest import mock
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL_ROOT))
+sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
 
-from launcher_core import checkout, checks, council, intake, package, route  # noqa: E402
+from launcher_core import checkout, checks, council, entitlement, intake, package, route  # noqa: E402
 from launcher_core.check_rules import checkout as rule  # noqa: E402
+import test_only_readback  # noqa: E402
+from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402
 
 READBACK = {  # a TEST-ONLY Skill 06 read-back: everything intake does not own
     "native_capability_evidence_ref": "TEST-ONLY-CAPABILITY",
@@ -344,6 +347,43 @@ class PerOfferRealisationTests(unittest.TestCase):
             mapping = build(normalized("single_simple"))
         self.assertEqual(mapping["realisation"], "single_request")
         m.assert_not_called()
+
+
+class WorkedExampleRealisationTests(unittest.TestCase):
+    """CARRIED 49 (DECISIONS-NEEDED[4]): every several-mains worked example is one native
+    combined_single_offer order form per main price choice, judged by the instances."""
+
+    @classmethod
+    def setUpClass(cls):
+        entitlement.set_transport(test_only_readback.test_only_transport())
+        cls.addClassCleanup(entitlement.set_transport, None)
+
+    def mapping(self, fixture, readback):
+        payload = json.loads((SKILL_ROOT / "fixtures" / fixture / "intake.json").read_text(encoding="utf-8"))
+        n = intake.validate(payload)
+        return checkout.order_form_mapping(n, route.compile_route(n), readback=readback)
+
+    def test_a_test_only_readback_gives_three_accepted_instances(self):
+        for fixture in ("seven-figure-preneur", "elevation"):  # folded_levels, multiple_options
+            with self.subTest(fixture=fixture):
+                mapping = self.mapping(fixture, TEST_ONLY_CHECKOUT_READBACK)
+                self.assertEqual(mapping["realisation"], "per_offer_instances")
+                self.assertEqual(mapping["checkout_mode"], "combined_single_offer")
+                self.assertEqual(mapping["checkout_mode_state"], "resolved")
+                self.assertEqual(len(mapping["instances"]), 3)
+                self.assertEqual([i["validation"]["result"] for i in mapping["instances"]], ["accepted"] * 3)
+                self.assertIs(mapping["delivery_blocked"], False)
+                self.assertEqual(mapping["delivery_blockers"], [])
+
+    def test_without_the_readback_delivery_is_blocked_by_named_rejections(self):
+        for fixture in ("seven-figure-preneur", "elevation"):
+            with self.subTest(fixture=fixture):
+                mapping = self.mapping(fixture, None)
+                self.assertEqual(mapping["realisation"], "per_offer_instances")
+                self.assertIs(mapping["delivery_blocked"], True)
+                self.assertTrue(mapping["delivery_blockers"])
+                self.assertTrue(all(b.startswith("AF-LAUNCH-CHECKOUT-REJECTED")
+                                    for b in mapping["delivery_blockers"]), mapping["delivery_blockers"])
 
 
 if __name__ == "__main__":
