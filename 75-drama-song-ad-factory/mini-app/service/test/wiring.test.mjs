@@ -43,6 +43,12 @@ function bucketOf(objects) {
       return found ? { text: async () => found.value } : null;
     },
     put: async (p, v) => objects.objectPut(p, v),
+    // FIXTURE: the approvals list reads R2 ready manifests, so the fake
+    // exposes the list shape approval-store.js calls: list({ prefix }).
+    list: async ({ prefix = '' } = {}) => ({
+      objects: [...objects._mem.keys()].filter((k) => k.startsWith(prefix)).sort().map((key) => ({ key })),
+      truncated: false,
+    }),
   };
 }
 
@@ -167,7 +173,7 @@ test('wiring: link, page and approvals routes reach their modules through index.
   const created = await call(req('POST', '/api/studio/orders', { title: 'Spring Sale' }, { key: s.box }), s);
   assert.equal(created.status, 201);
   const orderId = (await created.json()).order.order_id;
-  const approvals = await call(req('GET', `/api/studio/orders/${orderId}/approvals`, undefined, { key: s.link }), s);
+  const approvals = await call(req('GET', `/api/studio/orders/${orderId}/approvals`, undefined, { key: s.link }), s, bindingEnv(s.store, s.objects)); // FIXTURE: the revisioned list reads R2, so this call supplies the bucket env
   assert.equal(approvals.status, 200);
   assert.deepEqual((await approvals.json()).items, []);
 });

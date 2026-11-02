@@ -6,7 +6,7 @@ more workers than the printed "agents":
 
     python3 scripts/core/lane_size.py --runtime openclaw|claude-code --provider <id> \
         [--ollama-plan 20|100] [--balance N] [--max-job-price N] [--units N] \
-        [--openclaw-config PATH]
+        [--openclaw-config PATH] [--settings PATH]
 
 It prints ONE JSON line:
     {"agents":N,"workflows":W,"agents_per_workflow":P,"kie_inflight":K,
@@ -33,6 +33,7 @@ across repos -- and extended with memory.current for the Part D ram-availability
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -213,10 +214,73 @@ def _norm(provider):
     return str(provider).strip().lower()
 
 
-def runtime_cap(runtime, openclaw_config=None, profile_dir=None):
+def _positive_int(value):
+    if isinstance(value, bool):
+        return None
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
+
+
+def configured_capacity(settings_path, runtime="claude-code"):
+    """Actual selected-profile Claude Code capacity. No default path, no network.
+
+    Returns (max_total_agents|None, payload). Missing/unreadable settings are an
+    explicit payload error, never a silent substitution with the fixed ceiling.
+    """
+    if runtime != "claude-code" or not settings_path:
+        return None, {}
+    path = Path(settings_path)
+    try:
+        raw = path.read_bytes()
+        cfg = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        return None, {"settings_path": str(path), "error": "unreadable: %s" % exc}
+    if not isinstance(cfg, dict):
+        return None, {"settings_path": str(path), "error": "settings is not an object"}
+    env = cfg.get("env") if isinstance(cfg.get("env"), dict) else {}
+    overrides = cfg.get("modelOverrides") if isinstance(cfg.get("modelOverrides"), dict) else {}
+    payload = {
+        "settings_path": str(path),
+        "settings_sha256": hashlib.sha256(raw).hexdigest(),
+        "max_total_agents": _positive_int(env.get("CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS")),
+        "max_agents_per_workflow": _positive_int(
+            env.get("CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS")),
+        "max_spawn_depth": _positive_int(env.get("CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH")),
+        "subagent_model": env.get("CLAUDE_CODE_SUBAGENT_MODEL"),
+        "model": cfg.get("model"),
+        "model_overrides": {str(k): str(v) for k, v in sorted(overrides.items())},
+    }
+    cap = payload["max_total_agents"]
+    if cap is None and payload["max_agents_per_workflow"] is not None:
+        cap = payload["max_agents_per_workflow"]
+    return cap, payload
+
+
+def configured_route(settings_path, runtime="claude-code"):
+    """Exact configured route label; UNKNOWN when inherited. Never a provider guess."""
+    _cap, payload = configured_capacity(settings_path, runtime)
+    if not payload or payload.get("error"):
+        return {"status": "UNKNOWN",
+                "reason": (payload or {}).get("error") or "no selected settings path"}
+    model = payload.get("subagent_model")
+    if not isinstance(model, str) or not model or model == "inherit":
+        model = payload.get("model")
+    if not isinstance(model, str) or not model:
+        return {"status": "UNKNOWN", "reason": "no explicit model in selected settings"}
+    return {"status": "CONFIGURED", "model": model,
+            "settings_sha256": payload["settings_sha256"]}
+
+
+def runtime_cap(runtime, openclaw_config=None, profile_dir=None, configured=None):
     """OpenClaw: min(maxConcurrent keys found, config reachable only via path) - 1.
-    Claude Code/claude-nine: fixed 10 x 50 = 500 (D3)."""
+    Claude Code: actual selected-profile ceiling when supplied; else the historical
+    fixed 10 x 50 = 500 (D3) for callers that have no selected profile."""
     if runtime == "claude-code":
+        if isinstance(configured, dict) and configured.get("max_total_agents"):
+            return int(configured["max_total_agents"]), {"configured": configured}
         return CC_RUNTIME_CAP, {}
     keys = read_maxconcurrent(openclaw_config, profile_dir)
     caps = [v for v in keys.values() if isinstance(v, (int, float)) and v > 0]
@@ -301,7 +365,8 @@ def _num(v, nd=2):
 
 
 def size(runtime, provider, ollama_plan=None, balance=None, max_job_price=None,
-         units=999, openclaw_config=None, load1=None, ram_avail=None, cores=None, **cal_over):
+         units=999, openclaw_config=None, load1=None, ram_avail=None, cores=None,
+         settings_path=None, **cal_over):
     """One sizing decision. Returns the D3 line dict (retry_in_s absent unless hot).
 
     ram_avail / cores: inject a measured value directly (self-tests, or a caller that
@@ -326,12 +391,15 @@ def size(runtime, provider, ollama_plan=None, balance=None, max_job_price=None,
     machine, free_cores = machine_cap(ram, load_used, cores, reserve_gb, gb_per_agent,
                                       agent_per_free_core)
     prov = provider_cap(provider, ollama_plan)
-    rt, mc_keys = runtime_cap(runtime, openclaw_config)
+    configured, configured_keys = configured_capacity(settings_path, runtime)
+    rt, mc_keys = runtime_cap(runtime, openclaw_config, configured=configured)
+    route = configured_route(settings_path, runtime) if settings_path else None
     caps = [c for c in (machine, prov, rt) if c is not None]
     agents = max(1, min(min(caps), max(1, math.floor(units))))
     agents_per_workflow = workflows = None
     if runtime == "claude-code":
-        agents_per_workflow = min(10, agents)
+        per_flow = _positive_int((configured_keys or {}).get("max_agents_per_workflow")) or 10
+        agents_per_workflow = min(per_flow, agents)
         workflows = math.ceil(agents / agents_per_workflow)
     k = kie_inflight(units, balance, max_job_price)
     jobs, threads = ffmpeg_pool(cores)
@@ -349,6 +417,8 @@ def size(runtime, provider, ollama_plan=None, balance=None, max_job_price=None,
             "provider_cap": prov, "runtime_cap": rt,
             "maxConcurrent_keys": mc_keys or None, "balance": balance,
             "max_job_price": max_job_price, "source": src,
+            "configured_capacity": configured_keys or None,
+            "configured_route": route,
         },
     }
     if is_hot(load1, ram, cores, hot_load, reserve_gb, gb_per_agent):
@@ -366,6 +436,8 @@ def main(argv=None):
     ap.add_argument("--max-job-price", type=float, default=None)
     ap.add_argument("--units", type=float, default=999)
     ap.add_argument("--openclaw-config", default=None)
+    ap.add_argument("--settings", default=None,
+                    help="selected Claude Code settings.json; reads actual capacity/route")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args(argv)
     if args.selftest:
@@ -373,7 +445,8 @@ def main(argv=None):
     if args.runtime is None or args.provider is None:
         ap.error("--runtime and --provider are required (or use --selftest)")
     print(json.dumps(size(args.runtime, args.provider, args.ollama_plan, args.balance,
-                          args.max_job_price, args.units, args.openclaw_config)))
+                          args.max_job_price, args.units, args.openclaw_config,
+                          settings_path=args.settings)))
     return 0
 
 
