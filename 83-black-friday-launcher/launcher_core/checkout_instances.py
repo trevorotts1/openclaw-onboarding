@@ -36,6 +36,7 @@ if str(_ROUTES_DIR) not in sys.path:
 import substrate  # noqa: E402
 
 from . import checkout as checkout_module  # noqa: E402
+from . import launch_bridge  # noqa: E402
 
 MODE = "combined_single_offer"
 # S79 fields the launch itself never holds; the caller supplies them or they stay missing.
@@ -43,6 +44,10 @@ COMMERCIAL_KEYS = ("terms_ref", "consent_ref", "native_capability_evidence_ref",
                    "fulfillment_mapping_ref", "failed_pending_requirements")
 BUMP_KEYS = ("component_id", "component_version", "headline", "benefit_explanation",
              "quantity_policy", "fulfillment_rule_ref")
+# Facts that come only from the Skill 06 read-back; intake owns terms, consent and bump copy.
+READBACK_KEYS = ("native_capability_evidence_ref", "fulfillment_mapping_ref",
+                 "failed_pending_requirements", "bump", "native")
+BUMP_READBACK_KEYS = ("component_id", "component_version", "quantity_policy", "fulfillment_rule_ref")
 
 
 class CheckoutInstanceError(Exception):
@@ -109,6 +114,50 @@ def _next_route(graph: Dict[str, Any]) -> str:
     edge = next(e for e in graph["edges"]
                 if e["from"] == node["page_id"] and e["event"] == "payment_succeeded")
     return role_of[edge["to"]]
+
+
+def commercial_facts(intake: Dict[str, Any], readback: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """The ``commercial`` dict ``build`` takes, each fact from the one source that owns it.
+
+    Intake owns terms_ref / consent_ref (``checkout_terms``) and the bump copy (the bump
+    offer's ``checkout`` block); the Skill 06 read-back owns the native ids, the
+    capability and fulfillment refs, the failed/pending requirements and the bump
+    component facts. A key missing from its source stays missing, so S79 rejects it.
+    A read-back may not stand in for an intake-owned fact (CHK-16).
+    """
+    readback = readback or {}
+    stray = sorted(set(readback) - set(READBACK_KEYS))
+    if stray:
+        raise CheckoutInstanceError("AF-LAUNCH-CHECKOUT-READBACK",
+                                    f"the read-back may not supply {stray}; intake owns them")
+    rb_bump = readback.get("bump") or {}
+    stray = sorted(set(rb_bump) - set(BUMP_READBACK_KEYS))
+    if stray:
+        raise CheckoutInstanceError("AF-LAUNCH-CHECKOUT-READBACK",
+                                    f"the read-back bump may not supply {stray}; intake owns them")
+    terms = intake.get("checkout_terms") or {}
+    out: Dict[str, Any] = {k: terms[k] for k in ("terms_ref", "consent_ref") if k in terms}
+    for k in ("native_capability_evidence_ref", "fulfillment_mapping_ref",
+              "failed_pending_requirements", "native"):
+        if k in readback:
+            out[k] = readback[k]
+    bump_offer = next((o for o in intake["offers"] if o["role"] == "bump"), None)
+    copy_block = (bump_offer or {}).get("checkout") or {}
+    bump = {k: copy_block[k] for k in ("headline", "benefit_explanation") if k in copy_block}
+    bump.update(rb_bump)
+    if bump:
+        out["bump"] = bump
+    return out
+
+
+def record(intake: Dict[str, Any], graph: Dict[str, Any], *, readback: Optional[Dict[str, Any]] = None,
+           launch: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """The one entry point for the package: instances, verdicts and binding plan for an intake."""
+    # ponytail: the derived launch only carries price-choice ids (checkout never reads
+    # image_provider and the record is never written or dispatched); pass the dispatch
+    # run's own launch record when assemble is bound to one.
+    launch = launch or launch_bridge.to_launch_record(intake, graph, {"image_provider": "other_explicit"})
+    return build(intake, graph, launch, commercial_facts(intake, readback))
 
 
 def build(intake: Dict[str, Any], graph: Dict[str, Any], launch: Dict[str, Any],
@@ -208,6 +257,7 @@ def build(intake: Dict[str, Any], graph: Dict[str, Any], launch: Dict[str, Any],
         "journey_mode": intake["journey_mode"],
         "surface": "native Convert and Flow order form installed by Skill 06",
         "dispatch_adapter": False,
+        "realisation": "per_offer_instances",
         "checkout_mode": MODE,
         "instances": instances,
         "binding_plan": plan,
@@ -219,55 +269,57 @@ def build(intake: Dict[str, Any], graph: Dict[str, Any], launch: Dict[str, Any],
 def check(built: Dict[str, Any]) -> List[str]:
     """Violations of the instance set; an empty list is a clean set."""
     out: List[str] = []
-    instances = built["instances"]
+    instances = built.get("instances") or []
     if not instances:
         out.append("AF-LAUNCH-CHECKOUT-NONE: no checkout instance")
+    for n, i in enumerate(instances):
+        for field in ("slot", "page_id", "checkout_target_ref", "main_offer_id", "price_choice_id",
+                      "checkout_mode", "validation"):
+            if field not in i:
+                out.append(f"AF-LAUNCH-CHECKOUT-FIELD: instance {n} has no {field}")
     for field in ("slot", "page_id", "checkout_target_ref"):
-        values = [i[field] for i in instances]
+        values = [i[field] for i in instances if field in i]
         if len(set(values)) != len(values):
             out.append(f"AF-LAUNCH-CHECKOUT-DUPLICATE: two instances share a {field}")
     for i in instances:
-        if i["checkout_mode"] != MODE or i["selection_ref"] is not None:
-            out.append(f"AF-LAUNCH-CHECKOUT-MODE: {i['slot']} is not a {MODE} request")
-        if i["validation"]["result"] != "accepted":
-            out.append(f"AF-LAUNCH-CHECKOUT-REJECTED: {i['slot']}: {i['validation'].get('error')}")
+        if i.get("checkout_mode") != MODE or i.get("selection_ref") is not None:
+            out.append(f"AF-LAUNCH-CHECKOUT-MODE: {i.get('slot')} is not a {MODE} request")
+        validation = i.get("validation") or {}
+        if validation.get("result") != "accepted":
+            out.append(f"AF-LAUNCH-CHECKOUT-REJECTED: {i.get('slot')}: {validation.get('error')}")
     plan = built.get("binding_plan")
     if plan is not None:
-        targets = {(i["main_offer_id"], i["price_choice_id"]): i["checkout_target_ref"]
+        targets = {(i.get("main_offer_id"), i.get("price_choice_id")): i.get("checkout_target_ref")
                    for i in instances}
-        mapped = {(m["offer_id"], m["price_choice_id"]): m["checkout_target_ref"]
-                  for m in plan["mappings"]}
+        mapped = {(m.get("offer_id"), m.get("price_choice_id")): m.get("checkout_target_ref")
+                  for m in plan.get("mappings") or []}
         if mapped != targets:
             out.append("AF-LAUNCH-CHECKOUT-BINDING: the 78 binding plan does not reference "
                        "exactly the checkout instances")
     return out
 
 
-def dispatch_rows(launch: Dict[str, Any], graph: Dict[str, Any], built: Dict[str, Any], *,
-                  copy_profile: str, allowed_write_target: str) -> List[Dict[str, Any]]:
-    """One Skill 49 checkout request per instance, carrying main_offer_id, selection_ref
-    and the S78 target. Built from dispatch's own checkout request, so every other field
-    (approval, brand, route hash) is the one dispatch already stamps."""
-    dl = substrate.dispatch()
-    base = next(r for r in dl.build_requests(launch, graph, copy_profile=copy_profile,
-                                             allowed_write_target=allowed_write_target)
-                if r["page_role"] == "checkout")
-    rows: List[Dict[str, Any]] = []
-    for inst in built["instances"]:
-        ih = dl.request_input_hash(launch, inst["page_id"], "checkout")
-        bump_id = inst["request"]["bump"]["offer_id"] if inst["bump_applies"] else None
-        row = {**base,
-               "page_id": inst["page_id"], "input_hash": ih,
-               "request_id": dl.dispatch_key(launch, "checkout", ih),
-               "offer_refs": [inst["main_offer_id"]] + ([bump_id] if bump_id else []),
-               "role_instance": inst["role_instance"],
-               "checkout_mode": inst["checkout_mode"],
-               "main_offer_id": inst["main_offer_id"],
-               "price_choice_id": inst["price_choice_id"],
-               "selection_ref": inst["selection_ref"],
-               "checkout_target_ref": inst["checkout_target_ref"]}
-        fails = dl.validate_request(row)
-        if fails:
-            raise CheckoutInstanceError("AF-LAUNCH-CHECKOUT-DISPATCH", "; ".join(fails))
-        rows.append(row)
-    return rows
+def replay_violations(rec: Dict[str, Any]) -> List[str]:
+    """``check`` plus a fresh S79 verdict per request; a recorded verdict is never trusted."""
+    out = check(rec)
+    validator = substrate.s79_validate_checkout()
+    for i in rec.get("instances") or []:
+        slot = i.get("slot")
+        req = i.get("request")
+        if not isinstance(req, dict):
+            out.append(f"AF-LAUNCH-CHECKOUT-REPLAY: {slot} has no request to replay")
+            continue
+        try:
+            validator.validate_request(req)
+            now = "accepted"
+        except Exception:
+            now = "rejected"
+        recorded = (i.get("validation") or {}).get("result")
+        if now != recorded:
+            out.append(f"AF-LAUNCH-CHECKOUT-REPLAY: {slot} recorded {recorded}, "
+                       f"the S79 contract says {now}")
+        if (req.get("main_offer_id") != i.get("main_offer_id") or req.get("checkout_mode") != MODE
+                or req.get("selection_ref") is not None):
+            out.append(f"AF-LAUNCH-CHECKOUT-MODE: {slot} request is not a {MODE} request "
+                       "for its own main")
+    return out

@@ -32,6 +32,26 @@ COMMERCIAL = {
 }
 
 
+# TEST-ONLY: what the Skill 06 read-back supplies (never terms, consent or bump copy).
+READBACK = {
+    "native_capability_evidence_ref": COMMERCIAL["native_capability_evidence_ref"],
+    "fulfillment_mapping_ref": COMMERCIAL["fulfillment_mapping_ref"],
+    "failed_pending_requirements": COMMERCIAL["failed_pending_requirements"],
+    "bump": {k: COMMERCIAL["bump"][k] for k in
+             ("component_id", "component_version", "quantity_policy", "fulfillment_rule_ref")},
+}
+
+
+def with_terms(normalized):
+    """TEST-ONLY intake terms and bump copy, injected after validate (independent of intake landing)."""
+    out = copy.deepcopy(normalized)
+    out["checkout_terms"] = {"terms_ref": "TEST-TERMS", "consent_ref": "TEST-CONSENT"}
+    for o in out["offers"]:
+        if o["role"] == "bump":
+            o["checkout"] = {"headline": "TEST ONLY", "benefit_explanation": "TEST ONLY"}
+    return out
+
+
 def prepared(journey_mode: str):
     payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
     payload["journey_mode"] = journey_mode
@@ -70,17 +90,50 @@ class CheckoutInstanceTests(unittest.TestCase):
                                   for i in built["instances"]})
         self.assertEqual(built["binding_plan"]["route"], "per_offer_targets")
 
-    def test_dispatch_rows_carry_main_offer_and_selection_ref_per_instance(self):
-        normalized, graph, launch = prepared("multiple_options")
-        built = checkout_instances.build(normalized, graph, launch, COMMERCIAL)
-        rows = checkout_instances.dispatch_rows(launch, graph, built, copy_profile="standard",
-                                                allowed_write_target="local_only")
-        by_main = {m["offer_id"]: m["checkout_target_ref"] for m in built["binding_plan"]["mappings"]}
-        self.assertEqual([r["main_offer_id"] for r in rows], ["MAIN-A", "MAIN-B", "MAIN-C"])
-        self.assertEqual({r["selection_ref"] for r in rows}, {None})
-        self.assertEqual({r["main_offer_id"]: r["checkout_target_ref"] for r in rows}, by_main)
-        self.assertEqual(len({r["request_id"] for r in rows}), 3)
-        self.assertEqual({r["page_role"] for r in rows}, {"checkout"})
+    def test_record_takes_terms_from_intake_and_ids_from_readback(self):
+        for mode in ("multiple_options", "folded_levels"):
+            with self.subTest(mode=mode):
+                normalized, graph, _ = prepared(mode)
+                rec = checkout_instances.record(with_terms(normalized), graph, readback=READBACK)
+                self.assertEqual([i["validation"]["result"] for i in rec["instances"]], ["accepted"] * 3)
+                self.assertEqual(rec["realisation"], "per_offer_instances")
+                self.assertEqual(rec["violations"], [])
+                self.assertEqual(checkout_instances.replay_violations(rec), [])
+
+    def test_record_without_readback_names_only_readback_facts(self):
+        normalized, graph, _ = prepared("folded_levels")
+        rec = checkout_instances.record(with_terms(normalized), graph)
+        self.assertEqual({i["validation"]["result"] for i in rec["instances"]}, {"rejected"})
+        self.assertEqual(rec["instances"][0]["missing"], ["failed_pending_requirements",
+                         "fulfillment_mapping_ref", "native_capability_evidence_ref"])
+
+    def test_readback_cannot_supply_intake_owned_terms(self):
+        normalized, graph, _ = prepared("folded_levels")
+        bad = [{**READBACK, "terms_ref": "X"},
+               {**READBACK, "bump": {**READBACK["bump"], "headline": "X"}}]
+        for rb in bad:
+            with self.assertRaises(checkout_instances.CheckoutInstanceError) as ctx:
+                checkout_instances.record(with_terms(normalized), graph, readback=rb)
+            self.assertEqual(ctx.exception.code, "AF-LAUNCH-CHECKOUT-READBACK")
+
+    def test_replay_catches_a_tampered_verdict(self):
+        normalized, graph, _ = prepared("multiple_options")
+        rec = checkout_instances.record(with_terms(normalized), graph, readback=READBACK)
+        bad = copy.deepcopy(rec)
+        del bad["instances"][0]["request"]["terms_ref"]  # verdict still says accepted
+        self.assertTrue(any(v.startswith("AF-LAUNCH-CHECKOUT-REPLAY")
+                            for v in checkout_instances.replay_violations(bad)))
+        bad = copy.deepcopy(rec)
+        bad["binding_plan"]["mappings"][0]["checkout_target_ref"] = "elsewhere"
+        self.assertTrue(any(v.startswith("AF-LAUNCH-CHECKOUT-BINDING")
+                            for v in checkout_instances.replay_violations(bad)))
+        bad = copy.deepcopy(rec)
+        del bad["instances"][1]["request"]["main_offer_id"]
+        self.assertTrue(checkout_instances.replay_violations(bad))
+        bad = copy.deepcopy(rec)
+        del bad["instances"][1]["main_offer_id"]  # tampered manifest: named violation, no crash
+        self.assertTrue(any(v.startswith("AF-LAUNCH-CHECKOUT-FIELD")
+                            for v in checkout_instances.replay_violations(bad)))
 
     def test_missing_commercial_facts_are_rejected_never_defaulted(self):
         normalized, graph, launch = prepared("folded_levels")
