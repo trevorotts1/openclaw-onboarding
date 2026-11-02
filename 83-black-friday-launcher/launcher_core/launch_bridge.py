@@ -348,7 +348,10 @@ def _landing_bridge_config(adapter_inputs: Dict[str, Any], dispatch_dir: Path, i
                           "Nothing was dispatched and nothing was spent.") from exc
     landing = doc.get("landing") if isinstance(doc, dict) else None
     if not isinstance(landing, dict):
-        return adapter_inputs  # no landing section to complete: Skill 49's load_bridge_config refuses it by name
+        raise BridgeError("AF-LAUNCH-BRIDGE-ADAPTERS",
+                          f"the landing bridge config {adapter_inputs['bridge_config']} has no \"landing\" section, "
+                          "so the landing and sales pages have nothing to build from. "
+                          "Nothing was dispatched and nothing was spent.")
     written = image_plan.image_inputs_file(inputs)
     abs_inputs = str(Path(inputs_path).resolve())
     want = {"image_inputs": abs_inputs,

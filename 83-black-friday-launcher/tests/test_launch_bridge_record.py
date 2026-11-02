@@ -377,16 +377,19 @@ class LandingBridgeConfigTests(unittest.TestCase):  # STR-16
         self.assertIn("image_cap", ctx.exception.detail)
         build.assert_not_called()
 
-    def test_an_unreadable_config_is_refused_and_one_with_no_landing_section_is_left_to_skill_49(self):
+    def test_an_unreadable_config_or_one_with_no_landing_section_is_refused_before_dispatch(self):
         with self.assertRaises(launch_bridge.BridgeError) as ctx:
             launch_bridge._landing_bridge_config({"bridge_config": str(self.root / "absent.json")}, self.root,
                                                  {}, self.root / "image_inputs.json")
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-BRIDGE-ADAPTERS")
-        bare = self.root / "bare.json"
-        bare.write_text("{}", encoding="utf-8")
-        given = {"bridge_config": str(bare)}
-        self.assertIs(launch_bridge._landing_bridge_config(given, self.root, {}, self.root / "i.json"), given)
-
+        for text in ("{}", '{"landing": "x"}', "[]"):
+            bare = self.root / "bare.json"
+            bare.write_text(text, encoding="utf-8")
+            error, seen = self.run_to_adapter_builder(str(bare))
+            self.assertEqual(error.code, "AF-LAUNCH-BRIDGE-ADAPTERS")
+            self.assertIn("no \"landing\" section", error.detail)
+            self.assertIn("Nothing was dispatched", error.detail)
+            self.assertEqual(seen, [])  # refused before the adapter builder, so before dl.dispatch
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
