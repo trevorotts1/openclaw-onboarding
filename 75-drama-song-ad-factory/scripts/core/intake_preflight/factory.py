@@ -202,6 +202,25 @@ def cmd_preflight(a):
                     state_version={"expected": a.summary_digest, "current": run_id})
 
 
+def _admit_stage(run_dir, stage, run_id=None, got=None):
+    """C01: governed authority AND the required production order. Both paths --
+    ``next`` and the continuation controller -- admit through this one call, so
+    a run can never reach a later stage with an earlier required stage missing
+    and the two paths can never disagree about it."""
+    result = _production_admission(run_dir, stage, run_id=run_id)
+    if not result.get("ok"):
+        return result
+    ok, code, detail, missing = production_order_gate(run_dir, stage, got=got)
+    if ok:
+        return result
+    return {"ok": False, "reason_code": code, "detail": detail,
+            "next_action": "Produce the named predecessor artifacts first: %s."
+                           % (", ".join(missing) or detail),
+            "run_dir": str(run_dir), "run_id": run_id, "stage": stage,
+            "missing_artifacts": list(missing),
+            "governed_admission": result}
+
+
 def _production_admission(run_dir, stage=None, run_id=None):
     """Read governed authority; operator JSON and dependency checks cannot grant it."""
     try:
@@ -1896,119 +1915,450 @@ def _stage(prereqs, worker, entrypoint, idem, out_prod, qc_prod, evidence,
     }
 
 
-#: The full 12-stage registry (SPEC 8.6). Published + validated by
-#: ``validate_registry``. Specialized runners are preserved (an entrypoint may
-#: name a dedicated script); no stage is forced into a reconciler just to fill
-#: the table. No entry returns only an instruction string -- each ``entrypoint``
-#: is a concrete invocation.
-STAGE_REGISTRY = {
-    "research": _stage(
-        [], "research-analyst",
-        # --governed is the runner's AUTHORITATIVE mode: admission, the
-        # verified receipt and the independent review that completes the row.
-        # The option-only authoring mode never moves a stage row.
-        'scripts/core/research_engine/research.py --governed '
-        '--brief "$RUN/brief.json" --outdir "$RUN"',
-        "research/<request-digest>", "research/receipt.json",
-        "research/qc-records.json",
-        ["research/receipt.json", "research/qc-records.json",
-         "research/claims.json", "research/captures.json"],
-        "none", "research brief + sources on disk + independent semantic review",
-        'scripts/core/research_engine/research.py --governed '
-        '--brief "$RUN/brief.json" --outdir "$RUN"',
-        "research-complete",
-        artifacts=["research/receipt.json", "research/claims.json",
-                   "research/captures.json"]),
-    "creative-strategy": _stage(
-        ["research"], "creative-strategist",
-        "scripts/core/method_plan/method_plan.py build",
-        "creative/<plan-revision>", "creative/blueprint.json",
-        "creative/qc-record.json", ["creative/blueprint.json"],
-        "operator", "approved Story Beat Blueprint",
-        "scripts/core/method_plan/method_plan.py resume",
-        "creative-approved", artifacts=["creative/blueprint.json"]),
-    "script-lyrics": _stage(
-        ["creative-strategy"], "lyricist",
-        "scripts/core/script_approval/… generate", "script/<plan-revision>",
-        "script/lyrics.json", "script/qc-record.json", ["script/lyrics.json"],
-        "delivered-approval", "approved lyric sheet",
-        "scripts/core/script_approval/… resume", "script-approved",
-        artifacts=["script/lyrics.json"]),
-    "music": _stage(
-        ["script-lyrics"], "music-producer",
-        "scripts/core/intake_preflight/factory.py music --action start",
-        "music/<run-id>/<attempt-id>", "music/picked-song.mp3",
-        "music/qc-records.json", ["music/picked-song.mp3", "song-choices/pick.json"],
-        "delivered-approval", "picked song + independent QC PASS",
-        "scripts/core/intake_preflight/factory.py music --action resume",
-        "provider-completion", artifacts=["music/picked-song.mp3"]),
-    "continuity-bible": _stage(
-        ["music"], "continuity-editor",
-        "scripts/core/method_plan/method_plan.py continuity",
-        "continuity/<plan-revision>", "continuity/bible.json",
-        "continuity/qc-record.json", ["continuity/bible.json"],
-        "none", "continuity bible on disk",
-        "scripts/core/method_plan/method_plan.py continuity --resume",
-        "continuity-complete", artifacts=["continuity/bible.json"]),
-    "storyboard": _stage(
-        ["continuity-bible"], "storyboard-artist",
-        "scripts/core/intake_preflight/factory.py storyboard",
-        "storyboard/<plan-revision>", "storyboard/gate.json",
-        "storyboard/qc-record.json",
-        ["storyboard/gate.json", "storyboard/approval.json"],
-        "delivered-approval", "approved shots + stills present",
-        "scripts/core/intake_preflight/factory.py storyboard --resume",
-        "approval", artifacts=["storyboard/shot-list.json", "storyboard/contracts.json"]),
-    "image-keyframes": _stage(
-        ["storyboard"], "keyframe-artist",
-        "scripts/core/… image-keyframes", "keyframes/<shot-set-digest>",
-        "keyframes/manifest.json", "keyframes/qc-record.json",
-        ["keyframes/manifest.json"], "none", "keyframes per approved shot",
-        "scripts/core/… image-keyframes --resume", "provider-completion",
-        artifacts=["keyframes/manifest.json"]),
-    "video-generation": _stage(
-        ["image-keyframes"], "video-generator",
-        "scripts/core/… video-generation", "video/<segment-set-digest>",
-        "video/clips.json", "video/qc-record.json", ["video/clips.json"],
-        "none", "all clips materialized",
-        "scripts/core/… video-generation --resume", "provider-completion",
-        artifacts=["video/clips.json"]),
-    "qc-retakes": _stage(
-        ["video-generation"], "qc-reviewer",
-        "scripts/core/qc_gate.py evaluate", "qc/<clip-set-digest>",
-        "qc/retakes.json", "qc/qc-record.json", ["qc/retakes.json"],
-        "operator", "QC verdict recorded (retakes or accept)",
-        "scripts/core/qc_gate.py resume", "qc-complete",
-        required=False, artifacts=["qc/retakes.json"]),
-    "assembly": _stage(
-        ["qc-retakes"], "editor", "scripts/core/… assembly",
-        "assembly/<timeline-digest>", "assembly/timeline.json",
-        "assembly/qc-record.json", ["assembly/timeline.json"],
-        "none", "assembled timeline on disk",
-        "scripts/core/… assembly --resume", "assembly-complete",
-        artifacts=["assembly/timeline.json"]),
-    "final-qc": _stage(
-        ["assembly"], "final-qc-reviewer", "scripts/core/qc_gate.py final",
-        "final-qc/<assembly-digest>", "final-qc/record.json",
-        "final-qc/record.json", ["final-qc/record.json"],
-        "operator", "independent final QC PASS",
-        "scripts/core/qc_gate.py final --resume", "final-qc-complete",
-        artifacts=["final-qc/record.json"]),
-    "delivery": _stage(
-        ["final-qc"], "delivery-agent", "scripts/core/… deliver",
-        "delivery/<run-id>", "delivery/receipts.json",
-        "delivery/qc-record.json", ["delivery/receipts.json"],
-        "none", "successful destination delivery receipts",
-        "scripts/core/… deliver --resume", "delivery-complete",
-        artifacts=["delivery/receipts.json"]),
+#: C01/F4: a published descriptor is a CONTRACT, not prose. These tokens mean
+#: "someone must invent this at run time" and are refused by name.
+PLACEHOLDER_TOKENS = ("…", "...", "<", ">")
+
+#: C01/F4: the real, executable contracts behind each stage. ``script`` is
+#: skill-root-relative and must resolve on disk; ``verbs`` are the tokens the
+#: parser actually accepts ("" = option-only CLI, which is a real contract);
+#: ``artifacts`` is the emitted output inventory the successor depends on and
+#: the SAME tuple the registry publishes (no second copy to drift).
+#: ``alt_scripts`` are additional real executables the runbook row may name.
+STAGE_DESCRIPTORS = {
+    "research": {
+        "script": "scripts/core/research_engine/research.py",
+        "verbs": ("",),
+        "command": 'scripts/core/research_engine/research.py --governed '
+                   '--brief "$RUN/brief.json" --outdir "$RUN"',
+        "recovery": 'scripts/core/research_engine/research.py --governed '
+                    '--brief "$RUN/brief.json" --outdir "$RUN"',
+        "artifacts": ("research/receipt.json", "research/claims.json",
+                      "research/captures.json"),
+    },
+    "creative-strategy": {
+        "script": "scripts/core/story_arc/story_arc.py",
+        "verbs": ("",),
+        "command": 'scripts/core/story_arc/story_arc.py '
+                   '--story "$RUN/creative/story.json"',
+        "recovery": 'scripts/core/story_arc/story_arc.py '
+                    '--story "$RUN/creative/story.json"',
+        "artifacts": ("creative/story.json", "creative/blueprint.json"),
+    },
+    "script-lyrics": {
+        "script": "scripts/core/lyric_writer/lyric_writer.py",
+        "verbs": ("",),
+        "command": 'scripts/core/lyric_writer/lyric_writer.py '
+                   '--lyrics "$RUN/creative/lyrics.json" '
+                   '--brief "$RUN/brief.json"',
+        "recovery": 'scripts/core/lyric_writer/lyric_writer.py '
+                    '--lyrics "$RUN/creative/lyrics.json" '
+                    '--brief "$RUN/brief.json"',
+        "artifacts": ("script/lyrics.json",),
+    },
+    "music": {
+        "script": "scripts/core/intake_preflight/factory.py",
+        "verbs": ("music",),
+        "command": 'scripts/core/intake_preflight/factory.py music '
+                   '--run-dir "$RUN" --owner "$OWNER" --action start',
+        "recovery": 'scripts/core/intake_preflight/factory.py music '
+                    '--run-dir "$RUN" --owner "$OWNER" --action resume',
+        "artifacts": ("music/picked-song.mp3", "song-choices/pick.json"),
+        "alt_scripts": ("scripts/core/song_choices/song_choices.py",),
+    },
+    "continuity-bible": {
+        "script": "scripts/core/character_continuity/stage.py",
+        "verbs": ("check", "advance", "proven", "downstream"),
+        "command": 'scripts/core/character_continuity/stage.py advance '
+                   '--run-dir "$RUN" --run-id "$RUN_ID"',
+        "recovery": 'scripts/core/character_continuity/stage.py advance '
+                    '--run-dir "$RUN" --run-id "$RUN_ID"',
+        "artifacts": ("continuity/qc-records.json", "continuity/makers.json"),
+    },
+    "storyboard": {
+        "script": "scripts/core/intake_preflight/factory.py",
+        "verbs": ("storyboard",),
+        "command": 'scripts/core/intake_preflight/factory.py storyboard '
+                   '--run-dir "$RUN"',
+        "recovery": 'scripts/core/intake_preflight/factory.py storyboard '
+                    '--run-dir "$RUN" --reply "$REPLY"',
+        "artifacts": ("storyboard/shot-list.json", "storyboard/contracts.json"),
+        "alt_scripts": ("scripts/core/shot_planner/speaker_check/speaker_check.py",),
+    },
+    "image-keyframes": {
+        "script": "scripts/core/kie_dispatch/kie_dispatch.py",
+        "verbs": ("dispatch",),
+        "command": 'scripts/core/kie_dispatch/kie_dispatch.py dispatch '
+                   '--model <image-model-id> --request "$RUN/generation/req.json" '
+                   '--prompt-file "$RUN/generation/req.prompt.txt" '
+                   '--save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" '
+                   '--run-id "$RUN_ID" --logical-key keyframes '
+                   '--attempt-id "$ATTEMPT" --cost "$COST"',
+        "recovery": 'scripts/core/kie_dispatch/kie_dispatch.py dispatch '
+                    '--model <image-model-id> --request "$RUN/generation/req.json" '
+                    '--prompt-file "$RUN/generation/req.prompt.txt" '
+                    '--save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" '
+                    '--run-id "$RUN_ID" --logical-key keyframes '
+                    '--attempt-id "$ATTEMPT" --cost "$COST"',
+        "artifacts": ("keyframes/manifest.json",),
+    },
+    "video-generation": {
+        "script": "scripts/core/kie_dispatch/kie_dispatch.py",
+        "verbs": ("dispatch",),
+        "command": 'scripts/core/kie_dispatch/kie_dispatch.py dispatch '
+                   '--model <video-model-id> --request "$RUN/generation/req.json" '
+                   '--prompt-file "$RUN/generation/req.prompt.txt" '
+                   '--save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" '
+                   '--run-id "$RUN_ID" --logical-key video '
+                   '--attempt-id "$ATTEMPT" --cost "$COST"',
+        "recovery": 'scripts/core/kie_dispatch/kie_dispatch.py dispatch '
+                    '--model <video-model-id> --request "$RUN/generation/req.json" '
+                    '--prompt-file "$RUN/generation/req.prompt.txt" '
+                    '--save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" '
+                    '--run-id "$RUN_ID" --logical-key video '
+                    '--attempt-id "$ATTEMPT" --cost "$COST"',
+        "artifacts": ("video/clips.json",),
+    },
+    "qc-retakes": {
+        "script": "scripts/core/retake_manager/retake_manager.py",
+        "verbs": ("",),
+        "command": 'scripts/core/retake_manager/retake_manager.py '
+                   '--request "$RUN/qc/retake-request.json"',
+        "recovery": 'scripts/core/retake_manager/retake_manager.py '
+                    '--request "$RUN/qc/retake-request.json"',
+        "artifacts": ("qc/retakes.json",),
+    },
+    "assembly": {
+        "script": "scripts/core/final_assembler/assembler.py",
+        "verbs": ("",),
+        "command": 'scripts/core/final_assembler/assembler.py '
+                   '"$RUN/edit/timeline.json" "$RUN/edit/ad.mp4"',
+        "recovery": 'scripts/core/final_assembler/assembler.py '
+                    '"$RUN/edit/timeline.json" "$RUN/edit/ad.mp4"',
+        "artifacts": ("edit/timeline.json", "edit/ad.mp4"),
+    },
+    "final-qc": {
+        "script": "scripts/core/qc_gate.py",
+        "verbs": ("evaluate",),
+        "command": 'scripts/core/qc_gate.py evaluate --run "$RUN_ID" '
+                   '--stage final-qc --records "$RUN/qc/records.json" '
+                   '--makers "$RUN/qc/makers.json" --required "$REQUIRED_CHECKS"',
+        "recovery": 'scripts/core/qc_gate.py evaluate --run "$RUN_ID" '
+                    '--stage final-qc --records "$RUN/qc/records.json" '
+                    '--makers "$RUN/qc/makers.json" --required "$REQUIRED_CHECKS"',
+        "artifacts": ("final-qc/record.json",),
+    },
+    "delivery": {
+        "script": "scripts/core/qc_gate.py",
+        "verbs": ("evaluate",),
+        "command": 'scripts/core/qc_gate.py evaluate --run "$RUN_ID" '
+                   '--stage delivery --records "$RUN/qc/records.json" '
+                   '--makers "$RUN/qc/makers.json" --required "$REQUIRED_CHECKS"',
+        "recovery": 'scripts/core/qc_gate.py evaluate --run "$RUN_ID" '
+                    '--stage delivery --records "$RUN/qc/records.json" '
+                    '--makers "$RUN/qc/makers.json" --required "$REQUIRED_CHECKS"',
+        "artifacts": ("delivery/receipts.json",),
+    },
 }
 
 
-def validate_registry(registry=None):
+def _skill_root():
+    """This file's skill root: core/intake_preflight/factory.py -> skill/."""
+    return Path(__file__).resolve().parents[3]
+
+
+def _command_verb(command):
+    """The declared verb token of a descriptor command: the first token after
+    the script, and only when it really is a bare verb (never an option, never
+    a path). ``""`` means the CLI is option/positional-only -- a real contract,
+    not a missing one."""
+    tokens = str(command or "").split()
+    if len(tokens) < 2:
+        return ""
+    tok = tokens[1]
+    return tok if re.fullmatch(r"[a-z][a-z0-9-]*", tok) else ""
+
+
+#: Command prefixes that are an interpreter, not the script under contract.
+_INTERPRETERS = ("python3", "python", "/opt/homebrew/bin/python3")
+
+
+def _command_script(command):
+    """The script path a published command actually runs. Strips one leading
+    interpreter token; a command that runs no script (``python3 -c``) returns
+    ``""`` -- which the runbook checks report as unresolvable, never as valid."""
+    tokens = str(command or "").split()
+    if not tokens:
+        return ""
+    if tokens[0] in _INTERPRETERS:
+        if len(tokens) < 2 or tokens[1].startswith("-"):
+            return ""
+        return tokens[1]
+    return tokens[0]
+
+
+def _descriptor_problems(skill_root=None):
+    """F4 named checks over the descriptors themselves. Each problem names the
+    stage, the field and the reason -- never a bare False."""
+    root = _skill_root() if skill_root is None else Path(skill_root)
+    problems = []
+    for stage in CANONICAL_STAGES:
+        d = STAGE_DESCRIPTORS.get(stage)
+        if not isinstance(d, dict):
+            problems.append("stage %r has no descriptor contract" % stage)
+            continue
+        for field in ("script", "command", "recovery", "artifacts"):
+            if not d.get(field):
+                problems.append("stage %r descriptor missing %r" % (stage, field))
+        for field in ("command", "recovery"):
+            text = str(d.get(field) or "")
+            # ``<...>`` is only allowed as a RUNTIME INPUT slot (ids, costs);
+            # the script path itself never carries one.
+            head = text.split()[0] if text.split() else ""
+            if any(t in head for t in PLACEHOLDER_TOKENS):
+                problems.append("stage %r %s script is a placeholder: %r"
+                                % (stage, field, head))
+        for field in ("script",):
+            head = str(d.get(field) or "")
+            if any(t in head for t in PLACEHOLDER_TOKENS):
+                problems.append("stage %r script is a placeholder: %r"
+                                % (stage, head))
+            elif not (root / head).is_file():
+                problems.append("stage %r script does not resolve on disk: %r"
+                                % (stage, head))
+        for field in ("command", "recovery"):
+            verb = _command_verb(d.get(field))
+            if verb not in tuple(d.get("verbs") or ()):
+                problems.append("stage %r %s verb %r is not declared (supported: %s)"
+                                % (stage, field, verb,
+                                   ", ".join(repr(v) for v in (d.get("verbs") or ()))
+                                   or "none"))
+        arts = tuple(d.get("artifacts") or ())
+        if not arts:
+            problems.append("stage %r declares no emitted output inventory" % stage)
+        elif len(set(arts)) != len(arts):
+            problems.append("stage %r output inventory has duplicates" % stage)
+    return problems
+
+
+def _evidence_contract_problems(stage, entry, descriptor):
+    """C01F4-evidence: the published evidence fields are one contract with
+    the descriptor artifacts -- a row naming evidence the descriptors do
+    not emit is refused by name, never left to drift silently."""
+    problems = []
+    want = tuple((descriptor or {}).get("artifacts") or ())
+    if entry.get("output_producer") and entry.get("output_producer") not in want:
+        problems.append("stage %r output_producer %r is not a declared "
+                        "artifact (descriptor: %s)"
+                        % (stage, entry.get("output_producer"),
+                           ", ".join(want)))
+    for ev in (entry.get("required_evidence") or []):
+        if ev not in want:
+            problems.append("stage %r required_evidence %r is not a declared "
+                            "artifact (descriptor: %s)"
+                            % (stage, ev, ", ".join(want)))
+    idem = str(entry.get("idempotency") or "")
+    if idem and "/" in idem:
+        idem_dir = idem.split("/")[0]
+        want_dirs = {a.split("/")[0] for a in want if "/" in a}
+        if want_dirs and idem_dir not in want_dirs:
+            problems.append("stage %r idempotency %r names a directory the "
+                            "descriptor never emits (descriptor: %s)"
+                            % (stage, idem, ", ".join(want)))
+    return problems
+
+
+def _stage_contract_problems(stage, entry):
+    """F4: named reasons ONE published stage entry cannot be executed. Empty
+    list == executable. Never a bare False."""
+    d = STAGE_DESCRIPTORS.get(stage)
+    if not isinstance(d, dict):
+        return ["stage %r has no descriptor contract" % stage]
+    if not isinstance(entry, dict):
+        return ["stage %r has no registry entry" % stage]
+    problems = []
+    for field in ("entrypoint", "recovery_entrypoint"):
+        text = str(entry.get(field) or "")
+        head = text.split()[0] if text.split() else ""
+        if not head:
+            problems.append("stage %r field %r is empty" % (stage, field))
+        elif any(t in head for t in PLACEHOLDER_TOKENS):
+            problems.append("stage %r field %r names a placeholder script: %r"
+                            % (stage, field, head))
+    if entry.get("entrypoint") and \
+            str(entry.get("entrypoint")) != str(d.get("command") or ""):
+        problems.append("stage %r entrypoint drifted from its descriptor"
+                        % stage)
+    if entry.get("recovery_entrypoint") and \
+            str(entry.get("recovery_entrypoint")) != str(d.get("recovery") or ""):
+        problems.append("stage %r recovery_entrypoint drifted from its "
+                        "descriptor" % stage)
+    problems.extend(_evidence_contract_problems(stage, entry, d))
+    if not tuple(entry.get("required_artifacts") or ()):
+        problems.append("stage %r declares no emitted output inventory" % stage)
+    return problems
+
+
+#: C01: the required production order, over the EXISTING stage identities. A
+#: stage is admitted only when every required predecessor ahead of it has its
+#: declared artifacts on disk -- deleting a predecessor fails by name.
+PRODUCTION_ORDER = CANONICAL_STAGES
+
+
+def production_order_gate(run_dir, stage, registry=None, got=None):
+    """(ok, reason_code, detail, missing) for C01's required production order.
+
+    Names the FIRST predecessor whose declared artifacts are absent. An unknown
+    stage is refused, never assumed. When ``got`` (stage -> raw state) is
+    supplied, only predecessors the store already reports COMPLETE are checked
+    -- a COMPLETE row whose artifacts are gone is the contradiction this
+    refuses; a predecessor that has not run yet is already blocking upstream."""
+    reg = STAGE_REGISTRY if registry is None else registry
+    if stage not in PRODUCTION_ORDER:
+        return (False, "PRODUCTION_ORDER_UNKNOWN_STAGE",
+                "stage %r is not in the required production order" % (stage,),
+                [])
+    rd = Path(run_dir)
+    for pred in PRODUCTION_ORDER[:PRODUCTION_ORDER.index(stage)]:
+        entry = reg.get(pred) or {}
+        if not entry.get("required", True):
+            continue
+        if got is not None and str((got or {}).get(pred)) != "COMPLETE":
+            continue
+        missing = [a for a in (entry.get("required_artifacts") or [])
+                   if not (rd / a).exists()]
+        if missing:
+            return (False, "PRODUCTION_ORDER_VIOLATION",
+                    "stage %r requires predecessor %r first; missing: %s"
+                    % (stage, pred, ", ".join(missing)), missing)
+    return True, "PRODUCTION_ORDER_OK", "", []
+
+
+#: The full 12-stage registry (SPEC 8.6). Published + validated by
+#: ``validate_registry``. Specialized runners are preserved (an entrypoint may
+#: name a dedicated script); no stage is forced into a reconciler just to fill
+#: the table. Every entrypoint/recovery command and every artifact tuple is
+#: DERIVED from ``STAGE_DESCRIPTORS`` -- one contract, no second copy.
+STAGE_REGISTRY = {
+    # C01/F4: every entrypoint, recovery command and artifact tuple below is
+    # DERIVED from STAGE_DESCRIPTORS -- one contract, nothing to drift.
+    "research": _stage(
+        [], "research-analyst",
+        STAGE_DESCRIPTORS["research"]["command"],
+        "research/<request-digest>", "research/receipt.json",
+        "research/receipt.json",
+        ["research/receipt.json", "research/claims.json",
+         "research/captures.json"],
+        "none", "research brief + sources on disk + independent semantic review",
+        STAGE_DESCRIPTORS["research"]["recovery"],
+        "research-complete",
+        artifacts=STAGE_DESCRIPTORS["research"]["artifacts"]),
+    "creative-strategy": _stage(
+        ["research"], "creative-strategist",
+        STAGE_DESCRIPTORS["creative-strategy"]["command"],
+        "creative/<plan-revision>", "creative/blueprint.json",
+        "creative/qc-record.json",
+        ["creative/story.json", "creative/blueprint.json"],
+        "operator", "approved Story Beat Blueprint",
+        STAGE_DESCRIPTORS["creative-strategy"]["recovery"],
+        "creative-approved",
+        artifacts=STAGE_DESCRIPTORS["creative-strategy"]["artifacts"]),
+    "script-lyrics": _stage(
+        ["creative-strategy"], "lyricist",
+        STAGE_DESCRIPTORS["script-lyrics"]["command"], "script/<plan-revision>",
+        "script/lyrics.json", "script/qc-record.json", ["script/lyrics.json"],
+        "delivered-approval", "approved lyric sheet",
+        STAGE_DESCRIPTORS["script-lyrics"]["recovery"], "script-approved",
+        artifacts=STAGE_DESCRIPTORS["script-lyrics"]["artifacts"]),
+    "music": _stage(
+        ["script-lyrics"], "music-producer",
+        STAGE_DESCRIPTORS["music"]["command"],
+        "music/<run-id>/<attempt-id>", "music/picked-song.mp3",
+        "music/qc-records.json", ["music/picked-song.mp3", "song-choices/pick.json"],
+        "delivered-approval", "picked song + independent QC PASS",
+        STAGE_DESCRIPTORS["music"]["recovery"],
+        "provider-completion",
+        artifacts=STAGE_DESCRIPTORS["music"]["artifacts"]),
+    "continuity-bible": _stage(
+        ["music"], "continuity-editor",
+        STAGE_DESCRIPTORS["continuity-bible"]["command"],
+        "continuity/<plan-revision>", "continuity/qc-records.json",
+        "continuity/qc-records.json",
+        ["continuity/qc-records.json", "continuity/makers.json"],
+        "none", "continuity gate PASS on declared required evidence",
+        STAGE_DESCRIPTORS["continuity-bible"]["recovery"],
+        "continuity-complete",
+        artifacts=STAGE_DESCRIPTORS["continuity-bible"]["artifacts"]),
+    "storyboard": _stage(
+        ["continuity-bible"], "storyboard-artist",
+        STAGE_DESCRIPTORS["storyboard"]["command"],
+        "storyboard/<plan-revision>", "storyboard/shot-list.json",
+        "storyboard/qc-record.json",
+        ["storyboard/shot-list.json", "storyboard/contracts.json"],
+        "delivered-approval", "approved shots + stills present",
+        STAGE_DESCRIPTORS["storyboard"]["recovery"],
+        "approval", artifacts=STAGE_DESCRIPTORS["storyboard"]["artifacts"]),
+    "image-keyframes": _stage(
+        ["storyboard"], "keyframe-artist",
+        STAGE_DESCRIPTORS["image-keyframes"]["command"],
+        "keyframes/<shot-set-digest>", "keyframes/manifest.json",
+        "keyframes/qc-record.json", ["keyframes/manifest.json"],
+        "none", "keyframes per approved shot",
+        STAGE_DESCRIPTORS["image-keyframes"]["recovery"], "provider-completion",
+        artifacts=STAGE_DESCRIPTORS["image-keyframes"]["artifacts"]),
+    "video-generation": _stage(
+        ["image-keyframes"], "video-generator",
+        STAGE_DESCRIPTORS["video-generation"]["command"],
+        "video/<segment-set-digest>", "video/clips.json",
+        "video/qc-record.json", ["video/clips.json"],
+        "none", "all clips materialized",
+        STAGE_DESCRIPTORS["video-generation"]["recovery"], "provider-completion",
+        artifacts=STAGE_DESCRIPTORS["video-generation"]["artifacts"]),
+    "qc-retakes": _stage(
+        ["video-generation"], "qc-reviewer",
+        STAGE_DESCRIPTORS["qc-retakes"]["command"], "qc/<clip-set-digest>",
+        "qc/retakes.json", "qc/qc-record.json", ["qc/retakes.json"],
+        "operator", "QC verdict recorded (retakes or accept)",
+        STAGE_DESCRIPTORS["qc-retakes"]["recovery"], "qc-complete",
+        required=False, artifacts=STAGE_DESCRIPTORS["qc-retakes"]["artifacts"]),
+    "assembly": _stage(
+        ["qc-retakes"], "editor",
+        STAGE_DESCRIPTORS["assembly"]["command"],
+        "edit/<timeline-digest>", "edit/timeline.json",
+        "assembly/qc-record.json", ["edit/timeline.json", "edit/ad.mp4"],
+        "none", "assembled timeline on disk",
+        STAGE_DESCRIPTORS["assembly"]["recovery"], "assembly-complete",
+        artifacts=STAGE_DESCRIPTORS["assembly"]["artifacts"]),
+    "final-qc": _stage(
+        ["assembly"], "final-qc-reviewer",
+        STAGE_DESCRIPTORS["final-qc"]["command"],
+        "final-qc/<assembly-digest>", "final-qc/record.json",
+        "final-qc/record.json", ["final-qc/record.json"],
+        "operator", "independent final QC PASS",
+        STAGE_DESCRIPTORS["final-qc"]["recovery"], "final-qc-complete",
+        artifacts=STAGE_DESCRIPTORS["final-qc"]["artifacts"]),
+    "delivery": _stage(
+        ["final-qc"], "delivery-agent",
+        STAGE_DESCRIPTORS["delivery"]["command"],
+        "delivery/<run-id>", "delivery/receipts.json",
+        "delivery/qc-record.json", ["delivery/receipts.json"],
+        "none", "successful destination delivery receipts",
+        STAGE_DESCRIPTORS["delivery"]["recovery"], "delivery-complete",
+        artifacts=STAGE_DESCRIPTORS["delivery"]["artifacts"]),
+}
+
+
+def validate_registry(registry=None, skill_root=None, runbook_rows=None):
     """Validate the published 12-stage registry (SPEC 8.6). Returns a list of
     problems; empty list == valid. Checks: all 12 canonical stages present,
-    no extras, and every required stage carries every required field non-empty."""
+    no extras, every required stage carries every required field non-empty,
+    and -- C01/F4 -- every stage's descriptor names a REAL script on disk with
+    a DECLARED verb and a non-empty output inventory that matches the entry it
+    publishes. When ``runbook_rows`` is supplied, the normal ``next`` row and
+    the continuation registry must name the same executable, so the two paths
+    cannot disagree. Every problem names the stage and the field."""
     reg = STAGE_REGISTRY if registry is None else registry
+    root = _skill_root() if skill_root is None else Path(skill_root)
     problems = []
     for s in CANONICAL_STAGES:
         if s not in reg:
@@ -2034,6 +2384,60 @@ def validate_registry(registry=None):
                 continue
             if not entry[field]:
                 problems.append("stage %r empty field %r" % (s, field))
+        # F4: the descriptor contract -- a placeholder verb or a missing
+        # contract fails HERE, by name, never silently at run time.
+        d = STAGE_DESCRIPTORS.get(s) or {}
+        if not d:
+            problems.append("stage %r has no descriptor contract" % s)
+            continue
+        for field in ("entrypoint", "recovery_entrypoint"):
+            text = str(entry.get(field) or "")
+            head = text.split()[0] if text.split() else ""
+            if any(t in head for t in PLACEHOLDER_TOKENS):
+                problems.append("stage %r field %r names a placeholder "
+                                "script: %r" % (s, field, head))
+        if entry.get("entrypoint") and \
+                str(entry.get("entrypoint")) != str(d.get("command") or ""):
+            problems.append("stage %r entrypoint drifted from its descriptor"
+                            % s)
+        if entry.get("recovery_entrypoint") and \
+                str(entry.get("recovery_entrypoint")) != str(d.get("recovery") or ""):
+            problems.append("stage %r recovery_entrypoint drifted from its "
+                            "descriptor" % s)
+        arts = tuple(entry.get("required_artifacts") or ())
+        want = tuple(d.get("artifacts") or ())
+        if not arts:
+            problems.append("stage %r declares no emitted output inventory" % s)
+        elif arts != want:
+            problems.append("stage %r output inventory %r != descriptor %r"
+                            % (s, arts, want))
+        problems.extend(_evidence_contract_problems(s, entry, d))
+    problems.extend(_descriptor_problems(root))
+    if runbook_rows:
+        for s, row in sorted(runbook_rows.items()):
+            cmd = str((row or {}).get("command") or "")
+            head = _command_script(cmd)
+            if not head:
+                # An addition row may legitimately be an inline `python3 -c`
+                # probe; a CANONICAL stage row never may.
+                if s not in STAGE_DESCRIPTORS:
+                    continue
+                problems.append("runbook row %r has no resolvable script" % s)
+                continue
+            if any(t in head for t in PLACEHOLDER_TOKENS):
+                problems.append("runbook row %r names a placeholder script: %r"
+                                % (s, head))
+                continue
+            if not (root / head).is_file():
+                problems.append("runbook row %r script does not resolve on "
+                                "disk: %r" % (s, head))
+            d = STAGE_DESCRIPTORS.get(s)
+            if not d:
+                continue      # clips/trailers/platform-fit/agnes rows: additions
+            allowed = {str(d.get("script") or "")} | set(d.get("alt_scripts") or ())
+            if head not in allowed:
+                problems.append("runbook row %r names %r, not the registry "
+                                "contract %r" % (s, head, d.get("script")))
     return problems
 
 
@@ -2401,13 +2805,25 @@ def continuation_enqueue(run_dir, event, run_id=None, stages=None,
         "at": time.time(),
     }
     if decision["verdict"] == "runnable" and decision["next_stage"]:
-        admission = _production_admission(rd, decision["next_stage"], run_id=run_id)
+        admission = _admit_stage(rd, decision["next_stage"], run_id=run_id,
+                                 got=got)
         action["production_process"] = admission
         action["production_admitted"] = admission["ok"]
         if admission["ok"]:
             entry = (registry or STAGE_REGISTRY).get(decision["next_stage"], {})
-            action["entrypoint"] = entry.get("entrypoint")
-            action["idempotency"] = entry.get("idempotency")
+            contract = _stage_contract_problems(decision["next_stage"], entry)
+            if contract:
+                # F4: a descriptor that is not executable is not an entrypoint.
+                # The continuation path refuses by name instead of handing out
+                # a command no parser accepts.
+                action["verdict"] = "waiting"
+                action["reason_code"] = "REGISTRY_CONTRACT_INVALID"
+                action["contract_problems"] = contract
+                action["entrypoint"] = None
+                action["wake_event"] = "governed-stage-ready"
+            else:
+                action["entrypoint"] = entry.get("entrypoint")
+                action["idempotency"] = entry.get("idempotency")
         else:
             action["verdict"] = "waiting"
             action["reason_code"] = admission["reason_code"]
@@ -3021,6 +3437,32 @@ def _next_stage(a, *, boot_snapshot=None):
                 "one submission pass, overlap receipt, no paid redo for a missing overlap."
                 % sc["mode"],
                 data=data, evidence=["%s" % db, runbook_path])
+    # F4: the normal `next` path and the continuation controller must hand out
+    # the SAME executable contract. A placeholder descriptor, a drifted entry
+    # or a runbook row naming a different script is refused here, by name --
+    # neither path may invent a command the parser does not accept.
+    contract = _stage_contract_problems(next_stage, STAGE_REGISTRY.get(next_stage) or {})
+    contract.extend(p for p in validate_registry(runbook_rows=rows)
+                    if p.startswith("runbook row %r" % next_stage)
+                    or p.startswith("stage %r" % next_stage))
+    if contract:
+        return envelope("next", str(sid), "error", "REGISTRY_CONTRACT_INVALID",
+                        "Stage %r cannot be handed out: %s"
+                        % (next_stage, "; ".join(contract)),
+                        data={"stage": next_stage,
+                              "contract_problems": contract})
+    # C01: required production order -- a later stage never runs on a
+    # predecessor whose declared artifacts are gone.
+    order = _admit_stage(run_dir, next_stage, run_id=str(sid), got=got)
+    if not order.get("ok"):
+        # Same refusal shape as every other admission refusal on main
+        # (production_admitted False, blocked_stage, production_process),
+        # plus the C01 fields that name the stage and the missing artifacts.
+        refusal = _production_refusal("next", run_dir, dict(order, run_id=str(sid)))
+        refusal["reason_code"] = order.get("reason_code") or "PRODUCTION_ORDER_VIOLATION"
+        refusal["data"].update(stage=next_stage,
+                               missing_artifacts=order.get("missing_artifacts", []))
+        return refusal
     lane = lane_size_payload()
     nxt = {"stage": present_id, "production_stage": next_stage, "command": row["command"],
            "produces": row.get("produces", ""), "lane_size": lane,

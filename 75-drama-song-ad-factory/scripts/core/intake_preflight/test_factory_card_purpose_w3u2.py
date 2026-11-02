@@ -70,11 +70,11 @@ def make_run(tmp, advanced=0):
     run = Path(tmp) / "run"
     (run / "control").mkdir(parents=True, exist_ok=True)
     with Store(run / "control" / "state.sqlite3") as store:
-        store.init_run("R", STAGES)
+        store.init_run(run.name, STAGES)
         for stage in STAGES[:advanced]:
-            store.transition("R", stage, "READY", "fixture")
-            store.claim("R", stage, "fixture")
-            store.transition("R", stage, "COMPLETE", "fixture")
+            store.transition(run.name, stage, "READY", "fixture")
+            store.claim(run.name, stage, "fixture")
+            store.transition(run.name, stage, "COMPLETE", "fixture")
     return run
 
 
