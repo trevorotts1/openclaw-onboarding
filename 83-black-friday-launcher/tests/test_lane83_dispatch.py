@@ -1,7 +1,8 @@
 """Lane 83: `cli dispatch` turns an intake into a Skill 49 launch record and builds every page.
 
 Free: the page skills are replaced by tests/lane83_fake_consumer.py (no network, no provider), and a
-KIE adapter that fails loudly if it is ever started proves zero paid calls.
+KIE adapter that fails loudly if it is ever started proves zero paid calls. Because the fake consumer
+fabricates the design files, nothing here proves the real adapter chain: that is test_e2e_real_adapters.py.
 """
 
 from __future__ import annotations
@@ -297,9 +298,11 @@ class DispatchTests(unittest.TestCase):
             dispatch = staticmethod(stop)
 
         config = consumer_config()
-        with mock.patch.object(launch_bridge.substrate, "dispatch", return_value=Spy):
-            with self.assertRaises(launch_bridge.BridgeError):
-                run_dispatch(doc, self.out, adapters_config=config, **kw)
+        # this spy checks what Skill 49 is handed; the allow-list is proved in test_launch_bridge_record.AdapterAllowListTests
+        with mock.patch.object(launch_bridge, "_validate_supplied_adapters", lambda *a, **k: None, create=True):
+            with mock.patch.object(launch_bridge.substrate, "dispatch", return_value=Spy):
+                with self.assertRaises(launch_bridge.BridgeError):
+                    run_dispatch(doc, self.out, adapters_config=config, **kw)
         return seen
 
     @unittest.skipUnless("image_inputs" in __import__("inspect").signature(substrate.dispatch().dispatch).parameters,

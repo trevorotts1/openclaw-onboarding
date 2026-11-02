@@ -9,9 +9,15 @@ Two shapes, exactly as the owner records state them and never merged:
                       form. No product selection page, and never relabelled a
                       single offer.
 
-Both shapes now build. 7FigurePreneur uses the settled `folded_levels` journey
-mode: N >= 2 distinct main offers, landing straight to the native order form,
-no product_selection node.
+Elevation routes, assembles and checks clean. 7FigurePreneur routes and assembles
+but is delivery-blocked until Skill 79 names a checkout mode (the check fails on
+AF-LAUNCH-CHECKOUT-MODE by design); it is never reported as a green package. It
+uses the settled `folded_levels` journey mode: N >= 2 distinct main offers,
+landing straight to the native order form, no product_selection node.
+
+The pieces below are composed from the build plan, not produced by the page
+skills, so this file proves routing and package completeness only. The real
+adapter chain is proven by tests/test_e2e_real_adapters.py.
 
 No price, level content or product default is invented here. Every amount used
 comes from the repository's own TEST-ONLY fixtures; see fixtures/README.md.
