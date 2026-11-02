@@ -285,3 +285,35 @@ def test_concrete_driver_end_to_end_on_synthetic_capture(launch):
     cap = {k: v for k, v in SYN_CAPTURE.items() if k != "payment_status"}
     out2 = _install(plan, fs.RestCanvasFunnelDriver(SynGhl(), LOC, cap, allow_synthetic=True))
     assert out2["manual_gates"] == [fs.PAYMENT_GATE] and out2["ready"] is False
+
+
+def test_concrete_driver_write_methods_refuse_direct_call_without_approval(launch):
+    graph, offers, catalog = launch
+    plan = fs.build_funnel_plan(graph, offers, catalog)
+    ghl = SynGhl()
+    d = fs.RestCanvasFunnelDriver(ghl, LOC, SYN_CAPTURE, allow_synthetic=True)
+    calls = {"create_step": ("F1", "checkout", "order_form"), "attach_price": ("s", "p", "pr"),
+             "place_element": ("s", "order_bump", "pr", False), "set_action": ("s", "accept", "t")}
+    for name, args in calls.items():
+        with pytest.raises(fs.ApprovalRefused, match=name):
+            getattr(d, name)(*args)
+    # a rejecting verifier or a bad record leaves the driver locked, and the lock holds after a failed re-authorize
+    for rec, ver in ((_approval(plan), lambda r: False), (None, lambda r: True)):
+        with pytest.raises(fs.ApprovalRefused):
+            d.authorize(plan, rec, ver)
+        with pytest.raises(fs.ApprovalRefused):
+            d.create_step("F1", "checkout", "order_form")
+    assert ghl.evals == []
+
+
+def test_install_funnel_verifies_once_and_direct_writes_work_after_authorize(launch):
+    graph, offers, catalog = launch
+    plan = fs.build_funnel_plan(graph, offers, catalog)
+    seen = []
+    ghl = SynGhl()
+    d = fs.RestCanvasFunnelDriver(ghl, LOC, SYN_CAPTURE, allow_synthetic=True)
+    out = _install(plan, d, verifier=lambda r: seen.append(r) or True)
+    assert out["ready"] is True and len(seen) == 1
+    d2 = fs.RestCanvasFunnelDriver(SynGhl(), LOC, SYN_CAPTURE, allow_synthetic=True)
+    d2.authorize(plan, _approval(plan), lambda r: True)
+    assert d2.create_step("F1", "checkout", "order_form")
