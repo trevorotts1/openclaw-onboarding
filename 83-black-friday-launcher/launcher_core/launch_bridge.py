@@ -317,6 +317,57 @@ def _check_copy_form(normalized: Dict[str, Any], adapters_config: Optional[Dict[
                           "(or re-approve the plan). Nothing was dispatched and nothing was spent.")
 
 
+def _validate_supplied_adapters(config: Dict[str, Any], test_only: bool) -> None:
+    """An operator-supplied adapter config goes through Skill 83's adapter allow-list before anything runs."""
+    import adapters  # routes/adapters.py, as _build_adapters does
+    check = getattr(adapters, "validate_adapter_config", None)  # ponytail: U-structure-01 adds the allow-list; absent on this base
+    if check is None:
+        return
+    try:
+        check(config, test_only=test_only)
+    except adapters.AdapterError as exc:
+        raise BridgeError("AF-LAUNCH-BRIDGE-ADAPTERS",
+                          f"{exc}. Nothing was dispatched and nothing was spent.") from exc
+
+
+def _landing_bridge_config(adapter_inputs: Dict[str, Any], dispatch_dir: Path, inputs: Dict[str, Any],
+                           inputs_path: Path) -> Dict[str, Any]:
+    """Hand Skill 49's landing bridge the approved image plan (STR-16).
+
+    The supplied bridge config gets landing.image_inputs and landing.image_plan from the plan this run
+    resolved; a value the supplied config already holds that differs from the plan is refused. The
+    rewritten config is written beside the dispatch and replaces the supplied path. An unreadable file
+    is refused here; a readable one with no landing section is left for Skill 49 to refuse by name."""
+    if not adapter_inputs.get("bridge_config"):
+        return adapter_inputs
+    try:
+        doc = json.loads(Path(adapter_inputs["bridge_config"]).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise BridgeError("AF-LAUNCH-BRIDGE-ADAPTERS",
+                          f"the landing bridge config {adapter_inputs['bridge_config']} cannot be read ({exc}). "
+                          "Nothing was dispatched and nothing was spent.") from exc
+    landing = doc.get("landing") if isinstance(doc, dict) else None
+    if not isinstance(landing, dict):
+        return adapter_inputs  # no landing section to complete: Skill 49's load_bridge_config refuses it by name
+    written = image_plan.image_inputs_file(inputs)
+    abs_inputs = str(Path(inputs_path).resolve())
+    want = {"image_inputs": abs_inputs,
+            "image_plan": {"image_inputs": abs_inputs, "image_cap": written["image_cap"],
+                           "brand_owner": written["brand_owner"], "design_style": written["design_style"],
+                           "image_provider": written["image_provider"]},
+            "image_cap": written["image_cap"], "brand_owner": written["brand_owner"]}
+    for key, value in want.items():
+        if key in landing and landing[key] != value:
+            raise BridgeError("AF-LAUNCH-BRIDGE-IMAGE-PLAN",
+                              f"{key} in the landing bridge config is {landing[key]!r} but the approved image "
+                              f"plan says {value!r}. Nothing was dispatched and nothing was spent.")
+    landing.update(want)
+    landing["draft"] = landing.get("draft") is True  # a draft is only ever declared, never defaulted on
+    path = Path(dispatch_dir) / "landing-bridge.json"
+    path.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return {**adapter_inputs, "bridge_config": str(path)}
+
+
 def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
         client_identity_ref: str, worker_identity_ref: str,
         adapters_config: Optional[Dict[str, Any]] = None,
@@ -346,6 +397,8 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
         raise BridgeError("AF-LAUNCH-BRIDGE-RECORD",
                           "Skill 49 would not accept this launch plan: " + "; ".join(fails)
                           + ". Nothing was dispatched and nothing was spent.")
+    if adapters_config is not None:
+        _validate_supplied_adapters(adapters_config, bool(normalized.get("test_only", True)))
 
     out_dir.mkdir(parents=True, exist_ok=True)
     dispatch_dir = out_dir / "dispatch"
@@ -354,6 +407,8 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
     order_inputs_path = out_dir / "order-page-inputs.json"
     launch_path = out_dir / "launch.json"
     launch_path.write_text(json.dumps(launch, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (out_dir / "intake-at-dispatch.json").write_text(json.dumps(normalized, indent=2, sort_keys=True) + "\n",
+                                                     encoding="utf-8")  # the dispatch-time intake package.assemble binds to (package.INTAKE_SNAPSHOT_REL)
     inputs_path.write_text(json.dumps(image_plan.image_inputs_file(inputs), indent=2, sort_keys=True) + "\n",
                            encoding="utf-8")
     order_inputs_path.write_text(json.dumps(image_plan.order_page_inputs_file(
@@ -370,6 +425,7 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
                               "I have no way to build the pages yet: give me either a ready adapter "
                               "configuration or the per-page inputs (copy, journey and enrichment for the "
                               "upsell and downsell pages). Nothing was dispatched.")
+        adapter_inputs = _landing_bridge_config(adapter_inputs, dispatch_dir, inputs, inputs_path)
         adapters_config = _build_adapters(adapter_inputs, out_dir, launch_path, inputs, inputs_path,
                                           order_inputs_path)
 

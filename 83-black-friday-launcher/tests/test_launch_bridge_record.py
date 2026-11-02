@@ -21,6 +21,7 @@ sys.path.insert(0, str(SKILL_ROOT))
 sys.path.insert(0, str(SKILL_ROOT / "routes"))
 
 import substrate  # noqa: E402
+import adapters  # noqa: E402
 from launcher_core import image_plan, intake, launch_bridge, route  # noqa: E402
 
 BRAND = str(Path(tempfile.gettempdir()) / "test-brand.json")
@@ -254,6 +255,137 @@ class RunGateTests(unittest.TestCase):
             self.run_bridge(payload(), {}, adapters_config={"adapters": {"landing": {"command": [
                 "py", "x", "--bridge-config", opt_in]}}})
         self.assertEqual(refused.exception.code, "AF-LAUNCH-BRIDGE-COPY-FORM")
+
+
+class RunArtifactTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.out = self.root / "run"
+
+    def approval(self, doc):
+        return {"approval_id": "APPR-TEST-1", "subject_hash": plan_hash(record(doc))}
+
+    def test_the_validated_intake_is_written_before_the_adapter_refusal(self):  # ENF-03
+        with self.assertRaises(launch_bridge.BridgeError) as ctx:
+            launch_bridge.run(payload(), self.out, approval=self.approval(payload()),
+                              client_identity_ref="c", worker_identity_ref="w")
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-BRIDGE-ADAPTERS")
+        snapshot = self.out / "intake-at-dispatch.json"
+        self.assertTrue(snapshot.is_file())
+        self.assertEqual(json.loads(snapshot.read_text(encoding="utf-8")), intake.validate(payload()))
+
+
+class AdapterAllowListTests(unittest.TestCase):  # ENF-08
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.marker = self.root / "marker"
+
+    def refused(self, doc, config):
+        with self.assertRaises(launch_bridge.BridgeError) as ctx:
+            launch_bridge.run(doc, self.root / "run", approval={}, client_identity_ref="c",
+                              worker_identity_ref="w", adapters_config=config)
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-BRIDGE-ADAPTERS")
+        self.assertIn("adapter not in allow-list", ctx.exception.detail)
+        self.assertFalse(self.marker.exists())
+        self.assertFalse((self.root / "run" / "dispatch").exists())
+
+    def test_a_supplied_adapter_the_allow_list_refuses_never_runs(self):
+        config = {"adapters": {"landing": {"command": [
+            "python3", "-c", f"open({str(self.marker)!r},'w').write('x')"]}}}
+        stub = mock.Mock(side_effect=adapters.AdapterError("adapter not in allow-list: python3 -c"))
+        with mock.patch.object(adapters, "validate_adapter_config", stub, create=True):
+            self.refused(payload(), config)
+        self.assertEqual(stub.call_args.kwargs, {"test_only": True})
+
+    @unittest.skipUnless(hasattr(adapters, "validate_adapter_config"),
+                         "U-structure-01's allow-list is not in this tree")
+    def test_the_real_allow_list_refuses_the_paid_fake_consumer_config(self):
+        doc = payload(image_cap=9, paid_render_approval_ref="TEST-APPROVAL-REF")
+        doc["test_only"] = False
+        command = [sys.executable, str(SKILL_ROOT / "tests" / "lane83_fake_consumer.py"), "{request}", "{result}"]
+        self.refused(doc, {"adapters": {"landing": {"command": command}}})
+
+
+class RouteLawTests(unittest.TestCase):  # ENF-24
+    def test_a_route_law_violation_is_the_launchers_own_error(self):
+        law = route.route_law
+        with mock.patch.object(law, "compile_route",
+                               side_effect=law.RouteInvariantError("missing contract edges: landing->checkout")):
+            with self.assertRaises(route.RouteError) as ctx:
+                route.compile_route(intake.validate(payload()))
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-ROUTE-LAW")
+        self.assertIn("missing contract edges", str(ctx.exception))
+
+
+class LandingBridgeConfigTests(unittest.TestCase):  # STR-16
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.out = self.root / "run"
+        self.cap = image_plan.resolve(payload()["image_plan"], test_only=True)[0]["image_cap"]
+
+    def config(self, **landing) -> str:
+        brand, launch = self.root / "brand.json", self.root / "launch-placeholder.json"
+        brand.write_text("{}", encoding="utf-8")
+        launch.write_text("{}", encoding="utf-8")
+        path = self.root / "bridge.json"
+        path.write_text(json.dumps({
+            "skill71": {"root": str(SKILL_ROOT.parent / "71-blackceo-signature-page")},
+            "landing": {"run_dir": str(self.root / "landing-run"), "page_version": "standard",
+                        "page_kind": "sales", "brand_owner": "TEST-ONLY Client", "image_cap": self.cap,
+                        "launch_record": str(launch), "brand_file": str(brand), **landing}}), encoding="utf-8")
+        return str(path)
+
+    def run_to_adapter_builder(self, bridge_config):
+        seen = []
+
+        def stop(adapter_inputs, *args):
+            seen.append(adapter_inputs)
+            raise launch_bridge.BridgeError("AF-LAUNCH-BRIDGE-ADAPTERS", "spy: stopped at the adapter builder")
+
+        with mock.patch.object(launch_bridge, "_build_adapters", side_effect=stop):
+            with self.assertRaises(launch_bridge.BridgeError) as ctx:
+                launch_bridge.run(payload(), self.out, approval={}, client_identity_ref="c",
+                                  worker_identity_ref="w", adapter_inputs={"bridge_config": bridge_config})
+        return ctx.exception, seen
+
+    def test_the_landing_bridge_config_carries_the_approved_image_plan(self):
+        error, seen = self.run_to_adapter_builder(self.config())
+        self.assertEqual(error.detail, "spy: stopped at the adapter builder")
+        written = json.loads((self.out / "image_inputs.json").read_text(encoding="utf-8"))
+        landing = json.loads(Path(seen[0]["bridge_config"]).read_text(encoding="utf-8"))["landing"]
+        inputs_path = str((self.out / "image_inputs.json").resolve())
+        self.assertEqual(landing["image_inputs"], inputs_path)
+        self.assertEqual(landing["image_plan"], {"image_inputs": inputs_path, **{
+            k: written[k] for k in ("image_cap", "brand_owner", "design_style", "image_provider")}})
+        self.assertIs(landing["draft"], False)
+        landing_bridge = substrate.load("49-signature-funnel/scripts/landing_bridge.py", "launcher_s49_landing_bridge")
+        landing_bridge.load_bridge_config(Path(seen[0]["bridge_config"]))  # Skill 49 accepts the file
+
+    def test_a_config_that_disagrees_with_the_approved_plan_is_refused_before_any_adapter_is_built(self):
+        wrong = self.config(image_cap=self.cap + 1)
+        with mock.patch.object(launch_bridge, "_build_adapters") as build:
+            with self.assertRaises(launch_bridge.BridgeError) as ctx:
+                launch_bridge.run(payload(), self.out, approval={}, client_identity_ref="c",
+                                  worker_identity_ref="w", adapter_inputs={"bridge_config": wrong})
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-BRIDGE-IMAGE-PLAN")
+        self.assertIn("image_cap", ctx.exception.detail)
+        build.assert_not_called()
+
+    def test_an_unreadable_config_is_refused_and_one_with_no_landing_section_is_left_to_skill_49(self):
+        with self.assertRaises(launch_bridge.BridgeError) as ctx:
+            launch_bridge._landing_bridge_config({"bridge_config": str(self.root / "absent.json")}, self.root,
+                                                 {}, self.root / "image_inputs.json")
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-BRIDGE-ADAPTERS")
+        bare = self.root / "bare.json"
+        bare.write_text("{}", encoding="utf-8")
+        given = {"bridge_config": str(bare)}
+        self.assertIs(launch_bridge._landing_bridge_config(given, self.root, {}, self.root / "i.json"), given)
 
 
 if __name__ == "__main__":

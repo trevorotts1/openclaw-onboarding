@@ -121,7 +121,10 @@ def offer_requires(offer: Dict[str, Any]) -> List[str]:
 def compile_route(intake: Dict[str, Any],
                   council: Dict[str, Any] | None = None) -> Dict[str, Any]:
     """Compile with the real Skill 49 compiler, then run the structural gate."""
-    graph = route_law.compile_route(launch_record(intake, council))["graph"]
+    try:
+        graph = route_law.compile_route(launch_record(intake, council))["graph"]
+    except route_law.RouteInvariantError as exc:
+        raise RouteError("AF-LAUNCH-ROUTE-LAW", str(exc)) from exc
     validate_route(graph)
     return graph
 
