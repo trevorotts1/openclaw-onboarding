@@ -111,7 +111,8 @@ class DesignCheckTests(Base):
                              name="real")
         manifest = json.loads(Path(real["manifest_path"]).read_text(encoding="utf-8"))
         manifest["test_only"] = False
-        self.assertEqual(page_designs.design_violations(manifest, self.work / "real"), [])
+        # a real provider clears the stub rule only; a client delivery still needs its closed stage_gate run
+        self.assertFalse(any("stub provider" in f for f in page_designs.design_violations(manifest, self.work / "real")))
 
     def test_a_file_not_labeled_for_its_own_page_fails(self):
         pieces = self.pieces()
