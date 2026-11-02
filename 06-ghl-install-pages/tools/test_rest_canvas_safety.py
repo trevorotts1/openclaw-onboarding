@@ -107,3 +107,27 @@ def test_lint_errors_on_non_ghl_image_and_passes_ghl_image():
     assert not bad["ok"] and any("images/hero.png" in e for e in bad["errors"])
     assert rc.lint_ghl_fragment(f'<img src="{GHL_IMG}">')["ok"]
     assert rc.lint_ghl_fragment('<img src="images/hero.png">', require_ghl_media=False)["ok"]
+
+
+# ── Combined reporting (probe doc, row 3 + row 5) ────────────────────────────
+PROBE_DOC = """<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.gstatic.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&display=swap">
+<link rel="stylesheet" href="styles.css"><script src="https://cdn.example/countdown.js"></script>
+<style>.h{font-family:Anton}</style></head><body><h1 class="h">BF</h1><img src="images/hero.png"><script>startCountdown()</script></body></html>"""
+
+
+def test_new_page_blob_probe_doc_names_hero_png():
+    with pytest.raises(ValueError) as ei:
+        rc.new_page_blob(PROBE_DOC)
+    assert "images/hero.png" in str(ei.value) and "styles.css" in str(ei.value)
+
+
+def test_html_fragment_probe_doc_names_dropped_stylesheet():
+    with pytest.raises(ValueError, match="styles.css"):
+        rc.html_fragment(PROBE_DOC)
+
+
+def test_head_and_card_problems_reported_together():
+    with pytest.raises(ValueError) as ei:
+        rc.html_fragment(_doc(head='<link rel="stylesheet" href="site.css">', body='<input name="cvv">'))
+    assert "card-data fields refused" in str(ei.value) and "site.css" in str(ei.value)

@@ -959,15 +959,19 @@ def find_card_fields(html: str) -> list[str]:
     return problems
 
 
+def _card_msg(problems: list[str]) -> str:
+    return (
+        "card-data fields refused: card numbers, expiry and security codes are "
+        "collected ONLY by the payment processor's native order form, never by "
+        "a custom-code page:\n  - " + "\n  - ".join(problems)
+    )
+
+
 def assert_no_card_fields(html: str) -> None:
     """Raise ``ValueError`` when *html* carries a home-made card input."""
     problems = find_card_fields(html)
     if problems:
-        raise ValueError(
-            "card-data fields refused: card numbers, expiry and security codes are "
-            "collected ONLY by the payment processor's native order form, never by "
-            "a custom-code page:\n  - " + "\n  - ".join(problems)
-        )
+        raise ValueError(_card_msg(problems))
 
 
 # ── Head-asset carry-over (S06-09) ────────────────────────────────────────────
@@ -1062,6 +1066,9 @@ def html_fragment(raw: str, *, require_ghl_media: bool = False,
 
     Fragment passthrough (no wrappers) is a no-op and incurs no cost.
 
+    Head-asset, card-field and image problems on a full document are reported
+    together in one ``ValueError`` (one line group per problem class).
+
     IMAGES-AS-MEDIA-LINKS (``require_ghl_media``):
         When ``require_ghl_media`` is True, every ``<img>`` in the resulting
         fragment MUST reference a GoHighLevel media-storage URL (the public
@@ -1105,8 +1112,12 @@ def html_fragment(raw: str, *, require_ghl_media: bool = False,
         flags=re.IGNORECASE | re.DOTALL,
     )
     hoisted_styles = ""
+    head_err: ValueError | None = None
     if head_match:
-        hoisted_styles = _head_assets(head_match.group(1), base_dir)
+        try:
+            hoisted_styles = _head_assets(head_match.group(1), base_dir)
+        except ValueError as e:
+            head_err = e
 
     # Extract <body> content if present.
     body_match = re.search(
@@ -1134,14 +1145,23 @@ def html_fragment(raw: str, *, require_ghl_media: bool = False,
     # Strip <!DOCTYPE> from leading text in case it survived.
     fragment = re.sub(r"^\s*<!DOCTYPE[^>]*>", "", fragment, flags=re.IGNORECASE).strip()
 
+    parts: list[str] = []
+    card = find_card_fields(fragment)
+    if card:
+        parts.append(_card_msg(card))
+    if require_ghl_media:
+        imgs = find_non_ghl_images(fragment, extra_hosts=media_hosts)
+        if imgs:
+            parts.append(_IMG_MSG + "\n  - " + "\n  - ".join(imgs))
+    if head_err is not None:
+        parts.append(str(head_err))
+    if parts:
+        raise ValueError("\n".join(parts))
+
     if not fragment:
         raise ValueError(
             "html_fragment: stripping full-document wrappers produced an empty result"
         )
-
-    assert_no_card_fields(fragment)
-    if require_ghl_media:
-        assert_images_are_ghl_media(fragment, media_hosts=media_hosts)
 
     return fragment
 
@@ -1226,16 +1246,16 @@ def find_non_ghl_images(html: str, *, extra_hosts: tuple[str, ...] = ()) -> list
     return problems
 
 
+_IMG_MSG = "images must reference GHL media-storage CDN links, not external URLs:"
+
+
 def assert_images_are_ghl_media(html: str, *, media_hosts: tuple[str, ...] = ()) -> None:
     """Raise ``ValueError`` listing every ``<img>`` in *html* that does not
     reference a GHL media-storage URL. No-op when all images are GHL-hosted (or
     there are no images at all)."""
     problems = find_non_ghl_images(html, extra_hosts=media_hosts)
     if problems:
-        raise ValueError(
-            "images must reference GHL media-storage CDN links, not external URLs:\n  - "
-            + "\n  - ".join(problems)
-        )
+        raise ValueError(_IMG_MSG + "\n  - " + "\n  - ".join(problems))
 
 
 # Constructs the LIVE GoHighLevel /preview/ render probe (2026-06) CONFIRMED
