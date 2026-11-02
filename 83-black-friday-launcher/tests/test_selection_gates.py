@@ -318,8 +318,14 @@ class CheckRuleTests(unittest.TestCase):
         if not hasattr(seam, "run"):
             self.skipTest("the check_rules seam (U-launcher-core-02) is not in this tree; QC re-runs this after it lands")
         manifest = {"test_only": True, "pieces": [self.piece("landing", "copy.md", "Only 50 left!")]}
+        plan = json.loads((GOLDEN / "plan.json").read_text())
+        text, _ = ems.build(plan)
+        head, rest = text.split("## Section 4: Compare", 1)
+        bare = head + "## Section 4: Compare\n\n## Section 5" + rest.split("## Section 5", 1)[1]
+        manifest["pieces"].append(self.piece("product_selection", "copy/internal-manuscript.md", bare))
         fails = seam.run(manifest, self.root, SKILL_ROOT)
         self.assertTrue([f for f in fails if f.startswith("AF-LAUNCH-CLAIM")], fails)
+        self.assertTrue([f for f in fails if f.startswith("AF-LAUNCH-SELECTION")], fails)
 
 
 class LevelsTests(unittest.TestCase):
@@ -352,19 +358,25 @@ class LevelsTests(unittest.TestCase):
         self.assertTrue(validate_manuscript(text, launch))
 
     def test_without_levels_the_selection_page_is_refused_not_padded(self):
+        launch = self.launch(True)  # supplied levels, then every offer's deliverables emptied (as in the adapter test)
+        for offer in launch["offers"]:
+            offer["deliverables"], offer["limited_deliverables"] = [], []
         with self.assertRaises(Violation) as caught:
-            build_plan(self.launch(False))
+            build_plan(launch)
         self.assertEqual(caught.exception.code, "S78-OFFER-NO-DELIVERABLES")
 
     def test_without_levels_the_intake_is_refused(self):
         doc = json.loads((FIXTURES / "elevation" / "intake.json").read_text(encoding="utf-8"))
-        try:
+        mains = [i for i, o in enumerate(doc["offers"]) if o["role"] == "main"]
+        if not any("level" in doc["offers"][i] for i in mains):
+            self.skipTest("the fixture has no main-offer levels yet (U-products-01 supplies them); "
+                          "QC re-runs this after it lands")
+        for i in mains:
+            doc["offers"][i].pop("level", None)
+        with self.assertRaises(intake.IntakeError) as caught:
             intake.validate(doc)
-        except intake.IntakeError as exc:
-            self.assertEqual(exc.code, "AF-LAUNCH-INTAKE-LEVEL")
-            return
-        self.skipTest("the intake level refusal (AF-LAUNCH-INTAKE-LEVEL) is owned by U-products-01 and U-products-03; "
-                      "QC re-runs this after they land")
+        self.assertEqual(caught.exception.code, "AF-LAUNCH-INTAKE-LEVEL")
+        self.assertEqual(caught.exception.field, f"offers[{mains[0]}].level")
 
 
 if __name__ == "__main__":
