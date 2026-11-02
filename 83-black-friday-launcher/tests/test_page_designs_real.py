@@ -8,6 +8,7 @@ reference resolves to a recorded Design Board approval), STR-15 (section counts)
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import shutil
 import sys
@@ -37,13 +38,14 @@ def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def client_package(root: Path, role: str, sections: int, *, png: bytes = PNG, provider: str = "kie",
-                   mockup_stage: str = "final-mockups", closed: bool = True) -> dict:
-    """A non-test manifest for one page whose files exist under root and whose stage_gate state is recorded."""
-    root.mkdir(parents=True, exist_ok=True)
-    arts, hashes = [], {"desktop-wireframe": {}, "mobile-tablet": {}, "final-mockups": {}}
+def design_files(root: Path, base: str, slug: str, sections: int, *, png: bytes = PNG, provider: str = "kie",
+                 mockup_stage: str = "final-mockups", kinds=None) -> tuple:
+    """Write one page's full design set (or only `kinds`) under root/base: (artifact rows, {stage: {path: sha256}})."""
+    arts, hashes = [], {"desktop-wireframe": {}, "mobile-tablet": {}, "final-mockups": {}, "design-board": {}}
 
     def put(kind, rel, data, stage=None):
+        if kinds is not None and kind not in kinds:
+            return
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_bytes(data)
         arts.append({"path": rel, "sha256": sha(data), "kind": kind, "provider": provider})
@@ -52,19 +54,92 @@ def client_package(root: Path, role: str, sections: int, *, png: bytes = PNG, pr
 
     for device, wire_stage in (("desktop", "desktop-wireframe"), ("mobile", "mobile-tablet")):
         for n in range(1, sections + 1):
-            put(f"wireframe_{device}_section", f"pieces/{role}/{LABELS.folder(device, wire_stage)}/"
-                f"{LABELS.image_name(role, device, wire_stage, n, sections, f's{n}')}", png, wire_stage)
-            put(f"mockup_{device}_section", f"pieces/{role}/{LABELS.folder(device, 'final-mockups')}/"
-                f"{LABELS.image_name(role, device, mockup_stage, n, sections, f's{n}')}", png, "final-mockups")
-        put(f"wireframe_{device}_pdf", f"pieces/{role}/review-pdfs/{LABELS.pdf_name(role, device, wire_stage)}", PDF, None)
-        put(f"mockup_{device}_pdf", f"pieces/{role}/review-pdfs/{LABELS.pdf_name(role, device, mockup_stage)}", PDF, None)
-    put("board", f"pieces/{role}/review-pdfs/{LABELS.board_name(role, 'combined', 'final-mockups')}.png", png, None)
+            put(f"wireframe_{device}_section", f"{base}/{LABELS.folder(device, wire_stage)}/"
+                f"{LABELS.image_name(slug, device, wire_stage, n, sections, f's{n}')}", png, wire_stage)
+            put(f"mockup_{device}_section", f"{base}/{LABELS.folder(device, 'final-mockups')}/"
+                f"{LABELS.image_name(slug, device, mockup_stage, n, sections, f's{n}')}", png, "final-mockups")
+        put(f"wireframe_{device}_pdf", f"{base}/review-pdfs/{LABELS.pdf_name(slug, device, wire_stage)}", PDF)
+        put(f"mockup_{device}_pdf", f"{base}/review-pdfs/{LABELS.pdf_name(slug, device, mockup_stage)}", PDF)
+    put("board", f"{base}/review-pdfs/{LABELS.board_name(slug, 'combined', 'final-mockups')}.png", png, "design-board")
+    return arts, hashes
+
+
+def write_stage_state(root: Path, rel: str, hashes: dict, closed: bool = True) -> dict:
+    """The stage_gate state of a run, copied into the package: the piece's stage_state reference."""
     stages = {s: {"status": "closed" if closed else "open", "receipt_status": "pass", "artifact_hashes": h}
               for s, h in hashes.items()}
     state = json.dumps({"stages": stages}).encode()
-    (root / f"stage-state-{role}.json").write_bytes(state)
+    (root / rel).write_bytes(state)
+    return {"path": rel, "sha256": sha(state)}
+
+
+def client_package(root: Path, role: str, sections: int, *, png: bytes = PNG, provider: str = "kie",
+                   mockup_stage: str = "final-mockups", closed: bool = True) -> dict:
+    """A non-test manifest for one page whose files exist under root and whose stage_gate state is recorded."""
+    root.mkdir(parents=True, exist_ok=True)
+    arts, hashes = design_files(root, f"pieces/{role}", role, sections, png=png, provider=provider,
+                                mockup_stage=mockup_stage)
     return {"role": role, "page_kind": role, "image_provider": provider, "artifacts": arts,
-            "stage_state": {"path": f"stage-state-{role}.json", "sha256": sha(state)}}
+            "stage_state": write_stage_state(root, f"stage-state-{role}.json", hashes, closed)}
+
+
+def make_client_delivery(root: Path, manifest: dict) -> None:
+    """Make every page of a built package a real client delivery, in place (root = the package folder).
+
+    Each piece's design files become real PNG/PDF files at its page type's section count, a closed
+    stage_gate state that hashes them is written, and piece['stage_state'] and every artifact sha256
+    are set in the manifest dict, and a receipt.json beside it lists the new files. The caller writes the
+    manifest back and re-seals the receipt over it.
+    """
+    root = Path(root)
+    rules = page_designs.load_page_rules()
+    for piece in manifest["pieces"]:
+        old = [a for a in piece["artifacts"] if a.get("kind") in page_designs.KINDS]
+        if not old:
+            continue
+        counts = page_designs._section_rule(piece, rules)
+        sections = min(counts) if counts else sum(a["kind"] == "wireframe_desktop_section" for a in old)
+        for art in old:
+            (root / art["path"]).unlink(missing_ok=True)
+        base = "/".join(Path(old[0]["path"]).parts[:2])
+        arts, hashes = design_files(root, base, page_designs.label_slug(piece), sections,
+                                    provider=old[0].get("provider") or piece.get("image_provider") or "kie",
+                                    kinds={a["kind"] for a in old})  # a kind the page omitted stays omitted
+        piece["artifacts"] = [a for a in piece["artifacts"] if a not in old] + arts
+        piece["stage_state"] = write_stage_state(
+            root, f"stage-state-{page_designs.label_slug(piece)}.json", hashes)
+    receipt_path = root / "receipt.json"
+    if receipt_path.is_file():  # a built package's receipt lists the same files per unit: keep it true
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        for piece in manifest["pieces"]:
+            for row in receipt.get("units") or []:
+                if row.get("unit_id") in (piece.get("slot"), piece.get("role")):
+                    row["artifacts"] = [{"path": a["path"], "sha256": a["sha256"],
+                                         "size": (root / a["path"]).stat().st_size} for a in piece["artifacts"]]
+            for row in receipt.get("pieces") or []:
+                if row.get("page_id") == piece.get("page_id"):
+                    row["artifact_count"] = len(piece["artifacts"])
+        receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def recorded_design_approval(td: Path) -> dict:
+    """A design_approvals block whose approval_ref resolves to a real, recorded Skill 71 Design Board
+    approval (the client's hashed message) under td/run. Other tests import this."""
+    sys.path.insert(0, str(SKILL71_TESTS))
+    import board_fixture
+    db = board_fixture.design_board
+    td = Path(td)
+    td.mkdir(parents=True, exist_ok=True)
+    run_dir = td / "run"
+    board_fixture.make_run(run_dir, "landing")
+    message = td / "message.json"
+    message.write_text(json.dumps({"message_id": "m-1", "sender_ref": "Test Client"}), encoding="utf-8")
+    with mock.patch.object(db, "ocr_text", board_fixture.fake_ocr):
+        board_fixture.seed_board(run_dir, approved=False)
+        db.approve(run_dir, "Test Client", message)
+    record = run_dir / "design-board" / "production-record.json"
+    entry = {"state": "approved", "approval_ref": str(record), "record_sha256": sha(record.read_bytes())}
+    return {"design_board": dict(entry), "final_mockups": dict(entry)}
 
 
 def manifest_of(*pieces, approvals=None) -> dict:
@@ -94,6 +169,40 @@ class RealFileTests(Base):
         fails = self.check(built, name="junk")
         self.assertTrue(any("is not a PNG" in f for f in fails), fails[:3])
         self.assertTrue(any("is not a PDF" in f for f in fails), fails[:3])
+
+    def test_the_design_rule_fails_one_byte_files_whatever_designs_required_says(self):
+        rule = importlib.util.spec_from_file_location("designs_rule", SKILL_ROOT / "launcher_core" / "check_rules" / "designs.py")
+        module = importlib.util.module_from_spec(rule)
+        rule.loader.exec_module(module)
+
+        def build(name, junk):
+            pieces = self.pieces()
+            for piece in pieces.values():
+                for art in piece["artifacts"]:
+                    if junk:
+                        Path(art["path"]).write_bytes(b"x")
+                        art["sha256"] = sha(b"x")
+            built = self.assemble(pieces, name=name, require_designs=None)  # no design check asked for
+            self.assertIsNot(built["manifest"]["designs_required"], True)
+            return json.loads(Path(built["manifest_path"]).read_text(encoding="utf-8")), self.work / name
+
+        manifest, root = build("rule-junk", True)
+        for required in (None, False):
+            manifest["designs_required"] = required
+            fails = module.violations(manifest, root, SKILL_ROOT)
+            self.assertTrue(any("is not a PNG" in f for f in fails), fails[:3])
+            self.assertTrue(any("is not a PDF" in f for f in fails), fails[:3])
+        manifest, root = build("rule-real", False)  # control: real files, same instrument
+        self.assertEqual(module.violations(manifest, root, SKILL_ROOT), [])
+
+    def test_make_client_delivery_turns_a_built_package_into_a_passing_client_delivery(self):
+        built = self.assemble(self.pieces(**{n["role"]: {"provider": "kie"} for n in self.graph["nodes"]}), name="cd")
+        manifest = json.loads(Path(built["manifest_path"]).read_text(encoding="utf-8"))
+        manifest["test_only"] = False
+        root = self.work / "cd"
+        self.assertTrue(page_designs.design_violations(manifest, root))  # fake files: no run state, 2 sections
+        make_client_delivery(root, manifest)
+        self.assertEqual(page_designs.design_violations(manifest, root), [])
 
     def test_a_package_with_only_layout_proof_mockups_fails_the_mockup_requirement(self):
         pieces = self.pieces()
@@ -286,11 +395,11 @@ class ApprovalTests(unittest.TestCase):
                             for f in self.violations(self.package_approval(
                                 str(self.run_dir / "design-board" / "production-record.json"),
                                 record_sha256=sha((self.run_dir / "design-board" / "production-record.json").read_bytes())))))
-        self.db.approve(self.run_dir, "Test Client", self.message())
-        record = self.run_dir / "design-board" / "production-record.json"
-        self.assertEqual(self.violations(self.package_approval(str(record), record_sha256=sha(record.read_bytes()))), [])
+        recorded = recorded_design_approval(self.td / "recorded")
+        self.assertEqual(self.violations(recorded), [])
+        entry = recorded["design_board"]
         self.assertTrue(any("does not match its recorded hash" in f for f in
-                            self.violations(self.package_approval(str(record), record_sha256="0" * 64))))
+                            self.violations(self.package_approval(entry["approval_ref"], record_sha256="0" * 64))))
 
     def test_an_approval_with_no_recorded_client_message_fails(self):
         self.db.approve(self.run_dir, "Test Client", self.message())
