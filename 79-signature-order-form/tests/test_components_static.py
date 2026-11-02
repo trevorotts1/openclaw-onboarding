@@ -7,6 +7,10 @@ import unittest
 from pathlib import Path
 
 COMPONENTS = Path(__file__).resolve().parents[1] / "references" / "components"
+REPO = Path(__file__).resolve().parents[2]
+# Drafts owned by the review-only fix (CHK-18/CHK-24).
+REVIEW_ONLY_DRAFTS = ("combined-checkout.html", "post-selection-checkout.html",
+                      "order-bump.html", "guarantee-terms.html", "components.css")
 
 
 def read(name):
@@ -89,6 +93,32 @@ class ComponentStaticTests(unittest.TestCase):
     def test_no_em_dashes_in_component_copy(self):
         for path in list(COMPONENTS.glob("*.html")) + [COMPONENTS / "README.md"]:
             self.assertNotIn("—", path.read_text(), path.name)
+
+    def test_every_draft_carries_review_only_marker(self):
+        for name in REVIEW_ONLY_DRAFTS + ("README.md",):
+            self.assertIn("REVIEW-ONLY", read(name), name)
+
+    def test_no_stale_work_paths_or_draft_title(self):
+        for name in REVIEW_ONLY_DRAFTS + ("README.md",):
+            text = read(name)
+            self.assertNotIn("work/", text, name)
+            self.assertNotIn("DRAFT v0.1", text, name)
+            self.assertNotIn("0.1.5", text, name)
+        for name in ("combined-checkout.html", "post-selection-checkout.html"):
+            title = re.search(r"<title>(.*?)</title>", read(name)).group(1)
+            self.assertNotIn("TEST", title, name)
+
+    def test_paths_named_in_readme_resolve(self):
+        skill = COMPONENTS.parents[1]
+        for rel in re.findall(r"`((?:scripts|references)/[\w./-]+)`", read("README.md")):
+            self.assertTrue((skill / rel).exists(), rel)
+
+    def test_shared_utils_bump_copy_is_deprecated_and_points_to_79(self):
+        copy = REPO / "shared-utils" / "signature_launch" / "components" / "order-bump" / "order-bump.html"
+        head = copy.read_text()[:600]
+        self.assertIn("DEPRECATED", head)
+        self.assertIn("79-signature-order-form/references/components/order-bump.html", head)
+        self.assertTrue((REPO / "79-signature-order-form/references/components/order-bump.html").exists())
 
 
 if __name__ == "__main__":
