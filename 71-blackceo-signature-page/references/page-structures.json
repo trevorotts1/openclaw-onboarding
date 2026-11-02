@@ -63,6 +63,7 @@
       ]
     }
   },
+  "layouts_note": "`layouts` holds the upsell band geometry outside `roles` on purpose: an entry under `roles` reroutes build_production_request.py to the --page-copy path (line ~704/872, which refuses an upsell built from --copy-json) and check_section_count to the structure branch; the upsell keeps its upsell-v6.json sequence. Consumers: Skill 80 upsell_image_plan.py (slot ids and ratios), wireframe-build-spec.json page_type_blocks.upsell (one LAYOUT TAG line per section), and the band-tag gate in stage_executor.check_section_count plus the builder layout_tag stamp (carried to U-images-02 and U-structure-03).",
   "layouts": {
     "note": "Per-section band geometry of the upsell page, keyed by page role. Kept apart from `roles` on purpose: a `roles` entry switches scripts/build_production_request.py and check_section_count to the page-copy path (--page-copy, as the downsell uses), while the upsell is built from Skill 80's copy JSON and result bundle (--copy-json, --bundle) and checked against references/copy-specs/upsell-v6.json. upsell_2 shares upsell_1's eight bands (one page type); its images come from its own plan (80-signature-upsell/components/adapters/upsell_image_plan.py).",
     "upsell_1": {
@@ -72,6 +73,7 @@
       "copy_version": "upsell",
       "copy_source": "references/copy-specs/upsell-v6.json (sequence)",
       "wireframe_lines": "references/wireframe-build-spec.json page_type_blocks.upsell (each section's line carries its layout_tag)",
+      "layout_reference": "80-signature-upsell/components/80-signature-upsell/references/wireframe-layout.md",
       "sequence": [
         "1",
         "2",
@@ -178,6 +180,7 @@
       "copy_version": "upsell",
       "copy_source": "references/copy-specs/upsell-v6.json (sequence)",
       "wireframe_lines": "references/wireframe-build-spec.json page_type_blocks.upsell (each section's line carries its layout_tag)",
+      "layout_reference": "80-signature-upsell/components/80-signature-upsell/references/wireframe-layout.md",
       "sequence": [
         "1",
         "2",

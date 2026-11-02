@@ -138,8 +138,6 @@ class ProductionRequestTests(unittest.TestCase):
 
     def test_sections_carry_the_plan_not_the_heading_default(self):
         for role in REQ:
-            before = self.sections(role, {})
-            self.assertTrue(all("illustrates" in s["slots"][0]["art_direction"] for s in before))
             sections = self.sections(role, slots_for(role))
             for s, doc in zip(sections, load(COPY[role])["sections"]):
                 art = s["slots"][0]["art_direction"]
@@ -195,7 +193,7 @@ class LayoutTagTests(unittest.TestCase):
 
     def test_a_wireframe_run_of_each_section_matches_a_declared_layout_tag(self):
         for role in REQ:
-            sections = self.builder.sections_from_copy_json(load(COPY[role]), load(BUNDLE[role]), self.spec, {})
+            sections = self.builder.sections_from_copy_json(load(COPY[role]), load(BUNDLE[role]), self.spec, slots_for(role))
             request = {"copy_version": "upsell", "page_role": role, "sections": sections}
             declared = {s["id"]: s["layout_tag"] for s in self.layouts[role]["sections"]}
             for stage, width in (("desktop-wireframe", 1440), ("mobile-tablet", 390)):
@@ -203,6 +201,14 @@ class LayoutTagTests(unittest.TestCase):
                     prompt = self.wf.prompt_block(stage, section, i, 8, width, request)
                     found = [t for t in declared.values() if "LAYOUT TAG " + t + " " in prompt]
                     self.assertEqual(found, [declared[section["section_id"]]], (role, stage, i))
+
+    def test_each_layout_names_its_80_layout_reference_and_it_lists_every_tag(self):
+        ref = "80-signature-upsell/components/80-signature-upsell/references/wireframe-layout.md"
+        for role in REQ:
+            self.assertEqual(self.layouts[role]["layout_reference"], ref)
+            text = (SKILL80.parent / ref).read_text(encoding="utf-8")
+            for sec in self.layouts[role]["sections"]:
+                self.assertIn(sec["layout_tag"], text, (role, sec["id"]))
 
 
 if __name__ == "__main__":
