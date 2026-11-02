@@ -16,11 +16,17 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import compile_launch_route as clr  # noqa: E402
 import page_set as ps  # noqa: E402
+import page_swarm as sw  # noqa: E402
 import validate_launch_plan as vlp  # noqa: E402
 
 REPO = HERE.parents[1]
 sys.path.insert(0, str(REPO / "71-blackceo-signature-page" / "scripts"))
 import deliverable_labels as labels  # noqa: E402
+import copy_forms  # noqa: E402
+import page_kinds  # noqa: E402
+import role_spec  # noqa: E402
+sys.path.insert(0, str(REPO / "83-black-friday-launcher"))
+from launcher_core import page_designs  # noqa: E402
 
 LAUNCH_EXAMPLE = json.loads((HERE / "fixtures" / "launch-example.json").read_text(encoding="utf-8"))
 MODES = ("single_simple", "multiple_options", "free_entry", "folded_levels")
@@ -162,15 +168,22 @@ class EveryShapeEveryPage(unittest.TestCase):
 
 
 class Deliverables(unittest.TestCase):
-    def make_run(self, page_key, skip=(), render=True):
+    def make_run(self, page_key, skip=(), render=True, counts=None, provider=None):
+        """A run folder with one image per section in every image kind (counts overrides a kind's
+        number) and one file per render kind; provider writes a stage record per stage folder."""
         run = Path(tempfile.mkdtemp())
-        slug = ps.slug_of(page_key)
         for d in ps.deliverables_for(page_key):
             if d["id"] in skip or (d["needs"] == "render" and not render):
                 continue
-            target = run / d["glob"].replace("*", "01")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(d["id"].encode())
+            n = (counts or {}).get(d["id"], ps.section_counts(page_key)[0]) if d["needs"] == "images" else 1
+            for i in range(1, n + 1):
+                target = run / d["glob"].replace("*", f"{i:02d}")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(d["id"].encode())
+        for stage in ((provider or {}).get("stages") or ()):
+            (run / stage).mkdir(exist_ok=True)
+            (run / stage / "stage-executor-record.json").write_text(
+                json.dumps({"provider": provider["provider"]}), encoding="utf-8")
         return run
 
     def test_a_complete_run_has_every_deliverable(self):
@@ -204,9 +217,201 @@ class Deliverables(unittest.TestCase):
         (run / "visual-mockup").mkdir(exist_ok=True)
         (run / "visual-mockup" / "stage-executor-record.json").write_text("{}", encoding="utf-8")
         arts = ps.design_artifacts("downsell_2", run, relative=True)
-        self.assertEqual(len(arts), len(ps.page_types()["deliverables"]) + 1)
+        self.assertEqual(len(arts), sum(1 for f in run.rglob("*") if f.is_file()))
         self.assertTrue(all(len(a["sha256"]) == 64 and not a["path"].startswith("/") for a in arts))
         self.assertEqual([a["path"] for a in arts], sorted(a["path"] for a in arts))
+
+
+class SectionCountsPerKind(unittest.TestCase):  # STR-15
+    make_run = Deliverables.make_run
+
+    def test_one_of_fifteen_landing_section_images_fails_the_check(self):
+        run = self.make_run("landing", counts={"desktop_wireframe_sections": 1})
+        got = ps.check_deliverables("landing", run, rendered=True)
+        self.assertEqual(got["wrong_count"], ["desktop_wireframe_sections"])
+        self.assertEqual(got["section_counts"]["desktop_wireframe_sections"], 1)
+        self.assertIn("desktop_wireframe_sections", got["missing"])
+        self.assertFalse(got["images_complete"])
+        self.assertFalse(got["complete"])
+
+    def test_a_full_set_of_the_pages_own_form_passes(self):
+        for key in ps.page_types()["pages"]:
+            with self.subTest(page=key):
+                got = ps.check_deliverables(key, self.make_run(key), rendered=True)
+                self.assertTrue(got["complete"], got)
+                self.assertEqual(set(got["section_counts"].values()), {ps.section_counts(key)[0]})
+
+    def test_a_set_from_the_other_copy_form_or_a_mixed_set_fails(self):
+        every = {i: 12 for i in ("desktop_wireframe_sections", "mobile_wireframe_sections",
+                                 "desktop_mockup_sections", "mobile_mockup_sections")}
+        landing = ps.check_deliverables("landing", self.make_run("landing", counts=every), rendered=True)
+        self.assertEqual(len(landing["wrong_count"]), 4, "the opt-in page has only the 15 section form")
+        sales_long = {i: 15 for i in every}
+        self.assertTrue(ps.check_deliverables("sales", self.make_run("sales", counts=sales_long),
+                                              rendered=True)["complete"], "the sales page has both forms")
+        mixed = dict(sales_long, mobile_mockup_sections=12)
+        got = ps.check_deliverables("sales", self.make_run("sales", counts=mixed), rendered=True)
+        self.assertEqual(got["wrong_count"], ["mobile_mockup_sections"])
+        strict = ps.check_deliverables("sales", self.make_run("sales", counts=sales_long), rendered=True,
+                                       long_form=False)
+        self.assertEqual(len(strict["wrong_count"]), 4)
+
+    def test_page_types_counts_equal_the_skill_71_spec_sequence_lengths(self):  # drift test
+        pages = ps.page_types()["pages"]
+        structures = json.loads((REPO / "71-blackceo-signature-page" / "references" /
+                                 "page-structures.json").read_text(encoding="utf-8"))["roles"]
+        expect = {
+            "landing": (len(page_kinds.sequence("opt_in", "long-form")), None),
+            "sales": (len(page_kinds.sequence("sales", "standard")), len(page_kinds.sequence("sales", "long-form"))),
+            "downsell_1": (len(structures["downsell_1"]["sequence"]), None),
+            "downsell_2": (len(structures["downsell_1"]["sequence"]), None),
+        }
+        for key, role in (("product_selection", "product_selection"), ("checkout", "checkout"),
+                          ("upsell_1", "upsell_1"), ("upsell_2", "upsell_2"), ("thank_you", "thank_you")):
+            spec = role_spec.load(role)
+            if spec is None:
+                spec = copy_forms.load_spec(copy_forms.form_for_role(role))
+            expect[key] = (len(spec["sequence"]), None)
+        self.assertEqual(set(expect), set(pages), "every page type has a 71 sequence to compare with")
+        for key, (short, long_) in expect.items():
+            self.assertEqual(pages[key]["sections"], short, key)
+            self.assertEqual(pages[key].get("long_form_sections"), long_, key)
+
+
+class OfferedCeilingAndDryRun(unittest.TestCase):  # IMG-04
+    def nine_page_launch(self):
+        launch = route_launch("multiple_options", EXTRAS[-1])
+        return ps.build_page_set(launch, landing_pages=["landing", "sales"], extra_pages=["downsell_2"])
+
+    def requests(self, page_set):
+        return [{"page_role": r} for r in dict.fromkeys(p["request_role"] for p in page_set["pages"])]
+
+    def test_the_offered_ceiling_is_the_sum_of_the_pages_image_estimates(self):
+        got = self.nine_page_launch()
+        offered = ps.offered_image_ceilings(got)
+        self.assertEqual(len(got["pages"]), 9)
+        self.assertEqual(offered["total"], sum(p["image_estimate"] for p in got["pages"]))
+        self.assertEqual([x["page_key"] for x in offered["per_page"]], [p["page_key"] for p in got["pages"]])
+        self.assertEqual(offered["options"][-1]["image_cap"], offered["total"])
+        self.assertEqual(offered["options"][0]["builds"], ["landing"])
+        self.assertGreater(offered["options"][0]["image_cap"], 36, "the old largest guided cap (12/24/36) never fit")
+        caps = [x["image_cap"] for x in offered["options"]]
+        self.assertEqual(caps, sorted(caps))
+
+    def test_the_estimate_is_the_image_stages_per_section_not_a_typed_number(self):
+        self.assertEqual(ps.images_per_section(), 4)
+        self.assertEqual(ps.image_estimate("landing"), 4 * 15)
+        self.assertEqual(ps.image_estimate("sales", long_form=True), 4 * 15)
+
+    def test_a_dry_run_reports_the_lanes_a_guided_cap_would_skip_with_nothing_started(self):
+        lanes = ps.lane_plan(self.nine_page_launch())["parallel"]
+        report = sw.dry_run_cap(lanes, 36)
+        self.assertFalse(report["fits"])
+        skipped = [x["lane"] for x in report["would_skip"]]
+        self.assertEqual(skipped[0], "landing", "the landing and sales pages go first today")
+        self.assertIn("upsell_1", skipped)
+        self.assertLessEqual(report["reserved"], 36)
+        total = ps.offered_image_ceilings(self.nine_page_launch())["total"]
+        self.assertTrue(sw.dry_run_cap(lanes, total)["fits"])
+        self.assertFalse(sw.dry_run_cap(lanes, total - 1)["fits"])
+
+    def run_execute(self, provider, cap, strict):
+        got, started = self.nine_page_launch(), []
+        inputs = {"design_style": "B", "brand_file": "/x/b.json", "brand_owner": "Acme", "image_cap": cap,
+                  "image_provider": provider, "allow_paid": False}
+
+        def executor(request, lane=None):
+            started.append(lane or request["page_role"])
+            return {}
+        out = sw.execute(self.requests(got), executor, page_set=got, out_dir=None, launch_id="L-1",
+                         image_inputs=inputs, strict_cap=strict)
+        return out, started
+
+    def test_a_cap_too_small_for_the_page_set_refuses_before_any_lane_starts_stub_or_paid(self):
+        for provider in ("stub", "kie"):
+            started = []
+            got = self.nine_page_launch()
+            inputs = {"design_style": "B", "brand_file": "/x/b.json", "brand_owner": "Acme", "image_cap": 36,
+                      "image_provider": provider, "allow_paid": False}
+            with self.subTest(provider=provider), self.assertRaises(sw.SwarmError) as cm:
+                sw.execute(self.requests(got), lambda r, lane=None: started.append(r) or {}, page_set=got,
+                           out_dir=None, launch_id="L-1", image_inputs=inputs, strict_cap=True)
+            self.assertIn("landing", str(cm.exception))
+            self.assertIn("Nothing was started", str(cm.exception))
+            self.assertEqual(started, [])
+
+    def test_the_stub_run_report_names_the_lanes_the_paid_run_would_skip(self):
+        out, started = self.run_execute("stub", 36, strict=False)
+        preview = out["swarm"]["cap_preview"]
+        self.assertFalse(preview["fits"])
+        self.assertEqual(preview["would_skip"][0]["lane"], "landing")
+        self.assertEqual(set(out["swarm"]["statuses"].values()), {"ok"}, "the free stub still builds every lane")
+        total = ps.offered_image_ceilings(self.nine_page_launch())["total"]
+        out, _ = self.run_execute("kie", total, strict=True)
+        self.assertTrue(out["swarm"]["cap_preview"]["fits"])
+
+
+class UpsellLanesDoNotWaitForTheLanding(unittest.TestCase):  # UPS-18
+    def test_parallel_upsell_lanes_run_with_no_file_from_the_landing_lane(self):
+        got = ps.build_page_set(route_launch("multiple_options", EXTRAS[-1]), landing_pages=["landing", "sales"])
+        out, seen = Path(tempfile.mkdtemp()), []
+        landing_file = out / "result-landing.json"
+
+        def executor(request, lane=None):
+            seen.append(request["page_role"])
+            self.assertFalse(landing_file.exists(), "no lane reads or waits for a landing result file")
+            return {}
+        requests = [{"page_role": r} for r in dict.fromkeys(p["request_role"] for p in got["pages"])]
+        result = sw.execute(requests, executor, page_set=got, out_dir=out, launch_id="L-1", workers=4)
+        self.assertEqual(set(result["swarm"]["statuses"].values()), {"ok"})
+        self.assertIn("upsell_1", seen)
+        self.assertIn("upsell_2", seen)
+        self.assertFalse(landing_file.exists())
+        self.assertEqual(list(ps.lane_plan(got)), ["parallel"], "one parallel group, no landing-first stage")
+
+
+class ProviderOnEveryArtifact(unittest.TestCase):  # UPS-23
+    make_run = Deliverables.make_run
+
+    def test_every_artifact_names_the_provider_that_drew_the_run(self):
+        stages = ("desktop-wireframe", "mobile-tablet", "visual-mockup")
+        for provider in ("stub", "kie"):
+            run = self.make_run("upsell_1", provider={"provider": provider, "stages": stages})
+            arts = ps.design_artifacts("upsell_1", run, relative=True, with_provider=True)
+            with self.subTest(provider=provider):
+                self.assertTrue(arts)
+                self.assertEqual({a["provider"] for a in arts}, {provider}, "PDFs and boards take the run's")
+
+    def test_one_stub_stage_marks_the_files_outside_the_stages_as_stub(self):
+        run = self.make_run("upsell_1", provider={"provider": "kie", "stages": ("desktop-wireframe",)})
+        (run / "visual-mockup" / "stage-executor-record.json").write_text(
+            json.dumps({"provider": "stub"}), encoding="utf-8")
+        by_path = {a["path"]: a["provider"] for a in ps.design_artifacts("upsell_1", run, relative=True,
+                                                                       with_provider=True)}
+        self.assertEqual(by_path["desktop-wireframe/section-01.png"], "kie")
+        self.assertEqual(by_path["visual-mockup/desktop/part-01.png"], "stub")
+        self.assertEqual(by_path["review-pdfs/upsell-1_DESKTOP_WIREFRAMES.pdf"], "stub")
+
+    def test_a_run_with_no_stage_record_names_no_provider_rather_than_guessing(self):
+        arts = ps.design_artifacts("upsell_1", self.make_run("upsell_1"), relative=True, with_provider=True)
+        self.assertEqual({a["provider"] for a in arts}, {None})
+
+    def test_the_default_form_stays_path_and_hash_only_for_the_page_result_schema(self):
+        run = self.make_run("upsell_1", provider={"provider": "stub", "stages": ("desktop-wireframe",)})
+        self.assertEqual({tuple(sorted(a)) for a in ps.design_artifacts("upsell_1", run)}, {("path", "sha256")})
+
+    def test_a_non_test_package_with_a_stub_upsell_run_fails_the_design_gate(self):
+        run = self.make_run("upsell_1", provider={"provider": "stub", "stages": ("desktop-wireframe",)})
+        root = Path(tempfile.mkdtemp())
+        name = "upsell-1_desktop_wireframe_s01-of-08_x.png"
+        (root / name).write_bytes(b"x")
+        art = next(a for a in ps.design_artifacts("upsell_1", run, relative=True, with_provider=True)
+                   if a["path"] == "desktop-wireframe/section-01.png")
+        piece = {"role": "upsell_1", "artifacts": [{"path": name, "provider": art["provider"]}]}
+        fails = page_designs.design_violations({"pieces": [piece], "test_only": False}, root, spec={})
+        self.assertTrue(any("stub provider" in f and f.startswith("AF-LAUNCH-PAGE-DESIGNS") for f in fails), fails)
+        fails = page_designs.design_violations({"pieces": [piece], "test_only": True}, root, spec={})
+        self.assertFalse(any("stub provider" in f for f in fails))
 
 
 class ImageInputs(unittest.TestCase):
