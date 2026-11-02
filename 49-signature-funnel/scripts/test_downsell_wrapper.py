@@ -646,6 +646,56 @@ class DownsellEntryGuardAndHashTests(unittest.TestCase):
         proc = run_wrapper(paths, journey=False)
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
+    def test_staged_journey_is_never_evaluated(self):
+        # QC defect (attempt 2): every real dispatch passes --journey; a
+        # non-claiming staged journey must not drive the guard.
+        cases = {
+            "live, no purchase": (False, {"main_purchased_verified": False,
+                                          "u1_event": None,
+                                          "u1_accepted": False}),
+            "live, failed u1 payment": (False, {"main_purchased_verified": False,
+                                                "u1_event": "payment_failed",
+                                                "u1_accepted": False}),
+            "test, no purchase": (True, {"main_purchased_verified": False,
+                                         "u1_event": None,
+                                         "u1_accepted": False}),
+        }
+        for name, (test_only, facts) in cases.items():
+            with self.subTest(case=name):
+                paths = stage(_request(None))
+                _edit(paths, "launch.json",
+                      lambda d, t=test_only: d.update(test_only=t))
+                _edit(paths, "journey-downsell_1.json",
+                      lambda d, f=facts: d.update(f))
+                proc = run_wrapper(paths)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                record = json.loads((paths["workdir"]
+                                     / "entry-guard-downsell_1.json").read_text())
+                self.assertEqual(record["journey_source"], "design-time marker")
+                self.assertIs(record["staged_journey_evaluated"], False)
+                self.assertIs(record["evaluated_state"]["main_purchased_verified"],
+                              True)
+                self.assertEqual(record["evaluated_state"]["u1_event"],
+                                 "explicit_decline")
+                self.assertTrue(any(
+                    b.startswith("D1-ENTRY-GUARD-RUNTIME-ONLY")
+                    for b in self.result(paths)["blockers"]))
+                by_path = {os.path.realpath(a["path"]): a["sha256"]
+                           for a in self.result(paths)["artifacts"]}
+                journey_file = paths["workdir"] / "journey-downsell_1.json"
+                self.assertEqual(by_path[os.path.realpath(journey_file)],
+                                 _sha(journey_file))
+
+    def test_malformed_staged_journey_is_still_refused(self):
+        paths = stage(_request(None))
+        _edit(paths, "journey-downsell_1.json",
+              lambda d: d.update(main_purchased_verified="yes"))
+        proc = run_wrapper(paths)
+        self.assertEqual(proc.returncode, 2, proc.stdout)
+        self.assertIn("journey.main_purchased_verified: must be a boolean",
+                      proc.stderr)
+        self.assertFalse(paths["result"].exists())
+
     def test_sidecar_must_cite_a_difference_table(self):
         paths = stage(_request(None))
         _edit(paths, "enrichment-downsell_1.json",

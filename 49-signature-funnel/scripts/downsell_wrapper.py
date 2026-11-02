@@ -34,8 +34,8 @@ invocable command dispatch runs for the downsell_1 role:
   2. GAUNTLET  runs Skill 81's own contract checks, all fail-closed:
      the enriched request against the landed request schema (stdlib
      schema check, no third-party dependency, no silent skip); the
-     entry guard over the guard state computed from the journey file
-     and the record's extras; validate_copy over the staged page with
+     entry guard over the record's extras plus the fixed design-time
+     journey marker (a staged journey file is never evaluated); validate_copy over the staged page with
      its approved_amounts_minor set from the record's approved prices;
      validate_offer_difference over the record's U1/D1 offers with
      difference_kind and rationale folded in; and, for a non-one-time
@@ -75,10 +75,11 @@ authored / L1 unless Skill 71 ran all three stages (desktop-wireframe,
 mobile-tablet, visual-mockup) with a non-stub image provider; only then
 is it capped at locally_verified / L2, never higher. A stub provider adds
 D1-STUB-IMAGES. The entry guard is evaluated DESIGN-ONLY (launch enablement
-facts from the record, journey facts from a fixed design-time marker, or a
-staged --journey file that must not claim a verified purchase on a
-non-test launch) and every result carries D1-ENTRY-GUARD-RUNTIME-ONLY: the
-real guard is a runtime-stage gate. The result also names the other standing
+facts from the record, journey facts ALWAYS from the fixed design-time
+marker; a staged --journey file is shape-checked and hashed, never
+evaluated, and is refused when it claims a verified purchase on a non-test
+launch) and every result carries D1-ENTRY-GUARD-RUNTIME-ONLY: the real
+guard is a runtime-stage gate. The result also names the other standing
 blockers: no verified native action outcome exists (the pending-lockout
 binding point is UNMAPPED, D1-ADAPTER-PENDING-LOCKOUT-UNMAPPED, and
 CR-S81-006 is not confirmed), and binding read-back is required but not
@@ -191,9 +192,9 @@ SIDECAR_KEYS = frozenset({"difference_kind", "rationale", "entry_guard_ref",
 # evidence record the sidecar's entry_guard_ref names, not this file.
 JOURNEY_KEYS = frozenset({"main_purchased_verified", "u1_event",
                           "u1_accepted"})
-# Design-time D1 is a design deliverable: no purchase or decline happened. When
-# no journey file is staged the entry guard runs over this fixed marker (what the
-# runtime stage must observe), never over facts typed in by the author.
+# Design-time D1 is a design deliverable: no purchase or decline happened. The
+# entry guard ALWAYS runs over this fixed marker (what the runtime stage must
+# observe), never over a staged journey file or facts typed in by the author.
 DESIGN_JOURNEY = {"main_purchased_verified": True,
                   "u1_event": "explicit_decline", "u1_accepted": False}
 STAGES = ("design", "install")
@@ -216,8 +217,9 @@ IMAGES_PENDING_BLOCKER = (
     "client's approval and were not run by this wrapper")
 ENTRY_GUARD_BLOCKER = (
     "D1-ENTRY-GUARD-RUNTIME-ONLY: the entry guard was evaluated DESIGN-ONLY "
-    "(launch enablement facts plus a design-time journey marker or a staged "
-    "journey file); no purchase or decline event was observed, so the real "
+    "(launch enablement facts plus the fixed design-time journey marker; a "
+    "staged journey file is hashed, never evaluated); no purchase or decline "
+    "event was observed, so the real "
     "guard (verified main purchase, explicit U1 decline) is a runtime-stage "
     "gate and is not claimed here")
 NATIVE_IDS_BLOCKER = (
@@ -705,10 +707,10 @@ def enrich(request: Mapping[str, Any], launch: Mapping[str, Any],
             "the entry guard consumes (CR-S49-005 item 2) and the "
             "wrapper never invents it")
 
-    # Journey facts: exactly the three the guard consumes. A staged file
-    # is optional at design time (the guard then runs over DESIGN_JOURNEY);
-    # one that claims a verified purchase on a non-test launch asserts an
-    # event that never happened and is refused (DTY-08).
+    # Journey file: optional, shape-checked and hashed, never evaluated
+    # (the guard always runs over DESIGN_JOURNEY). One that claims a
+    # verified purchase on a non-test launch asserts an event that never
+    # happened and is refused (DTY-08).
     journey = DESIGN_JOURNEY if journey is None else journey
     if journey.get("main_purchased_verified") is True \
             and journey is not DESIGN_JOURNEY \
@@ -870,13 +872,13 @@ def _record_amounts(launch: Mapping[str, Any]) -> List[int]:
     return sorted(amounts)
 
 
-def guard_state(launch: Mapping[str, Any],
-                journey: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
-    """The entry-guard state: journey facts from the staged journey file
-    (or the design-time marker when none is staged), enablement facts from
-    the launch record's extras (launch facts under route law, never from
-    the named evidence record)."""
-    journey = DESIGN_JOURNEY if journey is None else journey
+def guard_state(launch: Mapping[str, Any]) -> Dict[str, Any]:
+    """The DESIGN-ONLY entry-guard state: journey facts from the fixed
+    design-time marker (a staged journey file is never evaluated: no
+    purchase or decline happens at dispatch), enablement facts from the
+    launch record's extras (launch facts under route law, never from the
+    named evidence record)."""
+    journey = DESIGN_JOURNEY
     return {
         "main_purchased_verified": journey.get("main_purchased_verified"),
         "u1_event": journey.get("u1_event"),
@@ -1116,7 +1118,7 @@ def run(args) -> Dict[str, Any]:
             ["enriched request violates the landed downsell-request "
              "schema: " + v for v in violations])
     # 2. The entry guard over the computed state.
-    state = guard_state(launch, journey)
+    state = guard_state(launch)
     codes = vd.check_entry_guard(state)
     if codes:
         raise WrapperError(
@@ -1125,8 +1127,8 @@ def run(args) -> Dict[str, Any]:
     guard_path.write_text(json.dumps({
         "mode": "DESIGN-ONLY",
         "blocker": "D1-ENTRY-GUARD-RUNTIME-ONLY",
-        "journey_source": "design-time marker" if journey is None
-        else "staged journey file",
+        "journey_source": "design-time marker",
+        "staged_journey_evaluated": False,
         "evaluated_state": state}, indent=2, sort_keys=True) + "\n",
         encoding="utf-8")
     # 3. The staged page under validate_copy, its approved amounts set
@@ -1361,8 +1363,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                          "({work_dir}/copy-downsell_1.json)")
     ap.add_argument("--journey",
                     help="optional staged journey entry facts JSON "
-                         "({work_dir}/journey-downsell_1.json); without it "
-                         "the entry guard runs over the fixed design-time "
+                         "({work_dir}/journey-downsell_1.json); shape-checked "
+                         "and hashed into the result, never evaluated: the "
+                         "entry guard always runs over the fixed design-time "
                          "marker. A file claiming a verified main purchase "
                          "on a non-test launch is refused")
     ap.add_argument("--stage", choices=list(STAGES), default="design",
