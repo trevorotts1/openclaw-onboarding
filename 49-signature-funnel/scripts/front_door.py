@@ -163,8 +163,13 @@ def step_version(skill_dir: Path = SKILL_DIR) -> None:
         raise FrontDoorError("VERSION", f"SKILL.md frontmatter version ({fm}) != skill-version.txt ({v}) - drift")
 
 
-def step_hashpin(skill_dir: Path = SKILL_DIR) -> str:
+def step_hashpin(skill_dir: Path = SKILL_DIR, must_cover=()) -> str:
+    """Compare the recomputed pin to the committed one. must_cover: 49-relative paths the generated list
+    has to include (the shell's PINNED_FILES floor), so a glob change can never silently drop a core file."""
     skill_dir = Path(skill_dir)
+    missing = sorted(set(f"49/{r}" for r in must_cover) - {n for n, _ in pin_files(skill_dir)})
+    if missing:
+        raise FrontDoorError("HASH-PIN", f"the generated pin list no longer covers: {', '.join(missing)}")
     pin_file = skill_dir / "scripts" / PIN_NAME
     now = compute_pin(skill_dir)
     if not pin_file.is_file():
@@ -370,8 +375,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name in ("check", "bypass-scan"):
         sub.add_parser(name).add_argument("--run-dir")
-    for name in ("hashpin", "pin-list"):
-        sub.add_parser(name)
+    sub.add_parser("pin-list")
+    sub.add_parser("hashpin").add_argument("--must-cover", nargs="*", default=[])
     wp = sub.add_parser("write-pin")
     wp.add_argument("--rotation-record")
     sub.add_parser("mint-pin").add_argument("--ci", action="store_true", required=True)
@@ -381,7 +386,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if a.cmd == "check":
         print(f"front door cleared (version/hash-pin/bypass): pin {check(a.run_dir, sd)}")
     elif a.cmd == "hashpin":
-        print(f"hash-pin verified: {step_hashpin(sd)}")
+        print(f"hash-pin verified: {step_hashpin(sd, a.must_cover)}")
     elif a.cmd == "bypass-scan":
         step_bypass_scan(a.run_dir, sd)
         print(f"BYPASS-SCAN clean: {a.run_dir or sd}")

@@ -180,6 +180,12 @@ class EveryDecisionFileIsPinned(Trees):
             fd.check(skill_dir=self.t49)
         fd.check(skill_dir=self.t49)  # restored: clear again
 
+    def test_the_shell_floor_must_stay_inside_the_generated_list(self):
+        fd.step_hashpin(self.t49, must_cover=["scripts/prove_sf_cert.py", "structure/funnel_structure.json"])
+        with self.assertRaises(fd.FrontDoorError) as cm:
+            fd.step_hashpin(self.t49, must_cover=["scripts/not_in_the_list.py"])
+        self.assertIn("no longer covers", str(cm.exception))
+
     def test_a_new_unpinned_file_trips_the_pin(self):
         extra = self.t49 / "scripts" / "new_wrapper.py"
         extra.write_text("X = 1\n")
