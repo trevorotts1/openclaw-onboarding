@@ -334,10 +334,12 @@ def _landing_bridge_config(adapter_inputs: Dict[str, Any], dispatch_dir: Path, i
                            inputs_path: Path) -> Dict[str, Any]:
     """Hand Skill 49's landing bridge the approved image plan (STR-16).
 
-    The supplied bridge config gets landing.image_inputs and landing.image_plan from the plan this run
-    resolved; a value the supplied config already holds that differs from the plan is refused. The
-    rewritten config is written beside the dispatch and replaces the supplied path. An unreadable file
-    is refused here; a readable one with no landing section is left for Skill 49 to refuse by name."""
+    With no bridge_config in adapter_inputs, adapter_inputs is returned unchanged. Otherwise the
+    supplied config's landing section gets image_inputs, image_plan, image_cap and brand_owner from the
+    plan this run resolved, and draft is False unless the config already declares it True; a value the
+    supplied config already holds that differs from the plan is refused. The rewritten config is
+    written beside the dispatch and replaces the supplied path. An unreadable file, or one with no
+    landing section, is refused here."""
     if not adapter_inputs.get("bridge_config"):
         return adapter_inputs
     try:
