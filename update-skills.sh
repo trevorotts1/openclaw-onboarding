@@ -189,6 +189,23 @@ _release_clone_source() {
 }
 # <<< RELEASE-PIN END <<<
 
+# CON-13: `update-skills.sh --check` (alias --prereqs-check) is a STANDALONE, read-only
+# prerequisite inspection. It runs BEFORE the release pin, self-sync, set -u, the fleet
+# gates and the update lock so a read-only check can never be swallowed by them.
+# Exit 0 = present, 2 = flagged missing/too old, 1 = cannot check.
+case " ${*:-} " in
+  *" --check "*|*" --prereqs-check "*)
+    if [ -f "$_SCRIPT_DIR/lib-onboarding-state.sh" ]; then
+      # shellcheck source=/dev/null
+      source "$_SCRIPT_DIR/lib-onboarding-state.sh" || true
+    fi
+    if command -v oc_ensure_jsonschema >/dev/null 2>&1; then
+      _oc_pc_rc=0; oc_ensure_jsonschema --check || _oc_pc_rc=$?; exit "$_oc_pc_rc"
+    fi
+    echo "update-skills.sh --check: lib-onboarding-state.sh with oc_ensure_jsonschema was not found next to this script; prerequisites NOT checked" >&2
+    exit 1 ;;
+esac
+
 # --help/-h performs no side effects; do not require a release identity to print usage.
 _oc_help_only=0
 for _oc_arg in "$@"; do
@@ -5357,7 +5374,9 @@ main() {
         ;;
       --help|-h)
         echo "Usage: update-skills.sh [--only \"05,06,35\"] [--preclear-check | --preclear-2026-7-1]"
-        echo "                        [--agents-list-check | --agents-list-migrate]"
+        echo "                        [--agents-list-check | --agents-list-migrate] [--check]"
+        echo "  --check       (alias --prereqs-check) Report whether python3 can import jsonschema (needed by"
+        echo "                Skills 49, 71, 78-83, 44, 38). Installs nothing. Exit 0 = present, 2 = flagged."
         echo "  --only LIST   Install only skill folders whose number prefix matches LIST (comma-separated)"
         echo "                Example: --only \"05,06,36\" installs only skills 05-ghl-setup, 06-ghl-install-pages, 36-ghl-mcp-setup"
         echo "  (no flag)     Install/update all skills"
@@ -13200,6 +13219,35 @@ PY
   # roll red on its own. The FAILED line + .lipsync-deps.pending marker are the
   # loud signal. Upgrade path: latch it next to _PRES_DEPS_CONVERGE_RC if the
   # fleet wants this class to gate roll success.
+  # ----------------------------------------------------------
+  # `jsonschema` for the page / launch skills (CON-13)
+  # ----------------------------------------------------------
+  # Skills 49, 71, 78-83, 44 and 38 import jsonschema (Skill 79's checkout
+  # validator does at module load). No installer provisioned it, so a box that
+  # lacked it failed at Skill 83 `check`, after the launch had spent images.
+  # Runs on EVERY full pass (not sentinel-gated) so boxes installed before this
+  # fix are backfilled. oc_ensure_jsonschema (lib-onboarding-state.sh, the same
+  # function install.sh Step 6.5c calls) installs the requirement declared in
+  # 83-black-friday-launcher/PREREQS.json and verifies it with a real import.
+  # Inspect only: bash update-skills.sh --check. LATCHED, never aborting: a
+  # failure is reported loudly and the next roll retries.
+  echo ""
+  echo "  Converging jsonschema (Skills 49, 71, 78-83, 44, 38)..."
+  _JSONSCHEMA_RC=0
+  if ! command -v oc_ensure_jsonschema >/dev/null 2>&1 && [ -f "$ONBOARDING_DIR/lib-onboarding-state.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$ONBOARDING_DIR/lib-onboarding-state.sh" || true
+  fi
+  if command -v oc_ensure_jsonschema >/dev/null 2>&1; then
+    oc_ensure_jsonschema --apply || _JSONSCHEMA_RC=$?
+  else
+    echo "  ⚠ lib-onboarding-state.sh with oc_ensure_jsonschema missing from the extracted tree — jsonschema was NOT verified. Manual: python3 -m pip install \"jsonschema>=4.0\" && python3 -c 'import jsonschema'" >&2
+    _JSONSCHEMA_RC=2
+  fi
+  if [ "$_JSONSCHEMA_RC" -ne 0 ]; then
+    echo "  ⚠ jsonschema NOT importable (rc=$_JSONSCHEMA_RC) -- the Skill 79 checkout validator and every wrapper that loads it will fail on this box until repaired. Content updates already delivered are NOT rolled back; the next roll retries this step." >&2
+  fi
+  export _JSONSCHEMA_RC
   # FIX 71 (persistence): record the venv interpreter in the box secrets env (values
   # are a path, never a secret) so the door + engine resolve the venv python on the
   # next run without depending on this process env. Append-only + idempotent.
