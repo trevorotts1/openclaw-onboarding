@@ -9,7 +9,13 @@ CURRENT sheet and method. Anything else is refused with a named code.
 
 Refusal codes: AUDIO_MISSING, AUDIO_HASH_MISMATCH, MEASURE_UNAVAILABLE,
 MEASURE_FAILED, LABEL_AS_LISTENING, STALE_BINDING, STALE_MEASUREMENT,
-JOB_OMITTED, JOB_NOT_IN_LEDGER, RISK_HIDES_FAIL.
+JOB_OMITTED, JOB_NOT_IN_LEDGER, NO_AUDIO_JOBS, RISK_HIDES_FAIL.
+
+Ledger rule: a job is in-ledger when state == 'succeeded', or state ==
+'reconciled' with final_outcome == 'succeeded' (mirrors spend_ledger).
+Caller contract: feed real spend_ledger rows through ledger_jobs_from_rows()
+/ ledger_jobs_from_db(); job_id = logical_key + '/' + attempt_id and
+output_sha256 = results.sha256 (None when unrecorded, which refuses).
 
 This module only judges a record; it never calls a provider, never measures
 audio itself, and a live PASS still needs a real evaluator run under Trevor's
@@ -40,6 +46,38 @@ def _sha(path):
     return h.hexdigest()
 
 
+def _succeeded(j):
+    return j.get("state") == "succeeded" or (
+        j.get("state") == "reconciled" and j.get("final_outcome") == "succeeded")
+
+
+def ledger_jobs_from_rows(job_rows, result_rows, stage="audio"):
+    """Map real spend_ledger rows to [{job_id, state, final_outcome, output_sha256}].
+
+    job_rows: dicts with logical_key, attempt_id, stage, state, final_outcome
+    (spend_ledger.jobs). result_rows: dicts with logical_key, attempt_id,
+    sha256 (spend_ledger.results). Only rows whose stage == `stage` are kept.
+    """
+    sha = {(r["logical_key"], r["attempt_id"]): r.get("sha256") for r in result_rows}
+    return [{"job_id": "%s/%s" % (j["logical_key"], j["attempt_id"]),
+             "state": j["state"], "final_outcome": j.get("final_outcome"),
+             "output_sha256": sha.get((j["logical_key"], j["attempt_id"]))}
+            for j in job_rows if j.get("stage") == stage]
+
+
+def ledger_jobs_from_db(db_path, run_id, stage="audio"):
+    """Read-only sqlite adapter over a real spend_ledger DB for one run."""
+    import sqlite3
+    c = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True)
+    c.row_factory = sqlite3.Row
+    try:
+        jobs = [dict(r) for r in c.execute("SELECT * FROM jobs WHERE run_id=?", (run_id,))]
+        res = [dict(r) for r in c.execute("SELECT * FROM results WHERE run_id=?", (run_id,))]
+    finally:
+        c.close()
+    return ledger_jobs_from_rows(jobs, res, stage)
+
+
 def refusals(record, ledger_jobs, method_sha256, sheet_sha256, now):
     """Return a list of {code, job_id, detail}; empty means complete review."""
     out = []
@@ -53,8 +91,10 @@ def refusals(record, ledger_jobs, method_sha256, sheet_sha256, now):
     if not isinstance(t, (int, float)) or now - t > MAX_AGE_S or t > now:
         add("STALE_MEASUREMENT", None, "measured_at missing, future or older than window")
 
-    led = {j["job_id"]: j for j in ledger_jobs if j.get("state") == "succeeded"}
+    led = {j["job_id"]: j for j in ledger_jobs if _succeeded(j)}
     jobs = {j.get("job_id"): j for j in record.get("jobs", [])}
+    if not led or not jobs:  # empty/empty must never be a vacuous PASS
+        add("NO_AUDIO_JOBS", None, "no succeeded ledger audio jobs or no jobs in record")
     for jid in led:
         if jid not in jobs:
             add("JOB_OMITTED", jid, "succeeded ledger job absent from acceptance record")

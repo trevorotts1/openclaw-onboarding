@@ -77,6 +77,57 @@ def test_accepted_risk_keeps_fail():
     assert P.accept(good, LEDGER, M, S, NOW) == "ACCEPTED_RISK"
 
 
+def test_empty_ledger_and_empty_record_refused():
+    rec = mut(lambda r: r.update(jobs=[]))
+    assert "NO_AUDIO_JOBS" in codes(rec, ledger=[])
+    try:
+        P.accept(rec, [], M, S, NOW); assert False
+    except P.AcceptanceRefused:
+        pass
+    assert "NO_AUDIO_JOBS" in codes(rec)  # ledger has job, record empty
+    assert "NO_AUDIO_JOBS" in codes(GOOD, ledger=[])  # record has job, ledger empty
+
+
+def _real_ledger(states):
+    """In-memory DB built from the real spend_ledger DDL."""
+    import sqlite3
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    import spend_ledger as SL
+    c = sqlite3.connect(":memory:")
+    c.executescript(SL.DDL)
+    c.execute("INSERT INTO runs(run_id,ceiling,created_at,updated_at) VALUES('r',100,'t','t')")
+    for i, (stage, state, final) in enumerate(states):
+        c.execute("INSERT INTO jobs(logical_key,attempt_id,run_id,request_digest,stage,state,final_outcome,"
+                  "created_at,updated_at) VALUES(?,?,?,?,?,?,?,'t','t')",
+                  ("k%d" % i, "att-0001-x", "r", "d", stage, state, final))
+        c.execute("INSERT INTO results(run_id,logical_key,attempt_id,artifact_path,sha256,created_at) "
+                  "VALUES('r',?,?,?,?,'t')", ("k%d" % i, "att-0001-x", f, H))
+    c.row_factory = sqlite3.Row
+    jobs = [dict(r) for r in c.execute("SELECT * FROM jobs")]
+    res = [dict(r) for r in c.execute("SELECT * FROM results")]
+    return P.ledger_jobs_from_rows(jobs, res)
+
+
+def _rec_for(job_ids):
+    return mut(lambda r: r.update(jobs=[dict(copy.deepcopy(GOOD["jobs"][0]), job_id=i) for i in job_ids]))
+
+
+def test_real_spend_ledger_shape_succeeded_and_reconciled():
+    led = _real_ledger([("audio", "succeeded", "succeeded"), ("audio", "reconciled", "succeeded"),
+                        ("audio", "reconciled", "failed"), ("video", "succeeded", "succeeded")])
+    assert [j["job_id"] for j in led] == ["k0/att-0001-x", "k1/att-0001-x", "k2/att-0001-x"]  # video dropped
+    ok_ids = ["k0/att-0001-x", "k1/att-0001-x"]  # reconciled+succeeded counts; reconciled+failed does not
+    assert P.accept(_rec_for(ok_ids), led, M, S, NOW) == "PASS"
+    assert "JOB_OMITTED" in codes(_rec_for(ok_ids[:1]), ledger=led)  # reconciled-succeeded cannot be omitted
+    assert "JOB_NOT_IN_LEDGER" in codes(_rec_for(ok_ids + ["k2/att-0001-x"]), ledger=led)
+
+
+def test_unrecorded_result_sha_refuses():
+    led = _real_ledger([("audio", "succeeded", "succeeded")])
+    led[0]["output_sha256"] = None  # results.sha256 NULL
+    assert "AUDIO_HASH_MISMATCH" in codes(_rec_for(["k0/att-0001-x"]), ledger=led)
+
+
 if __name__ == "__main__":
     n = 0
     for k, v in list(globals().items()):
