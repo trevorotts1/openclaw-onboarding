@@ -11,11 +11,11 @@ What the matrix proves, and nothing more:
   (including the 1.0-vs-1.1-vs-1.2 triple on one order);
 - 1.1 events — still stamped by the 44 normalizer, normalizer.py:180 —
   build, with and without contact_ref;
-- parent_order_ref absent / null / opaque string are equivalent — it is
-  not an identity, not a grouping key and not an exported snapshot
-  property;
-- a parent_order_ref pointing at an earlier order never merges a later
-  extra purchase into that order (grouping stays native_order_ref);
+- parent_order_ref absent / null / opaque string are equivalent within
+  one order (not an identity, not an exported snapshot property);
+- a parent_order_ref pointing at an earlier order in the stream groups
+  that later extra under it (DTY-21); unlinked orders stay separate
+  snapshots;
 - refunds (full and partial) fold identically across the version axis;
 - duplicate redelivery dedupes, conflicting redelivery raises;
 - unsupported and missing versions fail closed, with the missing-version
@@ -141,7 +141,8 @@ class FixtureIntegrityTest(unittest.TestCase):
             "eq-1.0-vs-1.1-same-order-followup-extras",
             "eq-parent-string-vs-null",
             "eq-parent-string-vs-absent",
-            "eq-1.0-vs-1.2-separate-extra-order",
+            "snapshot-1.2-parent-groups-separate-extra-order",
+            "snapshot-1.0-unlinked-orders-stay-separate",
             "eq-1.0-vs-1.2-refund",
             "eq-1.0-vs-1.1-refund",
             "snapshot-1.1-contact-ref-accepted",
@@ -162,8 +163,8 @@ class PairMatrixTest(unittest.TestCase):
         self.assertEqual(ACCEPTED_SCHEMA_VERSIONS, ("1.0", "1.1", "1.2"))
 
     def test_parent_order_ref_is_not_an_identity_or_refund_key(self):
-        # The field is opaque linkage only. If it ever appears here it
-        # has become an identity, and grouping/dedupe would depend on it.
+        # The field is an order-chain link only (DTY-21). If it ever appears
+        # here it has become an identity, and dedupe would depend on it.
         self.assertNotIn("parent_order_ref", IDENTITY_KEYS)
         self.assertNotIn("parent_order_ref", REFUND_IDENTITY_KEYS)
 
@@ -270,18 +271,15 @@ class PairMatrixTest(unittest.TestCase):
             checked += 1
         self.assertGreater(checked, 0)
 
-    def test_parent_order_ref_never_regroups_orders(self):
-        # The 1.2 parent deliberately points at TEST-ORDER-0001 from an
-        # event whose own native_order_ref is TEST-ORDER-0002.
+    def test_parent_order_ref_groups_a_separate_extra_order_with_its_main(self):
         snapshots = build("extra_separate_order_12_parent_string")
-        self.assertEqual(sorted(snapshots),
-                         ["TEST-ORDER-0001", "TEST-ORDER-0002"])
+        self.assertEqual(sorted(snapshots), ["TEST-ORDER-0001"])
         self.assertEqual(
             [line["offer_id"] for line in snapshots["TEST-ORDER-0001"]["line_items"]],
-            ["MAIN-A"])
-        self.assertEqual(
-            [line["offer_id"] for line in snapshots["TEST-ORDER-0002"]["line_items"]],
-            ["U1"])
+            ["MAIN-A", "U1"])
+        unlinked = build("extra_separate_order_10")
+        self.assertEqual(sorted(unlinked),
+                         ["TEST-ORDER-0001", "TEST-ORDER-0002"])
 
 
 if __name__ == "__main__":
