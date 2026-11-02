@@ -106,7 +106,7 @@ self_sync_guard() {
 # One approved, immutable release identity governs the whole update path.
 # Resolution order: OPENCLAW_APPROVED_RELEASE env, then the pin file's
 # approved_ref. Mode: OPENCLAW_RELEASE_PIN_MODE env, then the pin file's mode,
-# then "enforce".
+# then "enforce" if a pin is configured, else "off" (follow latest main).
 #   enforce  -> no valid pin => REFUSE with a named reason code (exit 78)
 #   advisory -> no valid pin => follow main with a loud warning
 #   off      -> legacy behaviour (follow main)
@@ -139,7 +139,11 @@ print(v)' "$f" "$1" 2>/dev/null
 _release_pin_mode() {
   local m="${OPENCLAW_RELEASE_PIN_MODE:-}"
   [ -n "$m" ] || m="$(_release_pin_read mode 2>/dev/null || true)"
-  [ -n "$m" ] || m="enforce"
+  # No mode set anywhere: enforce only when a pin was actually configured;
+  # otherwise follow the latest release (main) exactly as before the gate.
+  # Same rule as oc-atomic-upgrade.sh _npm_pin_mode. Defaulting to enforce
+  # with no pin on any box froze every Sunday update (RELEASE_PIN_UNCONFIGURED).
+  [ -n "$m" ] || { if [ -n "$(_release_pin_ref)" ]; then m="enforce"; else m="off"; fi; }
   printf '%s' "$m"
 }
 _release_pin_ref() {
@@ -4440,6 +4444,31 @@ heal_one_weekly_cron_updater() {
 
   # Never CREATE the cron script here -- only repair one already on disk.
   [ -f "$cron_script" ] || return 0
+
+  # Pin-gate default repair. A Sunday script written by setup-weekly-update.sh
+  # from 2026-11-01 carries a release-pin gate defaulting to "enforce", so on a
+  # box with no release-pin.json it refuses (RELEASE_PIN_UNCONFIGURED) BEFORE it
+  # downloads anything -- a repo fix can never reach it. Rewrite that one line to
+  # the fixed rule (enforce only when a pin is configured). Literal replace via
+  # python3 (the gate itself needs python3); inode/mode kept by `cat >`.
+  if grep -qF '[ -n "$m" ] || m="enforce"' "$cron_script" 2>/dev/null; then
+    local pin_tmp
+    pin_tmp="$(mktemp "${TMPDIR:-/tmp}/cron-heal-pin-XXXXXX" 2>/dev/null)" || pin_tmp=""
+    if [ -n "$pin_tmp" ] && cp -p "$cron_script" "${cron_script}.bak.pin-$(date +%Y%m%d-%H%M%S)" 2>/dev/null \
+       && python3 -I -c 'import sys
+s=open(sys.argv[1]).read()
+o="[ -n \"$m\" ] || m=\"enforce\""
+n="[ -n \"$m\" ] || { if [ -n \"$(_release_pin_ref)\" ]; then m=\"enforce\"; else m=\"off\"; fi; }"
+assert s.count(o)==1
+open(sys.argv[2],"w").write(s.replace(o,n))' "$cron_script" "$pin_tmp" 2>/dev/null \
+       && [ -s "$pin_tmp" ] && bash -n "$pin_tmp" 2>/dev/null; then
+      cat "$pin_tmp" > "$cron_script"
+      echo "  [cron-heal] release-pin gate default repaired (no pin => follow latest): $cron_script"
+    else
+      echo "  [cron-heal] WARN: release-pin gate repair failed -- $cron_script left untouched"
+    fi
+    [ -n "$pin_tmp" ] && rm -f "$pin_tmp"
+  fi
 
   if grep -qF "$WEEKLY_FULL_UPDATE_URL" "$cron_script" 2>/dev/null \
      || { [ "${RELEASE_REF:-main}" = "main" ] && grep -qF "$WEEKLY_FULL_UPDATE_URL_MAIN" "$cron_script" 2>/dev/null; }; then
