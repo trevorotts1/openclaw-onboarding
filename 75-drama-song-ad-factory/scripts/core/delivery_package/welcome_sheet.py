@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .contract import METHOD_ITEM_FILES
 from .package_items import (  # noqa: F401  (re-exported for callers)
     MIN_PDF_POINT_SIZE,
     PACKAGE_FILES,
@@ -32,8 +33,10 @@ BADGE_W, BADGE_H = 26.0, 16.0
 TEXT_X = MARGIN + BADGE_W + 6.0         # filenames / descriptions start here
 TEXT_W = CONTENT_W - (TEXT_X - MARGIN)  # 488
 LEADING = 15.0                          # one 13 pt line, airy
-ROW_GAP = 7.0
-DESC_GAP = 2.0
+#: A campaign owes 13 rows; 4/1 pt keeps the 13th inside the page floor
+#: without touching the 13 pt body type (the 12 pt readability floor holds).
+ROW_GAP = 4.0
+DESC_GAP = 1.0
 
 TITLE_SIZE = 21.0
 #: Body type. 13 pt clears the 12 pt floor with room to read.
@@ -50,8 +53,17 @@ TITLE = "Welcome to Your Delivery Folder"
 INTRO = ("Every file in this folder carries a number, so you always know "
          "what you are opening. This one page is your map: the number on "
          "the file matches the number below.")
-FOOTER = ("All twelve items belong to this delivery - nothing is hidden and "
-          "nothing is extra. If a file is missing, ask for that number first.")
+FOOTER = ("Every item this delivery owes is listed above - nothing is "
+          "hidden and nothing extra is in the folder. If a file is missing, "
+          "ask for that number first.")
+
+#: The client-facing sentence per contract key. The twelve base keys come
+#: from the DEL-12 map; the two method-only shapes have their own sentence so
+#: a trailer is never described as an ordinary clip and an ad clip is never
+#: described as a trailer.
+_WHAT_BY_KEY = {item["key"]: item["what"] for item in PACKAGE_ITEMS}
+_TRAILER_WHAT = "Two short trailers that send people to the full episode."
+_AD_CLIPS_WHAT = "Two short ad clips that sell your offer on social media."
 
 #: Helvetica AFM widths, 1/1000 em, ASCII 32..126 (base-14, no embedding).
 _REG_W = {
@@ -145,6 +157,35 @@ def _rect_op(x, y, w, h, color):
     return "%s\n%.2f %.2f %.2f %.2f re f" % (_rgb(color), x, y, w, h)
 
 
+def sheet_rows(items=None):
+    """The rows the sheet prints: one per item this run actually owes.
+
+    ``items`` is the resolved contract tuple from
+    ``run_inputs.delivery_context``; without it the twelve display slots are
+    rendered (the legacy structural sheet used by the DEL-12 unit suite).
+    Each row is the DEL-12 shape (``number``, ``key``, ``files``, ``what``)
+    so the renderer never reads a contract Item directly.
+    """
+    source = PACKAGE_ITEMS if items is None else tuple(items)
+    rows = []
+    for item in source:
+        if isinstance(item, dict):
+            rows.append({"number": item["number"], "key": item["key"],
+                         "files": tuple(item["files"]),
+                         "what": item["what"]})
+            continue
+        key = item.key
+        files = tuple(item.files)
+        what = _WHAT_BY_KEY.get(key, "This file is part of your delivery.")
+        if key == "clips" and files == tuple(METHOD_ITEM_FILES[6]):
+            what = _TRAILER_WHAT
+        elif key == "ad_clips":
+            what = _AD_CLIPS_WHAT
+        rows.append({"number": item.number, "key": key, "files": files,
+                     "what": what})
+    return tuple(rows)
+
+
 def _row_lines(item):
     """(kind, text) lines for one package item, in drawing order."""
     lines = [("file", name) for name in item["files"]]
@@ -153,7 +194,7 @@ def _row_lines(item):
     return lines
 
 
-def render_lines():
+def render_lines(items=None):
     """Everything the sheet draws, as ops plus the final cursor.
 
     Raises WelcomeSheetError when the page would overflow -- a loud failure
@@ -175,7 +216,7 @@ def render_lines():
         ops.append(_text_op(MARGIN, cy, line, BODY_SIZE, color=INK))
     cy -= 8.0
 
-    for item in PACKAGE_ITEMS:
+    for item in sheet_rows(items):
         rows = _row_lines(item)
         baseline = cy - LEADING * 0.85
         # number badge -- the number the file name carries
@@ -206,9 +247,9 @@ def render_lines():
     return ops
 
 
-def pdf_bytes():
+def pdf_bytes(items=None):
     """Deterministic single-page PDF of the welcome sheet."""
-    content = "\n".join(render_lines()).encode("latin-1")
+    content = "\n".join(render_lines(items)).encode("latin-1")
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -236,16 +277,24 @@ def pdf_bytes():
     return bytes(out)
 
 
-def build_welcome_sheet(path=None):
-    """Write the sheet. Default name is item 12's canonical name."""
+def build_welcome_sheet(path=None, *, items=None):
+    """Write the sheet. Default name is item 12's canonical name.
+
+    ``items`` is the run's resolved obligation tuple. Omitted -> the twelve
+    canonical display slots (the legacy structural sheet used by the DEL-12
+    unit suite); the packaging adapter always passes the run's own tuple.
+    """
     target = Path(path) if path else Path(WELCOME_SHEET_FILE)
-    data = pdf_bytes()
+    rows = sheet_rows(items)
+    data = pdf_bytes(rows)
     if not data.startswith(b"%PDF-"):
         raise WelcomeSheetError("refusing to write a non-PDF")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(data)
     return {"path": str(target), "bytes": len(data), "pages": 1,
-            "items": PACKAGE_ITEM_COUNT, "files": len(PACKAGE_FILES)}
+            "items": len(rows),
+            "files": sum(len(row["files"]) for row in rows),
+            "owed_keys": [row["key"] for row in rows]}
 
 
 def _cli(argv=None):
@@ -266,16 +315,22 @@ def _cli(argv=None):
 def produce_delivery(run_dir, item):
     """DEL-13 packaging adapter: the REAL DEL-12 deliver path (this sheet).
 
+    Resolves the run's OWN obligations FIRST (``run_inputs.delivery_context``:
+    intake admission, the client's saved length, ``control/method.json``) and
+    refuses with ``RunInputError`` before anything is written when the run
+    cannot prove them. The page then lists exactly the items that run owes --
+    no clip row on a 60/90/120 second ad, trailers plus ad clips on a
+    campaign -- under the same names the packaging call and Q12 check.
+
     Calls ``build_welcome_sheet`` on the run's delivery folder under item
-    12's canonical name -- the same entry the CLI runs. This page carries no
-    client data and reads nothing out of the run beyond where to land.
-    Fixture bytes are never written: ``contract.produce_item`` is test-only
-    and no deliver path imports it. Signature: produce_delivery(run_dir,
-    item) -> list[Path].
+    12's canonical name -- the same entry the CLI runs. Fixture bytes are
+    never written: ``contract.produce_item`` is test-only and no deliver path
+    imports it. Signature: produce_delivery(run_dir, item) -> list[Path].
     """
     from delivery_package import run_inputs as RI
+    context = RI.delivery_context(run_dir)
     out = RI.delivery_dir(run_dir)
-    build_welcome_sheet(str(out / item.files[0]))
+    build_welcome_sheet(str(out / item.files[0]), items=context["items"])
     return RI.stage(item, out)
 
 
