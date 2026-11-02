@@ -15,8 +15,9 @@
 #
 # Exit codes:
 #   0  = FAB-QC score >= 8.5 AND no hard miss
-#   1  = FAB-QC score < 8.5 OR a hard miss (build is NOT done)
-#   2  = evidence root not found / scorer unavailable
+#   1  = FAB-QC score < 8.5 OR a hard miss OR the mandatory FAB-QC overlay did not
+#        run (scorer missing/crashed) (build is NOT done)
+#   2  = usage error / evidence root not found
 #
 # Environment:
 #   QC_FUNNEL_LEGACY_EVIDENCE=1  opt-out for PRE-SEO-era evidence: a MISSING seoMeta
@@ -53,9 +54,12 @@ if [ ! -d "$EVIDENCE" ]; then
   echo "✗ evidence root not found: $ARG" >&2
   exit 2
 fi
+# S06-16: the FAB-QC overlay is MANDATORY for a funnel build. A scorer that is absent
+# (e.g. a 999 box without shared-utils/fab_qc.py) means the >= 8.5 gate never ran —
+# that is a FAILED build, never an exit-2 "environment" skip a caller could read past.
 if [ ! -f "$SCORER" ]; then
-  echo "✗ FAB-QC scorer not found at $SCORER" >&2
-  exit 2
+  echo "✗ FAB-QC overlay did not run: scorer not found at $SCORER — FAILED (the overlay is mandatory for funnel builds)" >&2
+  exit 1
 fi
 
 echo "═══ Skill 6 — FAB-QC build gate (funnel) ═══"
@@ -86,20 +90,58 @@ except Exception as exc:                 # tooling broken → the gate cannot ru
           "an unproved gate is not a pass")
     sys.exit(3)
 
-def _walk(o):
+# S06-12: the step type comes from the ROUTE NODE (the Skill 83 / Skill 49 compiled
+# route graph's page role), never from the page name. A purchase-path or thank-you
+# page is scored against the PRIVACY policy (robots noindex), a marketing page against
+# the full SEO gates — one policy, via ghl_builder.assert_step_seo_populated.
+_PRIVATE_PURCHASE = ("checkout", "upsell", "downsell", "product_selection", "selection")
+_PRIVATE_THANK_YOU = ("thank_you", "thankyou")
+_MARKETING = ("landing", "sales", "sales_page", "opt_in", "optin", "registration")
+
+def _step_type_of_role(role):
+    r = "_".join(str(role).strip().lower().replace("-", "_").split())
+    if r in _MARKETING:
+        return "marketing"
+    if r.startswith(_PRIVATE_THANK_YOU):
+        return "thank_you"
+    if r.startswith(_PRIVATE_PURCHASE):
+        return "purchase"
+    return None                                  # unknown role → caller fails closed
+
+def _graph_roles(o, out):
+    """page_id -> role for every route-graph node found anywhere in the evidence."""
     if isinstance(o, dict):
-        if "seoMeta" in o and isinstance(o["seoMeta"], dict):
-            yield o["seoMeta"]
+        nodes = o.get("nodes")
+        if isinstance(nodes, list):
+            for n in nodes:
+                if isinstance(n, dict) and n.get("page_id") and (n.get("role") or n.get("page_role")):
+                    out[str(n["page_id"])] = n.get("page_role") or n.get("role")
         for v in o.values():
-            yield from _walk(v)
+            _graph_roles(v, out)
     elif isinstance(o, list):
         for v in o:
-            yield from _walk(v)
+            _graph_roles(v, out)
+
+def _walk(o, graph, role=None):
+    """Yield (seoMeta, route_role|None). The role is the nearest enclosing page's
+    ``page_role`` / ``route_node.{page_role,role}`` / ``page_id`` (looked up in the graph)."""
+    if isinstance(o, dict):
+        rn = o.get("route_node") if isinstance(o.get("route_node"), dict) else {}
+        here = (o.get("page_role") or rn.get("page_role") or rn.get("role")
+                or graph.get(str(o.get("page_id") or rn.get("page_id") or "")) or role)
+        if "seoMeta" in o and isinstance(o["seoMeta"], dict):
+            yield o["seoMeta"], here
+        for v in o.values():
+            yield from _walk(v, graph, here)
+    elif isinstance(o, list):
+        for v in o:
+            yield from _walk(v, graph, role)
 
 seo_seen = 0
 seo_bad = []
 unreadable = []
 media_seen = 0
+docs = []
 for fp in glob.glob(os.path.join(root, "**", "*.json"), recursive=True):
     try:
         with open(fp) as f:
@@ -114,11 +156,33 @@ for fp in glob.glob(os.path.join(root, "**", "*.json"), recursive=True):
     except Exception as exc:
         unreadable.append((os.path.relpath(fp, root), f"invalid JSON: {exc}"))
         continue
-    for meta in _walk(data):
+    docs.append((fp, data))
+
+graph = {}
+for _, data in docs:
+    _graph_roles(data, graph)
+step_counts = {}
+for fp, data in docs:
+    rel = os.path.relpath(fp, root)
+    for meta, role in _walk(data, graph):
         seo_seen += 1
-        res = b.assert_seo_populated(meta)
+        if role is None:
+            # no route node on this page: score it as a public marketing page (the
+            # strictest policy) — a page can only be private by being a private NODE.
+            stype = "marketing"
+        else:
+            stype = _step_type_of_role(role)
+            if stype is None:
+                seo_bad.append((rel, [f"unclassifiable route role {role!r} — step type "
+                                      "must come from a known route node role"]))
+                continue
+        step_counts[stype] = step_counts.get(stype, 0) + 1
+        # Marketing = assert_step_seo_populated's own marketing branch (identical call);
+        # private steps go through the step-aware privacy gate.
+        res = (b.assert_seo_populated(meta) if stype == "marketing"
+               else b.assert_step_seo_populated(meta, {"step_type": stype}))
         if not res.get("ok"):
-            seo_bad.append((os.path.relpath(fp, root), res.get("reasons")))
+            seo_bad.append((rel, [f"[{stype}] {r}" for r in (res.get("reasons") or [])]))
 
 if unreadable:
     for rel, why in unreadable[:5]:
@@ -131,8 +195,9 @@ if seo_bad:
         print(f"FAIL seoMeta invalid in {rel}: {reasons}")
     sys.exit(2)                                # hard miss → caller fails the build
 if seo_seen:
-    print(f"PASS {seo_seen} seoMeta object(s) populated (author=founder, "
-          "length/keyword/canonical/lang gates ok)")
+    print(f"PASS {seo_seen} seoMeta object(s) populated (marketing: author=founder, "
+          "length/keyword/canonical/lang gates ok; purchase/thank_you: robots "
+          f"noindex privacy gate ok) step types={dict(sorted(step_counts.items()))}")
 elif legacy:
     print("WARN no seoMeta found in evidence — §2 SEO panel end-state not "
           "demonstrated (QC_FUNNEL_LEGACY_EVIDENCE=1, pre-SEO-era evidence)")
@@ -210,6 +275,9 @@ fi
 
 python3 "$SCORER" --evidence "$EVIDENCE" --kind funnel --gate $JSON
 rc=$?
+# Any non-zero scorer status (score < 8.5, hard miss, crash, argparse exit 2) is a
+# FAILED build — never let a scorer's own exit 2 masquerade as "evidence not found".
+[ "$rc" -ne 0 ] && rc=1
 [ "$SEO_MEDIA_FAIL" -eq 1 ] && rc=1
 
 # ── U24/B-U10 — GitHub archival receipt gate. Always on (not flag-gated): it
