@@ -202,19 +202,24 @@ class TestCardFieldGuard(unittest.TestCase):
               "Security code", "Name on card", "cc-number", "cc-exp", "**Card Number** *", "- Card\u2011number",
               "[INPUT: Card number]", "Enter your card number and CVC below",
               '<input name="card_number">', '<input autocomplete="cc-csc">', '<input placeholder="MM / YY">',
-              '<label for="x">Card number</label>', '<span>CVC</span>')
+              '<label for="x">Card number</label>', '<span>CVC</span>',
+              "Card\nnumber", "Expiry\ndate", "Security\ncode", 'autocomplete="cc-exp"',
+              '[INPUT autocomplete="cc-exp"]', 'Field: autocomplete="cc-number"', "autocomplete=cc-csc")
     PROSE = ("We never store your credit card.", "Your payment is processed securely. You will see a "
-             "confirmation right away.", "Your card details are never stored on this page.")
+             "confirmation right away.", "Your card details are never stored on this page.",
+             "Pay securely; your credit card is processed by Stripe", "We never store your\ncredit card details.")
 
     def test_every_field_like_variant_is_blocked(self):
         for text in self.FIELDS:
             with self.subTest(text):
+                self.assertTrue(cw.card_field_hits(text))
                 self.assertTrue(cw.card_field_hits(f"## Section 5: x\n\n{text}\n"))
 
     def test_reassurance_prose_passes(self):
         for text in self.PROSE:
             with self.subTest(text):
                 self.assertEqual(cw.card_field_hits(text), [])
+                self.assertEqual(cw.card_field_hits(f"## Section 5: x\n\n{text}\n"), [])
 
     def test_produced_html_is_scanned(self):
         (self.td / "visual-mockup").mkdir()

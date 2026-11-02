@@ -77,6 +77,7 @@ _ASK = re.compile(r"(?:^|[.!?]\s+)(?:please\s+)?(?:enter|type|provide|input|fill
                   r"\b(?:card[\s_\-]*(?:number|no)|cvc|cvv|csc|security[\s_\-]*code|exp\w*[\s_\-]*date|expiry|mm/yy)",
                   re.I)
 _PLACEHOLDER = re.compile(r"[\s_\u2022*xX#0-9\-\[\]()/.]*")
+_CC_TOKEN = re.compile(r"(?<![\w-])cc-(?:name|given-name|additional-name|family-name|number|exp(?:-month|-year)?|csc|type)(?![\w-])", re.I)
 BLOCKERS = (
     "the native checkout form is installed by Skill 06; this result carries the page's design "
     "stages only and no native binding",
@@ -145,8 +146,17 @@ def card_field_hits(text: str) -> list:
     parser = _FieldParser()
     parser.feed(text)
     parser.close()
-    hits = parser.hits
-    for line in text.splitlines():
+    hits = parser.hits + [m.group(0) for m in _CC_TOKEN.finditer(text)]
+    lines = text.splitlines()
+    paragraphs, block = [], []
+    for raw in lines + [""]:  # markdown soft breaks: "Card\nnumber" is one label
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            if len(block) > 1:
+                paragraphs.append(" ".join(block))
+            block = []
+        else:
+            block.append(raw.strip())
+    for line in lines + paragraphs:
         line = re.sub(r"<[^>]*>", " ", unicodedata.normalize("NFKC", line)).strip()
         if _MMYY.search(line) or _ASK.search(line):
             hits.append(line)
