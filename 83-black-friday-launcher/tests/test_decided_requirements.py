@@ -22,6 +22,8 @@ from unittest import mock
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL_ROOT))
 
+sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
+from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402
 from launcher_core import (  # noqa: E402
     checks, checkout, council, dependencies, entitlement, intake, package, route,
 )
@@ -493,7 +495,8 @@ class PackageRecordTests(unittest.TestCase):
         self.graph = route.compile_route(self.normalized, self.advice)
         self.pieces = pieces_for(self.run_dir, self.graph, self.normalized)
         self.out = package.assemble(self.run_dir, self.normalized, self.graph,
-                                    self.pieces, council=self.advice)
+                                    self.pieces, council=self.advice,
+                                    checkout_readback=TEST_ONLY_CHECKOUT_READBACK)
         self.manifest_path = self.run_dir / "package-manifest.json"
 
     def tearDown(self):

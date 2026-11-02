@@ -26,6 +26,8 @@ sys.path.insert(0, str(SKILL_ROOT))
 sys.path.insert(0, str(SKILL_ROOT / "routes"))
 
 import substrate  # noqa: E402
+sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
+from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402
 from launcher_core import (checks, cli, image_plan, intake, launch_bridge,  # noqa: E402
                            package, route)
 
@@ -186,7 +188,8 @@ class DispatchTests(unittest.TestCase):
                                  council={"step": "council_launch_planning", "skill": "x", "entry_point": "x",
                                           "status": "not_ready", "advice_state": "pending_live_session",
                                           "blocks_build": False, "is_permission": False},
-                                 require_designs=True, to_confirm=report["to_confirm"])
+                                 require_designs=True, to_confirm=report["to_confirm"],
+                                 checkout_readback=TEST_ONLY_CHECKOUT_READBACK)
         manifest = built["manifest"]
         self.assertTrue(manifest["designs_required"])
         up1 = next(p for p in manifest["pieces"] if p["role"] == "upsell_1")
@@ -212,6 +215,7 @@ class DispatchTests(unittest.TestCase):
         pieces = {r: json.loads((self.out / "pieces" / f"{r}.json").read_text()) for r in report["pages"]}
         built = package.assemble(self.out / "package", normalized, route.compile_route(normalized), pieces,
                                  source_root=self.out, require_designs=True, to_confirm=report["to_confirm"],
+                                 checkout_readback=TEST_ONLY_CHECKOUT_READBACK,
                                  council={"step": "s", "skill": "x", "entry_point": "x", "status": "not_ready",
                                           "advice_state": "p", "blocks_build": False, "is_permission": False})
         self.assertTrue(report["to_confirm"])
@@ -230,6 +234,7 @@ class DispatchTests(unittest.TestCase):
         pieces = {r: json.loads((self.out / "pieces" / f"{r}.json").read_text()) for r in report["pages"]}
         built = package.assemble(self.out / "package", normalized, route.compile_route(normalized), pieces,
                                  source_root=self.out, require_designs=True,
+                                 checkout_readback=TEST_ONLY_CHECKOUT_READBACK,
                                  council={"step": "s", "skill": "x", "entry_point": "x", "status": "not_ready",
                                           "advice_state": "p", "blocks_build": False, "is_permission": False})
         fails = checks.check_package(Path(built["manifest_path"]), self.out / "package")
@@ -497,6 +502,7 @@ class LandingPagesTests(unittest.TestCase):
         pieces = {r: json.loads((self.out / "pieces" / f"{r}.json").read_text()) for r in report["pages"]}
         return package.assemble(self.out / "package", normalized, route.compile_route(normalized), pieces,
                                 source_root=self.out, require_designs=True, to_confirm=report["to_confirm"],
+                                checkout_readback=TEST_ONLY_CHECKOUT_READBACK,
                                 landing_pages=report["landing_pages"],
                                 council={"step": "s", "skill": "x", "entry_point": "x", "status": "not_ready",
                                          "advice_state": "p", "blocks_build": False, "is_permission": False})

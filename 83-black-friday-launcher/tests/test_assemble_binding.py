@@ -14,7 +14,7 @@ import shutil
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -24,6 +24,8 @@ sys.path.insert(0, str(SKILL_ROOT))
 sys.path.insert(0, str(SKILL_ROOT / "routes"))
 
 import substrate  # noqa: E402
+sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
+from test_only_readback import TEST_ONLY_CHECKOUT_READBACK, paid_image_plan, patch_paid_budget  # noqa: E402
 from launcher_core import (checks, image_plan, intake, launch_bridge, package,  # noqa: E402
                            route)
 
@@ -38,6 +40,8 @@ BLOCKERS = ["native order form is not installed", "checkout images are placehold
 def payload(**plan) -> dict:
     doc = json.loads((FIXTURES / "elevation" / "intake.json").read_text(encoding="utf-8"))
     doc["image_plan"] = {"brand_file": "/tmp/test-brand.json", "brand_owner": "TEST-ONLY Client", **plan}
+    # a test-only dispatch records the verified record's approval ref (approval_for: APPR-TEST)
+    doc["approval"] = {**doc["approval"], "ref": "APPR-TEST"}
     return doc
 
 
@@ -59,9 +63,9 @@ def approved_doc(**plan) -> dict:
 
 
 def approval_for(doc: dict) -> dict:
-    return {"schema_version": "1.0", "approval_id": "APPR-TEST", "subject_type": "launch_plan_build",
-            "subject_hash": plan_hash(doc), "owner_identity_ref": CLIENT, "source_message_ref": "msg-test-1",
-            "recorded_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    return {"schema_version": "1.0", "approval_id": "APPR-TEST", "kind": "launch_plan_build",
+            "plan_hash": plan_hash(doc), "client_identity": CLIENT, "source_message_ref": "msg-test-1",
+            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
             "scope": ["launch_plan_build"], "revoked": False,
             "verification_class": "recorded_consent_not_cryptographically_sealed"}
 
@@ -119,6 +123,7 @@ class DispatchedRun(unittest.TestCase):
         run = run or self.rundir
         normalized = intake.validate(doc)
         kw.setdefault("require_designs", True)
+        kw.setdefault("checkout_readback", TEST_ONLY_CHECKOUT_READBACK)
         if named:
             kw["dispatch_run"] = run
         return package.assemble(
@@ -226,7 +231,8 @@ class BoundToDispatchTests(DispatchedRun):
         self.assertIn("status", self.refused("AF-LAUNCH-PKG-RESULT", name="raised", pieces=pieces).detail)
 
     def test_without_a_dispatch_run_a_live_package_is_refused_and_a_test_fixture_is_labelled(self):
-        live = payload(image_cap=9, paid_render_approval_ref="TEST-APPROVAL-REF")
+        patch_paid_budget(self)
+        live = payload(**paid_image_plan(9))
         live["test_only"] = False
         empty = self.work / "empty"
         empty.mkdir()

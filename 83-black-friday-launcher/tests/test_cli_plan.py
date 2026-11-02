@@ -19,6 +19,8 @@ REPO_ROOT = SKILL_ROOT.parent
 sys.path.insert(0, str(SKILL_ROOT))
 sys.path.insert(0, str(SKILL_ROOT / "routes"))
 
+sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
+from test_only_readback import paid_image_plan, patch_paid_budget  # noqa: E402
 from launcher_core import cli, dependencies, intake  # noqa: E402
 from launcher_core.constants import resolve_skill_dir  # noqa: E402
 
@@ -45,7 +47,7 @@ def real_hash(doc):
 
 
 def approval_record(doc, **over):
-    record = {"approval_id": "APPR-TEST", "subject_hash": real_hash(doc)}
+    record = {"approval_id": "APPR-TEST", "plan_hash": real_hash(doc)}
     record.update(over)
     return record
 
@@ -55,6 +57,7 @@ class _Tmp(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
+        patch_paid_budget(self)
 
     def write(self, name, doc):
         path = self.dir / name
@@ -80,7 +83,7 @@ class PlanTests(_Tmp):
     def test_the_printed_hash_is_the_one_an_approval_must_bind(self):
         rc, out, _ = run_cli("plan", "--intake", FIXTURE)
         self.assertEqual(rc, 0)
-        self.assertIn(approval_record(intake_doc())["subject_hash"], out)
+        self.assertIn(approval_record(intake_doc())["plan_hash"], out)
 
     def test_plan_takes_exactly_one_of_intake_or_plan(self):
         for argv in (("plan",), ("plan", "--intake", FIXTURE, "--plan", FIXTURE)):
@@ -100,7 +103,7 @@ class ApprovalBindingTests(_Tmp):
 
     def live(self, **claim):
         doc = intake_doc(test_only=False)
-        doc["image_plan"].update(image_cap=10, paid_render_approval_ref="APPR-PAID")
+        doc["image_plan"].update(paid_image_plan(10, "APPR-PAID"))
         doc["approval"] = {"ref": "APPR-TEST", "hash": real_hash(doc), **claim}
         return doc
 
@@ -126,7 +129,7 @@ class ApprovalBindingTests(_Tmp):
 
     def test_an_approval_record_for_another_plan_fails_dispatch_by_name(self):
         doc = self.live()
-        rc, err, run = self.dispatch(doc, approval_record(doc, subject_hash="1" * 64))
+        rc, err, run = self.dispatch(doc, approval_record(doc, plan_hash="1" * 64))
         self.assertEqual((rc, "AF-LAUNCH-APPROVAL-HASH" in err), (2, True))
         run.assert_not_called()
 

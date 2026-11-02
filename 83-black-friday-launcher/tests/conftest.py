@@ -21,8 +21,16 @@ from launcher_core import entitlement  # noqa: E402
 from test_only_readback import (TEST_ONLY_CONTACT, TEST_ONLY_ORDER, test_only_transport)  # noqa: E402,F401
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _offline_ghl_readback_session():
+    """Class-level setUpClass hooks (unittest) run before any function-scoped fixture."""
+    entitlement.set_transport(test_only_transport())
+    yield
+    entitlement.set_transport(None)
+
+
 @pytest.fixture(autouse=True)
 def _offline_ghl_readback():
     entitlement.set_transport(test_only_transport())
     yield
-    entitlement.set_transport(None)
+    entitlement.set_transport(test_only_transport())  # back to the session default, never to the live reader

@@ -27,6 +27,8 @@ sys.path[:0] = [str(SKILL_ROOT), str(SKILL_ROOT / "routes"), str(HERE)]
 
 import adapters  # noqa: E402
 import substrate  # noqa: E402
+sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
+from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402
 from launcher_core import intake, launch_bridge, package, route  # noqa: E402
 from test_lane83_dispatch import ELEVATION_PAGES, consumer_config, payload, run_dispatch  # noqa: E402
 
@@ -327,7 +329,7 @@ class SelectionAssemblyTests(unittest.TestCase):
     def assemble(self, doc, pieces):
         normalized = intake.validate(doc)
         return package.assemble(self.out / "package", normalized, route.compile_route(normalized), pieces,
-                                source_root=self.out)
+                                source_root=self.out, checkout_readback=TEST_ONLY_CHECKOUT_READBACK)
 
     def pieces(self, report):
         return {r: json.loads((self.out / "pieces" / f"{r}.json").read_text()) for r in report["pages"]}

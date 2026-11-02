@@ -22,6 +22,8 @@ sys.path.insert(0, str(SKILL_ROOT / "routes"))
 
 import adapters  # noqa: E402
 import substrate  # noqa: E402
+sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
+from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402
 from launcher_core import (checks, graphics_hooks, intake, package, page_designs, route)  # noqa: E402
 
 COUNCIL = {"step": "council_launch_planning", "skill": "x", "entry_point": "x", "status": "not_ready",
@@ -71,6 +73,7 @@ class Base(unittest.TestCase):
 
     def assemble(self, pieces, name="pkg", **kw):
         kw.setdefault("require_designs", True)
+        kw.setdefault("checkout_readback", TEST_ONLY_CHECKOUT_READBACK)
         return package.assemble(self.work / name, self.normalized, self.graph, pieces,
                                 source_root=self.work, council=COUNCIL, **kw)
 

@@ -214,9 +214,9 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     normalized, launch = _resolved_launch(payload)
     real = _plan_hash(launch)
     record = approval if isinstance(approval, dict) else {}
-    if record.get("subject_hash") != real:
+    if record.get("plan_hash") != real:
         raise CliError("AF-LAUNCH-APPROVAL-HASH",
-                            f"the approval record binds plan {str(record.get('subject_hash'))[:8]}, but "
+                            f"the approval record binds plan {str(record.get('plan_hash'))[:8]}, but "
                             f"this intake builds plan {real[:8]}. Nothing was built and nothing was spent; "
                             "run `plan` and get the client's approval of that plan.")
     payload = {**payload, "approval": _bind(normalized, real, str(record.get("approval_id") or ""))}

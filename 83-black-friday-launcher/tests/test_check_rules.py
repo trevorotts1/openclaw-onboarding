@@ -26,6 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import route_law  # noqa: E402
 import substrate  # noqa: E402
+sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
+from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402
 from launcher_core import check_rules, checks, cli, intake, package, page_designs, route  # noqa: E402
 from test_lane83_designs import COUNCIL, make_piece  # noqa: E402
 
@@ -56,6 +58,7 @@ class PackageCase(unittest.TestCase):
 
     def build(self, pieces=None, name="pkg", **kw):
         kw.setdefault("require_designs", True)
+        kw.setdefault("checkout_readback", TEST_ONLY_CHECKOUT_READBACK)
         built = package.assemble(self.work / name, self.normalized, self.graph,
                                  pieces if pieces is not None else self.pieces(),
                                  source_root=self.work, council=COUNCIL, **kw)

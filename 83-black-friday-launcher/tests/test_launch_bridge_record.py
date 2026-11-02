@@ -22,6 +22,8 @@ sys.path.insert(0, str(SKILL_ROOT / "routes"))
 
 import substrate  # noqa: E402
 import adapters  # noqa: E402
+sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
+from test_only_readback import paid_image_plan, patch_paid_budget  # noqa: E402
 from launcher_core import image_plan, intake, launch_bridge, route  # noqa: E402
 
 BRAND = str(Path(tempfile.gettempdir()) / "test-brand.json")
@@ -168,6 +170,7 @@ class RunGateTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.out = Path(self.tmp.name) / "run"
         self.calls = []
+        patch_paid_budget(self)
 
     def spy(self):
         real, calls = substrate.dispatch(), self.calls
@@ -184,12 +187,14 @@ class RunGateTests(unittest.TestCase):
 
     def run_bridge(self, doc, approval, **kw):
         kw.setdefault("adapters_config", {"adapters": {}})
-        with mock.patch.object(launch_bridge.substrate, "dispatch", return_value=self.spy()):
+        # this spy checks what Skill 49 is handed; the allow-list is proved in AdapterAllowListTests
+        with mock.patch.object(launch_bridge, "_validate_supplied_adapters", lambda *a, **k: None), \
+                mock.patch.object(launch_bridge.substrate, "dispatch", return_value=self.spy()):
             return launch_bridge.run(doc, self.out, approval=approval, client_identity_ref="client-1",
                                      worker_identity_ref="worker-9", **kw)
 
     def live(self):
-        doc = payload(image_cap=9, paid_render_approval_ref="TEST-APPROVAL-REF")
+        doc = payload(**paid_image_plan(9))
         doc["test_only"] = False
         return doc
 
@@ -199,7 +204,7 @@ class RunGateTests(unittest.TestCase):
     def test_the_approval_ref_comes_from_the_verified_record_and_a_differing_intake_is_refused(self):
         doc = self.live()
         digest = plan_hash(record(doc))
-        approval = {"approval_id": "APPR-LIVE-1", "subject_hash": digest}
+        approval = {"approval_id": "APPR-LIVE-1", "plan_hash": digest}
         with mock.patch.object(substrate.dispatch().swarm, "kie_limiter", return_value=object()):
             with self.assertRaises(launch_bridge.BridgeError) as refused:
                 self.run_bridge(doc, approval)  # the intake still names its placeholder approval
@@ -214,7 +219,7 @@ class RunGateTests(unittest.TestCase):
     def test_a_test_only_run_takes_the_record_ref_over_the_placeholder(self):
         digest = plan_hash(record(payload()))
         with self.assertRaises(launch_bridge.BridgeError):
-            self.run_bridge(payload(), {"approval_id": "APPR-TEST-1", "subject_hash": digest})
+            self.run_bridge(payload(), {"approval_id": "APPR-TEST-1", "plan_hash": digest})
         self.assertEqual(self.dispatched()[0]["plan_approval_ref"], "APPR-TEST-1")
 
     def test_the_front_door_runs_before_dispatch_and_a_tripped_gate_builds_nothing(self):
@@ -265,7 +270,7 @@ class RunArtifactTests(unittest.TestCase):
         self.out = self.root / "run"
 
     def approval(self, doc):
-        return {"approval_id": "APPR-TEST-1", "subject_hash": plan_hash(record(doc))}
+        return {"approval_id": "APPR-TEST-1", "plan_hash": plan_hash(record(doc))}
 
     def test_the_validated_intake_is_written_before_the_adapter_refusal(self):  # ENF-03
         with self.assertRaises(launch_bridge.BridgeError) as ctx:
@@ -304,7 +309,8 @@ class AdapterAllowListTests(unittest.TestCase):  # ENF-08
     @unittest.skipUnless(hasattr(adapters, "validate_adapter_config"),
                          "U-structure-01's allow-list is not in this tree")
     def test_the_real_allow_list_refuses_the_paid_fake_consumer_config(self):
-        doc = payload(image_cap=9, paid_render_approval_ref="TEST-APPROVAL-REF")
+        patch_paid_budget(self)
+        doc = payload(**paid_image_plan(9))
         doc["test_only"] = False
         command = [sys.executable, str(SKILL_ROOT / "tests" / "lane83_fake_consumer.py"), "{request}", "{result}"]
         self.refused(doc, {"adapters": {"landing": {"command": command}}})

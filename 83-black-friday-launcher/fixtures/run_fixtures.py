@@ -42,6 +42,7 @@ sys.path.insert(0, str(SKILL_ROOT))
 
 sys.path.insert(0, str(HERE))
 import test_only_readback  # noqa: E402
+from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402
 from launcher_core import checks, council, intake, package, route  # noqa: E402
 from launcher_core.constants import DECIDED_IDS, SEAM_IDS  # noqa: E402
 
@@ -54,16 +55,6 @@ import substrate  # noqa: E402
 PASSED: List[str] = []
 FAILED: List[str] = []
 
-# The read-back facts a live launch gets from the native checkout; offline they are TEST-ONLY markers.
-TEST_ONLY_CHECKOUT_READBACK = {
-    "native_capability_evidence_ref": "TEST-ONLY-CAPABILITY-REF",
-    "fulfillment_mapping_ref": "TEST-ONLY-FULFILLMENT-REF",
-    "failed_pending_requirements": {
-        "failed_state_copy_ref": "TEST-ONLY-FAILED-COPY", "pending_state_copy_ref": "TEST-ONLY-PENDING-COPY",
-        "retry_policy": "reconcile_native_records_first", "requires_customer_action_copy_ref": None},
-    "bump": {"component_id": "TEST-ONLY-BUMP", "component_version": "0.1", "quantity_policy": "fixed_1",
-             "fulfillment_rule_ref": "TEST-ONLY-RULE"},
-}
 
 
 def check(label: str, condition: bool, detail: str = "") -> None:

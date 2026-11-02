@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -109,9 +109,9 @@ class LaunchSchemaParity(unittest.TestCase):
             self.assertEqual(record["schema_version"], "1.2")
             approval = {
                 "schema_version": "1.0", "approval_id": record["plan_approval_ref"],
-                "subject_type": "launch_plan_build", "subject_hash": dl.vlp.plan_document_hash(record),
-                "owner_identity_ref": "client-test-1", "source_message_ref": "msg-test-1",
-                "recorded_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "kind": "launch_plan_build", "plan_hash": dl.vlp.plan_document_hash(record),
+                "client_identity": "client-test-1", "source_message_ref": "msg-test-1",
+                "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
                 "scope": ["launch_plan_build"], "revoked": False,
                 "verification_class": "recorded_consent_not_cryptographically_sealed"}
             out = td / "dispatch"
