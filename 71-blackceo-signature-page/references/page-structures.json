@@ -62,5 +62,223 @@
         "Section 7 and section 8 lists never look alike."
       ]
     }
+  },
+  "layouts_note": "`layouts` holds the upsell band geometry outside `roles` on purpose: an entry under `roles` reroutes build_production_request.py to the --page-copy path (line ~704/872, which refuses an upsell built from --copy-json) and check_section_count to the structure branch; the upsell keeps its upsell-v6.json sequence. Consumers: Skill 80 upsell_image_plan.py (slot ids and ratios), wireframe-build-spec.json page_type_blocks.upsell (one LAYOUT TAG line per section), and the band-tag gate in stage_executor.check_section_count plus the builder layout_tag stamp (carried to U-images-02 and U-structure-03).",
+  "layouts": {
+    "note": "Per-section band geometry of the upsell page, keyed by page role. Kept apart from `roles` on purpose: a `roles` entry switches scripts/build_production_request.py and check_section_count to the page-copy path (--page-copy, as the downsell uses), while the upsell is built from Skill 80's copy JSON and result bundle (--copy-json, --bundle) and checked against references/copy-specs/upsell-v6.json. upsell_2 shares upsell_1's eight bands (one page type); its images come from its own plan (80-signature-upsell/components/adapters/upsell_image_plan.py).",
+    "upsell_1": {
+      "role": "upsell_1",
+      "label": "Upsell 1",
+      "owner_skill": 80,
+      "copy_version": "upsell",
+      "copy_source": "references/copy-specs/upsell-v6.json (sequence)",
+      "wireframe_lines": "references/wireframe-build-spec.json page_type_blocks.upsell (each section's line carries its layout_tag)",
+      "layout_reference": "80-signature-upsell/components/80-signature-upsell/references/wireframe-layout.md",
+      "sequence": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "sections": [
+        {
+          "id": "1",
+          "name": "Opening offer",
+          "layout_tag": "hero-confirm",
+          "geometry": "A thin order-confirmed strip across the top, the offer headline beside one wide hero image plate, then the CTA stack.",
+          "slot": {
+            "slot_id": "IMG-001",
+            "aspect_ratio": "16:9"
+          }
+        },
+        {
+          "id": "2",
+          "name": "First problem",
+          "layout_tag": "split-right",
+          "geometry": "Headline and body in a left column with a short row of icon bullets, one image plate on the right, then the CTA stack.",
+          "slot": {
+            "slot_id": "IMG-002",
+            "aspect_ratio": "4:3"
+          }
+        },
+        {
+          "id": "3",
+          "name": "Second problem",
+          "layout_tag": "wide-over",
+          "geometry": "One wide image plate with the headline laid over it, the body in a centred column under it, then the CTA stack.",
+          "slot": {
+            "slot_id": "IMG-003",
+            "aspect_ratio": "3:2"
+          }
+        },
+        {
+          "id": "4",
+          "name": "Third problem",
+          "layout_tag": "dark-card",
+          "geometry": "A full-width dark ground: headline and body on a narrow dark card that overlaps the edge of the image plate on the right, then the CTA stack.",
+          "slot": {
+            "slot_id": "IMG-004",
+            "aspect_ratio": "4:3"
+          }
+        },
+        {
+          "id": "5",
+          "name": "Why now",
+          "layout_tag": "split-left",
+          "geometry": "Image plate on the left, headline and one supporting paragraph on the right on a light ground, then the CTA stack.",
+          "slot": {
+            "slot_id": "IMG-005",
+            "aspect_ratio": "3:2"
+          }
+        },
+        {
+          "id": "6",
+          "name": "Who it is for",
+          "layout_tag": "who-list",
+          "geometry": "A persona list of check rows beside the image plate, then the CTA stack.",
+          "slot": {
+            "slot_id": "IMG-006",
+            "aspect_ratio": "1:1"
+          }
+        },
+        {
+          "id": "7",
+          "name": "What is added",
+          "layout_tag": "what-panel",
+          "geometry": "Extra inclusions as check rows on the left, a price-and-terms panel with the exact terms line and the CTA on the right.",
+          "slot": {
+            "slot_id": "IMG-007",
+            "aspect_ratio": "4:3"
+          }
+        },
+        {
+          "id": "8",
+          "name": "Seven reasons",
+          "layout_tag": "reasons-seven",
+          "geometry": "Seven numbered reason chips 1 to 7 each beside its reason text, then the final CTA stack.",
+          "slot": {
+            "slot_id": "IMG-008",
+            "aspect_ratio": "3:2"
+          }
+        }
+      ],
+      "rules": [
+        "Eight bands in this order, one request section per band; never band-compressed.",
+        "Every band ends in the CTA stack: the button, the exact terms line, the plain decline link.",
+        "The three problem bands (2, 3, 4) never share one geometry; no two adjacent bands share a layout_tag.",
+        "A wireframe slice of section N carries exactly the layout_tag declared here for N."
+      ]
+    },
+    "upsell_2": {
+      "role": "upsell_2",
+      "label": "Upsell 2",
+      "owner_skill": 80,
+      "copy_version": "upsell",
+      "copy_source": "references/copy-specs/upsell-v6.json (sequence)",
+      "wireframe_lines": "references/wireframe-build-spec.json page_type_blocks.upsell (each section's line carries its layout_tag)",
+      "layout_reference": "80-signature-upsell/components/80-signature-upsell/references/wireframe-layout.md",
+      "sequence": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "sections": [
+        {
+          "id": "1",
+          "name": "Opening offer",
+          "layout_tag": "hero-confirm",
+          "geometry": "A thin order-confirmed strip across the top, the offer headline beside one wide hero image plate, then the CTA stack.",
+          "slot": {
+            "slot_id": "IMG-001",
+            "aspect_ratio": "16:9"
+          }
+        },
+        {
+          "id": "2",
+          "name": "First problem",
+          "layout_tag": "split-right",
+          "geometry": "Headline and body in a left column with a short row of icon bullets, one image plate on the right, then the CTA stack.",
+          "slot": {
+            "slot_id": "IMG-002",
+            "aspect_ratio": "4:3"
+          }
+        },
+        {
+          "id": "3",
+          "name": "Second problem",
+          "layout_tag": "wide-over",
+          "geometry": "One wide image plate with the headline laid over it, the body in a centred column under it, then the CTA stack.",
+          "slot": {
+            "slot_id": "IMG-003",
+            "aspect_ratio": "3:2"
+          }
+        },
+        {
+          "id": "4",
+          "name": "Third problem",
+          "layout_tag": "dark-card",
+          "geometry": "A full-width dark ground: headline and body on a narrow dark card that overlaps the edge of the image plate on the right, then the CTA stack.",
+          "slot": {
+            "slot_id": "IMG-004",
+            "aspect_ratio": "4:3"
+          }
+        },
+        {
+          "id": "5",
+          "name": "Why now",
+          "layout_tag": "split-left",
+          "geometry": "Image plate on the left, headline and one supporting paragraph on the right on a light ground, then the CTA stack.",
+          "slot": {
+            "slot_id": "IMG-005",
+            "aspect_ratio": "3:2"
+          }
+        },
+        {
+          "id": "6",
+          "name": "Who it is for",
+          "layout_tag": "who-list",
+          "geometry": "A persona list of check rows beside the image plate, then the CTA stack.",
+          "slot": {
+            "slot_id": "IMG-006",
+            "aspect_ratio": "1:1"
+          }
+        },
+        {
+          "id": "7",
+          "name": "What is added",
+          "layout_tag": "what-panel",
+          "geometry": "Extra inclusions as check rows on the left, a price-and-terms panel with the exact terms line and the CTA on the right.",
+          "slot": {
+            "slot_id": "IMG-007",
+            "aspect_ratio": "4:3"
+          }
+        },
+        {
+          "id": "8",
+          "name": "Seven reasons",
+          "layout_tag": "reasons-seven",
+          "geometry": "Seven numbered reason chips 1 to 7 each beside its reason text, then the final CTA stack.",
+          "slot": {
+            "slot_id": "IMG-008",
+            "aspect_ratio": "3:2"
+          }
+        }
+      ],
+      "rules": [
+        "Eight bands in this order, one request section per band; never band-compressed.",
+        "Every band ends in the CTA stack: the button, the exact terms line, the plain decline link.",
+        "The three problem bands (2, 3, 4) never share one geometry; no two adjacent bands share a layout_tag.",
+        "A wireframe slice of section N carries exactly the layout_tag declared here for N."
+      ]
+    }
   }
 }
