@@ -39,6 +39,7 @@ COPY_EXAMPLES = S71 / "tests" / "fixtures" / "copy_examples"
 S80_FIXTURES = REPO_ROOT / "80-signature-upsell" / "components" / "80-signature-upsell" / "fixtures"
 S80_JOURNEYS = REPO_ROOT / "80-signature-upsell" / "components" / "adapters" / "fixtures"
 S81_PAGE = REPO_ROOT / "81-signature-downsell" / "fixtures" / "valid-downsell-page.json"
+S81_EXTENSION = REPO_ROOT / "81-signature-downsell" / "fixtures" / "valid-downsell-result-trial-matched.json"
 S49_FIXTURES = REPO_ROOT / "49-signature-funnel" / "scripts" / "fixtures"
 
 BRAND_OWNER = "blackceo"  # Skill 71 refuses a brand file whose brand_id is not the run's owner
@@ -51,6 +52,9 @@ DELIVERABLES = {
                  "TEST ONLY build plan"],
     "downsell_1": ["TEST ONLY lite start pass"],
 }
+# the offer names the upsell copy fixtures were written for: the upsell page binds copy.offer_name to the offer
+OFFER_NAMES = {"upsell_1": "TEST ONLY Deep Work Library", "upsell_2": "TEST ONLY Implementation Studio"}
+D1_PRICE_MINOR = 100  # the trial price the pinned Skill 81 page fixture shows (its example amounts are refused unless the record prices them)
 LABEL = "images only, render pending"
 
 
@@ -95,12 +99,35 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
                                      brand_file=str(self.brand_file), brand_owner=BRAND_OWNER)
         doc["brand"]["hash"] = _sha256(self.brand_file)  # the landing build re-hashes the brand file
         for offer in doc["offers"]:
+            offer["name"] = OFFER_NAMES.get(offer["role"], offer["name"])
+            if offer["role"] == "downsell_1":
+                offer["price"]["amount_minor"] = D1_PRICE_MINOR
             if offer["role"] in DELIVERABLES:  # the upsell and downsell pages refuse to invent deliverables
                 offer["level"] = {"state": "supplied", "name": offer["name"],
                                   "deliverables": DELIVERABLES[offer["role"]]}
         return doc
 
-    def _adapter_inputs(self, out: Path) -> dict:
+    def _checkout_manuscript(self, doc: dict) -> str:
+        """The order-form copy for THIS launch: the fixture's five-section shape, with the offer, price, bump and
+        the approved guarantee, terms and consent written from the launch record and the intake (the checkout
+        wrapper refuses a price, name or terms text that differs from them)."""
+        main = next(o for o in doc["offers"] if o["role"] == "main")
+        bump = next(o for o in doc["offers"] if o["role"] == "bump")
+        terms = doc.get("checkout_terms")
+        if not terms:  # an intake from before the approved-terms block: the fixture's own copy, as shipped
+            return (COPY_EXAMPLES / "checkout-example.md").read_text(encoding="utf-8")
+        money = lambda o: f"${o['price']['amount_minor'] // 100}"  # noqa: E731  whole-dollar test prices
+        shape = (COPY_EXAMPLES / "checkout-example.md").read_text(encoding="utf-8")
+        head, rest = shape.split("## Section 2", 1)
+        tail = "## Section 5" + rest.split("## Section 5", 1)[1]
+        return (f"{head}## Section 2: Offer details and price\n\n{main['name']}, one payment of {money(main)}.\n\n"
+                f"Due today: {money(main)}.\n\n"
+                f"## Section 3: Order bump\n\nYes, add the {bump['name']} to my order.\n\n"
+                f"Ten ready-to-use planning templates. One-time price of {money(bump)}.\n\n"
+                f"## Section 4: Guarantee and terms\n\n{terms['guarantee_text']}\n\n{terms['terms_text']}\n\n"
+                f"{terms['consent_text']}\n\n{tail}")
+
+    def _adapter_inputs(self, out: Path, doc: dict) -> dict:
         """The per-page inputs `cli dispatch --adapter-inputs` takes. Every file is a repo fixture or derived
         from one; nothing is a stand-in for a page skill's output."""
         inputs = self.root / "inputs"
@@ -114,6 +141,9 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         def rebound(src: Path, name: str) -> Path:  # the fixtures name TEST-ONLY-U1/U2; this launch's offers are U1/U2
             return write(name, src.read_text(encoding="utf-8").replace("TEST-ONLY-U1", "U1").replace("TEST-ONLY-U2", "U2"))
 
+        difference_table = write("difference-table.json", json.dumps(
+            {"difference_kind": "reduced_scope", "rationale": "TEST ONLY recorded rationale."}))
+
         bridge = write("landing-bridge.json", json.dumps({
             "skill71": {"root": str(S71), "python": sys.executable},
             "landing": {"run_dir": str(self.root / "landing-run"), "page_version": "standard", "page_kind": "sales",
@@ -123,7 +153,7 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         return {
             "bridge_config": str(bridge),
             "author_session": "e2e-real-adapters",
-            "checkout_manuscript": str(COPY_EXAMPLES / "checkout-example.md"),
+            "checkout_manuscript": str(write("checkout-manuscript.md", self._checkout_manuscript(doc))),
             "copy": {"upsell_1": rebound(S80_FIXTURES / "copy-upsell1-public.valid.json", "copy-upsell_1.json"),
                      "upsell_2": rebound(S80_FIXTURES / "copy-upsell2-public.valid.json", "copy-upsell_2.json"),
                      "downsell_1": S81_PAGE,
@@ -136,17 +166,25 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
                            "upsell_2": S49_FIXTURES / "enrichment-upsell_2-onetime.json",
                            "downsell_1": write("enrichment-downsell_1.json", json.dumps(
                                {"difference_kind": "reduced_scope", "rationale": "TEST ONLY recorded rationale.",
-                                "entry_guard_ref": "TEST-ENTRY-GUARD"}))},
+                                "entry_guard_ref": "TEST-ENTRY-GUARD",
+                                "difference_table_ref": str(difference_table)}))},
         }
 
-    def _stage_operator_inputs(self, out: Path) -> None:
-        """The two files the design stages need staged in the dispatch folder by the operator: the run's
-        measured design system and the thank-you copy. (The Skill 82 result files are NOT staged: a page
+    def _stage_operator_inputs(self, out: Path, launch_id: str) -> None:
+        """What the operator stages in the dispatch folder: the run's measured design system, the thank-you copy
+        and the downsell's result extension. (The Skill 82 result files are NOT staged: a page
         built before any sale has none, and nothing here may hand-write them.)"""
         work = out / "dispatch"
         work.mkdir(parents=True)
-        for name in ("design-prose.json", "design-prose-checkout.json", "design-prose-product_selection.json"):
+        for name in ("design-prose.json", "design-prose-checkout.json"):
             (work / name).write_text(_design_prose(), encoding="utf-8")
+        # the downsell wrapper assembles its result around the extension record the Skill 81 side stages beside it
+        # (the fixture matched to the page fixture above); it checks it against the launch record and the route,
+        # so it names this launch's upsell_2 page (Skill 49 ids a page <LAUNCH_ID>-<ROLE>)
+        extension = json.loads(S81_EXTENSION.read_text(encoding="utf-8"))
+        extension["downsell_result_extension"]["route_result"]["canonical_u2_page_id"] = \
+            f"{launch_id.upper()}-UPSELL_2"
+        (work / "extension-downsell_1.json").write_text(json.dumps(extension), encoding="utf-8")
         (work / "copy-thank_you.md").write_text((COPY_EXAMPLES / "thank-you-path-b.md").read_text(encoding="utf-8"),
                                                 encoding="utf-8")
 
@@ -159,8 +197,10 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
     def test_a_multiple_options_launch_builds_assembles_and_checks_on_the_real_adapters(self):
         doc = self._intake()
         out = self.root / "run"
-        self._stage_operator_inputs(out)
-        report = dispatch_tests.run_dispatch(doc, out, adapters_config=None, adapter_inputs=self._adapter_inputs(out),
+        self._stage_operator_inputs(out, doc["launch_id"])
+        # the measured design system reaches the order-page inputs through the intake's declared image_plan key
+        doc["image_plan"]["design_prose_ref"] = str(out / "dispatch" / "design-prose.json")
+        report = dispatch_tests.run_dispatch(doc, out, adapters_config=None, adapter_inputs=self._adapter_inputs(out, doc),
                                              landing_pages=["sales"])
 
         # dispatch: every page of the funnel, free, on the stub provider
@@ -173,7 +213,7 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
             self.assertNotEqual(piece.get("author_session"), "lane83-fake-consumer", role)
             self.assertTrue(piece["artifacts"], f"{role} came back with no files at all")
             for art in piece["artifacts"]:
-                path = Path(art["path"])
+                path = out / art["path"]  # a relative path is relative to the folder holding pieces/, as assemble reads it
                 self.assertTrue(path.is_file(), f"{role}: {path} was listed but never written")
                 self.assertEqual(_sha256(path), art["sha256"], f"{role}: {path.name} does not match its recorded hash")
                 self.assertNotEqual(path.read_bytes(), fake_png, f"{role}: {path.name} is the fake consumer's picture")
@@ -182,18 +222,23 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         intake_path = self.root / "intake.json"
         intake_path.write_text(json.dumps(doc), encoding="utf-8")
         package_dir = self.root / "package"
-        code, _ = self._cli("assemble", "--intake", str(intake_path), "--pieces", str(out / "pieces"),
-                            "--out", str(package_dir), "--page-only")
-        self.assertEqual(code, 0)
+        code, shown = self._cli("assemble", "--intake", str(intake_path), "--pieces", str(out / "pieces"),
+                                "--out", str(package_dir), "--page-only")
+        self.assertEqual(code, 0, shown)
         manifest_path = package_dir / "package-manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         self.assertEqual(sorted(p["role"] for p in manifest["pieces"]), sorted(ROLES))
 
+        # every default the launcher chose for the client is confirmed by the client before check will pass
+        confirmations = [{"field": e["field"], "confirmation_ref": "TEST-CLIENT-CONFIRMATION"}
+                         for e in report["to_confirm"]]
+        (package_dir / "client-confirmations.json").write_text(json.dumps({"confirmations": confirmations}),
+                                                               encoding="utf-8")
+
         # check: passes, and says what it is: section images only, the render still pending
         code, shown = self._cli("check", "--manifest", str(manifest_path), "--root", str(package_dir))
         self.assertEqual((code, shown.strip().splitlines()[-1]), (0, "PASS package complete"), shown)
-        wording = (json.dumps(manifest) + (package_dir / "receipt.json").read_text(encoding="utf-8")).lower()
-        self.assertIn(LABEL, wording, "a stub-provider package must say it holds images only, render pending")
+        self.assertIn(f"delivery level: {LABEL}", shown, "a stub-provider package must say it holds images only, render pending")
 
 
 if __name__ == "__main__":
