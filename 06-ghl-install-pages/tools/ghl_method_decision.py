@@ -91,9 +91,12 @@ From ``ghl_fallback_ladder`` surfaces:
     -> ``visual_builder_write``; ``workflow`` -> ``workflow_write``;
     ``media`` -> ``media_upload``; ``pipeline`` -> ``crm_product_write``.
 
+From ``ghl_order_elements`` order plans (S06-02, via
+:func:`record_order_plan`): every planned native order element (order form,
+collect payment, order bump, upsell, downsell, thank-you) ->
+``payment_configuration``; the chosen lane is the funnel order-form step.
+
 Classes NO current source system emits (never fabricated by this module):
-  * ``payment_configuration`` — no router object type, ladder surface, or
-    page method covers payment configuration today.
   * ``metadata_read`` — the router's idempotency probe is a read, but it
     produces no standalone decision record; reads are not dressed up as
     routing decisions here.
@@ -188,7 +191,7 @@ LADDER_SURFACE_OPERATION_CLASS: Dict[str, str] = {
 }
 
 #: Step-1 classes no current source system produces (see docstring).
-UNEMITTED_OPERATION_CLASSES = ("metadata_read", "payment_configuration", "publish")
+UNEMITTED_OPERATION_CLASSES = ("metadata_read", "publish")
 
 
 # ── Record skeleton / persistence ─────────────────────────────────────────────
@@ -660,6 +663,68 @@ def record_ladder_result(run_dir: str, ladder_result: Any, *,
     return load_unified_record(run_dir) or record
 
 
+# ── Source 4: ghl_order_elements order plans (S06-02) ────────────────────────
+
+ORDER_OPERATION_CLASS = "payment_configuration"
+
+
+def entries_from_order_plan(plan: Any, *, run_dir: Optional[str] = None,
+                            record: Optional[dict] = None) -> List[dict]:
+    """One unified entry per planned order element. Duck-typed on the plan
+    dict (``skill6-order-plan/1``) so this module never imports the planner.
+    The form-builder Payments tile is recorded as the rejected lane."""
+    if not isinstance(plan, dict) or not isinstance(plan.get("elements"), list) \
+            or not plan["elements"]:
+        raise MethodDecisionRecordError(
+            "order plan must be a dict with a non-empty elements list")
+    scope_record = record if record is not None else _new_record(run_dir or "")
+    entries: List[dict] = []
+    for el in plan["elements"]:
+        kind = el.get("kind")
+        if not kind:
+            raise MethodDecisionRecordError(f"order element has no kind: {el!r}")
+        binding = el.get("binding") or {}
+        placement = el.get("placement") or {}
+        entries.append({
+            "id": f"order:{kind}",
+            "source": "ghl_order_elements",
+            "operation": f"order element {kind}",
+            "operationClass": ORDER_OPERATION_CLASS,
+            "chosenLane": placement.get("target") or plan.get("surface"),
+            "outcome": "planned",
+            "capabilitiesObserved": [],
+            "rejectedAlternatives": [{
+                "lane": "form_builder_payments_tile",
+                "reason": "decided 2026-11-02: the checkout surface is the "
+                          "funnel order-form step, not a form-builder tile",
+            }] if el.get("tile") else [],
+            "scope": _entry_scope(scope_record, plan.get("location_id")),
+            "evidenceRefs": [],
+            "detail": {
+                "productRef": binding.get("product_ref"),
+                "priceRef": binding.get("price_ref"),
+                "bindingSource": binding.get("binding_source"),
+            },
+        })
+    return entries
+
+
+def record_order_plan(run_dir: str, plan: Any, *,
+                      run_id: Optional[str] = None,
+                      location_ref: Optional[str] = None,
+                      publish_gate: Optional[str] = None,
+                      capabilities_observed: Optional[List[str]] = None) -> dict:
+    """Upsert the run's order-plan entries into the unified record and write
+    it (same explicit-call seam as the router and ladder)."""
+    record = _load_or_new(run_dir, run_id=run_id, location_ref=location_ref,
+                          publish_gate=publish_gate,
+                          capabilities_observed=capabilities_observed)
+    _upsert(record, entries_from_order_plan(plan, run_dir=run_dir,
+                                            record=record))
+    write_unified_record(run_dir, record)
+    return load_unified_record(run_dir) or record
+
+
 # ── Self-test — no network, no browser, tmp only ──────────────────────────────
 
 def _selftest() -> int:
@@ -728,6 +793,18 @@ def _selftest() -> int:
                 or "SELECTOR-MISS" not in lad_entry["rejectedAlternatives"][0]["reason"]:
             errors.append(f"ladder entry mistranslated: {lad_entry}")
 
+        record = record_order_plan(tmp, {
+            "location_id": "LOC_T", "surface": "funnel_order_form_step",
+            "elements": [{"kind": "order_form", "tile": "Sell Products",
+                          "placement": {"target": "funnel_order_form_step"},
+                          "binding": {"product_ref": "p1",
+                                      "binding_source": "caller_supplied"}}]})
+        ord_entry = next((e for e in record["operations"]
+                          if e["id"] == "order:order_form"), None)
+        if not ord_entry or ord_entry["operationClass"] != "payment_configuration" \
+                or ord_entry["chosenLane"] != "funnel_order_form_step":
+            errors.append(f"order entry mistranslated: {ord_entry}")
+
         # The unified file itself is never re-ingested as a page record.
         record2 = refresh_from_page_records(tmp)
         page_ids = [e["id"] for e in record2["operations"] if e["source"] == "ghl_method"]
@@ -735,7 +812,8 @@ def _selftest() -> int:
             errors.append(f"refresh re-ingested the wrong files: {page_ids}")
         # Router/ladder entries survive a page refresh.
         all_ids = {e["id"] for e in record2["operations"]}
-        if "object:tag:zhc_x" not in all_ids or "ladder:form" not in all_ids:
+        if not {"object:tag:zhc_x", "ladder:form",
+                "order:order_form"} <= all_ids:
             errors.append(f"refresh dropped non-page entries: {sorted(all_ids)}")
 
     if errors:
@@ -782,4 +860,6 @@ __all__ = [
     "record_router_result",
     "entry_from_ladder_result",
     "record_ladder_result",
+    "entries_from_order_plan",
+    "record_order_plan",
 ]
