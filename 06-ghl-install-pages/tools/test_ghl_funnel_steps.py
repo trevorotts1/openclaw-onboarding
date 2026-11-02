@@ -317,3 +317,40 @@ def test_install_funnel_verifies_once_and_direct_writes_work_after_authorize(lau
     d2 = fs.RestCanvasFunnelDriver(SynGhl(), LOC, SYN_CAPTURE, allow_synthetic=True)
     d2.authorize(plan, _approval(plan), lambda r: True)
     assert d2.create_step("F1", "checkout", "order_form")
+
+
+class NoopAuthDriver(FakeDriver):
+    def authorize(self, *a, **k):
+        return None
+
+    def accept_grant(self, *a, **k):
+        return None
+
+
+@pytest.mark.parametrize("approval,verifier", [(None, None), ("ok", None), ("ok", lambda r: False)])
+def test_install_funnel_gate_holds_for_driver_with_noop_authorize(launch, approval, verifier):
+    graph, offers, catalog = launch
+    plan = fs.build_funnel_plan(graph, offers, catalog)
+    d = NoopAuthDriver()
+    with pytest.raises(fs.ApprovalRefused):
+        _install(plan, d, approval=approval, verifier=verifier)
+    assert d.writes == 0
+
+
+def test_concrete_driver_refuses_forged_or_foreign_grant(launch):
+    graph, offers, catalog = launch
+    plan = fs.build_funnel_plan(graph, offers, catalog)
+    ghl = SynGhl()
+    d = fs.RestCanvasFunnelDriver(ghl, LOC, SYN_CAPTURE, allow_synthetic=True)
+    with pytest.raises(fs.ApprovalRefused):
+        fs.VerifiedApproval(object(), plan["plan_hash"], LOC)
+    other = fs.require_approval(_approval(plan, location_id="OTHER"), plan, "OTHER", lambda r: True)
+    for forged in (None, {"plan_hash": plan["plan_hash"], "location_id": LOC}, other):
+        with pytest.raises(fs.ApprovalRefused):
+            d.accept_grant(forged)
+        with pytest.raises(fs.ApprovalRefused, match="create_step"):
+            d.create_step("F1", "checkout", "order_form")
+    # approval for LOC but the driver writes to another location: refused before any write
+    with pytest.raises(fs.ApprovalRefused):
+        _install(plan, fs.RestCanvasFunnelDriver(ghl, "OTHER", SYN_CAPTURE, allow_synthetic=True))
+    assert ghl.evals == []
