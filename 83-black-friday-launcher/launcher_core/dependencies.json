@@ -1,12 +1,13 @@
 {
   "schema": "blackceo.launcher.dependencies/1",
   "target": "999-setup",
-  "note": "The Launcher is enabled in 999 only while every required entry below is present. The preflight derives enabled_in_999 from registration.json plus this check; this manifest writes nothing outside this skill.",
+  "note": "The Launcher is enabled in 999 only while every required entry below is present. The preflight derives enabled_in_999 from registration.json plus this check; this manifest writes nothing outside this skill. A skill_tree entry carries min_version, read from that tree's skill-version.txt; dispatch and assemble run this check first and refuse on any required entry that is missing or below its minimum.",
   "entries": [
     {
       "id": "tree-49-signature-funnel",
       "kind": "skill_tree",
       "ref": "49-signature-funnel",
+      "min_version": "v2.1.28",
       "required": true,
       "why": "intake validation, route compiler, dispatch, delegation receipt store"
     },
@@ -14,6 +15,7 @@
       "id": "tree-78-signature-product-selection",
       "kind": "skill_tree",
       "ref": "78-signature-product-selection",
+      "min_version": "0.2.5",
       "required": true,
       "why": "product_selection page producer"
     },
@@ -21,6 +23,7 @@
       "id": "tree-79-signature-order-form",
       "kind": "skill_tree",
       "ref": "79-signature-order-form",
+      "min_version": "0.1.6",
       "required": true,
       "why": "native checkout contract and cross-field validator"
     },
@@ -28,6 +31,7 @@
       "id": "tree-80-signature-upsell",
       "kind": "skill_tree",
       "ref": "80-signature-upsell",
+      "min_version": "0.2.4",
       "required": true,
       "why": "upsell_1 and upsell_2 page producer"
     },
@@ -35,6 +39,7 @@
       "id": "tree-81-signature-downsell",
       "kind": "skill_tree",
       "ref": "81-signature-downsell",
+      "min_version": "0.1.6",
       "required": true,
       "why": "downsell_1 validators consumed by the S49 downsell wrapper"
     },
@@ -42,13 +47,31 @@
       "id": "tree-82-signature-thank-you",
       "kind": "skill_tree",
       "ref": "82-signature-thank-you",
+      "min_version": "0.3.2",
       "required": true,
       "why": "thank_you result and run manifest"
+    },
+    {
+      "id": "tree-44-convert-and-flow-operator",
+      "kind": "skill_tree",
+      "ref": "44-convert-and-flow-operator",
+      "min_version": "v2.1.40",
+      "required": true,
+      "why": "launch automations: launch-c/plan_reader.py and the tools/siglaunch pipeline"
+    },
+    {
+      "id": "tree-50-email-engine",
+      "kind": "skill_tree",
+      "ref": "50-email-engine",
+      "min_version": "v2.0.8",
+      "required": true,
+      "why": "DRAFT-ONLY launch email, text and automation build plans"
     },
     {
       "id": "tree-71-blackceo-signature-page",
       "kind": "skill_tree",
       "ref": "71-blackceo-signature-page",
+      "min_version": "1.3.12",
       "required": true,
       "why": "landing page producer reached through the S49 landing bridge"
     },
@@ -56,15 +79,23 @@
       "id": "tree-77-council-of-wise-elders",
       "kind": "skill_tree",
       "ref": "77-council-of-wise-elders",
+      "min_version": "1.0.74",
       "required": true,
       "why": "Council planning-step invocation"
     },
     {
       "id": "shared-utils-signature-launch",
       "kind": "shared_utils",
-      "ref": "shared-utils/signature_launch",
+      "ref": "shared-utils/signature_launch_contract",
       "required": true,
-      "why": "shared signature-launch schemas and domain utilities"
+      "why": "the shared launch-plan contract: plan_document_hash (the hash every approval binds), the launch-plan validator and the calendar law. The id is kept for the manifest pin in the tests; the unused shared-utils/signature_launch entry it replaced is gone."
+    },
+    {
+      "id": "shared-utils-client-intake",
+      "kind": "shared_utils",
+      "ref": "shared-utils/client_intake",
+      "required": true,
+      "why": "the guided interview engine (cli questions) and the shared question bank; the interview never runs from a local question list"
     },
     {
       "id": "registry-line-81",

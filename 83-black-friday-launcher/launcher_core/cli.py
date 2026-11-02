@@ -2,6 +2,12 @@
 
 Exit 0 pass, 2 fail. The Council planning step runs on route/assemble and is
 always recorded; a not-ready Council never changes the exit code.
+
+``dispatch`` and ``assemble`` run the dependency preflight first and refuse on any
+required entry that is missing, so a green preflight means the launch can run.
+``plan`` shows the client the launch in plain words and the plan hash an approval
+must bind; ``dispatch``, ``assemble`` and ``check`` refuse an approval that binds a
+different hash.
 """
 
 from __future__ import annotations
@@ -16,6 +22,16 @@ from . import (checks, council, dependencies, image_plan, intake, launch_bridge,
                launch_plan, package, route)
 from .constants import DECIDED, SEAMS
 
+_TEST_ONLY_REF = "TEST-ONLY"  # the placeholder approval ref on test fixtures
+
+
+class CliError(Exception):
+    """A refusal the CLI makes itself (approval binding, bad arguments). Stable code, plain detail."""
+
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(f"{code}: {detail}")
+        self.code = code
+
 
 def _read_json(path: Path) -> Any:
     return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -23,6 +39,61 @@ def _read_json(path: Path) -> Any:
 
 def _emit(obj: Any) -> None:
     print(json.dumps(obj, indent=2, sort_keys=True))
+
+
+def _launch_event(launch_id: str, event: dict) -> None:
+    """Tell the Command Center about a stage (U-cc-01 emitter). Never raises, never changes an exit code."""
+    try:
+        import substrate  # routes/ is on sys.path through the launch_bridge import
+        substrate.load("shared-utils/signature_launch/launch_events.py",
+                       "launcher_launch_events").emit(83, launch_id, event)
+    except Exception as exc:  # a Command Center outage never fails a launch
+        print(f"[launch_events] skipped ({type(exc).__name__})", file=sys.stderr)
+
+
+def _plan_hash(launch: dict) -> str:
+    """The hash an approval binds: Skill 49's plan_document_hash of the launch record."""
+    return launch_bridge.substrate.dispatch().vlp.plan_document_hash(launch)
+
+
+def _launch_for(normalized: dict, inputs: dict) -> dict:
+    return launch_bridge.to_launch_record(normalized, route.compile_route(normalized), inputs)
+
+
+def _resolved_launch(payload: Any) -> tuple:
+    """(normalized intake, launch record) exactly as launch_bridge.run would build them."""
+    normalized = intake.validate(payload)
+    inputs, _ = image_plan.resolve(normalized.get("image_plan"),
+                                   test_only=bool(normalized.get("test_only", True)))
+    return normalized, _launch_for(normalized, inputs)
+
+
+def _bind(normalized: dict, real_hash: str, real_ref: str) -> dict:
+    """The approval the run records: the intake's claim, verified against the real hash and ref.
+
+    intake.approval is a claim, never proof. It must equal the real plan hash and the
+    approval record's own ref. A test fixture's placeholder ref (TEST-ONLY...) on a
+    test_only intake is replaced by the verified values instead, so a test receipt never
+    prints a made-up hash; any other mismatch is refused.
+    """
+    claim = normalized["approval"]
+    if normalized.get("test_only", True) and claim["ref"].startswith(_TEST_ONLY_REF):
+        return {"ref": real_ref, "hash": real_hash}
+    if claim["hash"] != real_hash or claim["ref"] != real_ref:
+        raise CliError(
+            "AF-LAUNCH-APPROVAL-BINDING",
+            f"the intake says it was approved as {claim['ref']!r} for plan {claim['hash'][:8]}, but the "
+            f"approval on record is {real_ref!r} for plan {real_hash[:8]}. Nothing was built and nothing "
+            "was spent; run `plan` to see the plan and its hash, and approve that.")
+    return dict(claim)
+
+
+def _json_object(path: Path) -> dict:
+    try:
+        doc = _read_json(path)
+    except (OSError, ValueError):
+        return {}
+    return doc if isinstance(doc, dict) else {}
 
 
 def cmd_route(args: argparse.Namespace) -> int:
@@ -35,27 +106,46 @@ def cmd_route(args: argparse.Namespace) -> int:
 
 
 def cmd_assemble(args: argparse.Namespace) -> int:
+    dependencies.require()
+    run_dir = Path(args.run_dir) if args.run_dir else None
+    pieces_dir = Path(args.pieces) if args.pieces else (run_dir / "pieces" if run_dir else None)
+    if pieces_dir is None:
+        raise CliError("AF-LAUNCH-ASSEMBLE-ARGS", "give --run-dir (the dispatch run folder) or --pieces")
+    source_root = run_dir or pieces_dir.parent
     normalized = intake.validate(_read_json(args.intake))
+    launch = _json_object(source_root / "launch.json")
+    if launch:  # the dispatch record: its plan hash and approval ref are what the receipt binds
+        normalized["approval"] = _bind(normalized, _plan_hash(launch), launch.get("plan_approval_ref", ""))
+    elif not normalized.get("test_only", True):
+        raise CliError("AF-LAUNCH-APPROVAL-UNBOUND",
+                            f"no dispatch record (launch.json) in {source_root}, so the approval cannot be "
+                            "tied to a plan. Pass --run-dir of the dispatch run.")
     advice = council.planning_step(normalized)
     graph = route.compile_route(normalized, advice)
-    pieces = {role: _read_json(Path(args.pieces) / f"{role}.json")
+    pieces = {role: _read_json(pieces_dir / f"{role}.json")
               for role in (n["role"] for n in graph["nodes"])}
     for slot in package.EXTRA_SLOTS:  # a second page of a role (downsell_2) rides beside its parent
-        extra = Path(args.pieces) / f"{slot}.json"
+        extra = pieces_dir / f"{slot}.json"
         if extra.is_file():
             pieces[slot] = _read_json(extra)
-    report_path = Path(args.pieces).parent / "dispatch-report.json"
+    report_path = source_root / "dispatch-report.json"
     report = _read_json(report_path) if report_path.is_file() else {}
     plan = _read_json(args.launch_plan) if args.launch_plan else None
     deliveries = _read_json(args.deliveries) if args.deliveries else None
     scope = package.DELIVERY_SCOPE_PAGE_ONLY if args.page_only else package.DELIVERY_SCOPE_FULL
-    out = package.assemble(Path(args.out), normalized, graph, pieces,
-                           source_root=Path(args.pieces).parent, council=advice,
-                           require_designs=not args.allow_no_designs,
-                           to_confirm=report.get("to_confirm"),
-                           landing_pages=report.get("landing_pages"),
-                           launch_plan=plan, deliveries=deliveries,
-                           delivery_scope=scope)
+    try:
+        out = package.assemble(Path(args.out), normalized, graph, pieces,
+                               source_root=source_root, council=advice,
+                               require_designs=not args.allow_no_designs,
+                               to_confirm=report.get("to_confirm"),
+                               landing_pages=report.get("landing_pages"),
+                               launch_plan=plan, deliveries=deliveries,
+                               delivery_scope=scope)
+    except package.PackageError as exc:
+        _launch_event(normalized["launch_id"], {"event_type": "stage_blocked", "stage": "assemble",
+                                                "failures": [exc.code]})
+        raise
+    _launch_event(normalized["launch_id"], {"event_type": "stage_closed", "stage": "assemble"})
     _emit({"manifest": out["manifest_path"], "receipt": out["receipt_path"],
            "council": advice["status"], "designs_required": not args.allow_no_designs,
            "to_confirm": out["manifest"]["to_confirm"],
@@ -66,8 +156,48 @@ def cmd_assemble(args: argparse.Namespace) -> int:
     return 0
 
 
+_BILLING = {"one_time": "one payment", "recurring": "recurring payments",
+            "installment": "a payment plan", "payment_plan": "a payment plan"}
+
+
+def render_plan(normalized: dict, launch: dict) -> str:
+    """The launch in plain words: every page, offer, price, billing term and route, then the hash to approve."""
+    li = launch_bridge.substrate.load("49-signature-funnel/scripts/launch_intake.py",
+                                      "launcher_launch_intake",
+                                      sibling_dir="49-signature-funnel/scripts")
+    real = _plan_hash(launch)
+    *summary, question = li.render_summary({"plan": launch}).splitlines()
+    lines = [*summary, "", "Offers, prices and billing:"]
+    for offer in launch["offers"]:
+        price = offer["prices"][0]
+        term = _BILLING.get(price.get("billing_type"), str(price.get("billing_type")))
+        lines.append(f"  - {offer['slot']}: {offer['display_name']}, "
+                     f"{li._money_display(price['amount_minor'], price['currency'])}, {term}")
+    graph = route.compile_route(normalized)
+    lines += ["", "Route (pages in order): " + " -> ".join(n["role"] for n in graph["nodes"]), "",
+              f"plan_document_hash: {real}",
+              f"To approve this exact plan, quote the hash (its first 8 characters are {real[:8]}). "
+              "An approval for any other hash is refused. Change anything above and the hash changes.",
+              "", question]
+    return "\n".join(lines)
+
+
 def cmd_plan(args: argparse.Namespace) -> int:
-    """Validate a shared launch plan: Black Friday calendar + planned-unit completeness."""
+    """`--intake`: show the client the plan and the hash to approve. `--plan`: validate a shared launch plan."""
+    if bool(args.intake) == bool(args.plan):
+        raise CliError("AF-LAUNCH-PLAN-ARGS", "give exactly one of --intake (show the plan to approve) "
+                            "or --plan (validate a shared launch plan)")
+    if args.intake:
+        normalized = intake.validate(_read_json(args.intake))
+        test_only = bool(normalized.get("test_only", True))
+        try:
+            inputs, _ = image_plan.resolve(normalized.get("image_plan"), test_only=test_only)
+        except image_plan.ImagePlanError:
+            # the picture details (brand file, cap) do not change the plan; only the provider is in the hash
+            raw = (normalized.get("image_plan") or {}).get("image_provider")
+            inputs = {"image_provider": raw if raw in image_plan.KNOWN_PROVIDERS else image_plan.DEFAULT_PROVIDER}
+        print(render_plan(normalized, _launch_for(normalized, inputs)))
+        return 0
     plan = _read_json(args.plan)
     deliveries = _read_json(args.deliveries) if args.deliveries else None
     record = launch_plan.record(plan, deliveries)
@@ -77,18 +207,38 @@ def cmd_plan(args: argparse.Namespace) -> int:
 
 
 def cmd_dispatch(args: argparse.Namespace) -> int:
+    dependencies.require()
+    payload = _read_json(args.intake)
+    approval = _read_json(args.approval)
+    launch_id = str(payload.get("launch_id") or "") if isinstance(payload, dict) else ""
+    normalized, launch = _resolved_launch(payload)
+    real = _plan_hash(launch)
+    record = approval if isinstance(approval, dict) else {}
+    if record.get("subject_hash") != real:
+        raise CliError("AF-LAUNCH-APPROVAL-HASH",
+                            f"the approval record binds plan {str(record.get('subject_hash'))[:8]}, but "
+                            f"this intake builds plan {real[:8]}. Nothing was built and nothing was spent; "
+                            "run `plan` and get the client's approval of that plan.")
+    payload = {**payload, "approval": _bind(normalized, real, str(record.get("approval_id") or ""))}
     adapters_config = _read_json(args.adapters) if args.adapters else None
     adapter_inputs = _read_json(args.adapter_inputs) if args.adapter_inputs else None
-    report = launch_bridge.run(
-        _read_json(args.intake), Path(args.out),
-        approval=_read_json(args.approval),
-        client_identity_ref=args.client, worker_identity_ref=args.worker,
-        adapters_config=adapters_config, adapter_inputs=adapter_inputs,
-        parallel=args.parallel,
-        scoped_approvals=_read_json(args.scoped_approvals) if args.scoped_approvals else None,
-        extra_pages=tuple(args.extra_page or ()),
-        landing_pages=[k.strip() for k in args.landing_pages.split(",") if k.strip()]
-        if args.landing_pages else None)
+    _launch_event(launch_id, {"event_type": "run_initialized"})
+    try:
+        report = launch_bridge.run(
+            payload, Path(args.out),
+            approval=approval,
+            client_identity_ref=args.client, worker_identity_ref=args.worker,
+            adapters_config=adapters_config, adapter_inputs=adapter_inputs,
+            parallel=args.parallel,
+            scoped_approvals=_read_json(args.scoped_approvals) if args.scoped_approvals else None,
+            extra_pages=tuple(args.extra_page or ()),
+            landing_pages=[k.strip() for k in args.landing_pages.split(",") if k.strip()]
+            if args.landing_pages else None)
+    except launch_bridge.BridgeError as exc:
+        _launch_event(launch_id, {"event_type": "stage_blocked", "stage": "dispatch",
+                                  "failures": [exc.code]})
+        raise
+    _launch_event(launch_id, {"event_type": "stage_closed", "stage": "dispatch"})
     _emit(report)
     print()
     for line in launch_bridge.summary_lines(report):
@@ -137,9 +287,36 @@ def cmd_questions(args: argparse.Namespace) -> int:
     return 0
 
 
+def _approval_fails(manifest: dict, root: Path) -> List[str]:
+    """The manifest's approved hash and ref against the dispatch record in the run folder."""
+    launch = _json_object(root / "launch.json")
+    if not launch:
+        if manifest.get("test_only", True):
+            return []  # a test package carries no consent claim
+        return ["AF-LAUNCH-APPROVAL-UNBOUND: no dispatch record (launch.json) in the run folder, so the "
+                "approved plan hash cannot be tied to a plan"]
+    real, fails = _plan_hash(launch), []
+    if manifest.get("approved_plan_hash") != real:
+        fails.append(f"AF-LAUNCH-APPROVAL-BINDING: the package says it was approved for plan "
+                     f"{str(manifest.get('approved_plan_hash'))[:8]}, but the plan that was dispatched "
+                     f"hashes to {real[:8]}")
+    ref = (_json_object(root / "receipt.json").get("approvals") or {}).get("launch_plan_build")
+    if ref is not None and ref != launch.get("plan_approval_ref"):
+        fails.append(f"AF-LAUNCH-APPROVAL-BINDING: the receipt records approval {ref!r}, but the dispatch "
+                     f"record carries {launch.get('plan_approval_ref')!r}")
+    return fails
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     fails = checks.check_package(Path(args.manifest), Path(args.root),
                                  require_designs=True if args.require_designs else None)
+    manifest = _json_object(Path(args.manifest))
+    fails = list(fails) + _approval_fails(manifest, Path(args.root))
+    launch_id = str(manifest.get("launch_id") or "")
+    if launch_id:
+        _launch_event(launch_id, {"event_type": "stage_blocked", "stage": "check",
+                                  "failures": [str(f) for f in fails][:20]} if fails
+                      else {"event_type": "stage_closed", "stage": "check"})
     if fails:
         print(f"FAIL {len(fails)} violation(s)")
         for f in fails:
@@ -181,7 +358,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     a = sub.add_parser("assemble", help="assemble package-manifest.json and receipt.json")
     a.add_argument("--intake", required=True)
-    a.add_argument("--pieces", required=True, help="directory of <role>.json page results")
+    a.add_argument("--run-dir", help="the dispatch run folder (its --out): holds pieces/, launch.json and "
+                                     "dispatch-report.json. The approval is tied to launch.json, and --pieces "
+                                     "defaults to <run-dir>/pieces")
+    a.add_argument("--pieces", help="directory of <role>.json page results (default: <run-dir>/pieces)")
     a.add_argument("--out", required=True)
     a.add_argument("--allow-no-designs", action="store_true",
                    help="assemble without requiring every page's wireframes and mockups; recorded "
@@ -198,8 +378,11 @@ def build_parser() -> argparse.ArgumentParser:
                         "is delivered or checked. Never the default")
     a.set_defaults(fn=cmd_assemble)
 
-    pl = sub.add_parser("plan", help="validate a shared launch plan's calendar and completeness")
-    pl.add_argument("--plan", required=True)
+    pl = sub.add_parser("plan", help="show the client the launch in plain words with the plan hash to approve "
+                                     "(--intake), or validate a shared launch plan's calendar (--plan)")
+    pl.add_argument("--intake", help="the intake: prints every page, offer, price, billing term and route, "
+                                     "then the plan_document_hash an approval must bind")
+    pl.add_argument("--plan", help="a shared launch plan to validate")
     pl.add_argument("--deliveries",
                     help="JSON object of unit id -> delivery result; omit to see what is missing")
     pl.set_defaults(fn=cmd_plan)
@@ -253,7 +436,8 @@ def main(argv: List[str] | None = None) -> int:
         return args.fn(args)
     except (intake.IntakeError, route.RouteError, package.PackageError,
             launch_bridge.BridgeError, image_plan.ImagePlanError,
-            launch_plan.LaunchPlanError) as exc:
+            launch_plan.LaunchPlanError, CliError,
+            dependencies.DependencyError) as exc:
         print(f"FAIL {exc}", file=sys.stderr)
         return 2
 
