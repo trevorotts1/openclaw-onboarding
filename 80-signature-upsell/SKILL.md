@@ -197,7 +197,8 @@ agent can follow the chain by hand. Paths are relative to the repo root.
    also run with `--compare` against the U1 copy, and every run takes
    `--binding-manifest` (see How to run).
    `python3 80-signature-upsell/components/80-signature-upsell/scripts/validate_upsell_copy.py <copy.json> --binding-manifest <manifest.json>`
-3. **Wrapper.** Skill 49's `upsell_wrapper.py` (`--slot upsell_1|upsell_2`)
+3. **Wrapper.** Skill 49's `49-signature-funnel/scripts/upsell_wrapper.py`
+   (`--slot upsell_1|upsell_2`)
    enriches the S49 page-request, calls this skill's
    `components/adapters/produce.py`, and projects the page-result. It takes
    `--request`, `--result`, `--launch`, `--copy`, `--journey`, `--produce`, and
