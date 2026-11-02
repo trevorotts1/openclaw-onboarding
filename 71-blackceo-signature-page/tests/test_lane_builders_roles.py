@@ -49,6 +49,15 @@ def load(name):
 
 exe = load("stage_executor")
 builder = load("build_production_request")
+
+
+def band_sections(role, ids):
+    """Request sections for `ids`; an upsell band carries the layout_tag its declared layout names."""
+    layout = json.loads(exe.STRUCTURES_FILE.read_text(encoding="utf-8"))["layouts"].get(role) or {"sections": []}
+    tags = {s["id"]: s["layout_tag"] for s in layout["sections"]}
+    return [{"section_id": i, **({"layout_tag": tags[i]} if i in tags else {})} for i in ids]
+
+
 runner = load("run_page_type")
 role_runner = load("run_page_role_stages")
 forms = load("copy_forms")
@@ -124,7 +133,7 @@ class RoleFormGuardTests(RunCase):
                                    ("thank_you", "thank-you", ["1", "2", "3", "4", "5"])):
             got = exe.check_section_count(self.run, {
                 "page_role": role, "copy_version": version,
-                "sections": [{"section_id": i} for i in ids]}, paid=True)
+                "sections": band_sections(role, ids)}, paid=True)
             self.assertEqual(got[:2], (version, ids), role)
 
     def test_the_builder_refuses_a_copy_version_that_belongs_to_another_role(self):
@@ -150,7 +159,7 @@ class RoleFormGuardTests(RunCase):
     def test_a_registered_role_is_checked_from_its_own_role_even_unpaid(self):
         # finding 14: no declared copy_version must not mean "skip the check" for a page type
         got = exe.check_section_count(self.run, {"page_role": "upsell_1",
-                                                 "sections": [{"section_id": i} for i in UPSELL_IDS]})
+                                                 "sections": band_sections("upsell_1", UPSELL_IDS)})
         self.assertEqual(got[:2], ("upsell", UPSELL_IDS))
         with self.assertRaises(exe.ExecutorError) as ctx:
             exe.check_section_count(self.run, {"page_role": "upsell_1",

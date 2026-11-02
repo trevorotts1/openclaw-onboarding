@@ -1283,6 +1283,42 @@ def _kie74_file(run_dir, task_id):
     return run_dir / KIE74_DIR / f"{safe}.json"
 
 
+def _kie74_receipt_module():
+    """Skill 49's kie74_receipt.py (the one checker of transport receipts), loaded the way
+    stage_executor._kie74_receipt() loads it; None when the sibling skill is absent."""
+    path = SKILL_ROOT.parent / "49-signature-funnel" / "scripts" / "kie74_receipt.py"
+    if not path.is_file():
+        return None
+    import importlib.util
+    saved = list(sys.path)
+    try:
+        spec = importlib.util.spec_from_file_location("kie74_receipt_skill49", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    finally:
+        sys.path[:] = saved
+    return mod
+
+
+def _kie74_binding_problems(run_dir, stage, f, obj, x, alias):
+    """The transport binding of a result file whose task passed the plain checks: the saved bytes
+    re-hash to the binding, the binding names the file the task claims, and a hand-made receipt
+    (no binding, not an alias run, not a test run) cannot prove the image is provider-backed."""
+    binding = obj.get("binding")
+    where = f"stage {stage}: {KIE74_DIR}/{f.name}"
+    if isinstance(binding, dict):
+        mod = _kie74_receipt_module()
+        problems = [f"{where}: {p}" for p in mod.binding_problems(obj, run_dir)] if mod else []
+        if x.get("file") not in (binding.get("file"), binding.get("delivered_file")):
+            problems.append(f"{where} binds {binding.get('file')!r}, not {x.get('file')!r}")
+        return problems
+    if not alias and intake_data(run_dir).get("test_run") is not True:
+        return [f"{where} has no transport binding (task_id, sha256 of the saved bytes, "
+                "credits_before/after) written by stage_executor; a hand-made receipt cannot prove "
+                "the image is provider-backed"]
+    return []
+
+
 def _kie74_problems(run_dir, stage, tasks, alias=False):
     """Each Skill 74 task id must be unique and backed by its own result file in receipts/kie74/.
 
@@ -1316,6 +1352,8 @@ def _kie74_problems(run_dir, stage, tasks, alias=False):
                   and obj.get("adapter_mode") == "active")
         if not ok:
             problems.append(f"stage {stage}: {KIE74_DIR}/{f.name} is not a successful active Skill 74 result for {tid!r}")
+        else:
+            problems += _kie74_binding_problems(run_dir, stage, f, obj, x, alias)
     ids = {}
     d = run_dir / KIE74_DIR
     for f in sorted(d.glob("*.json")) if d.is_dir() else []:

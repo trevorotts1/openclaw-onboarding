@@ -674,6 +674,27 @@ def page_role_for(run_dir: Path, request: dict) -> str:
     return page_role.declared_role(run_dir, request)  # also reads a role form's copy_version
 
 
+def check_band_layout_tags(role, ids, request):
+    """A role with a declared layout (references/page-structures.json layouts.<role>, the upsell
+    bands) must carry, section for section, the layout_tag that layout declares: every upsell band
+    is drawn from its declared layout, never from the heading. Roles without a layout are unchanged."""
+    try:
+        data = json.loads(STRUCTURES_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ExecutorError(f"cannot read {STRUCTURES_FILE.name}: {exc}")
+    layout = (data.get("layouts") or {}).get(role)
+    if not isinstance(layout, dict):
+        return
+    by_id = {canon_section_id(s["id"]): s["layout_tag"] for s in layout.get("sections") or []}
+    for i, section_id in enumerate(ids):
+        want, got = by_id.get(section_id), request["sections"][i].get("layout_tag")
+        if got != want:
+            raise ExecutorError(
+                f"band layout: section {section_id} of {role} carries layout_tag {got!r} but "
+                f"references/page-structures.json layouts.{role} declares {want!r}; every upsell band "
+                "is drawn from its declared layout")
+
+
 def check_section_count(run_dir: Path, request: dict, paid: bool = False):
     """Fail closed unless the request carries one section per canonical section of
     the page it builds, in order: the selected form's copy sections (Standard 12,
@@ -681,7 +702,8 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
     page role's own sequence (references/copy-specs/roles/<role>.json, checkout 5)
     for a run whose page_role has one. A non-landing page role with an entry in
     references/page-structures.json is checked against that entry's sequence
-    instead (Downsell 8).
+    instead (Downsell 8). An upsell role also carries the layout_tag its declared band layout
+    names for each section (check_band_layout_tags).
 
     Never band-compressed: a request that merges sections to fit fewer images
     is refused by name before any prompt is composed or any call is made.
@@ -751,6 +773,7 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
             f"{[i for i in want if i not in ids]}, unexpected "
             f"{[i for i in ids if i not in want]}. One request section per canonical "
             "copy section, in order; never band-compress sections")
+    check_band_layout_tags(role, ids, request)
     sources, absent = [], []
     for path in _copy_source_candidates(run_dir, request):
         if not path.is_file():

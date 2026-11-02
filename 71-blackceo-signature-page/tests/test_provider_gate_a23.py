@@ -62,6 +62,18 @@ class ProviderGateCase(unittest.TestCase):
         for task in fixture["receipt"]["transport"]["tasks"]:
             tid = task.get("task_id")
             if fixture["image_engine"] == "kie" and tid:
+                result = {
+                    "provider": "kie", "adapter": "74-kie-live-adapter",
+                    "adapter_mode": "active", "backend": "native-live",
+                    "model_id": "gpt-image-2", "task_id": tid, "state": "success",
+                    "result_urls": ["https://example.invalid/a.png"],
+                    "saved_paths": [str(run / task["file"])] if task.get("file") else [],
+                    "fallback_used": False, "warnings": [], "data": {}}
+                if task.get("file") in fixture["files"]:
+                    # the receipt stage_executor writes: bound to the saved bytes and the credit draw
+                    stage_gate._kie74_receipt_module().write_bound_receipt(
+                        run, result, task["file"], 100.0, 88.0)
+                    continue
                 f = stage_gate._kie74_file(run, tid)
                 f.parent.mkdir(parents=True, exist_ok=True)
                 f.write_text(json.dumps({

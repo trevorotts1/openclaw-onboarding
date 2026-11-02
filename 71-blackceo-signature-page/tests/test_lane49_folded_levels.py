@@ -95,11 +95,13 @@ class BuilderStampsFoldedLevelsTests(unittest.TestCase):
     def test_the_real_83_seven_figure_preneur_record_yields_three_levels(self):
         # the record 83 to_launch_record builds from its seven-figure-preneur fixture, built in a child
         # process so 83's modules never touch this test's import path
+        # (with 83's TEST-ONLY GHL read-back transport installed: the fixture carries TEST-ONLY references)
         root = HERE.parents[1] / "83-black-friday-launcher"
         code = ("import json,sys;from pathlib import Path;sys.path.insert(0,'.');"
                 "from launcher_core import intake,route,launch_bridge as lb;"
+                "sys.path.insert(0,'fixtures');import test_only_readback;test_only_readback.install();"
                 "n=intake.validate(json.loads(Path('fixtures/seven-figure-preneur/intake.json').read_text()));"
-                "print(json.dumps(lb.to_launch_record(n,route.compile_route(n),{'image_provider':'kie'})))")
+                "print(json.dumps(lb.to_launch_record(n,route.compile_route(n),{'image_provider':'kie','design_style':'B'})))")
         proc = subprocess.run([sys.executable, "-I", "-c", code], cwd=root, text=True, capture_output=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         record = json.loads(proc.stdout)
@@ -248,6 +250,117 @@ class SecondDownsellLabelTests(unittest.TestCase):
     def test_an_instance_of_another_family_is_ignored(self):
         os.environ["SIGNATURE_ROLE_INSTANCE"] = "upsell_2"
         self.assertEqual(labels.declared_page_role(self.run_dir), "downsell_1")
+
+
+class UpsellBandLayoutTagTests(unittest.TestCase):
+    """CARRIED 7: every upsell band is drawn from its declared layout (page-structures.json layouts)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.run = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+        layout = json.loads(executor.STRUCTURES_FILE.read_text(encoding="utf-8"))["layouts"]["upsell_1"]
+        self.tags = [s["layout_tag"] for s in layout["sections"]]
+
+    def check(self, tags):
+        sections = [{"section_id": str(i), **({"layout_tag": t} if t else {})} for i, t in enumerate(tags, 1)]
+        return executor.check_section_count(self.run, {"page_role": "upsell_1", "copy_version": "upsell",
+                                                       "sections": sections}, True)
+
+    def test_the_declared_tags_pass(self):
+        self.assertEqual(self.check(self.tags)[1], [str(i) for i in range(1, 9)])
+
+    def test_a_swapped_tag_is_refused_naming_the_section(self):
+        tags = list(self.tags)
+        tags[2] = tags[3]
+        with self.assertRaises(executor.ExecutorError) as ctx:
+            self.check(tags)
+        self.assertIn("band layout: section 3 of upsell_1", str(ctx.exception))
+
+    def test_no_tag_is_refused(self):
+        with self.assertRaises(executor.ExecutorError) as ctx:
+            self.check([None] + self.tags[1:])
+        self.assertIn("band layout: section 1 of upsell_1 carries layout_tag None", str(ctx.exception))
+
+
+class CheckoutRecordingTests(unittest.TestCase):
+    """CARRIED 54: write_intake.py records the CHK-28 proof; validate_handoff.py accepts it."""
+
+    URL = "https://pay.example.com/checkout/elevate"
+    ATTEST = {"url": URL, "attested_by": "client", "product": "Elevate", "price": {"amount": 97, "currency": "usd"}}
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.run = Path(self.tmp.name) / "run"
+        self.run.mkdir()
+        self.addCleanup(self.tmp.cleanup)
+        self.attest = Path(self.tmp.name) / "attest.json"
+        self.attest.write_text(json.dumps(self.ATTEST), encoding="utf-8")
+
+    def write_intake(self, *extra):
+        return subprocess.run([sys.executable, str(SCRIPTS / "write_intake.py"), str(self.run), "--brand-owner", "TEST",
+                               "--image-cap", "5", "--copy-version", "standard", "--page-kind", "sales",
+                               "--design-style", "A", "--test-run", *extra], text=True, capture_output=True)
+
+    def test_the_recorded_proof_passes_validate_handoff(self):
+        done = self.write_intake("--approved-price", "97:USD", "--checkout-attestation-json", str(self.attest))
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        handoff = json.loads((self.run / "intake.json").read_text(encoding="utf-8"))["funnel_handoff"]
+        self.assertEqual(handoff["approved_price"], {"amount": "97", "currency": "USD"})
+        self.assertEqual(handoff["checkout_attestation"], self.ATTEST)
+        (self.run / "copy").mkdir()
+        (self.run / "responsive-html").mkdir()
+        (self.run / "copy" / "copy-manifest.json").write_text(json.dumps({"ctas": [
+            {"label": "Claim Your Seat", "handoff_type": "external_link", "primary": True}]}), encoding="utf-8")
+        (self.run / "responsive-html" / "index.html").write_text(
+            f'<html><body><a class="cta" href="{self.URL}">Claim Your Seat</a></body></html>', encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(SCRIPTS / "validate_handoff.py"), str(self.run)],
+                              text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    def test_a_malformed_amount_or_empty_currency_is_refused(self):
+        for bad in ("abc:USD", "-5:USD", "97:", "97", "0:USD"):
+            self.assertEqual(self.write_intake("--approved-price", bad).returncode, 2, bad)
+        self.assertEqual(self.write_intake("--approved-bump", "19:USD").returncode, 2)
+
+
+class KieReceiptBindingGateTests(unittest.TestCase):
+    """CARRIED 117: stage_gate._kie74_problems re-checks the transport binding of each receipt."""
+
+    REL = "visual-mockup/part-01.png"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.run = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+        (self.run / "visual-mockup").mkdir()
+        (self.run / self.REL).write_bytes(b"\x89PNG\r\n\x1a\nbytes-1")
+        self.gate = importlib.import_module("stage_gate")
+        self.task = [{"task_id": "abc123", "file": self.REL}]
+        self.result = {"provider": "kie", "adapter": "74-kie-live-adapter", "adapter_mode": "active",
+                       "backend": "native-live", "model_id": "gpt-image-x", "task_id": "abc123", "state": "success",
+                       "result_urls": ["https://example.invalid/a.png"], "saved_paths": [str(self.run / self.REL)],
+                       "fallback_used": False, "warnings": [], "data": {}}
+        (self.run / "intake.json").write_text("{}", encoding="utf-8")
+
+    def problems(self):
+        return self.gate._kie74_problems(self.run, "image-generation-qc", self.task)
+
+    def test_a_receipt_written_by_the_executors_writer_passes(self):
+        self.gate._kie74_receipt_module().write_bound_receipt(self.run, self.result, self.REL, 1000, 996)
+        self.assertEqual(self.problems(), [])
+
+    def test_a_png_that_no_longer_hashes_to_its_binding_is_refused(self):
+        self.gate._kie74_receipt_module().write_bound_receipt(self.run, self.result, self.REL, 1000, 996)
+        (self.run / self.REL).write_bytes(b"swapped")
+        self.assertTrue(self.problems())
+
+    def test_a_hand_made_receipt_has_no_transport_unless_the_run_is_a_test_run(self):
+        (self.run / "receipts" / "kie74").mkdir(parents=True)
+        (self.run / "receipts" / "kie74" / "abc123.json").write_text(json.dumps(self.result), encoding="utf-8")
+        self.assertIn("has no transport binding", " ".join(self.problems()))
+        (self.run / "intake.json").write_text('{"test_run": true}', encoding="utf-8")
+        self.assertEqual(self.problems(), [])
 
 
 if __name__ == "__main__":

@@ -14,6 +14,9 @@ REPO = Path(__file__).resolve().parents[3]
 EXP = REPO / "shared-utils/signature_launch/experience"
 sys.path.insert(0, str(REPO / "83-black-friday-launcher/tests"))
 from test_lane83_designs import Base  # noqa: E402
+sys.path.insert(0, str(REPO / "83-black-friday-launcher/fixtures"))
+import test_only_readback  # noqa: E402
+from launcher_core import entitlement  # noqa: E402
 
 
 def run(script, *args):
@@ -22,6 +25,9 @@ def run(script, *args):
 
 class BoundRows(Base):
     def setUp(self):
+        # the fixture's entitlement attestation carries TEST-ONLY references: read them back offline
+        test_only_readback.install()
+        self.addCleanup(entitlement.set_transport, None)
         super().setUp()
         self.built = self.assemble(self.pieces())
         self.manifest = Path(self.built["manifest_path"])

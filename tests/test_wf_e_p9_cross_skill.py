@@ -10,8 +10,10 @@ What it proves (checklist C10, plan §14.2):
 
   B12  A folded-levels launch gets the APPROVED native contract and nothing
        invented: landing -> checkout with no product_selection node, every
-       level kept distinct, and the unsupported checkout shape recorded as an
-       explicit `contract_gap` rather than guessed into a Skill 79 mode.
+       level kept distinct, and its checkout realised as one native
+       combined_single_offer order form per main price choice (the owner's
+       decision DECISIONS-NEEDED[4], which replaced the earlier `contract_gap`),
+       never one main offer relabelled as the whole launch.
   B13  Only a GENUINE decline routes to D1. payment_pending / payment_failed /
        requires_customer_action retain the stage; a clicked button is not
        payment; abandoned checkout is never a decline.
@@ -95,6 +97,19 @@ from launcher_core import (  # noqa: E402
     route as route83,
 )
 
+sys.path.insert(0, str(LAUNCH83 / "fixtures"))
+import test_only_readback  # noqa: E402  Skill 83's TEST-ONLY GHL read-back transport (read-only, offline)
+from launcher_core import entitlement as entitlement83  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _offline_ghl_readback():
+    """intake83.validate() reads the entitlement attestation back from GHL; offline, only the TEST-ONLY refs resolve."""
+    test_only_readback.install()
+    yield
+    entitlement83.set_transport(None)
+
+
 SKILL62_VIDEOS = CWFE62 / "generate_videos.py"
 THANK_YOU_SNAPSHOT = ROOT / "82-signature-thank-you" / "fixtures" / "test-only-snapshot.json"
 GOLDEN_50 = ROOT / "50-email-engine" / "examples" / "golden-signature-launch-10"
@@ -126,9 +141,11 @@ def launch_intake(mode: str, mains: int = 1, **overrides) -> dict:
         "brand": {"ref": "brand-test", "hash": "a" * 64},
         "copy_profile": "signature_12_section",
         "approval": {"ref": "approval-test", "hash": "b" * 64},
-        "entitlement_attestation": {"basis": "purchase", "evidence_ref": "ev-test",
+        "entitlement_attestation": {"basis": "purchase", "evidence_ref": test_only_readback.TEST_ONLY_CONTACT,
                                     "attested_by": "operator-test",
-                                    "purchase_reference": "order-test"},
+                                    "purchase_reference": test_only_readback.TEST_ONLY_ORDER,
+                                    "amount_minor": entitlement83.load_declaration()["purchase_price"]["amount_minor"],
+                                    "currency": entitlement83.load_declaration()["purchase_price"]["currency"]},
         "offers": offers,
         "checkout_terms": {
             "guarantee_ref": "TEST-ONLY-GUARANTEE-REF", "guarantee_text": "Test-only guarantee text.",
@@ -230,23 +247,27 @@ class TestB12FoldedLevels:
         assert mapping["supplied"].get("main_price") is None
 
     def test_the_unsupported_checkout_shape_is_an_explicit_gap_never_a_guessed_mode(self):
+        # The old `contract_gap` (no Skill 79 mode for several mains) is closed by DECISIONS-NEEDED[4]: one
+        # native combined_single_offer order form per main price choice. Nothing is guessed: the mapping still
+        # names no single main offer or price, and each instance carries its own main.
         doc = intake83.validate(launch_intake("folded_levels", mains=3))
         mapping = checkout83.order_form_mapping(doc, route83.compile_route(doc))
-        assert mapping["checkout_mode"] is None
-        assert mapping["checkout_mode_state"] == "contract_gap"
-        # The gap names itself, and checkout_mode stays in the unknown set.
-        assert "checkout_mode" in mapping["unknown"]
-        assert any("contract" in note and "express neither" in note
-                   for note in mapping["notes"]), mapping["notes"]
-        # The contract has exactly two modes; neither is invented for this shape.
+        assert mapping["checkout_mode"] == "combined_single_offer"
+        assert mapping["checkout_mode_state"] == "resolved"
+        assert mapping["realisation"] == "per_offer_instances"
+        assert "main_offer_id" in mapping["unknown"] and "main_price" in mapping["unknown"]
+        assert [i["main_offer_id"] for i in mapping["instances"]] == ["main-1", "main-2", "main-3"]
+        assert {i["selection_ref"] for i in mapping["instances"]} == {None}
+        assert len({i["page_id"] for i in mapping["instances"]}) == 3
+        # The contract still has exactly two modes, and the journey table names the realised one.
         assert set(mapping["contract_modes"]) == {"combined_single_offer", "post_selection"}
-        assert checkout83.MODE_BY_JOURNEY["folded_levels"] is None
+        assert checkout83.MODE_BY_JOURNEY["folded_levels"] == "combined_single_offer"
         assert checkout83.MODE_BY_JOURNEY["single_simple"] == "combined_single_offer"
-        assert checkout83.MODE_BY_JOURNEY["multiple_options"] == "post_selection"
+        assert checkout83.MODE_BY_JOURNEY["multiple_options"] == "combined_single_offer"
 
     def test_the_two_supported_shapes_still_resolve(self):
         for mode, expected in (("single_simple", "combined_single_offer"),
-                               ("multiple_options", "post_selection")):
+                               ("multiple_options", "combined_single_offer")):
             doc = intake83.validate(launch_intake(mode, mains=1 if mode == "single_simple" else 2))
             mapping = checkout83.order_form_mapping(doc, route83.compile_route(doc))
             assert mapping["checkout_mode"] == expected, mode
@@ -852,6 +873,12 @@ class TestB22InstalledRepoDrift:
             (root / "83-black-friday-launcher" / "SKILL.md").write_text(
                 "---\nname: black-friday-launcher\n---\n", encoding="utf-8")
             (root / "49-signature-funnel").mkdir()
+            # a skill tree resolves only with its SKILL.md and counts as present only at its manifest minimum
+            # version (tree-49: v2.1.28)
+            (root / "49-signature-funnel" / "SKILL.md").write_text(
+                "---\nname: signature-funnel\n---\n", encoding="utf-8")
+            (root / "49-signature-funnel" / "skill-version.txt").write_text(
+                (ROOT / "49-signature-funnel" / "skill-version.txt").read_text(encoding="utf-8"), encoding="utf-8")
             before = sorted(p.name for p in root.rglob("*"))
             report = dependencies83.check(root=root)
             after = sorted(p.name for p in root.rglob("*"))

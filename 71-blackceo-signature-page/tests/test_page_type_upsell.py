@@ -78,7 +78,10 @@ class SpecTests(unittest.TestCase):
     def check(self, ids):
         # the role is declared, as every upsell run declares it: landing + upsell is the
         # disagreement finding 14 refuses
-        request = {"copy_version": "upsell", "page_role": "upsell_1", "sections": tsc.sections(ids)}
+        tags = {s["id"]: s["layout_tag"]
+                for s in load(exe.STRUCTURES_FILE)["layouts"]["upsell_1"]["sections"]}
+        sections = [{**s, "layout_tag": tags.get(s["section_id"])} for s in tsc.sections(ids)]  # the declared band tags
+        request = {"copy_version": "upsell", "page_role": "upsell_1", "sections": sections}
         return exe.check_section_count(self.run, request, True)
 
     def test_eight_sections_pass_and_other_counts_are_refused(self):

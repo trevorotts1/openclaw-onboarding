@@ -125,6 +125,7 @@ import json
 import os
 import struct
 import sys
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -177,6 +178,57 @@ def refuse(summary, recovery, role):
     operator. Registry names, provisioning topology and tier backstops
     belong in neither line."""
     return print_refusal(f"{summary} NEXT (operator, role: {role}): {recovery}")
+
+
+def parse_money(text):
+    """{"amount", "currency"} from AMOUNT:CURRENCY, or None when the amount is not a positive
+    finite number or the currency is empty."""
+    amount, _, currency = str(text).partition(":")
+    try:
+        value = Decimal(amount.strip())
+    except InvalidOperation:
+        return None
+    if not value.is_finite() or value <= 0 or not currency.strip():
+        return None
+    return {"amount": amount.strip(), "currency": currency.strip()}
+
+
+def read_json_object(path):
+    """The JSON object in `path`, or None when it is unreadable or not an object."""
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def checkout_records(a):
+    """CHK-28 production recording path: (funnel_handoff keys, refusal or None) from
+    --approved-price, --approved-bump, --checkout-attestation-json and --checkout-result-json,
+    under the keys scripts/validate_handoff.py checkout_proof() reads."""
+    records = {}
+    if a.approved_bump is not None and a.approved_price is None:
+        return {}, "--approved-bump needs --approved-price: the bump is recorded beside the approved price."
+    for flag, text in (("--approved-price", a.approved_price), ("--approved-bump", a.approved_bump)):
+        if text is None:
+            continue
+        money = parse_money(text)
+        if money is None:
+            return {}, (f"{flag} {text!r} is not AMOUNT:CURRENCY with a positive number and a currency "
+                        "code (for example 97:USD).")
+        if flag == "--approved-price":
+            records["approved_price"] = money
+        else:
+            records["approved_price"]["bump"] = money
+    for flag, path, key in (("--checkout-attestation-json", a.checkout_attestation_json, "checkout_attestation"),
+                            ("--checkout-result-json", a.checkout_result_json, "checkout_result")):
+        if path is None:
+            continue
+        doc = read_json_object(path)
+        if doc is None:
+            return {}, f"{flag} {path} is not a readable JSON object."
+        records[key] = doc
+    return records, None
 
 
 def image_pixel_dimensions(path):
@@ -611,6 +663,17 @@ def main(argv=None):
                    help="record the handoff form identity as an explicit "
                         "missing input with this reason, instead of a form "
                         "identity; never combined with the form flags")
+    # CHK-28: the checkout proof a sales page's primary CTA is verified against.
+    p.add_argument("--approved-price", default=None, metavar="AMOUNT:CURRENCY",
+                   help="the client-approved price, recorded as funnel_handoff.approved_price")
+    p.add_argument("--approved-bump", default=None, metavar="AMOUNT:CURRENCY",
+                   help="the client-approved order bump price, recorded inside approved_price; "
+                        "requires --approved-price")
+    p.add_argument("--checkout-attestation-json", type=Path, default=None,
+                   help="JSON object {url, attested_by, product, price {amount, currency}, optional "
+                        "bump}: the client's attestation of their own checkout")
+    p.add_argument("--checkout-result-json", type=Path, default=None,
+                   help="JSON object with read_back_url or native_page_url: the installed checkout")
     # Item 31 delivery fields (Amendment 4).
     p.add_argument("--publish-target", choices=["ghl", "vercel-embed", "vercel"])
     p.add_argument("--automation-scope", choices=["none", "workflows"], default="none")
@@ -913,6 +976,13 @@ def main(argv=None):
             "reason": a.handoff_missing_reason.strip(),
             "behavior": HANDOFF_BEHAVIOR,
             "step_order": list(HANDOFF_STEP_ORDER)}
+
+    checkout, why = checkout_records(a)
+    if why:
+        print(f"REFUSED: {why}")
+        return 2
+    if checkout:
+        intake.setdefault("funnel_handoff", {}).update(checkout)
 
     if launch_prepared is not None:
         updates, _prepared_artifacts = launch_prepared
