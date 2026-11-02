@@ -968,20 +968,33 @@ def _clip_reason(c):
     return None
 
 
-def _package_root(receipt, ans):
-    """Resolve the package consistently for export identity and completeness."""
+def _package_root(receipt, ans, selection=None):
+    """Resolve the delivery folder against the ONE selected run root.
+
+    The run the receipt claims is normalized ONCE by ``_selected_run_root``;
+    that same root resolves the folder here and the run's own authority in
+    ``_resolved_package_report``. A relative folder is therefore never
+    resolved against the current directory when the receipt names a run,
+    whichever alias (run_root, run_dir, root; receipt or answer) carried it.
+    With no run named the legacy cwd-relative resolution is kept.
+    """
     folder = (ans or {}).get("delivery_folder")
     if not isinstance(folder, str) or not folder.strip():
         raise ValueError("PACKAGE_COMPLETE missing delivery_folder")
     root = Path(folder.strip())
-    if not root.is_absolute():
-        base = receipt.get("run_root") or receipt.get("root") or ""
-        if base:
-            root = Path(str(base)) / root
+    if root.is_absolute():
+        return root
+    if selection is None:
+        selection = _selected_run_root(receipt, ans)
+    run_root, run_root_error = selection
+    if run_root_error is not None:
+        raise ValueError(run_root_error)
+    if run_root is not None:
+        return run_root / root
     return root
 
 
-def _q8_export(receipt, ans, codes, details):
+def _q8_export(receipt, ans, codes, details, selection=None):
     """Only lip-sync evidence for the hash-bound final export can answer Q8."""
     from final_assembler.master_provenance import sha256_file
     from lipsync_evidence import check_plan
@@ -992,7 +1005,9 @@ def _q8_export(receipt, ans, codes, details):
                 rc.get("produced_by", {}).get("module") != "final_assembler.assembler" or
                 rc.get("master_sha256") != sha256_file(master)):
             raise ValueError("final export or producer receipt does not match")
-        package_root = _package_root(receipt, _answer(receipt, "PACKAGE_COMPLETE"))
+        package_root = _package_root(
+            receipt, _answer(receipt, "PACKAGE_COMPLETE"),
+            selection=selection)
         clean_video = package_root / package_contract.ITEMS_BY_KEY["video"].files[1]
         if sha256_file(clean_video) != rc["master_sha256"]:
             raise ValueError("package clean video differs from the verified final export")
@@ -1023,7 +1038,7 @@ def _q8_export(receipt, ans, codes, details):
         return False
 
 
-def _q8_lip_sync(receipt, ans, codes, details):
+def _q8_lip_sync(receipt, ans, codes, details, selection=None):
     """Every lip-sync clip carries its lip_gate verdict and numbers. PASS and
     ACCEPT_WITH_FLAG clips pass. UNDETERMINED / UNMEASURABLE (a sung line) pass
     only after a person looked at the mouth strip (person_verdict PASS). A FAIL
@@ -1043,7 +1058,8 @@ def _q8_lip_sync(receipt, ans, codes, details):
         codes.append("%s:LIP_SYNC no per-clip lip_gate verdict list"
                      % CHECKLIST_NO_MEASUREMENT)
         return False
-    ok = _q8_export(receipt, ans, codes, details) and src is not None
+    ok = _q8_export(receipt, ans, codes, details,
+                    selection=selection) and src is not None
     flagged = []
     flags, tagged, tag_names = [], 0, set()
     for i, c in enumerate(clips):
@@ -1366,14 +1382,255 @@ def measure_villain_doctrine(shots, lines, runtime_s, villain=None):
 
 
 
-def _q12_package(receipt, ans, codes, qdetails):
-    """Q12 (DEL-13): the delivery folder carries all 12 package items.
+#: The receipt fields that can CLAIM a run identity or an obligation. They
+#: are data from outside the run: never authority, always reconciled with
+#: the run's own recorded answer before Q12 can pass.
+_RUN_ROOT_KEYS = ("run_root", "run_dir", "root")
+_CLAIM_KEYS = ("run_id", "chosen_length_s", "campaign", "purpose")
+
+
+def _allowed_lengths():
+    """The lengths the intake card can actually save (one registry).
+
+    ``suno_recipe.duration_registry.CANONICAL_DURATION_S`` is the ONE length
+    table every card and checker reads. Unavailable -> empty tuple, which
+    leaves the finite/positive/whole-number boundary in force.
+    """
+    try:
+        from suno_recipe.duration_registry import (  # noqa: PLC0415
+            CANONICAL_DURATION_S,
+        )
+        return tuple(int(seconds) for seconds in CANONICAL_DURATION_S)
+    except Exception:                    # noqa: BLE001 - absence never passes
+        return ()
+
+
+def _trusted_length(value):
+    """(seconds, None) or (None, why) for a receipt's claimed length.
+
+    A receipt is untrusted input. Booleans, strings, NaN/Infinity, non-finite
+    and non-integral values, non-positive values and lengths the card never
+    offers are refused BEFORE any int() conversion, so a corrupt receipt can
+    never crash evaluate() and never becomes a shortcut around a real run.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None, "not a number"
+    try:
+        number = float(value)
+    except (OverflowError, ValueError):
+        return None, "not finite"
+    if not math.isfinite(number):
+        return None, "not finite"
+    if number <= 0:
+        return None, "not positive"
+    allowed = _allowed_lengths()
+    if allowed and number not in allowed:
+        return None, "not an offered length"
+    if number != int(number):
+        return None, "not a whole number of seconds"
+    return int(number), None
+
+
+def _receipt_claims(receipt, ans):
+    """(claims, error) from the receipt's own run/obligation fields.
+
+    Conflicting values inside one receipt REFUSE. Nothing here is authority:
+    a claim is only ever compared with the resolved run's own record.
+    """
+    claims = {}
+    for source in (receipt, ans):
+        if not isinstance(source, dict):
+            continue
+        for key in _CLAIM_KEYS:
+            if key not in source or source[key] is None:
+                continue
+            value = source[key]
+            if key == "run_id":
+                if not isinstance(value, str) or not value.strip():
+                    return None, "the receipt's run_id is not an identifier"
+                value = value.strip()
+            elif key == "chosen_length_s":
+                value, why = _trusted_length(value)
+                if value is None:
+                    return None, ("the receipt's chosen_length_s is unusable "
+                                  "(%s)" % why)
+            elif key == "campaign":
+                if not isinstance(value, bool):
+                    return None, "the receipt's campaign flag is not a boolean"
+            elif key == "purpose":
+                if not isinstance(value, str) or not value.strip():
+                    return None, "the receipt's purpose is not a name"
+            prior = claims.get(key)
+            if prior is not None and prior != value:
+                return None, ("the receipt conflicts with itself on %s "
+                              "(%r / %r)" % (key, prior, value))
+            claims[key] = value
+    return claims, None
+
+
+#: Normalization failures that are EXPECTED for untrusted receipt text: an
+#: embedded NUL, an unreadable link and a vanished working directory raise
+#: ValueError / OSError; a ``~user`` whose home cannot be determined raises
+#: RuntimeError. Nothing broader is swallowed.
+_PATH_ERRORS = (OSError, ValueError, RuntimeError)
+
+
+def _normalized_run_path(value):
+    """(Path, None) or (None, why) for ONE claimed run path string.
+
+    Normalization is the trust boundary for a receipt's run aliases. A value
+    that cannot become a real path is REFUSED with the same selection error
+    the callers already report -- never kept as a trusted path and never
+    raised out of ``evaluate()``, so malformed receipt text cannot crash the
+    checker and cannot reach a structural completion.
+    """
+    if "\x00" in value:                     # before any filesystem call
+        return None, "run root %r is not a usable path" % value
+    try:
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        path = path.resolve()
+    except _PATH_ERRORS as exc:
+        return None, "run root %r is not a usable path: %s" % (value, exc)
+    return path, None
+
+
+def _selected_run_root(receipt, ans):
+    """(normalized Path, None) or (None, why) -- the ONE run selection.
+
+    ``run_root``, ``run_dir`` and ``root`` are three names for one claim, on
+    the receipt or on its answer. They are normalized here, once, so folder
+    resolution and the run's own authority lookup can never disagree. Equal
+    paths spelled differently are one root; distinct paths REFUSE. A value
+    that cannot be normalized REFUSES the selection.
+    """
+    claimed = []
+    for source in (receipt, ans):
+        if not isinstance(source, dict):
+            continue
+        for key in _RUN_ROOT_KEYS:
+            value = source.get(key)
+            if isinstance(value, str) and value.strip():
+                claimed.append((key, value.strip()))
+    if not claimed:
+        return None, None
+    selected = []
+    for _key, value in claimed:
+        path, path_error = _normalized_run_path(value)
+        if path_error is not None:
+            return None, path_error
+        if path not in selected:
+            selected.append(path)
+    if len(selected) > 1:
+        return None, "conflicting run roots: %s" % ", ".join(
+            "%s=%s" % (key, value) for key, value in claimed)
+    return selected[0], None
+
+
+def _explicit_run_root(receipt, ans):
+    """(normalized run root, None) or (None, conflict) for one run claim.
+
+    An explicit run path is a claim to run authority, so it must resolve or
+    refuse -- it may never fall back to a structural inspection. More than
+    one distinct path in one receipt is a conflict and refuses.
+    """
+    return _selected_run_root(receipt, ans)
+
+
+def _inferred_run_root(root):
+    """The governed run beside an in-place delivery folder, or None.
+
+    Only the two files that make a run authoritative are accepted here: an
+    inferred parent is never a claim to authority, so an unrelated folder
+    named ``control`` cannot turn a legacy receipt into a refused run.
+    """
+    parent = Path(root).parent
+    if ((parent / "control" / "intake-session.json").is_file() or
+            (parent / "control" / "state.sqlite3").is_file()):
+        return parent
+    return None
+
+
+def _claim_conflict(claims, context):
+    """Why the receipt disagrees with the run's own record, or None."""
+    run_id = claims.get("run_id")
+    if run_id is not None and run_id != context["run_id"]:
+        return ("the receipt names run %r but the resolved run is %r"
+                % (run_id, context["run_id"]))
+    length = claims.get("chosen_length_s")
+    if length is not None and length != context["chosen_length_s"]:
+        return ("the receipt claims %d seconds but the run's confirmed "
+                "intake is %d seconds"
+                % (length, context["chosen_length_s"]))
+    campaign = claims.get("campaign")
+    if campaign is not None and campaign is not context["campaign"]:
+        return ("the receipt claims campaign=%r but the run's purpose is %r"
+                % (campaign, context["purpose"]))
+    purpose = claims.get("purpose")
+    if purpose is not None and purpose != context["purpose"]:
+        return ("the receipt claims purpose %r but the run records %r"
+                % (purpose, context["purpose"]))
+    return None
+
+
+def _resolved_package_report(receipt, ans, root, selection=None):
+    """(report, authority, error) from the run's OWN recorded obligations.
+
+    A run folder named by the receipt wins; a delivery folder directly inside
+    a run infers its parent. Either way the run must RESOLVE through
+    ``run_inputs.delivery_context`` or Q12 refuses -- a named run whose
+    intake, saved length or purpose is missing, malformed or bound to another
+    run never falls back to the twelve-slot structural check.
+
+    No run (explicit or inferred) means structural inspection only: the
+    legacy report is still produced for history, but it is NOT authority and
+    can never grant a production completion. Receipt numerics and purpose
+    fields are compared with the run's record and never substituted for it.
+    """
+    claims, claim_error = _receipt_claims(receipt, ans)
+    if claim_error is not None:
+        return None, "resolved-run", claim_error
+    if selection is None:
+        selection = _selected_run_root(receipt, ans)
+    run_root, root_error = selection
+    if root_error is not None:
+        return None, "resolved-run", root_error
+    if run_root is None:
+        run_root = _inferred_run_root(root)
+    if run_root is not None:
+        from delivery_package import run_inputs as run_inputs  # noqa: PLC0415
+        try:
+            context = run_inputs.delivery_context(
+                run_root, run_id=claims.get("run_id"))
+        except run_inputs.RunInputError as exc:
+            return None, "resolved-run", str(exc)
+        conflict = _claim_conflict(claims, context)
+        if conflict is not None:
+            return None, "resolved-run", conflict
+        report = package_contract.verify_folder(
+            root, campaign_run=context["campaign"],
+            chosen_length_s=context["chosen_length_s"])
+        return report, "resolved-run", None
+    report = package_contract.verify_folder(root)
+    return report, "structural-only", (
+        "structural inspection only: the receipt names no run that resolves "
+        "its obligations, so PACKAGE_COMPLETE cannot be granted")
+
+
+def _q12_package(receipt, ans, codes, qdetails, selection=None):
+    """Q12 (DEL-13): the delivery folder carries exactly what the run OWES.
 
     The answer names the folder (delivery_folder, absolute or relative to
-    the receipt's run_root). The FOLDER is the evidence: every one of the 12
-    package items in core/delivery_package must be present and open. One
-    missing item fails Q12 and is named -- never a warning, never a pass by
-    absence. A folder that does not exist misses all 12.
+    the receipt's run_root). The FOLDER is the evidence, checked against the
+    SAME resolved obligation tuple the packaging call and the welcome sheet
+    consume (``run_inputs.delivery_context``): a 60/90/120 second ad owes no
+    clip files, an ordinary 3/5/10 minute ad owes its two clips, and a
+    campaign owes its two trailers plus its two ad clips under their exact
+    names. One missing item fails Q12 and is named -- never a warning, never
+    a pass by absence. A run that cannot prove its intake, saved length or
+    purpose refuses before any folder can pass. A structural inspection of a
+    legacy record is still reported, but it never grants a completion.
     """
     folder = ans.get("delivery_folder")
     if not (isinstance(folder, str) and folder.strip()):
@@ -1381,24 +1638,47 @@ def _q12_package(receipt, ans, codes, qdetails):
                      % CHECKLIST_NO_MEASUREMENT)
         return False
     named = folder.strip()
-    root = _package_root(receipt, ans)
-    qdetails["folder"] = str(root)
-    qdetails["items_expected"] = len(package_contract.PACKAGE_ITEMS)
+    if selection is None:
+        selection = _selected_run_root(receipt, ans)
+    _run_root, run_root_error = selection
+    qdetails["authority"] = "unresolved"
+    qdetails["items_expected"] = 0
     qdetails["items_present"] = 0
-    qdetails["missing_items"] = list(package_contract.ITEMS_BY_KEY)
+    qdetails["missing_items"] = []
+    qdetails["not_applicable"] = []
     qdetails["package_problems"] = []
+    if run_root_error is not None:
+        qdetails["authority"] = "resolved-run"
+        codes.append("%s: run context unverified (resolved-run): %s"
+                     % (CHECKLIST_PACKAGE_INCOMPLETE, run_root_error))
+        return False
+    root = _package_root(receipt, ans, selection=selection)
+    qdetails["folder"] = str(root)
     if not root.is_dir():
         codes.append("%s: delivery folder missing (%s)"
                      % (CHECKLIST_PACKAGE_INCOMPLETE, named))
         return False
-    report = package_contract.verify_folder(root)
-    qdetails["items_present"] = len(report["present"])
-    qdetails["missing_items"] = list(report["missing"])
-    qdetails["package_problems"] = report["problems"]
+    try:
+        report, authority, error = _resolved_package_report(
+            receipt, ans, root, selection=selection)
+    except (AttributeError, ImportError, OSError, TypeError, ValueError) as exc:
+        report, authority, error = None, "resolved-run", str(exc)
+    qdetails["authority"] = authority
+    if report is not None:
+        qdetails["items_expected"] = report["expected"]
+        qdetails["items_present"] = len(report["present"])
+        qdetails["missing_items"] = list(report["missing"])
+        qdetails["not_applicable"] = list(report.get("not_applicable", []))
+        qdetails["package_problems"] = report["problems"]
+    if error is not None:
+        codes.append("%s: run context unverified (%s): %s"
+                     % (CHECKLIST_PACKAGE_INCOMPLETE, authority, error))
+        return False
     if not report["ok"]:
-        codes.append("%s: missing %s"
-                     % (CHECKLIST_PACKAGE_INCOMPLETE,
-                        ", ".join(report["missing"])))
+        codes.append("%s (%s): missing %s"
+                     % (CHECKLIST_PACKAGE_INCOMPLETE, authority,
+                        ", ".join(report["missing"]) or
+                        "none; folder not clean"))
         return False
     return True
 
@@ -1426,6 +1706,10 @@ def evaluate(receipt):
     codes = []
     details = {}
     failing = []
+    # One run selection for the whole receipt: the SAME normalized root
+    # resolves the PACKAGE_COMPLETE folder and looks the run's authority up.
+    package_selection = _selected_run_root(
+        receipt, _answer(receipt, "PACKAGE_COMPLETE"))
     for q in QUESTIONS:
         ans = _answer(receipt, q)
         if ans is None:
@@ -1452,7 +1736,8 @@ def evaluate(receipt):
         elif q == "HONEST_RECEIPT":
             qok = _q7_honest(receipt, ans, qcodes, qdetails)
         elif q == "LIP_SYNC":
-            qok = _q8_lip_sync(receipt, ans, qcodes, qdetails)
+            qok = _q8_lip_sync(receipt, ans, qcodes, qdetails,
+                               selection=package_selection)
         elif q == "FIRST_SUNG":
             qok = _q9_first_sung(receipt, ans, qcodes, qdetails)
         elif q == "PICTURES_MATCH":
@@ -1460,7 +1745,8 @@ def evaluate(receipt):
         elif q == "GOALS_BAND":
             qok = _q11_goals(receipt, ans, qcodes, qdetails)
         elif q == "PACKAGE_COMPLETE":
-            qok = _q12_package(receipt, ans, qcodes, qdetails)
+            qok = _q12_package(receipt, ans, qcodes, qdetails,
+                               selection=package_selection)
         codes.extend(qcodes)
         details.update(qdetails)
         if qok:

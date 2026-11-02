@@ -14,7 +14,23 @@ Also proves the checklist ships verbatim next to the code and that the
 gate record wires into core/qc_gate.py (evaluate accepts it; a FAIL
 record fails the final_edit stage fail-closed).
 
-Run: python3 core/delivery_checklist/test_delivery_checklist.py
+W39 CONSUMERS-R2 makes Q12 authoritative: PACKAGE_COMPLETE is granted only
+against the run's OWN recorded obligations (core/delivery_package/run_inputs
+.delivery_context), never against a folder inspection. So every receipt here
+is evaluated against a REAL confirmed intake -- the real card session writer,
+the real stage store (control/state.sqlite3) and the run's saved length
+answer -- and names it through the receipt's own ``run_root``. A folder
+inspection with no resolvable run is still REPORTED (historical structure) but
+can never grant a completion, which the refusal case below pins down.
+
+The delivery folder stays a fixture: contract-valid bytes for the items the
+run owes (and a synthetic, never-rendered export master), because the subject
+here is the final checker, not a renderer. Nothing is mocked: no fake
+authority, no fake run inputs, no fake store.
+
+Run from the skill root (the real intake card resolves the live KIE model
+registry by walking up from the working directory):
+    python3 scripts/core/delivery_checklist/test_delivery_checklist.py
 """
 from __future__ import annotations
 
@@ -42,10 +58,64 @@ import qc_gate                                 # noqa: E402  (shared gate)
 # complete 12-item folder once and every case above reuses it.
 import shutil
 import delivery_package.contract as package_contract  # noqa: E402
+# W39: Q12 grants nothing without the run's own record, so the fixture writes
+# a REAL confirmed intake and names it in the receipt's run_root.
+from choice_card.intake_card import intake_session as session  # noqa: E402
+import delivery_package.run_inputs as run_inputs  # noqa: E402
 
 _PKG_TMP = Path(tempfile.mkdtemp(prefix="del13-checklist-"))
 _PKG_FOLDER = _PKG_TMP / "delivery"
 package_contract.write_reference_package(_PKG_FOLDER)
+
+#: What the fixture client actually typed to the real intake card. Three
+#: minutes + the two short cuts: the run owes the twelve base items, item 6
+#: as the contract's two clips.
+INTAKE_REPLIES = {
+    "offer": "New Chapter Coaching", "link": "https://example.com/coaching",
+    "audience": "successful founders 45-60",
+    "character": "Christine, a lawyer", "photos": "Generate the photos",
+    "models": "deepseek-chain builds, opus-chain checks", "spend": "$25",
+    "script": "1", "song": "1", "storyboard": "1",
+    "length": "3 minutes + 60s and 90s clips",
+}
+_RUN_CACHE = {}
+
+
+def confirm_run(run, *, length=None):
+    """Write a REAL confirmed intake (card session + stage store) into run.
+
+    One authority, the production one: ``intake_session.process`` writes
+    control/intake-session.json, the real control/state.sqlite3 store (its own
+    schema and migrations) and the saved answer records the run's obligations
+    are derived from. Nothing here is hand-shaped.
+    """
+    replies = dict(INTAKE_REPLIES)
+    if length is not None:
+        replies["length"] = length
+    run = Path(run)
+    run.mkdir(parents=True, exist_ok=True)
+    turn = session.process([], run_dir=run, purpose_flow=False,
+                           runtime="claude-nine")
+    for _ in range(40):
+        if turn.get("done"):
+            return turn["run_id"]
+        qid = turn.get("question_id")
+        raw = "yes" if qid == "recap" else replies.get(qid, "1")
+        turn = session.process(
+            [raw], run_dir=run, purpose_flow=False, runtime="claude-nine",
+            question_id=qid, question_digest=turn.get("question_digest"),
+            source="client", source_ref="del13:" + str(qid))
+        if turn.get("outcome") == "error":
+            raise AssertionError(turn)
+    raise AssertionError("intake did not reach its confirmation: %r" % turn)
+
+
+def real_run():
+    """The module's one confirmed run: (run_dir, run_id), written once."""
+    if "run" not in _RUN_CACHE:
+        run = _PKG_TMP / "run"
+        _RUN_CACHE["run"] = (run, confirm_run(run))
+    return _RUN_CACHE["run"]
 
 
 def tearDownModule():
@@ -79,6 +149,7 @@ def final_edit_record(run=RUN, stage=STAGE, verdict="PASS"):
 
 def full_answered_receipt():
     """A receipt answering all 7 questions with measured evidence."""
+    run, _run_id = real_run()
     receipt = {
         "SUNG": {"style": "sung", "sung_pct": 61.0, "spoken_pct": 39.0,
                  "detector": "singing-detector(vocal-stem)", "source_sung_pct":
@@ -138,6 +209,10 @@ def full_answered_receipt():
         ]},
         "PACKAGE_COMPLETE": {"delivery_folder": str(_PKG_FOLDER),
                              "source": "delivery_package.verify_folder"},
+        # W39: the run whose own record authorizes this completion. Q12
+        # resolves it through run_inputs.delivery_context; without it the
+        # folder would only ever be a structural inspection.
+        "run_root": str(run),
     }
 
     # Synthetic export proof: no rendering/provider call. Quantity policy is
@@ -810,12 +885,17 @@ class PackageFolderGate(unittest.TestCase):
         self.assertIn(dc.REASON_CODES["ANSWER_MISSING"], res["reason_code"])
 
     def test_folder_is_relative_to_the_receipt_run_root(self):
-        folder = self.folder()
+        # the run's OWN delivery folder, named relatively: the receipt's
+        # run_root is the authority the relative path resolves against.
+        run = self.tmp / "run-relative"
+        confirm_run(run)
+        folder = package_contract.write_reference_package(run / "delivery")
         r = self.receipt(folder)
         r["PACKAGE_COMPLETE"]["delivery_folder"] = "delivery"
-        r["run_root"] = str(self.tmp)
+        r["run_root"] = str(run)
         res = dc.evaluate(r)
         self.assertTrue(res["pass"], res["detail"])
+        self.assertEqual(res["evidence"]["authority"], "resolved-run")
 
 
 

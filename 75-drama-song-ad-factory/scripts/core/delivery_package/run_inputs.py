@@ -30,6 +30,13 @@ a live run)::
     11 character_images     character/records.json
     12 welcome_sheet        none (this page writes itself)
 
+``delivery_context`` is the ONE reader of what a run OWES: the intake
+admission (``production_process.inspect_intake``), the confirmed answer the
+client actually picked and ``control/method.json``. Packaging and the clip
+producer both resolve their obligations from it, so a short ad is never asked
+for clips it does not owe and a campaign is never satisfied with base clip
+names.
+
 Measured timing is the F17 receipt the run already holds
 (``music/word-timings.json``: ``{"words": [{"word", "start", "end"}],
 "source": ...}`` or the full ``provide_word_timings`` envelope). Nothing here
@@ -169,7 +176,9 @@ def chosen_length_s(run_dir):
     """The chosen ad length in seconds: card answer, else the brief.
 
     The same source the READY-TO-POST KIT reads, so the clips item and the
-    kit can never promise different lengths for one run.
+    kit can never promise different lengths for one run. Delivery uses
+    ``delivery_context`` instead: this reader also falls back to the brief,
+    which is input, never the client's confirmed choice.
     """
     answers = load_json_optional(run_dir, "card-answers.json", [])
     if isinstance(answers, dict):
@@ -186,6 +195,136 @@ def chosen_length_s(run_dir):
         raise RunInputError("the run carries no chosen ad length "
                             "(card-answers.json / brief.json)")
     return int(length)
+
+
+#: the purposes ``control/method.json`` may record (the card's own keys).
+PURPOSE_KEYS = ("campaign", "testimonial", "lesson", "short_post", "paid_ad")
+
+
+def delivery_context(run_dir, *, run_id=None):
+    """This run's OWN recorded delivery obligations -- read, never inferred.
+
+    Admission reuses ``production_process.inspect_intake`` (the existing
+    authority/run check, never a second one). The length comes from the
+    confirmed answer the client actually picked -- its stored option label, not
+    a current menu position or the brief. The purpose comes from
+    ``control/method.json`` and must agree with that same saved answer. A run
+    with no purpose card is accepted only when its session explicitly records
+    ``purpose_flow: false``; absent metadata never implies legacy.
+
+    Returns {"run_id", "purpose", "campaign", "method_run", "chosen_length_s",
+    "items", "not_applicable"}. Raises RunInputError before any producer runs
+    when the run cannot prove its own obligations.
+    """
+    root = as_run(run_dir)
+    try:
+        import production_process            # noqa: PLC0415 - core is on sys.path
+    except Exception as exc:                 # noqa: BLE001 - reported, never passed
+        raise RunInputError("production_process unavailable: %s" % exc) from None
+    admission = production_process.inspect_intake(root, run_id=run_id)
+    if not admission.get("ok"):
+        raise RunInputError("%s: %s" % (
+            admission.get("reason_code") or "RUN_CONTEXT_UNVERIFIED",
+            admission.get("detail") or "the run is not admitted"))
+    held = admission.get("run_id")
+    state = load_json(root, os.path.join("control", "intake-session.json"))
+    if not isinstance(state, dict):
+        raise RunInputError("control/intake-session.json is not an object")
+    if state.get("run_id") != held:
+        raise RunInputError("the intake session and the stage store identify "
+                            "different runs")
+    flow = state.get("purpose_flow")
+    if not isinstance(flow, bool):
+        raise RunInputError("the intake session does not record whether the "
+                            "purpose card ran")
+    records = state.get("answer_records")
+    if not isinstance(records, dict):
+        raise RunInputError("the intake session carries no answer records")
+    method_path = root / "control" / "method.json"
+    if method_path.exists():
+        method = load_json(root, os.path.join("control", "method.json"))
+        if not isinstance(method, dict):
+            raise RunInputError("control/method.json is not an object")
+    elif flow:
+        raise RunInputError("the purpose card ran but control/method.json is "
+                            "missing")
+    else:
+        method = None
+    if method is None:
+        if "purpose" in records:
+            raise RunInputError("the session holds a purpose answer its flow "
+                                "says was never asked")
+        purpose = None
+    else:
+        purpose = _saved_purpose(records)
+        recorded = method.get("purpose")
+        if recorded not in PURPOSE_KEYS:
+            raise RunInputError("control/method.json records no known purpose "
+                                "(%r)" % (recorded,))
+        if purpose != recorded:
+            raise RunInputError("the saved purpose (%s) and control/method.json "
+                                "(%s) disagree" % (purpose, recorded))
+    campaign = purpose == "campaign"
+    chosen = _saved_length_s(records, "episode_length" if campaign else "length")
+    if method is not None:
+        recorded_length = method.get("chosen_length_s")
+        if type(recorded_length) is not int or recorded_length != chosen:
+            raise RunInputError("control/method.json records %r seconds, the "
+                                "saved answer %d" % (recorded_length, chosen))
+    from delivery_package import contract as package_contract  # noqa: PLC0415
+    items = package_contract.required_items(chosen, campaign_run=campaign)
+    return {"run_id": held, "purpose": purpose, "campaign": campaign,
+            "method_run": method is not None, "chosen_length_s": chosen,
+            "items": items,
+            "not_applicable": (() if package_contract.short_cuts_owed(chosen)
+                               else ("clips",))}
+
+
+def _saved_option(record, qid):
+    """The option identity the client picked, from its own stored record."""
+    if not isinstance(record, dict):
+        raise RunInputError("the confirmed session carries no saved %s answer"
+                            % qid)
+    option = record.get("option")
+    if (not isinstance(option, dict) or
+            not isinstance(option.get("label"), str) or
+            not option["label"].strip()):
+        raise RunInputError("the saved %s answer carries no option label" % qid)
+    number = option.get("number_shown")
+    if type(number) is not int or number < 1:
+        raise RunInputError("the saved %s option carries no stable number" % qid)
+    return option
+
+
+def _saved_purpose(records):
+    """The purpose key the saved answers picked (campaign/lesson/...)."""
+    option = _saved_option(records.get("purpose"), "purpose")
+    where = 0
+    if option["number_shown"] == 4:
+        where = _saved_option(records.get("where"), "where")["number_shown"]
+    try:
+        from choice_card.intake_card import intake_card as card  # noqa: PLC0415
+        key = card._purpose_key(option["number_shown"], where)
+    except Exception as exc:                 # noqa: BLE001 - reported, never passed
+        raise RunInputError("the saved purpose cannot be read: %s" % exc) from None
+    if key not in PURPOSE_KEYS:
+        raise RunInputError("the saved purpose option reads %r, which is not a "
+                            "known purpose" % (key,))
+    return key
+
+
+def _saved_length_s(records, qid):
+    """The chosen length in seconds, from the label the client was shown."""
+    label = _saved_option(records.get(qid), qid)["label"]
+    from choice_card.video_models import video_models as models  # noqa: PLC0415
+    try:
+        seconds = models.length_seconds(label)
+    except (TypeError, ValueError) as exc:
+        raise RunInputError("the saved %s label %r has no length: %s"
+                            % (qid, label, exc)) from None
+    if type(seconds) is not int or seconds <= 0:
+        raise RunInputError("the saved %s label %r has no length" % (qid, label))
+    return seconds
 
 
 def _has_filter(exe, name):
@@ -247,7 +386,7 @@ def stage(item, folder):
     return [folder / name for name in item.files]
 
 
-__all__ = ["RunInputError", "DELIVERY_NAME", "TIMING_PATH", "as_run",
-           "delivery_dir", "load_json", "load_json_optional",
+__all__ = ["RunInputError", "DELIVERY_NAME", "TIMING_PATH", "PURPOSE_KEYS",
+           "as_run", "delivery_dir", "load_json", "load_json_optional",
            "approved_lines", "measured_cues", "audio_sources", "ad_title",
-           "chosen_length_s", "ffmpeg_with", "stage"]
+           "chosen_length_s", "delivery_context", "ffmpeg_with", "stage"]
