@@ -553,8 +553,10 @@ jobs:
             done
             echo ""
             echo "FIX: bump each affected skill-version.txt to the next patch version,"
+            echo "  AND sync that skill's SKILL.md frontmatter version: to match it,"
             echo "  then commit all changes together."
             echo "  e.g.:  echo 'v11.7.1' > <skill-dir>/skill-version.txt"
+            echo "  then set 'version: v11.7.1' in <skill-dir>/SKILL.md frontmatter"
             exit 1
           fi
 
