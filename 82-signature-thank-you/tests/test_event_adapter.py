@@ -25,7 +25,10 @@ TEST ONLY fixture data and proves only the offline contract:
     integrity hash;
 (11) DTY-21: a one-click extra under its own order ref groups with its
     main through parent_order_ref;
-(12) DTY-22: the confirmation observation posts to the S44 store once.
+(12) DTY-22: the confirmation observation posts to the S44 store once;
+(13) the snapshot integrity value is a keyed HMAC: live mode refuses
+    without a key, test_only uses the explicit test key, and a forger
+    who recomputes the old unkeyed sha256 no longer verifies.
 
 Stdlib unittest only.
 """
@@ -37,13 +40,16 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SKILL_DIR / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from purchase_event_adapter import (  # noqa: E402
+    SNAPSHOT_KEY_ENV,
     AdapterError,
+    snapshot_integrity,
     build_snapshot,
     build_snapshots,
     verify_snapshot_integrity,
@@ -143,7 +149,16 @@ def build(events, **overrides):
     return build_snapshots(events, **kwargs)
 
 
+FIXTURE_KEY = "fixture-hmac-key-for-tests-only"  # not a real secret
+
+
 class EventAdapterTest(unittest.TestCase):
+    def setUp(self):
+        # Live snapshots need a key; test_only ones are keyed by it too.
+        patcher = mock.patch.dict(os.environ, {SNAPSHOT_KEY_ENV: FIXTURE_KEY})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_1_main_plus_bump_single_event(self):
         # Main and bump arriving in ONE event stay in one snapshot.
         event = make_event("TEST-EVT-A1", ORDER_1, ["MAIN-A", "BUMP"])
@@ -361,6 +376,49 @@ class EventAdapterTest(unittest.TestCase):
         with self.assertRaises(AdapterError) as ctx:
             build([a, extra])
         self.assertIn("parent_order_cycle", str(ctx.exception))
+
+    def test_13_integrity_is_keyed_forgery_fails(self):
+        import hashlib
+        good = live_event()
+        store = FakeS44Store([good])
+        snapshot = build([good], evidence_store=store)[ORDER_1]
+        self.assertTrue(verify_snapshot_integrity(snapshot))
+
+        # The old attack: edit the snapshot and recompute the unkeyed sha256.
+        forged = copy.deepcopy(snapshot)
+        forged["line_items"][0]["amount_minor"] = 1
+        body = {k: v for k, v in forged.items() if k != "integrity"}
+        forged["integrity"] = hashlib.sha256(json.dumps(
+            body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        self.assertFalse(verify_snapshot_integrity(forged))
+        # Re-signing with a wrong key fails too; the right key still verifies.
+        with mock.patch.dict(os.environ, {SNAPSHOT_KEY_ENV: "attacker-key"}):
+            forged["integrity"] = snapshot_integrity(forged)
+        self.assertFalse(verify_snapshot_integrity(forged))
+        self.assertTrue(verify_snapshot_integrity(snapshot))
+        # A snapshot signed under one key does not verify under another.
+        with mock.patch.dict(os.environ, {SNAPSHOT_KEY_ENV: "rotated-key"}):
+            self.assertFalse(verify_snapshot_integrity(snapshot))
+
+        env_without_key = {k: v for k, v in os.environ.items()
+                           if k != SNAPSHOT_KEY_ENV}
+        with mock.patch.dict(os.environ, env_without_key, clear=True):
+            # Live mode refuses to sign, and refuses to verify, without a key.
+            with self.assertRaises(AdapterError) as ctx:
+                build([good], evidence_store=store)
+            self.assertIn("snapshot_key_required", str(ctx.exception))
+            self.assertFalse(verify_snapshot_integrity(snapshot))
+            # test_only uses the explicit test key: works, and is symmetric.
+            test_snapshot = build(
+                [make_event("TEST-EVT-K1", ORDER_1, ["MAIN-A"])])[ORDER_1]
+            self.assertTrue(verify_snapshot_integrity(test_snapshot))
+            test_snapshot["line_items"][0]["amount_minor"] = 1
+            self.assertFalse(verify_snapshot_integrity(test_snapshot))
+            # A forger cannot pass a live snapshot off with the public test key.
+            live_forgery = copy.deepcopy(snapshot)
+            live_forgery["test_only"] = False
+            live_forgery["integrity"] = "0" * 64
+            self.assertFalse(verify_snapshot_integrity(live_forgery))
 
     def _view(self, version):
         return {"tenant_id": "T", "location_id": "L", "launch_id": "LN",
