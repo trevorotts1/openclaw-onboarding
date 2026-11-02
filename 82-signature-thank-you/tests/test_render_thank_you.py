@@ -14,10 +14,11 @@ from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL_DIR / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import render_thank_you as rt  # noqa: E402
 from render_thank_you import format_amount, render_thank_you  # noqa: E402
-from thank_you_resolver import resolve_order_view  # noqa: E402
+from stamped_resolver import resolve_order_view  # noqa: E402
 
 REPO_ROOT = SKILL_DIR.parent
 TWIN = json.loads((REPO_ROOT / "71-blackceo-signature-page" / "references"
