@@ -1,5 +1,25 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.78: the directory-regression release (source and test surface reconciled)
+
+In plain English: the batch that shipped 1.0.75-1.0.77 left six directory-test failures behind. This release fixes the causes, not the expectations: the PDF contract check now runs before the renderer, the critical-front-door contract is checked on the code that can actually write config, the readiness fixture ships a real plugin package and gains a genuine missing-plugin negative, and the changelog no longer lags the version carriers. It also makes the critical contract run in the vendored distribution instead of assuming the onboarding repository layout. Source only: no box was written, no provider or Telegram call made, and no paid Council session run.
+
+- CLI contract order: `export --format pdf` without `--out` is a usage error (`COUNCIL_USAGE`, exit 2) before any renderer is invoked, so the refusal no longer depends on whether the host has a working headless browser.
+- Critical contract: the installer's `allowFrom` safety is asserted on executable code (no assignment or collection mutation) instead of a bare prose substring, and the policy module resolves in both the onboarding repository and a vendored distribution. Root-only carriers are checked where they are shipped and reported as `SKIP DISTRIBUTION_NOT_SHIPPED` where they are not.
+- Binding predicate regression: the empty/missing `allowFrom` refusal asserts its security fields (`ok:false`, `NO_AUTHORIZED_SENDERS`, no sender set) without weakening to a permissive object match.
+- Readiness fixture: `verify-council-box.test.sh` now installs the declared plugin package and a valid per-box binding in its fixture, and adds a negative case proving a genuinely missing plugin still reports `NOT_READY PLUGIN_NOT_INSTALLED`.
+- Version carriers: `version`, `skill-version.txt`, `SKILL.md` frontmatter and the regenerated manifest all read 1.0.78.
+
+## v1.0.77: the package-newline reseal
+
+- `skill-version.txt` regained its trailing newline and the package manifest and archive were resealed at 1.0.77 with no behavioural change.
+
+## v1.0.76: the shared binding predicate
+
+- `provision.mjs` and the existing-entry validator now share one fail-closed binding predicate (`lib/binding-predicate.mjs`), so they cannot classify an account's senders differently.
+- An explicit narrow binding may pass a wildcard account allowlist only when it names exactly one numeric sender id already enumerated in that account's `allowFrom` and equal to the conversation; automatic derivation still refuses a wildcard, and an empty allowlist authorizes nobody.
+- The account lookup is normalized the same way OpenClaw normalizes it, so a differently-cased account key cannot create a false negative.
+
 ## v1.0.75: the front-door install release (the interceptor ships, registers and provisions; an explicit ask cannot be routed away)
 
 In plain English: the client's explicit "ask the council" reached the model, the model followed the task-routing policy, and a Command Center card was created instead of a Council sitting. The chamber screen therefore never appeared. The deterministic interceptor that handles the ask before the model turn was shipped inside the skill but no install or update path ever deployed, registered or provisioned it. This release makes that one idempotent step and adds a narrow precedence rule to every place the routing policy is stamped or injected. It is a source package only: no box was written, no gateway restarted, no provider or Telegram call made, and no test suite run in this lane.

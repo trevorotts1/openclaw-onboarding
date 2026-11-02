@@ -744,28 +744,31 @@ test("a barrel whose relatives carry extensions passes the static closure", (t) 
 });
 
 test("a binding file can never widen the account allowlist", () => {
-  const binding = { telegram: { senderIds: ["sender-9"] } };
+  // The binding's senderIds are the explicit list; the fixture passes that
+  // list (not the whole binding object) to the shared predicate.
+  const explicit = ["999999"];
 
+  // The refusal is asserted by its security-relevant fields; the predicate may
+  // also carry a diagnostic `detail`, which must not turn this into a pass.
+  const emptySelection = authorizedSenderSelection({ allowFrom: [] }, explicit, "999999");
+  assert.equal(emptySelection.ok, false, "an empty allowFrom authorizes nobody, even with binding senders");
+  assert.equal(emptySelection.code, "NO_AUTHORIZED_SENDERS");
+  assert.equal(emptySelection.senderIds, undefined, "no sender set may be returned");
+  const missingSelection = authorizedSenderSelection({}, explicit, "999999");
+  assert.equal(missingSelection.ok, false, "a missing allowFrom authorizes nobody");
+  assert.equal(missingSelection.code, "NO_AUTHORIZED_SENDERS");
+  assert.equal(missingSelection.senderIds, undefined, "no sender set may be returned");
+
+  const notAuthorized = authorizedSenderSelection({ allowFrom: ["111111"] }, explicit, "999999");
+  assert.equal(notAuthorized.ok, false, "a binding may not introduce a sender the account never enumerated");
+  assert.equal(notAuthorized.code, "BINDING_SENDER_NOT_AUTHORIZED");
+  assert.deepEqual(notAuthorized.outside, ["999999"]);
   assert.deepEqual(
-    authorizedSenderSelection({ allowFrom: [] }, binding),
-    { ok: false, code: "NO_AUTHORIZED_SENDERS" },
-    "an empty allowFrom authorizes nobody, even with binding senders",
+    authorizedSenderSelection({ allowFrom: ["111111", "999999"] }, explicit, "999999"),
+    { ok: true, senderIds: ["999999"], source: "binding" },
   );
   assert.deepEqual(
-    authorizedSenderSelection({}, binding),
-    { ok: false, code: "NO_AUTHORIZED_SENDERS" },
-    "a missing allowFrom authorizes nobody",
-  );
-  assert.deepEqual(
-    authorizedSenderSelection({ allowFrom: ["sender-1"] }, binding),
-    { ok: false, code: "BINDING_SENDER_NOT_AUTHORIZED", outside: ["sender-9"] },
-  );
-  assert.deepEqual(
-    authorizedSenderSelection({ allowFrom: ["sender-1", "sender-9"] }, binding),
-    { ok: true, senderIds: ["sender-9"], source: "binding" },
-  );
-  assert.deepEqual(
-    authorizedSenderSelection({ allowFrom: ["sender-1"] }, null),
-    { ok: true, senderIds: ["sender-1"], source: "allowFrom" },
+    authorizedSenderSelection({ allowFrom: ["111111"] }, undefined, "111111"),
+    { ok: true, senderIds: ["111111"], source: "allowFrom" },
   );
 });
