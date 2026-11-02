@@ -66,9 +66,8 @@ may supply ONLY the keys this wrapper cannot source in-band:
   eligibility.already_owned_action  ("suppress_offer" |
                                      "route_to_final_thank_you")
   payment_capability                (object; only with real S06 evidence)
-Any other sidecar key fails closed. source_landing_copy_ref may also be
-sourced from a sibling result-landing.json in the work dir (the landing
-role's own result artifact path), which is where a real run records it.
+Any other sidecar key fails closed. source_landing_copy_ref comes only from
+the sidecar (UPS-18).
 
 Deterministic, stdlib only. Exit 0 ok, 2 fail-closed / consumer failure,
 3 usage.
@@ -608,20 +607,9 @@ def _source_landing_copy_ref(sidecar: Mapping[str, Any], work_dir: Path,
     ref = sidecar.get("source_landing_copy_ref")
     if isinstance(ref, str) and ref:
         return ref
-    landing_result = work_dir / "result-landing.json"
-    if landing_result.is_file():
-        try:
-            res = json.loads(landing_result.read_text(encoding="utf-8"))
-            artifacts = res.get("artifacts") or []
-            if artifacts and artifacts[0].get("path"):
-                return artifacts[0]["path"]
-        except ValueError:
-            pass
     problems.append(
-        "source_landing_copy_ref: no source names the landing copy this "
-        "upsell derives from (supply it in the enrichment sidecar, or run "
-        "after the landing role has written result-landing.json into the "
-        "work dir)")
+        "source_landing_copy_ref: the enrichment sidecar must name the landing "
+        "copy this upsell derives from")
     return None
 
 
@@ -932,7 +920,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         else work_dir / f"bundle-{args.slot}.json"
     cmd = [sys.executable, args.produce, "--instance", args.slot,
            "--request", str(enriched_path), "--copy", args.copy,
-           "--journey", str(journey_path), "--out", str(bundle_path)]
+           "--journey", str(journey_path), "--out", str(bundle_path), "--launch", args.launch]
     if args.copy_artifact_path:
         cmd += ["--copy-artifact-path", args.copy_artifact_path]
     proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -985,7 +973,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         images_dir = work_dir / f"images-{args.slot}"
         page_set.stage_visual_bible(getattr(args, "inputs", None), images_dir)
         found = {a["path"]: a for a in projected["artifacts"]}
-        found.update({a["path"]: a for a in page_set.design_artifacts(args.slot, images_dir)})
+        found.update({a["path"]: a for a in page_set.design_artifacts(args.slot, images_dir, with_provider=True)})
         projected["artifacts"] = [found[k] for k in sorted(found)]
     else:
         print(f"NOTE images: no --bridge-config, so no wireframes or mockups were made "

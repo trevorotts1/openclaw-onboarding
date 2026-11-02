@@ -312,7 +312,8 @@ def design_artifacts(page_key: str, run_dir: Path, relative: bool = False,
 # C3: the shared image inputs file
 # ---------------------------------------------------------------------------------------------
 IMAGE_INPUT_KEYS = ("design_style", "brand_file", "brand_owner", "image_cap", "image_provider",
-                    "paid_render_approval_ref", "design_prose_ref", "visual_bible_ref", "test_only")
+                    "paid_render_approval_ref", "design_prose_ref", "visual_bible_ref", "test_only",
+                    "design_style_source", "creative_direction")
 
 
 def load_image_inputs(path) -> Dict[str, Any]:
@@ -333,6 +334,12 @@ def load_image_inputs(path) -> Dict[str, Any]:
     style = doc.get("design_style")
     if style is not None and style not in STYLES:
         raise PageSetError(f"image inputs: design_style must be A, B or C (or null to ask), got {style!r}")
+    src = doc.get("design_style_source")
+    if src is not None and src not in ("client_choice", "default_to_confirm"):
+        raise PageSetError(f"image inputs: design_style_source must be client_choice or default_to_confirm, got {src!r}")
+    cd = doc.get("creative_direction")
+    if cd is not None and not isinstance(cd, str):
+        raise PageSetError("image inputs: creative_direction must be text or null")
     cap = doc.get("image_cap")
     if isinstance(cap, bool) or not isinstance(cap, int) or cap < 0:
         raise PageSetError(f"image inputs: image_cap must be an integer >= 0, got {cap!r}")

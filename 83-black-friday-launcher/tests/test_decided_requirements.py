@@ -34,9 +34,9 @@ def _base_intake_raw(mode: str = "single_simple", basis: str = "purchase") -> di
     if mode in ("multiple_options", "folded_levels"):
         offers.append({"offer_id": "main-2", "name": "Launch Plus", "role": "main",
                        "price": {"amount_minor": 99700, "currency": "USD"}})
-    attestation = {"basis": basis, "evidence_ref": "ev-1", "attested_by": "operator"}
+    attestation = {"basis": basis, "evidence_ref": "TEST-ONLY-EVIDENCE", "attested_by": "operator"}
     if basis == "purchase":
-        attestation["purchase_reference"] = "order-1"
+        attestation.update(purchase_reference="TEST-ONLY-PURCHASE-REFERENCE", amount_minor=49700, currency="USD")
     return {
         "schema_version": "1.0",
         "tenant_id": "tenant-a",

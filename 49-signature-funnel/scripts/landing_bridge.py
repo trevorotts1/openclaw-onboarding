@@ -813,6 +813,8 @@ def _produce(cfg: Dict[str, Any], req: Dict[str, Any], request_raw: bytes,
     inputs = cfg.get("image_inputs")
     if inputs and inputs.get("design_style"):
         intake_argv += ["--design-style", inputs["design_style"]]
+    if inputs and inputs.get("creative_direction"):
+        intake_argv += ["--creative-direction", inputs["creative_direction"]]
     _run(intake_argv, "Skill 71 write_intake (launch-context import)",
          timeout=600.0)
 
@@ -958,6 +960,11 @@ def bridge(request_path: Path, result_path: Path, work_dir: Path,
             f"{req['copy_profile']!r}, but the opt-in page is Long-Form only and "
             "the plan-bound copy profile cannot be changed here; dispatch the "
             "full funnel with copy_profile 'long-form'")
+    if cfg["page_version"] != req["copy_profile"]:
+        raise BridgeError(
+            f"page-request: the approved copy_profile is {req['copy_profile']!r} but landing.page_version is "
+            f"{cfg['page_version']!r}; the sales page is built only in the copy form the client approved "
+            "(Standard 12 or Long-Form 15)")
     brand_raw = _read_bytes(cfg["brand_file_cfg"], "brand file")
     if _sha256(brand_raw) != req["brand_hash"]:
         raise BridgeError(

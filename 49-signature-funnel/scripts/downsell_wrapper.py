@@ -247,6 +247,22 @@ BLOCKERS = (
 )
 
 
+def _resolve_image_model(provider: str) -> str:
+    """The image-to-image model the paid stages draw with, resolved through Skill 66 now (IMG-19).
+    The free stub provider has no model. Skill 66 missing or silent is a refusal, never a literal id."""
+    if provider == "stub":
+        return "STUB-NO-MODEL"
+    path = Path(__file__).resolve().parents[2] / "shared-utils" / "signature_launch" / "image_model.py"
+    try:
+        spec = importlib.util.spec_from_file_location("signature_launch_image_model", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.resolve()
+    except Exception as exc:  # ImageModelError, a missing file, a broken Skill 66 tree
+        raise WrapperError([f"images: Skill 66 did not resolve the image-to-image model ({exc}); "
+                            "nothing is drawn"])
+
+
 class WrapperError(ValueError):
     """Fail-closed refusal. `problems` names every fact that cannot be
     honestly supplied; the wrapper never guesses one."""
@@ -940,9 +956,7 @@ def _run_images(args, request: Mapping[str, Any],
     run_dir = Path(args.images_run_dir) if args.images_run_dir \
         else work_dir / f"{page_key}-images"
     py = sys.executable
-    model = args.image_model or (
-        "STUB-NO-MODEL" if args.image_provider == "stub"
-        else "gpt-image-2-5-sunburst-image-to-image")
+    model = args.image_model or _resolve_image_model(args.image_provider)
     steps = []
     for stage in IMAGE_STAGES:
         build = [py, str(scripts / "build_production_request.py"),

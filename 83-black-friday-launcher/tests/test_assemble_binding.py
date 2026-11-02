@@ -185,7 +185,7 @@ class BoundToDispatchTests(DispatchedRun):
         self.assertEqual(ok["manifest"]["dispatch_binding"]["intake_snapshot"], "verified")
         other = copy.deepcopy(self.doc)
         other["entitlement_attestation"] = {"basis": "brand_management_membership",
-                                            "evidence_ref": "ev-2", "attested_by": "operator"}
+                                            "evidence_ref": "TEST-ONLY-EVIDENCE", "attested_by": "operator"}
         err = self.refused("AF-LAUNCH-PKG-INTAKE-DRIFT", name="basis", doc=other, run=run)
         self.assertIn("entitlement", err.detail)
         # a practice run found beside the pieces (no named dispatch run) is held to the same snapshot
@@ -207,7 +207,7 @@ class BoundToDispatchTests(DispatchedRun):
             (run / package.INTAKE_SNAPSHOT_REL).unlink()
         other = copy.deepcopy(self.doc)
         other["entitlement_attestation"] = {"basis": "brand_management_membership",
-                                            "evidence_ref": "ev-2", "attested_by": "operator"}
+                                            "evidence_ref": "TEST-ONLY-EVIDENCE", "attested_by": "operator"}
         with self.assertRaises(package.PackageError) as ctx:
             self.assemble(name="real-pkg", doc=other, run=run)
         self.assertIn(ctx.exception.code, {"AF-LAUNCH-PKG-INTAKE-MISSING", "AF-LAUNCH-PKG-INTAKE-DRIFT"})

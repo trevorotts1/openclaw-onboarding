@@ -54,8 +54,9 @@ def raw_intake(mode: str = "single_simple", rich: bool = True, bump: bool = Fals
         "launch_id": "bf-2026", "revision": 1, "journey_mode": mode,
         "brand": {"ref": "brand-a", "hash": "a" * 64}, "copy_profile": "signature_12_section",
         "approval": {"ref": "approval-1", "hash": "b" * 64},
-        "entitlement_attestation": {"basis": "purchase", "evidence_ref": "ev-1",
-                                    "attested_by": "operator", "purchase_reference": "order-1"},
+        "entitlement_attestation": {"basis": "purchase", "evidence_ref": "TEST-ONLY-EVIDENCE",
+                                    "attested_by": "operator", "purchase_reference": "TEST-ONLY-PURCHASE-REFERENCE",
+                                "amount_minor": 49700, "currency": "USD"},
         "offers": offers,
     }
     if rich:
