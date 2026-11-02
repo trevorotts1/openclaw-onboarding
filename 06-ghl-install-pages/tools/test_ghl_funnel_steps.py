@@ -173,3 +173,115 @@ def test_plan_refuses_invented_or_disagreeing_prices(launch):
     wrong["BUMP"]["amount_minor"] += 1
     with pytest.raises(fs.FunnelPlanError):
         fs.build_funnel_plan(graph, offers, wrong)
+
+
+# ---- concrete driver (RestCanvasFunnelDriver) -------------------------------
+import re  # noqa: E402
+from urllib.parse import urlsplit  # noqa: E402
+
+# TEST-ONLY capture: invented strings, never a real GHL surface (CHK-19 is open).
+SYN_CAPTURE = {
+    "synthetic": True,
+    "step_types": {"landing": "syn_landing", "order_form": "syn_order_form", "upsell": "syn_upsell",
+                   "downsell": "syn_downsell", "thank_you": "syn_thank_you"},
+    "attach_price": {"method": "POST", "path": "/syn/p/{step_id}/price",
+                     "body": {"product": "{product_id}", "price": "{price_id}"}},
+    "place_element": {"method": "POST", "path": "/syn/p/{step_id}/el",
+                      "body": {"type": "{kind}", "price": "{price_id}", "checked": "{default_checked}"}},
+    "set_action": {"method": "POST", "path": "/syn/p/{step_id}/act",
+                   "body": {"which": "{action}", "goTo": "{target_step_id}"}},
+    "payment_status": {"method": "GET", "path": "/syn/pay?l={location_id}",
+                       "connected_path": "stripe.on", "provider_path": "stripe.name"},
+    "read_back_fields": {"steps_path": "data.steps", "step_page_id_path": "pages.0",
+                         "step_type_path": "type", "price_ids_path": "prices",
+                         "elements_path": "elements", "element_kind": "type",
+                         "element_price_id": "price", "element_default_checked": "checked",
+                         "accept_target_path": "act.accept", "decline_target_path": "act.decline"},
+}
+
+
+class SynGhl:
+    """In-memory GHL: answers the driver's fetch JS from what was written."""
+
+    def __init__(self):
+        self.evals, self.steps, self.pages, self.create_bodies = [], [], {}, []
+
+    def __call__(self, js):
+        self.evals.append(js)
+        m = re.search(r'fetch\("([^"]+)", \{method:"(\w+)"', js)
+        b = re.search(r"JSON\.stringify\((.*)\)\}\);", js)
+        method, url = m.group(2), urlsplit(m.group(1))
+        body = json.loads(b.group(1)) if b else None
+        path = url.path
+        if path == "/funnels/funnel/create-step":
+            self.create_bodies.append(body)
+            pid = f"pg{len(self.steps) + 1}"
+            self.steps.append({"type": body["step"]["type"], "pages": [pid]})
+            self.pages[pid] = {"prices": [], "elements": [], "act": {}}
+            seg = ["funnel_pages", pid]
+            return {"status": 201, "ok": True, "body": {"page": {"_ref": {"_path": {"segments": seg}}}}}
+        if path.startswith("/funnels/funnel/fetch/"):
+            return {"status": 200, "ok": True, "body": {"data": {"steps": self.steps}}}
+        if path.startswith("/funnels/page/"):
+            return {"status": 200, "ok": True, "body": self.pages[path.rsplit("/", 1)[1]]}
+        if path.startswith("/syn/pay"):
+            return {"status": 200, "ok": True, "body": {"stripe": {"on": True, "name": "stripe"}}}
+        page = self.pages[path.split("/")[3]]
+        if path.endswith("/price"):
+            page["prices"].append(body["price"])
+        elif path.endswith("/el"):
+            page["elements"].append({"type": body["type"], "price": body["price"], "checked": body["checked"]})
+        else:
+            page["act"][body["which"]] = body["goTo"]
+        return {"status": 200, "ok": True, "body": {}}
+
+
+def test_concrete_driver_implements_contract():
+    for name in ("payment_provider_status", "create_step", "attach_price", "place_element",
+                 "set_action", "read_back", "preflight"):
+        assert callable(getattr(fs.RestCanvasFunnelDriver, name))
+
+
+def test_concrete_driver_refuses_without_capture(launch, tmp_path):
+    graph, offers, catalog = launch
+    plan = fs.build_funnel_plan(graph, offers, catalog)
+    ghl = SynGhl()
+    d = fs.RestCanvasFunnelDriver(run_eval=ghl, location_id=LOC, capture=None)
+    with pytest.raises(fs.CommerceCaptureRequired, match="CAPTURE-GATE:CHK-19"):
+        _install(plan, d)
+    assert ghl.evals == []
+    # a synthetic capture is refused in production mode (allow_synthetic False) too
+    with pytest.raises(fs.CommerceCaptureRequired, match="synthetic_fixture"):
+        _install(plan, fs.RestCanvasFunnelDriver(ghl, LOC, SYN_CAPTURE))
+    assert ghl.evals == []
+    p = tmp_path / "cap.json"
+    p.write_text(json.dumps(SYN_CAPTURE))
+    with pytest.raises(fs.CommerceCaptureRequired, match="synthetic_fixture"):
+        fs.load_commerce_capture(str(p))
+    p.write_text(json.dumps({k: v for k, v in SYN_CAPTURE.items() if k != "synthetic"}))
+    assert fs.load_commerce_capture(str(p))["step_types"]["upsell"] == "syn_upsell"
+
+
+def test_concrete_driver_end_to_end_on_synthetic_capture(launch):
+    graph, offers, catalog = launch
+    plan = fs.build_funnel_plan(graph, offers, catalog)
+    ghl = SynGhl()
+    d = fs.RestCanvasFunnelDriver(ghl, LOC, SYN_CAPTURE, allow_synthetic=True)
+    out = _install(plan, d)
+    assert out["ready"] is True and out["mismatches"] == [] and out["manual_gates"] == []
+    assert {b["step"]["type"] for b in ghl.create_bodies} == set(SYN_CAPTURE["step_types"].values())
+    assert "optin_funnel_page" not in json.dumps(ghl.create_bodies)
+    by = {r["step_id"]: r for r in out["readback"]["steps"]}
+    ids = {s["role"]: out["step_ids"][s["page_id"]] for s in plan["steps"]}
+    assert [by[ids[r]]["type"] for r in ("checkout", "upsell_1", "downsell_1", "thank_you")] == [
+        "order_form", "upsell", "downsell", "thank_you"]
+    assert sorted(by[ids["checkout"]]["price_ids"]) == [
+        "price_MAIN-ELITE", "price_MAIN-ESS", "price_MAIN-PRO"]
+    assert {"kind": "order_bump", "price_id": "price_BUMP", "default_checked": False} in by[ids["checkout"]]["elements"]
+    u1 = next(s for s in plan["steps"] if s["role"] == "upsell_1")
+    assert by[ids["upsell_1"]]["accept_target"] == out["step_ids"][u1["accept_to"]]
+    assert by[ids["upsell_1"]]["decline_target"] == out["step_ids"][u1["decline_to"]]
+    # no captured payment route -> connected None -> named manual gate (fail closed)
+    cap = {k: v for k, v in SYN_CAPTURE.items() if k != "payment_status"}
+    out2 = _install(plan, fs.RestCanvasFunnelDriver(SynGhl(), LOC, cap, allow_synthetic=True))
+    assert out2["manual_gates"] == [fs.PAYMENT_GATE] and out2["ready"] is False

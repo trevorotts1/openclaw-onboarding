@@ -35,16 +35,28 @@ FAIL CLOSED
     is refused. There is no default verifier: the caller must pass the Command Center
     verifier (a service the AI session cannot write).
 
+CONCRETE DRIVER: :class:`RestCanvasFunnelDriver` implements the contract over the
+live-captured REST routes in ghl_rest_canvas (create-step, funnel fetch, page read),
+through a caller-bound ``run_eval(js)`` (an authenticated agent-browser eval; this
+module never launches a browser). Every commerce surface that SELECTORS-LIVE-funnel.md
+does not capture (native step-type strings, price attach, order-form/bump elements,
+accept/decline actions, read-back field paths, payment-provider status) comes ONLY
+from a ``capture`` dict loaded by :func:`load_commerce_capture`; without it the driver
+refuses before any write (:class:`CommerceCaptureRequired`, ``CAPTURE-GATE:CHK-19``).
+
 NOT DONE HERE (ceiling): navigation edges that are not commerce outcomes
 (interest_submitted, selection_validated) are the page buttons of non-purchase pages
-and are not set; the live capture of the order-form surface waits for an approved
-test location (DECISIONS CHK-19).
+and are not set; the live commerce capture and the live read-back wait for an
+approved test location (DECISIONS CHK-19). ``install_funnel`` returns the read-back
+as ``out["readback"]`` - the object the S06-02 live proof inspects.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 from typing import Any, Callable, Dict, List, Optional
+
+import ghl_rest_canvas as _rc
 
 # route role -> native funnel step type
 STEP_TYPES = {
@@ -74,6 +86,10 @@ class FunnelPlanError(ValueError):
 
 class ApprovalRefused(PermissionError):
     """A write was attempted without a verified approval record."""
+
+
+class CommerceCaptureRequired(RuntimeError):
+    """The live commerce capture is missing/invalid/synthetic: no write may happen."""
 
 
 def _price(offer: Dict[str, Any], catalog: Dict[str, Any]) -> Dict[str, Any]:
@@ -188,6 +204,9 @@ def install_funnel(plan: Dict[str, Any], driver: Any, funnel_id: str, location_i
                    verifier: Optional[Callable[[Dict[str, Any]], bool]]) -> Dict[str, Any]:
     """Create/attach/place/link then read back. Refuses every write without approval."""
     require_approval(approval, plan, location_id, verifier)
+    preflight = getattr(driver, "preflight", None)
+    if preflight:
+        preflight()  # fail closed on a missing capture BEFORE the first write
     gates = [g for g in [payment_gate(driver.payment_provider_status(location_id))] if g]
     ids: Dict[str, str] = {}
     for s in plan["steps"]:
@@ -204,6 +223,169 @@ def install_funnel(plan: Dict[str, Any], driver: Any, funnel_id: str, location_i
             driver.set_action(sid, "accept", ids[s["accept_to"]])
         if s["decline_to"]:
             driver.set_action(sid, "decline", ids[s["decline_to"]])
-    mismatches = verify_funnel_readback(plan, driver.read_back(funnel_id), ids)
+    readback = driver.read_back(funnel_id)
+    mismatches = verify_funnel_readback(plan, readback, ids)
     return {"step_ids": ids, "manual_gates": gates, "mismatches": mismatches,
-            "ready": not gates and not mismatches}
+            "ready": not gates and not mismatches, "readback": readback}
+
+
+# ---------------------------------------------------------------------------
+# Concrete driver (REST canvas) + capture gate
+# ---------------------------------------------------------------------------
+STEP_TYPE_KEYS = ("landing", "order_form", "upsell", "downsell", "thank_you")
+ROUTE_KEYS = ("attach_price", "place_element", "set_action")  # {method, path, body}
+READ_BACK_KEYS = ("steps_path", "step_page_id_path", "step_type_path", "price_ids_path",
+                  "elements_path", "element_kind", "element_price_id",
+                  "element_default_checked", "accept_target_path", "decline_target_path")
+COMMERCE_CAPTURE_KEYS = ("step_types",) + ROUTE_KEYS + ("read_back_fields",)
+
+
+def _ok_str(v: Any) -> bool:
+    return isinstance(v, str) and bool(v.strip())
+
+
+def validate_commerce_capture(capture: Any) -> List[str]:
+    """Problems (surface names) with a commerce capture; [] means usable. Pure."""
+    if not isinstance(capture, dict):
+        return list(COMMERCE_CAPTURE_KEYS)
+    bad: List[str] = []
+    st = capture.get("step_types")
+    if not (isinstance(st, dict) and all(_ok_str(st.get(k)) for k in STEP_TYPE_KEYS)):
+        bad.append("step_types")
+    for k in ROUTE_KEYS + ("payment_status",):
+        r = capture.get(k)
+        if r is None and k == "payment_status":
+            continue  # optional: absent -> payment gate stays closed
+        if not (isinstance(r, dict) and r.get("method") in ("GET", "POST", "PUT")
+                and _ok_str(r.get("path")) and r["path"].startswith("/")):
+            bad.append(k)
+        elif k == "payment_status" and not (_ok_str(r.get("connected_path"))
+                                            and _ok_str(r.get("provider_path"))):
+            bad.append(k)
+    rb = capture.get("read_back_fields")
+    if not (isinstance(rb, dict) and all(_ok_str(rb.get(k)) for k in READ_BACK_KEYS)):
+        bad.append("read_back_fields")
+    return bad
+
+
+def _refuse(problems: List[str]) -> "CommerceCaptureRequired":
+    return CommerceCaptureRequired("; ".join(f"CAPTURE-GATE:CHK-19:{p}" for p in problems))
+
+
+def load_commerce_capture(path: str) -> Dict[str, Any]:
+    """The only production ingress for a commerce capture: refuses synthetic/invalid."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            cap = json.load(f)
+    except (OSError, ValueError) as exc:
+        raise _refuse([f"capture_file({type(exc).__name__})"])
+    if isinstance(cap, dict) and cap.get("synthetic"):
+        raise _refuse(["synthetic_fixture"])
+    problems = validate_commerce_capture(cap)
+    if problems:
+        raise _refuse(problems)
+    return cap
+
+
+def _dig(obj: Any, path: str) -> Any:
+    """Dotted-path lookup (list indexes are digits); None when any hop is missing."""
+    for part in path.split("."):
+        if isinstance(obj, list) and part.isdigit() and int(part) < len(obj):
+            obj = obj[int(part)]
+        elif isinstance(obj, dict) and part in obj:
+            obj = obj[part]
+        else:
+            return None
+    return obj
+
+
+def _fill(tpl: Any, vals: Dict[str, Any]) -> Any:
+    """Substitute {name} in a captured route template; a lone "{name}" keeps its type."""
+    if isinstance(tpl, dict):
+        return {k: _fill(v, vals) for k, v in tpl.items()}
+    if isinstance(tpl, list):
+        return [_fill(v, vals) for v in tpl]
+    if isinstance(tpl, str):
+        if tpl.startswith("{") and tpl.endswith("}") and tpl[1:-1] in vals:
+            return vals[tpl[1:-1]]
+        for k, v in vals.items():
+            tpl = tpl.replace("{" + k + "}", str(v))
+    return tpl
+
+
+class RestCanvasFunnelDriver:
+    """Funnel driver over the captured REST routes. ``run_eval(js) -> {status, ok, body}``
+    is bound by the caller to an authenticated agent-browser session
+    (``ghl_rest_canvas.agent_browser_eval_cmd``); no browser is launched here."""
+
+    def __init__(self, run_eval: Callable[[str], Dict[str, Any]], location_id: str,
+                 capture: Optional[Dict[str, Any]], allow_synthetic: bool = False):
+        self.run_eval, self.location_id = run_eval, location_id
+        self.capture, self.allow_synthetic = capture, allow_synthetic
+
+    def preflight(self) -> None:
+        problems = validate_commerce_capture(self.capture)
+        if isinstance(self.capture, dict) and self.capture.get("synthetic") and not self.allow_synthetic:
+            problems.append("synthetic_fixture")
+        if problems:
+            raise _refuse(problems)
+
+    def _call(self, method: str, path: str, body: Optional[Dict[str, Any]] = None,
+              expect: Optional[int] = None) -> Any:
+        res = self.run_eval(_rc.build_fetch_js(method, path, body))
+        if (res.get("status") != expect) if expect else (not res.get("ok")):
+            raise RuntimeError(f"{method} {path.split('?')[0]} -> HTTP {res.get('status')}")
+        return res.get("body")
+
+    def _route(self, key: str, **vals: Any) -> None:
+        self.preflight()
+        r = self.capture[key]
+        vals.update(location_id=self.location_id)
+        self._call(r["method"], _fill(r["path"], vals), _fill(r.get("body"), vals) if r.get("body") else None)
+
+    def payment_provider_status(self, location_id: str) -> Dict[str, Any]:
+        r = (self.capture or {}).get("payment_status") if isinstance(self.capture, dict) else None
+        if not r:
+            return {"connected": None, "provider": None}  # no captured route -> manual gate
+        body = self._call(r["method"], _fill(r["path"], {"location_id": location_id}))
+        c = _dig(body, r["connected_path"])
+        return {"connected": c if isinstance(c, bool) else None, "provider": _dig(body, r["provider_path"])}
+
+    def create_step(self, funnel_id: str, name: str, step_type: str) -> str:
+        self.preflight()
+        ev = _rc.step_create(funnel_id, name, name.replace("_", "-"),
+                             step_type=self.capture["step_types"][step_type])["eval"]
+        res = self.run_eval(ev)
+        if res.get("status") != 201:
+            raise RuntimeError(f"create-step {name} -> HTTP {res.get('status')}")
+        return _rc.created_page_id(res.get("body"))
+
+    def attach_price(self, step_id: str, product_id: str, price_id: str) -> None:
+        self._route("attach_price", step_id=step_id, product_id=product_id, price_id=price_id)
+
+    def place_element(self, step_id: str, kind: str, price_id: str, default_checked: Optional[bool]) -> None:
+        self._route("place_element", step_id=step_id, kind=kind, price_id=price_id,
+                    default_checked=default_checked)
+
+    def set_action(self, step_id: str, action: str, target_step_id: str) -> None:
+        self._route("set_action", step_id=step_id, action=action, target_step_id=target_step_id)
+
+    def read_back(self, funnel_id: str) -> Dict[str, Any]:
+        self.preflight()
+        f, native = self.capture["read_back_fields"], {v: k for k, v in self.capture["step_types"].items()}
+        fetched = self._call("GET", _rc.funnel_fetch_path(funnel_id))
+        out = []
+        for st in _dig(fetched, f["steps_path"]) or []:
+            pid = _dig(st, f["step_page_id_path"])
+            if not pid:
+                continue
+            page = self._call("GET", _rc.page_read_path(str(pid), self.location_id))
+            els = [{"kind": _dig(e, f["element_kind"]), "price_id": _dig(e, f["element_price_id"]),
+                    "default_checked": _dig(e, f["element_default_checked"])}
+                   for e in _dig(page, f["elements_path"]) or []]
+            ntype = _dig(st, f["step_type_path"])
+            out.append({"step_id": str(pid), "type": native.get(ntype, ntype),
+                        "price_ids": list(_dig(page, f["price_ids_path"]) or []), "elements": els,
+                        "accept_target": _dig(page, f["accept_target_path"]),
+                        "decline_target": _dig(page, f["decline_target_path"])})
+        return {"steps": out}
