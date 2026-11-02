@@ -60,29 +60,25 @@ with a `provenance` block and an optional `launch_id` binding added.
 
 ## Approval discipline
 
-The adapter replicates the S49 plan gate (`validate_launch_plan.py`
-`_check_approval_record`) rather than inventing a second standard:
+The adapter calls the shared `approval_record.verify` (the same gate
+Skill 49 uses, in `shared-utils/signature_launch_contract/`) and no longer
+replicates `_check_approval_record`:
 
 - The plan document hash is recomputed with the S49 canonicalization
   (the launch record minus `status` and `plan_approval_ref`, keys sorted,
   compact separators, sha256). It must equal the session plan_hash and the
-  approval subject_hash. Any commercial change after approval invalidates
+  approval `plan_hash`. Any commercial change after approval invalidates
   the brief.
-- The approval must be of type launch_plan_build, its scope list must
+- The approval must be of kind launch_plan_build, its scope list must
   contain launch_plan_build, it must not be revoked, its verification class
   must be recognized, and it must carry the platform reference of the
   client's own response.
-- The approver must be the client identity recorded in the intake session,
-  and must differ from the worker identity operating the adapter when one is
-  supplied. A bare `"approved": true` flag anywhere is never read as
-  evidence.
-
-One deliberate difference from the S49 gate: the adapter does not apply the
-gate's 72 hour default expiry. The gate checks freshness when the approval
-is acted on for the build; the adapter is a downstream consumer verifying
-the binding (hash, identity, scope, revocation), which does not decay, and
-it refuses future-dated records. Operators who need a freshness window can
-impose one at the run level.
+- The approver (`client_identity`) must be the client identity recorded in
+  the intake session, and must differ from the worker identity operating the
+  adapter when one is supplied. A bare `"approved": true` flag anywhere is
+  never read as evidence.
+- Expiry is the record's own `expires_at`; the old "no 72 hour expiry"
+  difference between the adapter and the gate is gone.
 
 ## Field states
 

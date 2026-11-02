@@ -9,7 +9,7 @@ import json
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -53,11 +53,10 @@ def approved_launch(mode="multiple_options"):
     launch["route_graph_ref"] = f"route-graph:{launch['launch_id']}:rev{launch['revision']}"
     launch["route_graph_hash"] = clr.graph_hash(graph)
     launch["status"], launch["plan_approval_ref"] = "approved", "APPR-1"
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    approval = {"schema_version": "1.0", "approval_id": "APPR-1", "subject_type": "launch_plan_build",
-                "subject_hash": vlp.plan_document_hash(launch), "owner_identity_ref": "client-1",
-                "source_message_ref": "m-1", "recorded_at": now, "scope": ["launch_plan_build"],
-                "revoked": False,
+    approval = {"schema_version": "1.0", "approval_id": "APPR-1", "kind": "launch_plan_build",
+                "plan_hash": vlp.plan_document_hash(launch), "client_identity": "client-1",
+                "source_message_ref": "m-1", "scope": ["launch_plan_build"],
+                "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "revoked": False,
                 "verification_class": "recorded_consent_not_cryptographically_sealed"}
     return launch, approval
 

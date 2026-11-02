@@ -1181,7 +1181,8 @@ def approve(session: Dict[str, Any], approval: Dict[str, Any],
     assertion = vlp.assert_plan_build_approved(
         session["plan"], approval,
         client_identity_ref=session["client_identity_ref"],
-        worker_identity_ref=worker_identity_ref)
+        worker_identity_ref=worker_identity_ref,
+        test_only=(session["plan"].get("test_only") is True))
     # Pin the FULL plan the client approved, next to the record the gate bound.
     # The digest is canonical JSON; a later rebuild that differs proves the plan
     # changed after approval (plan_hash_mismatch), never a second approval.
@@ -1286,13 +1287,13 @@ def _self_test() -> int:
         base.update(kw)
         return new_session(**base)
 
+    from datetime import datetime, timedelta, timezone
+
     def approval_for(session, **over):
-        a = {"schema_version": "1.0", "approval_id": "APPR-1",
-             "subject_type": "launch_plan_build",
-             "subject_hash": session["plan_hash"],
-             "owner_identity_ref": "client-1",
-             "source_message_ref": "msg-123", "recorded_at": _now(),
-             "scope": ["launch_plan_build"], "revoked": False,
+        a = {"schema_version": "1.0", "approval_id": "APPR-1", "kind": "launch_plan_build",
+             "plan_hash": session["plan_hash"], "client_identity": "client-1",
+             "source_message_ref": "msg-123", "scope": ["launch_plan_build"],
+             "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "revoked": False,
              "verification_class": "recorded_consent_not_cryptographically_sealed"}
         a.update(over)
         return a
@@ -1335,8 +1336,8 @@ def _self_test() -> int:
     say("Sunrise Coaching" in summary and "497" in summary,
         "expert: summary names the real product and price")
     a = approve(s, approval_for(s), worker_identity_ref="worker-9")
-    say(s["state"] == "approved" and a["verification_class"].startswith("recorded"),
-        "expert: approval binds and is honestly classed as recorded consent")
+    say(s["state"] == "approved" and a["verification_class"] == "local_test_record",
+        "expert: approval binds and is honestly classed as a local test record")
     begin_build(s)
     say(s["state"] == "building" and s["plan"]["status"] == "building",
         "approved session enters building (doc 03 §3, D4)")
@@ -1371,19 +1372,19 @@ def _self_test() -> int:
         "presenting the plan moves recommendation_ready -> "
         "awaiting_plan_approval (D4)")
     try:
-        approve(s2, approval_for(s2, owner_identity_ref="someone-else"),
+        approve(s2, approval_for(s2, client_identity="someone-else"),
                 worker_identity_ref="worker-9")
         say(False, "unrelated client identity must not approve")
     except vlp.ApprovalError:
         say(True, "unrelated client identity cannot approve another launch")
     try:
-        approve(s2, approval_for(s2, owner_identity_ref="worker-9"),
+        approve(s2, approval_for(s2, client_identity="worker-9"),
                 worker_identity_ref="worker-9")
         say(False, "worker self-approval must fail")
     except vlp.ApprovalError:
         say(True, "worker cannot self-approve (identity == worker refused)")
     try:
-        approve(s2, approval_for(s2, subject_hash="0" * 64),
+        approve(s2, approval_for(s2, plan_hash="0" * 64),
                 worker_identity_ref="worker-9")
         say(False, "stale hash approval must fail")
     except vlp.ApprovalError:

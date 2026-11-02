@@ -404,7 +404,7 @@ def _check_scoped_approvals(launch: Dict[str, Any],
     for need in needed:
         candidates = [a for a in approvals
                       if isinstance(a, dict)
-                      and a.get("subject_type") == need]
+                      and a.get("kind") == need]
         if not candidates:
             raise DispatchError(
                 f"write target {target} requires a {need} approval bound to "
@@ -416,7 +416,8 @@ def _check_scoped_approvals(launch: Dict[str, Any],
                 vlp.assert_scoped_approval(
                     launch, cand, need,
                     client_identity_ref=client_identity_ref,
-                    worker_identity_ref=worker_identity_ref)
+                    worker_identity_ref=worker_identity_ref,
+                    test_only=(launch.get("test_only") is True))
                 break
             except vlp.ApprovalError as exc:
                 if first_error is None:
@@ -459,9 +460,14 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
     if launch["status"] not in ("approved", "building"):
         raise DispatchError(f"launch status is {launch['status']!r} — dispatch "
                             "requires an approved plan")
-    vlp.assert_plan_build_approved(launch, approval,
-                                   client_identity_ref=client_identity_ref,
-                                   worker_identity_ref=worker_identity_ref)
+    plan_ok = vlp.assert_plan_build_approved(
+        launch, approval, client_identity_ref=client_identity_ref,
+        worker_identity_ref=worker_identity_ref,
+        test_only=(launch.get("test_only") is True))
+    if allowed_write_target == "approved_live_publication" and \
+            plan_ok["verification_class"] != "authenticated_platform_record":
+        raise DispatchError("live publication needs a Command Center approval, "
+                            "not a local test record")
     graph = clr.compile_route(launch)
     if clr.graph_hash(graph) != launch["route_graph_hash"]:
         raise DispatchError("re-compiled route graph hash does not match the "
@@ -780,7 +786,7 @@ def _self_test() -> int:
             f"{_schema.relative_to(_repo_root)} page_role enum equals "
             "page_role_map.page_roles")
 
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     def offer(oid, slot, amt, excludes=()):
@@ -804,19 +810,18 @@ def _self_test() -> int:
                          offer("BP", "bump", 500),
                          offer("U1", "upsell_1", 3000, ["D1"]),
                          offer("D1", "downsell_1", 1500, ["U1"]),
-                         offer("U2", "upsell_2", 4000)],
+                         dict(offer("U2", "upsell_2", 4000),
+                              deliverables=["u2-only"])],  # UPS-25: U2 must differ
               "extras": {"upsell_1": True, "downsell_1": True, "upsell_2": True},
               "bump_enabled": True, "image_provider": "agnes",
               "source_refs": [], "test_only": True}
     graph = clr.compile_route(launch)
     launch["route_graph_ref"] = "route-graph:X:rev1"
     launch["route_graph_hash"] = clr.graph_hash(graph)
-    approval = {"schema_version": "1.0", "approval_id": "APPR-1",
-                "subject_type": "launch_plan_build",
-                "subject_hash": vlp.plan_document_hash(launch),
-                "owner_identity_ref": "client-1", "source_message_ref": "m-1",
-                "recorded_at": now, "scope": ["launch_plan_build"],
-                "revoked": False,
+    approval = {"schema_version": "1.0", "approval_id": "APPR-1", "kind": "launch_plan_build",
+                "plan_hash": vlp.plan_document_hash(launch), "client_identity": "client-1",
+                "source_message_ref": "m-1", "scope": ["launch_plan_build"],
+                "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "revoked": False,
                 "verification_class": "recorded_consent_not_cryptographically_sealed"}
     launch["status"] = "approved"
     launch["plan_approval_ref"] = "APPR-1"
@@ -847,7 +852,7 @@ def _self_test() -> int:
         [r["request_id"] for r in m2["requests"]],
         "dispatch is idempotent: same approved plan, same dispatch keys")
     try:
-        dispatch(launch, dict(approval, subject_hash="0" * 64),
+        dispatch(launch, dict(approval, plan_hash="0" * 64),
                  client_identity_ref="client-1", worker_identity_ref="worker-9")
         say(False, "dispatch under a stale approval must fail")
     except vlp.ApprovalError:
@@ -860,7 +865,7 @@ def _self_test() -> int:
     except DispatchError:
         say(True, "test-location write target requires its own scoped approval")
     scoped = [dict(approval, approval_id="APPR-T",
-                   subject_type="test_location_use",
+                   kind="test_location_use",
                    scope=["test_location_use"])]
     m3 = dispatch(launch, approval, client_identity_ref="client-1",
                   worker_identity_ref="worker-9",
@@ -873,13 +878,13 @@ def _self_test() -> int:
     # no provenance reference, recorded in 2020, class "none" — must NOT
     # authorize a live publication target.
     fabricated = [
-        dict(approval, approval_id="F-T", subject_type="test_location_use",
-             scope=["test_location_use"], owner_identity_ref="worker-9",
-             source_message_ref="", recorded_at="2020-01-01T00:00:00Z",
+        dict(approval, approval_id="F-T", kind="test_location_use",
+             scope=["test_location_use"], client_identity="worker-9",
+             source_message_ref="", expires_at="2020-01-01T00:00:00Z",
              verification_class="none"),
-        dict(approval, approval_id="F-P", subject_type="page_publication",
-             scope=["page_publication"], owner_identity_ref="worker-9",
-             source_message_ref="", recorded_at="2020-01-01T00:00:00Z",
+        dict(approval, approval_id="F-P", kind="page_publication",
+             scope=["page_publication"], client_identity="worker-9",
+             source_message_ref="", expires_at="2020-01-01T00:00:00Z",
              verification_class="none")]
     try:
         dispatch(launch, approval, client_identity_ref="client-1",

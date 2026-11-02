@@ -15,7 +15,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -48,11 +48,10 @@ def launch_for(doc: dict) -> dict:
 
 def approval_for(doc: dict, **over) -> dict:
     launch = launch_for(doc)
-    record = {"schema_version": "1.0", "approval_id": "APPR-TEST", "subject_type": "launch_plan_build",
-              "subject_hash": substrate.dispatch().vlp.plan_document_hash(launch),
-              "owner_identity_ref": CLIENT, "source_message_ref": "msg-test-1",
-              "recorded_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-              "scope": ["launch_plan_build"], "revoked": False,
+    record = {"schema_version": "1.0", "approval_id": "APPR-TEST", "kind": "launch_plan_build",
+              "plan_hash": substrate.dispatch().vlp.plan_document_hash(launch), "client_identity": CLIENT,
+              "source_message_ref": "msg-test-1", "scope": ["launch_plan_build"],
+              "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "revoked": False,
               "verification_class": "recorded_consent_not_cryptographically_sealed"}
     record.update(over)
     return record
@@ -225,15 +224,15 @@ class DispatchTests(unittest.TestCase):
         doc = payload("elevation")
         with self.assertRaises(launch_bridge.BridgeError) as ctx:
             run_dispatch(doc, self.out, client=WORKER, worker=WORKER,
-                         approval=approval_for(doc, owner_identity_ref=WORKER))
+                         approval=approval_for(doc, client_identity=WORKER))
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-BRIDGE-DISPATCH")
         self.assertFalse((self.out / "pieces").exists() and any((self.out / "pieces").iterdir()))
 
     def test_a_stale_approval_hash_is_refused(self):
         doc = payload("elevation")
         with self.assertRaises(launch_bridge.BridgeError) as ctx:
-            run_dispatch(doc, self.out, approval=approval_for(doc, subject_hash="0" * 64))
-        self.assertIn("does not match the current plan", str(ctx.exception))
+            run_dispatch(doc, self.out, approval=approval_for(doc, plan_hash="0" * 64))
+        self.assertIn("APPROVAL-HASH", str(ctx.exception))
 
     def test_agnes_is_refused_by_name_before_anything_runs(self):
         with self.assertRaises(image_plan.ImagePlanError) as ctx:

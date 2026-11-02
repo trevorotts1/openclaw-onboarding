@@ -158,17 +158,12 @@ def fixture_launch(full_funnel: bool = False) -> (dict, dict):
     launch["route_graph_hash"] = clr.graph_hash(graph)
     launch["status"] = "approved"
     launch["plan_approval_ref"] = "APPR-FIXTURE-1"
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    approval = {
-        "schema_version": "1.0", "approval_id": "APPR-FIXTURE-1",
-        "subject_type": "launch_plan_build",
-        "subject_hash": vlp.plan_document_hash(launch),
-        "owner_identity_ref": "client-fixture",
-        "source_message_ref": "fixture-msg-1", "recorded_at": now,
-        "scope": ["launch_plan_build"], "revoked": False,
-        "verification_class":
-            "recorded_consent_not_cryptographically_sealed",
-    }
+    from datetime import timedelta
+    approval = {"schema_version": "1.0", "approval_id": "APPR-FIXTURE-1", "kind": "launch_plan_build",
+                "plan_hash": vlp.plan_document_hash(launch), "client_identity": "client-fixture",
+                "source_message_ref": "fixture-msg-1", "scope": ["launch_plan_build"],
+                "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "revoked": False,
+                "verification_class": "recorded_consent_not_cryptographically_sealed"}
     return launch, approval
 
 
@@ -479,7 +474,7 @@ class RealTreeCase(LandingBridgeCase):
         brand = (SKILL71_MAIN / "assets" / "brand" / "blackceo-brand.json").read_bytes()
         self.brand_path.write_bytes(brand)
         self.launch["brand_hash"] = sha256(brand)
-        self.approval["subject_hash"] = vlp.plan_document_hash(self.launch)
+        self.approval["plan_hash"] = vlp.plan_document_hash(self.launch)
         self.launch_path.write_bytes(dump(self.launch))
         self.inputs = self.td / "image_inputs.json"
         self.inputs.write_text(json.dumps({
@@ -531,7 +526,7 @@ class TestLandingDrawsItsImages(RealTreeCase):
         self.launch, self.approval = fixture_launch(full_funnel=True)
         brand = (SKILL71_MAIN / "assets" / "brand" / "blackceo-brand.json").read_bytes()
         self.launch["brand_hash"] = sha256(brand)
-        self.approval["subject_hash"] = vlp.plan_document_hash(self.launch)
+        self.approval["plan_hash"] = vlp.plan_document_hash(self.launch)
         self.launch_path.write_bytes(dump(self.launch))
         opt_dir = self.td / "run-opt-in"
         own_copy = SKILL71_MAIN / "tests" / "fixtures" / "copy_examples" / "long-form-path-b.md"

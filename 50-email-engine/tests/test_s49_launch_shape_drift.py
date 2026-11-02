@@ -7,9 +7,10 @@ BOTH implementations over identical records, so a change to 49's plan hash or
 approval rule fails here instead of silently diverging. It also proves Skill 50
 accepts launch schema 1.0, 1.1 and 1.2.
 
-One deliberate difference: 49 expires an approval after max_age_hours (72 by
-default); 50 does not (see s49_launch_shape.py). The comparison passes
-max_age_hours=None to 49 so both sides apply the same rules.
+Both sides verify the approval through shared-utils approval_record.verify
+(ENF-01); the fixture launch is test_only, so 49 is called with test_only=True
+exactly as 50 derives it from the launch. Every malformed case must be refused
+by both.
 """
 
 from __future__ import annotations
@@ -49,7 +50,7 @@ def _record(version: str) -> dict:
 
 def _approval(launch: dict, **over) -> dict:
     a = copy.deepcopy(adapter.build_fixtures()["approval"])
-    a["subject_hash"] = shape.plan_document_hash(launch)
+    a["plan_hash"] = shape.plan_document_hash(launch)
     a.update(over)
     return a
 
@@ -88,29 +89,30 @@ class DriftTests(unittest.TestCase):
         rec = _record("1.2")
         cases = {
             "valid": {},
-            "wrong_type": {"subject_type": "paid_asset_budget"},
+            "wrong_type": {"kind": "paid_asset_budget"},
             "narrow_scope": {"scope": ["paid_asset_budget"]},
             "empty_scope": {"scope": []},
             "revoked": {"revoked": True},
             "bad_class": {"verification_class": "bare_flag"},
-            "stale_hash": {"subject_hash": "0" * 64},
-            "other_owner": {"owner_identity_ref": "client:someone-else"},
-            "worker_owner": {"owner_identity_ref": WORKER},
+            "stale_hash": {"plan_hash": "0" * 64},
+            "other_owner": {"client_identity": "client:someone-else"},
+            "worker_owner": {"client_identity": WORKER},
             "no_message_ref": {"source_message_ref": " "},
             "bad_schema": {"schema_version": "2.0"},
-            "future": {"recorded_at": "2999-01-01T00:00:00+00:00"},
-            "bad_time": {"recorded_at": "not-a-time"},
+            "expired": {"expires_at": "2000-01-01T00:00:00+00:00"},
+            "bad_time": {"expires_at": "not-a-time"},
         }
         for name, over in cases.items():
             ap = _approval(rec, **over)
-            client = ap["owner_identity_ref"] if name == "worker_owner" \
+            client = ap["client_identity"] if name == "worker_owner" \
                 else CLIENT
             mine = _verdict(shape.check_plan_build_approval, rec, ap,
                             client_identity_ref=client,
                             worker_identity_ref=WORKER)
             theirs = _verdict(v49.assert_plan_build_approved, rec, ap,
                               client_identity_ref=client,
-                              worker_identity_ref=WORKER, max_age_hours=None)
+                              worker_identity_ref=WORKER,
+                              test_only=rec.get("test_only") is True)
             self.assertEqual(mine, theirs, name)
             self.assertEqual(mine, name == "valid", name)
         mine = _verdict(shape.check_plan_build_approval, rec, "nope",
@@ -123,7 +125,7 @@ class DriftTests(unittest.TestCase):
         rec["bump_enabled"] = True
         for fn, kw in ((shape.check_plan_build_approval, {}),
                        (v49.assert_plan_build_approved,
-                        {"max_age_hours": None})):
+                        {"test_only": rec.get("test_only") is True})):
             self.assertFalse(_verdict(fn, rec, ap, client_identity_ref=CLIENT,
                                       worker_identity_ref=WORKER, **kw))
 
@@ -133,7 +135,7 @@ class AdapterSchemaTests(unittest.TestCase):
         fx = adapter.build_fixtures()
         launch = _record(version)
         fx["session"]["plan_hash"] = shape.plan_document_hash(launch)
-        fx["approval"]["subject_hash"] = shape.plan_document_hash(launch)
+        fx["approval"]["plan_hash"] = shape.plan_document_hash(launch)
         return adapter.adapt(fx["session"], launch, fx["approval"],
                              fx["brand_facts"], fx["landing_facts"],
                              worker_identity_ref=fx["worker_identity_ref"])

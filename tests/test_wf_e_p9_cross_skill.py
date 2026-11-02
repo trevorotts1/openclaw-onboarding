@@ -483,11 +483,11 @@ def plan_approval(launch: dict, **overrides) -> dict:
     record = {
         "schema_version": "1.0",
         "approval_id": "APPR-TEST",
-        "subject_type": s49_launch_shape.PLAN_BUILD_APPROVAL_TYPE,
-        "subject_hash": s49_launch_shape.plan_document_hash(launch),
-        "owner_identity_ref": "client-test",
+        "kind": s49_launch_shape.PLAN_BUILD_APPROVAL_TYPE,
+        "plan_hash": s49_launch_shape.plan_document_hash(launch),
+        "client_identity": "client-test",
         "source_message_ref": "msg-test",
-        "recorded_at": "2026-10-21T00:00:00Z",
+        "expires_at": "2099-01-01T00:00:00Z",
         "scope": [s49_launch_shape.PLAN_BUILD_APPROVAL_TYPE],
         "revoked": False,
         "verification_class": sorted(s49_launch_shape.VERIFICATION_CLASSES)[0],
@@ -498,7 +498,7 @@ def plan_approval(launch: dict, **overrides) -> dict:
 
 NOW = datetime(2026, 10, 22, tzinfo=timezone.utc)
 PLAN_LAUNCH = {"tenant_id": "TEST-TENANT", "location_id": "TEST-LOCATION",
-               "launch_id": "TEST-LAUNCH", "revision": 1}
+               "launch_id": "TEST-LAUNCH", "revision": 1, "test_only": True}
 
 
 class TestB16StaleApprovalBlocks:
@@ -510,14 +510,14 @@ class TestB16StaleApprovalBlocks:
         assert result["subject_hash"] == s49_launch_shape.plan_document_hash(PLAN_LAUNCH)
 
     @pytest.mark.parametrize("overrides,expected", [
-        ({"subject_hash": "0" * 64}, "does not match the current plan"),
-        ({"revoked": True}, "revoked"),
-        ({"scope": []}, "authorizes nothing"),
-        ({"scope": ["launch_plan_build_narrowed"]}, "authorizes nothing"),
-        ({"subject_type": "design_board"}, "approval types are separate"),
-        ({"recorded_at": "2099-01-01T00:00:00Z"}, "in the future"),
-        ({"recorded_at": "not-a-timestamp"}, "not a valid timestamp"),
-        ({"source_message_ref": ""}, "platform reference"),
+        ({"plan_hash": "0" * 64}, "APPROVAL-HASH"),
+        ({"revoked": True}, "APPROVAL-REVOKED"),
+        ({"scope": []}, "APPROVAL-SCOPE"),
+        ({"scope": ["launch_plan_build_narrowed"]}, "APPROVAL-SCOPE"),
+        ({"kind": "design_board"}, "APPROVAL-KIND"),
+        ({"expires_at": "2026-10-21T00:00:00Z"}, "APPROVAL-EXPIRED"),
+        ({"expires_at": "not-a-timestamp"}, "APPROVAL-EXPIRED"),
+        ({"source_message_ref": ""}, "source_message_ref"),
         ({"verification_class": "self_asserted"}, "verification_class"),
     ])
     def test_a_stale_or_malformed_approval_blocks_the_action(self, overrides, expected):
@@ -533,12 +533,12 @@ class TestB16StaleApprovalBlocks:
             s49_launch_shape.check_plan_build_approval(
                 PLAN_LAUNCH, plan_approval(other),
                 client_identity_ref="client-test", worker_identity_ref="worker-test", now=NOW)
-        assert "another plan" in str(exc.value)
+        assert "APPROVAL-HASH" in str(exc.value)
 
     def test_the_worker_cannot_approve_its_own_work(self):
         with pytest.raises(s49_launch_shape.ShapeError) as exc:
             s49_launch_shape.check_plan_build_approval(
-                PLAN_LAUNCH, plan_approval(PLAN_LAUNCH, owner_identity_ref="worker-test"),
+                PLAN_LAUNCH, plan_approval(PLAN_LAUNCH, client_identity="worker-test"),
                 client_identity_ref="worker-test", worker_identity_ref="worker-test", now=NOW)
         assert "self-approval" in str(exc.value)
 

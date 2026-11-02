@@ -59,6 +59,8 @@ REQUIRED = (
     "source_message_ref", "scope", "expires_at", "revoked", "verification_class",
 )
 
+VERIFICATION_CLASSES = ("authenticated_platform_record",
+                        "recorded_consent_not_cryptographically_sealed")
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 _LOOPBACK = ("localhost", "127.0.0.1", "::1")
 
@@ -134,6 +136,12 @@ def _check(rec, approval_id, kind, plan_hash, scope, client_identity, cap, now):
     missing = [k for k in REQUIRED if not isinstance(rec, dict) or k not in rec]
     if missing or not isinstance(rec.get("scope"), list) or not isinstance(rec.get("revoked"), bool):
         _refuse("APPROVAL-NOT-FROM-AUTHORITY", "record is malformed (missing %s)" % ", ".join(missing or ["scope/revoked types"]))
+    if rec["schema_version"] != "1.0":
+        _refuse("APPROVAL-NOT-FROM-AUTHORITY", "record schema_version is not 1.0")
+    if rec["verification_class"] not in VERIFICATION_CLASSES:
+        _refuse("APPROVAL-NOT-FROM-AUTHORITY", "record verification_class is not recognized")
+    if not isinstance(rec["source_message_ref"], str) or not rec["source_message_ref"].strip():
+        _refuse("APPROVAL-NOT-FROM-AUTHORITY", "record carries no source_message_ref (the client's own reply)")
     if isinstance(approval_id, str) and rec["approval_id"] != approval_id:
         _refuse("APPROVAL-NOT-FROM-AUTHORITY", "record id does not match the requested approval_id")
     if kind not in KINDS or rec["kind"] != kind:

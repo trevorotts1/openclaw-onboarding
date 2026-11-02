@@ -70,7 +70,8 @@ def make_run_dir(td: Path, *, adapters: bool, parallel="auto") -> Path:
 
 
 def lone_install(td: Path) -> Path:
-    """Skill 49 copied alone into a skills root: no 71-blackceo-signature-page sibling."""
+    """Skill 49 copied alone into a skills root with the shared approval verifier: no
+    71-blackceo-signature-page sibling."""
     dst = td / "skills" / "49-signature-funnel"
     dst.mkdir(parents=True)
     for name in ("signature-funnel-entry.sh", "SKILL.md", "skill-version.txt"):
@@ -80,6 +81,10 @@ def lone_install(td: Path) -> Path:
         SKILL / "scripts", dst / "scripts",
         ignore=shutil.ignore_patterns("__pycache__", "fixtures", "vendor",
                                       "working", "test_*.py"))
+    su = td / "skills" / "shared-utils" / "signature_launch_contract"
+    su.mkdir(parents=True)
+    shutil.copy2(SKILL.parent / "shared-utils" / "signature_launch_contract" / "approval_record.py",
+                 su / "approval_record.py")
     return dst
 
 

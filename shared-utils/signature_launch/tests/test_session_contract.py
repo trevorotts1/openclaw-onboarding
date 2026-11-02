@@ -9,6 +9,7 @@ import importlib
 import json
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -51,11 +52,10 @@ def digest(plan):
 
 
 def approval_for(session, **over):
-    a = {"schema_version": "1.0", "approval_id": "APPR-L01",
-         "subject_type": "launch_plan_build", "subject_hash": session["plan_hash"],
-         "owner_identity_ref": session["client_identity_ref"],
-         "source_message_ref": "msg-l01", "recorded_at": li._now(),
-         "scope": ["launch_plan_build"], "revoked": False,
+    a = {"schema_version": "1.0", "approval_id": "APPR-L01", "kind": "launch_plan_build",
+         "plan_hash": session["plan_hash"], "client_identity": session["client_identity_ref"],
+         "source_message_ref": "msg-l01", "scope": ["launch_plan_build"],
+         "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "revoked": False,
          "verification_class": "recorded_consent_not_cryptographically_sealed"}
     a.update(over)
     return a
@@ -306,8 +306,8 @@ class ApprovalInvalidation(unittest.TestCase):
         s = self.ready()
         with self.assertRaisesRegex(Exception, "revoked"):
             li.approve(s, approval_for(s, revoked=True), worker_identity_ref="worker-9")
-        with self.assertRaisesRegex(Exception, "subject_hash"):
-            li.approve(s, approval_for(s, subject_hash="0" * 64), worker_identity_ref="worker-9")
+        with self.assertRaisesRegex(Exception, "APPROVAL-HASH"):
+            li.approve(s, approval_for(s, plan_hash="0" * 64), worker_identity_ref="worker-9")
 
     def test_reingesting_the_answers_file_after_approval_invalidates_it(self):
         s = self.ready()
