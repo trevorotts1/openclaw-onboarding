@@ -251,6 +251,23 @@ def record_near(*dirs):
     return None
 
 
+def script_sha_near(*dirs):
+    """The current spoken-script digest found in the run folder (and each
+    folder's parent, the same search ``record_near`` uses), or None when the run
+    carries no readable script. Dispatch callers hold only lyrics; this is how
+    they pass the digest the gate requires."""
+    for d in dirs:
+        for c in ((d, os.path.dirname(os.path.abspath(d))) if d else ()):
+            try:
+                with open(os.path.join(c, "creative", "script.json"), encoding="utf-8") as stream:
+                    doc = json.load(stream)
+                sheet = doc["sheet"]
+            except (OSError, ValueError, TypeError, KeyError):
+                continue
+            return script_sha(doc.get("title") or "Your song", doc.get("story") or [], sheet)
+    return None
+
+
 def mark_sent(run_dir):
     """The script message reached the client: a resume must not send it again."""
     state, rec = AE.load_record(run_dir)
