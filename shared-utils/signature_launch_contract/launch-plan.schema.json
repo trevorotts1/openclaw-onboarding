@@ -87,7 +87,7 @@
         },
         "black_friday": {
           "type": "object",
-          "description": "Present only for Skill 83 Black Friday launches.",
+          "description": "Present only for Skill 83 Black Friday launches. Order law (calendar_law.py): teaser < countdown <= doors_open <= launch < cyber_monday <= last_call < doors_close.",
           "required": ["teaser_at", "countdown_at", "cyber_monday_at", "last_call_at"],
           "properties": {
             "teaser_at": {
@@ -161,6 +161,23 @@
       "items": {
         "$ref": "#/definitions/automation"
       }
+    },
+    "commerce_units": {
+      "type": "array",
+      "description": "Optional. Products, prices, order forms, bumps, one-click offers and payment providers a launch needs created or bound before sales open. Same unit-id and waits_for rules as every other unit.",
+      "items": {
+        "$ref": "#/definitions/commerce_unit"
+      }
+    },
+    "approved_plan_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 of the canonical plan the owner approved. Set only by the approval step, from the owner's own reply; a lane refuses an effect when the plan it holds no longer hashes to this value."
+    },
+    "approval_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Reference to the Command Center approval record that minted approved_plan_hash. A named reference, never a credential."
     }
   },
   "definitions": {
@@ -176,6 +193,26 @@
       },
       "uniqueItems": true,
       "description": "Unit ids that must be COMPLETE before this unit starts. Empty means ready now. Must resolve to units in the same plan and must not form a cycle."
+    },
+    "commerce_unit": {
+      "type": "object",
+      "required": ["id", "kind", "draft_only", "waits_for"],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/unit_id"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["product", "price", "order_form", "order_bump", "one_click_offer", "payment_provider"]
+        },
+        "draft_only": {
+          "type": "boolean",
+          "const": true
+        },
+        "waits_for": {
+          "$ref": "#/definitions/waits_for"
+        }
+      }
     },
     "page": {
       "type": "object",
