@@ -640,6 +640,10 @@ def new_cases(req0) -> None:
                     for a in out["artifacts"]),
             "design-only is authored/L0, no review, carries the standing "
             "blocker THANK-YOU-RUNTIME-NOT-INSTALLED and the design files")
+        say(any("design deliverable only" in b for b in out["blockers"]),
+            "design-only blockers say plainly the page is a design "
+            "deliverable only (status stays 'authored': the page-result "
+            "schema enum has no 'design_only')")
         say(json.loads(proc.stdout)["design_only"] is True,
             "design-only says so in its summary line")
         say(receipts.validate_result(out, req0) == [],
