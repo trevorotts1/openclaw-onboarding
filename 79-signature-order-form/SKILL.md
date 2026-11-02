@@ -63,6 +63,9 @@ offered on that original checkout.
   interface contract for the native binding.
 - `references/components/`: component drafts (order bump, offer details,
   guarantee/terms, both page assemblies) with their binding README.
+  REVIEW-ONLY: these drafts are design references and are not installable;
+  never paste them into a Skill 06 custom-code block. Order bump and consent
+  are native order-form settings, never custom inputs.
 - `scripts/`: the fixture-level reference models: bump model, quote display
   and billing audit, purchase state machine, selection resolver, purchase
   event handoff, the cross-field checkout validator, the native-binding
