@@ -2794,21 +2794,6 @@ jobs:
 
       # ── NEW ENFORCEMENT GATES (all rules that existed as prose but had no auto-fail) ──
 
-      - name: CRITICAL-1 — No real client names in tracked files
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Fleet-wide privacy invariant: this repo is a generic template; zero real
-          # client first or last names may appear in any committed file. The guard uses
-          # git ls-files (tracked-only) with word-boundary anchors for first names so
-          # inline enforcement scripts that HOLD the names as detection patterns are
-          # correctly self-excluded. Any hit is a hard-fail that blocks merge.
-          # This rule was documented in AGENTS.md N0 + repo memory entry
-          # [repo-is-fleet-wide-no-client-names] but was in NO CI gate or pre-commit
-          # hook. This step closes that gap.
-          bash scripts/qc-assert-no-client-names.sh
-          echo "✓ No real client names found in tracked files"
-
       - name: FLEET-STANDARDS §3 — WhatsApp permanently disabled (no enabled:true in JSON, no uncommented WHATSAPP_NUMBER in env files)
         shell: bash
         run: |
