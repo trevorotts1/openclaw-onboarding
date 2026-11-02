@@ -128,7 +128,7 @@ assert.ok(readSkill("scripts/build-bundles.mjs").includes("COUNCIL_PACKAGE_REUSE
   "build-bundles has no unchanged-runtime reuse path");
 
 // 9. The shipped extension package still contains every declared file.
-for (const rel of ["index.js", "index.ts", "lib/core.mjs", "provision.mjs",
+for (const rel of ["index.js", "index.ts", "lib/core.mjs", "lib/entry-validate.mjs", "provision.mjs",
   "openclaw.plugin.json", "package.json", "INSTALL.md", "CONTRACT.md"]) {
   readSkill(`extensions/council-before-dispatch/${rel}`);
 }

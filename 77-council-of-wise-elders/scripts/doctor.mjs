@@ -69,6 +69,7 @@ for (const f of ["agents/openai.yaml", "config/defaults.json",
   "extensions/council-before-dispatch/openclaw.plugin.json",
   "extensions/council-before-dispatch/package.json",
   "extensions/council-before-dispatch/lib/core.mjs",
+  "extensions/council-before-dispatch/lib/entry-validate.mjs",
   "extensions/council-before-dispatch/provision.mjs",
   "extensions/council-before-dispatch/INSTALL.md",
   "extensions/council-before-dispatch/CONTRACT.md"]) {

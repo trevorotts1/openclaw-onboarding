@@ -35,11 +35,12 @@ import { openSync, closeSync, fsyncSync, writeSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const PLUGIN_ID = "council-before-dispatch";
 const REQUIRED = [
   "index.js", "openclaw.plugin.json", "package.json", "lib/core.mjs",
-  "provision.mjs", "INSTALL.md", "CONTRACT.md",
+  "lib/entry-validate.mjs", "provision.mjs", "INSTALL.md", "CONTRACT.md",
 ];
 const REQUIRED_FIELDS = [
   "channel", "accountId", "conversationId", "senderIds", "agentId",
@@ -178,7 +179,7 @@ function normalizePath(value) {
   return isAbsolute(value) ? value : resolve(value);
 }
 
-function main() {
+async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const src = join(opts.skillDir, "extensions", PLUGIN_ID);
   const dst = join(opts.openclawRoot, "extensions", PLUGIN_ID);
@@ -208,6 +209,9 @@ function main() {
     return 0;
   }
 
+  // The validator ships with the package, so the install path and the verifier
+  // share one definition of a valid existing entry.
+  const { validateExistingEntry } = await import(pathToFileURL(join(dst, "lib", "entry-validate.mjs")).href);
   const pkg = JSON.parse(readFileSync(join(dst, "package.json"), "utf8"));
   const requiredVersion = pkg?.openclaw?.compat?.minGatewayVersion || pkg?.peerDependencies?.openclaw?.replace(/[^0-9.]/g, "") || "";
   const cli = findCli(opts.openclawCli, opts.openclawRoot);
@@ -290,14 +294,26 @@ function main() {
     return 0;
   };
 
+  // An existing, internally valid entry is authoritative. Re-derivation can be
+  // ambiguous on a box with several Telegram accounts or DMs; that must not
+  // disable a binding that already works (the operator box has four accounts
+  // and three authorized DMs). Only a valid entry gets this protection.
+  const existingEntry = cfg.plugins.entries[PLUGIN_ID];
+  const existingCheck = existingEntry
+    ? validateExistingEntry({ cfg, entry: existingEntry, openclawRoot: opts.openclawRoot, prefix: opts.prefix })
+    : { ok: false, problems: ["no existing entry"] };
+  let source = "derived";
+  let rederive = null;
   if (!result || result.status !== "READY" || !result.entry) {
     const reason = result?.reasons?.[0];
     const code = reason?.code ? `PLUGIN_BINDING_UNRESOLVED ${reason.code}` : "PLUGIN_BINDING_UNRESOLVED";
-    return disableExisting(code);
+    if (!existingCheck.ok) return disableExisting(code);
+    source = "existing-binding";
+    rederive = code;
   }
 
   // 4. Merge only the derived identity, preserving operator-set optional values.
-  const derived = result.entry.config ?? {};
+  const derived = result?.status === "READY" && result.entry ? (result.entry.config ?? {}) : (existingEntry.config ?? {});
   const existing = cfg.plugins.entries[PLUGIN_ID] ?? {};
   const existingConfig = existing.config && typeof existing.config === "object" ? existing.config : {};
   // The schema is additionalProperties:false. Rebuild from the known fields so
@@ -331,7 +347,7 @@ function main() {
   const before = JSON.parse(original);
   const unchanged = same(before, cfg);
   if (unchanged) {
-    say("NOOP", `plugin=${PLUGIN_ID}@${pkg.version} api=${haveRaw} agent=${derived.agentId} senderCount=${derived.senderIds.length} activation=next-gateway-start`);
+    say("NOOP", `plugin=${PLUGIN_ID}@${pkg.version} api=${haveRaw} agent=${derived.agentId} senderCount=${derived.senderIds.length} source=${source}${rederive ? ` rederive=${rederive}` : ""} activation=next-gateway-start`);
     return 0;
   }
 
@@ -348,8 +364,11 @@ function main() {
     say("NOT_READY PLUGIN_CONFIG_INVALID", `${v.detail}; previous config restored`);
     return 0;
   }
-  say("READY", `plugin=${PLUGIN_ID}@${pkg.version} api=${haveRaw} agent=${derived.agentId} senderCount=${derived.senderIds.length} activation=next-gateway-start${v.unverified ? " validation=unverified" : ""}`);
+  say("READY", `plugin=${PLUGIN_ID}@${pkg.version} api=${haveRaw} agent=${derived.agentId} senderCount=${derived.senderIds.length} source=${source}${rederive ? ` rederive=${rederive}` : ""} activation=next-gateway-start${v.unverified ? " validation=unverified" : ""}`);
   return 0;
 }
 
-process.exit(main());
+main().then((code) => process.exit(code)).catch((error) => {
+  say("NOT_READY PLUGIN_INSTALL_FAILED", String(error?.message ?? error).split("\n")[0]);
+  process.exit(0);
+});

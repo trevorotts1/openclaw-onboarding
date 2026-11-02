@@ -14,12 +14,10 @@ import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
+import { validateExistingEntry, REQUIRED_FIELDS as ENTRY_FIELDS } from "../extensions/council-before-dispatch/lib/entry-validate.mjs";
+
 const PLUGIN_ID = "council-before-dispatch";
 const REQUIRED = ["index.js", "openclaw.plugin.json", "package.json", "lib/core.mjs", "provision.mjs"];
-const REQUIRED_FIELDS = [
-  "channel", "accountId", "conversationId", "senderIds", "agentId",
-  "agentWorkspace", "councilAskPath", "stateDir",
-];
 
 function parseArgs(argv) {
   const out = { openclawRoot: null, prefix: null };
@@ -123,20 +121,19 @@ function main() {
   }
   checks.push({ result: "PASS", code: "PLUGIN_LOAD_PATH", detail: extDir });
 
+  const shared = validateExistingEntry({ cfg, entry, openclawRoot, prefix });
+  if (!shared.ok) return fail("PLUGIN_BINDING_UNRESOLVED", shared.problems.join("; "));
+  checks.push({ result: "PASS", code: "PLUGIN_BINDING_SHARED", detail: "entry-validate.mjs agrees with this box" });
+
   const config = entry.config && typeof entry.config === "object" ? entry.config : {};
-  for (const field of REQUIRED_FIELDS) {
-    if (config[field] === undefined || config[field] === null || config[field] === "") {
-      return fail("PLUGIN_BINDING_UNRESOLVED", `config.${field} is missing`);
-    }
+
+  // An existing, internally valid binding is authoritative. Re-derivation can
+  // be ambiguous on a box with several accounts or DMs, and that must not turn
+  // a working box into NOT_READY (the operator box has four accounts).
+  const existing = validateExistingEntry({ cfg, entry, openclawRoot, prefix });
+  if (existing.ok) {
+    checks.push({ result: "PASS", code: "PLUGIN_BINDING_SHAPE", detail: `agent=${config.agentId} senderCount=${Array.isArray(config.senderIds) ? config.senderIds.length : 0}` });
   }
-  if (config.channel !== "telegram") return fail("PLUGIN_BINDING_UNRESOLVED", "config.channel is not telegram");
-  if (!Array.isArray(config.senderIds) || config.senderIds.length === 0) return fail("PLUGIN_BINDING_UNRESOLVED", "config.senderIds is empty");
-  if (config.senderIds.some(isWildcard)) return fail("PLUGIN_BINDING_UNRESOLVED", "config.senderIds contains a wildcard");
-  if (!isAbsolute(config.agentWorkspace)) return fail("PLUGIN_BINDING_UNRESOLVED", "config.agentWorkspace is not absolute");
-  if (typeof config.runtimeRoot === "string" && config.runtimeRoot.length > 0) {
-    return fail("PLUGIN_BINDING_UNRESOLVED", "config.runtimeRoot overrides the activated release");
-  }
-  checks.push({ result: "PASS", code: "PLUGIN_BINDING_SHAPE", detail: `agent=${config.agentId} senderCount=${config.senderIds.length}` });
 
   const binding = join(openclawRoot, "council-before-dispatch", "binding.json");
   const provArgs = [
@@ -154,15 +151,25 @@ function main() {
   } catch { result = null; }
   if (!result || result.status !== "READY" || !result.entry) {
     const reason = result?.reasons?.[0];
-    return fail("PLUGIN_BINDING_UNRESOLVED", reason ? `${reason.code}: ${reason.detail}` : "provision did not return READY");
-  }
-  const derived = result.entry.config ?? {};
-  for (const field of REQUIRED_FIELDS) {
-    if (JSON.stringify(config[field]) !== JSON.stringify(derived[field])) {
-      return fail("PLUGIN_BINDING_DRIFT", `config.${field} disagrees with this box's derived binding`);
+    if (existing.ok) {
+      // The registry entry is valid; only automatic re-derivation is blocked
+      // (several accounts/DMs). The per-box binding file can settle it.
+      checks.push({ result: "PASS", code: "PLUGIN_BINDING", detail: `existing registry binding is valid; re-derivation: ${reason?.code ?? "not ready"}` });
+    } else {
+      return fail("PLUGIN_BINDING_UNRESOLVED",
+        `${reason?.code ? `${reason.code}: ${reason.detail}` : "existing entry is invalid and provision did not return READY"}; existing problems: ${existing.problems.join("; ")}`);
+    }
+  } else {
+    const derived = result.entry.config ?? {};
+    const drift = ENTRY_FIELDS.filter((field) => JSON.stringify(config[field]) !== JSON.stringify(derived[field]));
+    if (existing.ok) {
+      checks.push({ result: "PASS", code: "PLUGIN_BINDING", detail: drift.length > 0
+        ? `existing registry binding is valid; re-derivation differs on ${drift.join(", ")} and the existing binding is kept`
+        : "registry config matches provision.mjs for this box" });
+    } else {
+      return fail("PLUGIN_BINDING_DRIFT", `existing entry is invalid (${existing.problems.join("; ")}); wire.sh would write ${drift.join(", ") || "the derived binding"}`);
     }
   }
-  checks.push({ result: "PASS", code: "PLUGIN_BINDING", detail: "registry config matches provision.mjs for this box" });
 
   const loaded = loadedRecord(findCli(openclawRoot), openclawRoot);
   if (!loaded.known) {
