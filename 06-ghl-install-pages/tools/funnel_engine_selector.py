@@ -117,7 +117,7 @@ def _request_text(request: Any) -> str:
     if isinstance(request, dict):
         parts = [str(request.get(k, "")) for k in
                  ("text", "brief", "goal", "intent", "description", "ask",
-                  "message", "funnel_type", "type")]
+                  "message", "funnel_type", "type", "title")]
         return _norm(" ".join(p for p in parts if p))
     return _norm(str(request or ""))
 
@@ -161,10 +161,22 @@ def load_registry(path: str | None = None) -> dict:
 # --------------------------------------------------------------------------- #
 # Score
 # --------------------------------------------------------------------------- #
-def score_engine(engine: dict, req_text: str, req_tokens: set[str]) -> dict:
+def _launch_mode(request: Any) -> str:
+    """The request's declared launch_mode (S06-07), '' when absent / not a dict."""
+    return _norm(str(request.get("launch_mode") or "")) if isinstance(request, dict) else ""
+
+
+def score_engine(engine: dict, req_text: str, req_tokens: set[str],
+                 launch_mode: str = "") -> dict:
     """Raw score + per-signal breakdown for one engine against the request."""
     match = engine.get("match", {}) or {}
     parts: dict[str, float] = {}
+
+    # declared launch_mode == this engine's registered launch_mode.name: an explicit
+    # desire, scored like a verbatim NAME hit (S06-07: the selector now reads launch_mode).
+    eng_mode = _norm(str((engine.get("launch_mode") or {}).get("name") or ""))
+    if launch_mode and eng_mode and launch_mode == eng_mode:
+        parts["launch_mode"] = _W_NAME
 
     # explicit NAME hit (strongest; an explicit desire always routes)
     name_hit = 0.0
@@ -221,10 +233,11 @@ def select_engine(request: Any, registry: dict | None = None, *,
     engines = registry.get("engines", []) or []
     req_text = _request_text(request)
     req_tokens = _content_tokens(req_text)
+    launch_mode = _launch_mode(request)
 
     scored = []
     for eng in engines:
-        sc = score_engine(eng, req_text, req_tokens)
+        sc = score_engine(eng, req_text, req_tokens, launch_mode)
         eng_thr = float(eng.get("confidence_threshold", threshold))
         sc["confidence"] = round(_confidence(sc["raw"]), 4)
         sc["threshold"] = eng_thr
@@ -438,6 +451,9 @@ def step0_select_engine(task: dict, evidence_root: str, *,
             "goal": task.get("goal", ""),
             "funnel_type": task.get("funnel_type", task.get("type", "")),
             "explicit_funnel": task.get("explicit_funnel", ""),
+            "description": task.get("description", ""),
+            "title": task.get("title", ""),
+            "launch_mode": task.get("launch_mode", ""),
         }
         decision = select_engine(request, registry, threshold=threshold)
         decision, skeleton_guard = _apply_skeleton_guard(decision, force_skeleton)
@@ -526,6 +542,15 @@ def _self_test() -> int:
     d3 = select_engine("set up a basic webinar registration funnel", reg)
     check("generic webinar request -> NO_ENGINE_MATCH (falls through)",
           d3["decision"] == DEC_NONE)
+
+    # a Black Friday launch routes to Skill 83, ahead of the direct-response Skill 56 stack
+    d_bf = select_engine("Black Friday launch with landing page, checkout order form with "
+                         "order bump, upsell, downsell and thank you page", reg)
+    check("Black Friday launch -> black-friday-launcher (83) over sales-page-assets (56)",
+          d_bf["decision"] == DEC_ROUTE and d_bf["engine_id"] == "black-friday-launcher")
+    d_lm = select_engine({"text": "go", "launch_mode": "black_friday_launch"}, reg)
+    check("declared launch_mode routes to its engine",
+          d_lm["decision"] == DEC_ROUTE and d_lm["engine_id"] == "black-friday-launcher")
 
     # empty request never routes
     d4 = select_engine("", reg)

@@ -757,6 +757,22 @@ def post_activity(
     return False
 
 
+def post_handoff_event(task_id: str, event: dict, *, env: Optional[dict] = None) -> bool:
+    """Emit the P4->P5 board handoff event (S06-21) as an activity on the build card.
+
+    ``event`` is ``{from_dept, to_dept, artifact, job_id, ...}`` (SKILL.md Full-Funnel
+    Pipeline Integration). Rides the existing activities route, so no new CC endpoint.
+    FAIL-SOFT: returns False (never raises) on a missing/incomplete event or any board failure."""
+    if not isinstance(event, dict) or not all(event.get(k) for k in ("from_dept", "to_dept", "artifact", "job_id")):
+        _log("post_handoff_event skipped — event needs from_dept, to_dept, artifact, job_id.")
+        return False
+    return post_activity(
+        task_id, "updated",
+        f"P4->P5 handoff: {event['from_dept']} -> {event['to_dept']} ({event['artifact']})",
+        metadata={"handoff": event}, env=env,
+    )
+
+
 # ---------------------------------------------------------------------------
 # B-U1 / U15 — persona-bundle READ. Rung 2 of the persona-bundle-acquisition
 # ladder (persona_bundle_ladder.py): a read-only fetch against the Command

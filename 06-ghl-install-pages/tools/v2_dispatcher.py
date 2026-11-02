@@ -57,6 +57,13 @@ try:
 except Exception:  # noqa: BLE001 — board mirror is best-effort; never block the build
     _cc_board = None
 
+# STEP-0 engine selector (S06-07): which specialist authoring engine (49 / 56 / 83 / 62)
+# owns a funnel request. Optional import; absence degrades to the template matcher only.
+try:
+    import funnel_engine_selector as _fes  # noqa: E402
+except Exception:  # noqa: BLE001
+    _fes = None  # type: ignore[assignment]
+
 # FAB-QC library-aware build-quality gate (shared scorer). Optional/best-effort: when the
 # build evidence carries a match-decision receipt + fab-artifact, the dispatcher refuses to
 # mark `verified` below 8.5. When that evidence is ABSENT (advisory not wired for this build),
@@ -844,6 +851,148 @@ def remint_if_stale(
         return False
 
 
+# ---------------------------------------------------------------------------
+# S06-21 — P2 gate receipt for funnel jobs; S06-07 — engine selector; S06-08 —
+# return receipt for Skill 49 / 83; board handoff event.
+# ---------------------------------------------------------------------------
+
+# Funnel job types (v2-autonomous-build-sop.md INTAKE routing: job_type -> 'funnels').
+_FUNNEL_JOB_TYPES: frozenset = frozenset({"funnel", "sales-funnel", "opt-in", "multistep"})
+_COPY_AFFIRMATIVE = frozenset({"yes", "y", "true", "1"})
+
+
+def _job_type(task: dict) -> str:
+    return (task.get("job_type") or task.get("build_type") or task.get("type") or "").lower().strip()
+
+
+def _copy_client_supplied(has_copy_val: str) -> bool:
+    """True iff the intake ``has_copy`` answer says the client brought their own copy."""
+    v = (has_copy_val or "").strip().lower()
+    return bool(v) and (v in _COPY_AFFIRMATIVE or any(s in v for s in _COPY_HAVE_SIGNALS))
+
+
+def _p2_gate_missing(task: dict, evidence_root: str) -> str:
+    """'' when the P2 gate is satisfied or not required, else the reason it is not.
+
+    Required for FUNNEL job types whose copy is not client-supplied (the P0-P2
+    pipeline authors it): ``routing/p2-gate.json`` must be an approval record —
+    ``approved: true`` (or ``copy_status: APPROVED``) AND a non-empty ``approval_ref``.
+    # ponytail: file-shape check only; the approval primitive (CC-minted record the
+    # AI session cannot write) lands with the approval units and tightens this read.
+    """
+    # Declared board job_type only: intake-INFERRED build_type must not trip the gate.
+    if str(task.get("job_type") or "").lower().strip() not in _FUNNEL_JOB_TYPES:
+        return ""
+    if _copy_client_supplied(_resolve_has_copy(task, None)):
+        return ""
+    path = os.path.join(evidence_root, "routing", "p2-gate.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            rec = json.load(f)
+    except (OSError, ValueError):
+        return "routing/p2-gate.json is missing or unreadable"
+    if not isinstance(rec, dict):
+        return "routing/p2-gate.json is not a JSON object"
+    if not (rec.get("approved") is True or str(rec.get("copy_status", "")).upper() == "APPROVED"):
+        return "routing/p2-gate.json does not record an approval"
+    ref = rec.get("approval_ref")
+    if not (isinstance(ref, str) and ref.strip()):
+        return "routing/p2-gate.json carries no approval_ref"
+    return ""
+
+
+def _run_engine_selector(task: dict, evidence_root: str) -> dict:
+    """STEP 0a (S06-07): pick the specialist authoring engine BEFORE the template matcher.
+
+    Writes routing/funnel-engine-match.json and, on ROUTE_TO_ENGINE, routing/match-decision.json
+    (the selector's own receipt). Survey/quiz/form jobs never route to a funnel engine.
+    Never raises."""
+    # Declared job_type only: the intake-INFERRED build_type is a guess (a launch brief can
+    # infer 'survey') and must not switch the selector off.
+    if _fes is None or str(task.get("job_type") or "").lower().strip() in (
+            _SURVEY_JOB_TYPES | _FORM_JOB_TYPES):
+        return {"decision": "SKIPPED", "reason": "selector unavailable or non-funnel job type"}
+    try:
+        return _fes.step0_select_engine(task, evidence_root)
+    except Exception as exc:  # noqa: BLE001
+        return {"decision": "SKIPPED", "reason": f"selector raised: {type(exc).__name__}: {exc}"}
+
+
+def _write_build_receipt(task: dict, evidence_root: str, build: dict, verify_out: Any,
+                         summary: Any, fab: dict) -> str:
+    """S06-08: write ``build_receipt.json`` (the return contract to Skill 49 / 83) from the
+    machine-written verify evidence: page_type from the build's route node, preview_url from
+    the verify raw record, qc_score from fab_qc. Consumers MUST re-run
+    ``ghl_gate.require_pass(evidence_root)``; this file is a pointer, never the verdict."""
+    summary = summary if isinstance(summary, dict) else {}
+    raw = verify_out.get("raw") if isinstance(verify_out, dict) else None
+    built = [p for p in (build.get("pages") or []) if isinstance(p, dict)]
+    by_step = {str(p.get("step") or p.get("name") or p.get("slug") or ""): p for p in built}
+    pages = []
+    for r in (raw if isinstance(raw, list) and raw else built):
+        bp = by_step.get(str(r.get("step") or r.get("name") or r.get("slug") or ""), r)
+        pages.append({
+            "page_type": next((bp[k] for k in ("page_type", "route_node", "node", "role") if bp.get(k)),
+                              r.get("step") or r.get("name")),
+            "step": r.get("step") or r.get("name"),
+            "preview_url": r.get("preview_url"),
+            "verified": r.get("PASS") is True,
+        })
+    engine = task.get("funnel_engine")
+    size = task.get("funnel_size")
+    receipt = {
+        "schema": "skill6-build-receipt/1",
+        "funnel_type": task.get("funnel_type") or (str(engine).replace("-", "_") if engine else None),
+        "funnel_size": size if isinstance(size, int) and not isinstance(size, bool) else None,
+        "qc_score": fab.get("score") if fab.get("ran") else None,
+        "pages": pages,
+        "task_id": task.get("id") or "task",
+        "location_id": task.get("location_id"),
+        "evidence_root": evidence_root,
+        "verify_summary_path": os.path.join(evidence_root, ghl_verify.SUMMARY_REL),
+        "verify_overall_pass": summary.get("overall_pass") is True,
+        "verify_trust": summary.get("trust"),
+        "run_nonce": summary.get("run_nonce"),
+        "consumer_rule": "re-run ghl_gate.require_pass(evidence_root); never trust this file alone",
+        "written_by": "v2_dispatcher.dispatch_one",
+        "ts": _ts(),
+    }
+    path = os.path.join(evidence_root, "build_receipt.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(receipt, f, indent=2)
+    return path
+
+
+def _emit_board_handoff(task: dict, evidence_root: str, handoff_path: "str | None") -> dict:
+    """S06-21: the P4->P5 board handoff event (SKILL.md Full-Funnel Pipeline Integration),
+    emitted through cc_board for funnel jobs / any build carrying a Skill-44 handoff.
+    The event is always persisted to routing/board-handoff.json; delivery is fail-soft."""
+    if _job_type(task) not in _FUNNEL_JOB_TYPES and not handoff_path:
+        return {"emitted": False, "reason": "not a funnel job and no Skill-44 handoff"}
+    board_id = str(task.get("board_task_id") or task.get("id") or "").strip()
+    event = {
+        "from_dept": "web-development", "to_dept": "crm",
+        "artifact": "page_ids+form_ids+funnel_template_id+linked_automations",
+        "job_id": str(task.get("p5_job_id") or f"skill6-p5-{board_id or 'task'}"),
+        "funnel_template_id": task.get("funnel_template_id"),
+        "skill44_handoff_path": handoff_path,
+    }
+    delivered = False
+    if _cc_board is not None and board_id:
+        try:
+            delivered = bool(_cc_board.post_handoff_event(board_id, event))
+        except Exception:  # noqa: BLE001 — board is best-effort
+            delivered = False
+    try:
+        os.makedirs(os.path.join(evidence_root, "routing"), exist_ok=True)
+        with open(os.path.join(evidence_root, "routing", "board-handoff.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump({**event, "delivered": delivered, "ts": _ts()}, f, indent=2)
+    except OSError:
+        pass
+    return {"emitted": True, "delivered": delivered, "event": event}
+
+
 class DispatchResult:
     """The outcome of dispatching one task. Truthy iff the task reached
     ``verified`` with ``overall_pass`` True."""
@@ -971,7 +1120,12 @@ def dispatch_one(
     Returns:
         ``DispatchResult`` (truthy only on verified + overall_pass True).
     """
+    # S06-01: remember whether the CALLER injected a verifier BEFORE defaulting; the
+    # production path is "live and nothing injected". Defaulting first made
+    # `verifier is None` unreachable, so require_pass / tenant binding never ran.
+    injected = verifier is not None
     verifier = verifier or ghl_verify.verify_all
+    _production_path = live and not injected
     clock = clock or time.monotonic
     task_id = task.get("id") or "task"
 
@@ -1097,6 +1251,20 @@ def dispatch_one(
         return DispatchResult(task_id, STATE_WAITING, rec["reason"],
                               evidence_root=evidence_root, record_path=rp)
 
+    # ── P2 GATE RECEIPT (S06-21) ─────────────────────────────────────────────
+    # A funnel whose copy is authored by the P0-P2 pipeline must carry an approval
+    # record (routing/p2-gate.json) BEFORE any builder runs — otherwise the copy is
+    # improvised at build time. No receipt -> HELD (STATE_WAITING), never built.
+    _p2_missing = _p2_gate_missing(task, evidence_root)
+    if _p2_missing:
+        rec = {"task_id": task_id, "state": STATE_WAITING,
+               "reason": f"P2 gate not satisfied: {_p2_missing}. Funnel build is HELD until "
+                         "the approved-copy record exists (no improvised funnel copy).",
+               "required_artifact": "routing/p2-gate.json (approval record)"}
+        rp = _rec_write(rec)
+        return DispatchResult(task_id, STATE_WAITING, rec["reason"],
+                              evidence_root=evidence_root, record_path=rp)
+
     # Builder auto-resolution: if no builder was injected by the caller, attempt
     # to resolve from task job_type (survey/quiz → ghl_survey_builder;
     # form → ghl_form_builder). Follows the _resolve_step0 registration pattern.
@@ -1122,7 +1290,12 @@ def dispatch_one(
     # when a template is matched the builder sees an already-instantiated page plan
     # (task['pages'] / task['copy_persona'] / task['template_match']).  A SKIPPED
     # or errored result is recorded but NEVER causes a build failure.
-    _s0 = _resolve_step0(step0_matcher)
+    # STEP 0a (S06-07): the engine selector runs FIRST. A ROUTE_TO_ENGINE decision (e.g.
+    # Black Friday -> Skill 83) owns authoring and has already written routing/match-decision.json
+    # + stamped the task, so the template matcher (which would overwrite that receipt) is skipped.
+    _engine_decision = _run_engine_selector(task, evidence_root)
+    _engine_routed = _engine_decision.get("decision") == "ROUTE_TO_ENGINE"
+    _s0 = None if _engine_routed else _resolve_step0(step0_matcher)
     if _s0 is not None:
         try:
             _step0_result = _s0(task, evidence_root)
@@ -1201,14 +1374,16 @@ def dispatch_one(
     # "verified" state while trust=='MOCK' is immediately downgraded to FAILED.
     pages = build.get("pages", [])
 
-    if live and verifier is None:
-        # Production path: call ghl_verify.verify_all directly, live=True, no fetcher.
+    if _production_path:
+        # Production path: call ghl_verify.verify_all directly, live=True, no fetcher,
+        # bound to the task's own tenant (S06-01 / S06-08 expected_location_id).
         try:
             verify_out = ghl_verify.verify_all(
                 evidence_root, pages, live=True,
                 run_id=task_id, version="client-agent", brand=task.get("brand", ""),
+                expected_location_id=task.get("location_id"),
             )
-        except (ghl_verify.SealedGateViolation, ghl_verify.VerifyContradiction) as exc:
+        except Exception as exc:  # noqa: BLE001 — any verify failure is a FAILED build
             rec.update({"state": STATE_FAILED,
                         "reason": f"verify_all integrity failure: {type(exc).__name__}: {exc}"})
             rp = _rec_write(rec)
@@ -1241,7 +1416,6 @@ def dispatch_one(
     # ONLY invoked on the production path (live=True AND no injected verifier)
     # because the gate validates the writer/run_nonce of ghl_verify.verify_all,
     # which only appears when the production verifier ran.
-    _production_path = live and verifier is None
     if _production_path:
         gate_rc = ghl_gate.require_pass(evidence_root)
         if gate_rc != 0:
@@ -1269,6 +1443,22 @@ def dispatch_one(
                               "accepted as a shippable build pass — task is FAILED."})
         rp = _rec_write(rec)
         return DispatchResult(task_id, STATE_FAILED, rec["reason"],
+                              evidence_root=evidence_root, record_path=rp)
+
+    # ── VERDICT GATE (S06-01) ─────────────────────────────────────────────────
+    # A build whose verdict is not an explicit overall_pass True is FAILED — never
+    # recorded as `verified` and never pushed to the board as 'review'.
+    if not (isinstance(summary, dict) and summary.get("overall_pass") is True):
+        rec.update({"state": STATE_FAILED, "build_duration_s": duration,
+                    "verify_overall_pass": False,
+                    "verify_passed": summary.get("passed") if isinstance(summary, dict) else None,
+                    "verify_total": summary.get("total") if isinstance(summary, dict) else None,
+                    "verdict_source": os.path.join(evidence_root, ghl_verify.SUMMARY_REL),
+                    "reason": "VERIFY FAILED: the canonical verifier did not return "
+                              "overall_pass=True. Build is FAILED, not verified."})
+        rp = _rec_write(rec)
+        return DispatchResult(task_id, STATE_FAILED, rec["reason"],
+                              verify=summary if isinstance(summary, dict) else {},
                               evidence_root=evidence_root, record_path=rp)
 
     # ── FAB-ARTIFACT PRODUCER (D4) ────────────────────────────────────────────
@@ -1371,11 +1561,28 @@ def dispatch_one(
             return DispatchResult(task_id, STATE_FAILED, rec["reason"],
                                   evidence_root=evidence_root, record_path=rp)
 
+    # ── RETURN RECEIPT (S06-08) + BOARD HANDOFF (S06-21) ─────────────────────
+    # build_receipt.json is what Skill 49 / 83 consume; written from the verify evidence,
+    # fail-closed (a verified build whose receipt cannot be written is not returned verified).
+    try:
+        _receipt_path = _write_build_receipt(task, evidence_root, build, verify_out, summary, _fab)
+    except OSError as exc:
+        rec.update({"state": STATE_FAILED, "build_duration_s": duration,
+                    "reason": f"build_receipt.json could not be written ({exc}); the return "
+                              "contract to Skill 49/83 is lost — refusing to return verified."})
+        rp = _rec_write(rec)
+        return DispatchResult(task_id, STATE_FAILED, rec["reason"],
+                              evidence_root=evidence_root, record_path=rp)
+    _board_handoff = _emit_board_handoff(task, evidence_root, _handoff_path)
+
     # Tag the ledger as authoritative:false + verdict_source pointer so callers
     # know the single authoritative verdict lives in the scorecard, not here.
     rec.update({
         "state": STATE_VERIFIED,
         "skill44_handoff_path": _handoff_path,
+        "build_receipt_path": _receipt_path,
+        "board_handoff": _board_handoff,
+        "funnel_engine": task.get("funnel_engine"),
         "fab_qc": _fab,
         "fab_artifact": _fab_emit,
         "skill6_convergence": _convergence_result,
