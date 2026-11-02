@@ -97,16 +97,26 @@ resolve_secret() {
 # and broken in the product. Hand the receipt to whoever owns the state root; on
 # a single-user box the owner IS the caller and this is a no-op.
 hand_receipt_to_owner() {
-    [ -d "$STATE" ] || return 0
+    # A symlinked state root is never trusted: this function runs as root.
+    [ -d "$STATE" ] && [ ! -L "$STATE" ] || return 0
     [ "$(id -u 2>/dev/null || echo 0)" = "0" ] || return 0
-    local owner f
+    local owner f p
     owner=$(stat -c '%u:%g' "$STATE" 2>/dev/null || stat -f '%u:%g' "$STATE" 2>/dev/null) || return 0
-    [ -n "$owner" ] || return 0
+    # Numeric uid:gid only — never a name that could resolve elsewhere, and never
+    # root (handing the receipt to root is the bug this function exists to fix).
+    case "$owner" in
+        [0-9]*:[0-9]*) ;;
+        *) return 0 ;;
+    esac
     [ "$owner" = "0:0" ] && return 0
-    for f in machine.key machine.url client.url capability.json state.json; do
-        [ -f "$STATE/$f" ] || continue
-        chown "$owner" "$STATE/$f" 2>/dev/null || continue
-        chmod 600 "$STATE/$f" 2>/dev/null || true
+    for f in machine.key machine.url client.url; do
+        p="$STATE/$f"
+        [ -f "$p" ] || continue
+        [ -L "$p" ] && continue                        # a planted symlink is never followed
+        # Only files THIS pass wrote as root are ours to hand over.
+        [ "$(stat -c '%u' "$p" 2>/dev/null || stat -f '%u' "$p" 2>/dev/null)" = "0" ] || continue
+        chown "$owner" "$p" 2>/dev/null || continue
+        chmod 600 "$p" 2>/dev/null || true
     done
     return 0
 }
