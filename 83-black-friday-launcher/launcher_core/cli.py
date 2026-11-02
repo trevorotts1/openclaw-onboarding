@@ -57,16 +57,23 @@ def _plan_hash(launch: dict) -> str:
     return launch_bridge.substrate.dispatch().vlp.plan_document_hash(launch)
 
 
-def _launch_for(normalized: dict, inputs: dict) -> dict:
-    return launch_bridge.to_launch_record(normalized, route.compile_route(normalized), inputs)
+def _page_choices(args: argparse.Namespace) -> dict:
+    """The client's page choices as launch_bridge.run takes them. `plan` and `dispatch` both read them
+    here, so the plan hash a client approves is the hash dispatch binds."""
+    landing = [k.strip() for k in (args.landing_pages or "").split(",") if k.strip()]
+    return {"landing_pages": landing or None, "extra_pages": tuple(args.extra_page or ())}
 
 
-def _resolved_launch(payload: Any) -> tuple:
+def _launch_for(normalized: dict, inputs: dict, **choices: Any) -> dict:
+    return launch_bridge.to_launch_record(normalized, route.compile_route(normalized), inputs, **choices)
+
+
+def _resolved_launch(payload: Any, **choices: Any) -> tuple:
     """(normalized intake, launch record) exactly as launch_bridge.run would build them."""
     normalized = intake.validate(payload)
     inputs, _ = image_plan.resolve(normalized.get("image_plan"),
                                    test_only=bool(normalized.get("test_only", True)))
-    return normalized, _launch_for(normalized, inputs)
+    return normalized, _launch_for(normalized, inputs, **choices)
 
 
 def _bind(normalized: dict, real_hash: str, real_ref: str) -> dict:
@@ -140,7 +147,9 @@ def cmd_assemble(args: argparse.Namespace) -> int:
                                design_approvals=(_read_json(args.design_approvals)
                                                  if args.design_approvals else None),
                                launch_plan=plan, deliveries=deliveries,
-                               delivery_scope=scope)
+                               delivery_scope=scope,
+                               checkout_readback=(_read_json(args.checkout_readback)
+                                                  if args.checkout_readback else None))
     except package.PackageError as exc:
         _launch_event(normalized["launch_id"], {"event_type": "stage_blocked", "stage": "assemble",
                                                 "failures": [exc.code]})
@@ -174,7 +183,13 @@ def render_plan(normalized: dict, launch: dict) -> str:
         lines.append(f"  - {offer['slot']}: {offer['display_name']}, "
                      f"{li._money_display(price['amount_minor'], price['currency'])}, {term}")
     graph = route.compile_route(normalized)
-    lines += ["", "Route (pages in order): " + " -> ".join(n["role"] for n in graph["nodes"]), "",
+    prefix = launch_bridge.STRUCTURE_PREFIX
+    structure = dict(r[len(prefix):].split("=", 1) for r in launch["source_refs"] if r.startswith(prefix))
+    lines += ["", "Route (pages in order): " + " -> ".join(n["role"] for n in graph["nodes"]),
+              "Landing pages: " + (structure.get("landing_pages", "").replace(",", " and ") or "none")
+              + ". The hash covers this choice: dispatch must be given the same --landing-pages"
+              + (f" and --extra-page ({structure['extra_pages']})" if structure.get("extra_pages") else "")
+              + " as `plan`.", "",
               f"plan_document_hash: {real}",
               f"To approve this exact plan, quote the hash (its first 8 characters are {real[:8]}). "
               "An approval for any other hash is refused. Change anything above and the hash changes.",
@@ -196,7 +211,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
             # the picture details (brand file, cap) do not change the plan; only the provider is in the hash
             raw = (normalized.get("image_plan") or {}).get("image_provider")
             inputs = {"image_provider": raw if raw in image_plan.KNOWN_PROVIDERS else image_plan.DEFAULT_PROVIDER}
-        print(render_plan(normalized, _launch_for(normalized, inputs)))
+        print(render_plan(normalized, _launch_for(normalized, inputs, **_page_choices(args))))
         return 0
     plan = _read_json(args.plan)
     deliveries = _read_json(args.deliveries) if args.deliveries else None
@@ -244,7 +259,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     payload = _read_json(args.intake)
     approval = _read_json(args.approval)
     launch_id = str(payload.get("launch_id") or "") if isinstance(payload, dict) else ""
-    normalized, launch = _resolved_launch(payload)
+    normalized, launch = _resolved_launch(payload, **_page_choices(args))
     real = _plan_hash(launch)
     record = approval if isinstance(approval, dict) else {}
     if record.get("plan_hash") != real:
@@ -264,9 +279,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             adapters_config=adapters_config, adapter_inputs=adapter_inputs,
             parallel=args.parallel,
             scoped_approvals=_read_json(args.scoped_approvals) if args.scoped_approvals else None,
-            extra_pages=tuple(args.extra_page or ()),
-            landing_pages=[k.strip() for k in args.landing_pages.split(",") if k.strip()]
-            if args.landing_pages else None)
+            **_page_choices(args))
     except launch_bridge.BridgeError as exc:
         _launch_event(launch_id, {"event_type": "stage_blocked", "stage": "dispatch",
                                   "failures": [exc.code]})
@@ -381,6 +394,13 @@ def cmd_dependencies(args: argparse.Namespace) -> int:
     return 0
 
 
+_LANDING_HELP = ("the landing pages the client wants: landing, sales or landing,sales (default: the set "
+                 "Skill 49 recommends, flagged 'to confirm'). The plan hash covers this choice, so give "
+                 "`plan` and `dispatch` the same value")
+_EXTRA_HELP = ("an extra design page the client opted into (downsell_2); repeat for more. The plan hash "
+               "covers it, so give `plan` and `dispatch` the same value")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="launcher_core.cli")
     sub = p.add_subparsers(dest="command", required=True)
@@ -413,6 +433,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "Required unless --page-only")
     a.add_argument("--deliveries",
                    help="JSON object of unit id -> delivery result ({'state': 'complete'})")
+    a.add_argument("--checkout-readback",
+                   help="the Skill 06 install read-back record (JSON): the native capability evidence, "
+                        "fulfillment mapping and failed/pending copy the order form needs. Without it the "
+                        "order-form mapping lists those facts as unknown and check refuses it")
     a.add_argument("--page-only", action="store_true",
                    help="assemble pages alone and label the package page-only: no shared launch "
                         "plan, so no Black Friday calendar and no planned email, text or automation "
@@ -424,6 +448,8 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--intake", help="the intake: prints every page, offer, price, billing term and route, "
                                      "then the plan_document_hash an approval must bind")
     pl.add_argument("--plan", help="a shared launch plan to validate")
+    pl.add_argument("--landing-pages", help=_LANDING_HELP)
+    pl.add_argument("--extra-page", action="append", choices=["downsell_2"], help=_EXTRA_HELP)
     pl.add_argument("--deliveries",
                     help="JSON object of unit id -> delivery result; omit to see what is missing")
     pl.set_defaults(fn=cmd_plan)
@@ -444,11 +470,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="build the independent pages as this many parallel lanes (1 = one at a time; "
                         "default: this computer's worker count)")
     x.add_argument("--scoped-approvals", help="JSON array of extra scoped approvals")
-    x.add_argument("--landing-pages",
-                   help="the landing pages the client wants: landing, sales or landing,sales "
-                        "(default: the set Skill 49 recommends, flagged 'to confirm')")
-    x.add_argument("--extra-page", action="append", choices=["downsell_2"],
-                   help="an extra design page the client opted into (downsell_2); repeat for more")
+    x.add_argument("--landing-pages", help=_LANDING_HELP)
+    x.add_argument("--extra-page", action="append", choices=["downsell_2"], help=_EXTRA_HELP)
     x.set_defaults(fn=cmd_dispatch)
 
     q = sub.add_parser("questions", help="the guided interview's ONE next question (Black Friday "

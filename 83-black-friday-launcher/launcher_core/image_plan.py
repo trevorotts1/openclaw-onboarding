@@ -409,6 +409,9 @@ def order_page_inputs_file(inputs: Dict[str, Any], *, route_graph: str) -> Dict[
     """The same values in the shape Skill 78's run_image_stages.py reads (route_graph, provider, test_run).
     Skill 49's own page_set.selection_inputs makes this shape; kept here so the file is written
     before any Skill 49 module is loaded."""
-    return {"route_graph": route_graph, "brand_file": inputs["brand_file"], "brand_owner": inputs["brand_owner"],
-            "image_cap": inputs["image_cap"], "design_style": inputs["design_style"],
-            "provider": inputs["executor_provider"], "test_run": bool(inputs["test_only"])}
+    doc = {"route_graph": route_graph, "brand_file": inputs["brand_file"], "brand_owner": inputs["brand_owner"],
+           "image_cap": inputs["image_cap"], "design_style": inputs["design_style"],
+           "provider": inputs["executor_provider"], "test_run": bool(inputs["test_only"])}
+    if inputs.get("design_prose_ref"):  # Skill 71 refuses an order-page prompt under its floor without the measured design system
+        doc["design_prose"] = inputs["design_prose_ref"]
+    return doc

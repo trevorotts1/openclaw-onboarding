@@ -29,6 +29,7 @@ sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
 from test_only_readback import TEST_ONLY_CHECKOUT_READBACK, paid_image_plan, patch_paid_budget  # noqa: E402
 from launcher_core import (checks, council, image_plan, intake, launch_bridge, package,  # noqa: E402
                            route)
+from test_intake_validation import reprice  # noqa: E402
 from test_lane83_designs import make_piece  # noqa: E402
 from test_launch_plan_law import lane_deliveries, plan_fixture, pieces_for  # noqa: E402,F401
 
@@ -201,7 +202,8 @@ class BoundToDispatchTests(DispatchedRun):
 
     def test_a_plus_one_cent_price_change_is_refused_by_name(self):
         doc = copy.deepcopy(self.doc)
-        doc["offers"][0]["price"]["amount_minor"] += 1
+        # the intake refuses a price its answers file does not hold, so the drift is one the answers hold too
+        reprice(doc, doc["offers"][0]["offer_id"], amount_minor=doc["offers"][0]["price"]["amount_minor"] + 1)
         err = self.refused("AF-LAUNCH-PKG-PLAN-DRIFT", doc=doc)
         self.assertIn("price", err.detail)
 
