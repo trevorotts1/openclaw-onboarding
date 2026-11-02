@@ -694,7 +694,10 @@ def folded_levels(run_dir):
         return None
     if not isinstance(launch, dict) or launch.get("journey_mode") != "folded_levels":
         return None
-    mains = [o for o in launch.get("offers") or [] if isinstance(o, dict) and o.get("role") == "main"]
+    # a launch record names an offer's place in the journey as "slot" (83 to_launch_record); "role"
+    # is read only as a legacy alias
+    mains = [o for o in launch.get("offers") or []
+             if isinstance(o, dict) and (o.get("slot") or o.get("role")) == "main"]
     return len(mains) if len(mains) >= 2 else None
 
 

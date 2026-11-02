@@ -76,7 +76,8 @@ class BuilderStampsFoldedLevelsTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
 
     def write_run_launch(self, mode, mains):
-        offers = [{"offer_id": f"M{i}", "role": "main"} for i in range(mains)] + [{"offer_id": "U1", "role": "upsell_1"}]
+        # the shape 83 to_launch_record really writes: an offer's place in the journey is "slot"
+        offers = [{"offer_id": f"M{i}", "slot": "main"} for i in range(mains)] + [{"offer_id": "U1", "slot": "upsell_1"}]
         (self.run / "launch.json").write_text(json.dumps({"journey_mode": mode, "offers": offers}), encoding="utf-8")
 
     def request(self, kind="sales"):
@@ -90,6 +91,22 @@ class BuilderStampsFoldedLevelsTests(unittest.TestCase):
         last = request["sections"][-1]
         block = w.prompt_block("desktop-wireframe", last, len(request["sections"]), len(request["sections"]), 1440, request)
         self.assertIn("exactly 3 level cards", block)
+
+    def test_the_real_83_seven_figure_preneur_record_yields_three_levels(self):
+        # the record 83 to_launch_record builds from its seven-figure-preneur fixture, built in a child
+        # process so 83's modules never touch this test's import path
+        root = HERE.parents[1] / "83-black-friday-launcher"
+        code = ("import json,sys;from pathlib import Path;sys.path.insert(0,'.');"
+                "from launcher_core import intake,route,launch_bridge as lb;"
+                "n=intake.validate(json.loads(Path('fixtures/seven-figure-preneur/intake.json').read_text()));"
+                "print(json.dumps(lb.to_launch_record(n,route.compile_route(n),{'image_provider':'kie'})))")
+        proc = subprocess.run([sys.executable, "-I", "-c", code], cwd=root, text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        record = json.loads(proc.stdout)
+        self.assertTrue(all("slot" in o and "role" not in o for o in record["offers"]))
+        (self.run / "launch.json").write_text(json.dumps(record), encoding="utf-8")
+        self.assertEqual(builder.folded_levels(self.run), 3)
+        self.assertEqual(self.request()["folded_levels"], 3)
 
     def test_no_launch_record_a_single_offer_or_an_opt_in_page_is_unchanged(self):
         self.assertNotIn("folded_levels", self.request())
