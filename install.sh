@@ -4108,8 +4108,23 @@ for SKILL_DIR in "$ONBOARDING_DIR"/[0-9]*/; do
         *ARCHIVED*) note "Skipped (archived): $SKILL_NAME"; continue ;;
     esac
     
+    # >>> X11-GATE-BEGIN (S75-X11 release gate; tests/test_x11_install_gate.py)
+    # Skill 75 only. Default is warn-and-preserve: this copy only overlays and
+    # never deletes, so a missing backup-authorization record just logs. Only
+    # refuse mode (record present or S75_X11_GATE_MODE=refuse) can skip the skill.
+    if [ "$SKILL_NAME" = "75-drama-song-ad-factory" ]; then
+        _x11_rc=0
+        _x11_out="$(bash "$SKILL_DIR/scripts/core/x11_install_gate.sh" 2>&1)" || _x11_rc=$?
+        echo "$_x11_out" | tee -a "$LOG_FILE" || true
+        if [ "$_x11_rc" = "20" ]; then
+            warn "X11 gate REFUSED skill 75 install (refuse mode); $SKILLS_DIR/$SKILL_NAME left untouched"
+            continue
+        fi
+    fi
+    # <<< X11-GATE-END
+
     mkdir -p "$SKILLS_DIR/$SKILL_NAME"
-    
+
     for ITEM in "$SKILL_DIR"/*; do
         ITEM_NAME=$(basename "$ITEM")
         case "$ITEM_NAME" in

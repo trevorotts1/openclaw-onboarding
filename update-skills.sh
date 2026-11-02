@@ -7392,6 +7392,33 @@ PYEOF
     # skill stays whole and the operator gets one actionable line.
     # Box-local state on the allow-list (owner pins) is saved first and put
     # back after the copy; see oc_skill_box_state_paths.
+    # >>> X11-GATE-BEGIN (S75-X11 release gate; extracted verbatim by tests/test_x11_install_gate.py)
+    # Skill 75 only. rc 0 = gate allowed. rc 20 = refuse mode said no: skill 75
+    # is left untouched. Anything else (10 = no s75.x11.backup-authorization/v1
+    # record = DEFAULT) = warn-and-preserve: log it, never fail the roll, and
+    # keep the files the reviewed manifest targets (stashed here, put back below
+    # only where the release does not ship them). No manifest = empty list =
+    # the update behaves exactly as before, so existing installs are not broken.
+    _x11_rc=0
+    _x11_keep=""
+    if [ "$SKILL_NAME" = "75-drama-song-ad-factory" ]; then
+      _x11_out="$(bash "$SKILL_DIR/scripts/core/x11_install_gate.sh" 2>&1)" || _x11_rc=$?
+      echo "$_x11_out"
+    fi
+    if [ "$_x11_rc" = "20" ]; then
+      echo "  ✗ [x11-gate] skill $SKILL_NAME NOT updated (refuse mode); existing copy left intact"
+    else
+      if [ "$_x11_rc" != "0" ]; then
+        _x11_keep="$(mktemp -d "${TMPDIR:-/tmp}/oc-x11-keep.XXXXXX" 2>/dev/null || true)"
+        while IFS= read -r _x11_rel; do
+          [ -n "$_x11_rel" ] && [ -n "$_x11_keep" ] && [ -f "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" ] || continue
+          mkdir -p "$_x11_keep/$(dirname "$_x11_rel")" \
+            && cp -p "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" "$_x11_keep/$_x11_rel" \
+            || echo "  ⚠ [x11-gate] could not set aside $_x11_rel"
+        done <<X11EOF
+$(bash "$SKILL_DIR/scripts/core/x11_install_gate.sh" preserve-list 2>/dev/null)
+X11EOF
+      fi
     oc_skill_box_state_save "$SKILL_NAME" "$SKILLS_DIR/$SKILL_NAME" || true
     oc_remove_tree_guarded "$SKILLS_DIR/$SKILL_NAME" "skill"
 
@@ -7405,6 +7432,17 @@ PYEOF
     # named subdirectory, producing dest/01-skill/ as intended.
     cp -R "${SKILL_DIR%/}" "$SKILLS_DIR/"
     oc_skill_box_state_restore "$SKILL_NAME" "$SKILLS_DIR/$SKILL_NAME" || true
+      if [ -n "$_x11_keep" ]; then
+        (cd "$_x11_keep" && find . -type f) | while IFS= read -r _x11_rel; do
+          if [ -e "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" ]; then continue; fi
+          mkdir -p "$SKILLS_DIR/$SKILL_NAME/$(dirname "$_x11_rel")" \
+            && cp -p "$_x11_keep/$_x11_rel" "$SKILLS_DIR/$SKILL_NAME/$_x11_rel" \
+            && echo "  [x11-gate] kept manifest-targeted file the release does not ship: $_x11_rel"
+        done
+        rm -rf "$_x11_keep"
+      fi
+    fi
+    # <<< X11-GATE-END
 
     # ENGINE-PIN RE-STAMP (2026-10-13). Skill 59's `verify.sh stamp-pin`
     # recomputes ENGINE-PIN.sha256 over its enforcement set (the entry script,
