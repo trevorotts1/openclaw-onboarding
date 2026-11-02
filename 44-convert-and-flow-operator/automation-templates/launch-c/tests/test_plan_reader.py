@@ -43,7 +43,7 @@ def by_id(doc):
 class PlanReaderTests(unittest.TestCase):
     def test_partial_builds_block_exactly_the_missing_sequences(self):
         rc, doc = run_reader([PRE, MAIN, DOORS])
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 4)   # blocked builds exit 4 (output is still written)
         builds = by_id(doc)
         self.assertEqual(sorted(builds), ["auto_abandoned_checkout", "auto_post_sale", "auto_pre_launch"])
         # L07: an email-count mismatch is a REQUIRED-OUTPUT failure, so a build
@@ -67,7 +67,7 @@ class PlanReaderTests(unittest.TestCase):
 
     def test_complete_builds_block_on_count_mismatch(self):
         rc, doc = run_reader([PRE, MAIN, DOORS, ABANDONED, WELCOME])
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 4)
         builds = by_id(doc)
         self.assertEqual({b["state"] for b in builds.values()}, {"blocked"})
         self.assertEqual(doc["unused_build_plan_workflows"], [])
@@ -100,7 +100,7 @@ class PlanReaderTests(unittest.TestCase):
 
     def test_steps_pass_through_verbatim(self):
         rc, doc = run_reader([PRE])
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 4)
         workflow = by_id(doc)["auto_pre_launch"]["workflows"][0]
         source = json.loads(PRE.read_text())["sequence-email-pre-launch"]["templates"]
         self.assertEqual(workflow["steps"], source)
@@ -113,14 +113,14 @@ class PlanReaderTests(unittest.TestCase):
         doc.pop("_meta")
         detached.write_text(json.dumps(doc))
         rc, result = run_reader([detached])
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 4)
         self.assertEqual(len(result["unused_build_plan_workflows"]), 1)
         self.assertEqual(result["unused_build_plan_workflows"][0]["build_plan"], str(detached))
 
         mapping = temp / "map.json"
         mapping.write_text(json.dumps({"email_pre_launch": str(detached)}))
         rc, result = run_reader([detached], sequence_map=mapping)
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 4)
         self.assertEqual(result["unused_build_plan_workflows"], [])
         self.assertEqual(by_id(result)["auto_pre_launch"]["state"], "blocked")
         self.assertEqual(by_id(result)["auto_pre_launch"]["workflows"][0]["key"],
