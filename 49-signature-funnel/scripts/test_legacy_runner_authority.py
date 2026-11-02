@@ -304,3 +304,35 @@ def test_p0_installed_registry_under_home_resolves(tmp_path, home):
     assert ok.returncode == 0, ok.stdout + ok.stderr
     bad = _prove_intake(box / "49-signature-funnel", _brief(tmp_path / "rd-i", "totally-invented-persona"), home)
     assert bad.returncode == prove_sf_intake.EXIT_AUTOFAIL
+
+
+# ---------------------------------------------------------------- ENF-17: consumer that loads by file path
+_BYPATH = (
+    "import importlib.util, json, sys, pathlib\n"
+    "spec = importlib.util.spec_from_file_location('dr_bypath', sys.argv[1])\n"
+    "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n"
+    "assert str(pathlib.Path(sys.argv[1]).parent) not in sys.path\n"
+    "m._CLI_ADAPTER = 'kie_image_adapter'\n"      # a separate adapter process naming itself
+    "rd = pathlib.Path(sys.argv[2])\n"
+    "e = m.record(rd, phase='P3-IMAGES', provider='kie', operation='createTask',\n"
+    "             provider_response_id='task-123', http_status=200, remote_id='media-456', covers=['img-1'])\n"
+    "print(json.dumps({'signed': 'harness_sig' in e, 'ok': m.verify_delivery_store(rd, ['P3-IMAGES'])[0],\n"
+    "                  'state': m.store_state(rd)}))\n"
+)
+
+
+def _bypath(tmp_path: Path, home: Path, name: str, **env: str) -> dict:
+    rd = tmp_path / name
+    rd.mkdir()
+    r = subprocess.run([sys.executable, "-I", "-c", _BYPATH, str(HERE / "delegation_receipt.py"), str(rd)],
+                       capture_output=True, text=True, cwd=str(tmp_path), env=_env(home, **env), timeout=60)
+    assert r.returncode == 0, r.stdout + r.stderr
+    return json.loads(r.stdout)
+
+
+def test_receipt_module_loaded_by_file_path_still_finds_the_operator_key(tmp_path, home):
+    kf = _key_file(tmp_path)
+    keyed = _bypath(tmp_path, home, "run-keyed", SF_OPERATOR_KEY_FILE=str(kf))
+    assert keyed == {"signed": True, "ok": True, "state": "present"}
+    unkeyed = _bypath(tmp_path, home, "run-unkeyed")
+    assert unkeyed == {"signed": False, "ok": False, "state": "unsigned"}

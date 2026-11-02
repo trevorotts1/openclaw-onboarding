@@ -139,10 +139,29 @@ def _real_id(value: Any) -> bool:
     return bool(v) and v.lower() not in PLACEHOLDER_IDS
 
 
+_CERT_MOD: Any = None
+
+
+def _cert_module() -> Any:
+    """prove_sf_cert, found next to this file whatever the caller's sys.path (a consumer
+    may load this module by file path). sys.path is never mutated."""
+    global _CERT_MOD
+    if _CERT_MOD is None:
+        try:
+            import prove_sf_cert as mod
+        except ImportError:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "s49_prove_sf_cert", Path(__file__).resolve().parent / "prove_sf_cert.py")
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+        _CERT_MOD = mod
+    return _CERT_MOD
+
+
 def _operator_key(run_dir: Optional[Path] = None) -> Optional[str]:
     try:
-        import prove_sf_cert
-        return prove_sf_cert.load_operator_key(run_dir)[0]
+        return _cert_module().load_operator_key(run_dir)[0]
     except Exception:  # noqa: BLE001 — no key available == cannot sign, never a crash
         return None
 

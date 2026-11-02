@@ -5,10 +5,13 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
+import secrets
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL_ROOT))
@@ -296,17 +299,28 @@ class PackageTest(unittest.TestCase):
     def test_a_real_s49_receipt_moves_the_store_to_verified(self):
         module = package._load_receipt_module()
         self.assertIsNotNone(module, "Skill 49 delegation_receipt.py must be reachable")
-        module.record(self.run_dir, phase="P3-IMAGES", provider="kie",
-                      operation="createTask", provider_response_id="task-123",
-                      http_status=200, remote_id="media-456", covers=["img-1"])
-        evidence = package.receipt_evidence(self.run_dir)
-        self.assertEqual(evidence["state"], "verified")
-        self.assertEqual(evidence["entries"], 1)
-        # Re-assembling seals the verified store into the receipt.
-        out = package.assemble(self.run_dir, self.normalized, self.graph, self.pieces,
-                               council_runner=stub_council)
-        self.assertEqual(out["receipt"]["receipt_evidence"]["state"], "verified")
-        self.assertEqual(checks.check_package(self.manifest_path, self.run_dir), [])
+        receipt = dict(phase="P3-IMAGES", provider="kie", operation="createTask",
+                       provider_response_id="task-123", http_status=200,
+                       remote_id="media-456", covers=["img-1"])
+        # ENF-17: a process without the operator key writes an unsigned line -> not verified.
+        module.record(self.run_dir, **receipt)
+        self.assertEqual(package.receipt_evidence(self.run_dir)["state"], "unsigned")
+        module.reset(self.run_dir)
+        # The harness (operator key outside the run dir) writes a signed line -> verified.
+        with tempfile.TemporaryDirectory() as keydir:
+            keyfile = Path(keydir) / "operator.key"
+            keyfile.write_text(secrets.token_hex(32) + "\n", encoding="utf-8")
+            keyfile.chmod(0o600)
+            with mock.patch.dict(os.environ, {"SF_OPERATOR_KEY_FILE": str(keyfile)}):
+                module.record(self.run_dir, **receipt)
+                evidence = package.receipt_evidence(self.run_dir)
+                self.assertEqual(evidence["state"], "verified")
+                self.assertEqual(evidence["entries"], 1)
+                # Re-assembling seals the verified store into the receipt.
+                out = package.assemble(self.run_dir, self.normalized, self.graph, self.pieces,
+                                       council_runner=stub_council)
+                self.assertEqual(out["receipt"]["receipt_evidence"]["state"], "verified")
+                self.assertEqual(checks.check_package(self.manifest_path, self.run_dir), [])
 
     def test_clean_package_passes_checks(self):
         self.assertEqual(checks.check_package(self.manifest_path, self.run_dir), [])
