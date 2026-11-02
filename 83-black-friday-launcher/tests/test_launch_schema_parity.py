@@ -32,6 +32,7 @@ S49 = REPO / "49-signature-funnel"
 S71 = REPO / "71-blackceo-signature-page"
 SCHEMA_49 = S49 / "schema" / "launch.schema.json"
 SCHEMA_71 = S71 / "references" / "launch.schema.json"
+SCHEMA_SHARED = REPO / "shared-utils" / "signature_launch" / "domain" / "launch.schema.json"
 PY = sys.executable
 
 
@@ -52,11 +53,12 @@ def elevation_record(brand_file: str) -> dict:
 
 
 class LaunchSchemaParity(unittest.TestCase):
-    def test_71_schema_is_a_byte_copy_of_49(self):
-        self.assertEqual(SCHEMA_71.read_bytes(), SCHEMA_49.read_bytes())
+    def test_71_and_shared_schemas_are_byte_copies_of_49(self):
+        for copy_path in (SCHEMA_71, SCHEMA_SHARED):
+            self.assertEqual(copy_path.read_bytes(), SCHEMA_49.read_bytes(), copy_path)
 
     def test_both_accept_1_0_1_1_1_2_and_keep_delivery_bindings(self):
-        for path in (SCHEMA_49, SCHEMA_71):
+        for path in (SCHEMA_49, SCHEMA_71, SCHEMA_SHARED):
             doc = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(doc["properties"]["schema_version"]["enum"], ["1.0", "1.1", "1.2"], path)
             self.assertIn("delivery_bindings", doc["properties"], path)
@@ -71,6 +73,28 @@ class LaunchSchemaParity(unittest.TestCase):
         for version in ("1.0", "1.1"):
             self.assertEqual(lc.validate({**record, "schema_version": version}, schema, label="launch"), [])
         self.assertNotEqual(lc.validate({**record, "schema_version": "2.0"}, schema, label="launch"), [])
+
+    def test_optional_selection_fields_pass_71_launch_context_and_unknown_keys_still_refused(self):
+        lc = _load(S71 / "scripts" / "launch_context.py", "con01_launch_context_sel")
+        schema = json.loads(SCHEMA_71.read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as td:
+            record, _ = elevation_record(str(Path(td) / "brand.json"))
+        record = copy.deepcopy(record)
+        for offer in record["offers"]:
+            if offer["slot"] == "main":
+                offer.update(
+                    intended_buyer="TEST-ONLY buyer", primary_outcome="TEST-ONLY outcome",
+                    limited_deliverables=[{"item": "TEST-ONLY limited", "note": "TEST-ONLY note"}],
+                    conditional_deliverables=["TEST-ONLY cond"])
+        record["selection_faq"] = [{"question": "TEST-ONLY q?", "answer": "TEST-ONLY a"}]
+        record["trust_items"] = ["TEST-ONLY trust"]
+        self.assertEqual(lc.validate(record, schema, label="launch"), [])
+        bad = copy.deepcopy(record)
+        bad["offers"][0]["not_a_field"] = "x"
+        self.assertNotEqual(lc.validate(bad, schema, label="launch"), [])
+        bad = copy.deepcopy(record)
+        bad["selection_faq"] = [{"question": "TEST-ONLY q?"}]
+        self.assertNotEqual(lc.validate(bad, schema, label="launch"), [])
 
     def test_real_landing_bridge_into_71_write_intake_exits_0_on_a_1_2_record(self):
         dl = substrate.dispatch()

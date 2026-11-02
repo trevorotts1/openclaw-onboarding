@@ -239,6 +239,36 @@
           },
           "test_only": {
             "type": "boolean"
+          },
+          "intended_buyer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primary_outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limited_deliverables": {
+            "type": "array",
+            "items": {
+              "type": [
+                "string",
+                "object"
+              ]
+            }
+          },
+          "conditional_deliverables": {
+            "type": "array",
+            "items": {
+              "type": [
+                "string",
+                "object"
+              ]
+            }
           }
         },
         "required": [
@@ -354,6 +384,34 @@
     },
     "test_only": {
       "type": "boolean"
+    },
+    "selection_faq": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "question",
+          "answer"
+        ],
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1
+          },
+          "answer": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "trust_items": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     }
   },
   "required": [
