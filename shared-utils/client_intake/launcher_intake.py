@@ -177,10 +177,9 @@ def derive_offers(doc: Dict[str, Any]):
         offers.append(o)
         sources.append(s)
     e = _entry(doc, "downsell_2")
-    if e is not None and e.get("status") != "unknown" and e.get("value") not in (None, "none"):
+    if e is not None and e.get("value") not in (None, "none"):  # any answer but the bank's "none" is refused, never dropped
         _fail("AF-LAUNCH-ANSWERS-DOWNSELL2", "answers-file:downsell_2",
-              "the launch record has no slot for a second smaller offer with its own price; "
-              "remove it, or add the slot before using it")
+              "a second downsell is not supported in this release")  # byte-identical to 83 UNSUPPORTED_OFFER_ROLES['downsell_2']
     return mode, offers, sources
 
 
@@ -388,6 +387,10 @@ def to_launcher_intake(doc: Dict[str, Any], system: Dict[str, Any], *, answers_s
         intake["answers_file"] = str(answers_path)
     if _declared(mod, "checkout_terms"):
         intake["checkout_terms"] = _checkout_terms(doc)
+    if _declared(mod, "promotion"):
+        promo = _promotion(doc)
+        if promo is not None:
+            intake["promotion"] = promo
     for k in ("test_only", "allowed_write_target", "locale", "automation_execution"):
         if k in system:
             intake[k] = system[k]

@@ -11,6 +11,7 @@ import copy
 import importlib.util
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -28,6 +29,44 @@ def load(name: str) -> dict:
 
 def offer(payload: dict, offer_id: str) -> dict:
     return next(o for o in payload["offers"] if o["offer_id"] == offer_id)
+
+
+_ANSWERS_DIR = tempfile.TemporaryDirectory()  # the answers file copies the cases below edit
+
+
+def answers_for(name: str) -> dict:
+    return json.loads((FIXTURES / name / "answers.json").read_text(encoding="utf-8"))
+
+
+def use_answers(payload: dict, doc: dict) -> dict:
+    """Point the intake at a copy of the client's answers (written to a tmp dir) and return the intake."""
+    text = json.dumps(doc, sort_keys=True)
+    path = Path(_ANSWERS_DIR.name) / f"answers-{abs(hash(text))}.json"
+    path.write_text(text, encoding="utf-8")
+    payload["answers_file"] = str(path)
+    return payload
+
+
+def entry(doc: dict, offer_id: str) -> dict:
+    """The answers entry (an item of the packages list, or a slot's value) that holds this offer."""
+    for key, answer in doc["answers"].items():
+        value = answer.get("value")
+        for item in (value if isinstance(value, list) else [value]):
+            if isinstance(item, dict) and item.get("offer_id") == offer_id:
+                return item
+    raise KeyError(offer_id)
+
+
+def reprice(payload: dict, offer_id: str, name: str = "", **price) -> dict:
+    """A price (or name) the client really gave: the intake AND the client's answers carry it together."""
+    which = "seven-figure-preneur" if payload["journey_mode"] == "folded_levels" else "elevation"
+    doc = answers_for(which)
+    if name:
+        offer(payload, offer_id)["name"] = name
+        entry(doc, offer_id)["display_name"] = name.strip()  # the intake strips names; the answers hold the clean one
+    offer(payload, offer_id)["price"].update(price)
+    entry(doc, offer_id)["price"].update({k: v for k, v in price.items() if k in ("amount_minor", "currency")})
+    return use_answers(payload, doc)
 
 
 class IntakeCase(unittest.TestCase):
@@ -90,7 +129,7 @@ class OperationalFields(IntakeCase):  # PRD-13
 class OfferSetCoherence(IntakeCase):  # PRD-14
     def test_mixed_currencies_refused(self):
         payload = load("elevation")
-        offer(payload, "BUMP")["price"]["currency"] = "EUR"
+        reprice(payload, "BUMP", currency="EUR")
         self.refuses(payload, "AF-LAUNCH-INTAKE-OFFER", "currency", "'EUR'")
 
     def test_offer_ids_unique_case_insensitively(self):
@@ -105,26 +144,25 @@ class OfferSetCoherence(IntakeCase):  # PRD-14
 
     def test_display_names_unique(self):
         payload = load("elevation")
-        offer(payload, "U1")["name"] = "  test only ESSENTIAL "
+        reprice(payload, "U1", name="  test only ESSENTIAL ")
         self.refuses(payload, "AF-LAUNCH-INTAKE-OFFER", "U1", "display name")
 
     def test_multiple_options_identical_price_needs_different_levels(self):
         payload = load("elevation")
         pro, ess = offer(payload, "MAIN-PRO"), offer(payload, "MAIN-ESS")
-        pro["price"]["amount_minor"] = ess["price"]["amount_minor"]
+        reprice(payload, "MAIN-PRO", amount_minor=ess["price"]["amount_minor"])
         intake.validate(payload)  # the levels differ, so identical prices are allowed
         pro["level"] = copy.deepcopy(ess["level"])
         self.refuses(payload, "AF-LAUNCH-INTAKE-OFFER", "offers", "same level")
 
     def test_folded_levels_identical_price_refused(self):
         payload = load("seven-figure-preneur")
-        offer(payload, "MAIN-B")["price"]["amount_minor"] = 9700
+        reprice(payload, "MAIN-B", amount_minor=9700)
         self.refuses(payload, "AF-LAUNCH-INTAKE-OFFER", "offers", "identical prices")
 
     def test_price_sanity_bounds_need_confirmation(self):
         for amount in (99, 10_000_001):
-            payload = load("elevation")
-            offer(payload, "BUMP")["price"]["amount_minor"] = amount
+            payload = reprice(load("elevation"), "BUMP", amount_minor=amount)
             self.refuses(payload, "AF-LAUNCH-INTAKE-OFFER", "amount_minor", "bounds_confirmed")
             offer(payload, "BUMP")["price"]["bounds_confirmed"] = True
             intake.validate(payload)
@@ -176,6 +214,108 @@ class UpsellDownsellDeliverables(IntakeCase):  # UPS-15
         by_id = {o["offer_id"]: o for o in record["offers"]}
         for offer_id in ("U1", "D1", "U2"):
             self.assertTrue(by_id[offer_id]["deliverables"], offer_id)
+
+
+class PriceProvenance(IntakeCase):  # PRD-03: the client's answers file is the only price authority
+    def test_both_fixtures_resolve_every_price_to_a_provided_owner_answer(self):
+        for name in ("elevation", "seven-figure-preneur"):
+            normalized = intake.validate(load(name))
+            for o in normalized["offers"]:
+                canon = o["canonical"]
+                self.assertEqual(canon["prices"][0]["approval_status"], "provided", (name, o["offer_id"]))
+                self.assertEqual(canon["source_kind"], "owner", (name, o["offer_id"]))
+                self.assertEqual(o["price"]["source_ref"], canon["source_ref"])
+
+    def test_an_offer_whose_price_has_no_source_ref_is_refused(self):
+        payload = load("elevation")
+        del offer(payload, "BUMP")["price"]["source_ref"]
+        self.refuses(payload, "AF-LAUNCH-INTAKE-PROVENANCE", "offers[3].price.source_ref")
+
+    def test_a_ref_that_is_not_an_answers_entry_is_refused(self):
+        for ref in ("answers-file:made_up_price", "launcher-intake:L1:r1"):
+            payload = load("elevation")
+            offer(payload, "BUMP")["price"]["source_ref"] = ref
+            self.refuses(payload, "AF-LAUNCH-INTAKE-PROVENANCE", "offers[3].price.source_ref")
+
+    def test_a_real_ref_with_a_different_amount_is_refused(self):
+        payload = load("elevation")
+        offer(payload, "BUMP")["price"]["amount_minor"] = 1
+        payload["offers"][3]["price"]["bounds_confirmed"] = True  # past the sanity bounds, so only provenance can refuse
+        self.refuses(payload, "AF-LAUNCH-INTAKE-PROVENANCE", "offers[3].price.source_ref")
+
+    def test_an_intake_with_no_answers_file_is_refused(self):
+        payload = load("elevation")
+        del payload["answers_file"]
+        self.refuses(payload, "AF-LAUNCH-INTAKE-MISSING", "answers_file")
+
+    def test_an_answers_file_that_cannot_be_read_or_is_the_wrong_schema_is_refused(self):
+        payload = load("elevation")
+        payload["answers_file"] = str(Path(_ANSWERS_DIR.name) / "absent.json")
+        self.refuses(payload, "AF-LAUNCH-INTAKE-PROVENANCE", "answers_file")
+        doc = answers_for("elevation")
+        doc["schema"] = "something-else/v9"
+        self.refuses(use_answers(load("elevation"), doc), "AF-LAUNCH-INTAKE-PROVENANCE", "answers_file")
+
+    def test_a_suggested_price_carries_its_recommendation_status_into_the_canonical_offer(self):
+        doc = answers_for("elevation")
+        doc["answers"]["packages"]["status"] = "suggested"
+        normalized = intake.validate(use_answers(load("elevation"), doc))
+        for o in normalized["offers"]:
+            want = ("recommended_unapproved", "recommendation") if o["role"] == "main" else ("provided", "owner")
+            self.assertEqual((o["canonical"]["prices"][0]["approval_status"], o["canonical"]["source_kind"]),
+                             want, o["offer_id"])
+
+
+class UnsupportedSecondDownsell(IntakeCase):  # PRD-30
+    def test_a_downsell_2_offer_is_refused_by_name_never_dropped(self):
+        payload = load("elevation")
+        payload["offers"].append({
+            "offer_id": "down-2", "name": "Down Two", "role": "downsell_2",
+            "price": {"amount_minor": 2700, "currency": "USD"},
+            "level": {"state": "supplied", "name": "Down Two", "deliverables": ["Down Two access"]},
+            "delivery": {"destination": "https://delivery.test-only.invalid/elevation/down-2", "owner_confirmed": True}})
+        err = self.refuses(payload, "AF-LAUNCH-INTAKE-OFFER", f"offers[{len(payload['offers']) - 1}].role")
+        self.assertIn("a second downsell is not supported in this release", str(err))
+
+
+class PromotionFacts(IntakeCase):  # PRD-15, DECISIONS-NEEDED[37]: a fact record only
+    PROMOTION = {"kind": "A discount", "limitations": "only 50 seats at this price", "buyers": None, "followup": None,
+                 "seat_limit": 50, "seat_limit_state": "limited",
+                 "source_refs": ["answers-file:bf_promotion", "answers-file:bf_limitations"]}
+
+    def test_a_supplied_promotion_reaches_the_normalized_intake(self):
+        payload = load("elevation")
+        payload["promotion"] = dict(self.PROMOTION)
+        promo = intake.validate(payload)["promotion"]
+        self.assertEqual((promo["seat_limit"], promo["kind"]), (50, "A discount"))
+        self.assertNotIn("promotion", intake.validate(load("elevation")))  # never defaulted
+
+    def test_an_undeclared_promotion_key_is_refused(self):
+        payload = load("elevation")
+        payload["promotion"] = dict(self.PROMOTION, compare_at_claim="was $997")
+        self.refuses(payload, "AF-LAUNCH-INTAKE-PROMOTION", "promotion")
+
+    def test_a_bad_promotion_value_is_refused(self):
+        for bad in ({"kind": "A free car"}, {"seat_limit": 0}, {"seat_limit": 50, "seat_limit_state": "no_limit"},
+                    {"seat_limit": None, "seat_limit_state": "limited"}, {"source_refs": []},
+                    {"source_refs": ["launcher-intake:x"]}, {"limitations": 5}):
+            payload = load("elevation")
+            payload["promotion"] = dict(self.PROMOTION, **bad)
+            self.refuses(payload, "AF-LAUNCH-INTAKE-PROMOTION", "promotion")
+
+
+class ClientChoices(IntakeCase):  # CON-04: what the CLIENT chose to leave out of the launch
+    def test_a_recorded_waiver_validates_and_is_carried(self):
+        payload = load("elevation")
+        payload["client_choices"] = ["email_only"]
+        self.assertEqual(intake.validate(payload)["client_choices"], ["email_only"])
+        self.assertEqual(intake.validate(load("elevation"))["client_choices"], [])
+
+    def test_an_unknown_or_malformed_choice_is_refused(self):
+        for bad in (["skip_everything"], "email_only", ["email_only", "email_only"], [5]):
+            payload = load("elevation")
+            payload["client_choices"] = bad
+            self.refuses(payload, "AF-LAUNCH-INTAKE-CHOICES", "client_choices")
 
 
 class CheckoutFacts(IntakeCase):  # CHK-16

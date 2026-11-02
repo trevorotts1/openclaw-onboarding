@@ -5,6 +5,7 @@ Run: python3 -m pytest shared-utils/client_intake/tests/test_launcher_intake.py 
 No network, no paid call, no model.
 """
 import copy
+import hashlib
 import importlib
 import json
 import subprocess
@@ -25,7 +26,9 @@ import launcher_intake as li  # noqa: E402
 SKILL83 = REPO / "83-black-friday-launcher"
 SKILL71 = REPO / "71-blackceo-signature-page" / "scripts"
 sys.path.insert(0, str(SKILL83))
+sys.path.insert(0, str(SKILL83 / "fixtures"))
 intake83 = importlib.import_module("launcher_core.intake")
+from test_only_readback import test_only_transport as offline_readback  # noqa: E402  (the offline GHL read-back every 83 test installs)
 
 ELEVATION = json.loads((PKG / "fixtures" / "answers.elevation.json").read_text())
 _FIX83 = json.loads((SKILL83 / "fixtures" / "elevation" / "intake.json").read_text())
@@ -33,19 +36,61 @@ SYSTEM = {k: _FIX83[k] for k in ("tenant_id", "location_id", "launch_id", "brand
 HOUSE = "House look (recommended)"
 
 
+_SAID = {}
+
+
+def _say(text):  # stores a CLIENT message in the transcript seam, returns its id
+    ref = "t-" + hashlib.sha256(str(text).encode()).hexdigest()[:10]  # same words, same id: answers files stay comparable
+    _SAID[ref] = {"role": "client", "text": str(text)}
+    return ref
+
+
+def setUpModule():
+    e.TRANSCRIPT_LOOKUP = _SAID.get
+    intake83.entitlement.set_transport(offline_readback())  # 83 reads the contact record back; offline here
+
+
+def tearDownModule():
+    e.TRANSCRIPT_LOOKUP = None
+    intake83.entitlement.set_transport(None)
+
+
+_ANSWERS_DIR = tempfile.TemporaryDirectory()  # the answers files the 83 intake reads its provenance from
+
+
 def elevation(direction=HOUSE):
-    """The Elevation answers with the three answers a launch intake also needs, asked the way a client answers."""
+    """The Elevation answers with the answers a launch intake also needs, asked the way a client answers.
+    The entitlement cites the client's own message; the checkout terms are the client's own wording."""
     doc = copy.deepcopy(ELEVATION)
     doc["meta"]["mode"] = "bf"
     for qid, text in (("entitlement", "Yes, it is included"), ("plan_approval", "Approve this plan"),
                       ("visual_direction", direction)):
-        r = e.record(doc, qid, text)
+        r = e.record(doc, qid, text, source_message_ref=_say(text) if qid in e.CITED_QUESTIONS else None)
         assert r.get("ok"), (qid, r)
+    e._set(doc, "checkout_terms", TERMS, "provided", "client")
     return doc
 
 
+def answers_on_disk(doc):
+    """The answers file the intake names (answers_file): written as the generator would read it."""
+    fd, name = tempfile.mkstemp(suffix=".json", dir=_ANSWERS_DIR.name)
+    with open(fd, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh)
+    return Path(name)
+
+
+def delivery_for(doc):
+    """What no answer can carry: the owner-confirmed https address where each buyer gets access (83 requires it)."""
+    return {o["offer_id"]: {"delivery": {"destination": f"https://delivery.test-only.invalid/{o['offer_id']}",
+                                         "owner_confirmed": True}} for o in li.derive_offers(doc)[1]}
+
+
 def built(doc=None, **kw):
-    return li.to_launcher_intake(doc or elevation(), dict(SYSTEM, **kw))
+    doc = doc or elevation()
+    extra = delivery_for(doc)
+    for oid, fields in (kw.pop("extra_offer", None) or {}).items():
+        extra[oid] = dict(extra.get(oid, {}), **fields)
+    return li.to_launcher_intake(doc, dict(SYSTEM, extra_offer=extra, **kw), answers_path=answers_on_disk(doc))
 
 
 def refused(test, code, fn, *a, **kw):
@@ -66,11 +111,14 @@ class ElevationBuildsAValidIntake(unittest.TestCase):
             self.assertRegex(src[o["offer_id"]]["source_ref"], r"^answers-file:([A-Za-z0-9_.]+)(?:\[(\d+)\])?$")  # 83 offer_mapper grammar
         packages = ELEVATION["answers"]["packages"]["value"]
         mains = [o for o in res["intake"]["offers"] if o["role"] == "main"]
-        self.assertEqual([(o["name"], o["price"]) for o in mains], [(p["display_name"], p["price"]) for p in packages])
+        self.assertEqual([(o["name"], o["price"]) for o in mains],
+                         [(p["display_name"], dict(p["price"], source_ref=f"answers-file:packages[{i}]"))
+                          for i, p in enumerate(packages)])  # each price names the answer it came from
         self.assertEqual([src[o["offer_id"]]["source_ref"] for o in mains], [f"answers-file:packages[{i}]" for i in range(len(mains))])
         self.assertEqual([src[o["offer_id"]]["index"] for o in mains], list(range(len(mains))))
         by_role = {o["role"]: o for o in res["intake"]["offers"]}
-        self.assertEqual(by_role["upsell_1"]["price"], ELEVATION["answers"]["upsell_1"]["value"]["price"])
+        self.assertEqual(by_role["upsell_1"]["price"],
+                         dict(ELEVATION["answers"]["upsell_1"]["value"]["price"], source_ref="answers-file:upsell_1"))
         self.assertEqual(src[by_role["downsell_1"]["offer_id"]]["source_ref"], "answers-file:downsell_1")
         self.assertNotIn("bump", by_role)  # "none" in the answers: nothing is invented
         self.assertEqual(by_role["upsell_1"]["level"]["deliverables"], ["One private strategy day"])
@@ -83,7 +131,7 @@ class ElevationBuildsAValidIntake(unittest.TestCase):
             doc["answers"].pop(qid, None)
         res = built(doc)
         self.assertEqual([(o["offer_id"], o["price"]) for o in res["intake"]["offers"]],
-                         [("MAIN", {"amount_minor": 49700, "currency": "USD"})])
+                         [("MAIN", {"amount_minor": 49700, "currency": "USD", "source_ref": "answers-file:price"})])
         self.assertEqual(res["provenance"]["offers"][0]["source_ref"], "answers-file:price")
         intake83.validate(res["intake"])
 
@@ -119,6 +167,20 @@ class ElevationBuildsAValidIntake(unittest.TestCase):
         e._set(doc, "downsell_2", {"display_name": "Last chance", "price": {"amount_minor": 9900, "currency": "USD"}},
                "provided", "client")
         refused(self, "AF-LAUNCH-ANSWERS-DOWNSELL2", built, doc)
+
+    def test_a_yes_to_a_second_downsell_with_a_price_is_refused_naming_it(self):  # PRD-30
+        doc = elevation()
+        e._set(doc, "downsell_2", {"display_name": "Yes, I have one", "price": {"amount_minor": 2700, "currency": "USD"}},
+               "provided", "client")
+        err = refused(self, "AF-LAUNCH-ANSWERS-DOWNSELL2", built, doc)
+        self.assertEqual(err.field, "answers-file:downsell_2")
+        self.assertIn("a second downsell is not supported in this release", str(err))
+        self.assertEqual(err.detail, intake83.UNSUPPORTED_OFFER_ROLES["downsell_2"])  # byte-identical to 83
+
+    def test_no_second_downsell_builds_with_no_trace_of_one(self):  # PRD-30
+        doc = elevation()
+        e._set(doc, "downsell_2", "none", "provided", "client")
+        self.assertNotIn("downsell_2", json.dumps(built(doc)["intake"]))
 
     def test_the_image_plan_carries_only_confirmed_picture_choices(self):
         plan = built()["intake"]["image_plan"]
@@ -200,6 +262,14 @@ def future83(**over):
     return types.SimpleNamespace(**dict(base, **over))
 
 
+def past83():
+    """A stand-in for Skill 83's intake before it declared answers_file, checkout_terms and a price source_ref."""
+    return types.SimpleNamespace(REQUIRED_FIELDS={k: v for k, v in intake83.REQUIRED_FIELDS.items()
+                                                  if k not in ("answers_file", "checkout_terms")},
+                                 OPTIONAL_FIELDS=("image_plan",), PERMITTED_DEFAULTS=intake83.PERMITTED_DEFAULTS,
+                                 PRICE_REQUIRED=intake83.PRICE_REQUIRED, PRICE_OPTIONAL=("bounds_confirmed",))
+
+
 class GeneratorFollowsWhatSkill83Declares(unittest.TestCase):
     def _terms_doc(self, value=TERMS):
         doc = elevation()
@@ -207,11 +277,19 @@ class GeneratorFollowsWhatSkill83Declares(unittest.TestCase):
         return doc
 
     def test_a_field_83_does_not_declare_is_not_emitted(self):
-        intake = built(self._terms_doc())["intake"]  # base 83 declares none of the three
+        doc = self._terms_doc()
+        intake = li.to_launcher_intake(doc, SYSTEM, intake_module=past83())["intake"]  # an older 83 declares none of the three
         for k in ("answers_file", "checkout_terms"):
             self.assertNotIn(k, intake)
         self.assertNotIn("source_ref", intake["offers"][0]["price"])
-        intake83.validate(intake)
+        with self.assertRaises(intake83.IntakeError) as cm:  # the 83 in this tree requires them, and says so by name
+            intake83.validate(intake)
+        self.assertEqual((cm.exception.code, cm.exception.field), ("AF-LAUNCH-INTAKE-MISSING", "checkout_terms"))
+        built_now = built(doc)["intake"]  # the 83 in this tree declares all three, so the generator emits them
+        for k in ("answers_file", "checkout_terms"):
+            self.assertIn(k, built_now)
+        self.assertIn("source_ref", built_now["offers"][0]["price"])
+        intake83.validate(built_now)
 
     def test_a_declared_answers_file_checkout_terms_and_price_source_ref_are_built_from_the_answers(self):
         res = li.to_launcher_intake(self._terms_doc(), SYSTEM, answers_path=Path("/x/answers.json"), intake_module=future83())
@@ -227,7 +305,9 @@ class GeneratorFollowsWhatSkill83Declares(unittest.TestCase):
     def test_declared_terms_are_never_defaulted_and_all_six_parts_are_needed(self):
         mod = future83()
         build = lambda doc: li.to_launcher_intake(doc, SYSTEM, answers_path=Path("a.json"), intake_module=mod)  # noqa: E731
-        refused(self, "AF-LAUNCH-ANSWERS-MISSING", build, elevation())
+        no_terms = elevation()
+        del no_terms["answers"]["checkout_terms"]
+        refused(self, "AF-LAUNCH-ANSWERS-MISSING", build, no_terms)
         err = refused(self, "AF-LAUNCH-ANSWERS-TERMS", build, self._terms_doc("30-day guarantee, see my terms page"))
         self.assertIn("consent_text", err.detail)
         refused(self, "AF-LAUNCH-ANSWERS-TERMS", build, self._terms_doc({k: v for k, v in TERMS.items() if k != "terms_text"}))
@@ -244,6 +324,16 @@ class GeneratorFollowsWhatSkill83Declares(unittest.TestCase):
         refused(self, "AF-LAUNCH-ANSWERS-SYSTEM", built, extra_offer={first: {"name": "Cheaper"}})
         ok = built(extra_offer={first: {"delivery": {"kind": "x"}}})["intake"]["offers"][0]
         self.assertEqual(ok["delivery"], {"kind": "x"})  # what no answer can carry still passes through
+
+    def test_the_promotion_facts_ride_the_intake_only_when_83_declares_them(self):
+        doc = elevation()
+        for qid, v in (("bf_promotion", "A discount"), ("bf_limitations", "only 50 seats at this price"), ("bf_seat_limit", "Only 50 seats")):
+            e._set(doc, qid, v, "provided", "client")
+        self.assertNotIn("promotion", li.to_launcher_intake(doc, SYSTEM, intake_module=past83())["intake"])
+        promo = built(doc)["intake"]["promotion"]
+        self.assertEqual((promo["kind"], promo["seat_limit"], promo["seat_limit_state"]), ("A discount", 50, "limited"))
+        self.assertEqual(intake83.validate(built(doc)["intake"])["promotion"], promo)  # 83's own check accepts what the generator emits
+        self.assertNotIn("promotion", built(elevation())["intake"])  # nothing answered: nothing invented
 
     def test_creative_direction_rides_the_image_plan_only_when_83_accepts_it(self):
         named = elevation("Like an outside style: warm editorial magazine")
@@ -374,6 +464,22 @@ class ProviderAndBank(unittest.TestCase):
             promo = built(doc)["provenance"]["promotion"]
             self.assertEqual((promo["seat_limit"], promo["seat_limit_state"]), (seats, state))
         self.assertIsNone(built(elevation())["provenance"]["promotion"])
+
+    def test_the_paid_image_answer_reaches_image_plan_as_an_approval_ref_with_its_cap(self):  # IMG-03
+        for said in ("No paid pieces", "Decide later"):
+            doc = elevation()
+            e.record(doc, "paid_render_approval", said)
+            got = e.image_inputs(doc)
+            self.assertEqual((got["allow_paid"], got["paid_render_approval_ref"], got["image_cap_minor"]), (False, None, None), said)
+        doc = elevation()
+        e.record(doc, "paid_render_approval", "$200")
+        self.assertEqual((e.image_inputs(doc)["allow_paid"], e.image_inputs(doc)["paid_render_approval_ref"]), (False, None))  # no CC record yet
+        doc["answers"]["paid_render_approval"]["value"]["approval_id"] = "cc-approval-7"
+        got = e.image_inputs(doc)
+        self.assertEqual((got["allow_paid"], got["paid_render_approval_ref"], got["image_cap_minor"], got["image_currency"]),
+                         (True, "cc-approval-7", 20000, "USD"))
+        ip = importlib.import_module("launcher_core.image_plan")  # 83's own raw check takes exactly these keys
+        ip.validate_raw({k: got[k] for k in ("paid_render_approval_ref", "image_cap_minor", "image_currency")})
 
     def test_a_second_downsell_is_not_asked_outside_the_legacy_funnel(self):  # PRD-30
         for mode in ("bf", "launch"):
