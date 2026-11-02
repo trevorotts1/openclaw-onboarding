@@ -142,6 +142,7 @@ class EveryDecisionFileIsPinned(Trees):
         for want in ("49/structure/page_types.json", "49/scripts/collect_launch_receipts.py",
                      "49/scripts/launch_intake.py", "49/scripts/page_set.py", "49/scripts/landing_bridge.py",
                      "49/scripts/validate_launch_plan.py", "49/FUNNEL-MANIFEST.json", "49/role_wrappers.py",
+                     "49/signature-funnel-entry.sh",
                      "shared/contract/validate_launch_plan.py", "83/routes/substrate.py"):
             self.assertIn(want, names)
         for wrapper in (self.t49 / "scripts").glob("*_wrapper.py"):

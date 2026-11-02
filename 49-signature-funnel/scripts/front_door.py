@@ -46,8 +46,9 @@ EXPECTED_MAJOR = "2"
 
 # Pin set: (logical prefix, tree, [(subdir, glob)]). Test files are never pinned or scanned.
 _PIN_SPEC = (
-    ("49", "49", (("", "*.py"), ("", "FUNNEL-MANIFEST.json"), ("scripts", "*.py"), ("scripts/vendor", "*.json"),
-                  ("structure", "*.json"), ("schema", "*.json"), ("intake", "*.json"))),
+    ("49", "49", (("", "*.py"), ("", "signature-funnel-entry.sh"), ("", "FUNNEL-MANIFEST.json"),
+                  ("scripts", "*.py"), ("scripts/vendor", "*.json"), ("structure", "*.json"),
+                  ("schema", "*.json"), ("intake", "*.json"))),
     ("83", "83", (("launcher_core", "*.py"), ("launcher_core", "*.json"), ("routes", "*.py"),
                   ("", "entitlement-declaration.json"), ("", "receipt.schema.json"))),
     ("shared/contract", "contract", (("", "*.py"), ("", "*.json"))),
