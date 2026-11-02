@@ -1521,13 +1521,17 @@ def load_image_slots():
     return mod
 
 
-def image_contract_errors(content_imgs, image_map, base_dirs, fetch):
+def image_contract_errors(content_imgs, image_map, base_dirs, fetch, require_map=False):
     """IMG-18: every content image must map to an image-map entry, carry that
     entry's URL or file, and hash to the QC'd file. Founder and logo images have
-    their own gates and are not passed in."""
+    their own gates and are not passed in. With no image-map at all, a launch
+    run (require_map) fails each image; any other run keeps the existing
+    "image-map.json not found" warning."""
     if not content_imgs:
         return []
     if image_map is None:
+        if not require_map:
+            return []
         return [f"image src does not map to an image-map entry: {img['src']} "
                 "(image-map.json not found)" for img in content_imgs]
     mod = load_image_slots()
@@ -1842,7 +1846,8 @@ def main():
                                 [i for i in imgs_res["imgs"]
                                  if i["visible"] and not i["founder"] and not i["logo"]],
                                 image_map, map_dirs,
-                                lambda src: resolve_image_bytes(page, src, page_url_dir)))
+                                lambda src: resolve_image_bytes(page, src, page_url_dir),
+                                require_map=bool(intake.get("launch_profile") or intake.get("launch"))))
                             founder_res = page.evaluate(FOUNDER_JS)
                             width_results[width]["founder"] = founder_res
                             if is_blackceo and founder_res.get("present"):

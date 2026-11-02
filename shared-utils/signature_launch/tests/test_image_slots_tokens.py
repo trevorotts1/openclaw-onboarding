@@ -155,6 +155,14 @@ def test_missing_component_refuses_a_token_driven_page_only():
         assert any(r[0] == "DEGRADED" and "refused" in r[2] for r in rows), rows
 
 
+def test_launch_run_without_an_image_map_fails_each_image_and_other_runs_warn():
+    validate_page = _load("vp_under_test", SCRIPTS / "validate_page.py")
+    imgs = [{"src": "file:///run/img.png", "slot": None}]
+    out = validate_page.image_contract_errors(imgs, None, [], lambda s: b"", require_map=True)
+    assert len(out) == 1 and "does not map to an image-map entry" in out[0]
+    assert validate_page.image_contract_errors(imgs, None, [], lambda s: b"") == []
+
+
 # ---------------------------------------------- validate_page, in a browser
 
 def _require_browser():
