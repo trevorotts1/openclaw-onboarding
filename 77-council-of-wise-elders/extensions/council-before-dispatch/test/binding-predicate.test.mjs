@@ -9,8 +9,8 @@ import test from "node:test";
 
 import { resolveCouncilBinding } from "../lib/binding-predicate.mjs";
 
-const CLIENT_DM = "8566720334";
-const RESCUE_DM = "5252140759";
+const CLIENT_DM = "1000000001";
+const RESCUE_DM = "1000000002";
 
 function config(bindings, allowFrom = [CLIENT_DM, RESCUE_DM]) {
   return {
