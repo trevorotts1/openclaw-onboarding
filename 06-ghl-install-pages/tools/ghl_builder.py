@@ -654,7 +654,9 @@ def page_autosave(page_id: str, page_data: dict, *, funnel_id: str,
                            evidence_root=evidence_root, store_dir=store_dir)
     return rc.page_autosave(
         page_id, page_data, funnel_id=funnel_id, page_version=page_version,
-        integrations=integrations, publish=publish is not False, session=session)
+        integrations=integrations, publish=publish is not False, session=session,
+        approval=approval, location_id=location_id, evidence_root=evidence_root,
+        store_dir=store_dir)
 
 
 # ── Two-saves invariant (transcript steps 17→18, ~08:31–09:05) ────────────────

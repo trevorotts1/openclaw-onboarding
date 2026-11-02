@@ -179,6 +179,36 @@ def _launch_contract():
           "the plan cannot be proven against the contract it claims to follow")
 
 
+@lru_cache(maxsize=1)
+def _calendar_law():
+    """The ONE launch calendar law (shared-utils/signature_launch_contract/calendar_law.py),
+    imported by path from the same directory as the shared validator."""
+    spec = importlib.util.spec_from_file_location(
+        "_launch_calendar_law", _launch_contract()[1].parent / "calendar_law.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _assert_calendar_law(calendar, black_friday_required):
+    """Phase ORDER is the shared law's, never a private rule of this reader."""
+    violations = _calendar_law().violations(calendar, black_friday_required=black_friday_required)
+    _require(not violations, "CALENDAR-PHASE-ORDER", "; ".join(violations))
+
+
+@lru_cache(maxsize=1)
+def _buildable_keys():
+    """Template keys of this skill's OWN sibling manifest (_matcher/buildable-templates.json).
+    A missing or unreadable manifest yields no keys, so every template is refused (fail closed)."""
+    path = Path(__file__).resolve().parents[1] / "_matcher" / "buildable-templates.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return frozenset(t["key"] for t in data.get("templates", [])
+                         if isinstance(t, dict) and t.get("key"))
+    except (OSError, ValueError, AttributeError):
+        return frozenset()
+
+
 def _shared_errors(plan):
     """Error strings from the shared validator (empty list = the contract accepts it)."""
     module, schema_path = _launch_contract()
@@ -248,7 +278,7 @@ def _zone_time(dt, zone, label):
     return resolved, ambiguous
 
 
-def read_calendar(calendar):
+def read_calendar(calendar, black_friday_required=False):
     _require(isinstance(calendar, dict), "CALENDAR-SHAPE",
              "launch_calendar is missing or is not an object")
     for field in ("launch_at", "doors_open_at", "doors_close_at", "timezone"):
@@ -289,8 +319,8 @@ def read_calendar(calendar):
             compiled.setdefault("black_friday", {})[field] = resolved.isoformat()
             compiled["dst_ambiguous"] = compiled["dst_ambiguous"] or ambiguous
 
-    # Phase ORDER is the shared calendar law's (enforced by the shared validator
-    # before this runs); only zone/offset/DST resolution lives here.
+    # Zone/offset/DST resolution lives here; phase ORDER is delegated to the shared law.
+    _assert_calendar_law(calendar, black_friday_required)
     return compiled, values
 
 
@@ -304,7 +334,16 @@ def read_launch_plan(plan, source="launch-plan"):
     _require(not errors, "LAUNCH-PLAN-CONTRACT", "; ".join(errors))
     reject_credentials(plan, source)
 
-    calendar_doc, calendar_times = read_calendar(plan["launch_calendar"])
+    # A launch with a Black Friday email sequence must carry launch_calendar.black_friday;
+    # the shared calendar law then orders its phases (read_calendar).
+    black_friday_launch = any(
+        isinstance(seq, dict) and seq.get("kind") in BLACK_FRIDAY_KINDS
+        for seq in plan.get("email_sequences", []))
+    if black_friday_launch and isinstance(plan["launch_calendar"], dict):
+        _require("black_friday" in plan["launch_calendar"], "CALENDAR-BLACK-FRIDAY",
+                 "a Black Friday email sequence needs launch_calendar.black_friday "
+                 "(%s)" % ", ".join(BLACK_FRIDAY_FIELDS))
+    calendar_doc, calendar_times = read_calendar(plan["launch_calendar"], black_friday_launch)
     units = {}            # id -> kind
     pages, email_sequences, text_sets, automations = {}, {}, {}, []
     targets = {"pages": pages, "email_sequences": email_sequences, "text_sets": text_sets}
@@ -315,14 +354,19 @@ def read_launch_plan(plan, source="launch-plan"):
             units[item["id"]] = kind
             edges[item["id"]] = list(item["waits_for"])
             if kind == "automations":
+                template = item.get("template")
+                new = item.get("new_template")
+                approved_new = (template == "new" and isinstance(new, dict)
+                                and bool(str(new.get("owner_approved_reason") or "").strip())
+                                and bool(new.get("compile_spec")))
+                _require(template in _buildable_keys() or approved_new,
+                         "LAUNCH-PLAN-TEMPLATE-UNBUILDABLE",
+                         "automation %r template %r is not in buildable-templates.json "
+                         "(a 'new' template needs new_template.owner_approved_reason and "
+                         "new_template.compile_spec)" % (item["id"], template))
                 automations.append(item)
             elif kind in targets:
                 targets[kind][item["id"]] = item
-
-    if any(seq["kind"] in BLACK_FRIDAY_KINDS for seq in email_sequences.values()):
-        _require("black_friday" in calendar_doc, "CALENDAR-BLACK-FRIDAY",
-                 "a Black Friday email sequence needs launch_calendar.black_friday "
-                 "(%s)" % ", ".join(BLACK_FRIDAY_FIELDS))
 
     order = _assert_acyclic(edges)
 
@@ -962,7 +1006,8 @@ def _selftest():
              "email_count": 1, "draft_only": True, "waits_for": []}],
         "text_sets": [],
         "automations": [
-            {"id": "auto_pre_launch", "family": "pre_launch", "template": "new",
+            {"id": "auto_pre_launch", "family": "pre_launch",
+             "template": "launch-a/launch-a-prelaunch-window",
              "build_rail": "skill44_engine", "draft_only": True,
              "trigger": {"type": "tag_added"}, "waits_for": ["email_pre_launch"]}],
     }
@@ -1044,6 +1089,13 @@ def _selftest():
         raise AssertionError("out-of-order calendar was accepted")
     except ReaderError as exc:
         assert exc.code == "LAUNCH-PLAN-CONTRACT", exc.code
+
+    # read_calendar on its own delegates order to the shared law (CALENDAR-PHASE-ORDER).
+    try:
+        read_calendar(out_of_order["launch_calendar"])
+        raise AssertionError("out-of-order calendar was accepted by read_calendar")
+    except ReaderError as exc:
+        assert exc.code == "CALENDAR-PHASE-ORDER", exc.code
 
     print("selftest ok")
 

@@ -1444,6 +1444,10 @@ def workflows_build(ctx, plan_file, automation_file, journal_path, folder, check
 
         if check_only:
             errors = validate_campaign(campaign) + _contract_errors(campaign)
+            # compile_launch_builds records blocked/refused builds on the result
+            # instead of raising; a dry run must not look clean while it hides them.
+            errors += ["%s: %s: %s" % (r.get("id"), r.get("code"), r.get("reason"))
+                       for r in getattr(campaign, "refusals", None) or []]
             report = {
                 "dry_run": True,
                 "source": "automation-build" if automation_file else "plan",
@@ -2103,10 +2107,69 @@ class _GhlApiTransport:
         return pp.Response(200, data if isinstance(data, dict) else {})
 
 
+def _approval_record():
+    """Load shared-utils/signature_launch_contract/approval_record.py by path (the
+    ONE approval verifier, stdlib only). Searched like ``_products_prices``."""
+    import importlib.util
+    name = "_caf_shared_approval_record"
+    if name in sys.modules:
+        return sys.modules[name]
+    candidates = []
+    override = os.environ.get("CAF_SHARED_UTILS_DIR", "").strip()
+    if override:
+        candidates.append(os.path.join(override, "signature_launch_contract", "approval_record.py"))
+    candidates.append(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..", "..", "..", "..", "..", "shared-utils", "signature_launch_contract", "approval_record.py"))
+    for path in candidates:
+        path = os.path.normpath(path)
+        if os.path.isfile(path):
+            spec = importlib.util.spec_from_file_location(name, path)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module
+            spec.loader.exec_module(module)
+            return module
+    raise RuntimeError("approval_record.py not found (looked in: %s)" % ", ".join(candidates))
+
+
+def _verify_automation_write(approval_id, plan_sha256, action):
+    """Verify an ``automation_write`` approval for one action against the approval
+    authority (Command Center). Returns approval_record's result dict
+    (``ok`` True) or raises. This is the CLI's verify hook."""
+    return _approval_record().verify(approval_id, "automation_write", plan_sha256, [action])
+
+
+def _write_approval(pp, approval_id, plan_sha256, action, key):
+    """Per-action approval record for the products/prices adapter, or None when no
+    ``--approval-id`` was given (the adapter then refuses the write: fail closed,
+    zero POSTs). A refusal or an unreachable authority is ``pp.ApprovalRequired``."""
+    if not approval_id:
+        return None
+    from datetime import datetime
+    try:
+        if not plan_sha256:
+            raise ValueError("--plan-sha256 is required with --approval-id")
+        verified = _verify_automation_write(approval_id, plan_sha256, action)
+        expiry = datetime.fromisoformat(str(verified["expires_at"]).replace("Z", "+00:00")).timestamp()
+        return {"kind": "automation_write", "approval_id": approval_id,
+                "location_id": key.location_id, "action": action,
+                "object_key": ":".join(key.as_tuple()), "plan_sha256": plan_sha256,
+                "approver": verified["client_identity"], "expiry": expiry}
+    except Exception as exc:  # noqa: BLE001 - refusal, unavailable authority, bad shape
+        raise pp.ApprovalRequired("%s: approval %s" % (action, exc)) from exc
+
+
 def _products_prices_adapter(pp):
     # ponytail: run-scoped store; wire shared-utils/delivery/checkpoints.py for
     # cross-run read-before-create when the durable store lands.
-    return pp.ProductsPricesAdapter(_GhlApiTransport(pp), pp.InMemoryStore())
+    def _reverify(record):
+        try:  # the authority re-checks the very record the adapter is about to trust
+            return _verify_automation_write(
+                record["approval_id"], record["plan_sha256"], record["action"]).get("ok") is True
+        except Exception:  # noqa: BLE001 - fail closed
+            return False
+    return pp.ProductsPricesAdapter(_GhlApiTransport(pp), pp.InMemoryStore(),
+                                    approval_verifier=_reverify)
 
 
 @payments.command("create-product")
@@ -2117,14 +2180,21 @@ def _products_prices_adapter(pp):
 @click.option("--description", default=None, help="Product description")
 @click.option("--image-url", default=None,
               help="REFUSED: the shared products adapter carries no image field.")
+@click.option("--approval-id", default=None,
+              help="Command Center automation_write approval id (required to create)")
+@click.option("--plan-sha256", default=None,
+              help="sha256 of the approved plan the approval is bound to")
 @click.pass_context
-def payments_create_product(ctx, name, product_type, description, image_url):
+def payments_create_product(ctx, name, product_type, description, image_url,
+                            approval_id, plan_sha256):
     """Create a product through shared-utils/ghl/products_prices.py.
 
     POST /products/ (Version 2021-07-28), then GET /products/{id} read-back of
     name, type and location; a mismatch is a failure, never a success. A product
-    is the catalog entry; attach prices with ``payments create-price``. The
-    safety gate runs inside ``api.post``.
+    is the catalog entry; attach prices with ``payments create-price``. A create
+    needs a verified ``automation_write`` approval (``--approval-id`` and
+    ``--plan-sha256``); without one nothing is POSTed. The safety gate runs
+    inside ``api.post``.
     """
     try:
         if image_url:
@@ -2137,10 +2207,12 @@ def payments_create_product(ctx, name, product_type, description, image_url):
             sys.exit(2)
         pp = _products_prices()
         loc = _loc(ctx)
+        key = pp.LogicalKey(loc, "product", name)
         product, op = _products_prices_adapter(pp).ensure_product(
-            pp.LogicalKey(loc, "product", name),
+            key,
             pp.ProductSpec(name=name, location_id=loc, product_type=product_type,
                            description=description),
+            _write_approval(pp, approval_id, plan_sha256, "products.create", key),
         )
         _output(ctx, {
             "native_product_id": product.native_product_id,
@@ -2165,18 +2237,26 @@ def payments_create_product(ctx, name, product_type, description, image_url):
 @click.option("--interval", default=None,
               type=click.Choice(["day", "week", "month", "year"]),
               help="Billing interval (required for --type recurring)")
+@click.option("--interval-count", default=1, type=int,
+              help="Billing intervals per charge (recurring only, default 1)")
 @click.option("--trial-days", default=None, type=int,
               help="Trial days before the first charge (recurring only)")
+@click.option("--approval-id", default=None,
+              help="Command Center automation_write approval id (required to create)")
+@click.option("--plan-sha256", default=None,
+              help="sha256 of the approved plan the approval is bound to")
 @click.pass_context
 def payments_create_price(ctx, product_id, name, amount, currency, price_type,
-                          interval, trial_days):
+                          interval, interval_count, trial_days, approval_id, plan_sha256):
     """Create a price on a product through shared-utils/ghl/products_prices.py.
 
     ``amount`` is in the smallest currency unit (cents): $49.00 = 4900. The
     adapter converts to the documented API amount, POSTs
     /products/{id}/price, and reads the price back (amount, currency, type,
-    interval, trial); a mismatch is a failure. The safety gate runs inside
-    ``api.post``.
+    interval, trial); a mismatch is a failure. The body is built only by
+    ``products_prices.price_request_body``. A create needs a verified
+    ``automation_write`` approval (``--approval-id`` and ``--plan-sha256``);
+    without one nothing is POSTed. The safety gate runs inside ``api.post``.
     """
     try:
         pp = _products_prices()
@@ -2187,10 +2267,13 @@ def payments_create_price(ctx, product_id, name, amount, currency, price_type,
             billing = "one_time"
         spec = pp.PriceSpec(
             name=name, location_id=loc, billing_type=billing, currency=currency,
-            amount_minor=amount, recurring_interval=interval, trial_days=trial_days)
+            amount_minor=amount, recurring_interval=interval, trial_days=trial_days,
+            recurring_interval_count=interval_count)
         product = pp.NativeProduct(product_id, loc, "", "")
+        key = pp.LogicalKey(loc, "price", name, parent_logical_id=product_id)
         price, op = _products_prices_adapter(pp).ensure_price(
-            pp.LogicalKey(loc, "price", name, parent_logical_id=product_id), spec, product)
+            key, spec, product,
+            _write_approval(pp, approval_id, plan_sha256, "products.prices.create", key))
         _output(ctx, {
             **price.as_price_ref_fields(),
             "name": price.name,

@@ -57,7 +57,7 @@ def plan_doc(calendar=None, page_url="https://example.com/landing", sequences=No
         ],
         "text_sets": text_sets or [],
         "automations": automations or [
-            {"id": "auto_pre_launch", "family": "pre_launch", "template": "new",
+            {"id": "auto_pre_launch", "family": "pre_launch", "template": "launch-a/launch-a-prelaunch-window",
              "build_rail": "skill44_engine", "draft_only": True,
              "trigger": {"type": "tag_added"}, "waits_for": ["email_pre_launch"]}
         ],
@@ -176,7 +176,7 @@ class ScheduleCompileTests(unittest.TestCase):
                 ("email_doors_closing", "doors_closing", 2, ["email_pre_launch"]),
             ],
             automations=[{
-                "id": "auto_pre_launch", "family": "pre_launch", "template": "new",
+                "id": "auto_pre_launch", "family": "pre_launch", "template": "launch-a/launch-a-prelaunch-window",
                 "build_rail": "skill44_engine", "draft_only": True,
                 "trigger": {"type": "tag_added"},
                 "waits_for": ["email_pre_launch", "email_doors_closing"],
@@ -238,7 +238,7 @@ class ScheduleCompileTests(unittest.TestCase):
             calendar=calendar,
             sequences=[("email_doors_closing", "doors_closing", 2, [])],
             automations=[{
-                "id": "auto_closing", "family": "pre_launch", "template": "new",
+                "id": "auto_closing", "family": "pre_launch", "template": "launch-a/launch-a-prelaunch-window",
                 "build_rail": "skill44_engine", "draft_only": True,
                 "trigger": {"type": "tag_added"}, "waits_for": ["email_doors_closing"],
             }],
@@ -265,7 +265,7 @@ class ScheduleCompileTests(unittest.TestCase):
             sequences=[("email_abandoned_checkout", "abandoned_checkout", 2, [])],
             automations=[{
                 "id": "auto_abandoned_checkout", "family": "abandoned_checkout",
-                "template": "new", "build_rail": "skill44_engine",
+                "template": "launch-b/abandoned-checkout-recovery", "build_rail": "skill44_engine",
                 "draft_only": True, "trigger": {"type": "checkout_started_unpaid"},
                 "waits_for": ["email_abandoned_checkout"],
             }],

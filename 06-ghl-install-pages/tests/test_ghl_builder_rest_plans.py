@@ -57,6 +57,7 @@ import browser_manager  # SINGLETON POOLED BROWSER gateway (session bracket)
 import ghl_builder as b
 import ghl_publish_approval
 import ghl_rest_canvas as rc
+import ghl_verify
 
 
 # ── Generic fakes (NO real client/operator data) ─────────────────────────────
@@ -198,6 +199,45 @@ class TestRestSavePlanPublishGate:
         (d / f"{ref}.json").write_text(json.dumps(rec))
         return str(d)
 
+    @pytest.fixture(autouse=True)
+    def _nonce_dir(self, tmp_path_factory, monkeypatch):
+        # TEST-ONLY: run-nonce file lives outside the evidence tree (S06-04).
+        monkeypatch.setenv(ghl_verify.NONCE_DIR_ENV, str(tmp_path_factory.mktemp("nonces")))
+
+    @staticmethod
+    def _seal(run_dir):
+        """TEST-ONLY seal: render manifest + 0600 run-nonce file, the shape
+        ghl_verify.verify_all leaves (same recipe as tests/test_ghl_gate.py)."""
+        run_dir = str(run_dir)
+        raw_path = os.path.join(run_dir, ghl_verify.RAW_REL)
+        summary_path = os.path.join(run_dir, ghl_verify.SUMMARY_REL)
+        with open(raw_path) as f:
+            raw = json.load(f)
+        render = os.path.join(run_dir, "render")
+        os.makedirs(render, exist_ok=True)
+        manifest = {}
+        for i, r in enumerate(raw):
+            step = r.get("step") or r.get("page_id") or f"row{i}"
+            marker = r.setdefault("marker", f"SEAL-MARKER-{step}")
+            entry = {}
+            for key, ext, data in (("dom", "dom.html", f"<html><body><p>{marker}</p></body></html>".encode()),
+                                   ("png", "png", b"\x89PNG\r\n\x1a\n" + b"x" * 64),
+                                   ("console", "console.json", b"[]")):
+                p = os.path.join(render, f"{step}.{ext}")
+                with open(p, "wb") as f:
+                    f.write(data)
+                entry[f"{key}_path"] = p
+                entry[f"{key}_sha256"] = ghl_verify._sha256_file(p)
+            manifest[step] = entry
+        with open(raw_path, "w") as f:
+            json.dump(raw, f)
+        manifest_path = os.path.join(run_dir, ghl_verify.RENDER_MANIFEST_REL)
+        with open(manifest_path, "w") as f:
+            json.dump(manifest, f)
+        with open(summary_path) as f:
+            summary = json.load(f)
+        ghl_verify.write_run_nonce(run_dir, summary["run_nonce"], raw_path, manifest_path)
+
     @staticmethod
     def _evidence(tmp_path):
         root = tmp_path / "evidence"
@@ -208,6 +248,7 @@ class TestRestSavePlanPublishGate:
             "writer": "ghl_verify.verify_all", "run_nonce": str(uuid.uuid4())}))
         (root / "logs" / "final-preview-verify.json").write_text(json.dumps(
             [{"step": "home", "page_id": FAKE_PAGE_ID, "PASS": True, "http_code": 200}]))
+        TestRestSavePlanPublishGate._seal(root)
         return str(root)
 
     def test_launcher_record_and_gate_pass_publishes(self, tmp_path, monkeypatch):

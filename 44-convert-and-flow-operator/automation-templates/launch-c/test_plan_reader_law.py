@@ -49,8 +49,17 @@ def at(text):
     return datetime.fromisoformat(text)
 
 
-def automation(unit_id, family, waits, template="new"):
-    return {"id": unit_id, "family": family, "template": template,
+# Buildable template per family (Skill 49 TEMPLATE_BY_FAMILY; keys of _matcher/buildable-templates.json).
+FAMILY_TEMPLATE = {
+    "pre_launch": "launch-a/launch-a-prelaunch-window",
+    "abandoned_checkout": "launch-b/abandoned-checkout-recovery",
+    "post_sale": "launch-b/launch-post-sale-purchase",
+    "win_back": "launch-c/launch-win-back-closed-no-purchase",
+}
+
+
+def automation(unit_id, family, waits, template=None):
+    return {"id": unit_id, "family": family, "template": template or FAMILY_TEMPLATE[family],
             "build_rail": "skill44_engine", "draft_only": True,
             "trigger": {"type": "tag_added"}, "waits_for": waits}
 
@@ -191,6 +200,23 @@ class CalendarOrderTests(unittest.TestCase):
         self.assertEqual(rc, 0)
 
     @unittest.skipUnless(HAS_CALENDAR_LAW, "shared calendar_law.py (U-skill44-01) not on this base")
+    def test_read_calendar_delegates_order_to_the_shared_law(self):
+        with self.assertRaises(plan_reader.ReaderError) as caught:
+            plan_reader.read_calendar(dict(STANDARD, launch_at="2026-11-03T08:00:00-05:00"))
+        self.assertEqual(caught.exception.code, "CALENDAR-PHASE-ORDER")
+        # a Black Friday-kind launch whose calendar lacks the black_friday block is refused too
+        with self.assertRaises(plan_reader.ReaderError) as caught:
+            plan_reader.read_calendar(dict(STANDARD), black_friday_required=True)
+        self.assertEqual(caught.exception.code, "CALENDAR-PHASE-ORDER")
+        # teaser == countdown is out of order under the Black Friday law
+        calendar = copy.deepcopy(BLACK_FRIDAY)
+        calendar["black_friday"]["countdown_at"] = calendar["black_friday"]["teaser_at"]
+        with self.assertRaises(plan_reader.ReaderError) as caught:
+            plan_reader.read_calendar(calendar)
+        self.assertEqual(caught.exception.code, "CALENDAR-PHASE-ORDER")
+        plan_reader.read_calendar(copy.deepcopy(BLACK_FRIDAY), black_friday_required=True)
+
+    @unittest.skipUnless(HAS_CALENDAR_LAW, "shared calendar_law.py (U-skill44-01) not on this base")
     def test_shared_calendar_law_decides_order(self):
         calendar = dict(STANDARD, launch_at="2026-11-03T08:00:00-05:00")
         rc, doc, err = run(launch_plan(calendar))
@@ -223,11 +249,64 @@ class SharedValidatorFirstTests(unittest.TestCase):
         self.assertNotIn("CREDENTIAL-IN-PLAN", err)
 
     def test_a_plan_the_shared_validator_accepts_is_not_refused_by_a_private_rule(self):
-        # elevation.json is the contract's own fixture; the reader must take it.
+        # elevation.json is the contract's own fixture. Its template ids predate the buildable
+        # manifest, so the only refusal is the buildability gate; mapped to the buildable
+        # keys the reader takes it.
         fixture = CONTRACT_DIR / "fixtures" / "elevation.json"
-        rc, doc, _ = run(json.loads(fixture.read_text()))
+        plan = json.loads(fixture.read_text())
+        rc, doc, err = run(copy.deepcopy(plan))
+        self.assertEqual((rc, doc), (2, None))
+        self.assertIn("LAUNCH-PLAN-TEMPLATE-UNBUILDABLE", err)
+        for item in plan["automations"]:
+            item["template"] = FAMILY_TEMPLATE[item["family"]]
+        rc, doc, _ = run(plan)
         self.assertEqual(rc, 4)   # parsed and compiled; blocked only for want of build plans
         self.assertEqual(doc["launch_id"], "elevation-2026-11")
+
+
+class TemplateBuildabilityTests(unittest.TestCase):
+    """S44-12: the reader refuses a template its own manifest cannot build."""
+
+    def plan_with(self, template, **extra):
+        plan = launch_plan()
+        plan["automations"][0]["template"] = template
+        plan["automations"][0].update(extra)
+        return plan
+
+    def test_template_outside_the_manifest_is_refused(self):
+        rc, doc, err = run(self.plan_with("cart-open-cart-close-launch-sequence"))
+        self.assertEqual((rc, doc), (2, None))
+        self.assertIn("LAUNCH-PLAN-TEMPLATE-UNBUILDABLE", err)
+
+    def test_new_without_an_approved_new_template_is_refused(self):
+        for extra in ({}, {"new_template": {"owner_approved_reason": "  ", "compile_spec": {"a": 1}}},
+                      {"new_template": {"owner_approved_reason": "owner said so"}}):
+            rc, doc, err = run(self.plan_with("new", **extra))
+            self.assertEqual((rc, doc), (2, None), extra)
+            self.assertIn("LAUNCH-PLAN-TEMPLATE-UNBUILDABLE", err)
+
+    def test_new_with_reason_and_compile_spec_passes_the_gate(self):
+        rc, doc, _ = run(self.plan_with("new", new_template={
+            "owner_approved_reason": "owner approved a small custom reminder",
+            "compile_spec": {"build_graph": []}}))
+        self.assertIsNotNone(doc)
+
+    def test_manifest_keys_pass_and_a_missing_manifest_refuses_everything(self):
+        rc, doc, _ = run(self.plan_with("launch-a/launch-a-prelaunch-window"))
+        self.assertIsNotNone(doc)
+        plan_reader._buildable_keys.cache_clear()
+        original = plan_reader.Path
+        try:
+            class Gone(type(HERE)):
+                def read_text(self, *args, **kwargs):
+                    raise OSError("manifest missing")
+            plan_reader.Path = Gone
+            plan_reader._buildable_keys.cache_clear()
+            self.assertEqual(plan_reader._buildable_keys(), frozenset())
+        finally:
+            plan_reader.Path = original
+            plan_reader._buildable_keys.cache_clear()
+        self.assertIn("launch-a/launch-a-prelaunch-window", plan_reader._buildable_keys())
 
 
 class BlockedExitTests(unittest.TestCase):
