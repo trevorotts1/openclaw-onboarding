@@ -38,9 +38,29 @@ record (`route.launch_record`), the manifest and the receipt. `blocks_build` and
 `is_permission` are literal `false`, so no caller can turn advice into a gate.
 Tests inject a stub runner; no live paid session is required or started.
 
+**Honest label (CON-16).** Without a live session the step is a package check,
+not advice, and every record says so: `council_session_held: false`,
+`advice_state: pending_live_session`, and a `client_summary` reading "No Council
+advice was obtained ... This is not a Council review." The status value
+`ready_no_advice` means only "the Skill 77 package is installed and intact"; the
+verify log's `DOCTOR: PASS` is that package check and nothing more
+(`doctor.mjs` is covered by Skill 77's manifest hash, so it is left unchanged). Callers that need real
+advice pass `council_required=True` to `planning_step`, which refuses with
+`AF-LAUNCH-COUNCIL-REQUIRED` unless a session returned advice.
+
 **Ceiling.** The default runner reports readiness only. Producing actual advice
-needs the owner's live Council path; until then the record says
-`advice_state: pending_live_session`.
+needs the owner's live Council path (recommended: submit the launch summary
+through the Command Center council API, advice staying non-blocking); until then
+the record says `council_session_held: false`.
+
+### 2b. A second downsell (`downsell_2`) is refused by name
+
+**Decision.** The interview can name a second downsell but neither the intake nor
+the Skill 49 record has a slot with its own offer and price, so a `downsell_2`
+page would be built with no price fact. This release refuses it:
+`constants.UNSUPPORTED_OFFER_ROLES["downsell_2"]` is "a second downsell is not
+supported in this release". A priced slot (its own offer, price and hash entry)
+is the alternative and is not built here.
 
 ### 3. Native Convert and Flow checkout mapping
 
