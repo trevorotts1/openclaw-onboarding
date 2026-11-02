@@ -10,13 +10,9 @@ Skill 79 cross-field validator as a live binding probe. Anything the launch does
 not supply stays explicitly unknown. Nothing is defaulted into a field the
 contract calls commercial.
 
-`checkout_mode` is resolved only where the Skill 79 contract has a mode for the
-launch shape (`post_selection` after a Product Selection page,
-`combined_single_offer` for one simple offer). `folded_levels` has three main
-offers and no selection page, and the S79 contract expresses neither; that is
-recorded as a contract gap rather than invented into a mode. Where the per-offer
-realisation (`checkout_instances`, one native combined_single_offer order form per
-main price choice) is present it carries every launch with several mains instead.
+`checkout_mode` is `combined_single_offer` for every journey: one simple offer is one
+order form, and several mains (`multiple_options`, `folded_levels`) are one native
+combined_single_offer order form per main price choice (`checkout_instances`).
 """
 
 from __future__ import annotations
@@ -38,11 +34,10 @@ from .constants import (
 
 MODE_BY_JOURNEY = {
     "single_simple": "combined_single_offer",
-    "multiple_options": "post_selection",
-    # folded_levels: three distinct mains folded into the signature page and no
-    # selection page. The S79 contract has exactly two modes and neither says
-    # this. Recorded as a gap; never guessed.
-    "folded_levels": None,
+    # several mains (multiple_options, folded_levels): one native combined_single_offer
+    # order form per main price choice (DECISIONS-NEEDED[4]); see checkout_instances.
+    "multiple_options": "combined_single_offer",
+    "folded_levels": "combined_single_offer",
 }
 
 # A field is "supplied" only when the launch actually carries it.

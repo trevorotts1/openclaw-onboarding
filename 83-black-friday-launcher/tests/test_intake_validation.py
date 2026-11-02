@@ -172,7 +172,7 @@ class UpsellDownsellDeliverables(IntakeCase):  # UPS-15
     def test_supplied_deliverables_reach_the_launch_record(self):
         normalized = intake.validate(load("elevation"))
         record = launch_bridge.to_launch_record(
-            normalized, route.compile_route(normalized), {"image_provider": "stub"})
+            normalized, route.compile_route(normalized), {"image_provider": "stub", "design_style": "A"})
         by_id = {o["offer_id"]: o for o in record["offers"]}
         for offer_id in ("U1", "D1", "U2"):
             self.assertTrue(by_id[offer_id]["deliverables"], offer_id)

@@ -37,6 +37,9 @@ CONSUMER = HERE / "lane83_fake_consumer.py"
 def payload(name: str, **plan) -> dict:
     doc = json.loads((FIXTURES / name / "intake.json").read_text(encoding="utf-8"))
     doc["image_plan"] = {"brand_file": "/tmp/test-brand.json", "brand_owner": "TEST-ONLY Client", **plan}
+    # a test-only dispatch records the approval ref of the verified record (approval_for: APPR-TEST), so the
+    # intake assembled against that run carries the same ref
+    doc["approval"] = {**doc["approval"], "ref": "APPR-TEST"}
     return doc
 
 
@@ -247,9 +250,11 @@ class DispatchTests(unittest.TestCase):
         self.assertIn("APPROVAL-HASH", str(ctx.exception))
 
     def test_agnes_is_refused_by_name_before_anything_runs(self):
+        # a practice run draws stub pictures with any service (test_lane83_image_plan); paid pictures need a built one
+        doc = payload("elevation", image_provider="agnes")
+        doc["test_only"] = False
         with self.assertRaises(image_plan.ImagePlanError) as ctx:
-            run_dispatch(payload("elevation", image_provider="agnes"), self.out,
-                         approval={})
+            run_dispatch(doc, self.out, approval={})
         self.assertIn("agnes", ctx.exception.detail)
         self.assertFalse((self.out / "dispatch").exists())
         self.assertFalse(self.marker.exists())
@@ -333,11 +338,12 @@ class DispatchTests(unittest.TestCase):
         doc = payload("elevation", brand_file=str(brand), design_style="B", image_cap=9, image_cap_minor=72,
                       image_currency="USD", paid_render_approval_ref="TEST-APPROVAL-REF")
         doc["test_only"] = False
-        doc["approval"] = {"ref": "APPR-TEST", "hash": substrate.dispatch().vlp.plan_document_hash(launch_for(doc))}
         sentinel = object()
         with mock.patch.object(substrate.dispatch().swarm, "kie_limiter", return_value=sentinel), \
                 mock.patch.object(image_plan, "_verify_paid_budget", return_value=None):
             # the budget approval itself is proved in test_image_plan_spend.py
+            doc["approval"] = {"ref": "APPR-TEST",
+                               "hash": substrate.dispatch().vlp.plan_document_hash(launch_for(doc))}
             seen = self._spy_dispatch(doc, approval={})
         self.assertIs(seen["limiter"], sentinel)
         self.assertEqual((seen["image_inputs"]["image_provider"], seen["image_inputs"]["image_cap"],
@@ -456,7 +462,7 @@ class LandingPagesTests(unittest.TestCase):
     def test_the_two_image_input_files_each_hold_only_what_their_reader_accepts(self):
         self.real_config_run(lambda *a: None)
         shared = json.loads((self.out / "image_inputs.json").read_text())
-        self.assertEqual(sorted(shared), sorted(image_plan.C3_KEYS))
+        self.assertEqual(sorted(shared), sorted(set(image_plan.C3_KEYS) | set(image_plan.C3_CARRIED_KEYS)))
         order = json.loads((self.out / "order-page-inputs.json").read_text())
         self.assertEqual((order["provider"], order["test_run"]), ("stub", True))
         substrate.dispatch().pset.load_image_inputs(self.out / "image_inputs.json")  # Skill 49's strict reader

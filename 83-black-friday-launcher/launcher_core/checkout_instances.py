@@ -154,9 +154,10 @@ def record(intake: Dict[str, Any], graph: Dict[str, Any], *, readback: Optional[
            launch: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The one entry point for the package: instances, verdicts and binding plan for an intake."""
     # ponytail: the derived launch only carries price-choice ids (checkout never reads
-    # image_provider and the record is never written or dispatched); pass the dispatch
+    # image_provider or design_style, and the record is never written or dispatched, so the
+    # style below is a placeholder for the plan-bound structure refs only); pass the dispatch
     # run's own launch record when assemble is bound to one.
-    launch = launch or launch_bridge.to_launch_record(intake, graph, {"image_provider": "other_explicit"})
+    launch = launch or launch_bridge.to_launch_record(intake, graph, {"image_provider": "other_explicit", "design_style": "A"})
     return build(intake, graph, launch, commercial_facts(intake, readback))
 
 
@@ -249,7 +250,12 @@ def build(intake: Dict[str, Any], graph: Dict[str, Any], launch: Dict[str, Any],
                     "native_price_id": i["request"]["main_price"]["native_price_id"],
                     "target_ref": i["checkout_target_ref"]} for i in instances]
         try:
-            plan = _s78("emit_binding_plan").emit_plan(launch, targets, route="per_offer_targets")
+            # Skill 78 (U-products-07) declines any journey mode but multiple_options. This per-offer
+            # route has no selection page for any journey (folded_levels included): one native
+            # target per main price choice is the realisation, so 78 judges the catalog and targets
+            # as the multiple-options shape they are. The launch itself is not altered.
+            plan = _s78("emit_binding_plan").emit_plan(dict(launch, journey_mode="multiple_options"), targets,
+                                                       route="per_offer_targets")
         except Exception as exc:
             raise CheckoutInstanceError(getattr(exc, "code", "AF-LAUNCH-CHECKOUT-BINDING"),
                                         str(exc)) from exc

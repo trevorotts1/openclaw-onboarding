@@ -57,7 +57,7 @@ def prepared(journey_mode: str):
     payload["journey_mode"] = journey_mode
     normalized = intake.validate(payload)
     graph = route.compile_route(normalized)
-    launch = launch_bridge.to_launch_record(normalized, graph, {"image_provider": "kie"})
+    launch = launch_bridge.to_launch_record(normalized, graph, {"image_provider": "kie", "design_style": "A"})
     return normalized, graph, launch
 
 
@@ -152,7 +152,7 @@ class CheckoutInstanceTests(unittest.TestCase):
             o.pop("relationships", None)
         normalized = intake.validate(payload)
         graph = route.compile_route(normalized)
-        launch = launch_bridge.to_launch_record(normalized, graph, {"image_provider": "kie"})
+        launch = launch_bridge.to_launch_record(normalized, graph, {"image_provider": "kie", "design_style": "A"})
         built = checkout_instances.build(normalized, graph, launch, COMMERCIAL)
         checkout_page = next(n["page_id"] for n in graph["nodes"] if n["role"] == "checkout")
         self.assertEqual([i["page_id"] for i in built["instances"]], [checkout_page])

@@ -530,13 +530,31 @@ def _find_dispatch_root(dispatch_run: Optional[Path],
     return None, False
 
 
-def _expected_launch(intake: Dict[str, Any]) -> Dict[str, Any]:
+def _dispatched_choices(launch: Dict[str, Any]) -> Dict[str, Any]:
+    """The client's landing/extra page choices the dispatched record carries as plan-bound structure refs.
+
+    They are not intake fields (the plan hash already binds them at dispatch), so the rebuilt record
+    takes them from the dispatched one; everything the intake does own is still compared."""
+    refs = {}
+    for ref in launch.get("source_refs") or []:
+        if isinstance(ref, str) and ref.startswith(launch_bridge.STRUCTURE_PREFIX) and "=" in ref:
+            key, _, value = ref[len(launch_bridge.STRUCTURE_PREFIX):].partition("=")
+            refs[key] = [v for v in value.split(",") if v]
+    out: Dict[str, Any] = {}
+    if refs.get("landing_pages"):
+        out["landing_pages"] = refs["landing_pages"]
+    if refs.get("extra_pages"):
+        out["extra_pages"] = refs["extra_pages"]
+    return out
+
+
+def _expected_launch(intake: Dict[str, Any], dispatched: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The launch record this intake produces, exactly as launch_bridge.run derives it."""
     try:
         inputs, _ = image_plan_module.resolve(intake.get("image_plan"),
                                               test_only=bool(intake.get("test_only", True)))
         graph = route_module.compile_route(intake)
-        return launch_bridge.to_launch_record(intake, graph, inputs)
+        return launch_bridge.to_launch_record(intake, graph, inputs, **_dispatched_choices(dispatched or {}))
     except (image_plan_module.ImagePlanError, route_module.RouteError) as exc:
         raise PackageError("AF-LAUNCH-PKG-PLAN-DRIFT",
                            f"the intake cannot be turned back into the dispatched launch record "
@@ -594,7 +612,7 @@ def _bind_dispatch(root: Path, intake: Dict[str, Any], route: Dict[str, Any],
                                                                  launch.get("revision")):
         raise PackageError("AF-LAUNCH-PKG-DISPATCH-PLAN",
                            "dispatch-manifest.json is for another launch or revision than launch.json")
-    expected = _expected_launch(intake)
+    expected = _expected_launch(intake, launch)
     if _canonical(expected) != _canonical(launch):
         raise PackageError("AF-LAUNCH-PKG-PLAN-DRIFT",
                            "the intake no longer produces the launch record that was dispatched and "
