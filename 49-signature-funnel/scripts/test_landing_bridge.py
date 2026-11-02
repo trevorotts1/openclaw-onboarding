@@ -715,6 +715,9 @@ class TestImageModelResolvedThroughSkill66(RealTreeCase):
                       for f in self.run_dir.glob("production-request-*.json")}
             self.assertEqual(len(list(self.run_dir.glob("production-request-*.json"))), 3)
             self.assertEqual(models, {f"{latest}-image-to-image"})
+            recorded = json.loads((self.run_dir / "image-inputs.resolved.json").read_text(encoding="utf-8"))
+            self.assertEqual(recorded["image_model"], f"{latest}-image-to-image")
+            self.assertEqual(recorded["image_inputs_file"], str(self.inputs))
             seen.append(models)
         self.assertNotEqual(seen[0], seen[1])
 

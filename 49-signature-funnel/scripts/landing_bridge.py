@@ -339,7 +339,7 @@ def load_bridge_config(path: Path) -> Dict[str, Any]:
     draft = landing.get("draft", False)
     if not isinstance(draft, bool):
         raise BridgeError("bridge config: landing.draft must be true or false when present")
-    image_inputs = None
+    image_inputs = inputs_path = None
     if landing.get("image_inputs") is not None:
         import page_set
         inputs_path = _require_abs_path(landing, "image_inputs", "landing")
@@ -381,6 +381,7 @@ def load_bridge_config(path: Path) -> Dict[str, Any]:
         "pipeline_command": pipeline_command,
         "opt_in_run_dir": opt_in_run_dir,
         "image_inputs": image_inputs,
+        "image_inputs_file": inputs_path,
         "draft": draft,
         "manuscript": manuscripts.get("manuscript"),
         "opt_in_manuscript": manuscripts.get("opt_in_manuscript"),
@@ -747,6 +748,11 @@ def _draw_images(cfg: Dict[str, Any], run_dir: Path, page_kind: str,
     Needs the page copy at <run_dir>/copy/internal-manuscript.md (staged from landing.manuscript
     when given). With none, nothing is drawn and the summary says "waiting_for_copy"."""
     inputs, root, python = cfg["image_inputs"], cfg["skill_root"], cfg["python"]
+    # The resolved model rides with the inputs every request of this run is built from (IMG-19). The shared
+    # inputs file stays untouched (page_set.load_image_inputs rejects unknown keys); the record sits in the run.
+    (run_dir / "image-inputs.resolved.json").write_text(
+        json.dumps({**inputs, "image_inputs_file": str(cfg["image_inputs_file"])}, indent=2, sort_keys=True,
+                   default=str) + "\n", encoding="utf-8")
     source = cfg["opt_in_manuscript"] if run_dir == cfg["opt_in_run_dir"] else cfg["manuscript"]
     if source is not None:
         _stage_file(run_dir, "copy/internal-manuscript.md", _read_bytes(source, "manuscript"), "manuscript")
@@ -1013,7 +1019,8 @@ def bridge(request_path: Path, result_path: Path, work_dir: Path,
     # What a later assemble/check needs to refuse an unfinished or downgraded delivery (ENF-09); the
     # page-result schema is closed, so it rides beside the result, not inside it.
     receipt = {"request_id": req["request_id"], "draft": cfg["draft"],
-               "receipt_validation": validation_mode, "pipeline_exit": pipeline.get("exit")}
+               "receipt_validation": validation_mode, "pipeline_exit": pipeline.get("exit"),
+               "image_model": cfg.get("image_model")}
     if opt_dir is not None:
         receipt.update(opt_in_receipt_validation=summary["opt_in_receipt_validation"],
                        opt_in_pipeline_exit=o_pipeline.get("exit"))
