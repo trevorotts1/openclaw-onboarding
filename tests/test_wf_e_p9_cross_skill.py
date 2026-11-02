@@ -108,8 +108,14 @@ def launch_intake(mode: str, mains: int = 1, **overrides) -> dict:
     """A minimal launch intake that passes Skill 83's own validator."""
     offers = [{"offer_id": f"main-{i + 1}", "name": f"TEST ONLY Level {i + 1}",
                "role": "main",
-               "price": {"amount_minor": 49700 + 50000 * i, "currency": "USD"}}
+               "price": {"amount_minor": 49700 + 50000 * i, "currency": "USD"},
+               "delivery": {"destination": f"https://members.example.com/main-{i + 1}",
+                            "owner_confirmed": True}}
               for i in range(mains)]
+    if mode != "single_simple":
+        for offer in offers:
+            offer["level"] = {"state": "supplied", "name": offer["name"],
+                              "deliverables": [f"{offer['name']} access"]}
     doc = {
         "schema_version": "1.0",
         "tenant_id": "TEST-TENANT",
@@ -124,6 +130,11 @@ def launch_intake(mode: str, mains: int = 1, **overrides) -> dict:
                                     "attested_by": "operator-test",
                                     "purchase_reference": "order-test"},
         "offers": offers,
+        "checkout_terms": {
+            "guarantee_ref": "TEST-ONLY-GUARANTEE-REF", "guarantee_text": "Test-only guarantee text.",
+            "terms_ref": "TEST-ONLY-TERMS-REF", "terms_text": "Test-only terms text.",
+            "consent_ref": "TEST-ONLY-CONSENT-REF", "consent_text": "Test-only consent text.",
+        },
         "test_only": True,
     }
     doc.update(overrides)
