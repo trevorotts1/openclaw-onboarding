@@ -1008,6 +1008,38 @@ def resolve_adapter(explicit=None):
 GENERATION_CMDS = frozenset({"submit", "create", "generate", "extend"})
 
 
+def _bind_verified_request(args, request, request_digest, save_dir):
+    """X06: bind the VERIFIED request bytes to the subprocess invocation.
+
+    The digest check proves the caller's file has not changed since admission,
+    but the subprocess used to re-read that same mutable caller path, leaving a
+    window where the submitted content differed from the validated content.
+    Write the exact validated snapshot once (atomic replace) and point the
+    subprocess at THAT file: the submitted bytes are the admitted bytes.
+    """
+    try:
+        index = args.index("--request") + 1
+        args[index]
+    except (ValueError, IndexError) as exc:
+        raise DispatchError("PRODUCTION_REQUEST_UNREADABLE: no --request path") from exc
+    blob = json.dumps(request, sort_keys=True, default=str).encode("utf-8")
+    snap = os.path.join(save_dir, ".kie-verified-%s.json" % str(request_digest)[:16])
+    partial = snap + ".partial"
+    try:
+        os.makedirs(save_dir, exist_ok=True)
+        with open(partial, "wb") as f:
+            f.write(blob)
+        os.replace(partial, snap)
+    except OSError as exc:
+        try:
+            os.unlink(partial)
+        except OSError:
+            pass
+        raise DispatchError("PRODUCTION_REQUEST_NOT_BINDABLE: %s" % exc) from exc
+    args[index] = snap
+    return args
+
+
 def make_runner(timeout=300, *, process_context=None):
     """Real Skill 74 subprocess; paid commands require current run authority.
 
@@ -1017,10 +1049,10 @@ def make_runner(timeout=300, *, process_context=None):
     """
     def _run(argv):
         cmd = str(argv[1]) if len(argv) > 1 else ""
+        args = list(argv)
         if cmd in GENERATION_CMDS:
             if not isinstance(process_context, dict):
                 raise DispatchError("PRODUCTION_CONTEXT_REQUIRED: use governed dispatch")
-            args = list(argv)
             try:
                 req_path = args[args.index("--request") + 1]
                 with open(req_path, encoding="utf-8") as f:
@@ -1034,15 +1066,21 @@ def make_runner(timeout=300, *, process_context=None):
             if not receipt.get("ok"):
                 raise DispatchError("%s: %s" % (
                     receipt.get("reason_code"), receipt.get("detail")))
+            # X06: the admitted snapshot is the submitted snapshot. Bind the
+            # validated bytes to this invocation instead of re-reading a path
+            # a concurrent writer can still change.
+            args = _bind_verified_request(
+                args, current_request, process_context["request_digest"],
+                process_context["arguments"].get("save_dir") or ".")
         def once():
-            r = subprocess.run([sys.executable] + list(argv),
+            r = subprocess.run([sys.executable] + list(args),
                                capture_output=True, text=True, timeout=timeout,
                                env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
             return r.returncode, r.stdout
         # Load governor: only NEW generation requests (submit) draw from the
         # 20-per-10-s bucket; health/preflight/wait/save use the gentle poll
         # limiter. A 429 means the job did not run: back off and resubmit.
-        return _LG.kie_request(once, label=" ".join(str(a) for a in argv[1:4]),
+        return _LG.kie_request(once, label=" ".join(str(a) for a in args[1:4]),
                                generation=cmd in GENERATION_CMDS)
     _run._s75_live_runner = True
     _run._s75_bind = lambda context: make_runner(timeout, process_context=context)

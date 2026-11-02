@@ -16,6 +16,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))          # core/
@@ -34,8 +35,18 @@ def _forbid_make_runner(*_a, **_k):
     raise AssertionError("real Skill 74 runner disabled in tests")
 
 
-# Held for the whole run: any dispatch that forgot its fake runner fails here.
-MODULE.make_runner = _forbid_make_runner
+# Held per file via setup/teardown_module: a dispatch that forgot its fake
+# runner fails here, but the patch never outlives this file.
+_NO_REAL_RUNNER = mock.patch.object(MODULE, "make_runner", _forbid_make_runner)
+
+
+def setup_module(_module=None):
+    """Scoped, not global: pytest runs this per file, teardown restores it."""
+    _NO_REAL_RUNNER.start()
+
+
+def teardown_module(_module=None):
+    _NO_REAL_RUNNER.stop()
 
 
 def check(name, cond, detail=""):
@@ -694,4 +705,5 @@ def main():
 
 
 if __name__ == "__main__":
+    setup_module()
     sys.exit(main())

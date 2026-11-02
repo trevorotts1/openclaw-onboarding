@@ -1566,6 +1566,17 @@ def constituent_ok(rec):
     return True, ""
 
 
+def _take_request_digest(request):
+    """Canonical sha256 of the exact outbound take request (X06)."""
+    blob = json.dumps(request, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _freeze_take_request(request):
+    """A detached canonical copy: the validated bytes are the submitted bytes."""
+    return json.loads(json.dumps(request, sort_keys=True, default=str))
+
+
 def run_takes(request, plan, generate, measure, save, script_words, hook_text,
               spoken_range_pct=None, cap_cents=SPEND_CAP_CENTS, cost_cents=GEN_COST_CENTS,
               kie=_LG.kie_request, style_id=None, script_approval=None, run_dir=None,
@@ -1708,10 +1719,53 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     # the same arrangement.
     refuse_asr("faster-" + "wh" + "isper")
     plan = dict(plan, sheet_text=plan.get("sheet_text") or _lyrics_of(request))
+    # X06: freeze ONE outbound snapshot and re-admit it INSIDE the governor
+    # callback, after acquisition and on every retry. A mutation of the
+    # caller's request, a stale/legacy approval record or a changed saved
+    # election is refused before the generator is called; the snapshot handed
+    # to ``generate`` is the same object re-checked here.
+    take_request = _freeze_take_request(request)
+    take_digest = _take_request_digest(take_request)
+    admitted_lyrics = _lyrics_of(take_request)
+
+    def _admit_take():
+        if _take_request_digest(take_request) != take_digest:
+            raise DispatchError("REQUEST_CHANGED_AFTER_ADMISSION: prepare the request again")
+        frozen_inp = _input_of(take_request)
+        frozen_errs = _R.check_envelope(take_request)
+        if frozen_errs:
+            raise DispatchError("REQUEST_ENVELOPE_REJECTED: %s" % "; ".join(frozen_errs))
+        if _lyrics_of(take_request) != admitted_lyrics:
+            raise DispatchError("REQUEST_CHANGED_AFTER_ADMISSION: the lyrics changed")
+        pace_errs = (_PC.check_pace_plan(order) +
+                     _SCM.check_pace_style(frozen_inp.get("style"), order))
+        if _PC.pace_provider_leak(take_request):
+            pace_errs.append("PACE_INTERNAL_METADATA_IN_PAYLOAD: the internal "
+                             "_pace_plan judging metadata reaches a provider field")
+        if pace_errs:
+            raise DispatchError("PACE_PAYLOAD_REJECTED: %s" % "; ".join(pace_errs))
+        current = _SA.record_near(run_dir, take_request.get("run_dir"))
+        if current is None:
+            current = script_approval          # the caller's own record, when none is saved
+        fresh_refusal = _SA.check_script_approval(
+            current, _lyrics_of(take_request),
+            _SA.script_sha_near(run_dir, take_request.get("run_dir")))
+        if fresh_refusal:
+            raise DispatchError("%s: %s" % (fresh_refusal["reason_code"], fresh_refusal["detail"]))
+        if run_dir:
+            from production_process import current_script_election
+            elected = current_script_election(run_dir)
+            if elected is True and not (isinstance(current, dict) and current.get("required") is True):
+                raise DispatchError(
+                    "SCRIPT_APPROVAL_ELECTION_CHANGED: the saved client answer elects "
+                    "script approval, but the current record does not require it; "
+                    "nothing was sent to the music generator")
+        return generate(take_request)
+
     spent, receipts = 0, []
     while spent + cost_cents <= cap_cents:
         spent += cost_cents
-        for take in kie(lambda: generate(request), "song generate", generation=True):
+        for take in kie(_admit_take, "song generate", generation=True):
             take = dict(take, **measure(take))
             rcpt = judge_take(take, plan, script_words, hook_text, spoken_range_pct,
                               style_id, _lyrics_of(request))
@@ -1722,7 +1776,8 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
             if take_accepted(rcpt)[0]:
                 return {"delivered": take, "verdict": rcpt["verdict"],
                         "receipt": constituent_receipt(take, rcpt, plan),
-                        "receipts": receipts, "spent_cents": spent, "duration": duration}
+                        "receipts": receipts, "spent_cents": spent,
+                        "duration": duration, "submitted_digest": take_digest}
             # S75-W05-U5 (spec 6.5, D29): a low-confidence sung/spoken
             # classification is uncertainty, never a definite creative failure
             # -- STOP before any regeneration. The existing-take ladder runs
@@ -1730,7 +1785,8 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
             # it is exhausted may new paid generation be considered.
             if (rcpt.get("review") or {}).get("required"):
                 return {"delivered": None, "verdict": rcpt["verdict"],
-                        "receipts": receipts, "spent_cents": spent, "duration": duration,
+                        "receipts": receipts, "spent_cents": spent,
+                        "duration": duration, "submitted_digest": take_digest,
                         "review_required": rcpt["review"]}
     return {"delivered": None, "verdict": "FAIL", "receipts": receipts, "spent_cents": spent,
-            "duration": duration}
+            "duration": duration, "submitted_digest": take_digest}

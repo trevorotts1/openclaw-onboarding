@@ -26,6 +26,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
@@ -42,7 +43,16 @@ def _forbid(*_a, **_k):
     raise AssertionError("real Skill 74 runner disabled in tests")
 
 
-D.make_runner = _forbid
+_NO_REAL_RUNNER = mock.patch.object(D, "make_runner", _forbid)
+
+
+def setup_module(_module=None):
+    """Scoped, not global: pytest runs this per file, teardown restores it."""
+    _NO_REAL_RUNNER.start()
+
+
+def teardown_module(_module=None):
+    _NO_REAL_RUNNER.stop()
 
 
 def check(name, got, want):
@@ -177,4 +187,5 @@ def main():
 
 
 if __name__ == "__main__":
+    setup_module()
     sys.exit(main())
