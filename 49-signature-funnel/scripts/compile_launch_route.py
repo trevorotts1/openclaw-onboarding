@@ -25,6 +25,10 @@ ROUTING LAW (doc 02 §5 — the owner's exact graph; no improvisation):
   downsell_1 decline -> thank_you
   upsell_2 paid or decline -> thank_you
   U1 disabled REQUIRES D1 and U2 disabled. There is no second downsell.
+  The single upsell_2 node has TWO entry paths (U1 paid, D1 paid). The graph
+  does not split it; the entry path is the purchased set (U1 vs D1) that
+  resolve_after carries, so any acknowledgment on upsell_2 must key on that
+  set and never state "your first upgrade is confirmed" to a D1 buyer (UPS-05).
   Pending/failed payment NEVER traverses a paid edge and is never a decline:
   it retains the current purchase state (see resolve_after).
   Checkout has NO decline edge: an abandoned initial checkout is not a route.
