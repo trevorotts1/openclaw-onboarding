@@ -82,7 +82,9 @@ SEAM_NATIVE_CHECKOUT_INSTALL = "native_checkout_install"
 # ENF-03: the dispatch run this package is bound to. launch_bridge.run lays these down.
 DISPATCH_MANIFEST_REL = "dispatch/dispatch-manifest.json"
 LAUNCH_RECORD_REL = "launch.json"
-# What dispatch should persist so a changed entitlement basis or approval is caught; verified whenever present.
+# launch_bridge.run writes this (the writer half is carried to U-products-03); a strict binding requires it,
+# so a changed entitlement basis or approval is caught. A non-strict run (found beside the pieces,
+# test_only intake) verifies it when present and records 'absent' otherwise.
 INTAKE_SNAPSHOT_REL = "intake-at-dispatch.json"
 DISPATCH_STATE_BOUND = "bound"
 DISPATCH_STATE_UNBOUND_FIXTURE = "unbound_fixture"
@@ -604,12 +606,23 @@ def _bind_dispatch(root: Path, intake: Dict[str, Any], route: Dict[str, Any],
 
     snapshot_state = "absent"
     snapshot_path = root / INTAKE_SNAPSHOT_REL
+    if strict and not snapshot_path.is_file():
+        raise PackageError("AF-LAUNCH-PKG-INTAKE-MISSING",
+                           "the dispatch run carries no intake-at-dispatch.json, so the entitlement "
+                           "basis and approval it was dispatched with cannot be proven; re-dispatch "
+                           "the run")
     if snapshot_path.is_file():
         try:
-            snapshot = intake_module.validate(json.loads(snapshot_path.read_text(encoding="utf-8")))
-        except (OSError, ValueError, intake_module.IntakeError) as exc:
+            snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
             raise PackageError("AF-LAUNCH-PKG-INTAKE-DRIFT",
                                f"{INTAKE_SNAPSHOT_REL} is unreadable or invalid ({exc})") from exc
+        if not isinstance(snapshot, dict):
+            raise PackageError("AF-LAUNCH-PKG-INTAKE-DRIFT", f"{INTAKE_SNAPSHOT_REL} is not an object")
+        try:  # launch_bridge.run writes the validated intake; a raw payload is validated here
+            snapshot = intake_module.validate(snapshot)
+        except intake_module.IntakeError:
+            pass  # already normalized: the comparison below catches any difference
         changed = sorted(k for k in set(snapshot) | set(intake) if snapshot.get(k) != intake.get(k))
         if changed:
             raise PackageError("AF-LAUNCH-PKG-INTAKE-DRIFT",
@@ -771,7 +784,7 @@ def _resolve_delivery_scope(requested: Optional[str],
 def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
              pieces: Dict[str, Any], source_root: Optional[Path] = None,
              council: Optional[Dict[str, Any]] = None,
-             council_runner=None, require_designs: bool = False,
+             council_runner=None, require_designs: Optional[bool] = None,
              image_plan: Optional[Dict[str, Any]] = None,
              to_confirm: Optional[List[Dict[str, Any]]] = None,
              design_approvals: Optional[Dict[str, Any]] = None,
@@ -780,7 +793,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
              deliveries: Optional[Dict[str, Any]] = None,
              delivery_scope: Optional[str] = None,
              dispatch_run: Optional[Path] = None,
-             design_waiver: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+             design_waiver: Optional[Dict[str, Any]] = None,
+             checkout_readback: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Write package-manifest.json + receipt.json into run_dir. Returns both records.
 
     Artifacts are copied into run_dir/pieces/<page_id>/ so the delivered package
@@ -791,7 +805,12 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     renamed hash. Two different files that would land on one path are refused.
 
     require_designs makes AF-LAUNCH-PAGE-DESIGNS part of the package's own checks: every page
-    must carry its full labeled set of desktop and mobile wireframes and mockups. image_plan,
+    must carry its full labeled set of desktop and mobile wireframes and mockups. Explicit False
+    (the CLI's --allow-no-designs) always needs a verified design_waiver bound to the approved hash.
+    An unchosen value (None) is designs required for any dispatched or live package, and stays
+    not-required only for a hand-built test fixture with no dispatch run (recorded
+    dispatch_binding.state = "unbound_fixture"). checkout_readback, when given, is passed to
+    checkout.order_form_mapping (CHK-10). image_plan,
     to_confirm and design_approvals are recorded so the delivery report can say which choices
     were defaults awaiting the client's confirmation.
 
@@ -874,7 +893,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
 
     if council is None:
         council = council_module.planning_step(intake, runner=council_runner)
-    checkout = checkout_module.order_form_mapping(intake, route)
+    checkout = checkout_module.order_form_mapping(
+        intake, route, **({"readback": checkout_readback} if checkout_readback is not None else {}))
     if launch_plan is not None and launch_plan.get("launch_id") != intake["launch_id"]:
         raise PackageError("AF-LAUNCH-PLAN-LAUNCH",
                            f"the launch plan is for {launch_plan.get('launch_id')!r}, not "
@@ -907,8 +927,9 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         if binding is not None:
             _bind_piece(binding, pieces[slot], parent, slot, True)
 
+    designs_required = require_designs if require_designs is not None else (binding is not None or not test_only)
     waiver = None
-    if not require_designs and binding is not None:
+    if require_designs is False:
         waiver = _verify_design_waiver(design_waiver, approved)
 
     for piece in ordered:
@@ -1029,7 +1050,7 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "cross_sales": cross_sales,
         "live_effects": live_effects,
         "test_only": test_only,
-        "designs_required": bool(require_designs),
+        "designs_required": designs_required,
         "design_approvals": design_approvals or page_designs.default_approvals(),
         "image_plan": image_plan,
         "to_confirm": list(to_confirm or []),

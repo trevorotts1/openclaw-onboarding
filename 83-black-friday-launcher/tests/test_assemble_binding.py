@@ -91,6 +91,11 @@ class DispatchedRun(unittest.TestCase):
         cls.doc = approved_doc()
         cls.rundir = cls.base / "run"
         cls.report = dispatch(cls.doc, cls.rundir, cls.provider)
+        snapshot = cls.rundir / package.INTAKE_SNAPSHOT_REL
+        cls.bridge_wrote_snapshot = snapshot.is_file()
+        if not cls.bridge_wrote_snapshot:
+            # what launch_bridge.run writes once U-products-03's carried edit lands
+            snapshot.write_text(json.dumps(intake.validate(cls.doc), sort_keys=True), encoding="utf-8")
 
     @classmethod
     def tearDownClass(cls):
@@ -189,6 +194,25 @@ class BoundToDispatchTests(DispatchedRun):
         err = self.refused("AF-LAUNCH-PKG-INTAKE-DRIFT", name="approval", doc=other, run=run, named=False)
         self.assertIn("approval", err.detail)
 
+    def test_a_named_run_without_the_dispatch_time_intake_refuses(self):
+        run = self.copy_run("nosnap")
+        (run / package.INTAKE_SNAPSHOT_REL).unlink()
+        self.refused("AF-LAUNCH-PKG-INTAKE-MISSING", name="named", run=run)
+        built = self.assemble(name="found-beside", run=run, named=False)  # test_only intake: not strict
+        self.assertEqual(built["manifest"]["dispatch_binding"]["intake_snapshot"], "absent")
+
+    def test_a_real_dispatch_with_another_entitlement_basis_never_assembles(self):
+        run = self.copy_run("real")
+        if not self.bridge_wrote_snapshot:  # exercise exactly what dispatch left behind
+            (run / package.INTAKE_SNAPSHOT_REL).unlink()
+        other = copy.deepcopy(self.doc)
+        other["entitlement_attestation"] = {"basis": "brand_management_membership",
+                                            "evidence_ref": "ev-2", "attested_by": "operator"}
+        with self.assertRaises(package.PackageError) as ctx:
+            self.assemble(name="real-pkg", doc=other, run=run)
+        self.assertIn(ctx.exception.code, {"AF-LAUNCH-PKG-INTAKE-MISSING", "AF-LAUNCH-PKG-INTAKE-DRIFT"})
+        self.assertFalse((self.work / "real-pkg" / "package-manifest.json").exists())
+
     def test_a_piece_the_dispatch_never_produced_is_refused_even_with_the_right_request_ids(self):
         pieces = self.pieces()
         forged = self.work / "forged.html"
@@ -234,6 +258,17 @@ class BoundToDispatchTests(DispatchedRun):
             with self.subTest(bad=bad):
                 self.refused("AF-LAUNCH-PKG-DESIGN-WAIVER", name="bad", require_designs=False,
                              design_waiver=self.waiver(**bad))
+
+    def test_an_unbound_fixture_without_designs_needs_the_same_waiver(self):
+        loose = self.copy_run("loose-waiver")
+        shutil.rmtree(loose / "dispatch")
+        self.refused("AF-LAUNCH-PKG-DESIGN-WAIVER", name="nowaiver", run=loose, named=False,
+                     require_designs=False)
+        built = self.assemble(name="waived-fixture", run=loose, named=False, require_designs=False,
+                              design_waiver=self.waiver())
+        self.assertEqual(built["manifest"]["dispatch_binding"]["state"], "unbound_fixture")
+        for record in (built["manifest"], built["receipt"]):
+            self.assertIn("designs waived", record["delivery_label"])
 
     def test_a_verified_waiver_is_recorded_and_stamps_the_delivery_label(self):
         built = self.assemble(name="waived", require_designs=False, design_waiver=self.waiver())
@@ -284,6 +319,26 @@ class BoundToDispatchTests(DispatchedRun):
                            delivery_scope=package.DELIVERY_SCOPE_FULL)
         self.assertIn("lane receipts", err.detail)
         self.assertIn("absent", err.detail)
+
+
+class CheckoutReadbackTests(DispatchedRun):
+    def test_checkout_readback_is_passed_to_the_order_form_mapping(self):
+        real = package.checkout_module.order_form_mapping
+        seen = []
+
+        def fake(intake_, route_, **kw):
+            seen.append(kw)
+            return {**real(intake_, route_), "readback_seen": kw.get("readback")}
+
+        original = package.checkout_module.order_form_mapping
+        package.checkout_module.order_form_mapping = fake
+        try:
+            built = self.assemble(name="rb", checkout_readback={"probe": 1})
+            self.assertEqual(built["manifest"]["checkout"]["readback_seen"], {"probe": 1})
+            self.assemble(name="no-rb")
+        finally:
+            package.checkout_module.order_form_mapping = original
+        self.assertEqual(seen, [{"readback": {"probe": 1}}, {}])
 
 
 class PaidRenderTests(DispatchedRun):

@@ -137,8 +137,12 @@ class DesignCheckTests(Base):
                             for f in page_designs.design_violations(manifest, self.work / "pkg")))
 
     def test_the_check_is_opt_in_for_old_style_packages_and_on_for_deliveries(self):
-        bare = self.assemble(self.pieces(), name="optional", require_designs=False)
+        waiver = {"approval_ref": "APPR-WAIVE-TEST", "subject_type": "design_waiver",
+                  "subject_hash": self.normalized["approval"]["hash"],
+                  "owner_identity_ref": "client-test-1", "revoked": False}
+        bare = self.assemble(self.pieces(), name="optional", require_designs=False, design_waiver=waiver)
         self.assertFalse(bare["manifest"]["designs_required"])
+        self.assertEqual(bare["manifest"]["design_waiver"]["approval_ref"], "APPR-WAIVE-TEST")
         manifest_path = Path(bare["manifest_path"])
         self.assertEqual(checks.check_package(manifest_path, self.work / "optional"), [])
         self.assertEqual(checks.check_package(manifest_path, self.work / "optional", require_designs=True), [])
@@ -210,7 +214,7 @@ class SlotTests(Base):
         landing["artifacts"] = [{"path": str(inside), "sha256": hashlib.sha256(b"one").hexdigest()},
                                 {"path": str(beside), "sha256": hashlib.sha256(b"two").hexdigest()}]
         with self.assertRaises(package.PackageError) as ctx:
-            self.assemble(pieces, name="collide", require_designs=False)
+            self.assemble(pieces, name="collide")
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-PKG-COLLISION")
 
 
