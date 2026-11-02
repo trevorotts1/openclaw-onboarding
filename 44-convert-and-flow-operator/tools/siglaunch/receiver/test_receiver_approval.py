@@ -161,13 +161,19 @@ def test_verified_approval_dispatches_and_receipt_names_the_authority(env):
     assert receipt["approval"]["verified_by"] == "command-center"
 
 
-# ── S44-17 against the real shared verifier (runs once U-approval-02 is on the branch) ──
-_REAL = rcv._APPROVAL_RECORD_PATH.is_file()
-
-
-@pytest.mark.skipif(not _REAL, reason="shared-utils approval_record not on this branch yet")
+# ── S44-17 against the real shared verifier ──
+# Absent (before U-approval-02 merges): the default verifier fails closed.
+# Present: it accepts only a matching Command Center record.
 def test_real_approval_record_accepts_only_a_command_center_record(env, monkeypatch):
     req = make_request()
+    if not rcv._APPROVAL_RECORD_PATH.is_file():
+        monkeypatch.setenv("COMPANY_SLUG", "client-a")
+        monkeypatch.setenv("MISSION_CONTROL_URL", "http://127.0.0.1:9")
+        rx, fake, store = env()
+        code, receipt = rx.dispatch(req)
+        assert (code, receipt["refused"]) == (EXIT_BLOCKED, "APPROVAL_UNAVAILABLE")
+        assert fake.build_calls == [] and store.get_request(req["request_id"]) is None
+        return
     state = {"status": 200, "record": {
         "schema_version": "1.0", "approval_id": "appr_12345678", "kind": rcv.APPROVAL_KIND,
         "plan_hash": plan_hash(req["plan"]), "client_identity": "client-a",
@@ -225,3 +231,46 @@ def test_module_declares_native_ghl_and_refuses_production_entry(path):
     proc = subprocess.run([sys.executable, str(path)], capture_output=True, text=True, timeout=120)
     assert proc.returncode == 6
     assert "native-ghl-post-sale-workflows" in proc.stderr and proc.stdout == ""
+
+
+# ── S44-19: python -m siglaunch run, one purchase end to end (fake executor) ──
+TOOLS = HERE.parents[1]  # tools/, so `-m siglaunch` resolves
+
+
+def _run(tmp_path, *extra):
+    ev, cat, db = tmp_path / "ev.json", tmp_path / "cat.json", tmp_path / "s.sqlite"
+    ev.write_text(json.dumps({
+        "tenant_id": "T1", "location_id": "LOC1", "launch_id": "LN1", "provider": "ghl",
+        "provider_event_id": "evt-1", "native_event_kind": "order_paid",
+        "native_order_ref": "ord-1", "native_transaction_ref": "txn-1",
+        "occurred_at": "2026-10-15T20:00:00Z", "received_at": "2026-10-15T20:00:05Z",
+        "payment_status": "succeeded", "evidence_ref": "readback/ord-1", "test_only": True,
+        "contact_ref": "contact-1",
+        "line_items": [{"native_line_ref": "li-m", "native_product_ref": "prod-main",
+                        "offer_id": "off-main", "currency": "USD", "amount_minor": 49700,
+                        "entitlement_ids": ["ent-main"]}]}))
+    cat.write_text(json.dumps({"tenant_id": "T1", "location_id": "LOC1", "launch_id": "LN1",
+                               "bindings": {"prod-main": "main"}, "purchase_tag": "verified-purchase"}))
+    proc = subprocess.run([sys.executable, "-m", "siglaunch", "run", "--event", str(ev),
+                           "--catalog", str(cat), "--db", str(db), *extra],
+                          cwd=TOOLS, capture_output=True, text=True, timeout=120)
+    return proc, db
+
+
+def test_run_fake_processes_one_purchase_then_is_idempotent(tmp_path):
+    proc, db = _run(tmp_path, "--executor", "fake")
+    assert proc.returncode == 0, proc.stderr
+    out = json.loads(proc.stdout)
+    assert out["ingest"] == "accepted" and out["active_entitlements"] == ["ent-main"]
+    assert [e for e in out["fake_effects"] if e["effect"] == "tag"] == [
+        {"effect": "tag", "contact_ref": "contact-1", "tag": "verified-purchase"}]
+    proc2, _ = _run(tmp_path, "--executor", "fake")
+    out2 = json.loads(proc2.stdout)
+    assert proc2.returncode == 0 and out2["ingest"] == "duplicate" and out2["fake_effects"] == []
+
+
+@pytest.mark.parametrize("extra", [("--executor", "live"), ()])
+def test_run_refuses_anything_but_fake_executor(tmp_path, extra):
+    proc, db = _run(tmp_path, *extra)
+    assert proc.returncode == 6 and "native-ghl-post-sale-workflows" in proc.stderr
+    assert not db.exists()
