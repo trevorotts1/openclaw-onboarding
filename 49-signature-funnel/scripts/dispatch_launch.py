@@ -417,7 +417,12 @@ def _check_scoped_approvals(launch: Dict[str, Any],
                     launch, cand, need,
                     client_identity_ref=client_identity_ref,
                     worker_identity_ref=worker_identity_ref,
-                    test_only=(launch.get("test_only") is True))
+                    test_only=(launch.get("test_only") is True),
+                    # paid_asset_budget is the one scoped approval that carries a spend cap; the
+                    # gate refuses a budget without one and checks it against the Command Center record
+                    # ponytail: the requested cap is the record's own, so this proves a verified, capped budget
+                    # exists; the per-picture ceiling is enforced by image_cap in the swarm
+                    cap=(cand.get("cap") if need == "paid_asset_budget" else None))
                 break
             except vlp.ApprovalError as exc:
                 if first_error is None:

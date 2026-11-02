@@ -33,6 +33,7 @@ ORCH = SKILL_DIR / "run_signature_funnel.py"
 PY = sys.executable or "python3"
 
 sys.path.insert(0, str(SCRIPTS))
+import prove_sf_build  # noqa: E402  (P7 gate + the tool-run evidence fixture it reads)
 import prove_sf_graph  # noqa: E402  (canonical 3/5/7 matrix + graph/derived fixtures)
 from prove_sf_prompt_floor import _GRADE_BLOCK as SIG_GRADE_BLOCK  # noqa: E402  (canonical verbatim grade block)
 from prove_sf_prompt_floor import (  # noqa: E402  (FIX-IMG-07 required image set)
@@ -1911,11 +1912,15 @@ def _emit_build_artifacts(dst: Path) -> list:
     (dst / "pages").mkdir(parents=True, exist_ok=True)
     for profile in pages:
         rel = f"pages/{profile}.fragment.html"
-        (dst / rel).write_text(
-            f"<section class=\"sf-page\" data-stage=\"{profile}\">\n"
-            f"  <h1>{PRODUCT} — {profile} page</h1>\n"
-            f"  <div class=\"sf-body\">Signature-styled {profile} fragment for the golden funnel.</div>\n"
-            f"</section>\n", encoding="utf-8")
+        # P5-HTML parses the fragment: a root page marker and the profile's data-section markers in order,
+        # each around real text (prove_sf_build.html_fragment_violations).
+        ids = prove_sf_build.required_section_ids(prove_sf_build._structure(), profile)
+        body = "".join(f"  <div class=\"sf-sec\" data-section=\"{sid}\"><p>{PRODUCT} {profile} section {sid}: "
+                       "signature-styled copy for the golden funnel.</p></div>\n" for sid in ids)
+        if not ids:  # the design-only checkout carries microcopy, no numbered sections
+            body = f"  <p>{PRODUCT} {profile} page: signature-styled order microcopy for the golden funnel.</p>\n"
+        (dst / rel).write_text(f"<section class=\"sf-page\" data-page=\"{profile}\">\n{body}</section>\n",
+                               encoding="utf-8")
         rels.append(rel)
     _write_json(dst / "funnel_graph.json", prove_sf_graph._valid_graph(GOLDEN_SIZE))
     receipt = {
@@ -1931,6 +1936,27 @@ def _emit_build_artifacts(dst: Path) -> list:
     _write_json(dst / "build_receipt.json", receipt)
     _write_json(dst / "derived_pages.json", prove_sf_graph._valid_derived_ledger(GOLDEN_SIZE))
     return rels + ["funnel_graph.json", "build_receipt.json", "derived_pages.json"]
+
+
+def _stage_build_evidence(run_dir: Path) -> None:
+    """P7 reads what the TOOLS wrote under the run dir, not the receipt: a sealed Skill 6 verify run
+    (build/evidence) and a wireframe + mockup set (page-images). Neither can be committed (the verify run's
+    nonce lives outside the tree), so each run dir gets prove_sf_build's own fixture; the committed golden page
+    fragments are restored over its generic ones so they are the fragments actually checked.
+    Test fixture only; never a substitute for a real tool run."""
+    prove_sf_build.write_valid_run_evidence(
+        run_dir, GOLDEN_SIZE, json.loads((HERE / "build_receipt.json").read_text(encoding="utf-8")))
+    for frag in (HERE / "pages").glob("*.fragment.html"):
+        (run_dir / "pages" / frag.name).write_text(frag.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def _prove_build() -> tuple:
+    """prove_sf_build on the golden receipt, in a throwaway run dir that carries the staged evidence."""
+    with tempfile.TemporaryDirectory(prefix="golden_daybreak_build_") as td:
+        run_dir = Path(td)
+        _stage_build_evidence(run_dir)
+        return _prove("prove_sf_build.py", ["--receipt", str(run_dir / "build_receipt.json"),
+                                            "--funnel-size", str(GOLDEN_SIZE), "--run-dir", str(run_dir)])
 
 
 def _new_operator_key(tmp: Path) -> Path:
@@ -2048,12 +2074,13 @@ def main() -> int:
         ("prove_sf_copy.py", ["--ledger", str(HERE / "copy_ledger.json")]),
         ("prove_sf_prompt_floor.py", ["--ledger", str(HERE / "prompt_ledger.json")]),
         ("prove_sf_graph.py", ["--graph", str(HERE / "funnel_graph.json")]),
-        ("prove_sf_build.py", ["--receipt", str(HERE / "build_receipt.json")]),
         ("prove_sf_no_pitch.py", ["--ledger", str(HERE / "media_ledger.json")]),
     ]
     prover_results = {}
+    # prove_sf_build keeps its place in the run order but is proven on the staged run dir
+    checks.insert(4, ("prove_sf_build.py", None))
     for script, args in checks:
-        rc, out = _prove(script, args)
+        rc, out = _prove_build() if args is None else _prove(script, args)
         prover_results[script] = {"rc": rc, "pass": rc == 0, "tail": out.strip().splitlines()[-1:]}
         print(f"  [{'PASS' if rc == 0 else 'FAIL'}] golden {script} (rc={rc})")
         if rc != 0:
@@ -2079,6 +2106,7 @@ def main() -> int:
             dst_p = run_dir / rel
             dst_p.parent.mkdir(parents=True, exist_ok=True)
             dst_p.write_text((HERE / rel).read_text(encoding="utf-8"), encoding="utf-8")
+        _stage_build_evidence(run_dir)
         rc, out = _orchestrate(run_dir, key_file)
         cert_path = run_dir / "PROCESS-CERTIFICATE.json"
         certified = rc == 0 and cert_path.exists()
