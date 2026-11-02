@@ -426,12 +426,14 @@ class SuppliedAssetGateTest(unittest.TestCase):
                         "image-inventory-prompts", item)
 
     def put_generation_receipt(self, run, supplied_entry):
-        write(run / "receipts" / "kie74" / "task-001.json", json.dumps({
+        # the receipt stage_executor writes: bound to the saved bytes (Image-001.png) and the credit draw
+        stage_gate._kie74_receipt_module().write_bound_receipt(run, {
             "provider": "kie", "adapter": "74-kie-live-adapter",
             "adapter_mode": "active", "backend": "native-live",
             "model_id": "gpt-image-2", "task_id": "task-001", "state": "success",
-            "saved_paths": ["image-generation-qc/Image-001.png"],
-            "warnings": [], "data": {}}))
+            "result_urls": ["https://example.invalid/a.png"],
+            "saved_paths": ["image-generation-qc/Image-001.png"], "fallback_used": False,
+            "warnings": [], "data": {}}, "image-generation-qc/Image-001.png", 100.0, 96.0)
         put_receipt(run, "image-generation-qc",
                     cost={"provider": "kie", "credits_before": 100.0,
                           "credits_after": 96.0},

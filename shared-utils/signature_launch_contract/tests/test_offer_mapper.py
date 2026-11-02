@@ -74,7 +74,15 @@ def round_trip(d):
     rows = expected_offers(d)
     assert [facts(o, o["prices"][0]) for o in record["offers"]] == [want(r) for r in rows]
 
-    plan = om.record_to_plan(record)
+    plan_record = record
+    if record["journey_mode"] == "folded_levels":
+        # Skill 78 declines folded_levels (the levels sit on the sales page, there is no selection page), so the
+        # same offers are planned through a journey 78 supports, the way the checkout instances are built.
+        with pytest.raises(Exception) as declined:
+            om.record_to_plan(record)
+        assert getattr(declined.value, "code", None) == "S78-JOURNEY-MODE-DECLINE"
+        plan_record = {**record, "journey_mode": "multiple_options"}
+    plan = om.record_to_plan(plan_record)
     assert plan["outcome"] == "plan"
     mains = [want(r) for r, o in zip(rows, record["offers"]) if o["slot"] == "main"]
     assert [facts(o, o["prices"][0]) for o in plan["offers_in_order"]] == mains
@@ -127,7 +135,10 @@ def test_provided_prices_are_provided_owner_with_a_resolving_source_ref():
 def test_recommended_price_shows_recommended_unapproved_in_launch_json_and_78_refuses_it():
     d = doc("answers.elevation.json")
     d["answers"]["packages"]["status"] = "default_to_confirm"
-    record, _ = om.answers_to_record(d, **IDENT)
+    # 78 refuses a recommended price until the client's plan approval covers it (U-products-07): this record
+    # is built before that approval, so it is awaiting_plan_approval with no plan_approval_ref.
+    record, _ = om.answers_to_record(d, **{**IDENT, "plan_approval_ref": None})
+    assert record["status"] == "awaiting_plan_approval"
     launch = json.loads(json.dumps(record))  # what is written to launch.json
     mains = [o for o in launch["offers"] if o["slot"] == "main"]
     assert {o["prices"][0]["approval_status"] for o in mains} == {"recommended_unapproved"}
@@ -136,6 +147,8 @@ def test_recommended_price_shows_recommended_unapproved_in_launch_json_and_78_re
     with pytest.raises(Exception) as e:
         om.record_to_plan(record)
     assert getattr(e.value, "code", None) == "S78-UNAPPROVED-PRICE"
+    approved, _ = om.answers_to_record(d, **IDENT)  # the same prices once the plan approval carries a ref
+    assert om.record_to_plan(approved)["outcome"] == "plan"
 
 
 def test_billing_comes_from_the_answers_never_a_constant():
