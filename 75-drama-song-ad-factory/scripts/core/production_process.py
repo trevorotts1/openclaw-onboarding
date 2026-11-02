@@ -198,9 +198,17 @@ def _script_proof(run_dir, run_id, *, required=True):
     status, rec = events.load_record(str(run_dir))
     if status != "ok" or not isinstance(rec, dict) or events.is_unknown_record(rec):
         return _result(False, "PRODUCTION_SCRIPT_APPROVAL_MISSING", "The whole script and lyrics have no readable artifact approval.")
-    old_refusal = approval.check_script_approval(rec, lyrics)
+    old_refusal = approval.check_script_approval(rec, lyrics, hashes["script"])
     if old_refusal:
-        return _result(False, old_refusal["reason_code"], old_refusal["detail"])
+        # The gate names a changed artifact ARTIFACT_CHANGED; this module's
+        # public reason-code contract reports every approval that does not
+        # cover the current bytes as PRODUCTION_SCRIPT_APPROVAL_UNVERIFIED
+        # (the same refusal the revision loop below emits). Both refuse; only
+        # the exported name is normalized here.
+        code = ("PRODUCTION_SCRIPT_APPROVAL_UNVERIFIED"
+                if old_refusal["reason_code"] == approval.ARTIFACT_CHANGED
+                else old_refusal["reason_code"])
+        return _result(False, code, old_refusal["detail"])
     bound_run = rec.get("run_id") or (rec.get("run") or {}).get("run_id")
     if bound_run and str(bound_run) != run_id:
         return _result(False, "PRODUCTION_APPROVAL_SCOPE_MISMATCH", "The script approval belongs to another run.")

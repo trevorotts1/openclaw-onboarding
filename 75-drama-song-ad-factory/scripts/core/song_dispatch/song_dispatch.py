@@ -1624,7 +1624,8 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     # SCRIPT APPROVAL: a client who asked to approve the script first gets no generation until they do.
     if script_approval is None:       # found in the run folder; nobody passes it by hand
         script_approval = _SA.record_near(run_dir, request.get("run_dir"))
-    refusal = _SA.check_script_approval(script_approval, _lyrics_of(request))
+    refusal = _SA.check_script_approval(script_approval, _lyrics_of(request),
+                                        _SA.script_sha_near(run_dir, request.get("run_dir")))
     if refusal:
         raise DispatchError("%s: %s" % (refusal["reason_code"], refusal["detail"]))
     # G9 / CPR-R2: the request asks for the DELIVERED seconds, exactly. The old
