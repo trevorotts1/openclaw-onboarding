@@ -29,6 +29,8 @@ if str(_SKILL_ROOT) not in sys.path:
 from launcher_core import graphics_hooks, image_stages  # noqa: E402
 
 CODE = "AF-LAUNCH-IMAGE-STAGES"
+# What a launch leaves in the package root: the stage report, the layout-proof approval, the dispatch report.
+LAUNCH_MARKS = (image_stages.REPORT_REL, image_stages.LAYOUT_APPROVAL_REL, "dispatch-report.json")
 
 
 def _stage_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
@@ -62,6 +64,17 @@ def _stage_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
     return fails
 
 
+def applies(manifest: Dict[str, Any], root: Path) -> bool:
+    """A paid run (test_only not true) always: it delivers finished pages (DECISIONS 2026-11-02 09:25).
+    A test package once a launch dispatch or the stage driver left its mark in the package root; a
+    bare stub package stays 'images only, render pending' (checks.py, U-launcher-core-02)."""
+    if manifest.get("test_only") is not True:
+        return True
+    return any((root / rel).exists() for rel in LAUNCH_MARKS) or bool(image_stages.discover_page_runs(root))
+
+
 def violations(manifest: Dict[str, Any], root: Path, skill_root: Path) -> List[str]:
     root = Path(root)
+    if not applies(manifest, root):
+        return []
     return graphics_hooks.report_violations(manifest, root) + _stage_violations(manifest, root)

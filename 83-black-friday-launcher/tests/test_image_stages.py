@@ -22,7 +22,7 @@ sys.path.insert(0, str(SKILL_ROOT))
 sys.path.insert(0, str(SKILL_ROOT / "routes"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from launcher_core import checks, graphics_hooks, image_stages  # noqa: E402
+from launcher_core import checks, cli, graphics_hooks, image_stages  # noqa: E402
 from launcher_core.image_stages import STAGES  # noqa: E402
 from test_lane83_designs import Base  # noqa: E402  (a real stub-provider package, no tests of its own)
 
@@ -281,11 +281,29 @@ class PackageCheckTests(Base):
                    "triggered_autofails": []} for i in graphics_hooks.collect_images(manifest, root)]
         write(root / graphics_hooks.QC_REPORT_REL, json.dumps({"assets": assets}))
 
+    def launched(self, root):
+        """The mark a launch dispatch leaves in the package root."""
+        write(root / "dispatch-report.json", "{}")
+
     def test_the_layout_proof_package_fails_with_no_stage_report_and_no_qc_report(self):
         manifest, root, _ = self.package()
+        self.launched(root)
         fails = self.rule()(manifest, root, SKILL_ROOT)
         self.assertTrue(any("image_stages_report.json is missing" in f and "layout proofs only" in f for f in fails), fails)
         self.assertTrue(any("image_qc_report.json is missing" in f for f in fails), fails)
+
+    def test_a_paid_package_always_needs_its_stages_and_qc_report(self):
+        manifest, root, _ = self.package()
+        fails = self.rule()(dict(manifest, test_only=False), root, SKILL_ROOT)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-IMAGE-STAGES") for f in fails), fails)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-IMAGE-QC") for f in fails), fails)
+
+    def test_a_bare_stub_package_stays_images_only_until_a_launch_marks_it(self):
+        manifest, root, _ = self.package()
+        self.assertIs(manifest["test_only"], True)
+        self.assertEqual(self.rule()(manifest, root, SKILL_ROOT), [])  # 'images only, render pending'
+        self.launched(root)
+        self.assertNotEqual(self.rule()(manifest, root, SKILL_ROOT), [])
 
     def test_it_fails_until_design_board_and_final_mockups_are_closed_for_every_page(self):
         manifest, root, _ = self.package()
@@ -323,15 +341,25 @@ class PackageCheckTests(Base):
         write(root / image_stages.REPORT_REL, json.dumps(doc))
         self.assertTrue(any("page run(s)" in f or "has no page run" in f for f in self.rule()(manifest, root, SKILL_ROOT)))
 
-    def test_check_package_runs_the_rule_when_the_check_rules_seam_is_present(self):
-        seam = SKILL_ROOT / "launcher_core" / "check_rules" / "__init__.py"
-        if not seam.is_file():  # the seam lands with U-launcher-core-02; the rule file above is its plug-in
-            self.assertTrue(RULE_FILE.is_file())
-            return
+    @unittest.skipUnless((SKILL_ROOT / "launcher_core" / "check_rules" / "__init__.py").is_file(),
+                         "the check_rules seam lands with U-launcher-core-02; QC re-runs rows 2-4 after it lands")
+    def test_cli_check_fails_a_stub_launch_until_every_page_closes_its_stages(self):
         manifest, root, built = self.package()
-        fails = checks.check_package(Path(built["manifest_path"]), root, announce=False)
-        self.assertTrue(any("AF-LAUNCH-IMAGE-STAGES" in f for f in fails), fails)
-        self.assertTrue(any("AF-LAUNCH-IMAGE-QC" in f for f in fails), fails)
+        self.launched(root)
+        argv = ["check", "--manifest", str(built["manifest_path"]), "--root", str(root)]
+        image = lambda fails: [f for f in fails if f.startswith("AF-LAUNCH-IMAGE")]
+        fails = checks.check_package(Path(built["manifest_path"]), root)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-IMAGE-STAGES") for f in fails), fails)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-IMAGE-QC") for f in fails), fails)
+        self.assertEqual(cli.main(argv), 2)
+        self.write_clean_qc(manifest, root)
+        self.close_every_page(manifest, root, skip=(0, "final-mockups"))
+        self.assertEqual(image(checks.check_package(Path(built["manifest_path"]), root)),
+                         ["AF-LAUNCH-IMAGE-STAGES: page run-0 stage final-mockups is not closed by stage_gate.py"])
+        self.assertEqual(cli.main(argv), 2)
+        self.close_every_page(manifest, root)
+        self.assertEqual(image(checks.check_package(Path(built["manifest_path"]), root)), [])
+        self.assertEqual(cli.main(argv), 0)
 
 
 class ModelIsNeverALiteralTests(unittest.TestCase):
