@@ -109,6 +109,7 @@ class PaidSpendTests(unittest.TestCase):
         price = image_plan.IMAGE_PRICE_MINOR["kie"]["USD"]
         self.assertTrue(inputs["allow_paid"])
         self.assertEqual(inputs["executor_provider"], "kie")
+        self.assertEqual(inputs["paid_approval_id"], APPROVAL_ID)
         self.assertEqual((inputs["image_cap_minor"], inputs["image_currency"], inputs["image_price_minor"]),
                          (4000, "USD", price))
         self.assertEqual(inputs["image_cap"], 4000 // price)  # the picture ceiling, derived from the money
@@ -141,6 +142,7 @@ class PaidSpendTests(unittest.TestCase):
         with mock.patch.object(image_plan, "_approval_verify", return_value=verifier):
             inputs, _ = resolve({"brand_file": "/nope.json", "brand_owner": "X"}, test_only=True)
         self.assertEqual((inputs["executor_provider"], inputs["allow_paid"]), ("stub", False))
+        self.assertIsNone(inputs["paid_approval_id"])
         verifier.assert_not_called()
 
     # ---- IMG-08: a defaulted style is never paid for -------------------------------------------

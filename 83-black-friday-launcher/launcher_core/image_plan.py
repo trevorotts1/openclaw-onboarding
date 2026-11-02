@@ -367,6 +367,7 @@ def resolve(raw: Optional[Dict[str, Any]], *, test_only: bool,
         "test_only": bool(test_only),
         "executor_provider": executor,
         "allow_paid": allow_paid,
+        "paid_approval_id": approval if allow_paid else None,
     }
     return inputs, to_confirm
 
