@@ -112,6 +112,10 @@
         {
           "element": "comparison_rows",
           "unit_kind": "bullet",
+          "unit_kinds": [
+            "bullet",
+            "row"
+          ],
           "min": 1,
           "max": 200,
           "kind": "hard",

@@ -134,6 +134,38 @@ class BuilderStampsFoldedLevelsTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
 
+class UpsellLayoutStampTests(unittest.TestCase):
+    """UPS-20/21 (carried from U-upsell-05): with page-structures.json `layouts` declared, an upsell
+    section carries its layout tag and an image plate from the layout, never one derived from its heading."""
+    SKILL80 = HERE.parents[1] / "80-signature-upsell"
+    COPY = SKILL80 / "components/80-signature-upsell/fixtures/copy-upsell1-public.valid.json"
+    BUNDLE = SKILL80 / "examples/upsell-result-bundle-upsell1.example.json"
+
+    def sections(self, structures):
+        path = Path(tempfile.mkdtemp()) / "page-structures.json"
+        path.write_text(json.dumps(structures), encoding="utf-8")
+        self.addCleanup(lambda: path.unlink(missing_ok=True))
+        old, executor.STRUCTURES_FILE = executor.STRUCTURES_FILE, path
+        self.addCleanup(lambda: setattr(executor, "STRUCTURES_FILE", old))
+        spec = json.loads((executor.SPEC_DIR / "upsell-v6.json").read_text(encoding="utf-8"))
+        load = lambda f: json.loads(f.read_text(encoding="utf-8"))
+        return builder.sections_from_copy_json(load(self.COPY), load(self.BUNDLE), spec, {})
+
+    def test_layout_tag_and_plate_come_from_the_declared_layout(self):
+        if not self.COPY.is_file():
+            self.skipTest("Skill 80 is not installed beside Skill 71")
+        layout = {"sections": [{"id": str(i), "layout_tag": f"tag-{i}", "geometry": f"Band {i} geometry.",
+                                "slot": {"slot_id": f"IMG-{i:03d}", "aspect_ratio": "4:3"}} for i in range(1, 9)]}
+        out = self.sections({"layouts": {"note": "x", "upsell_1": layout}})
+        self.assertEqual([s["layout_tag"] for s in out], [f"tag-{i}" for i in range(1, 9)])
+        for s in out:
+            art = s["slots"][0]["art_direction"]
+            self.assertNotIn("illustrates", art)
+            self.assertTrue(art.startswith(f"Band {s['section_id']} geometry."))
+        with self.assertRaises(builder.BuildError):  # layouts declared, but none for this instance
+            self.sections({"layouts": {"upsell_2": layout}})
+
+
 class SecondDownsellLabelTests(unittest.TestCase):
     def setUp(self):
         self.run_dir = tempfile.mkdtemp()

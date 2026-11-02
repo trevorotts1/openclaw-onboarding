@@ -561,6 +561,20 @@ UPSELL_RATIOS = {"1": "16:9", "2": "4:3", "3": "3:2", "4": "4:3", "5": "3:2", "6
                  "7": "4:3", "8": "3:2"}
 
 
+def upsell_layouts(plan):
+    """{section id: layout entry} for the bundle's upsell instance from page-structures.json
+    `layouts`, or None while that file declares no layouts at all."""
+    layouts = json.loads(Path(exe.STRUCTURES_FILE).read_text(encoding="utf-8")).get("layouts")
+    if layouts is None:
+        return None
+    instance = (plan or {}).get("instance")
+    entry = layouts.get(instance) if isinstance(layouts.get(instance), dict) else None
+    if not entry:
+        raise BuildError(f"the bundle's page_plan.instance {instance!r} has no layout in "
+                         f"page-structures.json layouts ({', '.join(k for k in layouts if k != 'note')})")
+    return {x["id"]: x for x in entry["sections"]}
+
+
 def sections_from_copy_json(copy_doc: dict, bundle: dict, spec: dict, slots: dict) -> list:
     """Request sections from Skill 80's validated upsell copy and its result bundle.
 
@@ -585,6 +599,8 @@ def sections_from_copy_json(copy_doc: dict, bundle: dict, spec: dict, slots: dic
             f"missing {[i for i in sequence if i not in order]}, unexpected "
             f"{[i for i in order if i not in sequence]}")
     names = {x["id"]: x["framework_name"] for x in spec["sections"]}
+    layouts = upsell_layouts(plan)
+    fell_back = []
     out = []
     for sid, doc in zip(sequence, docs):
         cta = (doc.get("cta") or {}).get("text")
@@ -595,15 +611,29 @@ def sections_from_copy_json(copy_doc: dict, bundle: dict, spec: dict, slots: dic
         if sid == "1":
             lines += ack
         lines.append(disclosure)
-        default = [{"slot_id": f"IMG-{int(sid):03d}", "aspect_ratio": UPSELL_RATIOS[sid],
-                    "art_direction": f"Editorial photograph that illustrates: {doc['heading']}"}]
+        if layouts is not None:  # the declared band layout: never a picture derived from the heading
+            band = layouts[sid]
+            default = [{**band["slot"],
+                        "art_direction": f"{band['geometry']} Image plate only; no plan was passed "
+                                         "(--slots from 80-signature-upsell upsell_image_plan.py gives "
+                                         "the offer-specific plan)"}]
+            if sid not in slots:
+                fell_back.append(sid)
+        else:  # ponytail: page-structures.json carries no `layouts` yet; drop this branch once it does
+            default = [{"slot_id": f"IMG-{int(sid):03d}", "aspect_ratio": UPSELL_RATIOS[sid],
+                        "art_direction": f"Editorial photograph that illustrates: {doc['heading']}"}]
         entry = {"section_id": sid, "section_name": names[sid], "copy": "\n".join(lines),
                  "cta": cta, "terms": disclosure, "decline": spec["decline_label"],
                  "slots": slots.get(sid, default),
                  "behavior_notes": "One-click accept CTA; decline never charges"}
+        if layouts is not None:
+            entry["layout_tag"] = layouts[sid]["layout_tag"]
         if sid == "1":
             entry["ack"] = ack
         out.append(entry)
+    if fell_back:
+        print(f"NOTE: no image plan for upsell section(s) {', '.join(fell_back)}; each carries its "
+              "declared layout's image plate", file=sys.stderr)
     return out
 
 
