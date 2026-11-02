@@ -518,5 +518,92 @@ class ApprovedPartialViewSetRefuses(unittest.TestCase):
                          sorted(view + ".png" for view in views))
 
 
+class Ww27CastBlockSurvivesF7(unittest.TestCase):
+    """The F7 port must not drop main's WW-27 cast block (a missing constant
+    only shows when the cast path runs, which no render test does)."""
+
+    def test_cast_constants_exist_and_cast_path_runs(self):
+        for name in ("CAST_SCHEMA", "TOOL_NAME", "CAST_MODES", "DEFAULT_CAST_MODE",
+                     "MIN_ENSEMBLE", "CAST_ROLES", "OPPOSING_ROLES", "CAST_FIELDS",
+                     "VOICE_DIRECTION_FIELDS", "CHARACTER_FIELDS",
+                     "CODE_SPEAKER_UNDECLARED", "CODE_ENSEMBLE_SINGLE_VOICE_STYLE",
+                     "CODE_VOICE_PACK_STITCHED", "_SINGLE_VOICE_RE"):
+            self.assertTrue(hasattr(CB, name), name)
+        self.assertEqual(CB.cast_decision({})["schema"], CB.CAST_SCHEMA)
+        CB.check_cast({})          # must run, not raise NameError
+
+
+class EnsemblePerCharacterGate(unittest.TestCase):
+    """F7 cross-character: one short character is refused BY NAME in final
+    mode, and every character's files keep their own bytes."""
+
+    def setUp(self):
+        self.t = tempfile.mkdtemp(prefix="del02-ens-")
+        self.run = os.path.join(self.t, "run")
+        os.makedirs(os.path.join(self.run, "character"))
+
+    def tearDown(self):
+        shutil.rmtree(self.t, ignore_errors=True)
+
+    def _approved(self, short_views, measured=True):
+        full = CB.IMAGE_VIEWS
+        entries = []
+        for n, (name, views) in enumerate((("Alpha Person", full),
+                                           ("Bravo Person", short_views))):
+            imgs = {v: _png(os.path.join(self.t, "%s-%s.png" % (name[:5], v)),
+                            rgb=(40 + 70 * n, 30 * i + 20, 90))
+                    for i, v in enumerate(views)}
+            entries.append({
+                "name": name, "role": "protagonist" if n == 0 else "foil",
+                "slug": name.split()[0].lower(),
+                "background": FIXTURE["character_background"],
+                "appearance": FIXTURE["character_ethnicity"],
+                "voice_notes": FIXTURE["character_voice_notes"], "images": imgs})
+        DO.save_origin(self.run, DO.origin_record(
+            tenant_id="tenant-9", account_id="bot-9", channel="app",
+            conversation_id="conv-9", thread_id="thread-9"))
+        CA.save_bible(self.run, CA.bible_from_entries(entries))
+        CA.present(self.run, run_id="run-9")
+        self.assertEqual(CA.approve(self.run, "approve", approved_by="client-9",
+                                    run_id="run-9")["status"], CA.APPROVED)
+        if measured:
+            os.makedirs(os.path.join(self.run, "audio"))
+            with open(os.path.join(self.run, "audio", "timing.json"), "w") as fh:
+                json.dump({"measured": True}, fh)
+        return entries
+
+    def test_final_refuses_the_short_character_by_name_and_writes_nothing(self):
+        self._approved(("close-up", "side-profile"))
+        with self.assertRaises(Exception) as caught:
+            CB.produce_delivery(self.run, ITEM)
+        msg = str(caught.exception)
+        self.assertIn("Bravo Person", msg)
+        self.assertNotIn("Alpha Person", msg)
+        self.assertFalse(os.path.exists(os.path.join(self.run, "delivery")))
+
+    def test_complete_cast_keeps_each_characters_own_hashes(self):
+        import hashlib
+        entries = self._approved(CB.IMAGE_VIEWS)
+        staged = CB.produce_delivery(self.run, ITEM)
+        img_dir = os.path.join(os.path.dirname(str(staged[0])), ITEM.files[1])
+
+        def sha(p):
+            with open(p, "rb") as fh:
+                return hashlib.sha256(fh.read()).hexdigest()
+        for e in entries:
+            for view, src in e["images"].items():
+                self.assertEqual(sha(os.path.join(img_dir, e["slug"], view + ".png")),
+                                 sha(src), (e["slug"], view))
+        self.assertNotEqual(sha(entries[0]["images"]["close-up"]),
+                            sha(entries[1]["images"]["close-up"]))
+
+    def test_unmeasured_short_cast_is_a_labelled_preview(self):
+        self._approved(("close-up", "side-profile"), measured=False)
+        staged = CB.produce_delivery(self.run, ITEM)
+        pdf = os.path.join(os.path.dirname(str(staged[0])), ITEM.files[1],
+                           "bravo", CB.DELIVERY_PDF_NAME)
+        self.assertIn(b"PREVIEW", _read(pdf))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

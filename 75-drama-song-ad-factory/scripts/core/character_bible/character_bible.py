@@ -466,6 +466,75 @@ def _ship_plan(resolved, preview=False, label="the character"):
     return plan
 
 
+# ---- WW-27: the ensemble cast model and the distinct-voice gate -------------
+#
+# WW-27 (2026-10-11): the CAST DECISION precedes drafting. Multiple characters
+# are the DEFAULT and the count follows the conflict; a single-voice cast is
+# legal only when the brief declares it. Every declared character carries a
+# complete treatment -- name, role, want, wound, relationships, consequential
+# action, voice -- and a Suno voice direction of register, timbre, articulation,
+# delivery, emotional progression and version treatment. At least one villain or
+# foil SPEAKS and receives a consequential reply; a non-person antagonist is
+# permitted only with a speaking foil. A bracket in the sheet that names a
+# character nobody declared is REFUSED, and an ensemble whose FINAL style still
+# commands a single voice ("A single female voice.") is REFUSED. One full-song
+# track is kept: a stitched voice pack is REFUSED.
+#
+# This is a PRE-GENERATION check on the script and the serialized payload --
+# never a delivered-audio gate. Audio gate D5 alone confirms the delivered
+# voices. Every number here is a NEW ACCEPTANCE RULE, not a measured limit and
+# never a number Trevor set. Same as before: a check that only fires on a
+# hand-built dictionary is not a guard, so the seam is checked at the real call
+# sites (suno_recipe.build_request, music_director.build_generate_request,
+# song_contract.check_sheet).
+
+CAST_SCHEMA = "blackceo.ensemble-cast/v1"
+
+TOOL_NAME = "character_bible"
+
+CAST_MODES = ("ensemble", "single")
+DEFAULT_CAST_MODE = "ensemble"      # PROPOSED: multiple characters by default
+MIN_ENSEMBLE = 2                    # PROPOSED: an ensemble is two or more
+CAST_ROLES = ("protagonist", "villain", "foil", "antagonist", "support", "narrator")
+#: A role that OPPOSES the protagonist; one of these must speak.
+OPPOSING_ROLES = ("villain", "foil", "antagonist")
+CAST_FIELDS = ("name", "role", "want", "wound", "relationships",
+               "consequential_action", "voice")
+#: The character's SUNO VOICE direction: register, timbre, articulation,
+#: delivery, emotional progression and version treatment. The brief key is
+#: ``voice_direction`` -- the name is scrubbed because this module's own
+#: client-safety walker refuses a PUBLIC string constant that carries a product
+#: or model name, and the recipe host's name is one of them.
+VOICE_DIRECTION_FIELDS = ("register", "timbre", "articulation", "delivery",
+                          "emotional_progression", "version_treatment")
+CHARACTER_FIELDS = CAST_FIELDS + ("voice_direction",)
+
+CODE_CAST_NOT_ENSEMBLE = "CAST_NOT_ENSEMBLE"
+CODE_CAST_INCOMPLETE = "CAST_INCOMPLETE"
+CODE_CAST_VOICE_INCOMPLETE = "CAST_VOICE_INCOMPLETE"
+CODE_CAST_ROLE_UNKNOWN = "CAST_ROLE_UNKNOWN"
+CODE_CAST_NO_OPPOSING_VOICE = "CAST_NO_OPPOSING_VOICE"
+CODE_CAST_OPPONENT_SILENT = "CAST_OPPONENT_SILENT"
+CODE_CAST_NO_CONSEQUENTIAL_REPLY = "CAST_NO_CONSEQUENTIAL_REPLY"
+CODE_CAST_VOICES_IDENTICAL = "CAST_VOICES_IDENTICAL"
+CODE_SPEAKER_UNDECLARED = "SPEAKER_UNDECLARED"
+CODE_ENSEMBLE_SINGLE_VOICE_STYLE = "ENSEMBLE_SINGLE_VOICE_STYLE"
+CODE_VOICE_PACK_STITCHED = "VOICE_PACK_STITCHED"
+
+#: A style that COMMANDS one voice is refused for an ensemble cast. Matched on
+#: the FINAL serialized request["input"]["style"]. The plan's literal case is
+#: "A single female voice."
+#: ponytail: this is the command class the plan names, not every possible
+#: single-voice phrasing; extend the alternation when a built style ships one.
+_SINGLE_VOICE_RE = re.compile(
+    r"\b(?:a|one|single|only\s+one|just\s+one)\s+(?:single\s+|only\s+|solo\s+)?"
+    r"(?:female|male|woman|man|woman's|man's|gender)?\s*(?:lead\s+|solo\s+)?"
+    r"(?:voice|vocal|singer)\b"
+    r"|\bsolo\s+(?:female|male|woman|man)\s+(?:voice|vocal)\b"
+    r"|\bsingle\s+(?:lead\s+)?voice\b"
+    r"|\bonly\s+one\s+voice\b", re.I)
+
+
 def _present(v):
     """True when a cast field carries a value: a non-empty string, list or
     mapping, a True flag, or a number. False for None, "", [], {} and False."""
@@ -841,20 +910,44 @@ def _produce_ensemble(run_dir, item, out, doc):
         package = EP.plan(run_dir, mode=mode, bible=doc,
                           approval=approved, measured_timing=timing)
         img_dir = os.path.join(str(out), _ITEMS["character_bible"].files[1])
+        if package["mode"] == "final":
+            # F7 per-character gate, belt-and-braces beside EP.plan: each
+            # character must ship all four real angles, refused by name.
+            for rec in package["characters"].values():
+                _ship_plan({v: m.get("path") for v, m in rec["views"].items()
+                            if m.get("status") != "placeholder"},
+                           label=rec["name"])
         EP.write(package, img_dir)
     except EP.PackageError as e:
         if e.reason_code in (EP.CODE_CROSSED_REFERENCE, EP.CODE_STALE_REFERENCE):
             raise CA.ApprovalError(CA.REASON_IMAGES_CHANGED, e.detail)
         raise CA.ApprovalError(e.reason_code, e.detail)
+    combined = PW.Doc()
+    combined_started = False
     for slug, rec in package["characters"].items():
         imgs = {view: meta["path"] for view, meta in rec["views"].items()
                 if meta.get("status") != "placeholder"}
         slug_dir = os.path.join(img_dir, slug)
         os.makedirs(slug_dir, exist_ok=True)
-        render(record({
+        card = record({
             "character_name": rec["name"],
             "character_description": doc_character_field(doc, slug, "background"),
-        }), imgs, os.path.join(slug_dir, DELIVERY_PDF_NAME))
+            "character_background": doc_character_field(doc, slug, "background"),
+            "character_ethnicity": doc_character_field(doc, slug, "appearance"),
+            "character_voice_notes": doc_character_field(doc, slug, "voice_notes"),
+        })
+        preview = package["mode"] != "final"
+        render(card, imgs, os.path.join(slug_dir, DELIVERY_PDF_NAME), preview=preview)
+        # the one numbered PDF the delivery contract requires: every character,
+        # each with its own four-angle page
+        body = "\n\n".join(card[k] for k in ("character_name", "character_background",
+                                             "character_ethnicity", "voice_notes")
+                           if card.get(k))
+        if combined_started:
+            combined.page()
+        combined_started = True
+        _render_character(combined, card, imgs, body=body, preview=preview)
+    _finish(combined, os.path.join(str(out), DELIVERY_PDF_NAME))
     return RI_stage(item, out)
 
 
