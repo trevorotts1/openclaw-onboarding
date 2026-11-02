@@ -37,13 +37,22 @@ binding, no proof class, no state. States PLANNED -> CREATED -> CONFIGURED
 -> PUBLISHED -> VERIFIED are carried verbatim and never promoted (saving is
 not publishing; one page delivered is not the site delivered).
 
-PROVISIONAL (W9B): the delivery nodes reach this module today from the
-route adapters (shared-utils/signature_launch/route_adapters.py, unit
-W1B-U1) or from an execution stream's saved state; that module is not on
-this tree yet. load_route_adapters() is the seam and contract_status()
-reports it honestly; delivery nodes are validated against the local
-contract-record mirror here in the meantime. INTEGRATION_OUTSTANDING
-records exactly what remains.
+LIBRARY ONLY (UPS-26 / DTY-11): nothing in the launch run path imports this
+module. scripts/dispatch_launch.py does not import it and binds no delivery
+node; it keeps its own role -> skill map (ROLE_SKILL), which agrees with
+ROLE_WRAPPERS below, and the only caller in the tree is
+scripts/test_role_wrappers.py. This file is a validating library plus a
+self-check, not a delivery binder: there is no runtime host here for the
+role wrappers it names (the Skill 81 downsell and Skill 82 thank-you
+wrappers run from their own skills, not from this module). Do not read a
+passing self-check as delivery having been bound.
+
+Delivery nodes would reach this module from the route adapters
+(shared-utils/signature_launch/route_adapters.py, unit W1B-U1, present on
+this tree) or from an execution stream's saved state. load_route_adapters()
+is the seam and contract_status() reports it honestly; delivery nodes are
+also validated against the local contract-record mirror here.
+INTEGRATION_OUTSTANDING records exactly what remains.
 
 Deterministic, stdlib only, no network, no model. Never reads a secret.
 Run the self-check: ``python3 -I 49-signature-funnel/role_wrappers.py``
@@ -99,10 +108,13 @@ RECEIPTS_FILE = (Path(__file__).resolve().parent / "scripts"
 
 # --- seams to the sibling units (PROVISIONAL) -------------------------------
 INTEGRATION_OUTSTANDING = [
-    "Bind delivery nodes to shared-utils/signature_launch/route_adapters.py "
-    "(W1B-U1) through load_route_adapters() when it lands on this tree; "
-    "until then nodes are checked against the local contract-record mirror "
-    "(validate_delivery_node) and contract_status() says so.",
+    "This module is library-only: no run-path caller binds delivery nodes "
+    "through it (dispatch_launch.py does not import it). Wire it into "
+    "dispatch only by an explicit unit; delivery nodes from "
+    "shared-utils/signature_launch/route_adapters.py (W1B-U1) are bound "
+    "through load_route_adapters() and checked against the local "
+    "contract-record mirror (validate_delivery_node); contract_status() says "
+    "which authority answered.",
     "folder_identity/container_identity/page_identity and approved_content "
     "are filled by the execution streams (W5 primitives, W7 publishing, W9A "
     "composition); product_price_refs by W8. Wrappers bind them when the "
