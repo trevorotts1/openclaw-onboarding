@@ -4,6 +4,17 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.138 - 2026-11-01 - fix(enroll): hand the studio receipt to the runtime user
+
+- **G3 version stamp, skill 75 v2.9.137 -> v2.9.138.** `shared-bridge/enroll-on-install.sh`
+  now chowns the enrollment receipt (`machine.key`, `machine.url`, `client.url`,
+  `capability.json`, `state.json`) to the owner of the state root and re-tightens it to
+  600, on both the fresh-enroll and the `enroll --resume` paths. Inside a container the
+  installer runs as root while the gateway runs as `node`, and a root-owned 600 key is
+  unreadable by the runtime: the box reported `NO_KEY` / "no machine key; run enroll
+  first" immediately after a successful enroll. No-op on a single-user box. No secret
+  handling changed. No release or tag is created here.
+
 ## v2.9.136 - 2026-11-01 - chore(c05): version stamp for the eighteen-style cue and rate wiring
 
 - **G3 version stamp, skill 75 v2.9.135 -> v2.9.136.** The C05 change set touches
