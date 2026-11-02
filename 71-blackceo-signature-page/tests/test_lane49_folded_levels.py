@@ -212,7 +212,7 @@ class StructureRatificationTests(unittest.TestCase):
                 self.assertNotIn(word, status, path.name)
 
     def test_each_ratified_spec_carries_the_dated_decision(self):
-        for rel in ("product-selection-v1.json", "thank-you-v1.json", "standard-v6.json", "roles/checkout.json"):
+        for rel in ("product-selection-v1.json", "thank-you-v1.json", "standard-v6.json", "long-form-v6.json", "roles/checkout.json"):
             spec = json.loads((HERE.parent / "references" / "copy-specs" / rel).read_text(encoding="utf-8"))
             self.assertEqual(spec["structure_approval"]["decision"], "ratified_as_built", rel)
             self.assertRegex(spec["structure_approval"]["date"], r"^\d{4}-\d{2}-\d{2}$")
@@ -220,7 +220,8 @@ class StructureRatificationTests(unittest.TestCase):
     def test_the_page_handoff_manifest_carries_the_structure_approval(self):
         import page_result
         for request in ({"page_role": "thank_you"}, {"page_role": "checkout"}, {"page_role": "product_selection"},
-                        {"page_role": "landing", "copy_profile": "standard"}):
+                        {"page_role": "landing", "copy_profile": "standard"},
+                        {"page_role": "landing", "copy_profile": "long_form"}):
             got = page_result.structure_approval(request)
             self.assertEqual((got["decision"], got["date"]), ("ratified_as_built", "2026-11-02"), request)
         # a page whose spec records no decision is labelled, never silently approved
