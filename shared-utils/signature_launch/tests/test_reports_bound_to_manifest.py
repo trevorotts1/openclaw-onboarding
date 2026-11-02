@@ -4,6 +4,7 @@
 Free: fake consumer + stub provider, no network. Run: python3 -m pytest shared-utils/signature_launch/tests/test_reports_bound_to_manifest.py -q
 """
 import json
+import re
 import subprocess
 import sys
 import unittest
@@ -72,6 +73,27 @@ class BoundRows(Base):
         r = run("progress_report.py", "--manifest", self.manifest, "--emit-rows", self.rows)
         self.assertNotEqual(r.returncode, 0)
         self.assertFalse(self.rows.exists())
+
+
+ADAPTER_READMES = [
+    "83-black-friday-launcher/adapters/claude-nine/README.md",
+    "83-black-friday-launcher/adapters/openclaw/README.md",
+    "49-signature-funnel/adapters/claude-code/README.md",
+    "49-signature-funnel/adapters/claude-nine/README.md",
+    "49-signature-funnel/adapters/openclaw/README.md",
+    "71-blackceo-signature-page/adapters/openclaw/README.md",
+]
+
+
+class AdapterDocs(unittest.TestCase):
+    def test_adapter_docs_pass_the_manifest(self):
+        for rel in ADAPTER_READMES:
+            cmds = [c for c in re.findall(r"`([^`]+)`", (REPO / rel).read_text())
+                    if "progress_report.py" in c or "delivery_report.py" in c]
+            self.assertTrue(cmds, rel)
+            for c in cmds:
+                self.assertIn("--manifest", c, f"{rel}: {c}")
+            self.assertTrue(any("--emit-rows" in c for c in cmds), f"{rel}: no --emit-rows command")
 
 
 if __name__ == "__main__":
