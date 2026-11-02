@@ -24,8 +24,27 @@ between packages. The order form that takes payment is Skill 79 (checkout).
   fake one-button selection page.
 - An explicitly requested standalone comparison page may run with its own
   approved brief.
-- Input offers must be approved. Unknown price is never zero, never free.
+- Any other journey mode (`folded_levels`, `free_entry`, ...) has no selection
+  page in its route graph: `check_invocation` returns `decline` and
+  `validate_catalog` refuses it (`S78-JOURNEY-MODE-DECLINE`).
+- Input offers must be approved. Unknown price is never zero, never free. A
+  `recommended_unapproved` price is covered only when the launch record is
+  `approved`/`building` and carries a `plan_approval_ref` (the plan approval
+  binds every stated price; an optional `approval_verifier` callable can veto
+  the ref). Anywhere else it is `S78-UNAPPROVED-PRICE`.
 - Selection output is `selection.json`: intent only, never payment evidence.
+
+## Native ids and the 78 to 79 handoff
+
+- Outside `test_only`, `emit_binding_plan.py` refuses a null or blank native
+  product/price id on the catalog or on any target (`S78-BINDING-INCOMPLETE`);
+  `build_selection` refuses it as `S78-MISSING-NATIVE-MAPPING`. The ids are
+  created or read back by Skill 06's installer, under its own scoped approval,
+  and written back into `launch.json`; this skill only consumes them.
+- `79-signature-order-form/scripts/selection_flow.py::selection_from_intent` is
+  the one adapter from a `selection.json` intent to Skill 79's `Selection`
+  (`amount_minor_snapshot` becomes `amount_minor`; `revision` feeds both the
+  launch and the offer revision). It refuses an intent with no native price id.
 
 ## What it produces
 
