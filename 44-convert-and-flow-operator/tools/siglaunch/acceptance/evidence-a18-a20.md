@@ -31,6 +31,8 @@ were saved:
 Re-run both with a real declined payment and a delivered confirmation
 before A20 is presented above L2.
 
+DTY-21 L4 capture (main + U1 one-click; raw native payloads saved; what GHL reports as the U1 order ref): OPEN, waiting on the owner's GHL test location (DECISIONS CHK-19). Offline proof only: tests/test_event_adapter.py test_11 and pair-matrix snapshot-1.2-parent-groups-separate-extra-order.
+
 ## A18 — Rapid extra purchases not blocked by long waits
 
 Verdict: PROVEN at L1/L2.

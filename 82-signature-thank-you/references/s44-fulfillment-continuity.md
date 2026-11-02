@@ -107,10 +107,12 @@ twice. The rule:
 `scripts/confirmation_observation.py` posts the record to the S44
 store's action ledger (`Store.claim_action`) under
 `(tenant_id, order_ref, "*", "confirmation_shown", dedupe_key)`. The
-claim is atomic and idempotent: the first render posts, a refresh finds
-the existing claim and adds nothing, so the store holds exactly one
+claim is atomic and idempotent: the first call posts, a repeat call for the
+same view (the refresh case) finds the existing claim and adds nothing, so the store holds exactly one
 `confirmation_shown` record per journey (tests: fake store and the real
-S44 `Store`). It posts ONLY when the view carries S44's `ev1:` version;
+S44 `Store`). **No page or renderer calls `post_confirmation_observation`
+yet**; render and refresh are exercised by direct calls in tests. The
+page-to-POST wiring is open work. It posts ONLY when the view carries S44's `ev1:` version;
 the derived fallback below can never equal S44's `ev1` key, so a view
 without `ev1` is refused rather than posted. **Not wired:** S44's
 event worker does not yet read this record before its own send; the
