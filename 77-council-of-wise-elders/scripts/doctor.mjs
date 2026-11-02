@@ -62,8 +62,17 @@ for (const f of ["agents/openai.yaml", "config/defaults.json",
   "runtime/tsconfig.json", "runtime/README.md",
   "scripts/build-bundles.mjs", "scripts/verify-bundles.mjs",
   "scripts/install-runtime.mjs", "scripts/doctor.mjs",
+  "scripts/install-council-plugin.mjs", "scripts/verify-council-plugin.mjs",
   "scripts/export-skill22.mjs", "scripts/qc-council-of-wise-elders.sh",
-  "scripts/qc-council-of-wise-elders.ps1"]) {
+  "scripts/qc-council-of-wise-elders.ps1",
+  "extensions/council-before-dispatch/index.js",
+  "extensions/council-before-dispatch/openclaw.plugin.json",
+  "extensions/council-before-dispatch/package.json",
+  "extensions/council-before-dispatch/lib/core.mjs",
+  "extensions/council-before-dispatch/lib/entry-validate.mjs",
+  "extensions/council-before-dispatch/provision.mjs",
+  "extensions/council-before-dispatch/INSTALL.md",
+  "extensions/council-before-dispatch/CONTRACT.md"]) {
   if (!existsSync(join(root, f))) missing.push(f);
 }
 for (const r of REFERENCES) {
