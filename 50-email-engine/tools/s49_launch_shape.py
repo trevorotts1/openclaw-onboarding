@@ -41,7 +41,10 @@ from typing import Any, Dict, Optional
 # ---------------------------------------------------------------------------
 # Vocabulary (S49 launch.schema.json + doc 03 field states)
 # ---------------------------------------------------------------------------
-LAUNCH_SCHEMA_VERSION = "1.0"
+# S49 validate_launch accepts 1.0, 1.1 (prompt_policy_id) and 1.2
+# (delivery_bindings; what Skill 83 emits). The plan hash binds every field
+# but the two lifecycle fields, so all three versions hash identically.
+ACCEPTED_LAUNCH_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2")
 SESSION_SCHEMA = "signature-launch-intake/v1"
 APPROVAL_SCHEMA_VERSION = "1.0"
 PLAN_BUILD_APPROVAL_TYPE = "launch_plan_build"

@@ -432,10 +432,11 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
             "hash: the plan changed after the intake was approved")
 
     # --- launch record -----------------------------------------------------
-    if launch.get("schema_version") != s49.LAUNCH_SCHEMA_VERSION:
+    if launch.get("schema_version") not in s49.ACCEPTED_LAUNCH_SCHEMA_VERSIONS:
         raise Refusal(
             f"launch record schema_version is "
-            f"{launch.get('schema_version')!r}, expected '1.0'")
+            f"{launch.get('schema_version')!r}, expected one of "
+            f"{list(s49.ACCEPTED_LAUNCH_SCHEMA_VERSIONS)}")
     if launch.get("status") not in s49.BUILDABLE_LAUNCH_STATUSES:
         raise Refusal(
             f"launch record status is {launch.get('status')!r}: only an "
