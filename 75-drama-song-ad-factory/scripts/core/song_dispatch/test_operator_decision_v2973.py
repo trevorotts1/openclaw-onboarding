@@ -69,6 +69,9 @@ def new_run(tmp, variant="v1", d5="UNMEASURED"):
         f.write(b"the picked master, as _real_generate leaves it")
     with open(os.path.join(run, "music", "takes", variant, "take-1.mp3"), "wb") as f:
         f.write(b"a produced take, as the generator leaves it")
+    os.makedirs(os.path.join(run, "song-choices"), exist_ok=True)
+    with open(os.path.join(run, "song-choices", "pick.json"), "w") as f:
+        f.write('{"pick": 1}')
     b = _binding("export")
     results = {g: {"verdict": "PASS", "binding": dict(b)} for g in REQUIRED}
     results["D5"] = {"verdict": d5, "binding": dict(b)}
