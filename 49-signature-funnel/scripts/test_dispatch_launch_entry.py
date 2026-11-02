@@ -8,12 +8,19 @@ Real subprocesses, temp dirs, stub/fake consumers only: no network, no paid
 provider, no Skill 71 execution. Run from scripts/: python3 test_dispatch_launch_entry.py
 """
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+# Launch events spool to the home directory when no Command Center is configured;
+# a test run must never write there.
+_SPOOL = tempfile.mkdtemp(prefix="launch-events-spool-")
+os.environ["LAUNCH_EVENTS_SPOOL"] = _SPOOL
+os.environ.pop("LAUNCH_EVENTS_URL", None)
 
 HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
@@ -76,12 +83,29 @@ def run(cmd) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
+def pinned_copy(td: Path) -> Path:
+    """The whole skill copied beside Skill 71 with its own freshly minted pin.
+
+    These tests are about what the entry DOES with an approved adapter table, not
+    about the enforcement-core pin (the integrator re-stamps SF-PROVER-PIN.sha256
+    after any pinned file changes; the pin itself is proven elsewhere). A copy
+    with its own pin keeps them true on every branch."""
+    root = td / "skills"
+    dst = root / "49-signature-funnel"
+    shutil.copytree(SKILL, dst, ignore=shutil.ignore_patterns("__pycache__", "working"))
+    (root / "71-blackceo-signature-page").symlink_to(
+        SKILL.parent / "71-blackceo-signature-page", target_is_directory=True)
+    p = run(["bash", str(dst / "signature-funnel-entry.sh"), "--write-pin"])
+    assert p.returncode == 0, p.stdout + p.stderr
+    return dst
+
+
 class TheEntryExecutesApprovedAdapters(unittest.TestCase):
     def test_entry_launch_mode_executes_instead_of_only_emitting(self):
         with tempfile.TemporaryDirectory() as td:
             tdp = Path(td)
             rd = make_run_dir(tdp, adapters=True)
-            p = run(["bash", str(SKILL / "signature-funnel-entry.sh"),
+            p = run(["bash", str(pinned_copy(tdp) / "signature-funnel-entry.sh"),
                      "--mode", "signature_launch", "--run-dir", str(rd)])
             out = p.stdout + p.stderr
             self.assertEqual(p.returncode, 0, out)
@@ -116,7 +140,7 @@ class BadAdapterConfigFailsClosed(unittest.TestCase):
             req = json.loads((rd / "launch-request.json").read_text(encoding="utf-8"))
             mutate(req)
             (rd / "launch-request.json").write_text(json.dumps(req), encoding="utf-8")
-            p = run(["bash", str(SKILL / "signature-funnel-entry.sh"),
+            p = run(["bash", str(pinned_copy(tdp) / "signature-funnel-entry.sh"),
                      "--mode", "signature_launch", "--run-dir", str(rd)])
             return p.stdout + p.stderr, p.returncode
 
@@ -138,6 +162,139 @@ class BadAdapterConfigFailsClosed(unittest.TestCase):
         self.assertEqual(rc, dl.EXIT_VIOLATION, out)
         self.assertNotIn("Traceback", out)
         self.assertIn("adapter landing command", out)
+
+
+def _adapters(td: Path, *roles, author="entry-test"):
+    consumer = td / f"consumer-{author}.py"
+    consumer.write_text(CONSUMER.replace("entry-test", author), encoding="utf-8")
+    return {r: {"command": [sys.executable, str(consumer), "{request}", "{result}"]}
+            for r in roles}
+
+
+def _dispatch(td: Path, adapters, **kw):
+    launch, approval = approved_launch()
+    out = td / "dispatch"
+    return dl.dispatch(launch, approval, client_identity_ref=CLIENT,
+                       worker_identity_ref=WORKER, out_dir=out,
+                       executor=dl.executor_from_config({"adapters": adapters}, out),
+                       **kw), out
+
+
+class AnExtraLaneNeverBorrowsItsParentsAdapter(unittest.TestCase):
+    """DTY-12: downsell_2 rides on downsell_1's request; with no entry of its own it
+    used to run the downsell_1 command and rebuild D1 under the Downsell 2 name."""
+    def test_downsell_2_without_its_own_entry_is_refused(self):
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaises(dl.DispatchError) as ctx:
+                _dispatch(Path(td), _adapters(Path(td), *dl.PAGE_ROLES),
+                          extra_pages=("downsell_2",))
+            self.assertIn("downsell_2", str(ctx.exception))
+            self.assertIn("no consumer adapter", str(ctx.exception))
+
+    def test_downsell_2_with_its_own_entry_runs_it_and_leaves_d1_alone(self):
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            adapters = _adapters(tdp, *dl.PAGE_ROLES)
+            adapters.update(_adapters(tdp, "downsell_2", author="d2-only"))
+            manifest, out = _dispatch(tdp, adapters, extra_pages=("downsell_2",))
+            self.assertEqual(manifest["page_results"]["downsell_2"]["author_session"], "d2-only")
+            d1 = json.loads((out / "result-downsell_1.json").read_text(encoding="utf-8"))
+            self.assertEqual(d1["author_session"], "entry-test")
+            self.assertTrue((out / "page-result-downsell_2.json").is_file())
+
+
+class ASimulatedRunIsLabelledAndTestOnly(unittest.TestCase):
+    """ENF-26: --simulate-executor fabricates results, so the manifest says so."""
+    def test_cli_manifest_says_simulated(self):
+        with tempfile.TemporaryDirectory() as td:
+            rd = make_run_dir(Path(td), adapters=False, parallel=1)
+            p = run([sys.executable, str(HERE / "dispatch_launch.py"),
+                     "--run-dir", str(rd), "--simulate-executor"])
+            self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+            manifest = json.loads(
+                (rd / "dispatch" / "dispatch-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["execution"], "simulated")
+
+    def test_refused_when_the_launch_is_not_test_only(self):
+        launch, approval = approved_launch()
+        launch["test_only"] = False
+        with self.assertRaises(dl.DispatchError) as ctx:
+            dl.dispatch(launch, approval, client_identity_ref=CLIENT,
+                        worker_identity_ref=WORKER,
+                        executor=dl._simulated_executor("x"))
+        self.assertIn("simulate-executor", str(ctx.exception))
+
+
+class ARefusalPrintedToStdoutStillShowsItsCause(unittest.TestCase):
+    """DTY-28: a lane that exits non-zero with empty stderr used to read 'exited 2:'."""
+    def test_stdout_stands_in_for_an_empty_stderr(self):
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            refuser = tdp / "refuser.py"
+            refuser.write_text("import sys\n"
+                               "print('cannot read /x/thank-you-result.json')\n"
+                               "sys.exit(2)\n", encoding="utf-8")
+            adapters = _adapters(tdp, *dl.PAGE_ROLES)
+            adapters["thank_you"] = {"command": [sys.executable, str(refuser)]}
+            with self.assertRaises(dl.DispatchError) as ctx:
+                _dispatch(tdp, adapters)
+            self.assertIn("exited 2: cannot read /x/thank-you-result.json",
+                          str(ctx.exception))
+
+
+class APaidKieRunNeedsItsBudgetApproval(unittest.TestCase):
+    """IMG-03: a paid (kie) execution needs a paid_asset_budget approval."""
+    INPUTS = {"image_provider": "kie", "image_cap": 100000}
+
+    def test_refused_without_and_accepted_with_the_approval(self):
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            adapters = _adapters(tdp, *dl.PAGE_ROLES)
+            with self.assertRaises(dl.DispatchError) as ctx:
+                _dispatch(tdp, adapters, image_inputs=self.INPUTS)
+            self.assertIn("paid_asset_budget", str(ctx.exception))
+            _, approval = approved_launch()
+            budget = dict(approval, approval_id="APPR-P", subject_type="paid_asset_budget",
+                          scope=["paid_asset_budget"])
+            manifest, _ = _dispatch(tdp, adapters, image_inputs=self.INPUTS,
+                                    scoped_approvals=[budget])
+            self.assertEqual(manifest["execution"], "executed")
+
+    def test_the_free_stub_provider_needs_no_budget_approval(self):
+        with tempfile.TemporaryDirectory() as td:
+            manifest, _ = _dispatch(
+                Path(td), _adapters(Path(td), *dl.PAGE_ROLES),
+                image_inputs={"image_provider": "stub", "image_cap": 100000})
+            self.assertEqual(manifest["execution"], "executed")
+
+
+class LaunchEventsAreEmittedAndNeverBlock(unittest.TestCase):
+    class Fake:
+        def __init__(self, boom=False):
+            self.calls, self.boom = [], boom
+
+        def emit(self, skill, launch_id, event):
+            self.calls.append((skill, launch_id, event))
+            if self.boom:
+                raise RuntimeError("Command Center is down")
+
+    def _run(self, fake):
+        real = dl._load_launch_events
+        dl._load_launch_events = lambda: fake
+        self.addCleanup(setattr, dl, "_load_launch_events", real)
+        with tempfile.TemporaryDirectory() as td:
+            return _dispatch(Path(td), _adapters(Path(td), *dl.PAGE_ROLES))[0]
+
+    def test_events_go_out_as_skill_49(self):
+        fake = self.Fake()
+        self._run(fake)
+        self.assertTrue(fake.calls)
+        self.assertEqual({c[0] for c in fake.calls}, {49})
+        self.assertEqual([c[2] for c in fake.calls], ["dispatch_requests", "page_execution"])
+
+    def test_an_emitter_that_raises_or_is_missing_never_fails_the_launch(self):
+        self.assertEqual(self._run(self.Fake(boom=True))["execution"], "executed")
+        self.assertEqual(self._run(None)["execution"], "executed")
 
 
 class ALoneInstallStillEmits(unittest.TestCase):
