@@ -7372,7 +7372,14 @@ print(f'{account}|{agent_id}')
     # $TG_TARGET is still resolved + operator-guarded above so the agent knows
     # the owner chat to send to WHEN it decides to — we just never wire it as
     # the cron's auto-delivery sink.
-    local CRON_AGENT="${DEFAULT_AGENT:-main}"
+    # Runtime answer first: the config parse above reads only agents.list and
+    # misses boxes whose agents live in agents.entries, falling back to "main",
+    # which the runtime rejects when main is not the default agent.
+    local CRON_AGENT="$(openclaw agents list --json 2>/dev/null | python3 -c 'import json,sys
+r=sys.stdin.read(); i=min([x for x in (r.find("{"),r.find("[")) if x>=0] or [0]); d=json.loads(r[i:])
+a=d if isinstance(d,list) else d.get("agents",[])
+print(([x.get("id") for x in a if isinstance(x,dict) and (x.get("default") or x.get("isDefault"))] or [""])[0])' 2>/dev/null)"
+    [ -n "$CRON_AGENT" ] || CRON_AGENT="${DEFAULT_AGENT:-main}"
 
     # Runtime-compatible SILENT main-session cron (fix/cron-flag-skew). The old
     # ladder only emitted `--session-target main` forms, ALL of which the 2026.6.11
