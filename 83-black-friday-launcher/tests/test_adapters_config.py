@@ -139,6 +139,15 @@ class RoutedRolesTests(unittest.TestCase):
         inputs.kwargs["copy"]["downsell_2"] = inputs.write("copy-downsell_2.json")
         command = inputs.build(extra_pages=("downsell_2",))["adapters"]["downsell_2"]["command"]
         self.assertEqual(command[command.index("--role-instance") + 1], "downsell_2")
+        # CARRIED 116: a design page that draws its own images, in its own folder, never downsell_1's
+        self.assertIn("--skill71-root", command)
+        run_dir = command[command.index("--images-run-dir") + 1]
+        self.assertTrue(run_dir.endswith("downsell_2-images"), run_dir)
+        self.assertNotIn("downsell_1-images", run_dir)
+        self.assertEqual(command[command.index("--author-session") + 1], "session-test")
+        self.assertNotIn("--allow-paid", command)
+        self.assertIn("--allow-paid", inputs.build(allow_paid=True, extra_pages=("downsell_2",))
+                      ["adapters"]["downsell_2"]["command"])
         no_d1 = Inputs(self, "u1_only")
         no_d1.kwargs["copy"]["downsell_2"] = no_d1.write("copy-downsell_2.json")
         with self.assertRaises(adapters.AdapterError):  # D1 is not routed, so there is nothing for D2 to ride on
@@ -148,6 +157,20 @@ class RoutedRolesTests(unittest.TestCase):
         del inputs.kwargs["copy"]["downsell_2"]
         with self.assertRaises(adapters.AdapterError):  # asked for, but no copy supplied
             inputs.build(extra_pages=("downsell_2",))
+
+
+class UpsellTwoCopyTests(unittest.TestCase):
+    """CARRIED 140: U2 copy is checked against the U1 copy the launch supplied."""
+
+    def test_upsell_2_carries_the_u1_copy_path(self):
+        inputs = Inputs(self)
+        config = inputs.build()
+        command = config["adapters"]["upsell_2"]["command"]
+        self.assertEqual(command[command.index("--u1-copy") + 1], str(inputs.kwargs["copy"]["upsell_1"]))
+        self.assertNotIn("--u1-copy", config["adapters"]["upsell_1"]["command"])
+
+    def test_a_u1_less_launch_has_no_upsell_2_entry(self):
+        self.assertNotIn("upsell_2", Inputs(self, "u1_d1").build()["adapters"])
 
 
 class ThankYouTests(unittest.TestCase):
@@ -253,15 +276,19 @@ class FakeConsumerTests(unittest.TestCase):
         self.assertTrue(result["artifacts"])
 
 
+# the order page's copy form fixes how many section images each deliverable needs (Skill 49 page_types.json)
+SECTIONS = substrate.load("49-signature-funnel/scripts/page_set.py", "adapters_config_page_set",
+                          "49-signature-funnel/scripts").section_counts("product_selection")[0]
 STAND_IN = """
 import json, sys
 from pathlib import Path
 argv = sys.argv[2:]
 run = Path(argv[argv.index("--run-dir") + 1])
-for rel in ("desktop-wireframe/section-1.png", "mobile-tablet/section-1.png",
-            "visual-mockup/desktop/part-1.png", "visual-mockup/mobile/part-1.png"):
-    (run / rel).parent.mkdir(parents=True, exist_ok=True)
-    (run / rel).write_bytes(b"stub png " + rel.encode())
+for n in range(1, __SECTIONS__ + 1):
+    for rel in (f"desktop-wireframe/section-{n}.png", f"mobile-tablet/section-{n}.png",
+                f"visual-mockup/desktop/part-{n}.png", f"visual-mockup/mobile/part-{n}.png"):
+        (run / rel).parent.mkdir(parents=True, exist_ok=True)
+        (run / rel).write_bytes(b"stub png " + rel.encode())
 (run / "visual-mockup" / "stage-executor-record.json").write_text(json.dumps({"provider": "stub"}))
 (run.parent / "image-stage-argv.json").write_text(json.dumps(argv))
 """
@@ -279,7 +306,7 @@ class SelectionAssemblyTests(unittest.TestCase):
         self.brand.write_text("{}", encoding="utf-8")
         bin_dir = self.root / "bin"
         bin_dir.mkdir()
-        (bin_dir / "stand_in_images.py").write_text(STAND_IN, encoding="utf-8")
+        (bin_dir / "stand_in_images.py").write_text(STAND_IN.replace("__SECTIONS__", str(SECTIONS)), encoding="utf-8")
         # an interpreter named python3 that runs the stand-in for Skill 78's image stage and python for the rest
         self.python = bin_dir / "python3"
         self.python.write_text('#!/bin/sh\nfor a in "$@"; do case "$a" in *run_image_stages.py) exec "%s" "%s" "$@";; esac; done\n'
@@ -290,12 +317,13 @@ class SelectionAssemblyTests(unittest.TestCase):
         files = self.root / "inputs"
         files.mkdir(exist_ok=True)
 
-        def f(name):
+        def f(name, text="{}"):
             path = files / name
-            path.write_text("{}", encoding="utf-8")
+            path.write_text(text, encoding="utf-8")
             return str(path)
         roles = ("upsell_1", "upsell_2", "downsell_1")
-        adapter_inputs = {"bridge_config": f("bridge.json"), "author_session": "sess", "checkout_manuscript": f("checkout.md"),
+        # the bridge refuses a config with no landing section; it fills landing.image_inputs from the approved plan
+        adapter_inputs = {"bridge_config": f("bridge.json", '{"landing": {}}'), "author_session": "sess", "checkout_manuscript": f("checkout.md"),
                           "copy": {r: f(f"copy-{r}.json") for r in roles},
                           "journey": {r: f(f"journey-{r}.json") for r in roles},
                           "enrichment": {r: f(f"enrichment-{r}.json") for r in roles}}
@@ -342,14 +370,16 @@ class SelectionAssemblyTests(unittest.TestCase):
         selection = pieces["product_selection"]
         images = self.out / "dispatch" / "order-page-images"
         listed = {Path(a["path"]).relative_to(images).as_posix() for a in selection["artifacts"]}
-        self.assertEqual(listed, {"desktop-wireframe/section-1.png", "mobile-tablet/section-1.png",
-                                  "visual-mockup/desktop/part-1.png", "visual-mockup/mobile/part-1.png",
-                                  "visual-mockup/stage-executor-record.json"})
+        want = {"visual-mockup/stage-executor-record.json"}
+        for n in range(1, SECTIONS + 1):
+            want |= {f"desktop-wireframe/section-{n}.png", f"mobile-tablet/section-{n}.png",
+                     f"visual-mockup/desktop/part-{n}.png", f"visual-mockup/mobile/part-{n}.png"}
+        self.assertEqual(listed, want)
         self.assertEqual(selection["status"], "locally_verified")
         self.assertEqual(selection["blockers"], [])
         built = self.assemble(doc, pieces)
         piece = next(p for p in built["manifest"]["pieces"] if p["role"] == "product_selection")
-        self.assertEqual(len(piece["artifacts"]), 5)
+        self.assertEqual(len(piece["artifacts"]), 4 * SECTIONS + 1)
         argv = json.loads((self.out / "dispatch" / "image-stage-argv.json").read_text())
         self.assertNotIn("--allow-paid", argv)  # a practice run is free
 

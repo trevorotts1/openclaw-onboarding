@@ -30,6 +30,7 @@ REPO_ROOT = SKILL_ROOT.parent
 for entry in (SKILL_ROOT, SKILL_ROOT / "routes", HERE):
     sys.path.insert(0, str(entry))
 
+import substrate  # noqa: E402
 import lane83_fake_consumer  # noqa: E402  only for its marker constants: proves we did NOT use it
 import test_lane83_dispatch as dispatch_tests  # noqa: E402  run_dispatch carries the approval and plan choices
 from launcher_core import cli  # noqa: E402
@@ -148,6 +149,9 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
             "skill71": {"root": str(S71), "python": sys.executable},
             "landing": {"run_dir": str(self.root / "landing-run"), "page_version": "standard", "page_kind": "sales",
                         "brand_owner": BRAND_OWNER, "image_cap": 200, "launch_record": str(out / "launch.json"),
+                        # the 14 production stages are closed by an agent-driven process, never in an offline run:
+                        # the landing lane is a declared draft, so the bridge places its result with the gate open
+                        "draft": True,
                         "brand_file": str(self.brand_file), "image_inputs": str(out / "image_inputs.json"),
                         "manuscript": str(COPY_EXAMPLES / "standard-path-b.md")}}))
         return {
@@ -200,6 +204,10 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         self._stage_operator_inputs(out, doc["launch_id"])
         # the measured design system reaches the order-page inputs through the intake's declared image_plan key
         doc["image_plan"]["design_prose_ref"] = str(out / "dispatch" / "design-prose.json")
+        # the intake names the approval on record: the verified ref and the hash of the plan it approves (the
+        # CLI's assemble refuses an intake whose approval is not the one the dispatch bound)
+        doc["approval"] = {"ref": "APPR-TEST", "hash": substrate.dispatch().vlp.plan_document_hash(
+            dispatch_tests.launch_for(doc, landing_pages=["sales"]))}
         report = dispatch_tests.run_dispatch(doc, out, adapters_config=None, adapter_inputs=self._adapter_inputs(out, doc),
                                              landing_pages=["sales"])
 

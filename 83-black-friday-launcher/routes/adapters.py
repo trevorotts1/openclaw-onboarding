@@ -276,7 +276,7 @@ EXPECTED_SIGNATURES = (
      "82-signature-thank-you/scripts/run_manifest.py",
      "82-signature-thank-you/scripts", "build_run_manifest",
      ("view", "snapshot", "fulfillment_map", "independent_review",
-      "envelope_ref", "snapshot_ref", "map_ref", "result_ref")),
+      "envelope_ref", "snapshot_ref", "map_ref", "snapshot_sha256", "result_ref")),
     ("s82_thank_you_resolver.resolve_order_view",
      "82-signature-thank-you/scripts/thank_you_resolver.py", None,
      "resolve_order_view",
@@ -681,6 +681,9 @@ def build_dispatch_config(*, work_dir: str | Path,
                         *(["--allow-paid"] if paid else [])],
             "timeout_s": ADAPTERS[role]["timeout_s"],
         }
+        if role == "upsell_2" and "upsell_1" in copy_files:
+            # U2 copy is checked against the U1 copy the launch supplied
+            adapters[role]["command"] += ["--u1-copy", str(copy_files["upsell_1"])]
     if "downsell_1" in routed:
         adapters["downsell_1"] = {
             "command": [python, str(root49 / "downsell_wrapper.py"),
@@ -702,7 +705,14 @@ def build_dispatch_config(*, work_dir: str | Path,
                         "--result", "{result}",
                         "--launch", str(launch_path),
                         "--route-graph", "{work_dir}/route-graph.json",
-                        "--copy", str(copy_files["downsell_2"])],
+                        "--copy", str(copy_files["downsell_2"]),
+                        # a design page: its own images, in its own folder (never downsell_1's)
+                        "--skill71-root", str(root71),
+                        "--image-inputs", str(images_path),
+                        "--images-run-dir", "{work_dir}/downsell_2-images",
+                        "--image-provider", image_provider,
+                        *(["--allow-paid"] if paid else []),
+                        "--author-session", author_session],
             "timeout_s": ADAPTERS["downsell_1"]["timeout_s"],
         }
     if checkout_design is not None:
