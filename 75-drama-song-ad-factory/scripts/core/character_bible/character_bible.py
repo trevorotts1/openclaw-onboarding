@@ -822,10 +822,15 @@ def _produce_ensemble(run_dir, item, out, doc):
     mode = ("final" if (isinstance(approved, dict)
                         and approved.get("status") == CA.APPROVED
                         and timing is not None) else "preview")
-    package = EP.plan(run_dir, mode=mode, bible=doc,
-                      approval=approved, measured_timing=timing)
-    img_dir = os.path.join(str(out), _ITEMS["character_bible"].files[1])
-    EP.write(package, img_dir)
+    try:
+        package = EP.plan(run_dir, mode=mode, bible=doc,
+                          approval=approved, measured_timing=timing)
+        img_dir = os.path.join(str(out), _ITEMS["character_bible"].files[1])
+        EP.write(package, img_dir)
+    except EP.PackageError as e:
+        if e.reason_code in (EP.CODE_CROSSED_REFERENCE, EP.CODE_STALE_REFERENCE):
+            raise CA.ApprovalError(CA.REASON_IMAGES_CHANGED, e.detail)
+        raise CA.ApprovalError(e.reason_code, e.detail)
     for slug, rec in package["characters"].items():
         imgs = {view: meta["path"] for view, meta in rec["views"].items()
                 if meta.get("status") != "placeholder"}
