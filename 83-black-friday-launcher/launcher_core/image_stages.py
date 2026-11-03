@@ -18,6 +18,11 @@ what is missing. Two stops are by design:
 * the Design Board stops for the client's recorded approval (``design_board.py approve``);
   final-mockups never starts without it.
 
+When a page's final-mockups stage closes, its labeled final mockups, review PDF and boards exist for the
+first time. Dispatch listed the page's files before that, so ``refresh_pieces`` lists them again in the
+page's piece and in the dispatch's stored result the package binds the piece to; without it the package
+check would never see the final mockups of a real run.
+
 ``python3 -m launcher_core.image_stages --run-dir <launch run folder>`` exits 0 only when every page
 has all five stages closed, and always writes ``qc/image_stages_report.json``. The package check
 (check_rules/image_qc.py) re-reads each page's own stage state, so the report is never trusted.
@@ -47,6 +52,7 @@ _SKIP_DIRS = {"private", ".git", "node_modules", "__pycache__"}
 _MAX_DEPTH = 5
 
 Runner = Callable[[List[str]], Tuple[int, str]]
+_ROUTES_DIR = Path(__file__).resolve().parent.parent / "routes"
 
 
 class Stop(Exception):
@@ -239,6 +245,106 @@ class _Page:
         return {s: "closed" if stage_closed(self.run, s) else "open" for s in STAGES}
 
 
+def _page_set():
+    """Skill 49's page_set (the one list of a page's design files), loaded through the substrate."""
+    if str(_ROUTES_DIR) not in sys.path:
+        sys.path.insert(0, str(_ROUTES_DIR))
+    import substrate
+    return substrate.load("49-signature-funnel/scripts/page_set.py", "launcher_page_set",
+                          "49-signature-funnel/scripts")
+
+
+def _upsert(result: Dict[str, Any], fresh: List[Dict[str, Any]], old: set) -> bool:
+    """Put ``fresh`` artifacts into ``result`` (replace the same path, else append) when it lists any of ``old``."""
+    arts = result.get("artifacts")
+    if not isinstance(arts, list) or not any(isinstance(a, dict) and (a.get("path"), a.get("sha256")) in old
+                                             for a in arts):
+        return False
+    by_path = {a["path"]: a for a in fresh}
+    result["artifacts"] = [by_path.pop(a["path"], a) if isinstance(a, dict) else a for a in arts] + list(by_path.values())
+    return True
+
+
+def _own_form(page_run: Path, artifacts: Sequence[Any]) -> Optional[str]:
+    """How a piece names this run's files, or None when it lists none of them: "prefix" (``<run folder>/path``,
+    the form landing_bridge gives an opt-in run's files, resolved from the run's parent exactly as
+    package._artifact_source does), "absolute", or "relative" (from the run). A file counts only when it sits
+    inside the run AND carries the hash listed for it. The prefix form is tried first: it names the run, while
+    a bare name can match another run's identical file (two runs share generic names and some bytes)."""
+    def mine(digest: Any, target: Path) -> bool:
+        return target.is_file() and target.resolve().is_relative_to(page_run) and (not digest or _sha(target) == digest)
+
+    listed = [(a.get("path"), a.get("sha256")) for a in artifacts if isinstance(a, dict) and isinstance(a.get("path"), str)]
+    if any(p.startswith(page_run.name + "/") and mine(d, page_run.parent / p) for p, d in listed):
+        return "prefix"
+    for p, d in listed:
+        if Path(p).is_absolute() and mine(d, Path(p)):
+            return "absolute"
+        if not Path(p).is_absolute() and mine(d, page_run / p):
+            return "relative"
+    return None
+
+
+def _write_json(path: Path, doc: Any) -> None:
+    path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+
+
+def refresh_pieces(run_dir: Path, page_run: Path) -> List[str]:
+    """Re-list one page's design files in its piece after its final-mockups stage closed. Returns the slots refreshed.
+
+    A piece (``pieces/<slot>.json``) belongs to the page run when one of its artifacts is that file inside it
+    (same bytes; see ``_own_form``). The run's files are listed again with Skill 49's own
+    ``page_set.design_artifacts``, for the page key the PIECE names (a landing-lane piece's page_kind: the
+    sales-only slot "landing" is the "sales" page), in the form the piece already uses (absolute, relative to
+    the run, or prefixed with the run folder name as the opt-in run's files are; with the provider when the
+    piece names one) and merged by path. The piece must stay one of the
+    dispatch's own artifacts (``package._bind_piece``), so every stored dispatch result that lists the
+    piece's files, and the dispatch manifest's copy of it, takes the same files.
+    """
+    run_dir, page_run = Path(run_dir), Path(page_run).resolve()
+    page_set = _page_set()
+    pages = page_set.page_types()["pages"]
+    by_kind = {v["page_kind"]: k for k, v in pages.items() if v.get("page_kind")}  # opt_in -> landing, sales -> sales
+    intake = _read(page_run / "intake.json")
+    run_kind = intake.get("page_kind") if isinstance(intake, dict) else None
+    stored = [p for p in sorted((run_dir / "dispatch").glob("*result-*.json"))]
+    manifest_path = run_dir / "dispatch" / "dispatch-manifest.json"
+    manifest = _read(manifest_path)
+    refreshed: List[str] = []
+    for piece_path in sorted((run_dir / "pieces").glob("*.json")):
+        piece = _read(piece_path)
+        if piece_path.stem not in pages or not isinstance(piece, dict):
+            continue
+        # the page key comes from the piece, not its slot: the sales-only lane's slot is "landing" but it is the sales page
+        kind = piece.get("page_kind")
+        key = by_kind.get(kind, piece_path.stem)
+        if kind in by_kind and run_kind != kind:  # a landing-lane piece is refreshed only from the run of its own kind
+            continue
+        form = _own_form(page_run, piece.get("artifacts") or [])
+        if form is None:
+            continue
+        fresh = page_set.design_artifacts(key, page_run, relative=form != "absolute",
+                                          with_provider=any(isinstance(a, dict) and "provider" in a
+                                                          for a in piece["artifacts"]))
+        if form == "prefix":
+            fresh = [{**a, "path": f"{page_run.name}/{a['path']}"} for a in fresh]
+        old = {(a.get("path"), a.get("sha256")) for a in piece["artifacts"] if isinstance(a, dict)}
+        _upsert(piece, fresh, old)
+        _write_json(piece_path, piece)
+        for path in stored:
+            doc = _read(path)
+            if isinstance(doc, dict) and _upsert(doc, fresh, old):
+                _write_json(path, doc)
+        if isinstance(manifest, dict):
+            for doc in list(manifest.get("results") or []) + list((manifest.get("page_results") or {}).values()):
+                if isinstance(doc, dict):
+                    _upsert(doc, fresh, old)
+        refreshed.append(piece_path.stem)
+    if refreshed and isinstance(manifest, dict):
+        _write_json(manifest_path, manifest)
+    return refreshed
+
+
 def layout_approval(run_dir: Path, path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
     """The client's recorded approval of the layout proofs, or None. A record names an approval_ref;
     this is recorded consent, not an authenticated signature (the approval units own that)."""
@@ -277,6 +383,8 @@ def drive(run_dir: Path, *, runner: Runner = default_runner, provider: str = "st
         else:
             page = _Page(run, scripts, runner, provider, allow_paid)
             stages = page.advance()
+            if stages.get("final-mockups") == "closed":  # the labeled final files exist now: list them in the piece
+                entry["pieces_refreshed"] = refresh_pieces(run_dir, run)
             done = all(v == "closed" for v in stages.values())
             entry.update(status="complete" if done else (page.stop.status if page.stop else "blocked"),
                          stages=stages, reason=None if done else (page.stop.reason if page.stop else "a stage is still open"),
