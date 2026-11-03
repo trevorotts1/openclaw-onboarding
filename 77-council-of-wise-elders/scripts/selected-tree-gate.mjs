@@ -575,6 +575,10 @@ function verifyInstalledEntry(rec, { load }) {
  * A record is a promise about a release. Verify the release entry it can
  * reach, not only the skill tree: a live record pointing at a release whose
  * entry is a directory or empty means the CLI cannot run at all.
+ *
+ * Returns { problems, provisional }. `provisional` is set (and `problems` is
+ * empty) for the one state that is NOT a disagreement: a record with no
+ * activation yet.
  */
 function verifyRecordRelease(rec, { load }) {
   const dir = dirname(rec.recordPath);
@@ -588,28 +592,65 @@ function verifyRecordRelease(rec, { load }) {
       break;
     }
   }
+  let releases = [];
+  try {
+    releases = readdirSync(releasesDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => join(releasesDir, e.name, "dist", "blackceo-council.mjs"))
+      .filter((p) => existsSync(p));
+  } catch {
+    releases = [];
+  }
+  // Provisional record: an install that never completed its build.
+  // install-runtime.mjs writes releases/install-record.json BEFORE the build and
+  // activate() runs only after build and verify, and no failure path removes the
+  // record. So a record with no active.json and no release directory is the
+  // normal leftover of an interrupted install, never a resolver disagreement.
+  // wire.sh runs this gate BEFORE install-runtime so a refusal can never leave
+  // active.json advanced past a service that still runs the previous release;
+  // refusing here would therefore block the very build that heals the prefix and
+  // the state would survive every later roll. Skip only the release rule: the
+  // record and the selected tree are still verified above and below, and the
+  // next pass (installation finished) re-checks the release for real.
+  if (!releasePath && releases.length === 0) {
+    return {
+      problems: [],
+      provisional:
+        `PROVISIONAL INSTALL-RECORD: ${rec.recordPath} names ${rec.skillDir} but no activation exists yet ` +
+        `(no active.json releasePath and no releases/*/dist entry). An install that never completed its build ` +
+        `leaves exactly this state, so it is not a resolver disagreement and the release rule is skipped here. ` +
+        `Next step: run wire.sh (or update-skills.sh) so install-runtime completes the build and activation; ` +
+        `the following gate pass verifies the release for real. If a completed run still leaves this state, ` +
+        `repair the unfinished release under ${releasesDir}, not the record.`,
+    };
+  }
   const candidates = [];
   if (releasePath) {
     candidates.push(join(releasePath, "dist", "blackceo-council.mjs"));
   } else {
-    let releases = [];
-    try {
-      releases = readdirSync(releasesDir, { withFileTypes: true })
-        .filter((e) => e.isDirectory())
-        .map((e) => join(releasesDir, e.name, "dist", "blackceo-council.mjs"))
-        .filter((p) => existsSync(p));
-    } catch {
-      releases = [];
-    }
     candidates.push(...releases);
     if (!candidates.length) candidates.push(...entryCandidatesForRecord(rec.recordPath));
   }
   if (!candidates.length) {
-    return [`the install-record ${rec.recordPath} names no reachable release entry (no active.json releasePath and no releases/*/dist entry): a record that promises a release must be able to name one`];
+    return {
+      problems: [
+        `the install is broken, not a resolver disagreement: the install-record ${rec.recordPath} names ${rec.skillDir} ` +
+        `but no release can be reached (no active.json releasePath and no releases/*/dist entry). ` +
+        `Next step: run wire.sh so install-runtime rebuilds and activates the release`,
+      ],
+      provisional: null,
+    };
   }
   const perEntry = candidates.map((e) => ({ e, problems: verifyEntryFile(e, { load }) }));
-  if (perEntry.some((x) => x.problems.length === 0)) return [];
-  return perEntry.flatMap((x) => x.problems).map((p) => `the release named by ${rec.recordPath}: ${p}`);
+  if (perEntry.some((x) => x.problems.length === 0)) return { problems: [], provisional: null };
+  return {
+    problems: perEntry.flatMap((x) => x.problems).map(
+      (p) => `the install is broken, not a resolver disagreement: the install-record ${rec.recordPath} names ` +
+        `${rec.skillDir} but ${p}. Next step: run wire.sh so install-runtime rebuilds and activates the release; ` +
+        `if that run still fails, repair the release under ${releasesDir}`,
+    ),
+    provisional: null,
+  };
 }
 
 const sha256File = (file) => {
@@ -1099,7 +1140,9 @@ export function checkSelectedTree(opts = {}) {
         `repair the record with an absolute path`,
       );
     }
-    problems.push(...verifyRecordRelease(rec, { load }));
+    const release = verifyRecordRelease(rec, { load });
+    problems.push(...release.problems);
+    if (release.provisional) warnings.push(release.provisional);
   }
   // Pin the physical targets once: a symlink retargeted mid-run must never be
   // verified as if it were the tree that was checked at the start.

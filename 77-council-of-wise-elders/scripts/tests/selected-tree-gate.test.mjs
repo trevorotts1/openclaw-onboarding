@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -852,4 +852,182 @@ test("(regression) an unreadable file is a clean FAIL, never a crash", (t) => {
   const gate = runPair(home, canonical, dist);
   assert.equal(gate.ok, false);
   assert.match(gate.problems.join("\n"), /SAME-RELEASE PROOF REFUSED: .*cannot be verified: .*unreadable|is not the tree its own manifest records/);
+});
+
+const scriptsDir = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+// ---------------------------------------------------------------- install state
+// wire.sh runs the selected-tree gate BEFORE install-runtime, so a gate refusal
+// can never leave active.json advanced past a service that still runs the
+// previous release. That order is only safe if the gate tolerates the one state
+// a failed install leaves behind: releases/install-record.json with no
+// active.json and no release directory. install-runtime.mjs writes that record
+// before the build and activates only after build and verify, and no failure
+// path removes it, so refusing it would block the very build that heals it.
+
+// A prefix exactly as an install that never completed its build leaves it.
+function makeProvisionalPrefix(home, skillDir, { name = "provisional" } = {}) {
+  const prefix = join(home, name);
+  mkdirSync(join(prefix, "releases"), { recursive: true });
+  writeFileSync(join(prefix, "releases", "install-record.json"), JSON.stringify({ skill_dir: skillDir }));
+  return prefix;
+}
+
+// A runtime tree the real installer can build with an injected fake npm, so the
+// S1 heal is exercised through install-runtime.mjs itself, not a simulated one.
+function writeBuildableRuntime(runtimeDir) {
+  mkdirSync(join(runtimeDir, "src"), { recursive: true });
+  writeFileSync(join(runtimeDir, "src", "index.ts"), "export const marker = 'one';\n");
+  writeFileSync(join(runtimeDir, "package.json"), JSON.stringify({
+    name: "fixture-council-runtime",
+    version: "0.0.0",
+    private: true,
+    type: "module",
+    engines: { node: "^22.13.0 || >=24" },
+    scripts: { build: "true" },
+    dependencies: {},
+    devDependencies: {},
+  }, null, 2));
+  writeFileSync(join(runtimeDir, "package-lock.json"), JSON.stringify({
+    name: "fixture-council-runtime",
+    version: "0.0.0",
+    lockfileVersion: 3,
+    requires: true,
+    packages: { "": { name: "fixture-council-runtime", version: "0.0.0" } },
+  }, null, 2));
+}
+
+function writeFakeNpm(dir) {
+  const path = join(dir, "fake-npm");
+  writeFileSync(path, `#!/bin/sh
+set -e
+case "$1" in
+  ci)
+    mkdir -p node_modules/fixture-dep
+    printf 'module.exports = 1;\\n' > node_modules/fixture-dep/index.js
+    exit 0
+    ;;
+  run)
+    if [ "$2" != "build" ]; then exit 0; fi
+    mkdir -p dist/brief dist/contracts
+    printf 'export const built = true;\\n' > dist/index.js
+    printf 'export const brief = true;\\n' > dist/brief/permitted-brief.js
+    printf 'export const contracts = true;\\n' > dist/contracts/index.js
+    printf '#!/usr/bin/env node\\nconsole.log("council");\\n' > dist/blackceo-council.mjs
+    exit 0
+    ;;
+esac
+exit 0
+`);
+  chmodSync(path, 0o755);
+  return path;
+}
+
+test("(install state) S1: a record left by a failed install is PROVISIONAL, never a resolver disagreement", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  const prefix = makeProvisionalPrefix(home, wired);
+  const gate = checkSelectedTree({ home, skillDir: wired, prefix, load: false });
+  assert.equal(gate.ok, true, gate.problems.join(" | "));
+  const warnings = gate.warnings.join("\n");
+  assert.match(warnings, /PROVISIONAL INSTALL-RECORD/);
+  assert.match(warnings, /no activation exists yet/);
+  assert.match(warnings, /Next step: run wire\.sh/);
+  // The state is named as an unfinished install; it is not dressed up as a
+  // resolver disagreement and the reachability rule is not reported as an error.
+  const problems = gate.problems.join("\n");
+  assert.doesNotMatch(problems, /does not exist/);
+  assert.doesNotMatch(problems, /install is broken/);
+  assert.doesNotMatch(problems, /the two disagree/);
+});
+
+test("(install state) S1 HEALS: one install-runtime run, then the gate verifies the release for real", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  writeBuildableRuntime(join(wired, "runtime"));
+  const prefix = makeProvisionalPrefix(home, wired);
+  const npm = writeFakeNpm(home);
+
+  // 1. the pre-build gate lets the run continue instead of refusing, so the
+  //    build that repairs the prefix is never blocked
+  const before = checkSelectedTree({ home, skillDir: wired, prefix, load: false });
+  assert.equal(before.ok, true, before.problems.join(" | "));
+  assert.match(before.warnings.join("\n"), /PROVISIONAL INSTALL-RECORD/);
+
+  // 2. install-runtime completes the build and activation
+  const install = spawnSync(process.execPath, [
+    join(scriptsDir, "install-runtime.mjs"),
+    "--runtime-dir", join(wired, "runtime"),
+    "--prefix", prefix,
+    "--npm-executable", npm,
+    "--idempotent",
+  ], { encoding: "utf8", timeout: 120_000 });
+  assert.equal(install.status, 0, `${install.stdout}\n${install.stderr}`);
+  assert.ok(existsSync(join(prefix, "active.json")), "install-runtime must activate the release");
+
+  // 3. the next gate pass verifies the release for real: no provisional note
+  const after = checkSelectedTree({ home, skillDir: wired, prefix, load: false });
+  assert.equal(after.ok, true, after.problems.join(" | "));
+  assert.doesNotMatch(after.warnings.join("\n"), /PROVISIONAL/);
+});
+
+test("(install state) S2: a record with an activated release passes with no provisional note", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  const prefix = makePrefix(home, wired);
+  const gate = checkSelectedTree({ home, skillDir: wired, prefix, load: false });
+  assert.equal(gate.ok, true, gate.problems.join(" | "));
+  assert.doesNotMatch(gate.warnings.join("\n"), /PROVISIONAL/);
+});
+
+test("(install state) a record whose active release has no usable entry is BROKEN and says so", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  const prefix = makePrefix(home, wired);
+  // The path exists but is empty: an existing path is not a valid artifact.
+  writeFileSync(join(prefix, "releases", "r1", "dist", "blackceo-council.mjs"), "");
+  const gate = checkSelectedTree({ home, skillDir: wired, prefix, load: false });
+  assert.equal(gate.ok, false);
+  const problems = gate.problems.join("\n");
+  assert.match(problems, /the install is broken, not a resolver disagreement/);
+  assert.match(problems, /Next step: run wire\.sh/);
+  assert.doesNotMatch(problems, /PROVISIONAL/);
+});
+
+test("(install state) CONTROL: the round-1 gate refuses the same S1 prefix that this gate accepts", (t) => {
+  const repo = join(scriptsDir, "..");
+  const ROUND1 = "5a36ce9bee06a178c72df09f812e9af5ac601b09";
+  let round1Source;
+  try {
+    round1Source = execFileSync("git", ["-C", repo, "show", `${ROUND1}:77-council-of-wise-elders/scripts/selected-tree-gate.mjs`], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    t.diagnostic(`CONTROL NOT RUN: commit ${ROUND1} is not in this clone, so the round-1 gate cannot be reconstructed`);
+    return;
+  }
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  const prefix = makeProvisionalPrefix(home, wired);
+  const dir = mkdtempSync(join(tmpdir(), "cwe-round1-gate-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  for (const sibling of ["entry-point-gate.mjs", "manifest-tree.mjs"]) {
+    copyFileSync(join(scriptsDir, sibling), join(dir, sibling));
+  }
+  writeFileSync(join(dir, "selected-tree-gate.mjs"), round1Source);
+  const run = (gateFile) => spawnSync(process.execPath, [
+    gateFile,
+    "--home", home,
+    "--skill-dir", wired,
+    "--prefix", prefix,
+    "--no-load",
+  ], { encoding: "utf8", timeout: 60_000 });
+  const round1 = run(join(dir, "selected-tree-gate.mjs"));
+  assert.equal(round1.status, 1, `the round-1 gate must refuse S1:\n${round1.stdout}${round1.stderr}`);
+  assert.match(round1.stdout, /the release named by .*install-record\.json: entry .* does not exist/);
+  const tip = run(join(scriptsDir, "selected-tree-gate.mjs"));
+  assert.equal(tip.status, 0, `this gate must accept the same fixture:\n${tip.stdout}${tip.stderr}`);
+  assert.match(tip.stdout, /PROVISIONAL INSTALL-RECORD/);
+  assert.match(tip.stdout, /SELECTED-TREE: OK/);
 });

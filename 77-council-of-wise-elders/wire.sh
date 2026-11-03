@@ -493,6 +493,15 @@ fi
 # and the running process still on the previous release). Refusing before any
 # mutation keeps active.json, service.json and the running service on the same
 # previous release.
+# Running it first is only safe because the gate tolerates the ONE state a failed
+# install leaves behind: a releases/install-record.json with no active.json and
+# no release directory. install-runtime writes that record before the build and
+# activates only after build and verify, and no failure path removes the record,
+# so that state is normal after any interrupted install. The gate reports it as
+# PROVISIONAL and skips only the release rule; refusing it here would block the
+# build that heals it and the prefix would stay refused on every later roll. The
+# record, the selected tree, the contract text and the shipped executable are
+# still verified, and once activation exists the release rule applies again.
 # On a box with more than one copy the gate needs agent-resolver evidence:
 # COUNCIL_AGENT_SKILL_DIR=<the path the agent resolves> (for OpenClaw the
 # shadowing root, e.g. ~/.agents/skills/council-of-wise-elders) when the caller
