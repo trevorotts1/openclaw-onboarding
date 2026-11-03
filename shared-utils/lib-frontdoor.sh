@@ -51,6 +51,23 @@ frontdoor_skills_dir() {
   printf '%s' "$r/skills"
 }
 
+# ── Bounded git ─────────────────────────────────────────────────────────────
+# A git call blocked on a stalled filesystem (observed field case: `config --get
+# remote.origin.url` stuck in getcwd for hours) used to wedge the whole route
+# with no deadline and leave its children behind. Every git invocation in this
+# file -- and in git_ff_sync.sh -- now runs under one. bash 3.2 has no GNU
+# `timeout` on macOS, so this is the same perl-alarm pattern update-skills.sh
+# already uses; on expiry git takes SIGALRM and the caller gets a non-zero rc
+# instead of a hung update.
+FD_GIT_TIMEOUT="${FD_GIT_TIMEOUT:-60}"
+fd_git() {
+  if command -v perl >/dev/null 2>&1; then
+    perl -e 'alarm shift; exec @ARGV or exit 127' "$FD_GIT_TIMEOUT" git "$@"
+  else
+    command git "$@"
+  fi
+}
+
 # Run the shared tail. Sets FRONTDOOR_STATUS + FRONTDOOR_JSON:
 #   status: ok | ran-with-notes | incomplete-gaps | gate-failed | gate-undetermined | failed
 #   json:   the stage report (one line of JSON on the caller's stdout fd 9)
@@ -129,7 +146,7 @@ print("[front-door] stage status: %s" % d.get("status","failed"), file=sys.stder
 #     pointed at an untouched copy are repointed. Symlinks only, nothing deleted.
 frontdoor_update_999() {
   local _home canon cand real repo="" origin before after pull_out
-  local _seen=" " _fail=0 _untouched="" _ffs _ffrc
+  local _seen=" " _fail=0 _untouched="" _ffs _ffrc=0 _grc=0 _dirty=""
   _home="$HOME"
   [ -d /data/.openclaw ] && _home="/data"
   canon="$_home/999-setup"
@@ -171,30 +188,39 @@ $cand"
     real="$(cd "$cand" && pwd -P)"
     case "$_seen" in *" $real "*) continue ;; esac
     _seen="$_seen$real "
-    origin="$(git -C "$real" config --get remote.origin.url 2>/dev/null || echo "")"
+    _grc=0
+    origin="$(fd_git -C "$real" config --get remote.origin.url 2>/dev/null)" || _grc=$?
+    if [ "$_grc" -ne 0 ] && [ "$_grc" -ne 1 ]; then
+      echo "[front-door] 999-setup at $real: git did not answer (rc=$_grc, ${FD_GIT_TIMEOUT}s deadline) — not touched" >&2
+      _untouched="$_untouched $real (git rc=$_grc)"; continue
+    fi
     case "$origin" in
       *trevorotts1/999-setup*) : ;;
       *) echo "[front-door] 999-setup at $real: origin is not trevorotts1/999-setup — not touched"; continue ;;
     esac
-    if [ -n "$(git -C "$real" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    _dirty="$(fd_git -C "$real" status --porcelain --untracked-files=no 2>/dev/null)" || {
+      echo "[front-door] 999-setup at $real: git status did not answer (${FD_GIT_TIMEOUT}s deadline) — not touched" >&2
+      _untouched="$_untouched $real (git status failed)"; continue; }
+    if [ -n "$_dirty" ]; then
       _untouched="$_untouched $real (local changes)"; continue
     fi
-    before="$(git -C "$real" rev-parse HEAD || true)"
+    before="$(fd_git -C "$real" rev-parse HEAD 2>/dev/null || true)"
     # CAN005: git_ff_sync.sh handles a gone upstream (rc 3 = left untouched, named below).
     _ffs="$(dirname "${BASH_SOURCE[0]}")/git_ff_sync.sh"
-    if [ -f "$_ffs" ]; then pull_out="$(sh "$_ffs" "$real" 2>&1)"; _ffrc=$?
-    else pull_out="$(git -C "$real" pull --ff-only --quiet 2>&1)"; _ffrc=$?; fi
+    _ffrc=0
+    if [ -f "$_ffs" ]; then pull_out="$(sh "$_ffs" "$real" 2>&1)" || _ffrc=$?
+    else pull_out="$(fd_git -C "$real" pull --ff-only --quiet 2>&1)" || _ffrc=$?; fi
     if [ "$_ffrc" = 3 ]; then
       _untouched="$_untouched $real ($pull_out)"; continue
     elif [ "$_ffrc" != 0 ]; then
-      if [ "$(git -C "$real" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)" != 0 ] \
-         && [ "$(git -C "$real" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0)" != 0 ]; then
+      if [ "$(fd_git -C "$real" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)" != 0 ] \
+         && [ "$(fd_git -C "$real" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0)" != 0 ]; then
         _untouched="$_untouched $real (diverged)"; continue
       fi
       echo "[front-door] 999-setup: git pull --ff-only FAILED at $real — left unchanged: ${pull_out:0:200}" >&2
       _fail=1
     else
-      after="$(git -C "$real" rev-parse HEAD || true)"
+      after="$(fd_git -C "$real" rev-parse HEAD 2>/dev/null || true)"
       [ "$after" = "$before" ] && echo "[front-door] 999-setup: $real already current (${after:0:12})" \
                                || echo "[front-door] 999-setup: $real ${before:0:12} -> ${after:0:12}"
     fi
@@ -211,7 +237,7 @@ FDEOF
     fi
     command -v git >/dev/null 2>&1 || { echo "[front-door] 999-setup: git missing — cannot clone" >&2; return 1; }
     echo "[front-door] 999-setup: no clean checkout — cloning $_clone_dest (links only; installer never run)"
-    if git clone --depth 1 --quiet https://github.com/trevorotts1/999-setup.git "$_clone_dest" 2>&1 | sed 's/^/[front-door]   /'; \
+    if fd_git clone --depth 1 --quiet https://github.com/trevorotts1/999-setup.git "$_clone_dest" 2>&1 | sed 's/^/[front-door]   /'; \
        [ -f "$_clone_dest/AGENT_INSTALL.md" ] && [ -d "$_clone_dest/.git" ]; then
       repo="$(cd "$_clone_dest" && pwd -P)"
     else

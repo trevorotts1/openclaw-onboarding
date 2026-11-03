@@ -451,7 +451,7 @@ Same as Block 1: ⌘+Space → type **Terminal** → Return.
 ### Step 2 — Paste the update command and press Return
 
 ```
-curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh | bash
+t="$(mktemp)" && curl -fsSL --max-time 60 --retry 2 --retry-delay 2 https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh -o "$t" && bash "$t"
 ```
 
 ### What you'll see while it runs
@@ -509,7 +509,7 @@ Find your conversation with your **Mac** OpenClaw bot.
 I need you to run the OpenClaw skills updater on my Mac and follow these rules exactly. Read all rules before starting.
 
 RULE 1 — Run this command on my Mac using your shell-exec capability. Run it exactly as written, no edits:
-  curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh | bash
+  t="$(mktemp)" && curl -fsSL --max-time 60 --retry 2 --retry-delay 2 https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh -o "$t" && bash "$t"
 
 RULE 2 — Do not modify the command, URL, or add flags. If a tweak seems needed, ask me first.
 
@@ -590,7 +590,7 @@ ssh root@YOUR.VPS.IP.ADDRESS
 ### Step 2 — Paste the VPS update command
 
 ```
-curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh | bash
+t="$(mktemp)" && curl -fsSL --max-time 60 --retry 2 --retry-delay 2 https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh -o "$t" && bash "$t"
 ```
 
 ### What you'll see
@@ -639,7 +639,7 @@ Find your **VPS** OpenClaw bot conversation.
 I need you to run the OpenClaw skills updater on this VPS and follow these rules exactly. Read all rules before starting.
 
 RULE 1 — Run this command on the VPS using your shell-exec capability. Run it exactly as written, no edits:
-  curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh | bash
+  t="$(mktemp)" && curl -fsSL --max-time 60 --retry 2 --retry-delay 2 https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh -o "$t" && bash "$t"
 
 RULE 2 — Do not modify the command. The unified repo auto-detects Mac vs VPS — no separate VPS URL needed.
 

@@ -11,7 +11,16 @@
 # Exit 1  git failure; git's message is on stdout
 # Never: reset --hard, stash, branch delete, discarding local changes.
 repo=${1:?usage: git_ff_sync.sh <repo>}
-g() { git -C "$repo" "$@"; }
+# Bounded: a git call blocked on a stalled filesystem used to hang the caller with
+# no deadline. bash/POSIX sh has no GNU `timeout` on macOS, so the same perl-alarm
+# pattern update-skills.sh and lib-frontdoor.sh use. On expiry git takes SIGALRM
+# and the caller gets a non-zero rc (not 3) instead of a hung tree.
+T=${OC_GIT_TIMEOUT:-${FD_GIT_TIMEOUT:-60}}
+if command -v perl >/dev/null 2>&1; then
+  g() { perl -e 'alarm shift; exec @ARGV or exit 127' "$T" git -C "$repo" "$@"; }
+else
+  g() { git -C "$repo" "$@"; }
+fi
 
 out=$(g fetch --prune --quiet origin 2>&1) || { echo "git fetch --prune failed: $out"; exit 1; }
 

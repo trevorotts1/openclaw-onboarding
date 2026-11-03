@@ -15,7 +15,18 @@
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
 ONBOARDING_VERSION="v27.1.69"
-_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
+# Under the documented `curl -fsSL .../update-skills.sh | bash` entrypoint
+# BASH_SOURCE[0] is EMPTY and $0 is the interpreter ("bash" or /bin/bash), so the
+# old ${BASH_SOURCE[0]:-$0} resolved _SCRIPT_DIR to the interpreter's directory
+# (measured /bin) and made every "$_SCRIPT_DIR/<repo file>" probe dead. When the
+# script really is on disk BASH_SOURCE[0] names it; when it is piped there is no
+# on-disk script at all, so the caller's working directory is the only honest
+# answer.
+if [ -n "${BASH_SOURCE[0]:-}" ]; then
+  _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || pwd)"
+else
+  _SCRIPT_DIR="$(pwd)"
+fi
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
 if [ ! -f "$_PLATFORM_COMMON" ]; then
@@ -980,6 +991,24 @@ PYEOF
 # migration, which is exactly the invariant scripts/oc-atomic-upgrade.sh
 # asserts before it will commit one. Keep the two reads in this order.
 # ----------------------------------------------------------
+# Load scripts/onboarding-state.sh on demand. The resolver's FIRST call is the
+# write pre-flight, which runs before the bundle is cloned and ~1550 lines before
+# the run's own `source` of this shim -- so obs_resolve_workspace() used to be
+# undefined on EVERY run and the fallback line blamed a file that is in fact
+# present in the bundle. Load it as soon as one is readable instead. The shim is
+# idempotent (its own __OBS_SOURCED guard), so the later explicit source is a no-op.
+_oc_load_state_shim() {
+  command -v obs_resolve_workspace >/dev/null 2>&1 && return 0
+  local _d
+  for _d in "${ONBOARDING_DIR:-}" "${_SCRIPT_DIR:-}" "${PWD:-}"; do
+    [ -n "$_d" ] && [ -r "$_d/scripts/onboarding-state.sh" ] || continue
+    # shellcheck source=/dev/null
+    . "$_d/scripts/onboarding-state.sh" >/dev/null 2>&1 || true
+    command -v obs_resolve_workspace >/dev/null 2>&1 && return 0
+  done
+  return 1
+}
+
 oc_resolve_workspace_announced() {
   local _ctx="${1:-workspace}"
   OC_WS_RESOLVED=""
@@ -989,7 +1018,9 @@ oc_resolve_workspace_announced() {
   [ -d "/data/.openclaw" ] && _ws_ocroot="/data/.openclaw"
   local _ws_ocjson="$_ws_ocroot/openclaw.json"
 
-  # (1) the intended resolver, when the conditionally-sourced shim defined it.
+  # (1) the intended resolver. Load the shim first when it is reachable: this
+  # call can precede the run's own source of it (see _oc_load_state_shim).
+  _oc_load_state_shim || true
   local _ws_have_resolver="no"
   if command -v obs_resolve_workspace >/dev/null 2>&1; then
     _ws_have_resolver="yes"
@@ -1036,7 +1067,7 @@ except Exception:
 PYEOF
 )"
     if [ -n "$OC_WS_RESOLVED" ]; then
-      OC_WS_SOURCE="this box's own openclaw.json ($_ws_ocjson) -- FALLBACK USED because obs_resolve_workspace() is NOT defined (scripts/onboarding-state.sh was not sourced: absent from this bundle)"
+      OC_WS_SOURCE="this box's own openclaw.json ($_ws_ocjson) -- FALLBACK USED because obs_resolve_workspace() is NOT defined (scripts/onboarding-state.sh was not readable in \$ONBOARDING_DIR, \$_SCRIPT_DIR or \$PWD at this point in the run)"
     fi
   fi
 
@@ -1053,7 +1084,7 @@ PYEOF
     if [ "$_ws_have_resolver" = "yes" ]; then
       _ws_why_resolver="DEFINED but returned an empty path"
     else
-      _ws_why_resolver="NOT DEFINED -- scripts/onboarding-state.sh was not sourced (missing from the pulled bundle)"
+      _ws_why_resolver="NOT DEFINED -- scripts/onboarding-state.sh was not readable in \$ONBOARDING_DIR, \$_SCRIPT_DIR or \$PWD (paths checked, no cause assumed)"
     fi
     if [ ! -f "$_ws_ocjson" ]; then
       _ws_why_json="ABSENT"

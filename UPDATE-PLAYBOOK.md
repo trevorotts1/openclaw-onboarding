@@ -10,9 +10,9 @@ This playbook defines how updates are applied to an already-onboarded BlackCEO s
 ### Method 1: Terminal (Manual)
 The client or Trevor runs the universal bootstrap command in Terminal:
 ```
-curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh | bash
+t="$(mktemp)" && curl -fsSL --max-time 60 --retry 2 --retry-delay 2 https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh -o "$t" && bash "$t"
 ```
-This downloads the latest update script directly from GitHub and runs it. It works regardless of the client's installed version because it always pulls the newest script. The script stages the update and tells the human what to tell their agent next.
+This downloads the latest update script to a temp file and runs it **only when the download succeeded**. A mid-stream receive failure (curl rc=56/18) therefore runs nothing at all, instead of bash executing the half of the script that already arrived. It works regardless of the client's installed version because it always pulls the newest script. The script stages the update and tells the human what to tell their agent next.
 
 > **Use the REPO-ROOT `update-skills.sh` — there is no other updater.**
 > (The retired `scripts/update-skills.sh` shim was deleted outright, OCT4 issue #10; a
