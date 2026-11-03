@@ -70,6 +70,12 @@ OUT="$(run_harness pass pass)"
 if grep -q 'REACHED-INSTALL' <<<"$OUT" && grep -q 'FINAL-RC=0' <<<"$OUT"; then ok "clean gate: no change in behaviour (rc 0)"
 else bad "clean-gate path regressed: $(tail -3 <<<"$OUT")"; fi
 
+# libgate: a tree that PASSED before the install can be BROKEN by the content swap.
+# The tail must re-judge even when the early verdict was clean, and surface rc 2.
+OUT="$(run_harness pass fail)"
+if grep -q 'FINAL-RC=2' <<<"$OUT"; then ok "install that breaks the gate -> rc 2 (re-judged with a clean early verdict)"
+else bad "a clean early verdict skipped the post-install re-judge: $(tail -3 <<<"$OUT")"; fi
+
 # Both exit paths must re-judge: the end of main() and the content-current exit.
 n="$(grep -c 'frontdoor_final_verdict' "$UPDATE_SH")"
 [ "$n" -ge 4 ] && ok "frontdoor_final_verdict is wired at both exits ($n refs)" || bad "frontdoor_final_verdict not wired at both exits ($n refs)"

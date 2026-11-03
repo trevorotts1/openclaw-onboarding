@@ -45,6 +45,22 @@ PENDING_MARKERS = ("PENDING - FILL FROM LIBRARY", "how-to.md (stub)")
 ROUTED_MARKER = "[ROUTED — WORK HANDLED BY GENERAL-TASK]"
 MIN_BYTES = 3072  # same floor as create_role_workspaces.try_library_fill
 SKIP_DIRS = {"memory", "devils-advocate"}
+# The exact signatures scripts/health/library-gate-check.sh fails on, read the
+# same way (first 600 bytes). Repair and gate must never disagree about what a
+# placeholder is: the gate accepted every dash form, the repair only the hyphen,
+# so an em-dash stub was invisible to repair and fatal to the gate.
+SIG = re.compile(
+    r"PENDING\W{0,4}FILL FROM LIBRARY"
+    r"|how-to\.md \(stub\)"
+    r"|to be personalized based on research"
+    r"|\[\s*step\s+\d+\s*[-–—]\s*to be personalized",
+    re.IGNORECASE)
+_DASHES = dict.fromkeys(map(ord, "‐‑‒–—―−"), "-")
+
+
+def is_placeholder_text(head):
+    """True when this head carries an installer stub signature (any dash form)."""
+    return bool(SIG.search(head))
 
 
 def is_pending(how_to):
@@ -52,7 +68,7 @@ def is_pending(how_to):
         head = how_to.read_text(encoding="utf-8", errors="replace")[:600]
     except OSError:
         return False
-    return any(m in head for m in PENDING_MARKERS)
+    return any(m in head.translate(_DASHES) for m in PENDING_MARKERS)
 
 
 def is_routed(how_to):
@@ -104,6 +120,25 @@ def pending_roles(departments_dir, depts=None):
             if (role_dir / "how-to.md").is_file() and is_pending(role_dir / "how-to.md"):
                 out.append((dept_dir, role_dir))
     return out
+
+
+GENERIC_HOW = "generic-scaffold"
+
+
+def generic_template():
+    """(doc_path, role_entry) for the shared role scaffold, or (None, None).
+
+    Used by the REPAIR only, as its last deterministic rung: a role whose
+    department the library does not cover can never match a role template, so
+    without this it stays on the routing notice forever and the health gate fails
+    on it by construction. The scaffold is a real, executable procedure (the
+    mirror of _director-scaffold.md), and the repair never marks the SOP-needed
+    record authored on it -- the role-specific playbook is still owed.
+    """
+    doc = crw._resolve_skill_dir() / "templates" / "role-library" / "_role-scaffold.md"
+    if not doc.is_file():
+        return None, None
+    return doc, {"dept": "_generic", "slug": "role-scaffold", "path": str(doc)}
 
 
 def nearest_template(title, dept_slug, cutoff, library_cutoff=0.85):
@@ -195,6 +230,21 @@ def routed_role_dirs(sop_needed_path, departments_dir, depts=None):
 
 
 def default_departments_dir():
+    """The tree the health gate audits, resolved the same way the gate resolves it.
+
+    The gate (scripts/health/library-gate-check.sh) uses _qc_paths.live_departments_dir's
+    rule: the build state's own companyRoot/departments first, else
+    <workspace>/departments. This used to ask detect_platform for company_dir only,
+    which returns None on a <workspace>/departments layout with no build state -- so
+    the repair exited 2 on the very tree the gate was failing.
+    """
+    try:
+        from _qc_paths import live_departments_dir  # noqa: E402
+        d = live_departments_dir()
+        if d.is_dir():
+            return d
+    except (ImportError, OSError):
+        pass
     try:
         from detect_platform import get_openclaw_paths  # noqa: E402
         company = get_openclaw_paths().get("company_dir")

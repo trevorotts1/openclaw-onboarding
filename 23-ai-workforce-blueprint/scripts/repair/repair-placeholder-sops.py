@@ -53,9 +53,7 @@ _spec.loader.exec_module(fpm)
 
 TAG = "[repair-placeholder-sops]"
 CUTOFF, LIBRARY_CUTOFF = 0.6, 0.85  # same matcher floors fill-pending-howtos.py ships
-# Both signatures every stub writer ever emitted (dash-free tail shared by all PENDING
-# headers) -- the same two verify-wiring.sh STUB_MARKERS test.
-STUB_SIG = re.compile(r"FILL FROM LIBRARY|how-to\.md \(stub\)")
+# The stub signature is read from fill-pending-howtos.SIG (the gate's own set).
 # Folders that hold no role: a stub how-to.md directly inside one is an aggregate stub.
 CONTAINERS = {"_archive", "_index", "_compliance_audit", "_pending_rewrite", "_stage1_drafts",
               "sops", "scripts", "roles", "_drafts", "artifacts", "templates", "assets", "intake",
@@ -101,17 +99,23 @@ def residual_lines(text):
 
 
 def classify(text):
-    """'stub' | 'routed' | 'review' | None (real content, not ours to touch)."""
-    title = next((l for l in text.splitlines() if l.startswith("#")), "")
-    if fpm.ROUTED_MARKER in title:
+    """'stub' | 'routed' | 'review' | None (real content, not ours to touch).
+
+    Signatures are read from the first 600 bytes with the GATE's own pattern set
+    (fill-pending-howtos.SIG), not from the title line alone: the gate reads the
+    head, so a stub whose marker sits in the body is fatal to the gate and used to
+    be invisible here -- the repair could never clear a file it could not see.
+    """
+    head = text[:600]
+    if fpm.ROUTED_MARKER in head:
         return "routed"
-    if STUB_SIG.search(title):
-        # ponytail: content verify = signature in the title + under the substance floor +
+    if fpm.is_placeholder_text(head):
+        # ponytail: content verify = signature in the head + under the substance floor +
         # <=3 non-boilerplate body lines. Upgrade to a full line diff against the four
         # legacy templates if hand-edited stubs show up in the field.
         pure = len(text.encode("utf-8")) < fpm.MIN_BYTES and residual_lines(text) <= 3
         return "stub" if pure else "review"
-    return None  # signature only in body prose (authored docs discuss it): real content
+    return None  # no installer signature: real content
 
 
 def owner_description(text):
@@ -190,10 +194,17 @@ class Manifest:
 # --- the repair --------------------------------------------------------------
 
 def library_fill(dept_dir, title, desc):
-    """(text, why) from the nearest library template, or (None, reason)."""
+    """(text, why) from the nearest library template, or from the shared scaffold."""
     doc, entry, how = fpm.nearest_template(title, dept_dir.name, CUTOFF, LIBRARY_CUTOFF)
     if not doc:
-        return None, how
+        # Last deterministic rung: the shared role scaffold (see
+        # fill-pending-howtos.generic_template). A department the library does not
+        # cover can never match a role template, so without this the role stays on
+        # the routing notice forever and the gate fails it by construction.
+        doc, entry = fpm.generic_template()
+        how = fpm.GENERIC_HOW if doc else None
+    if not doc:
+        return None, how or "no comparable template"
     dept_name = dept_dir.name.replace("-", " ").title()
     is_ceo = dept_dir.name.lower() in CEO_DEPTS
     filled = crw.fill_tokens(doc.read_text(encoding="utf-8"), title, dept_name, is_ceo, role_entry=entry)
@@ -220,12 +231,46 @@ def iter_candidates(ddir, depts):
             yield dept, ("aggregate" if sub.name.lower() in CONTAINERS else "role"), sub / "how-to.md"
 
 
+def dept_guide_fill(dept_dir):
+    """(text, why) from the library's own guide for this department, or (None, reason).
+
+    A DEPT-LEVEL how-to.md has no library owner: the library ships
+    how-to-use-this-department.md and never how-to.md, so a legacy dept stub or
+    dept-level routing notice was never replaceable -- the gate failed it and the
+    repair filed it as REVIEW. The dept guide is real library content, so it is
+    the honest replacement.
+    """
+    lib = crw._resolve_dept_library_dir(dept_dir.name)
+    src = (lib / "how-to-use-this-department.md") if lib else None
+    if not src or not src.is_file():
+        return None, "library has no how-to-use-this-department.md for this department"
+    dept_name = dept_dir.name.replace("-", " ").title()
+    text = crw.fill_tokens(src.read_text(encoding="utf-8"), dept_name, dept_name, False,
+                           role_entry=None)
+    if not text.strip() or fpm.is_placeholder_text(text[:600]):
+        return None, "library dept guide is itself a placeholder"
+    return text, "dept guide from role-library/how-to-use-this-department.md"
+
+
+def replaceable(how_to, kinds):
+    """Re-check immediately before a write: still absent, or still one of `kinds`."""
+    if not how_to.is_file():
+        return True
+    return classify(read(how_to)) in kinds
+
+
 def repair(ddir, manifest, depts, apply):
     c = dict(scanned=0, placeholders=0, filled_from_library=0, handed_to_authoring=0,
              already_awaiting_authoring=0, aggregate_stubs_deleted=0, needs_manual_review=0,
              skipped_symlink=0, errors=0)
     for dept, kind, how_to in iter_candidates(ddir, depts):
-        if not (how_to.is_file() or how_to.is_symlink()):
+        present = how_to.is_file() or how_to.is_symlink()
+        # The gate counts a role folder holding IDENTITY.md but no how-to.md as
+        # "missing how-to.md". Skipping absent paths meant the repair never saw
+        # that file, so the gate could never be cleared.
+        missing_role = (not present and kind == "role"
+                        and (how_to.parent / "IDENTITY.md").is_file())
+        if not present and not missing_role:
             continue
         c["scanned"] += 1
         rel = f"{dept.name}/{how_to.parent.name if how_to.parent != dept else ''}".rstrip("/")
@@ -235,19 +280,32 @@ def repair(ddir, manifest, depts, apply):
                     c["skipped_symlink"] += 1
                     log(f"SKIP symlinked how-to.md {rel}")
                 continue
-            text = read(how_to)
-            found = classify(text)
+            text = read(how_to) if present else ""
+            found = classify(text) if present else "stub"
             if found is None:
                 continue
             c["placeholders"] += 1
-            if found == "review" or (kind == "aggregate" and found != "stub"):
+            if found == "review":
                 c["needs_manual_review"] += 1
                 log(f"REVIEW {rel}: signature present but not pure boilerplate -- left untouched")
                 continue
             if kind == "aggregate":
+                if how_to.parent == dept:
+                    # Dept-level file: the library owns it via its department guide.
+                    new, why = dept_guide_fill(dept)
+                    if new is not None:
+                        c["filled_from_library"] += 1
+                        log(f"{'FILLED' if apply else 'WOULD FILL'} {rel} ({why})")
+                        if apply and replaceable(how_to, ("stub", "routed")):
+                            write_atomic(how_to, new)
+                        continue
+                if found != "stub":
+                    c["needs_manual_review"] += 1
+                    log(f"REVIEW {rel}: signature present but not pure boilerplate -- left untouched")
+                    continue
                 c["aggregate_stubs_deleted"] += 1
                 log(f"{'DELETE' if apply else 'WOULD DELETE'} aggregate stub {rel}/how-to.md")
-                if apply and classify(read(how_to)) == "stub":  # re-verify right before the write
+                if apply and how_to.is_file() and classify(read(how_to)) == "stub":
                     how_to.unlink()
                 continue
             role_dir = how_to.parent
@@ -257,9 +315,12 @@ def repair(ddir, manifest, depts, apply):
             if new is not None:
                 c["filled_from_library"] += 1
                 log(f"{'FILLED' if apply else 'WOULD FILL'} {rel} ({why})")
-                if apply and classify(read(how_to)) in ("stub", "routed"):
+                if apply and replaceable(how_to, ("stub", "routed")):
                     write_atomic(how_to, new)
-                    manifest.mark_authored(role_dir, title, dept.name)
+                    if not why.startswith(fpm.GENERIC_HOW):
+                        # The shared scaffold is not an authored playbook: leave the
+                        # record open so the role-specific SOP is still owed.
+                        manifest.mark_authored(role_dir, title, dept.name)
                 continue
             if found == "routed" and manifest.find(role_dir, title, dept.name):
                 c["already_awaiting_authoring"] += 1
@@ -267,7 +328,7 @@ def repair(ddir, manifest, depts, apply):
                 continue
             c["handed_to_authoring"] += 1
             log(f"{'HAND OFF' if apply else 'WOULD HAND OFF'} {rel} to authoring ({why})")
-            if apply and classify(read(how_to)) in ("stub", "routed"):
+            if apply and replaceable(how_to, ("stub", "routed")):
                 rec = manifest.open_record(role_dir, how_to, title, dept.name, desc)
                 cfg = crw._load_company_config()
                 write_atomic(how_to, crw.routing_how_to(

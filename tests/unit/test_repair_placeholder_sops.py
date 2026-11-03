@@ -2,9 +2,10 @@
 """repair-placeholder-sops.py: placeholder how-to.md files on an existing box get repaired.
 
 Proves: every legacy stub shape is detected; a library-matched role is filled
-(>= 3072 bytes, no stub marker left); a role with no template is handed to the
-authoring path (ROUTED notice + open SOP-NEEDED.json record, never a guess);
-aggregate department-level stubs are deleted; real content is never touched, even
+(>= 3072 bytes, no stub marker left); a role with no template is filled from the
+shared role scaffold (a real procedure, no specialty invented, no authoring gap
+closed) instead of being left on a gate-fatal routing notice; aggregate
+department-level stubs are deleted; real content is never touched, even
 under a stub-looking mention; dry run writes nothing; a second run changes nothing;
 openclaw.json is never touched.
 
@@ -108,11 +109,18 @@ class TestRepairPlaceholderSops(_Box):
         self.assertGreaterEqual(len(text.encode()), 3072)
         self.assertNotIn("FILL FROM LIBRARY", text)
         self.assertIn("generator=repair-placeholder-sops.py", text)
-        # no template: ROUTED notice + open record; the model is never chosen here
-        recs = {x["role"]: x for x in self.manifest()["records"]}
-        self.assertIn("[ROUTED — WORK HANDLED BY GENERAL-TASK]", f["no_template"].read_text())
-        self.assertEqual(recs["Buyer Agent"]["status"], "routed")
-        self.assertIn("quarterly vendor audit", recs["Vendor Auditor"]["role_description"])
+        # no role template: the SHARED SCAFFOLD keeps the role operational and clears
+        # the health gate (a routing notice is gate-fatal by construction). It never
+        # guesses a specialty procedure: it says so and routes the work to general-task,
+        # and no SOP-NEEDED record is closed on it.
+        text = f["no_template"].read_text()
+        self.assertGreaterEqual(len(text.encode()), 3072)
+        self.assertNotIn("FILL FROM LIBRARY", text)
+        self.assertNotIn("[ROUTED — WORK HANDLED BY GENERAL-TASK]", text)
+        self.assertIn("match=generic-scaffold", text)
+        self.assertIn("general-task", text)
+        self.assertFalse((self.company / "SOP-NEEDED.json").exists(),
+                         "a scaffold fill must not close an authoring gap")
         self.assertIn("quarterly vendor audit", f["owner"].read_text())  # owner's words survive
         self.assertNotIn("FILL FROM LIBRARY", f["addrole"].read_text())
         # aggregate stubs gone, aggregate-free departments keep their roles

@@ -5278,7 +5278,10 @@ retire_legacy_sunday_crontab() {
 # tree. Returns 0 (clean now) or the early rc (still failing: 2 gate, 1 no stage).
 # Callers: _content_current_exit and the end of main(), before registry-parity.
 frontdoor_final_verdict() {
-  [ "${_FD_EARLY_RC:-0}" -ne 0 ] || return 0
+  # CAN006 + libgate: the early run only LATCHES (_FD_EARLY_RC); it is never the
+  # verdict. A tree that passed BEFORE the install can be broken BY it (the content
+  # swap ships the very playbooks the gate judges), so the freshly installed tree is
+  # always re-judged here -- including when the early rc was 0.
   if [ -n "${_FRONTDOOR_STAGE_PY:-}" ] && declare -F frontdoor_run_stage >/dev/null 2>&1; then
     echo "  ℹ [FRONT DOOR] re-running the shared stage against the freshly installed tree..."
     if frontdoor_run_stage "${_FRONTDOOR_STAGE_PY}"; then
@@ -5288,7 +5291,11 @@ frontdoor_final_verdict() {
       return 0
     fi
     rm -f "${OC_ROOT:-$HOME/.openclaw}/fleet-refresh/.frontdoor-last.json" 2>/dev/null || true
+    if [ "${_FD_EARLY_RC:-0}" -eq 0 ]; then
+      _FD_EARLY_RC=2   # the install broke the gate: infrastructure needs attention
+    fi
   fi
+  [ "${_FD_EARLY_RC:-0}" -ne 0 ] || return 0
   echo "  ✗ [FRONT DOOR] still failing after the install -- content is current (stamp written); exiting ${_FD_EARLY_RC} = infrastructure needs attention" >&2
   return "$_FD_EARLY_RC"
 }

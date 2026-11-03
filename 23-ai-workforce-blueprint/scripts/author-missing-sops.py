@@ -50,6 +50,7 @@ EXIT CODES:
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -311,8 +312,14 @@ def deterministic_fill(record, departments_dir):
 
     sys.path.insert(0, str(HERE))
     try:
-        import fill_pending_howtos as fph  # noqa: E402
-    except ImportError as e:
+        # The file is fill-pending-howtos.py (hyphens); a plain `import
+        # fill_pending_howtos` raised ModuleNotFoundError, which silently killed
+        # the whole deterministic rung and left every routed role to model authoring.
+        _spec = importlib.util.spec_from_file_location(
+            "fill_pending_howtos", HERE / "fill-pending-howtos.py")
+        fph = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(fph)
+    except (ImportError, AttributeError, OSError, SyntaxError) as e:
         return False, f"fill-pending-howtos unavailable: {e}"
     doc, entry, how = fph.nearest_template(title, dept_slug, 0.6, 0.85)
     if not doc:

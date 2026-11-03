@@ -46,13 +46,31 @@ def default_workspace():
     if env:
         return Path(env)
     here = Path(__file__).resolve()
-    for p in (here.parents[2] / "lib", here.parents[3] / "shared-utils"):
+    for p in (here.parents[1], here.parents[2] / "lib", here.parents[3] / "shared-utils"):
         sys.path.insert(0, str(p))
     try:
         from detect_platform import get_openclaw_paths
         return Path(get_openclaw_paths()["workspace"])
     except (ImportError, SystemExit, KeyError, RuntimeError):
         return Path.home() / ".openclaw" / "workspace"
+
+
+def default_departments(workspace):
+    """The tree the health gate audits, not merely <workspace>/departments.
+
+    _qc_paths.live_departments_dir is the ONE definition of the live departments
+    tree (the build state's own companyRoot/departments first). Reading only
+    <workspace>/departments made this repair exit 1 on a <companyRoot>/departments
+    layout that the gate resolves and judges.
+    """
+    try:
+        from _qc_paths import live_departments_dir
+        d = live_departments_dir()
+        if d.is_dir():
+            return d
+    except (ImportError, OSError):
+        pass
+    return workspace / "departments"
 
 
 def is_broken_link(p):
@@ -186,7 +204,7 @@ def main(argv=None):
         selftest()
         return 0
     workspace = Path(a.workspace) if a.workspace else default_workspace()
-    departments = Path(a.departments_dir) if a.departments_dir else workspace / "departments"
+    departments = Path(a.departments_dir) if a.departments_dir else default_departments(workspace)
     if not departments.is_dir():
         print("ERROR: departments dir not found: %s" % departments, file=sys.stderr)
         return 1
