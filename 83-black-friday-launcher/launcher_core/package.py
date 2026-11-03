@@ -919,6 +919,22 @@ def _artifact_source(path: str, source_root: Path, landing_roots: Sequence[Path]
     return source_root / src
 
 
+REPO_FIXTURE_DIR = "stand-in-inputs"  # where a test run's repo fixture is laid out inside its page folder
+
+
+def _is_repo_fixture(src: Path, run_roots: Sequence[Path]) -> bool:
+    """True for a repo fixture or test file: inside the skill repository under a fixtures/ or tests/ folder
+    and not inside the run itself. A client package must never name one by its repo path (F7)."""
+    src = src.resolve()
+    if any(src.is_relative_to(Path(r).resolve()) for r in run_roots):
+        return False
+    try:
+        parts = src.relative_to(REPO_ROOT.resolve()).parts[:-1]
+    except ValueError:
+        return False
+    return "fixtures" in parts or "tests" in parts
+
+
 def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
              pieces: Dict[str, Any], source_root: Optional[Path] = None,
              council: Optional[Dict[str, Any]] = None,
@@ -1128,8 +1144,18 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     for piece in ordered:
         copied: List[Dict[str, Any]] = []
         sources = [_artifact_source(art["path"], source_root, landing_roots) for art in piece["artifacts"]]
-        base = Path(os.path.commonpath([str(p.parent) for p in sources])) if sources else source_root
-        for art, src in zip(piece["artifacts"], sources):
+        # F7: a repo fixture (a test run's stand-in page copy) is never laid out by its repo path, and its
+        # folders must not decide where the run's own files land. A client package refuses one outright.
+        run_roots = [source_root, run_dir, *landing_roots]
+        repo_fixture = [_is_repo_fixture(p, run_roots) for p in sources]
+        if any(repo_fixture) and not test_only:
+            raise PackageError("AF-LAUNCH-PKG-REPO-FIXTURE",
+                               f"{piece['role']}: artifact "
+                               f"{piece['artifacts'][repo_fixture.index(True)]['path']!r} is a repo fixture; "
+                               "a client package carries only files the run produced")
+        own = [p for p, fx in zip(sources, repo_fixture) if not fx]
+        base = Path(os.path.commonpath([str(p.parent) for p in own])) if own else source_root
+        for art, src, fx in zip(piece["artifacts"], sources, repo_fixture):
             if not src.is_file():
                 raise PackageError("AF-LAUNCH-PKG-ARTIFACT-MISSING",
                                    f"{piece['role']}: artifact {art['path']!r} does not exist")
@@ -1139,10 +1165,13 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
                 raise PackageError("AF-LAUNCH-PKG-HASH",
                                    f"{piece['role']}: artifact {art['path']!r} is {actual}, "
                                    f"declared {art['sha256']}")
-            inside = src.resolve().relative_to(base.resolve())
             prefix = Path("pieces") / piece["page_id"]
-            if inside.parts[:2] == prefix.parts:  # already laid out as pieces/<page_id>/...
-                inside = Path(*inside.parts[2:])
+            if fx:
+                inside = Path(REPO_FIXTURE_DIR) / src.name
+            else:
+                inside = src.resolve().relative_to(base.resolve())
+                if inside.parts[:2] == prefix.parts:  # already laid out as pieces/<page_id>/...
+                    inside = Path(*inside.parts[2:])
             rel = str(prefix / inside)
             dest = run_dir / rel
             if dest.exists() and _sha256_file(dest) != actual:
