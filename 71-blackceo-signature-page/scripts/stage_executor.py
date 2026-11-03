@@ -639,11 +639,11 @@ def declared_copy_version(run_dir: Path, request: dict):
     return None
 
 
-def allowed_section_sequences(spec: dict) -> list:
+def allowed_section_sequences(spec: dict, request=None) -> list:
     """The sequence the spec accepts: its own, plus each optional-children expansion
     (5 -> 5A,5B,5C). page_role.allowed_sequences is the one resolver; the request
     builder reads the same function, so the two never disagree."""
-    return page_role.allowed_sequences(spec)
+    return page_role.allowed_sequences(spec, request)
 
 
 STRUCTURES_FILE = SKILL_ROOT / "references" / "page-structures.json"
@@ -764,7 +764,7 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
             raise ExecutorError(f"page kind: {exc}")
         label = f"{version} copy"
     ids = [canon_section_id(s["section_id"]) for s in request["sections"]]
-    allowed = allowed_section_sequences(spec)
+    allowed = allowed_section_sequences(spec, request)
     if ids not in allowed:
         want = allowed[0]
         raise ExecutorError(
