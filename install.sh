@@ -190,10 +190,10 @@ command -v oc_cron_present >/dev/null 2>&1 || oc_cron_present() {
         case $? in 0) return 0;; 1) return 1;; *) return 2;; esac
     fi
     if command -v python3 >/dev/null 2>&1; then
-        OC_CRON_RAW="$_raw" python3 - "$_name" 2>/dev/null <<'PYEOF'
+        python3 - "$_name" 3<<<"$_raw" 2>/dev/null <<'PYEOF'
 import json, os, sys
 name = sys.argv[1]
-raw = os.environ.get("OC_CRON_RAW", "")
+raw = os.fdopen(3).read()
 try:
     data = json.loads(raw)
 except Exception:
@@ -7246,9 +7246,9 @@ install_weekly_cron() {
             local _oc_raw_json
             _oc_raw_json=$(openclaw cron list --json 2>/dev/null) || _oc_raw_json=""
             if [ -n "$_oc_raw_json" ] && \
-               OC_CRON_JSON="$_oc_raw_json" python3 - <<'PYEOF' 2>/dev/null
+               python3 - 3<<<"$_oc_raw_json" <<'PYEOF' 2>/dev/null
 import json, os, sys
-raw = os.environ.get('OC_CRON_JSON', '')
+raw = os.fdopen(3).read()
 try:
     data = json.loads(raw)
 except Exception:

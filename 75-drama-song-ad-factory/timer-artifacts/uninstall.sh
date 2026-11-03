@@ -70,11 +70,11 @@ _cron_present() {
     esac
   fi
   if command -v python3 >/dev/null 2>&1; then
-    OC_CRON_RAW="$raw" python3 - "$NAME" 2>/dev/null <<'PYEOF'
+    python3 - "$NAME" 3<<<"$raw" 2>/dev/null <<'PYEOF'
 import json, os, sys
 name = sys.argv[1]
 try:
-    data = json.loads(os.environ.get("OC_CRON_RAW", ""))
+    data = json.loads(os.fdopen(3).read())
     jobs = data if isinstance(data, list) else data["jobs"]
     if not isinstance(jobs, list):
         raise ValueError

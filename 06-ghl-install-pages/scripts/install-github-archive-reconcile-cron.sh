@@ -153,11 +153,11 @@ fi
 # object. Prints nothing for a healthy job. Queries --all so a disabled job is
 # still visible to the scan (findings 29/30).
 _broken_job_id() {
-  OC_CRON_RAW="$(openclaw cron list --all --json 2>/dev/null)" python3 - "$CRON_NAME" "${HOME:-}" "$EVIDENCE_BASE" "${SKILL6_DATA_ROOT:-/data}" <<'PYEOF' 2>/dev/null
+  python3 - "$CRON_NAME" "${HOME:-}" "$EVIDENCE_BASE" "${SKILL6_DATA_ROOT:-/data}" 3<<<"$(openclaw cron list --all --json 2>/dev/null)" <<'PYEOF' 2>/dev/null
 import json, os, re, sys
 name, home, want, droot = sys.argv[1], sys.argv[2].rstrip("/"), sys.argv[3], sys.argv[4].rstrip("/")
 try:
-    data = json.loads(os.environ.get("OC_CRON_RAW", ""))
+    data = json.loads(os.fdopen(3).read())
 except Exception:
     sys.exit(0)
 jobs = data if isinstance(data, list) else data.get("jobs", [])

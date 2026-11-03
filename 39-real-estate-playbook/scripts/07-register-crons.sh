@@ -66,9 +66,9 @@ declare -a CRON_NAMES=( "re-open-house-followup-scan" "re-post-close-anniversary
 # Reads `cron list --json` (real CLI: payload.message; test fixture: message).
 _re_cron_rows() {
   command -v openclaw >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 || return 0
-  OC_CRON_RAW="$(openclaw cron list --json 2>/dev/null)" python3 - "${CRON_NAMES[@]}" <<'PYEOF' 2>/dev/null || true
+  python3 - "${CRON_NAMES[@]}" 3<<<"$(openclaw cron list --json 2>/dev/null)" <<'PYEOF' 2>/dev/null || true
 import json, os, sys
-raw = os.environ.get("OC_CRON_RAW", "")
+raw = os.fdopen(3).read()
 try:
     data = json.loads(raw[raw.index("{"):] if "{" in raw else raw)
 except Exception:

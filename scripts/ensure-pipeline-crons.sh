@@ -242,19 +242,14 @@ _cron_present() {
   fi
 
   # Strategy 2: python3 exact match (no jq required)
-  #
-  # SC2259 FIX (fix/industry-gate-and-idempotent-crons): JSON is passed via an
-  # env var, not a pipe — `python3 -` already reads its OWN script text from
-  # stdin via the heredoc below, so a pipe feeding the SAME stdin is silently
-  # OVERRIDDEN (the heredoc wins) and `sys.stdin.read()` inside the script would
-  # see EOF, not the JSON — the exact same pattern already used two screens down
-  # in _reconcile_rows() (OC_CRON_RAW env var), applied here for consistency.
+  # SC2259 NOTE: `python3 -` reads its OWN script text from the heredoc below,
+  # so the JSON cannot ride stdin. It travels on fd 3.
   if command -v python3 >/dev/null 2>&1; then
-    OC_CRON_RAW="$raw" python3 - "$name" 2>/dev/null <<'PYEOF'
+    python3 - "$name" 3<<<"$raw" 2>/dev/null <<'PYEOF'
 import json, os, sys
 name = sys.argv[1]
 try:
-    data = json.loads(os.environ.get("OC_CRON_RAW", ""))
+    data = json.loads(os.fdopen(3).read())
     jobs = data if isinstance(data, list) else data["jobs"]
     if not isinstance(jobs, list):
         raise ValueError
@@ -962,14 +957,13 @@ _reconcile_rows() {
   names_csv=$(printf '%s,' "${MANAGED_RECONCILE_CRONS[@]}")
 
   if command -v python3 >/dev/null 2>&1; then
-    # Pass the JSON + the managed-name CSV via the ENVIRONMENT, not stdin.
-    # `python3 - <<'PY'` already consumes stdin to read the PROGRAM, so we must
-    # NOT also pipe the JSON to stdin (that would make python try to execute the
-    # JSON as the program → NameError). Env vars avoid the stdin collision.
-    OC_CRON_RAW="$raw" OC_CRON_NAMES="$names_csv" python3 - <<'PYEOF' 2>/dev/null
+    # JSON and the managed-name CSV travel on fd 3, not in argv/env:
+    # `python3 - <<'PY'` already consumes stdin to read the PROGRAM, and a
+    # large cron document exceeds the platform per-string exec limit.
+    python3 - 3<<<"$raw" 4<<<"$names_csv" 2>/dev/null <<'PYEOF'
 import json, os
-managed = set(x for x in os.environ.get("OC_CRON_NAMES", "").split(",") if x)
-raw = os.environ.get("OC_CRON_RAW", "")
+managed = set(x for x in os.fdopen(4).read().split(",") if x)
+raw = os.fdopen(3).read()
 try:
     data = json.loads(raw)
 except Exception:

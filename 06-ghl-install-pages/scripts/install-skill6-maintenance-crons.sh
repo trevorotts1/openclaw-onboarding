@@ -143,13 +143,13 @@ PYEOF
 fi
 
 # shellcheck disable=SC2086
-_STATUSES="$(OC_CRON_RAW="$_LIST_RAW" OC_FULL_VIS="$_FULL_VIS" python3 - $_JOB_NAMES <<'PYEOF'
+_STATUSES="$(OC_FULL_VIS="$_FULL_VIS" python3 - $_JOB_NAMES 3<<<"$_LIST_RAW" <<'PYEOF'
 import json, os, sys
 input_names = sys.argv[1:]
 if not input_names:
     sys.exit(2)
 try:
-    data = json.loads(os.environ.get("OC_CRON_RAW", ""))
+    data = json.loads(os.fdopen(3).read())
     jobs = data if isinstance(data, list) else (data.get("jobs") or [])
     if not isinstance(jobs, list) or any(not isinstance(j, dict) for j in jobs):
         raise ValueError("unexpected cron list shape")

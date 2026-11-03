@@ -51,9 +51,9 @@ review_counts() {
   local raw
   raw="$(openclaw cron list --all --json 2>/dev/null)" || raw=""
   [ -n "$raw" ] || raw="$(openclaw cron list --json 2>/dev/null)" || raw=""
-  OC_CRON_RAW="$raw" python3 - <<'PYEOF' 2>/dev/null
+  python3 - 3<<<"$raw" <<'PYEOF' 2>/dev/null
 import json, os
-raw = os.environ.get("OC_CRON_RAW", "")
+raw = os.fdopen(3).read()
 try:
     data = json.loads(raw[raw.index("{"):])
 except Exception:

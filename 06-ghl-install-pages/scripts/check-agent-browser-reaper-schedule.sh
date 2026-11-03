@@ -100,11 +100,11 @@ if [[ "$_present_rc" -eq 0 ]]; then
   # Prints "<enabled-flag>\t<schedule>": flag 1=enabled, 0=disabled, ?=unknown.
   parsed=""
   if [[ -n "$raw" ]] && command -v python3 >/dev/null 2>&1; then
-    parsed="$(OC_CRON_RAW="$raw" python3 - "$CRON_NAME" <<'PYEOF' 2>/dev/null
+    parsed="$(python3 - "$CRON_NAME" 3<<<"$raw" <<'PYEOF' 2>/dev/null
 import json, os, sys
 name = sys.argv[1]
 try:
-    data = json.loads(os.environ.get("OC_CRON_RAW", ""))
+    data = json.loads(os.fdopen(3).read())
     jobs = data if isinstance(data, list) else data.get("jobs", [])
     if not isinstance(jobs, list):
         raise ValueError

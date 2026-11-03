@@ -49,11 +49,15 @@ _cron_state() {
   # --all is the whole point: the default listing hides disabled jobs.
   raw="$(openclaw cron list --all --json 2>/dev/null)" || return 2
   [[ -n "$raw" ]] || return 2
-  out="$(OC_CRON_ALL_JSON="$raw" python3 - "$name" <<'PYEOF'
+  # JSON travels on fd 3, never in argv/env: a large `cron list` document
+  # exceeds the platform per-string limit (Linux MAX_ARG_STRLEN = 131072 bytes)
+  # and execve fails with E2BIG ("Argument list too long"). stdin is already
+  # consumed by the heredoc program, so fd 3 is the free channel.
+  out="$(python3 - "$name" 3<<<"$raw" <<'PYEOF'
 import json, os, sys
 name = sys.argv[1]
 try:
-    data = json.loads(os.environ.get("OC_CRON_ALL_JSON", ""))
+    data = json.loads(os.fdopen(3).read())
 except Exception:
     sys.exit(2)
 if isinstance(data, list):

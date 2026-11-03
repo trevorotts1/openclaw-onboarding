@@ -2069,11 +2069,11 @@ cc_watchdog_cron_lookup() {
   raw=$(openclaw cron list --json $list_flags 2>/dev/null) || raw=""
   [[ -n "$raw" ]] || return 1
   command -v python3 >/dev/null 2>&1 || return 1
-  OC_CRON_RAW="$raw" python3 - "$CC_WATCHDOG_CRON_NAME" 2>/dev/null <<'PYWD'
+  python3 - "$CC_WATCHDOG_CRON_NAME" 3<<<"$raw" 2>/dev/null <<'PYWD'
 import json, os, sys
 name = sys.argv[1]
 try:
-    data = json.loads(os.environ.get("OC_CRON_RAW", ""))
+    data = json.loads(os.fdopen(3).read())
 except Exception:
     sys.exit(1)
 jobs = data if isinstance(data, list) else data.get("jobs", [])

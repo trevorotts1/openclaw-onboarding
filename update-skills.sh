@@ -6719,15 +6719,15 @@ except Exception:
       esac
     elif command -v python3 >/dev/null 2>&1; then
       local _wcp_py_rc=0
-      if OC_CRON_RAW="$_wcp_raw" python3 -c '
+      if python3 -c '
 import json, os, sys
 try:
-    data = json.loads(os.environ.get("OC_CRON_RAW", ""))
+    data = json.loads(os.fdopen(3).read())
 except Exception:
     sys.exit(2)
 jobs = data if isinstance(data, list) else data.get("jobs", [])
 sys.exit(0 if any(j.get("name") == "weekly-onboarding-update" for j in jobs) else 1)
-' 2>/dev/null; then
+' 3<<<"$_wcp_raw" 2>/dev/null; then
         _wcp_py_rc=0
       else
         _wcp_py_rc=$?
@@ -11090,10 +11090,10 @@ PY
       case $? in 0) return 0;; 1) return 1;; *) return 2;; esac
     fi
     if command -v python3 >/dev/null 2>&1; then
-      OC_CRON_RAW="$_raw" python3 - "$_name" 2>/dev/null <<'PYEOF'
+      python3 - "$_name" 3<<<"$_raw" 2>/dev/null <<'PYEOF'
 import json, os, sys
 name = sys.argv[1]
-raw = os.environ.get("OC_CRON_RAW", "")
+raw = os.fdopen(3).read()
 try:
     data = json.loads(raw)
 except Exception:
@@ -11227,9 +11227,9 @@ PYEOF
       if command -v python3 >/dev/null 2>&1; then
         _OC_RAW_JSON=$(openclaw cron list --json 2>/dev/null) || _OC_RAW_JSON=""
         if [ -n "$_OC_RAW_JSON" ] && \
-           OC_CRON_JSON="$_OC_RAW_JSON" python3 - <<'PYEOF' 2>/dev/null
+           python3 - 3<<<"$_OC_RAW_JSON" <<'PYEOF' 2>/dev/null
 import json, os, sys
-raw = os.environ.get('OC_CRON_JSON', '')
+raw = os.fdopen(3).read()
 try:
     data = json.loads(raw)
 except Exception:
@@ -11259,9 +11259,9 @@ PYEOF
         _WOU_JOB_ID=""
         _WOU_JOB_KIND=""
         if [ -n "${_OC_RAW_JSON:-}" ] && command -v python3 >/dev/null 2>&1; then
-          _WOU_ID_KIND=$(OC_CRON_JSON="$_OC_RAW_JSON" python3 - <<'PYEOF' 2>/dev/null
+          _WOU_ID_KIND=$(python3 - 3<<<"$_OC_RAW_JSON" <<'PYEOF' 2>/dev/null
 import json, os
-raw = os.environ.get('OC_CRON_JSON', '')
+raw = os.fdopen(3).read()
 try:
     data = json.loads(raw)
 except Exception:

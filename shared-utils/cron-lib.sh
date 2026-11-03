@@ -140,15 +140,15 @@ oc_cron_present() {
   fi
 
   if command -v python3 >/dev/null 2>&1; then
-    # NOTE: JSON is passed via env var, not a pipe — `python3 -` already reads
-    # its OWN script text from stdin via the heredoc below, so a pipe feeding
-    # the SAME stdin would be silently overridden (shellcheck SC2259) and
-    # `sys.stdin.read()` inside the script would see EOF, not the JSON.
-    OC_CRON_RAW="$raw" python3 - "$name" 2>/dev/null <<'PYEOF'
+    # NOTE: JSON travels on fd 3, not in an env var or a pipe — `python3 -`
+    # already reads its OWN script text from stdin via the heredoc below
+    # (shellcheck SC2259), and a large cron document exceeds the platform
+    # per-string exec limit when passed through argv/env.
+    python3 - "$name" 3<<<"$raw" 2>/dev/null <<'PYEOF'
 import json, os, sys
 name = sys.argv[1]
 try:
-    data = json.loads(os.environ.get("OC_CRON_RAW", ""))
+    data = json.loads(os.fdopen(3).read())
     jobs = data if isinstance(data, list) else data["jobs"]
     if not isinstance(jobs, list):
         raise ValueError
@@ -294,9 +294,9 @@ OC_BOX_UPDATE_RM_DELAY="${OC_BOX_UPDATE_RM_DELAY:-10}"
 _oc_box_update_job_ids() {
   local raw
   raw="$(openclaw cron list --json 2>/dev/null)" || return 1
-  OC_CRON_JSON="$raw" python3 - "$OC_BOX_UPDATE_CRON_NAME" <<'PYEOF' 2>/dev/null
+  python3 - "$OC_BOX_UPDATE_CRON_NAME" 3<<<"$raw" <<'PYEOF' 2>/dev/null
 import json, os, sys
-raw = os.environ.get("OC_CRON_JSON", "")
+raw = os.fdopen(3).read()
 data = json.loads(raw[min([i for i in (raw.find("{"), raw.find("[")) if i >= 0] or [0]):])
 for j in (data if isinstance(data, list) else data.get("jobs", [])):
     if j.get("name") == sys.argv[1] and j.get("id"):
@@ -332,10 +332,10 @@ oc_box_update_cron_ensure() {
   openclaw cron add --help 2>&1 | grep -qE '^[[:space:]]*--command[[:space:]<]' || return 1
   local raw state keep old
   raw="$(openclaw cron list --json 2>/dev/null)" || return 2
-  state="$(OC_CRON_JSON="$raw" python3 - "$OC_BOX_UPDATE_CRON_NAME" "$OC_BOX_UPDATE_SCHEDULE" "$OC_BOX_UPDATE_TZ" "$OC_BOX_UPDATE_COMMAND" <<'PYEOF' 2>/dev/null
+  state="$(python3 - "$OC_BOX_UPDATE_CRON_NAME" "$OC_BOX_UPDATE_SCHEDULE" "$OC_BOX_UPDATE_TZ" "$OC_BOX_UPDATE_COMMAND" 3<<<"$raw" <<'PYEOF' 2>/dev/null
 import json, os, sys
 name, expr, tz, cmd = sys.argv[1:5]
-raw = os.environ.get("OC_CRON_JSON", "")
+raw = os.fdopen(3).read()
 try:
     data = json.loads(raw[min([i for i in (raw.find("{"), raw.find("[")) if i >= 0] or [0]):])
 except Exception:
