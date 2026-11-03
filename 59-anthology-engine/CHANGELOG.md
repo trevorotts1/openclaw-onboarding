@@ -1,3 +1,12 @@
+### v1.0.19 -- REQUIRED-tier fallback resolves the client's own mappable models (2026-11-03)
+
+- **Fix (preflight.sh RESOLVE failed closed on a client whose own ids match no purpose chain).** When none of the client's configured ids matched a select_model chain for a REQUIRED tier, the fallback took ONE deterministic pick (`sorted(inventory)[0]`); if that id's provider was one `to_link()` cannot carry, the whole resolve exited 2 `AF-AE-UNRESOLVED-MODELMAP` even though other configured ids WOULD map. `client_best()` now returns the first sorted id whose provider `to_link()` can carry (the original pick stays as the last resort, so an all-unmappable inventory still fails closed).
+- **Fix (JUDGE independence on the repaired fallback).** With one mappable model the REQUIRED tiers all landed on it, so the judge pass failed closed `AF-AE-JUDGE-INDEPENDENCE`. When no standing judge rung is both configured and keyed, JUDGE now takes a DIFFERENT one of the client's OWN mappable models; the four standing rungs are unchanged and still first, and only the client's own inventory may fill the tier.
+- **Fix (the Agnes judge rung was unroutable).** `scripts/model_router.py` carries no agnes default base URL, so the rung-4 link raised "no base url resolvable" and the router advanced to the writer's own model -- a preflight PASS that failed mid-run at S9. The Agnes rung now carries the fleet's canonical Agnes base URL on the link (the router already honours a link-level `baseUrl`); no router table changed.
+- **Tests.** `tests/test_model_map_resolution.py` gains a keyless and a keyed positive case for a four-id chainless-but-mappable client (each asserting every REQUIRED primary is one of the client's OWN ids, HEAVY-WRITER and JUDGE stay independent, and every emitted link is router-routable), plus a negative control that an all-unmappable inventory still exits 2 with no map in both key states. Provider key variables are scrubbed from the child env so a developer's own keys cannot change the result.
+- ENGINE-MANIFEST.json is in the ENGINE-PIN set, so ENGINE-PIN.sha256 was restamped with `verify.sh stamp-pin`.
+- skill-version v1.0.18 -> v1.0.19.
+
 ### v1.0.16 -- model doctrine cleanup: client choice or configured default (2026-10-13)
 
 - INSTALL.md owner_pins example and the producer orchestrator role no longer pin named models: each role resolves to the model the client selected, or the client's configured default model, recorded in model-map.json; when neither exists the run stops and asks the client.

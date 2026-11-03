@@ -162,9 +162,17 @@ pins_of() { python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.arg
 WANT_PINS="$(python3 -c 'import json,sys; print(json.dumps({"HEAVY-WRITER":sys.argv[1],"JUDGE":sys.argv[2]}, sort_keys=True))' "$HW" "$JG")"
 
 # --- 3. control: no pins -> judge collapse fails closed ------------------------
+# The control client carries exactly ONE mappable model. A client with a SECOND
+# mappable model now resolves JUDGE onto it with no pin needed (the resolver takes
+# a different one of the client's OWN models), so the two-model fixture above no
+# longer needs a pin to keep JUDGE independent. The one-model shape is the one that
+# still dies on the collapse, which is what keeps this a real control.
 hdr "control: the same client with NO pins fails closed"
 BOX0="$WORK/box0"; new_box "$BOX0"
-out="$(bash "$BOX0/skills/$SKILL/preflight.sh" 2>&1)"; rc=$?
+cat > "$WORK/control-openclaw.json" <<EOF
+{"agents":{"defaults":{"model":"$HW"},"list":[]},"models":{"list":[]}}
+EOF
+out="$(OPENCLAW_CONFIG="$WORK/control-openclaw.json" bash "$BOX0/skills/$SKILL/preflight.sh" 2>&1)"; rc=$?
 if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'AF-AE-JUDGE-INDEPENDENCE'; then
   ok "unpinned re-resolve fails closed on AF-AE-JUDGE-INDEPENDENCE (rc=$rc)"
 else

@@ -389,6 +389,114 @@ def test_unreadable_existing_map_still_self_heals_with_a_warning():
     assert "owner_pins" not in mm
 
 
+# ISSUE-09: a client whose own ids match NO select_model purpose chain -- a
+# suffixed DeepSeek build, an OpenRouter-namespaced minimax, an nvidia VL id and an
+# agnes id. The REQUIRED-tier fallback used to take ONE sorted pick
+# (sorted(inventory)[0] -> the agnes id), which to_link() cannot carry, so the whole
+# resolve exited 2 AF-AE-UNRESOLVED-MODELMAP although three ids WOULD map.
+FOUR_ID_CFG = {
+    "agents": {"defaults": {}, "list": []},
+    "models": {"list": [
+        {"id": "openrouter/nvidia/nemotron-3.5-super-vl"},
+        {"id": "openrouter/deepseek/deepseek-v4.1-flash-1017"},
+        {"id": "openrouter/minimax/minimax-m3.1-flash"},
+        {"id": "agnes/agnes-3.0-flash"},
+    ]},
+}
+# Every id namespaces to a provider to_link() cannot carry: fail closed, never a
+# substituted default, whether or not an Agnes key is present.
+ALL_UNMAPPABLE_CFG = {
+    "agents": {"defaults": {}, "list": []},
+    "models": {"list": [{"id": "agnes/agnes-3.0-flash"}]},
+}
+_ALL_PROVIDER_KEYS = (
+    "OLLAMA_API_KEY", "OLLAMA_CLOUD_API_KEY", "OPENROUTER_API_KEY", "GOOGLE_API_KEY",
+    "GEMINI_API_KEY", "MINIMAX_API_KEY", "DEEPSEEK_API_KEY", "KIMI_API_KEY",
+    "MOONSHOT_API_KEY", "AGNES_API_KEY", "AGNES_AI_API_KEY", "AGNES_KEY", "KIE_API_KEY",
+)
+
+def _resolve_isolated(cfg_obj, keys=()):
+    """Resolve with EXACTLY `keys` set. Every provider/KIE key variable is scrubbed
+    from the child env and HOME is redirected into the temp dir, so a developer's own
+    keys can never change the result. Values are placeholders; presence only."""
+    td = tempfile.mkdtemp(prefix="mmiso_")
+    cfg_path = Path(td) / "openclaw.json"
+    cfg_path.write_text(json.dumps(cfg_obj), encoding="utf-8")
+    run_dir = Path(td) / "run"
+    run_dir.mkdir()
+    env = {k: v for k, v in os.environ.items() if k not in _ALL_PROVIDER_KEYS}
+    env["HOME"] = td
+    env["OPENCLAW_CONFIG"] = str(cfg_path)
+    env["KIE_API_KEY"] = _KIE_DUMMY
+    for k in keys:
+        env[k] = "dummy-not-a-real-secret"
+    proc = subprocess.run(["bash", str(PREFLIGHT), "--run-dir", str(run_dir)],
+                          capture_output=True, text=True, timeout=90, env=env)
+    return proc.returncode, run_dir, proc
+
+def _assert_own_models_and_routable(cfg_obj, tiers):
+    """Every REQUIRED-tier primary names one of the CLIENT's OWN ids, HEAVY-WRITER
+    and JUDGE stay independent, and every emitted link is router-routable."""
+    native = {m["id"].split("/", 1)[1] for m in cfg_obj["models"]["list"]}
+    for t in ("HEAVY-WRITER", "LIGHT", "JUDGE"):
+        assert t in tiers, "required tier %s missing" % t
+        primary = tiers[t]["chain"][0]
+        assert primary["model"] in native, \
+            "%s primary %r is not one of the client's OWN models %s" % (t, primary["model"], sorted(native))
+    hw = tiers["HEAVY-WRITER"]["chain"][0]
+    jg = tiers["JUDGE"]["chain"][0]
+    assert (hw["provider"], hw["model"]) != (jg["provider"], jg["model"]), \
+        "JUDGE resolved to the same model as HEAVY-WRITER: %s" % jg
+
+    sys.path.insert(0, str(SCRIPTS))
+    import model_router as mr  # noqa: E402
+    for t in ("HEAVY-WRITER", "LIGHT", "JUDGE"):
+        for link in tiers[t]["chain"]:
+            if str(link.get("provider", "")).upper() == "HOLD":
+                continue  # durable HOLD sentinel terminus, not a routable model
+            assert mr._base_url(link, link["provider"]), \
+                "%s link %s/%s has no resolvable base url" % (t, link["provider"], link["model"])
+            req = mr.build_chat_request(link, link["provider"], link["model"], [], {},
+                                        "dummy-not-a-real-secret", mr.encode_parameters)
+            assert req.url.endswith("/chat/completions"), req.url
+
+def test_chainless_but_mappable_client_models_resolve_keyless():
+    # The fallback must land on a mappable one of the client's OWN models and keep
+    # JUDGE independent using that client's OTHER mappable models -- with no Agnes
+    # key present (the standing judge rungs are all unconfigured/unkeyed here).
+    rc, run_dir, proc = _resolve_isolated(FOUR_ID_CFG)
+    assert rc == 0, "four-id client must resolve with no provider key:\n%s\n%s" \
+        % (proc.stdout, proc.stderr)
+    mm = json.loads((run_dir / "model-map.json").read_text(encoding="utf-8"))
+    _assert_own_models_and_routable(FOUR_ID_CFG, mm["tiers"])
+    assert mm["tiers"]["JUDGE"]["chain"][0]["provider"] == "openrouter", \
+        "keyless JUDGE must take another client-owned OpenRouter model, got %s" \
+        % mm["tiers"]["JUDGE"]["chain"][0]
+
+def test_chainless_but_mappable_client_models_resolve_with_agnes_key():
+    # With an Agnes key the standing rung 4 wins, and its link must carry the
+    # canonical Agnes baseUrl so the router can actually reach it (no false pass).
+    rc, run_dir, proc = _resolve_isolated(FOUR_ID_CFG, keys=("AGNES_API_KEY",))
+    assert rc == 0, "four-id client must resolve with an Agnes key:\n%s\n%s" \
+        % (proc.stdout, proc.stderr)
+    mm = json.loads((run_dir / "model-map.json").read_text(encoding="utf-8"))
+    _assert_own_models_and_routable(FOUR_ID_CFG, mm["tiers"])
+    jg = mm["tiers"]["JUDGE"]["chain"][0]
+    assert jg["provider"] == "agnes" and jg.get("baseUrl") == "https://apihub.agnes-ai.com/v1", \
+        "the Agnes judge rung must carry the canonical baseUrl, got %s" % jg
+
+def test_all_unmappable_inventory_still_fails_closed():
+    # Negative control: an inventory whose only id no anthology link can carry must
+    # still exit 2 with no map written -- never a substituted default -- in BOTH key
+    # states. This is the guard that keeps the fallback repair from inventing a model.
+    for keys in ((), ("AGNES_API_KEY",)):
+        rc, run_dir, proc = _resolve_isolated(ALL_UNMAPPABLE_CFG, keys=keys)
+        assert rc == 2, "all-unmappable inventory must fail closed (exit 2), got %d (keys=%s):\n%s" \
+            % (rc, keys, proc.stderr)
+        assert "AF-AE-UNRESOLVED-MODELMAP" in proc.stderr, proc.stderr
+        assert not (run_dir / "model-map.json").is_file(), \
+            "fail-closed must NOT write a map (keys=%s)" % (keys,)
+
 def _run_all():
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     failed = 0

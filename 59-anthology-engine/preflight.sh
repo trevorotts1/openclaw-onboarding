@@ -335,6 +335,13 @@ def client_best():
         got = ordered_for_purpose(p)
         if got:
             return got[0]
+    # No purpose chain matched: prefer the first sorted id whose provider to_link
+    # can carry, so the REQUIRED-tier fallback resolves to a model the router can
+    # actually route. An all-unmappable inventory still falls through to the
+    # deterministic pick and fails closed downstream (never a substituted default).
+    for fid in sorted(inventory):
+        if to_link(fid):
+            return fid
     return sorted(inventory)[0]
 
 
@@ -344,6 +351,7 @@ REQUIRED = {"HEAVY-WRITER", "LIGHT", "JUDGE", "IMAGE"}
 resolved_tiers = {}
 unresolved_required = []
 unresolved_optional = []
+fallback_tiers = set()
 
 for name, t in tiers_tmpl.items():
     if name == "IMAGE":
@@ -391,6 +399,7 @@ for name, t in tiers_tmpl.items():
     ordered = ordered_for_purpose(purpose, context)
     if name in REQUIRED and not ordered:
         ordered = [client_best()]
+        fallback_tiers.add(name)
 
     links, seen = [], set()
     for fid in ordered:
@@ -597,6 +606,11 @@ def judge_fallback_link(exclude_ids=frozenset()):
         else:
             _link = {"provider": _prov, "model": _mid.split("/", 1)[1] if "/" in _mid else _mid,
                      "credential_label": _labels[0], "slotting": "apiKey"}
+            if _prov == "agnes":
+                # model_router.py has no agnes default base URL, so carry the
+                # fleet's canonical Agnes surface on the link (the router honours
+                # a link-level baseUrl) -- otherwise this rung is unroutable.
+                _link["baseUrl"] = "https://apihub.agnes-ai.com/v1"
         if _link_identity(_link) in exclude_ids:
             continue  # this rung IS (or normalizes to) the writer; keep walking
         return _link
@@ -621,10 +635,22 @@ _hw_ids = {_link_identity(l) for l in _hw_chain_all}
 # above), so the judge-fallback pass only auto-repairs the AUTO-resolved case.
 # A pin that collapses JUDGE onto HEAVY-WRITER still fails closed below.
 _jg_pinned = any(str(_r).strip().upper() == "JUDGE" for _r in owner_pins)
+_hw_pinned = any(str(_r).strip().upper() == "HEAVY-WRITER" for _r in owner_pins)
 if _hw_chain_all and _jg_chain_all and not _jg_pinned:
     _hw0, _jg0 = _hw_chain_all[0], _jg_chain_all[0]
     if _link_identity(_hw0) == _link_identity(_jg0):
         _fb = judge_fallback_link(exclude_ids=_hw_ids)
+        if _fb is None and ("HEAVY-WRITER" in fallback_tiers or _hw_pinned):
+            # No standing rung is both configured and keyed, and the collision came
+            # from the single-pick REQUIRED fallback or from an honored HEAVY-WRITER
+            # owner pin: keep JUDGE independent by taking a DIFFERENT one of the
+            # CLIENT's OWN mappable models. (A chain-resolved HEAVY-WRITER on an
+            # unpinned box keeps the original fail-closed contract.)
+            for _fid in sorted(inventory):
+                _cand = to_link(_fid)
+                if _cand and _link_identity(_cand) not in _hw_ids:
+                    _fb = _cand
+                    break
         if _fb is not None:
             _jg_chain_all[:] = [_fb] + [l for l in _jg_chain_all
                                         if _link_identity(l) != _link_identity(_fb)]
