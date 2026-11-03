@@ -1,5 +1,19 @@
 # Changelog — Social Media in a Box (Skill 57)
 
+## v1.8.1 - 2026-11-03 - prompt 17 re-pinned and the six golden certificates re-minted
+
+- The Fish-Audio `drama-3` change edited `prompts/17-podcast-script-writer.md` without
+  recomputing `PROMPT-HASHES.json`, so 1 of the 19 shipped prompts drifted from the pin.
+  verify.sh step 6/7 failed, and the runtime P6-MANIFEST gate tripped
+  `AF-SM-PROMPT-HASH`, which fail-closed `build_manifest.py` -> no signed
+  PROCESS-CERTIFICATE -> every golden mode reported "run did not pass through the entry".
+- `PROMPT-HASHES.json` now pins prompt 17's committed bytes
+  (`15268da5c7deacc93df802a7af443763e1f533ae18122ff4a7c3e7e62c3eb389`). Because
+  `certificate_sha` binds the shipped prompt hashes, the committed
+  `PROCESS-CERTIFICATE.{json,md}` of all six certificate-minting goldens were re-minted
+  from a real test-posture run; every other certificate field is unchanged.
+- The skill-version had already moved to v1.8.0 without a changelog entry.
+
 ## v1.7.12 - 2026-10-29 - fix: verify.sh runs the goldens in the skill's test posture (Big Fleet Roll row 22)
 
 - Defect: `verify.sh` ran every golden through `social-media-entry.sh` with no test posture, so the entry stamped `production` and the orchestrator correctly refused the golden configs' offline `probes` block at P0 with `AF-SM-EXEC-MODE: probes present in a production configuration (ghlTokenValid, kieCredits, openrouterBalance)`. All seven golden checks (golden-week, newsletter, blog, podcast, twitter, engage, golden-creative) failed on every box, not just the one that reported it.

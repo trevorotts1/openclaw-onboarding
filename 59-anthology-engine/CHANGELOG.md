@@ -1,3 +1,8 @@
+### v1.0.19 -- version surfaces resynced (2026-11-03)
+
+- ENGINE-MANIFEST.json `skill_version` still read v1.0.16 while skill-version.txt and SKILL.md had moved to v1.0.18, so verify.sh reported a version mismatch on a pristine tree.
+- All three surfaces now read v1.0.19 and ENGINE-PIN.sha256 is restamped with `verify.sh stamp-pin` (the manifest is in the ENGINE-PIN set). No v1.0.17/v1.0.18 changelog entries were ever written; this entry records the resync only.
+
 ### v1.0.16 -- model doctrine cleanup: client choice or configured default (2026-10-13)
 
 - INSTALL.md owner_pins example and the producer orchestrator role no longer pin named models: each role resolves to the model the client selected, or the client's configured default model, recorded in model-map.json; when neither exists the run stops and asks the client.

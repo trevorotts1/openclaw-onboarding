@@ -1,5 +1,14 @@
 # Changelog — Anthology Writer (Skill 54)
 
+## v2.0.7 - 2026-11-03 - version surfaces resynced
+
+- A later change raised skill-version.txt and SKILL.md to v2.0.6 but left
+  ANTHOLOGY-MANIFEST.json `skill_version` and the top CHANGELOG entry at v2.0.5,
+  so verify.sh's version-consistency gate failed on a pristine tree even though
+  nothing was edited locally.
+- All four surfaces (ANTHOLOGY-MANIFEST.json, skill-version.txt, SKILL.md,
+  this changelog) now read v2.0.7 and the gate passes.
+
 ## v2.0.5 - 2026-10-14 - stamp-pin subcommand + pin/version reconciliation
 
 - verify.sh gained a `stamp-pin` subcommand that recomputes ENGINE-PIN.sha256 over

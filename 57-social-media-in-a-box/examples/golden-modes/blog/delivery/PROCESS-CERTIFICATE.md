@@ -11,6 +11,6 @@
 - **Client-copy verbatim OK:** True
 - **Creative (frame proven, picture free):** mode=None theme_source=None persona=config em_dash=ban-all series_len=7 arc=tv-season
 - **Models used:** google/gemini-2.0-flash-001, meta-llama/llama-3.1-70b-instruct
-- **Certificate SHA:** `c24d651b95a87a35a253ad4e46af8cd3194889aaa40b6bf33d91abb3553c8d97`
+- **Certificate SHA:** `6a07191ee3d3e51c507555c77e338777629624b000152754a90143f3f0942dd0`
 
 Issued by `build_manifest.py`. The publisher (P7) refuses to run without this certificate. Client runtime uses the client's OWN provider chain. `done` is claimed only from this certificate plus a live GHL post-listing verify.

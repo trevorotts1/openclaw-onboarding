@@ -101,15 +101,12 @@ case this file, which weakens the gate for every other file in the repo. Neither
 trade is worth taking for a fixture.
 
 The Anthropic-family P1 escalation path (S1/S2's "family or paid id on a client box
-escalates to P1") is instead exercised by the sentinel's OWN in-code self-test, which
-assembles the banned token from fragments AT RUNTIME (the same convention
-`guard-no-anthropic-runtime.py` and `model_router.py` already use for their own
-source) so the banned literal never ships as committed data anywhere in this repo,
-including here. Run that self-test with each sentinel script's own `--self-test`
-flag (see `HOW-TO-USE.md`'s `verify` verb); it is the authoritative proof that the
-Anthropic-family branch of S1/S2 actually fires, and it is a stronger proof than a
-static fixture would have been, because it also proves the runtime assembly itself
-still resolves to a real deny hit and not a typo.
+escalates to P1") is RETIRED: `config/signatures.json` ships
+`anthropic_family_deny_prefixes` EMPTY (no Anthropic rule since the 2026-10-29
+order), so the family axis classifies nothing and the sentinel's in-code self-test
+now asserts exactly that (a would-be family id comes back `family: False`). The paid
+half of the same escalation is still exercised by the self-test. Run it with each
+sentinel script's own `--self-test` flag (see `HOW-TO-USE.md`'s `verify` verb).
 
 ## Parsing and scanning
 

@@ -51,7 +51,7 @@ import ews_common as C
 import ews_baseline as B
 import ews_sentinel as S
 import ews_alert as A
-from ews_ledger import Ledger, now_utc
+from ews_ledger import Ledger
 import ews_snapshot as SNAP
 import ews_revert as REV
 import ews_fleet as FLEET
@@ -196,9 +196,13 @@ with tempfile.TemporaryDirectory() as td:
 with tempfile.TemporaryDirectory() as td:
     os.environ["EWS_FLEET_DIR"] = os.path.join(td, "ews-fleet")
     os.environ["EWS_STATE_DIR"] = os.path.join(td, "ews")
-    FLEET.cmd_ingest("drill-box-example", {"last_tick_ts": now_utc(), "by_severity": {}})
+    # RR-016: health is decided from the TICK's age, never from collection time, so a
+    # dark box is one whose tick is older than the dead-man horizon
+    # (dead_man_cycles * cycle_minutes = 2 * 60 min). Ingest an ancient tick; a fresh
+    # one would (correctly) stay HEALTHY and this drill could never pass.
+    FLEET.cmd_ingest("drill-box-example", {"last_tick_ts": "2000-01-01T00:00:00+00:00", "by_severity": {}})
     FLEET.cmd_cycle(dry_run=True)  # cycle 1
-    res = FLEET.cmd_cycle(dry_run=True)  # cycle 2 -> silent since ingest at cycle 0
+    res = FLEET.cmd_cycle(dry_run=True)  # cycle 2 -> still silent since ingest
     check("D-DEADMAN box silent 2 cycles = sentinel dark",
           "drill-box-example" in res["sentinel_dark"])
     os.environ.pop("EWS_FLEET_DIR", None)

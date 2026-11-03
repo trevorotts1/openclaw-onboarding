@@ -43,7 +43,7 @@
       "citations": [
         {
           "file": "35-social-media-planner/CHANGELOG.md",
-          "line": 194,
+          "line": 595,
           "must_contain": "funnel_matcher.py --match"
         }
       ]
@@ -70,7 +70,7 @@
       "citations": [
         {
           "file": "38-conversational-ai-system/SKILL.md",
-          "line": 35,
+          "line": 57,
           "must_contain": "Skill 38 OWNS every inbound conversation those CTAs generate; Skill 35 never answers a conversation itself."
         }
       ]
@@ -82,7 +82,7 @@
       "citations": [
         {
           "file": "35-social-media-planner/SKILL.md",
-          "line": 133,
+          "line": 135,
           "must_contain": "Skill 38 owns the conversations these CTAs generate"
         }
       ]
@@ -94,7 +94,7 @@
       "citations": [
         {
           "file": "38-conversational-ai-system/SKILL.md",
-          "line": 33,
+          "line": 55,
           "must_contain": "workflow BUILDS route through Skill 44"
         },
         {
@@ -111,7 +111,7 @@
       "citations": [
         {
           "file": "06-ghl-install-pages/SKILL.md",
-          "line": 105,
+          "line": 124,
           "must_contain": "Full-Funnel Pipeline Integration (Skill 44 seam)"
         }
       ]
@@ -170,7 +170,7 @@
       "citations": [
         {
           "file": "35-social-media-planner/INSTRUCTIONS.md",
-          "line": 120,
+          "line": 122,
           "must_contain": "Graphics department"
         }
       ]

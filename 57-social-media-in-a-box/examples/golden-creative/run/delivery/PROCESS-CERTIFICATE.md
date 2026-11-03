@@ -12,6 +12,6 @@
 - **Creative (frame proven, picture free):** mode=brief theme_source=wildcard persona=config em_dash=allow-content series_len=5 arc=custom
 - **Models used:** google/gemini-2.0-flash-001, meta-llama/llama-3.1-70b-instruct, google/gemini-2.0-flash-001, gemini-2.0-flash, gpt-image-2-5-sunburst-text-to-image
 - **Labeled deliverables dest root:** `~/Downloads/Social-Media-in-a-Box/northwind-bakehouse/2026-W28`
-- **Certificate SHA:** `143a28b15840edfb1420dd77f903c1b0e7a23be3981d9c3c8077c5f3480905ea`
+- **Certificate SHA:** `c762d918607f4945209a0269fb42a10761806c1eaac92e9171f8f80d1a5087e2`
 
 Issued by `build_manifest.py`. The publisher (P7) refuses to run without this certificate. Client runtime uses the client's OWN provider chain. `done` is claimed only from this certificate plus a live GHL post-listing verify.

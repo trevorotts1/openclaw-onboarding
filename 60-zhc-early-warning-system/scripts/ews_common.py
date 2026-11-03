@@ -324,8 +324,8 @@ def load_signatures() -> dict:
 
 def model_id_flags(model_id, signatures=None) -> dict:
     """Classify a model/provider id string. Returns {'family','paid','metered'} bools.
-    'family' = starts with one of the Anthropic-family deny prefixes (client skills
-    never use Anthropic models). 'paid' = carries any billable-tier marker (a :cloud
+    'family' = starts with one of the Anthropic-family deny prefixes (that list
+    SHIPS EMPTY since the 2026-10-29 order, so the axis classifies nothing). 'paid' = carries any billable-tier marker (a :cloud
     suffix or a metered provider slug); S5 uses it because a furnace wastes tokens in
     EVERY billing model. 'metered' = a metered provider slug only (pay-per-token): the
     only tier S1/S2 raise to P1 on a client box, because a subscription (Ollama Cloud,
@@ -465,7 +465,9 @@ def self_test():
     # carries NO contiguous banned literal - the guard-no-anthropic scanner proves it)
     fam_id = ("clau" + "de") + "-3-opus"
     paid_id = "minimax-m3:cloud"
-    assert model_id_flags(fam_id)["family"] is True
+    # The shipped deny list is EMPTY (no Anthropic rule since the 2026-10-29 order),
+    # so the family axis classifies nothing: a would-be family id comes back False.
+    assert model_id_flags(fam_id)["family"] is False
     assert model_id_flags("glm-5.2")["family"] is False
     assert model_id_flags(paid_id)["paid"] is True
     assert model_id_flags("openrouter/glm-5.2")["paid"] is True  # metered slug

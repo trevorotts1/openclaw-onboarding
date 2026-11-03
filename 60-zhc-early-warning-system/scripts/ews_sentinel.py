@@ -873,10 +873,12 @@ def self_test():
     diffs_model = [{"path": "agents.defaults.model.primary", "class": "model", "changed": True,
                     "direction": "change", "dangerous": False, "live_value": fam_id}]
     f1 = sig_s1(diffs_model, "client", sig)
-    assert len(f1) == 1 and f1[0]["severity"] == "P1"
+    # The shipped deny list is EMPTY (no Anthropic rule since the 2026-10-29 order), so a
+    # would-be family id is an ordinary model change on a client box: P2, never a P1.
+    assert len(f1) == 1 and f1[0]["severity"] == "P2"
     f1b = sig_s1([{**diffs_model[0], "live_value": "glm-5.2"}], "client", sig)
     assert f1b[0]["severity"] == "P2"
-    print("  S1 case: PASS (family on client=P1, benign=P2)")
+    print("  S1 case: PASS (family list empty -> no P1 escalation; benign=P2)")
     # D11: Ollama Cloud (:cloud, subscription) fallback is NOT a paid-tier P1; metered openrouter still is
     f1c = sig_s1([{**diffs_model[0], "live_value": ["glm-5.2", "ollama-cloud/glm-5.3:cloud"]}], "client", sig)
     assert f1c[0]["severity"] == "P2" and "paid" not in f1c[0]["detail"], f1c
@@ -1050,12 +1052,14 @@ def self_test():
     events = [{"modelId": "glm-5.2", "provider": "openrouter", "sessionId": "s1"},
               {"modelId": fam_id, "provider": "openrouter", "sessionId": "s2"}]
     f2 = sig_s2(["glm-5.2"], events, "client", sig)
-    assert f2 and f2[0]["severity"] == "P1"
+    # The deny list is empty and the id carries no metered slug, so this is a plain
+    # out-of-allowlist P2 on a client box: the family escalation is retired.
+    assert f2 and f2[0]["severity"] == "P2"
     # 3+ out-of-allowlist non-family -> provider down P1
     many = [{"modelId": "x-%d" % i, "sessionId": "s"} for i in range(3)]
     f2b = sig_s2(["glm-5.2"], many, "operator", sig)
     assert f2b and f2b[0]["severity"] == "P1" and "provider likely down" in f2b[0]["detail"]
-    print("  S2 case: PASS (family fallback on client=P1; 3+ fallbacks=provider-down P1)")
+    print("  S2 case: PASS (out-of-allowlist on client=P2; 3+ fallbacks=provider-down P1)")
 
     # S5 furnace: idle burn with billing framing
     paid_ev = [{"modelId": "minimax-m3:cloud", "sessionId": "s"}]

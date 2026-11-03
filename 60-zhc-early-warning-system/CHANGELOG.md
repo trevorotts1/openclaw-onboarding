@@ -3,6 +3,27 @@
 All notable changes to this skill. Dates are UTC. This skill's version lives in
 `skill-version.txt` and the SKILL.md frontmatter `version:` field, kept in lockstep.
 
+## [1.2.5] - 2026-11-03
+
+Self-test follows the shipped signatures data (no Anthropic rule since the 2026-10-29 order).
+
+- `config/signatures.json` ships `anthropic_family_deny_prefixes` EMPTY, but the
+  self-tests still asserted that an Anthropic-family id classified as
+  `family: True` / escalated S1 and S2 to P1 on a client box, so `--self-test`
+  could never pass again. Those assertions now assert the shipped semantics
+  (`family: False`; a would-be family id is a plain P2 model change, and an
+  out-of-allowlist id on a client box without a metered slug is a P2); the
+  paid/metered assertions are unchanged. The deny list stays empty - it is not
+  restored here.
+- `tests/fixtures/README.md` updated to say the family P1 escalation is retired
+  and the self-test proves that, instead of claiming it proves the branch fires.
+- `verify.sh`'s D-DEADMAN drill ingested a FRESH tick (`now_utc()`) and then
+  expected the box to read as sentinel-dark. Since RR-016 decides health from the
+  tick's age (never collection time), a fresh tick is HEALTHY and the drill could
+  not pass on any tree. The drill now ingests a tick older than the dead-man
+  horizon, matching the engine's own dead-man self-test, and still asserts dark
+  after two cycles.
+
 ## [1.2.3] - 2026-10-12
 
 D11: no more permanent false alarms from Ollama Cloud or from a box with no tunnel.
