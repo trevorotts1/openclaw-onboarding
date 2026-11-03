@@ -19,10 +19,10 @@ sys.path.insert(0, str(SKILL_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from launcher_core import checks, intake, package, route  # noqa: E402
-from launcher_core.constants import REPO_ROOT  # noqa: E402
+from launcher_core.constants import REPO_ROOT, skill_path  # noqa: E402
 from test_launcher_core import base_intake, make_pieces, stub_council  # noqa: E402
 
-FIXTURE = REPO_ROOT / "81-signature-downsell" / "fixtures" / "valid-downsell-page.json"
+FIXTURE = skill_path("signature-downsell", "fixtures", "valid-downsell-page.json")
 
 
 class RepoFixtureNeverInPackageTests(unittest.TestCase):
@@ -45,7 +45,8 @@ class RepoFixtureNeverInPackageTests(unittest.TestCase):
         self.assertEqual(len(paths), 2)
         for rel in paths:
             self.assertTrue((self.run_dir / rel).is_file(), rel)
-            for repo_part in ("81-signature-downsell", "fixtures", REPO_ROOT.name):
+            for repo_part in {FIXTURE.parent.parent.name, FIXTURE.resolve().parent.parent.name,
+                              "fixtures", REPO_ROOT.name}:
                 self.assertNotIn(repo_part, Path(rel).parts, rel)
         self.assertEqual(checks.check_package(self.run_dir / "package-manifest.json", self.run_dir), [])
 

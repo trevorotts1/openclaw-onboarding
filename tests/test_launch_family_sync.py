@@ -121,14 +121,33 @@ def test_parity_fails_when_999_loses_a_declared_999_only_file(tmp_path):
     assert any(f"nine_only_missing: {victim}" in f for f in report["failures"])
 
 
-def test_parity_fails_when_divergent_file_lacks_its_seam_tokens(tmp_path):
+ONB_CLI = "83-black-friday-launcher/launcher_core/cli.py"
+NINE_CLI = ".claude/skills/black-friday-launcher/launcher_core/cli.py"
+NINE_ROUTE = ".claude/skills/black-friday-launcher/launcher_core/route.py"
+
+
+def test_parity_fails_when_divergent_file_lacks_its_seam_tokens(tmp_path, monkeypatch):
+    # cli.py is pinned, so it is no longer a divergence; the token check is still covered through route.py
+    monkeypatch.setitem(parity.DIVERGENT, NINE_ROUTE, ("test seam", ("def cmd_plan",)))
     onb, nine = build(tmp_path, "launcher", drift=False)
-    cli = ".claude/skills/black-friday-launcher/launcher_core/cli.py"
-    _write(nine / cli, "an old 999 cli without the plan command\n")
+    _write(onb / "83-black-friday-launcher/launcher_core/route.py", "onboarding route\n")
+    _write(nine / NINE_ROUTE, "an old 999 route without the plan command\n")
     report = parity.check(onb, nine, ["launcher"])
     assert any("divergent_token_missing" in f and "def cmd_plan" in f for f in report["failures"])
     # the divergence is allowed to differ in bytes: only the missing seam fails
-    assert not any("drift: " + cli in f for f in report["failures"])
+    assert not any("drift: " + NINE_ROUTE in f for f in report["failures"])
+
+
+def test_cli_is_neutral_and_synced(tmp_path):
+    # a pinned file cannot be a declared divergence: 999 gets the pin only through the sync
+    assert NINE_CLI not in parity.DIVERGENT
+    onb, nine = build(tmp_path, "launcher", drift=False)
+    _write(onb / ONB_CLI, "onboarding cli\n")
+    _write(nine / NINE_CLI, "an old 999 cli\n")
+    report = parity.check(onb, nine, ["launcher"])
+    assert any(f.startswith("[launcher] drift: " + NINE_CLI) for f in report["failures"])
+    assert sync.main(["--onboarding", str(onb), "--nine", str(nine), "--family", "launcher"]) == 0
+    assert (nine / NINE_CLI).read_bytes() == (onb / ONB_CLI).read_bytes()
 
 
 def test_excluded_pack_file_present_in_999_refuses_the_sync(tmp_path, capsys):
@@ -156,6 +175,7 @@ def test_gate_scripts_travel_with_the_signature_page_family(tmp_path):
 
 
 def test_failing_sync_never_prints_unprefixed_pass(tmp_path, monkeypatch, capsys):
+    monkeypatch.setitem(sync._parity.DIVERGENT, NINE_ROUTE, ("test seam", ("def cmd_plan",)))
     onb, nine = build(tmp_path, "launcher", drift=False)
     for onb_rel, nine_rel in parity.FAMILIES["signature-page"]:
         _write(onb / onb_rel / "skill-version.txt", "2.0.0\n")
@@ -163,8 +183,7 @@ def test_failing_sync_never_prints_unprefixed_pass(tmp_path, monkeypatch, capsys
     for rel in parity.GATE_TOOLS:
         _write(onb / rel, "gate\n")
         _write(nine / rel, "gate\n")
-    cli = ".claude/skills/black-friday-launcher/launcher_core/cli.py"
-    _write(nine / cli, "an old 999 cli without the plan command\n")
+    _write(nine / NINE_ROUTE, "an old 999 route without the plan command\n")
     ok = type("P", (), {"returncode": 0, "stdout": "SYNC DONE, PARITY PASS\n", "stderr": ""})()
     monkeypatch.setattr(sync.subprocess, "run", lambda *a, **k: ok)
     rc = sync.main(["--onboarding", str(onb), "--nine", str(nine),

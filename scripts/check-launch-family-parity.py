@@ -92,14 +92,13 @@ NINE_ONLY = {
     _N + "convert-and-flow-operator/PACK.md": "pack membership",
 }
 
-# D3: the 999 `questions` path (render_question, not client_intake) and the
-# guided-experience files built around it. Copied only when absent, never
-# overwritten; the 999 copy must keep the seam tokens that prove it carries
-# the plan command and page-only scope law AND its own questions path.
+# D3: the unpinned 999 guided-experience files built around `render_question`
+# (the 999 `questions` path). Copied only when absent, never overwritten; the
+# 999 copy must keep the listed seam tokens. launcher_core/cli.py is NOT here:
+# it is a pinned file (front_door.py pins every launcher_core/*.py by bytes and
+# 999 only receives the pin through the sync), so it is an ordinary neutral
+# file and must be byte-identical in both repos.
 DIVERGENT = {
-    _LAUNCHER + "launcher_core/cli.py": (
-        "D3 999 questions path",
-        ("def cmd_plan", "--page-only", "--launch-plan", "def _experience")),
     _SL + "experience/render_question.py": ("D3 999 questions path", ()),
     _SL + "experience/progress_report.py": ("D3 999 questions path", ()),
     _SL + "experience/test_experience.py": ("D3 999 questions path", ()),
