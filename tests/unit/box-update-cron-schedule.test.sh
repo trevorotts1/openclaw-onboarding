@@ -34,6 +34,12 @@ if a[:2] == ["cron", "add"]:
                  "delivery": {"mode": "none" if "--no-deliver" in a else "announce"}})
     save(); sys.exit(0)
 if a[:2] == ["cron", "rm"]:
+    # FAKE_OC_RM_FAIL_TIMES: the first N rm calls fail (busy box: SQLite admission timeout)
+    cnt = os.environ.get("FAKE_OC_RM_COUNT")
+    if cnt:
+        done = int(open(cnt).read() or 0) if os.path.exists(cnt) else 0
+        open(cnt, "w").write(str(done + 1))
+        if done < int(os.environ.get("FAKE_OC_RM_FAIL_TIMES", "0")): sys.exit(1)
     n = len(jobs); jobs[:] = [j for j in jobs if j["id"] != a[2]]; save()
     sys.exit(0 if len(jobs) < n else 1)
 sys.exit(0)
@@ -43,7 +49,8 @@ export PATH="$T/bin:$PATH" FAKE_OC_STORE="$T/jobs.json" FAKE_OC_CALLS="$T/calls"
 # shellcheck source=/dev/null
 source "$REPO/shared-utils/cron-lib.sh"
 
-reset() { printf '%s' "${1:-[]}" > "$FAKE_OC_STORE"; : > "$FAKE_OC_CALLS"; unset FAKE_OC_NO_COMMAND FAKE_OC_ADD_FAIL; }
+export OC_BOX_UPDATE_RM_DELAY=0
+reset() { printf '%s' "${1:-[]}" > "$FAKE_OC_STORE"; : > "$FAKE_OC_CALLS"; rm -f "$T/rmcount"; unset FAKE_OC_NO_COMMAND FAKE_OC_ADD_FAIL FAKE_OC_RM_FAIL_TIMES FAKE_OC_RM_COUNT; }
 jobs_summary() { python3 - "$FAKE_OC_STORE" <<'EOF'
 import json, sys
 j = [x for x in json.load(open(sys.argv[1])) if x["name"] == "weekly-onboarding-update"]
@@ -76,5 +83,22 @@ reset "$OLD"; export FAKE_OC_NO_COMMAND=1; oc_box_update_cron_ensure >/dev/null;
 echo "== 5. create fails -> rc 2, old job still in place (box never left without an update job)"
 reset "$OLD"; export FAKE_OC_ADD_FAIL=1; oc_box_update_cron_ensure >/dev/null; rc=$?
 [ "$rc" = 2 ] && [ "$(jobs_summary | cut -d' ' -f1)" = 2 ] && ok "old jobs kept on failed create" || bad "rc=$rc got: $(jobs_summary)"
+
+echo "== 6. busy box: rm fails 3 times, then works -> retried, exactly one command job left"
+reset "$OLD"; export FAKE_OC_RM_COUNT="$T/rmcount" FAKE_OC_RM_FAIL_TIMES=3
+out="$(oc_box_update_cron_ensure)"; rc=$?
+[ "$rc" = 0 ] && [ "$(jobs_summary)" = "$WANT" ] && ! printf '%s' "$out" | grep -q "could NOT remove" && ok "old jobs removed after retries ($(jobs_summary))" || bad "rc=$rc got: $(jobs_summary) out: $out"
+
+echo "== 7. rm never works -> loud warning naming the stuck ids, new job still in place"
+reset "$OLD"; export FAKE_OC_RM_COUNT="$T/rmcount" FAKE_OC_RM_FAIL_TIMES=999
+out="$(oc_box_update_cron_ensure)"; rc=$?
+printf '%s' "$out" | grep -q "could NOT remove old job(s) old-1 old-2" && ok "warning names stuck ids" || bad "no loud warning: $out"
+python3 -c 'import json,sys;j=json.load(open(sys.argv[1]));c=[x for x in j if x["name"]=="weekly-onboarding-update" and x["payload"]["kind"]=="command"];assert len(c)==1' "$FAKE_OC_STORE" \
+  && ok "exactly one new command job despite failed removals" || bad "command job count wrong: $(jobs_summary)"
+
+echo "== 8. next run on that box (rm works again) -> keeps the command job, removes only leftovers, no new job"
+export FAKE_OC_RM_FAIL_TIMES=0; rm -f "$T/rmcount"; : > "$FAKE_OC_CALLS"
+oc_box_update_cron_ensure >/dev/null; rc=$?
+[ "$rc" = 0 ] && [ "$(jobs_summary)" = "$WANT" ] && ! grep -qE '^cron add$' "$FAKE_OC_CALLS" && ok "self-healed without creating a second job ($(jobs_summary))" || bad "rc=$rc got: $(jobs_summary) calls: $(tr '\n' ';' < "$FAKE_OC_CALLS")"
 
 exit $FAIL
