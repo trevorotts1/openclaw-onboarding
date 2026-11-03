@@ -45,6 +45,7 @@ Run:  python3 -m pytest tests/test_wf_e_p9_cross_skill.py -q
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import socket
 import sys
@@ -119,11 +120,34 @@ GOLDEN_50 = ROOT / "50-email-engine" / "examples" / "golden-signature-launch-10"
 # Fixtures — synthetic, offline, test_only everywhere
 # ---------------------------------------------------------------------------
 
+_ANSWERS_DIR = tempfile.TemporaryDirectory()  # the client's answers files for the intakes below
+
+
+def _answers_file_for(offers: list) -> str:
+    """Write the client-intake-answers/v1 doc that says exactly what these offers say (the shape Skill 83's tests use)."""
+    answers = {"billing": {"value": "one_time", "status": "provided"}}
+    mains = []
+    for o in offers:
+        item = {"offer_id": o["offer_id"], "display_name": o["name"],
+                "price": {"amount_minor": o["price"]["amount_minor"], "currency": o["price"]["currency"]},
+                "deliverables": list((o.get("level") or {}).get("deliverables") or [])}
+        if o["role"] == "main":
+            mains.append(item)
+        else:
+            answers[o["role"]] = {"value": item, "status": "provided"}
+    answers["packages"] = {"value": mains, "status": "provided"}
+    text = json.dumps({"schema": "client-intake-answers/v1", "answers": answers}, indent=1, sort_keys=True)
+    path = Path(_ANSWERS_DIR.name) / f"answers-{hashlib.sha256(text.encode()).hexdigest()[:16]}.json"
+    path.write_text(text, encoding="utf-8")
+    return str(path)
+
+
 def launch_intake(mode: str, mains: int = 1, **overrides) -> dict:
     """A minimal launch intake that passes Skill 83's own validator."""
     offers = [{"offer_id": f"main-{i + 1}", "name": f"TEST ONLY Level {i + 1}",
                "role": "main",
-               "price": {"amount_minor": 49700 + 50000 * i, "currency": "USD"},
+               "price": {"amount_minor": 49700 + 50000 * i, "currency": "USD",
+                         "source_ref": f"answers-file:packages[{i}]"},
                "delivery": {"destination": f"https://members.example.com/main-{i + 1}",
                             "owner_confirmed": True}}
               for i in range(mains)]
@@ -147,6 +171,7 @@ def launch_intake(mode: str, mains: int = 1, **overrides) -> dict:
                                     "amount_minor": entitlement83.load_declaration()["purchase_price"]["amount_minor"],
                                     "currency": entitlement83.load_declaration()["purchase_price"]["currency"]},
         "offers": offers,
+        "answers_file": _answers_file_for(offers),
         "checkout_terms": {
             "guarantee_ref": "TEST-ONLY-GUARANTEE-REF", "guarantee_text": "Test-only guarantee text.",
             "terms_ref": "TEST-ONLY-TERMS-REF", "terms_text": "Test-only terms text.",
