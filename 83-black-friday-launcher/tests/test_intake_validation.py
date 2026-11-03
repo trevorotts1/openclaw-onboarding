@@ -126,6 +126,20 @@ class OperationalFields(IntakeCase):  # PRD-13
             self.assertEqual(intake.validate(payload)["locale"], good)
 
 
+class LaunchIdShape(IntakeCase):  # rehearsal F9: refuse at intake what the launch-plan schema refuses later
+    def test_ids_the_launch_plan_schema_refuses_are_refused_at_intake(self):
+        for bad in ("TEST-REHEARSAL-V2-UPPER", "Bf-2026", "-bf-2026", "bf_2026", "bf 2026", "ab"):
+            payload = load("elevation")
+            payload["launch_id"] = bad
+            self.refuses(payload, "AF-LAUNCH-INTAKE-SHAPE", "launch_id")
+
+    def test_a_slug_the_schema_accepts_passes(self):
+        for good in ("bf-2026", "elevation-2026-11", "9lives", "abc"):
+            payload = load("elevation")
+            payload["launch_id"] = good
+            self.assertEqual(intake.validate(payload)["launch_id"], good)
+
+
 class OfferSetCoherence(IntakeCase):  # PRD-14
     def test_mixed_currencies_refused(self):
         payload = load("elevation")

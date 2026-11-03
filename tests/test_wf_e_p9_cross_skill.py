@@ -160,7 +160,7 @@ def launch_intake(mode: str, mains: int = 1, **overrides) -> dict:
         "schema_version": "1.0",
         "tenant_id": "TEST-TENANT",
         "location_id": "TEST-LOCATION",
-        "launch_id": "TEST-LAUNCH",
+        "launch_id": "test-launch",
         "revision": 1,
         "journey_mode": mode,
         "brand": {"ref": "brand-test", "hash": "a" * 64},

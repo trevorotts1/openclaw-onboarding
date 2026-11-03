@@ -166,7 +166,7 @@ class SeamTests(PackageCase):
             def violations(manifest, root, skill_root):
                 return [f"saw {manifest['launch_id']} at {root.name}"]
             """)
-        self.assertEqual(fails, ["saw TEST-FIXTURE-ELEVATION at pkg"])
+        self.assertEqual(fails, ["saw test-fixture-elevation at pkg"])
 
     def test_a_broken_rule_module_is_a_violation_never_a_skip(self):
         for label, source in (("no function", "x = 1\n"),

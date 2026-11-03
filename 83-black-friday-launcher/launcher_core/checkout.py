@@ -149,10 +149,23 @@ def _main_offers(intake: Dict[str, Any]) -> List[Dict[str, Any]]:
     return [o for o in intake["offers"] if o["role"] == "main"]
 
 
+def currency_exponent(currency: str) -> int:
+    """The currency's minor-unit exponent (ISO 4217), from Skill 78's table: a fact of the
+    currency, not a commercial fact, so it is derived rather than left unknown."""
+    routes = str(Path(__file__).resolve().parent.parent / "routes")
+    if routes not in sys.path:
+        sys.path.insert(0, routes)
+    import substrate  # the one loader of sibling skills' code (routes/substrate.py)
+    return substrate.load("78-signature-product-selection/scripts/selection_core.py",
+                          "launcher_s78_selection_core",
+                          sibling_dir="78-signature-product-selection/scripts").currency_exponent(currency)
+
+
 def _price_choice(offer: Dict[str, Any], intake: Dict[str, Any],
                   readback: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """One price choice. Native ids and the exponent come only from the intake's
-    checkout block or the read-back; a fact nobody holds is named, never invented."""
+    """One price choice. Native ids come only from the intake's checkout block or the
+    read-back; the exponent is the read-back's when it carries one, else the Skill 78 currency
+    table's (it is never absent); any other fact nobody holds is named, never invented."""
     block = offer.get("checkout") or {}
     price = offer["price"]
     # The read-back keys native ids by the Skill 49 price_choice_id (<offer_id>-<currency>);
@@ -173,9 +186,11 @@ def _price_choice(offer: Dict[str, Any], intake: Dict[str, Any],
     exponent = native.get("currency_exponent")
     if isinstance(exponent, int) and not isinstance(exponent, bool):
         choice["currency_exponent"] = exponent
+    else:
+        choice["currency_exponent"] = currency_exponent(price["currency"])
     if intake.get("test_only"):
         choice["approval_status"] = "test_only"
-    unknown = [n for n in ("currency_exponent", "billing_type", "approval_status")
+    unknown = [n for n in ("billing_type", "approval_status")
                if n not in choice]
     if unknown:  # an annotation, never part of the probe request (contract_request)
         choice["unknown"] = unknown

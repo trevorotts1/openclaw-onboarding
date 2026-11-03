@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from . import check_rules
+from . import checkout as checkout_module
 from . import launch_plan as launch_plan_module
 from . import package as package_module
 from . import page_designs
@@ -139,14 +140,13 @@ def _checkout_probe_violations(checkout: Dict[str, Any],
     if result not in ("accepted", "rejected"):
         return [f"AF-LAUNCH-CHECKOUT-VALIDATOR: the S79 probe recorded no verdict "
                 f"({result!r}); a binding is proved, never assumed"]
-    request = dict(checkout.get("supplied") or {})
-    defaults = checkout.get("operational_defaults") or {}
-    for name, entry in defaults.items():
-        if isinstance(entry, dict) and "value" in entry:
-            request[name] = entry["value"]
-    if "schema_version" in request:
+    if "schema_version" in (checkout.get("supplied") or {}):
         return ["AF-LAUNCH-CHECKOUT-VALIDATOR: schema_version is a document-level field; "
                 "the inner checkout_request envelope must not carry it"]
+    # The same builder the producer uses: contract fields only, bookkeeping ("unknown",
+    # "unresolved") stripped, so a recorded annotation is never replayed as a malformed envelope.
+    request = checkout_module.contract_request(checkout.get("supplied"),
+                                               checkout.get("operational_defaults"))
     outcome, detail = _replay_checkout(request)
     if outcome == "unavailable":
         # The probe's "bound" verdict is only earned by replay. A validator that

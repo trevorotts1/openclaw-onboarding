@@ -339,7 +339,9 @@ class CheckoutMappingTests(unittest.TestCase):
         price = self.mapping("single_simple")["supplied"]["main_price"]
         self.assertIsNone(price["native_product_id"])
         self.assertIsNone(price["native_price_id"])
-        self.assertIn("currency_exponent", price["unknown"])
+        # the exponent is a fact of the currency (USD is 2), derived, never left unknown (rehearsal F2)
+        self.assertEqual(price["currency_exponent"], 2)
+        self.assertNotIn("currency_exponent", price.get("unknown", []))
 
     def test_the_real_s79_validator_is_bound(self):
         # jsonschema is the Launcher's own runtime requirement (requirements.txt),

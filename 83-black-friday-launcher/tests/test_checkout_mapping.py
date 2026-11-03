@@ -185,6 +185,37 @@ class ProbeRequestTests(unittest.TestCase):
         self.assertNotIn("unknown", request["bump"]["price"])
 
 
+class DerivedExponentTests(unittest.TestCase):
+    """Rehearsal F2: the exponent is a fact of the currency (ISO 4217), not of the read-back."""
+    NO_NATIVE = {k: v for k, v in READBACK.items() if k != "native"}
+
+    def test_a_single_offer_checkout_derives_the_exponent_from_its_currency(self):
+        mapping = build(normalized(complete=True, bump=True), self.NO_NATIVE)
+        self.assertEqual(mapping["supplied"]["main_price"]["currency_exponent"], 2)
+        self.assertEqual(mapping["supplied"]["bump"]["price"]["currency_exponent"], 2)
+        self.assertNotIn("currency_exponent", mapping["supplied"]["main_price"].get("unknown", []))
+        self.assertNotIn("main_price.currency_exponent", mapping["missing_facts"])
+
+    def test_a_zero_decimal_currency_derives_zero_not_two(self):
+        offer_ = {"offer_id": "main-1", "price": {"amount_minor": 5000, "currency": "JPY"}}
+        self.assertEqual(checkout._price_choice(offer_, {}, None)["currency_exponent"], 0)
+
+    def test_the_readback_still_wins_over_the_derived_exponent(self):
+        offer_ = {"offer_id": "main-1", "price": {"amount_minor": 5000, "currency": "USD"}}
+        rb = {"native": {"main-1": {"currency_exponent": 3}}}
+        self.assertEqual(checkout._price_choice(offer_, {}, rb)["currency_exponent"], 3)
+
+    def test_the_package_replay_does_not_choke_on_bookkeeping(self):
+        # no billing_type: the price keeps an "unknown" annotation, which must never reach the S79 request
+        n = normalized(complete=True)
+        for o in n["offers"]:
+            o["checkout"] = {}
+        mapping = build(n, self.NO_NATIVE)
+        self.assertIn("unknown", mapping["supplied"]["main_price"])
+        verdict = checks._checkout_probe_violations(mapping, mapping["validator"])
+        self.assertEqual(verdict, [])
+
+
 class MappingFactTests(unittest.TestCase):
     """CHK-05: the plan hash is mapped; defaults are applied before unknown is computed."""
 

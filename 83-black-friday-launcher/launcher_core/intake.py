@@ -20,7 +20,7 @@ from typing import Any, Dict, List
 from urllib.parse import urlsplit
 
 from . import entitlement, image_plan
-from .launch_plan import SCOPE_WAIVERS
+from .launch_plan import SCOPE_WAIVERS, launch_id_violation
 from .constants import (
     JOURNEY_MODES,
     OFFER_RELATION_KEYS,
@@ -486,6 +486,10 @@ def validate(payload: Any) -> Dict[str, Any]:
     for key in ("tenant_id", "location_id", "launch_id"):
         if not _nonempty_str(payload[key]):
             _fail("AF-LAUNCH-INTAKE-MISSING", key, "must be a non-empty string")
+
+    bad_id = launch_id_violation(payload["launch_id"].strip())
+    if bad_id:
+        _fail("AF-LAUNCH-INTAKE-SHAPE", "launch_id", bad_id)
 
     revision = payload["revision"]
     if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
