@@ -85,10 +85,44 @@ def launch_record(intake: Dict[str, Any], council: Dict[str, Any] | None = None)
     return record
 
 
+def offer_entitlements(intake: Dict[str, Any]) -> Dict[str, List[str]]:
+    """offer_id -> the entitlement ids a buyer of that offer holds, in intake order, own id first.
+
+    `included_in` is cumulative access: a level listed as included_in a bigger level is granted to its
+    buyers too, transitively (Level 3 holds Levels 1 and 2). A bump listed included_in a level is no
+    exception: that level's buyers hold the bump's entitlement, and that level's order form does not sell
+    the bump (Skill 49's validator skips the bump-subset check for the levels the bump is included_in)."""
+    offers = intake["offers"]
+    own = {o["offer_id"]: o["offer_id"].lower() for o in offers}
+    contains: Dict[str, List[str]] = {o["offer_id"]: [] for o in offers}
+    for o in offers:
+        for host in (o.get("relationships") or {}).get("included_in", []):
+            contains[host].append(o["offer_id"])  # targets were checked against the offer ids by intake
+
+    def grant(offer_id: str, seen: List[str]) -> List[str]:
+        if offer_id in seen:  # a cycle of inclusions grants each level once
+            return []
+        seen.append(offer_id)
+        ids = [own[offer_id]]
+        for inner in contains[offer_id]:
+            ids += [i for i in grant(inner, seen) if i not in ids]
+        return ids
+
+    return {o["offer_id"]: grant(o["offer_id"], []) for o in offers}
+
+
+def offer_requires(offer: Dict[str, Any]) -> List[str]:
+    """The offer ids this offer needs the buyer to hold first (its `requires` relationship)."""
+    return list((offer.get("relationships") or {}).get("requires", []))
+
+
 def compile_route(intake: Dict[str, Any],
                   council: Dict[str, Any] | None = None) -> Dict[str, Any]:
     """Compile with the real Skill 49 compiler, then run the structural gate."""
-    graph = route_law.compile_route(launch_record(intake, council))["graph"]
+    try:
+        graph = route_law.compile_route(launch_record(intake, council))["graph"]
+    except route_law.RouteInvariantError as exc:
+        raise RouteError("AF-LAUNCH-ROUTE-LAW", str(exc)) from exc
     validate_route(graph)
     return graph
 

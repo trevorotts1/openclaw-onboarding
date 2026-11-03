@@ -997,6 +997,88 @@ oc_onboarding_complete() {
   return 1
 }
 
+# ------------------------------------------------------------
+# oc_ensure_jsonschema [--check|--apply]       (CON-13)
+#   Skills 49, 71, 78-83, 44 and 38 import `jsonschema` (Skill 79's checkout
+#   validator does it at module load, so every wrapper that loads it dies
+#   without it). No installer provisioned it, and check-skill-prereqs.sh has no
+#   python-module check type, so a box without it learned so at `check`, after
+#   Skill 83 had already spent images. This is the ONE implementation both
+#   install.sh and update-skills.sh call.
+#   The requirement string is read from 83-black-friday-launcher/PREREQS.json
+#   (the entry carrying "pythonModule": "jsonschema"); the default below is only
+#   for a bundle that lacks that file.
+#   --check  report, never mutate (OPENCLAW_PREREQS_CHECK=1 is the same)
+#   --apply  pip-install when missing/too old, then VERIFY with a real import
+#   Returns 0 satisfied, 2 still missing/too old, 1 no python3 / bad argument.
+#   Interpreter: python3 from PATH, because that is what the skills run.
+# ------------------------------------------------------------
+oc_ensure_jsonschema() {
+  local _mode=apply _py _spec="jsonschema>=4.0" _f _s _why _out _tier _self_dir
+  case "${1:-}" in
+    --check|check)    _mode=check ;;
+    --apply|apply|"") ;;
+    *) echo "  jsonschema-prereq: unknown argument '$1' (use --check or --apply)" >&2; return 1 ;;
+  esac
+  [ "${OPENCLAW_PREREQS_CHECK:-0}" = "1" ] && _mode=check
+  _py="$(command -v python3 2>/dev/null || true)"
+  if [ -z "$_py" ]; then
+    echo "  jsonschema-prereq: FAILED: no python3 on PATH; cannot check or install jsonschema" >&2
+    return 1
+  fi
+  _self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+  for _f in "${OC_SKILLS_DIR:-$OC_CONFIG/skills}/83-black-friday-launcher/PREREQS.json" \
+            "${_self_dir:-.}/83-black-friday-launcher/PREREQS.json"; do
+    [ -f "$_f" ] || continue
+    _s="$("$_py" -c 'import json, sys
+for p in json.load(open(sys.argv[1])).get("prerequisites", []):
+    if p.get("pythonModule") == "jsonschema":
+        print(p["requirement"]); break' "$_f" 2>/dev/null || true)"
+    [ -n "$_s" ] && { _spec="$_s"; break; }
+  done
+
+  # A REAL import, never find_spec: jsonschema with its own dependency missing
+  # passes find_spec and then fails at first use (L25-BF-40). Also enforces the
+  # ">=X.Y" floor, since an old jsonschema imports fine.
+  _oc_jsonschema_probe() {
+    "$_py" -c 'import re, sys
+need = re.match(r"^[A-Za-z0-9_.-]+\s*>=\s*(\d+)(?:\.(\d+))?", sys.argv[1])
+need = (int(need.group(1)), int(need.group(2) or 0)) if need else (0, 0)
+try:
+    import jsonschema
+    from importlib.metadata import version
+    got = (tuple(int(x) for x in re.findall(r"\d+", version("jsonschema"))[:2]) + (0, 0))[:2]
+except Exception as e:
+    print("%s: %s" % (type(e).__name__, e)); sys.exit(1)
+if got < need:
+    print("installed %d.%d is older than the required %d.%d" % (got + need)); sys.exit(1)' "$_spec" 2>&1
+  }
+
+  if _why="$(_oc_jsonschema_probe)"; then
+    echo "  jsonschema-prereq: OK: $_spec importable in $_py"
+    return 0
+  fi
+  if [ "$_mode" = "check" ]; then
+    echo "  [prereq][83-black-friday-launcher][required] jsonschema :: $_spec NOT importable in $_py ($_why) :: $_py -m pip install \"$_spec\""
+    return 2
+  fi
+  echo "  jsonschema-prereq: $_spec missing in $_py ($_why) -> installing"
+  # Plain, then --user (PEP 668 box), then --break-system-packages (last resort).
+  for _tier in "" "--user" "--break-system-packages"; do
+    # shellcheck disable=SC2086
+    if _out="$("$_py" -m pip install --quiet --disable-pip-version-check --no-input $_tier "$_spec" 2>&1)"; then
+      break
+    fi
+  done
+  if _why="$(_oc_jsonschema_probe)"; then
+    echo "  jsonschema-prereq: OK: installed $_spec into $_py and verified the import"
+    return 0
+  fi
+  echo "  jsonschema-prereq: FAILED: $_spec still not importable in $_py after install ($_why). Skills 49, 71, 78-83, 44 and 38 will fail until: $_py -m pip install \"$_spec\"" >&2
+  printf '%s\n' "${_out:-}" | tail -n 5 | sed 's/^/    /' >&2
+  return 2
+}
+
 # ============================================================
 # PRD 2.13 — PER-WAVE GOAL STATE + CHEAP MACHINE-CHECKABLE GOALS
 # ============================================================
@@ -1026,7 +1108,8 @@ oc_onboarding_complete() {
 #   Wave 4 (INFRASTRUCTURE):31,36
 #   Wave 5 (USER-INTERACT): 22,23,32,35
 #   Wave 6 (EXTENSIONS):    44,45,47,48,49,50,51,52,53,54,55,56,57,69,70,71
-#   (46 and 58-62 are deliberately NOT gated — see the OC_WAVE6_SKILLS note.)
+#   (46, 58-62 and the launch family 72 + 78-83 are deliberately NOT gated — see
+#   the OC_WAVE6_SKILLS note: EXPLICIT EXCLUSION, CON-14.)
 #
 # PER-WAVE GOAL DEFINITION (all must hold for wave to pass):
 #   (a) All skills in the wave have status=qc-passed (or interview-pending for Wave 5)
@@ -1119,6 +1202,23 @@ OC_WAVE5_SKILLS="22-book-to-persona-coaching-leadership-system 23-ai-workforce-b
 # Those six stay ungated until the operator lifts the HOLD (58-61), the skeleton
 # is finished (62), or the relay is modelled as operator infrastructure rather
 # than a client skill (46). Add them here at that point — not before.
+#
+# THE LAUNCH FAMILY (72-motion-video-plus, 78-signature-product-selection,
+# 79-signature-order-form, 80-signature-upsell, 81-signature-downsell,
+# 82-signature-thank-you, 83-black-friday-launcher) IS ALSO DELIBERATELY NOT
+# GATED — an explicit exclusion (CON-14), not an oversight. The wave goal that
+# would apply is "every skill qc-passed", and oc_gate_skill proves qc-passed by
+# running the skill's qc-*.sh. None of the family ships a qc-*.sh; their
+# verification is verify.sh (72, 78, 83), verify.py (80) or nothing at all (79,
+# 81, 82 ship neither). A goal that "requires their verify.sh exit 0" therefore
+# cannot be stated for the family today, and naming them here without it would
+# either gate nothing or wedge Wave 6 on every box. What protects a box in the
+# meantime: oc_ensure_jsonschema (install.sh Step 6.5c, update-skills.sh
+# post-stamp convergence, `--prereqs-check` to inspect) provisions and verifies
+# the one runtime requirement, `jsonschema`, declared in
+# 83-black-friday-launcher/PREREQS.json. Revisit: add 72 and 78-83 to
+# OC_WAVE6_SKILLS once each ships a verify.sh AND oc_gate_skill runs it (or
+# each ships a qc-*.sh), in ascending order after 71 and before 77.
 #
 # ORDERING WITHIN THE WAVE: several entries name an earlier Wave 6 skill as a
 # prerequisite (49 and 56 need 47; 50 and 56 need 44). Ascending skill-number

@@ -18,8 +18,10 @@ owns all engine contact.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import uuid
+from pathlib import Path
 from typing import Optional, Protocol
 
 EXIT_OK = 0
@@ -28,6 +30,55 @@ EXIT_VALIDATION = 4  # envelope/plan validation failed
 EXIT_BLOCKED = 5     # named blocker (auth state)
 
 SKILL44_VERSION = "siglaunch-s44-receiver-0.2"
+
+# S44-19 (decision: native GHL for Black Friday 2026). The siglaunch
+# pipeline (receiver -> normalizer -> processor) has no runner: no CLI,
+# webhook, poller or production catalog. The declared purchase path for
+# Black Friday 2026 is the native Convert and Flow post-sale workflows;
+# siglaunch is a later, separately approved path. This module refuses to
+# run as a production entry until a runner exists and this flag is flipped
+# by an owner-approved change.
+BLACK_FRIDAY_2026_PURCHASE_PATH = "native-ghl-post-sale-workflows"
+PRODUCTION_ENTRY_ENABLED = False
+EXIT_NOT_PRODUCTION = 6
+
+
+def main(argv=None) -> int:
+    import sys
+    print("siglaunch receiver is not a production entry: the Black Friday "
+          "2026 purchase path is " + BLACK_FRIDAY_2026_PURCHASE_PATH
+          + " (no runner exists; refusing).", file=sys.stderr)
+    return EXIT_NOT_PRODUCTION
+
+# S44-17: an approval is only what the Command Center minted from the
+# client's own reply. The receiver asks the one shared verifier
+# (shared-utils/signature_launch_contract/approval_record.py); it never
+# accepts a hash the requester computed itself.
+APPROVAL_KIND = "launch_plan_build"
+APPROVAL_SCOPE = ("workflows_draft_build",)
+_APPROVAL_RECORD_PATH = (Path(__file__).resolve().parents[4] / "shared-utils"
+                         / "signature_launch_contract"
+                         / "approval_record.py")
+
+
+class _VerifierUnavailable(Exception):
+    """The approval store cannot be consulted; fail closed."""
+
+
+def _load_approval_record():
+    if not _APPROVAL_RECORD_PATH.is_file():
+        raise _VerifierUnavailable(
+            "shared approval_record verifier is not installed")
+    spec = importlib.util.spec_from_file_location(
+        "siglaunch_approval_record", _APPROVAL_RECORD_PATH)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def default_approval_verifier(*args, **kwargs):
+    """approval_record.verify, loaded from shared-utils on first use."""
+    return _load_approval_record().verify(*args, **kwargs)
 
 _ENVELOPE_FIELDS = {
     "request_id", "request_version", "location_id", "launch_id",
@@ -124,10 +175,14 @@ class Executor(Protocol):
 
 
 class Receiver:
-    def __init__(self, store, executor: Executor, configured_location: str):
+    def __init__(self, store, executor: Executor, configured_location: str,
+                 approval_verifier=None):
         self.store = store
         self.executor = executor
         self.configured_location = configured_location
+        # Same signature as approval_record.verify. Injectable so a test can
+        # stand in for the Command Center; the default is the real verifier.
+        self.approval_verifier = approval_verifier or default_approval_verifier
         # Resolved once per receiver: the exact evidence the carrier can
         # fill. Requests are checked against this set before any build.
         self.evidence_fields = executor_evidence_fields(executor)
@@ -179,14 +234,14 @@ class Receiver:
                     isinstance(field, str) and field
                     for field in required_evidence):
                 return self._refuse(
-                    EXIT_VALIDATION, "REQUIRED_EVIDENCE_INVALID",
+                    request, EXIT_VALIDATION, "REQUIRED_EVIDENCE_INVALID",
                     "required_evidence must be a list of non-empty "
                     "field names")
             unmet = sorted(set(required_evidence)
                            - self.evidence_fields)
             if unmet:
                 return self._refuse(
-                    EXIT_VALIDATION, "EVIDENCE_UNPRODUCIBLE",
+                    request, EXIT_VALIDATION, "EVIDENCE_UNPRODUCIBLE",
                     "executor cannot produce required evidence fields: "
                     f"{unmet}")
         # 2. deploy mode: fail-closed, never defaulted
@@ -201,6 +256,9 @@ class Receiver:
                 "refused before any engine call")
         # 4. approval hash over the plan as received
         approval = request["approval"]
+        if not isinstance(approval, dict):
+            return self._refuse(request, EXIT_VALIDATION, "APPROVAL_INVALID",
+                                "approval must be an object")
         if approval.get("plan_hash") != plan_hash(request["plan"]):
             return self._refuse(request, EXIT_VALIDATION, "PLAN_HASH_MISMATCH",
                                 "approval plan_hash does not match the "
@@ -213,11 +271,32 @@ class Receiver:
                     "request_version is lower than the recorded version")
             if prior["state"] == "complete" and prior["receipt"] is not None:
                 return EXIT_OK, prior["receipt"]
+        # 5b. S44-17: the approval must resolve in the Command Center
+        # record store (approver, scope, plan hash, expiry). The hash in
+        # the request is requester-computed and proves integrity only.
+        try:
+            verified = self.approval_verifier(
+                approval.get("ref"), APPROVAL_KIND, plan_hash(request["plan"]),
+                list(APPROVAL_SCOPE))
+        except _VerifierUnavailable as e:
+            return self._refuse(request, EXIT_BLOCKED,
+                                "APPROVAL_UNAVAILABLE", str(e))
+        except Exception as e:  # ApprovalRefused / ApprovalUnavailable / bug
+            code = getattr(e, "code", None)
+            if code:
+                return self._refuse(request, EXIT_GATE, code, str(e))
+            return self._refuse(
+                request, EXIT_BLOCKED, "APPROVAL_UNAVAILABLE",
+                "approval store could not be consulted "
+                f"({type(e).__name__}); refusing, never defaulting to approved")
+        if not (isinstance(verified, dict) and verified.get("ok") is True):
+            return self._refuse(request, EXIT_GATE, "APPROVAL_NOT_VERIFIED",
+                                "approval verifier did not return ok")
         # 6. capability probe (fresh evidence per dispatch attempt)
         probe = self.executor.probe()
         token_state = probe.get("token_state")
         if token_state != "healthy":
-            receipt = self._receipt_shell(request, probe)
+            receipt = self._receipt_shell(request, probe, verified)
             receipt["outcome"] = "refused"
             receipt["status"] = "blocked"
             receipt["status_claimed"] = "blocked-auth"
@@ -238,7 +317,7 @@ class Receiver:
         except ValueError as e:
             return self._refuse(request, EXIT_VALIDATION, "PLAN_INVALID", str(e))
         # 8. per-workflow execution with resume semantics
-        receipt = self._receipt_shell(request, probe)
+        receipt = self._receipt_shell(request, probe, verified)
         prior_ops = {}
         if prior and prior["receipt"]:
             prior_ops = {op["slug"]: op
@@ -401,7 +480,8 @@ class Receiver:
         "qc.checklist_complete (human-review WF items are graded by the "
         "Step-9 QC agent, not the executor)")
 
-    def _receipt_shell(self, request: dict, probe: dict) -> dict:
+    def _receipt_shell(self, request: dict, probe: dict,
+                       verified: Optional[dict] = None) -> dict:
         notes = list(request.get("notes", []))
         if request.get("handoff_sha256") is not None:
             notes.append(
@@ -416,7 +496,8 @@ class Receiver:
             # design 1.4 per-request fields
             "deploy_mode": request["deploy_mode"],
             "approval": {"ref": approval.get("ref"),
-                         "plan_hash": approval.get("plan_hash")},
+                         "plan_hash": approval.get("plan_hash"),
+                         "verified_by": (verified or {}).get("authority")},
             # seam packet sections 2/4: the hash-lock echo (None when
             # the dispatch carried no handoff)
             "handoff_sha256": request.get("handoff_sha256"),
@@ -936,3 +1017,7 @@ def stage14_outcome(request: dict, exit_code: int, result: dict) -> dict:
         unproducible.append(key)
     record["unproducible"] = unproducible
     return record
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -108,8 +108,8 @@ class LaunchIntakeAdapterTests(unittest.TestCase):
         prov = brief["launch_provenance"]
         self.assertEqual(prov["plan_hash"],
                          s49.plan_document_hash(self.fx["launch"]))
-        self.assertEqual(prov["approval"]["subject_hash"], prov["plan_hash"])
-        self.assertEqual(prov["approval"]["subject_type"],
+        self.assertEqual(prov["approval"]["plan_hash"], prov["plan_hash"])
+        self.assertEqual(prov["approval"]["kind"],
                          "launch_plan_build")
         self.assertEqual(
             prov["fields"]["testimonial_evidence"]["state"],

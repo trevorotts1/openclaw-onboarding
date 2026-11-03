@@ -101,6 +101,18 @@ command -v oc_state_seed          >/dev/null 2>&1 || oc_state_seed()          { 
 command -v oc_onboarding_complete >/dev/null 2>&1 || oc_onboarding_complete() { return 1; }
 command -v oc_state_summary       >/dev/null 2>&1 || oc_state_summary()       { OC_VERIFIED=0; OC_TOTAL=0; OC_FAILED_LIST=""; OC_PENDING_LIST=""; OC_INTERVIEW_LIST=""; }
 
+# CON-13: `install.sh --check` (alias --prereqs-check) is a STANDALONE, read-only
+# prerequisite inspection: it reports whether python3 can import jsonschema
+# (needed by Skills 49, 71, 78-83, 44, 38) and exits WITHOUT installing anything.
+# Exit 0 = present, 2 = flagged missing/too old, 1 = cannot check.
+case " ${*:-} " in
+    *" --check "*|*" --prereqs-check "*)
+        if command -v oc_ensure_jsonschema >/dev/null 2>&1; then
+            _oc_pc_rc=0; oc_ensure_jsonschema --check || _oc_pc_rc=$?; exit "$_oc_pc_rc"
+        fi
+        echo "install.sh --check: lib-onboarding-state.sh was not available; prerequisites NOT checked" >&2; exit 1 ;;
+esac
+
 # ----------------------------------------------------------
 # Shared onboarding-resume cron installer (v17.0.21). SINGLE canonical
 # definition of install_onboarding_resume_cron(), shared with update-skills.sh
@@ -5042,6 +5054,29 @@ if [ "$_LIPSYNC_DEPS_RC" -ne 0 ]; then
     warn "Step 6.5b: skill 75 lip-sync prerequisites INCOMPLETE (rc=$_LIPSYNC_DEPS_RC) — the lip-sync picture gate and the measured clip gate will REFUSE lip-sync jobs on this box until it is repaired. Install continues; update-skills.sh retries this step on every roll. Manual: bash <(curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/shared-utils/lipsync-deps.sh)"
 fi
 unset _LIPSYNC_DEPS_RC
+
+# ----------------------------------------------------------
+# Step 6.5c: `jsonschema` for the page / launch skills (CON-13). Skills 49, 71,
+# 78-83, 44 and 38 import it (Skill 79's checkout validator at module load) and
+# nothing provisioned it, so Skill 83 found out at `check`, after the launch had
+# spent images. oc_ensure_jsonschema (lib-onboarding-state.sh, ONE copy shared
+# with update-skills.sh) pip-installs the requirement declared in
+# 83-black-friday-launcher/PREREQS.json and VERIFIES it with a real import.
+# NOT FATAL: a transient network failure must not abort the bootstrap; it is
+# stated loudly and update-skills.sh retries it on every roll.
+# Inspect only: bash install.sh --check
+# ----------------------------------------------------------
+_JSONSCHEMA_RC=0
+if command -v oc_ensure_jsonschema >/dev/null 2>&1; then
+    oc_ensure_jsonschema --apply || _JSONSCHEMA_RC=$?
+else
+    warn "Step 6.5c: lib-onboarding-state.sh was not available — jsonschema (needed by Skills 49, 71, 78-83, 44, 38) was NOT verified. Manual: python3 -m pip install \"jsonschema>=4.0\" && python3 -c 'import jsonschema'"
+    _JSONSCHEMA_RC=2
+fi
+if [ "$_JSONSCHEMA_RC" -ne 0 ]; then
+    warn "Step 6.5c: jsonschema is NOT importable (rc=$_JSONSCHEMA_RC) — the Skill 79 checkout validator and every wrapper that loads it will fail until it is. Install continues; update-skills.sh retries this step on every roll."
+fi
+unset _JSONSCHEMA_RC
 
 if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
     # ── VPS ARM ──────────────────────────────────────────────────────────────

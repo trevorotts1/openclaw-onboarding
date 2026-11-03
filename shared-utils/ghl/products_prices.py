@@ -34,12 +34,17 @@ Provenance (never invented; every route cites a file or official spec):
     Response identity fields: product `_id`, price `_id` + `product`.
 
 Rules encoded (GHL-DELIVERY-SPEC.md "Commerce (W8)" and "Durable execution"):
-  * Terms preserved exactly: amount in integer minor units (hundredths, the
-    skills/79-checkout convention -- dollars floats never cross the internal
-    boundary), currency, billing type (one_time | recurring |
+  * Terms preserved exactly: amount in integer minor units of the currency's
+    ISO-4217 exponent (2 for USD, 0 for JPY, 3 for KWD; floats never cross the
+    internal boundary). The documented CreatePriceDto `amount` is a decimal in
+    MAJOR units (spec example 99.99, checked against apps/products.json), so
+    minor_to_api_amount() is the one conversion every caller (incl. Skill 44)
+    shares. Zero price is refused unless allow_free; currency, billing type (one_time | recurring |
     trial_then_recurring, matching skills/79-checkout/order_bumps.py
     BILLING_TYPES), recurrence interval, trial days, native IDs.
-  * Read before create; confirmed IDs persisted immediately under
+  * Every create needs a verified automation_write approval record bound to
+    location, action and object (require_write_approval); no verifier = refused.
+  * Read before create (store, then a read-first identity list); confirmed IDs persisted immediately under
     (location, kind, parent, logical id) -- never name alone; resume never
     duplicates products/prices and never deletes successful assets.
   * Timeout/uncertain outcome is reconciled before any retry; ambiguous
@@ -59,9 +64,7 @@ OUTSTANDING INTEGRATION (provisional unit state):
     is refused as unattached, never claimed bound.
   * The durable store is wired to W4A shared-utils/delivery/checkpoints.py at
     integration; the Store protocol here matches its key discipline.
-  * W2B registers these confirmed documented routes in
-    shared-utils/ghl/capability_inventory.py (its products_prices_undocumented_here
-    restriction predates this spec-cited evidence).
+  * The documented routes are registered in shared-utils/ghl/capability_inventory.py.
   * Variant/membership/physical-inventory price features are outside the
     supported subset and are refused, never silently dropped.
 
@@ -76,6 +79,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from urllib.parse import quote
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 API_BASE = "https://services.leadconnectorhq.com"
@@ -88,11 +92,11 @@ RECURRING_INTERVALS: Tuple[str, ...] = ("day", "week", "month", "year")
 # Exact documented paths (apps/products.json). One table, never assembled ad hoc.
 ROUTES: Mapping[str, Tuple[str, str]] = {
     "create_product": ("POST", "/products/"),
-    "get_product": ("GET", "/products/{productId}"),
-    "list_products": ("GET", "/products/"),
+    "get_product": ("GET", "/products/{productId}?locationId={locationId}"),
+    "list_products": ("GET", "/products/?locationId={locationId}&search={search}&limit=100"),
     "create_price": ("POST", "/products/{productId}/price"),
-    "get_price": ("GET", "/products/{productId}/price/{priceId}"),
-    "list_prices": ("GET", "/products/{productId}/price"),
+    "get_price": ("GET", "/products/{productId}/price/{priceId}?locationId={locationId}"),
+    "list_prices": ("GET", "/products/{productId}/price?locationId={locationId}&limit=100"),
 }
 
 
@@ -118,6 +122,11 @@ class ReadbackMismatch(ProductsPricesError):
 
 class AmbiguousReconcile(ProductsPricesError):
     """Uncertain outcome left more than one identity candidate. Refused, never guessed."""
+
+
+class ApprovalRequired(ProductsPricesError):
+    """No verified automation_write approval record for this exact write. Refused
+    before the platform write; reads are not gated."""
 
 
 class UnsupportedCapability(ProductsPricesError):
@@ -197,26 +206,54 @@ def _require_text(value: Any, what: str) -> None:
         raise SpecError(f"{what} must be a non-empty string")
 
 
-def _require_minor(amount_minor: Any, what: str) -> None:
+# ISO-4217 active codes by minor-unit exponent. The documented CreatePriceDto
+# `amount` is a decimal number in MAJOR units (spec example 99.99; verified
+# against apps/products.json 2026-11-02), so the exponent decides the wire value.
+_ISO_EXP0 = frozenset("BIF CLP DJF GNF ISK JPY KMF KRW PYG RWF UGX UYI VND VUV XAF XOF XPF".split())
+_ISO_EXP3 = frozenset("BHD IQD JOD KWD LYD OMR TND".split())
+_ISO_EXP4 = frozenset("CLF UYW".split())
+_ISO_EXP2 = frozenset((
+    "AED AFN ALL AMD ANG AOA ARS AUD AWG AZN BAM BBD BDT BGN BMD BND BOB BOV BRL BSD BTN BWP BYN BZD CAD CDF "
+    "CHE CHF CHW CNY COP COU CRC CUP CVE CZK DKK DOP DZD EGP ERN ETB EUR FJD FKP GBP GEL GHS GIP GMD GTQ GYD "
+    "HKD HNL HTG HUF IDR ILS INR IRR JMD KES KGS KHR KPW KYD KZT LAK LBP LKR LRD LSL MAD MDL MGA MKD MMK MNT "
+    "MOP MRU MUR MVR MWK MXN MXV MYR MZN NAD NGN NIO NOK NPR NZD PAB PEN PGK PHP PKR PLN QAR RON RSD RUB SAR "
+    "SBD SCR SDG SEK SGD SHP SLE SOS SRD SSP STN SVC SYP SZL THB TJS TMT TOP TRY TTD TWD TZS UAH USD UYU UZS "
+    "VED VES WST XCD YER ZAR ZMW ZWG").split())
+
+
+def currency_exponent_for(currency: Any) -> int:
+    """ISO-4217 minor-unit exponent. Lowercase or unknown codes are refused: a wrong
+    exponent mis-prices the product by 10x/100x."""
+    if not isinstance(currency, str) or currency != currency.upper() or len(currency) != 3:
+        raise SpecError(f"currency must be an uppercase ISO-4217 code, got {currency!r}")
+    for exp, codes in ((0, _ISO_EXP0), (2, _ISO_EXP2), (3, _ISO_EXP3), (4, _ISO_EXP4)):
+        if currency in codes:
+            return exp
+    raise SpecError(f"unknown ISO-4217 currency {currency!r}")
+
+
+def _require_minor(amount_minor: Any, what: str, allow_free: bool = False) -> None:
     if not isinstance(amount_minor, int) or isinstance(amount_minor, bool):
-        raise SpecError(f"{what} must be integer minor units (hundredths), never float dollars")
+        raise SpecError(f"{what} must be integer minor units, never float major units")
     if amount_minor < 0:
         raise SpecError(f"{what} cannot be negative; unknown price is not zero")
+    if amount_minor == 0 and not allow_free:
+        raise SpecError(f"{what} is zero: a free price needs allow_free=True (approved free route)")
 
 
-def minor_to_api_amount(amount_minor: int) -> float:
-    """Integer hundredths -> the documented numeric `amount` field."""
-    return float(Decimal(amount_minor) / 100)
+def minor_to_api_amount(amount_minor: int, exponent: int = 2) -> float:
+    """THE one money conversion: integer minor units -> documented major-unit `amount`."""
+    return float(Decimal(amount_minor).scaleb(-exponent))
 
 
-def api_amount_to_minor(value: Any) -> int:
-    """Documented numeric `amount` -> integer hundredths; sub-minor drift is a mismatch."""
+def api_amount_to_minor(value: Any, exponent: int = 2) -> int:
+    """Documented numeric `amount` -> integer minor units; sub-minor drift is a mismatch."""
     try:
-        minor = Decimal(str(value)) * 100
+        minor = Decimal(str(value)).scaleb(exponent)
     except Exception:
         raise ReadbackMismatch(f"amount is not numeric: {value!r}")
-    if minor != minor.to_integral_value():
-        raise ReadbackMismatch(f"amount {value!r} is not representable in integer hundredths")
+    if not minor.is_finite() or minor != minor.to_integral_value():
+        raise ReadbackMismatch(f"amount {value!r} is not representable in integer minor units (exponent {exponent})")
     return int(minor)
 
 
@@ -228,6 +265,7 @@ class ProductSpec:
     location_id: str
     product_type: str
     description: Optional[str] = None
+    image_url: Optional[str] = None
 
     def __post_init__(self) -> None:
         _require_text(self.name, "product name")
@@ -248,12 +286,24 @@ class PriceSpec:
     recurring_interval: Optional[str] = None
     trial_days: Optional[int] = None
     description: Optional[str] = None
+    recurring_interval_count: int = 1
+    currency_exponent: Optional[int] = None  # None -> ISO-4217 table; a conflicting value is refused
+    allow_free: bool = False  # only an approved free route may price at zero
 
     def __post_init__(self) -> None:
         _require_text(self.name, "price name")
         _require_text(self.location_id, "location_id")
-        _require_text(self.currency, "currency")
-        _require_minor(self.amount_minor, "amount_minor")
+        exp = currency_exponent_for(self.currency)
+        if self.currency_exponent is None:
+            object.__setattr__(self, "currency_exponent", exp)
+        elif self.currency_exponent != exp:
+            raise SpecError(f"currency_exponent {self.currency_exponent!r} contradicts ISO-4217 for {self.currency} ({exp})")
+        _require_minor(self.amount_minor, "amount_minor", self.allow_free)
+        if (not isinstance(self.recurring_interval_count, int) or isinstance(self.recurring_interval_count, bool)
+                or self.recurring_interval_count < 1):
+            raise SpecError("recurring_interval_count must be an integer >= 1")
+        if self.recurring_interval_count != 1 and self.billing_type == "one_time":
+            raise SpecError("one_time price must not carry recurrence or trial terms")
         if self.billing_type not in BILLING_TYPES:
             raise SpecError(f"unknown billing_type: {self.billing_type!r}")
         if self.billing_type == "recurring":
@@ -367,6 +417,35 @@ class NativePrice:
         }
 
 
+def price_request_body(spec: PriceSpec) -> Dict[str, Any]:
+    """The ONLY builder of a CreatePriceDto body (adapter and Skill 44 both use it)."""
+    payload: Dict[str, Any] = {
+        "name": spec.name,
+        "locationId": spec.location_id,
+        "currency": spec.currency,
+        "amount": minor_to_api_amount(spec.amount_minor, spec.currency_exponent),
+        "type": "one_time" if spec.billing_type == "one_time" else "recurring",
+    }
+    if spec.description:
+        payload["description"] = spec.description
+    if spec.recurring_interval:
+        payload["recurring"] = {"interval": spec.recurring_interval,
+                                "intervalCount": spec.recurring_interval_count}
+    if spec.trial_days is not None:
+        payload["trialPeriod"] = spec.trial_days
+    return payload
+
+
+def product_request_body(spec: ProductSpec, image_url: Optional[str] = None) -> Dict[str, Any]:
+    """The ONLY builder of a CreateProductDto body."""
+    body: Dict[str, Any] = {"name": spec.name, "locationId": spec.location_id, "productType": spec.product_type}
+    if spec.description:
+        body["description"] = spec.description
+    if image_url:
+        body["image"] = image_url
+    return body
+
+
 # --- Binding (catalog creation alone is not checkout binding) ----------------
 
 
@@ -391,16 +470,53 @@ class ComponentIO:
         raise NotImplementedError
 
 
+# --- Per-action approval ------------------------------------------------------
+
+APPROVAL_KIND = "automation_write"
+_APPROVAL_FIELDS = ("location_id", "action", "object_key", "plan_sha256", "approver", "expiry")
+
+
+def require_write_approval(approval: Optional[Mapping[str, Any]],
+                           verifier: Optional[Callable[[Mapping[str, Any]], bool]], *,
+                           location_id: str, action: str, object_key: str,
+                           now: Optional[float] = None) -> None:
+    """Refuse unless `approval` is an unexpired automation_write record naming this
+    location, action and object, AND the approval authority's `verifier` accepts it.
+    A record alone proves nothing (the AI session can write a dict); with no
+    verifier wired the write is refused (fail closed)."""
+    import time as _time
+
+    if not isinstance(approval, Mapping) or approval.get("kind") != APPROVAL_KIND:
+        raise ApprovalRequired(f"{action}: a verified {APPROVAL_KIND} approval record is required")
+    missing = [f for f in _APPROVAL_FIELDS if approval.get(f) in (None, "")]
+    if missing:
+        raise ApprovalRequired(f"{action}: approval record lacks {missing}")
+    for field_name, want in (("location_id", location_id), ("action", action), ("object_key", object_key)):
+        if approval.get(field_name) != want:
+            raise ApprovalRequired(f"{action}: approval {field_name} does not match this write")
+    expiry = approval.get("expiry")
+    if isinstance(expiry, bool) or not isinstance(expiry, (int, float)) or expiry <= (now if now is not None else _time.time()):
+        raise ApprovalRequired(f"{action}: approval record is expired or has no numeric expiry")
+    if verifier is None or verifier(approval) is not True:
+        raise ApprovalRequired(f"{action}: approval record was not verified by the approval authority")
+
+
 # --- Adapter ----------------------------------------------------------------
 
 
 class ProductsPricesAdapter:
     def __init__(self, transport: Transport, store: Store, sleep: Callable[[float], None] = None,
-                 max_attempts: int = 3) -> None:
+                 max_attempts: int = 3,
+                 approval_verifier: Optional[Callable[[Mapping[str, Any]], bool]] = None) -> None:
         self._t = transport
         self._store = store
         self._sleep = sleep or (lambda _s: None)
         self._max = max_attempts
+        self._verify = approval_verifier
+
+    def _approve(self, approval: Optional[Mapping[str, Any]], action: str, location_id: str, key: LogicalKey) -> None:
+        require_write_approval(approval, self._verify, location_id=location_id, action=action,
+                               object_key=":".join(key.as_tuple()))
 
     # -- bounded backoff / denial handling -----------------------------------
 
@@ -433,9 +549,11 @@ class ProductsPricesAdapter:
 
     # -- products -------------------------------------------------------------
 
-    def ensure_product(self, key: LogicalKey, spec: ProductSpec) -> Tuple[NativeProduct, OpRecord]:
-        """Read before create; create with readback; persist confirmed ID immediately;
-        resume never duplicates. Uncertain create outcomes are reconciled first."""
+    def ensure_product(self, key: LogicalKey, spec: ProductSpec,
+                       approval: Optional[Mapping[str, Any]] = None) -> Tuple[NativeProduct, OpRecord]:
+        """Read first, reconcile, then create only on zero candidates and only with a
+        verified approval record; read back before the ID is trusted and persisted.
+        Run twice, it creates once (second run adopts the stored/listed product)."""
         if key.kind != "product":
             raise SpecError("ensure_product requires a product LogicalKey")
         if spec.location_id != key.location_id:
@@ -447,13 +565,18 @@ class ProductsPricesAdapter:
             return rec, OpRecord(ROUTES["get_product"][0] + " " + ROUTES["get_product"][1],
                                  key.location_id, rec.native_product_id, key.as_tuple(), "verified")
 
+        # Read first: a retry after a lost response (new process, empty store) finds the
+        # product by identity instead of duplicating it.
+        found = self._find_products(spec)
+        if found:
+            rec = self._read_product(found, spec)
+            self._store.put(key.as_tuple(), {"native_product_id": rec.native_product_id})
+            return rec, OpRecord(ROUTES["list_products"][0] + " " + ROUTES["list_products"][1],
+                                 key.location_id, rec.native_product_id, key.as_tuple(), "reconciled")
+
+        self._approve(approval, "products.create", spec.location_id, key)
         try:
-            created = self._call("create_product", body={
-                "name": spec.name,
-                "locationId": spec.location_id,
-                "productType": spec.product_type,
-                **({"description": spec.description} if spec.description else {}),
-            })
+            created = self._call("create_product", body=product_request_body(spec, spec.image_url))
         except (TransportTimeout, UncertainWriteOutcome):
             rec = self._reconcile_product(key, spec)
             return rec, OpRecord(ROUTES["create_product"][0] + " " + ROUTES["create_product"][1],
@@ -468,7 +591,7 @@ class ProductsPricesAdapter:
                              key.location_id, rec.native_product_id, key.as_tuple(), "verified")
 
     def _read_product(self, native_id: str, spec: ProductSpec) -> NativeProduct:
-        body = self._call("get_product", {"productId": native_id})
+        body = self._call("get_product", {"productId": native_id, "locationId": quote(spec.location_id, safe="")})
         got_id = str(body.get("_id") or "")
         if got_id != native_id:
             raise ReadbackMismatch(f"product readback id {got_id!r} != requested {native_id!r}")
@@ -480,34 +603,44 @@ class ProductsPricesAdapter:
             raise ReadbackMismatch(f"product {native_id} location readback {body.get('locationId')!r} != {spec.location_id!r}")
         return NativeProduct(native_id, spec.location_id, spec.name, spec.product_type)
 
-    def _reconcile_product(self, key: LogicalKey, spec: ProductSpec) -> NativeProduct:
-        """Timeout after send: list by identity (location+name+type, never name
-        alone), adopt exactly one match, refuse ambiguity, recreate on zero."""
-        listed = self._call("list_products", body={"locationId": spec.location_id})
-        candidates = [p for p in (listed.get("products") or [])
+    def _find_products(self, spec: ProductSpec) -> str:
+        """List by identity (location+name+type, never name alone). Returns the single
+        match's id, "" on zero, refuses ambiguity and refuses an incomplete page
+        (absence cannot be proven from a truncated list)."""
+        listed = self._call("list_products", {"locationId": quote(spec.location_id, safe=""),
+                                              "search": quote(spec.name, safe="")})
+        rows = listed.get("products") or []
+        total = listed.get("total")
+        if isinstance(total, list):  # real API: [{"total": n}]
+            total = (total[0] or {}).get("total") if total else None
+        if isinstance(total, int) and not isinstance(total, bool) and total > len(rows):
+            raise AmbiguousReconcile(f"product list for {spec.location_id} is truncated ({len(rows)} of {total}); refusing to guess")
+        candidates = [p for p in rows
                       if str(p.get("name") or "") == spec.name
                       and str(p.get("productType") or "") == spec.product_type
                       and str(p.get("locationId") or "") == spec.location_id]
         if len(candidates) > 1:
             raise AmbiguousReconcile(
                 f"product {spec.name!r} at {spec.location_id}: {len(candidates)} identity candidates; refusing to guess")
-        if not candidates:
-            created = self._call("create_product", body={
-                "name": spec.name, "locationId": spec.location_id, "productType": spec.product_type,
-                **({"description": spec.description} if spec.description else {}),
-            })
+        return str(candidates[0].get("_id") or "") if candidates else ""
+
+    def _reconcile_product(self, key: LogicalKey, spec: ProductSpec) -> NativeProduct:
+        """Uncertain create: list by identity, adopt exactly one match, recreate on zero
+        (the approval was already verified for this write)."""
+        native_id = self._find_products(spec)
+        if not native_id:
+            created = self._call("create_product", body=product_request_body(spec, spec.image_url))
             native_id = str(created.get("_id") or "")
             if not native_id:
                 raise ReadbackMismatch("recreate product response carries no _id")
-        else:
-            native_id = str(candidates[0].get("_id") or "")
         rec = self._read_product(native_id, spec)
         self._store.put(key.as_tuple(), {"native_product_id": rec.native_product_id})
         return rec
 
     # -- prices ---------------------------------------------------------------
 
-    def ensure_price(self, key: LogicalKey, spec: PriceSpec, product: NativeProduct) -> Tuple[NativePrice, OpRecord]:
+    def ensure_price(self, key: LogicalKey, spec: PriceSpec, product: NativeProduct,
+                     approval: Optional[Mapping[str, Any]] = None) -> Tuple[NativePrice, OpRecord]:
         """Same discipline as ensure_product, parented by the native product."""
         if key.kind != "price":
             raise SpecError("ensure_price requires a price LogicalKey")
@@ -520,6 +653,14 @@ class ProductsPricesAdapter:
             return rec, OpRecord(ROUTES["get_price"][0] + " " + ROUTES["get_price"][1],
                                  key.location_id, rec.native_price_id, key.as_tuple(), "verified")
 
+        found = self._find_price(spec, product)
+        if found:
+            rec = self._read_price(product, found, spec)
+            self._store.put(key.as_tuple(), {"native_price_id": rec.native_price_id})
+            return rec, OpRecord(ROUTES["list_prices"][0] + " " + ROUTES["list_prices"][1],
+                                 key.location_id, rec.native_price_id, key.as_tuple(), "reconciled")
+
+        self._approve(approval, "products.prices.create", spec.location_id, key)
         body = self._price_payload(spec)
         try:
             created = self._call("create_price", {"productId": product.native_product_id}, body)
@@ -537,29 +678,17 @@ class ProductsPricesAdapter:
                              key.location_id, rec.native_price_id, key.as_tuple(), "verified")
 
     def _price_payload(self, spec: PriceSpec) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {
-            "name": spec.name,
-            "locationId": spec.location_id,
-            "currency": spec.currency,
-            "amount": minor_to_api_amount(spec.amount_minor),
-            "type": "one_time" if spec.billing_type == "one_time" else "recurring",
-        }
-        if spec.description:
-            payload["description"] = spec.description
-        if spec.recurring_interval:
-            payload["recurring"] = {"interval": spec.recurring_interval, "intervalCount": 1}
-        if spec.trial_days is not None:
-            payload["trialPeriod"] = spec.trial_days
-        return payload
+        return price_request_body(spec)
 
     def _read_price(self, product: NativeProduct, native_id: str, spec: PriceSpec) -> NativePrice:
-        body = self._call("get_price", {"productId": product.native_product_id, "priceId": native_id})
+        body = self._call("get_price", {"productId": product.native_product_id, "priceId": native_id,
+                                        "locationId": quote(spec.location_id, safe="")})
         got_id = str(body.get("_id") or "")
         if got_id != native_id:
             raise ReadbackMismatch(f"price readback id {got_id!r} != requested {native_id!r}")
         if str(body.get("product") or "") != product.native_product_id:
             raise ReadbackMismatch(f"price {native_id} parent readback {body.get('product')!r} != {product.native_product_id!r}")
-        amount_minor = api_amount_to_minor(body.get("amount"))
+        amount_minor = api_amount_to_minor(body.get("amount"), spec.currency_exponent)
         if amount_minor != spec.amount_minor:
             raise ReadbackMismatch(f"price {native_id} amount readback {amount_minor} != {spec.amount_minor} minor")
         if str(body.get("currency") or "") != spec.currency:
@@ -571,6 +700,8 @@ class ProductsPricesAdapter:
             recurring = body.get("recurring") or {}
             if str(recurring.get("interval") or "") != spec.recurring_interval:
                 raise ReadbackMismatch(f"price {native_id} interval readback {recurring.get('interval')!r} != {spec.recurring_interval!r}")
+            if recurring.get("intervalCount", 1) != spec.recurring_interval_count:
+                raise ReadbackMismatch(f"price {native_id} intervalCount readback {recurring.get('intervalCount')!r} != {spec.recurring_interval_count!r}")
         raw_trial = body.get("trialPeriod")
         if raw_trial is None:
             readback_trial = None  # omitted: equal only when the spec expects no trial
@@ -591,13 +722,20 @@ class ProductsPricesAdapter:
             trial_days=readback_trial,
         )
 
-    def _reconcile_price(self, key: LogicalKey, spec: PriceSpec, product: NativeProduct) -> NativePrice:
-        listed = self._call("list_prices", {"productId": product.native_product_id})
+    def _find_price(self, spec: PriceSpec, product: NativeProduct) -> str:
+        """List the product's prices by identity (name+type+currency+amount); "" on zero,
+        refuses ambiguity and a truncated page."""
+        listed = self._call("list_prices", {"productId": product.native_product_id,
+                                            "locationId": quote(spec.location_id, safe="")})
+        rows = listed.get("prices") or []
+        total = listed.get("total")
+        if isinstance(total, int) and not isinstance(total, bool) and total > len(rows):
+            raise AmbiguousReconcile(f"price list on {product.native_product_id} is truncated ({len(rows)} of {total}); refusing to guess")
         want_type = "one_time" if spec.billing_type == "one_time" else "recurring"
         candidates = []
-        for p in (listed.get("prices") or []):
+        for p in rows:
             try:
-                minor = api_amount_to_minor(p.get("amount"))
+                minor = api_amount_to_minor(p.get("amount"), spec.currency_exponent)
             except ReadbackMismatch:
                 continue
             if (str(p.get("name") or "") == spec.name
@@ -608,13 +746,15 @@ class ProductsPricesAdapter:
         if len(candidates) > 1:
             raise AmbiguousReconcile(
                 f"price {spec.name!r} on {product.native_product_id}: {len(candidates)} identity candidates; refusing to guess")
-        if not candidates:
+        return str(candidates[0].get("_id") or "") if candidates else ""
+
+    def _reconcile_price(self, key: LogicalKey, spec: PriceSpec, product: NativeProduct) -> NativePrice:
+        native_id = self._find_price(spec, product)
+        if not native_id:
             created = self._call("create_price", {"productId": product.native_product_id}, self._price_payload(spec))
             native_id = str(created.get("_id") or "")
             if not native_id:
                 raise ReadbackMismatch("recreate price response carries no _id")
-        else:
-            native_id = str(candidates[0].get("_id") or "")
         rec = self._read_price(product, native_id, spec)
         self._store.put(key.as_tuple(), {"native_price_id": rec.native_price_id})
         return rec
@@ -665,6 +805,14 @@ class _FakeTransport(Transport):
         return action
 
 
+class _Approved(ProductsPricesAdapter):
+    """Self-check only: skips the approval step so the other scenarios exercise the
+    transport discipline; the approval gate itself is checked in scenario 15."""
+
+    def _approve(self, approval, action, location_id, key):
+        return None
+
+
 class _FakeComponentIO(ComponentIO):
     def __init__(self, initial: Optional[Mapping[str, Any]] = None,
                  drift_on_read: Optional[Mapping[str, Any]] = None) -> None:
@@ -701,34 +849,36 @@ def _self_check() -> int:
     product_body = {"_id": "prod_1", "locationId": loc, "name": "Vault Access", "productType": "DIGITAL"}
 
     # 1. Create product: POST /products/ then GET readback, ID persisted under the logical key.
-    t1 = _FakeTransport([Response(200, product_body), Response(200, product_body)])
+    t1 = _FakeTransport([Response(200, {"products": [], "total": 0}), Response(200, product_body), Response(200, product_body)])
     store = InMemoryStore()
-    a = ProductsPricesAdapter(t1, store, sleep=sleeps.append)
+    a = _Approved(t1, store, sleep=sleeps.append)
     key_p = LogicalKey(loc, "product", "funnelA.main.product")
     rec, op = a.ensure_product(key_p, ProductSpec("Vault Access", loc, "DIGITAL"))
     ok(rec.native_product_id == "prod_1", "create product returns native id")
-    ok(t1.calls[0][0:2] == ("POST", "/products/"), "create uses documented POST /products/ route")
-    ok(t1.calls[1][0:2] == ("GET", "/products/prod_1"), "readback uses documented GET /products/{productId}")
+    ok(t1.calls[0][0] == "GET" and t1.calls[0][1].startswith("/products/?locationId=loc_1"), "read-first lists products before any create")
+    ok(t1.calls[1][0:2] == ("POST", "/products/"), "create uses documented POST /products/ route")
+    ok(t1.calls[2][0:2] == ("GET", "/products/prod_1?locationId=loc_1"),
+       "readback uses documented GET /products/{productId} with the required locationId")
     ok(store.get(key_p.as_tuple()) == {"native_product_id": "prod_1"}, "confirmed ID persisted under logical key")
     ok(op.readback == "verified" and op.target == "prod_1", "operation record carries route/location/target/readback")
 
     # 2. Resume: store hit means readback only, never a second create.
     t2 = _FakeTransport([Response(200, product_body)])
-    a2 = ProductsPricesAdapter(t2, store, sleep=sleeps.append)
+    a2 = _Approved(t2, store, sleep=sleeps.append)
     rec2, _ = a2.ensure_product(key_p, ProductSpec("Vault Access", loc, "DIGITAL"))
     ok(rec2 == rec and len(t2.calls) == 1 and t2.calls[0][0] == "GET", "resume never duplicates the product")
 
     # 3. Price create: amount is integer minor units internally, documented numeric field on the wire.
     price_body = {"_id": "price_1", "product": "prod_1", "name": "Pay in full", "type": "one_time",
                   "currency": "USD", "amount": 97.5}
-    t3 = _FakeTransport([Response(200, price_body), Response(200, price_body)])
-    a3 = ProductsPricesAdapter(t3, store, sleep=sleeps.append)
+    t3 = _FakeTransport([Response(200, {"prices": [], "total": 0}), Response(200, price_body), Response(200, price_body)])
+    a3 = _Approved(t3, store, sleep=sleeps.append)
     key_r = LogicalKey(loc, "price", "funnelA.main.price", parent_logical_id="funnelA.main.product")
     prec, pop = a3.ensure_price(key_r, PriceSpec("Pay in full", loc, "one_time", "USD", 9750), rec)
     ok(prec.amount_minor == 9750 and prec.currency == "USD", "price terms preserved in integer minor units")
-    sent = t3.calls[0][2]
+    sent = t3.calls[1][2]
     ok(sent["amount"] == 97.5 and sent["type"] == "one_time", "wire amount/type match documented CreatePriceDto")
-    ok(t3.calls[0][0:2] == ("POST", "/products/prod_1/price"), "price create uses documented /products/{productId}/price")
+    ok(t3.calls[1][0:2] == ("POST", "/products/prod_1/price"), "price create uses documented /products/{productId}/price")
     ok(pop.readback == "verified", "price create readback verified")
 
     # 4. Recurring + trial mapping onto documented fields (recurring{interval,intervalCount},
@@ -736,13 +886,13 @@ def _self_check() -> int:
     rec_body = {"_id": "price_2", "product": "prod_1", "name": "Monthly", "type": "recurring",
                 "currency": "USD", "amount": 27.0, "recurring": {"interval": "month", "intervalCount": 1}}
     rec_body_ok = dict(rec_body, trialPeriod=7)
-    t4 = _FakeTransport([Response(200, rec_body_ok), Response(200, rec_body_ok)])
-    a4 = ProductsPricesAdapter(t4, store, sleep=sleeps.append)
+    t4 = _FakeTransport([Response(200, {"prices": [], "total": 0}), Response(200, rec_body_ok), Response(200, rec_body_ok)])
+    a4 = _Approved(t4, store, sleep=sleeps.append)
     key_m = LogicalKey(loc, "price", "funnelA.monthly.price", parent_logical_id="funnelA.main.product")
     mrec, _ = a4.ensure_price(
         key_m, PriceSpec("Monthly", loc, "trial_then_recurring", "USD", 2700,
                          recurring_interval="month", trial_days=7), rec)
-    sent4 = t4.calls[0][2]
+    sent4 = t4.calls[1][2]
     ok(sent4["type"] == "recurring" and sent4["recurring"] == {"interval": "month", "intervalCount": 1},
        "recurring terms map to documented RecurringDto")
     ok(sent4["trialPeriod"] == 7, "trial maps to documented trialPeriod days")
@@ -754,33 +904,33 @@ def _self_check() -> int:
 
     # 5. Readback drift is a failure: ID is not stored, mismatch raised.
     drift_body = dict(price_body, _id="price_9", amount=96.0)
-    t5 = _FakeTransport([Response(200, drift_body), Response(200, drift_body)])
-    a5 = ProductsPricesAdapter(t5, InMemoryStore(), sleep=sleeps.append)
+    t5 = _FakeTransport([Response(200, {"prices": [], "total": 0}), Response(200, drift_body), Response(200, drift_body)])
+    a5 = _Approved(t5, InMemoryStore(), sleep=sleeps.append)
     refused(lambda: a5.ensure_price(LogicalKey(loc, "price", "x", parent_logical_id="funnelA.main.product"),
                                     PriceSpec("Pay in full", loc, "one_time", "USD", 9750), rec),
             ReadbackMismatch, "amount drift on readback")
     ok(a5._store.get((loc, "price", "funnelA.main.product", "x")) is None, "mismatched ID is never persisted")
 
     # 6. Uncertain outcome (timeout on create) reconciles before retry: one candidate adopted, zero recreated.
-    t6 = _FakeTransport([TransportTimeout("boom"),
+    t6 = _FakeTransport([Response(200, {"products": [], "total": 0}), TransportTimeout("boom"),
                          Response(200, {"products": [product_body], "total": 1}),
                          Response(200, product_body)])
-    a6 = ProductsPricesAdapter(t6, InMemoryStore(), sleep=sleeps.append)
+    a6 = _Approved(t6, InMemoryStore(), sleep=sleeps.append)
     rec6, op6 = a6.ensure_product(LogicalKey(loc, "product", "p6"), ProductSpec("Vault Access", loc, "DIGITAL"))
     ok(rec6.native_product_id == "prod_1" and op6.readback == "reconciled", "timeout reconciles to the single identity candidate")
-    t6b = _FakeTransport([TransportTimeout("boom"),
+    t6b = _FakeTransport([Response(200, {"products": [], "total": 0}), TransportTimeout("boom"),
                           Response(200, {"products": [], "total": 0}),
                           Response(200, product_body),
                           Response(200, product_body)])
-    a6b = ProductsPricesAdapter(t6b, InMemoryStore(), sleep=sleeps.append)
+    a6b = _Approved(t6b, InMemoryStore(), sleep=sleeps.append)
     rec6b, _ = a6b.ensure_product(LogicalKey(loc, "product", "p6b"), ProductSpec("Vault Access", loc, "DIGITAL"))
-    ok(rec6b.native_product_id == "prod_1" and t6b.calls[2][0] == "POST", "zero candidates recreates once after reconcile")
+    ok(rec6b.native_product_id == "prod_1" and t6b.calls[3][0] == "POST", "zero candidates recreates once after reconcile")
 
     # 7. Ambiguous reconcile is refused, never guessed.
     twin = dict(product_body, _id="prod_2")
-    t7 = _FakeTransport([TransportTimeout("boom"),
+    t7 = _FakeTransport([Response(200, {"products": [], "total": 0}), TransportTimeout("boom"),
                          Response(200, {"products": [product_body, twin], "total": 2})])
-    a7 = ProductsPricesAdapter(t7, InMemoryStore(), sleep=sleeps.append)
+    a7 = _Approved(t7, InMemoryStore(), sleep=sleeps.append)
     refused(lambda: a7.ensure_product(LogicalKey(loc, "product", "p7"), ProductSpec("Vault Access", loc, "DIGITAL")),
             AmbiguousReconcile, "two identity candidates")
 
@@ -789,12 +939,12 @@ def _self_check() -> int:
     store8 = InMemoryStore()
     store8.put(key_p.as_tuple(), {"native_product_id": "prod_1"})
     t8 = _FakeTransport([Response(429, {}), Response(429, {}), Response(200, product_body)])
-    a8 = ProductsPricesAdapter(t8, store8, sleep=sleeps.append)
+    a8 = _Approved(t8, store8, sleep=sleeps.append)
     rec8, _ = a8.ensure_product(key_p, ProductSpec("Vault Access", loc, "DIGITAL"))
     ok(rec8.native_product_id == "prod_1" and len(sleeps) == 2, "429 on read retried with bounded backoff")
     ok(all(s <= 8.0 for s in sleeps), "backoff stays bounded")
     t9 = _FakeTransport([Response(403, {"message": "denied"})])
-    a9 = ProductsPricesAdapter(t9, InMemoryStore(), sleep=sleeps.append)
+    a9 = _Approved(t9, InMemoryStore(), sleep=sleeps.append)
     refused(lambda: a9.ensure_product(LogicalKey(loc, "product", "p9"), ProductSpec("Vault Access", loc, "DIGITAL")),
             RouteDenied, "403 denial")
     ok(len(t9.calls) == 1, "denial is never retried and never rerouted")
@@ -825,13 +975,13 @@ def _self_check() -> int:
     #     runs first -- NEVER a blind re-send (a duplicate product/price could
     #     result). Transport calls are counted: exactly one per write attempt.
     tw = _FakeTransport([Response(503, {}), Response(503, {}), Response(503, {})])
-    aw = ProductsPricesAdapter(tw, InMemoryStore(), sleep=sleeps.append)
+    aw = _Approved(tw, InMemoryStore(), sleep=sleeps.append)
     refused(lambda: aw._call("create_product", body={
         "name": "Vault Access", "locationId": loc, "productType": "DIGITAL"}),
             UncertainWriteOutcome, "503 on create write is an uncertain outcome")
     ok(len(tw.calls) == 1, "503 on write: exactly one transport call, never a blind retry")
     t429w = _FakeTransport([Response(429, {}), Response(429, {})])
-    a429w = ProductsPricesAdapter(t429w, InMemoryStore(), sleep=sleeps.append)
+    a429w = _Approved(t429w, InMemoryStore(), sleep=sleeps.append)
     refused(lambda: a429w._call("create_price", {"productId": "prod_1"}, {"name": "x"}),
             UncertainWriteOutcome, "429 on create write is an uncertain outcome")
     ok(len(t429w.calls) == 1, "429 on write: exactly one transport call, never a blind retry")
@@ -839,37 +989,37 @@ def _self_check() -> int:
     # 12. Reconcile-then-retry: the 5xx create surfaces as an uncertain outcome and
     #     the reconcile list runs BEFORE any write re-send (adopted candidate: zero
     #     re-sends; a re-send happens only after a zero-candidate list).
-    t11 = _FakeTransport([Response(503, {}),
+    t11 = _FakeTransport([Response(200, {"products": [], "total": 0}), Response(503, {}),
                           Response(200, {"products": [product_body], "total": 1}),
                           Response(200, product_body)])
-    a11 = ProductsPricesAdapter(t11, InMemoryStore(), sleep=sleeps.append)
+    a11 = _Approved(t11, InMemoryStore(), sleep=sleeps.append)
     rec11, op11 = a11.ensure_product(LogicalKey(loc, "product", "p11"), ProductSpec("Vault Access", loc, "DIGITAL"))
     posts11 = [c for c in t11.calls if c[0] == "POST"]
     ok(op11.readback == "reconciled" and rec11.native_product_id == "prod_1",
        "5xx create reconciles to the single identity candidate")
-    ok(len(posts11) == 1 and t11.calls[1][0] == "GET",
+    ok(len(posts11) == 1 and t11.calls[2][0] == "GET",
        "reconcile list runs before any write re-send (exactly one POST)")
 
     # 13. trialPeriod is verified on readback like every other field: drift is a
     #     mismatch, absent readback with a requested trial is a mismatch, and an
     #     unrequested trial is a mismatch (omitted + spec-none is equal, check 3/4).
     drift_trial = dict(rec_body, _id="price_3", trialPeriod=14)
-    t12 = _FakeTransport([Response(200, drift_trial), Response(200, drift_trial)])
-    a12 = ProductsPricesAdapter(t12, InMemoryStore(), sleep=sleeps.append)
+    t12 = _FakeTransport([Response(200, {"prices": [], "total": 0}), Response(200, drift_trial), Response(200, drift_trial)])
+    a12 = _Approved(t12, InMemoryStore(), sleep=sleeps.append)
     refused(lambda: a12.ensure_price(LogicalKey(loc, "price", "p12", parent_logical_id="funnelA.main.product"),
                                      PriceSpec("Monthly", loc, "trial_then_recurring", "USD", 2700,
                                                recurring_interval="month", trial_days=7), rec),
             ReadbackMismatch, "trialPeriod drift on readback")
     absent_trial = dict(rec_body, _id="price_4")
-    t13 = _FakeTransport([Response(200, absent_trial), Response(200, absent_trial)])
-    a13 = ProductsPricesAdapter(t13, InMemoryStore(), sleep=sleeps.append)
+    t13 = _FakeTransport([Response(200, {"prices": [], "total": 0}), Response(200, absent_trial), Response(200, absent_trial)])
+    a13 = _Approved(t13, InMemoryStore(), sleep=sleeps.append)
     refused(lambda: a13.ensure_price(LogicalKey(loc, "price", "p13", parent_logical_id="funnelA.main.product"),
                                      PriceSpec("Monthly", loc, "trial_then_recurring", "USD", 2700,
                                                recurring_interval="month", trial_days=7), rec),
             ReadbackMismatch, "absent trialPeriod with a requested trial is a mismatch")
     unrequested_trial = dict(price_body, _id="price_5", trialPeriod=3)
-    t14 = _FakeTransport([Response(200, unrequested_trial), Response(200, unrequested_trial)])
-    a14 = ProductsPricesAdapter(t14, InMemoryStore(), sleep=sleeps.append)
+    t14 = _FakeTransport([Response(200, {"prices": [], "total": 0}), Response(200, unrequested_trial), Response(200, unrequested_trial)])
+    a14 = _Approved(t14, InMemoryStore(), sleep=sleeps.append)
     refused(lambda: a14.ensure_price(LogicalKey(loc, "price", "p14", parent_logical_id="funnelA.main.product"),
                                      PriceSpec("Pay in full", loc, "one_time", "USD", 9750), rec),
             ReadbackMismatch, "unrequested trialPeriod on readback is a mismatch")
@@ -877,6 +1027,50 @@ def _self_check() -> int:
        and a13._store.get((loc, "price", "funnelA.main.product", "p13")) is None
        and a14._store.get((loc, "price", "funnelA.main.product", "p14")) is None,
        "trial-period mismatches never persist an ID")
+
+    # 14. CHK-20 money: currency exponent drives BOTH conversions; zero price and
+    #     bad currency are refused before any platform call.
+    ok(minor_to_api_amount(5000, 0) == 5000.0 and api_amount_to_minor(5000, 0) == 5000, "JPY 5000 -> 5000")
+    ok(minor_to_api_amount(1500, 3) == 1.5 and api_amount_to_minor(1.5, 3) == 1500, "KWD exponent 3")
+    jpy = PriceSpec("Yen", loc, "one_time", "JPY", 5000)
+    ok(jpy.currency_exponent == 0 and price_request_body(jpy)["amount"] == 5000.0, "JPY body amount is 5000, not 50")
+    ok(price_request_body(PriceSpec("Buck", loc, "one_time", "USD", 4900))["amount"] == 49.0, "$49.00 -> 49.0 major units")
+    refused(lambda: PriceSpec("x", loc, "one_time", "USD", 0), SpecError, "zero price without allow_free")
+    ok(PriceSpec("x", loc, "one_time", "USD", 0, allow_free=True).amount_minor == 0, "approved free route may be zero")
+    refused(lambda: PriceSpec("x", loc, "one_time", "usd", 100), SpecError, "lowercase currency")
+    refused(lambda: PriceSpec("x", loc, "one_time", "ZZZ", 100), SpecError, "unknown currency")
+    refused(lambda: PriceSpec("x", loc, "one_time", "JPY", 100, currency_exponent=2), SpecError, "contradicting exponent")
+
+    # 15. Approval: no create without a verified, bound, unexpired automation_write record.
+    kp = LogicalKey(loc, "product", "approval.product")
+    ap = {"kind": APPROVAL_KIND, "location_id": loc, "action": "products.create",
+          "object_key": ":".join(kp.as_tuple()), "plan_sha256": "ab" * 32, "approver": "client", "expiry": 4102444800}
+    list0 = Response(200, {"products": [], "total": 0})
+    for bad, why in ((None, "no record"), (dict(ap, kind="note"), "wrong kind"),
+                     (dict(ap, action="products.prices.create"), "wrong action"),
+                     (dict(ap, object_key="other"), "wrong object"), (dict(ap, expiry=1), "expired"),
+                     (dict(ap, approver=""), "no approver")):
+        tn = _FakeTransport([list0])
+        refused(lambda: ProductsPricesAdapter(tn, InMemoryStore(), approval_verifier=lambda r: True)
+                .ensure_product(kp, ProductSpec("Vault Access", loc, "DIGITAL"), bad), ApprovalRequired, why)
+        ok(all(c[0] == "GET" for c in tn.calls), f"{why}: no write reached the platform")
+    tn = _FakeTransport([list0])
+    refused(lambda: ProductsPricesAdapter(tn, InMemoryStore()).ensure_product(
+        kp, ProductSpec("Vault Access", loc, "DIGITAL"), ap), ApprovalRequired, "no verifier wired: fail closed")
+    refused(lambda: ProductsPricesAdapter(_FakeTransport([list0]), InMemoryStore(), approval_verifier=lambda r: False)
+            .ensure_product(kp, ProductSpec("Vault Access", loc, "DIGITAL"), ap), ApprovalRequired, "verifier rejects")
+
+    # 16. Idempotency across processes: a second run with an empty store finds the product
+    #     by read-first and creates nothing.
+    tr = _FakeTransport([list0, Response(200, product_body), Response(200, product_body),
+                         Response(200, {"products": [product_body], "total": 1}), Response(200, product_body)])
+    st = InMemoryStore()
+    ar = ProductsPricesAdapter(tr, st, approval_verifier=lambda r: True)
+    r1, _ = ar.ensure_product(kp, ProductSpec("Vault Access", loc, "DIGITAL"), ap)
+    r2, o2 = ProductsPricesAdapter(tr, InMemoryStore(), approval_verifier=lambda r: True).ensure_product(
+        kp, ProductSpec("Vault Access", loc, "DIGITAL"), ap)
+    ok(r1 == r2 and o2.readback == "reconciled" and [c[0] for c in tr.calls].count("POST") == 1,
+       "run twice: one POST, second run adopts the existing product")
 
     return checks
 

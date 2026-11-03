@@ -9,18 +9,18 @@
   },
   "device_labels": {"desktop": "DESKTOP", "mobile": "MOBILE"},
   "deliverables": [
-    {"id": "desktop_wireframe_sections", "device": "desktop", "kind": "wireframe", "stage": "desktop-wireframe", "glob": "desktop-wireframe/section-*.png", "needs": "images"},
-    {"id": "mobile_wireframe_sections", "device": "mobile", "kind": "wireframe", "stage": "mobile-tablet", "glob": "mobile-tablet/section-*.png", "needs": "images"},
-    {"id": "desktop_mockup_sections", "device": "desktop", "kind": "mockup", "stage": "visual-mockup", "glob": "visual-mockup/desktop/part-*.png", "needs": "images"},
-    {"id": "mobile_mockup_sections", "device": "mobile", "kind": "mockup", "stage": "visual-mockup", "glob": "visual-mockup/mobile/part-*.png", "needs": "images"},
+    {"id": "desktop_wireframe_sections", "device": "desktop", "kind": "wireframe", "stage": "desktop-wireframe", "glob": "desktop-wireframe/section-*.png", "labeled_glob": "review-pdfs/desktop-wireframes/{slug}_desktop_wireframe_s*-of-*_*.png", "needs": "images"},
+    {"id": "mobile_wireframe_sections", "device": "mobile", "kind": "wireframe", "stage": "mobile-tablet", "glob": "mobile-tablet/section-*.png", "labeled_glob": "review-pdfs/mobile-wireframes/{slug}_mobile_wireframe_s*-of-*_*.png", "needs": "images"},
+    {"id": "desktop_mockup_sections", "device": "desktop", "kind": "mockup", "stage": "visual-mockup", "glob": "visual-mockup/desktop/part-*.png", "labeled_glob": "review-pdfs/desktop-mockups/{slug}_desktop_mockup-final_s*-of-*_*.png", "needs": "images"},
+    {"id": "mobile_mockup_sections", "device": "mobile", "kind": "mockup", "stage": "visual-mockup", "glob": "visual-mockup/mobile/part-*.png", "labeled_glob": "review-pdfs/mobile-mockups/{slug}_mobile_mockup-final_s*-of-*_*.png", "needs": "images"},
     {"id": "desktop_wireframe_pdf", "device": "desktop", "kind": "wireframe", "stage": "desktop-wireframe", "glob": "review-pdfs/{slug}_DESKTOP_WIREFRAMES.pdf", "needs": "render"},
     {"id": "mobile_wireframe_pdf", "device": "mobile", "kind": "wireframe", "stage": "mobile-tablet", "glob": "review-pdfs/{slug}_MOBILE_WIREFRAMES.pdf", "needs": "render"},
-    {"id": "desktop_mockup_pdf", "device": "desktop", "kind": "mockup", "stage": "visual-mockup", "glob": "review-pdfs/{slug}_DESKTOP_MOCKUPS-VISUAL.pdf", "needs": "render"},
-    {"id": "mobile_mockup_pdf", "device": "mobile", "kind": "mockup", "stage": "visual-mockup", "glob": "review-pdfs/{slug}_MOBILE_MOCKUPS-VISUAL.pdf", "needs": "render"},
+    {"id": "desktop_mockup_pdf", "device": "desktop", "kind": "mockup", "stage": "final-mockups", "glob": "review-pdfs/{slug}_DESKTOP_MOCKUPS-FINAL.pdf", "needs": "render"},
+    {"id": "mobile_mockup_pdf", "device": "mobile", "kind": "mockup", "stage": "final-mockups", "glob": "review-pdfs/{slug}_MOBILE_MOCKUPS-FINAL.pdf", "needs": "render"},
     {"id": "overview_boards", "device": "desktop+mobile", "kind": "board", "stage": "visual-mockup", "glob": "review-pdfs/{slug}_*-BOARD.*", "needs": "render"}
   ],
   "needs_legend": {
-    "images": "the section images; the free stub provider draws placeholders for these",
+    "images": "the section images; the free stub provider draws placeholders for these. `glob` is the raw layout proof every provider draws; `labeled_glob` is the labeled client copy Skill 71 writes on the paid provider (the files AF-LAUNCH-PAGE-DESIGNS counts; the mockup ones exist only after final-mockups closes)",
     "render": "the review PDFs and overview boards; composed only on the paid provider, so a stub run reports them as pending, never as present"
   },
   "pages": {

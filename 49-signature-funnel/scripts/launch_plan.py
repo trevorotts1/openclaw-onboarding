@@ -97,6 +97,28 @@ _CONTRACT_PAGE_KIND = {
 # U-GHL-PROBE: every family builds through Skill 44's engine (see module docstring).
 BUILD_RAIL = "skill44_engine"
 
+# S44-12: each family names a template key from Skill 44's buildable-templates.json,
+# never a prose-only name Skill 44 cannot build.
+# Repo layout names the skill folder 44-convert-and-flow-operator; the installed layout
+# (~/.claude/skills) drops the number prefix. First existing wins, else the repo path.
+_MANIFEST_CANDIDATES = [HERE.parents[1] / d / "automation-templates" / "_matcher"
+                        / "buildable-templates.json"
+                        for d in ("44-convert-and-flow-operator", "convert-and-flow-operator")]
+BUILDABLE_MANIFEST = next((c for c in _MANIFEST_CANDIDATES if c.is_file()), _MANIFEST_CANDIDATES[0])
+TEMPLATE_BY_FAMILY = {
+    "pre_launch": "launch-a/launch-a-prelaunch-window",
+    "opt_in": "launch-a/launch-optin-register-login",
+    "event_reminders": "launch-a/launch-a-reminder-confirm",
+    "post_sale": "launch-b/launch-post-sale-purchase",
+    "upsell_downsell": "launch-b/upsell-downsell-branch",
+    "abandoned_checkout": "launch-b/abandoned-checkout-recovery",
+    "page_retargeting": "launch-b/launch-b-retarget-visited-sales-no-checkout",
+    "onboarding_review": "launch-c/launch-c-onboarding-first-hour-day-week",
+    "win_back": "launch-c/launch-win-back-closed-no-purchase",
+    "failed_payment": "launch-c/failed-payment-recovery",
+    "conversation_ai_reply": "launch-ai/customer-replied-conversation-ai",
+}
+
 _MISSING = object()
 
 
@@ -577,56 +599,59 @@ def _automations(*, has_upsells: bool, has_checkout: bool, has_thank_you: bool,
 
     landing_wait = "page_landing" if has_landing else ("page_sales" if has_sales else "")
     out = [
-        unit("auto_pre_launch", "pre_launch", "cart-open-cart-close-launch-sequence",
+        unit("auto_pre_launch", "pre_launch", TEMPLATE_BY_FAMILY["pre_launch"],
              "launch_calendar",
              "teaser, countdown, doors open and doors close switches drive tags and the "
              "email/text schedule" + (" (Black Friday: teaser, countdown, Cyber Monday, last call)"
                                       if black_friday else ""),
              ["email_pre_launch", "email_main_launch", "email_doors_closing"]
              + tset("text_doors_open")),
-        unit("auto_opt_in", "opt_in", "post-optin-multichannel-stack", "form_submitted",
+        unit("auto_opt_in", "opt_in", TEMPLATE_BY_FAMILY["opt_in"], "form_submitted",
              "waitlist / registration opt-in tags the contact and starts nurture",
              tset("text_opt_in_confirmation", "text_keyword_opt_in") + ["email_pre_launch"]),
     ]
     if event_eligible:  # approved live-event facts only; never for a self-paced product
         out.append(unit("auto_event_reminders", "event_reminders",
-                        "webinar-registration-reminder-replay-stack", "registration",
+                        TEMPLATE_BY_FAMILY["event_reminders"], "registration",
                         "confirm, 1 week / 3 days / 1 day / 1 hour / 15 minutes before, then "
                         "replay and no-show follow-up", ["email_pre_launch"]
                         + tset("text_event_reminder")))
     post_sale_waits = ["email_welcome_access"] + (["page_thank_you"] if has_thank_you else []) \
         + tset("text_access_link")
-    out.append(unit("auto_post_sale", "post_sale", "new", "payment_succeeded",
+    out.append(unit("auto_post_sale", "post_sale", TEMPLATE_BY_FAMILY["post_sale"], "payment_succeeded",
                     "access + welcome, promotional sends stop, next follow-up starts",
                     post_sale_waits))
     if has_upsells:
         followups = [f"email_{k}" for k in ("upsell_1", "upsell_2", "downsell_1", "downsell_2")]
-        out.append(unit("auto_upsell_branch", "upsell_downsell", "new", "upsell_decision",
+        out.append(unit("auto_upsell_branch", "upsell_downsell", TEMPLATE_BY_FAMILY["upsell_downsell"],
+                        "upsell_decision",
                         "bought or declined routes to the matching follow-up",
                         [i for i in followups if i in set(email_ids)]))
     if has_checkout:
         out.append(unit("auto_abandoned_checkout", "abandoned_checkout",
-                        "abandoned-cart-multichannel-recovery", "checkout_started_unpaid",
+                        TEMPLATE_BY_FAMILY["abandoned_checkout"], "checkout_started_unpaid",
                         "recovery stops on purchase",
                         ["email_abandoned_checkout"] + tset("text_abandoned_checkout")))
     out.append(unit("auto_page_retargeting", "page_retargeting",
-                    "behavioral-retargeting-page-visit-fire", "page_visit_no_checkout",
+                    TEMPLATE_BY_FAMILY["page_retargeting"], "page_visit_no_checkout",
                     "sales page visit without checkout gets one nudge",
                     [landing_wait] if landing_wait else []))
     out.append(unit("auto_onboarding_review", "onboarding_review",
-                    "membership-stick-retention", "purchase",
+                    TEMPLATE_BY_FAMILY["onboarding_review"], "purchase",
                     "first hour / day / week, then a review and referral ask",
                     ["auto_post_sale"]))
-    out.append(unit("auto_win_back", "win_back", "re-engagement-winback-broadcast",
+    out.append(unit("auto_win_back", "win_back", TEMPLATE_BY_FAMILY["win_back"],
                     "launch_closed_no_purchase",
                     "re-engagement for the next offer",
                     ["auto_post_sale"] + tset("text_last_call")))
     if payment_plans:
-        out.append(unit("auto_failed_payment", "failed_payment", "new", "payment_failed",
+        out.append(unit("auto_failed_payment", "failed_payment", TEMPLATE_BY_FAMILY["failed_payment"],
+                        "payment_failed",
                         "payment-plan recovery only (the offer has payment plans)",
                         ["auto_post_sale"]))
     if ai_requested:
-        out.append(unit("auto_ai_reply", "conversation_ai_reply", "new", "customer_replied",
+        out.append(unit("auto_ai_reply", "conversation_ai_reply", TEMPLATE_BY_FAMILY["conversation_ai_reply"],
+                        "customer_replied",
                         "SMS and chat replies route to the Conversation AI action; keyword "
                         "wake-up re-enables the bot",
                         tset("text_opt_in_confirmation") + ["auto_post_sale"]))
@@ -829,6 +854,38 @@ def build_from_session(session: Dict[str, Any], *,
         raise LaunchPlanError("session has no assembled launch record")
     return build_launch_plan(launch, session.get("answers") or {},
                              landing_pages=landing_pages, extra_pages=extra_pages)
+
+
+def buildable_keys(manifest: Path = BUILDABLE_MANIFEST) -> frozenset:
+    """Template keys Skill 44 can build (buildable-templates.json)."""
+    data = json.loads(Path(manifest).read_text(encoding="utf-8"))
+    return frozenset(t["key"] for t in data.get("templates", []) if t.get("key"))
+
+
+def template_problems(plan: Dict[str, Any], buildable: Optional[frozenset] = None) -> List[str]:
+    """One problem per automation whose template Skill 44 cannot build (S44-12).
+
+    A template must be a buildable-templates.json key. 'new' is accepted only with
+    an owner-approved reason and a compile spec on the unit; anything else blocks.
+    This is the generator-side gate; Skill 44's plan_reader enforces the same rule
+    against its own sibling manifest."""
+    keys = buildable_keys() if buildable is None else buildable
+    problems = []
+    for unit in plan.get("automations", []):
+        template = unit.get("template")
+        if template in keys:
+            continue
+        if template == "new":
+            new = unit.get("new_template")
+            if isinstance(new, dict) and str(new.get("owner_approved_reason") or "").strip() \
+                    and new.get("compile_spec"):
+                continue
+            problems.append(f"{unit.get('id')}: 'new' needs an owner-approved reason and a "
+                            "compile spec")
+        else:
+            problems.append(f"{unit.get('id')}: template {template!r} is not in "
+                            "buildable-templates.json")
+    return problems
 
 
 def check(plan: Dict[str, Any]) -> List[str]:

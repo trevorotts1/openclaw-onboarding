@@ -3,7 +3,9 @@
 Covers the three subcommands added for the ecosystem build:
   * caf calendars create        -> POST /calendars/        (Version 2021-04-15)
   * caf payments create-product -> POST /products/          (Version 2021-07-28)
-  * caf payments create-price   -> POST /products/{id}/price (singular)
+  * caf payments create-price   -> POST /products/{id}/price (singular); the CLI
+    takes cents, the wire carries the documented amount (dollars) and the
+    created record is read back
 
 Every test uses mocks/fixtures — NO live CRM is contacted. Two layers are
 exercised:
@@ -70,8 +72,17 @@ def _clear_env():
         os.environ.pop(k, None)
 
 
+# TEST-ONLY approval: creates need a verified automation_write approval record. The
+# CLI's verify hook is faked here with the shape approval_record.verify returns; nothing
+# below is a real approval and the approval authority is never contacted.
+_TEST_ONLY_VERIFIED = {"ok": True, "approval_id": "TEST-ONLY-APPROVAL", "kind": "automation_write",
+                       "client_identity": "test-only-client", "expires_at": "2999-01-01T00:00:00+00:00",
+                       "authority": "local-test-record", "test_only": True}
+_TEST_ONLY_APPROVAL_ARGS = ["--approval-id", "TEST-ONLY-APPROVAL", "--plan-sha256", "0" * 64]
+
+
 class _PatchedApiBase(unittest.TestCase):
-    """Patches gohighlevel_cli.api.post and returns the recorded call."""
+    """Patches gohighlevel_cli.api.post/get and returns the recorded calls."""
 
     def setUp(self):
         _approved_env()
@@ -79,24 +90,32 @@ class _PatchedApiBase(unittest.TestCase):
     def tearDown(self):
         _clear_env()
 
-    def _invoke(self, args, post_return):
+    def _invoke(self, args, post_return, get_return=None):
         from click.testing import CliRunner
         from cli_anything.gohighlevel.gohighlevel_cli import cli
 
+        get_kw = ({"side_effect": get_return} if callable(get_return)
+                  else {"return_value": get_return})
         with patch(
             "cli_anything.gohighlevel.gohighlevel_cli.api.post",
             return_value=post_return,
-        ) as mock_post:
+        ) as mock_post, patch(
+            "cli_anything.gohighlevel.gohighlevel_cli.api.get",
+            **get_kw,
+        ) as mock_get, patch(
+            "cli_anything.gohighlevel.gohighlevel_cli._verify_automation_write",
+            return_value=dict(_TEST_ONLY_VERIFIED),
+        ):
             runner = CliRunner()
             result = runner.invoke(cli, args)
-        return result, mock_post
+        return result, mock_post, mock_get
 
 
 # ── calendars create ──────────────────────────────────────────────────────────
 
 class TestCalendarsCreate(_PatchedApiBase):
     def test_posts_to_calendars_with_correct_body(self):
-        result, mock_post = self._invoke(
+        result, mock_post, mock_get = self._invoke(
             ["--json", "--location-id", LOC,
              "calendars", "create",
              "--name", "ZHC Scent-Bar Workshop",
@@ -117,7 +136,7 @@ class TestCalendarsCreate(_PatchedApiBase):
         self.assertEqual(data["id"], "CAL_NEW")
 
     def test_omits_team_members_when_none_given(self):
-        result, mock_post = self._invoke(
+        result, mock_post, mock_get = self._invoke(
             ["--json", "--location-id", LOC,
              "calendars", "create", "--name", "ZHC Cal"],
             post_return={"id": "CAL2"},
@@ -129,15 +148,36 @@ class TestCalendarsCreate(_PatchedApiBase):
 
 # ── payments create-product / create-price ────────────────────────────────────
 
+def _product_get(name="ZHC Workshop Seat"):
+    """GET router: the read-first list is empty, the read-back returns the created product."""
+    def get(path, params=None, version=None):
+        if path.split("?")[0] == "/products/":
+            return {"products": [], "total": 0}
+        return {"_id": "PROD_NEW", "name": name, "productType": "SERVICE", "locationId": LOC}
+    return get
+
+
+def _price_get(amount=49.0):
+    """GET router: no price listed yet, the read-back returns the created price."""
+    def get(path, params=None, version=None):
+        if path.split("?")[0] == "/products/PROD_NEW/price":
+            return {"prices": [], "total": 0}
+        return {"_id": "PRICE_NEW", "product": "PROD_NEW", "amount": amount,
+                "currency": "USD", "type": "one_time"}
+    return get
+
+
 class TestPaymentsCreateProduct(_PatchedApiBase):
-    def test_posts_to_products_with_location_id(self):
-        result, mock_post = self._invoke(
-            ["--json", "--location-id", LOC,
+    _ARGS = ["--json", "--location-id", LOC,
              "payments", "create-product",
              "--name", "ZHC Workshop Seat",
-             "--type", "SERVICE",
-             "--image-url", "https://storage.googleapis.com/msgsndr/x.png"],
-            post_return={"product": {"_id": "PROD_NEW"}},
+             "--type", "SERVICE"] + _TEST_ONLY_APPROVAL_ARGS
+
+    def test_posts_to_products_with_location_id(self):
+        result, mock_post, mock_get = self._invoke(
+            self._ARGS,
+            post_return={"_id": "PROD_NEW"},
+            get_return=_product_get(),
         )
         self.assertEqual(result.exit_code, 0, f"Output: {result.output}")
         path = mock_post.call_args.args[0]
@@ -150,33 +190,109 @@ class TestPaymentsCreateProduct(_PatchedApiBase):
         self.assertEqual(body["locationId"], LOC)
         self.assertNotIn("altId", body)
         self.assertNotIn("altType", body)
-        self.assertEqual(body["image"], "https://storage.googleapis.com/msgsndr/x.png")
+        # Shared adapter reads the created record back.
+        self.assertEqual(mock_post.call_count, 1)
+        self.assertEqual(mock_get.call_args.args[0].split("?")[0], "/products/PROD_NEW")
+        data = json.loads(result.output)
+        self.assertEqual(data["native_product_id"], "PROD_NEW")
+        self.assertEqual(data["readback"], "verified")
+
+    def test_without_approval_id_refuses_and_never_posts(self):
+        result, mock_post, _ = self._invoke(
+            self._ARGS[:-4],  # same command, no --approval-id / --plan-sha256
+            post_return={"_id": "PROD_NEW"},
+            get_return=_product_get(),
+        )
+        self.assertNotEqual(result.exit_code, 0, f"Output: {result.output}")
+        self.assertIn("approval", result.output)
+        self.assertEqual(mock_post.call_count, 0)
+
+    def test_image_url_refused_never_posts(self):
+        result, mock_post, mock_get = self._invoke(
+            self._ARGS + ["--image-url", "https://storage.googleapis.com/msgsndr/x.png"],
+            post_return={"_id": "PROD_NEW"},
+        )
+        self.assertEqual(result.exit_code, 2, f"Output: {result.output}")
+        self.assertIn("REFUSED", result.output)
+        self.assertEqual(mock_post.call_count, 0)
+        self.assertEqual(mock_get.call_count, 0)
+
+    def test_readback_mismatch_fails(self):
+        result, mock_post, _ = self._invoke(
+            self._ARGS,
+            post_return={"_id": "PROD_NEW"},
+            get_return=_product_get(name="Other"),
+        )
+        self.assertNotEqual(result.exit_code, 0, f"Output: {result.output}")
+        self.assertEqual(mock_post.call_count, 1)  # never a second create
 
 
 class TestPaymentsCreatePrice(_PatchedApiBase):
-    def test_posts_to_product_price_with_amount_cents(self):
-        result, mock_post = self._invoke(
-            ["--json", "--location-id", LOC,
+    _ARGS = ["--json", "--location-id", LOC,
              "payments", "create-price",
              "--product-id", "PROD_NEW",
              "--name", "Workshop Seat",
              "--amount", "4900",
-             "--currency", "USD"],
-            post_return={"_id": "PRICE_NEW", "amount": 4900},
+             "--currency", "USD"] + _TEST_ONLY_APPROVAL_ARGS
+
+    def test_posts_to_product_price_with_amount_cents(self):
+        result, mock_post, mock_get = self._invoke(
+            self._ARGS,
+            post_return={"_id": "PRICE_NEW"},
+            get_return=_price_get(),
         )
         self.assertEqual(result.exit_code, 0, f"Output: {result.output}")
         path = mock_post.call_args.args[0]
         body = mock_post.call_args.kwargs["data"]
         # GHL Products API: create price is POST /products/{id}/price (SINGULAR)
-        # with locationId + product; no altId/altType.
+        # with locationId; the product id rides in the path, no altId/altType.
         self.assertEqual(path, "/products/PROD_NEW/price")
         self.assertEqual(body["locationId"], LOC)
-        self.assertEqual(body["product"], "PROD_NEW")
-        self.assertEqual(body["amount"], 4900)
+        self.assertEqual(body["amount"], 49.0)  # documented CreatePriceDto dollars
         self.assertEqual(body["currency"], "USD")
         self.assertEqual(body["type"], "one_time")
         self.assertNotIn("altId", body)
         self.assertNotIn("altType", body)
+        # Parent link is proven by the read-back path.
+        self.assertEqual(mock_get.call_args.args[0].split("?")[0],
+                         "/products/PROD_NEW/price/PRICE_NEW")
+        self.assertEqual(json.loads(result.output)["amount_minor"], 4900)
+
+    def test_without_approval_id_refuses_and_never_posts(self):
+        result, mock_post, _ = self._invoke(
+            self._ARGS[:-4],
+            post_return={"_id": "PRICE_NEW"},
+            get_return=_price_get(),
+        )
+        self.assertNotEqual(result.exit_code, 0, f"Output: {result.output}")
+        self.assertIn("approval", result.output)
+        self.assertEqual(mock_post.call_count, 0)
+
+    def test_recurring_interval_count_and_trial_ride_the_shared_body(self):
+        def get(path, params=None, version=None):
+            if path.split("?")[0] == "/products/PROD_NEW/price":
+                return {"prices": [], "total": 0}
+            return {"_id": "PRICE_NEW", "product": "PROD_NEW", "amount": 49.0, "currency": "USD",
+                    "type": "recurring", "recurring": {"interval": "month", "intervalCount": 3},
+                    "trialPeriod": 7}
+        result, mock_post, _ = self._invoke(
+            self._ARGS + ["--type", "recurring", "--interval", "month",
+                          "--interval-count", "3", "--trial-days", "7"],
+            post_return={"_id": "PRICE_NEW"}, get_return=get,
+        )
+        self.assertEqual(result.exit_code, 0, f"Output: {result.output}")
+        body = mock_post.call_args.kwargs["data"]
+        self.assertEqual(body["recurring"], {"interval": "month", "intervalCount": 3})
+        self.assertEqual(body["trialPeriod"], 7)
+
+    def test_amount_readback_mismatch_fails(self):
+        result, mock_post, _ = self._invoke(
+            self._ARGS,
+            post_return={"_id": "PRICE_NEW"},
+            get_return=_price_get(amount=48.0),
+        )
+        self.assertNotEqual(result.exit_code, 0, f"Output: {result.output}")
+        self.assertEqual(mock_post.call_count, 1)
 
 
 # ── Safety gate fires (lowest-layer requests patched; gate must refuse first) ─

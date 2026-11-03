@@ -19,6 +19,12 @@ from receiver import (EXIT_GATE, EXIT_OK, Receiver, plan_hash,
                       stage14_outcome)
 from store import Store
 
+
+def _cc_approved(ref, kind, phash, scope, **kw):
+    """Stub approval_record.verify: the approval gate itself is proven in
+    test_receiver_approval.py; these suites test everything after the gate."""
+    return {"ok": True, "authority": "test-stub"}
+
 HANDOFF = "5ea1502da48cf5c46317c865cfa06ef4f772cede6bba2026852a28809afb2325"
 
 class FakeExecutor:
@@ -76,7 +82,8 @@ class Stage14OutcomeTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.store = Store(str(Path(self.tmp.name) / "s44.db"))
         self.rx = Receiver(self.store, FakeExecutor(),
-                           configured_location="LOC1")
+                           configured_location="LOC1",
+                           approval_verifier=_cc_approved)
 
     def tearDown(self):
         self.tmp.cleanup()

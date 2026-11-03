@@ -254,7 +254,7 @@
       "validators": [
         "python3 scripts/validate_wireframe.py {run_dir} desktop-wireframe",
         "python3 scripts/design_style.py validate-inventory {run_dir}",
-        "python3 scripts/validate_production_record.py {run_dir}/desktop-wireframe/production-record.json",
+        "python3 scripts/validate_production_record.py {run_dir}/desktop-wireframe/production-record.json --ocr --model {model}",
         "python3 scripts/validate_review_pdf.py {run_dir} --stage desktop-wireframe"
       ],
       "review_required": true,
@@ -310,7 +310,7 @@
       ],
       "validators": [
         "python3 scripts/validate_wireframe.py {run_dir} mobile-tablet",
-        "python3 scripts/validate_production_record.py {run_dir}/mobile-tablet/production-record.json",
+        "python3 scripts/validate_production_record.py {run_dir}/mobile-tablet/production-record.json --ocr --model {model}",
         "python3 scripts/validate_review_pdf.py {run_dir} --stage mobile-tablet"
       ],
       "review_required": true,
@@ -366,6 +366,7 @@
       ],
       "validators": [
         "python3 scripts/validate_visual_direction.py {run_dir}",
+        "python3 scripts/validate_production_record.py {run_dir}/visual-mockup/production-record.json --ocr --model {model} --if-present",
         "python3 scripts/validate_page.py {run_dir}/visual-mockup/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}",
         "python3 scripts/validate_review_pdf.py {run_dir} --stage visual-mockup"
       ],
@@ -394,7 +395,8 @@
         "references/composition-treatments.json (the treatments, role defaults, prompt sentences and QC thresholds; every slot declares one treatment)",
         "assets/visual-standards/reference-catalog.json (typed hosted references: wireframe, mockup, hybrid image map, mood board, mockup crop, by section and viewport)"
       ],
-      "may_be_not_authorized": false
+      "may_be_not_authorized": false,
+      "production_record_note": "The layout proof's section images are read back (OCR, AF-G1) and checked against the logo (AF-G2) whenever the stage carries visual-mockup/production-record.json (--if-present: a stage that writes none is not failed here, because the record was never a visual-mockup artifact; the client-judged final-mockups stage requires it). The solid-block slots are by design and are never scored as photography."
     },
     "image-inventory-prompts": {
       "itemized": true,
@@ -418,7 +420,7 @@
       "count_of": "desktop-wireframe/image-inventory.json",
       "count_glob": "image-inventory-prompts/IMG-*.txt",
       "validators": [
-        "python3 scripts/validate_prompt.py {file} {sauce}"
+        "python3 scripts/validate_prompt.py {file} {sauce} --model {model} --max-chars {max_chars}"
       ],
       "review_required": true,
       "min_scores": {
@@ -595,7 +597,7 @@
       "validators": [
         "python3 scripts/validate_page.py {run_dir}/final-mockups/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}",
         "python3 scripts/validate_mockup_slots.py {run_dir} final-mockups",
-        "python3 scripts/validate_production_record.py {run_dir}/final-mockups/production-record.json",
+        "python3 scripts/validate_production_record.py {run_dir}/final-mockups/production-record.json --ocr --model {model}",
         "python3 scripts/validate_review_pdf.py {run_dir} --stage final-mockups"
       ],
       "review_required": true,

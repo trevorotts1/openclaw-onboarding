@@ -24,7 +24,13 @@ landing kinds hand off differently:
   anchor to an absolute http(s) checkout/payment link: never a fragment
   or placeholder. When intake records the destination (funnel_handoff.
   checkout_url, funnel_handoff.checkout.url, or intake.json
-  checkout_url), the page's link must be that destination.
+  checkout_url), the page's link must be that destination. The destination
+  is also tied to the approved offer (CHK-28), recorded under
+  funnel_handoff or at the top of intake.json: once a checkout_result
+  exists the link must equal its read_back_url / native_page_url; until
+  then a client-built checkout needs a checkout_attestation (url, attested_by,
+  product, price {amount, currency}, optional bump) whose price read-back
+  matches the recorded approved_price.
 
 A run that declares no page_kind keeps the form route (the contract this
 check shipped with). This check verifies, on the built page
@@ -47,9 +53,11 @@ check shipped with). This check verifies, on the built page
 When intake records the missing input, a placeholder primary CTA is
 carried under that recorded flag (printed here, never silent) and this
 check passes; the flag is the run's own record, not this check's
-invention. The live proof (the button actually opens the named form, or
-the checkout page takes payment, and the journey lands and routes
-onward) is the funnel-completion receipt's, verified by
+invention. On the checkout route the flag carries only a placeholder
+primary CTA (an empty or fragment href, or no link at all); a live
+checkout link under it is still tied to the approved offer (CHK-28).
+The live proof (the button actually opens the named form, or the
+checkout page takes payment, and the journey lands and routes onward) is the funnel-completion receipt's, verified by
 scripts/validate_funnel_completion.py.
 
 Exit 0 pass, 1 fail, 2 usage error.
@@ -57,6 +65,7 @@ Exit 0 pass, 1 fail, 2 usage error.
 import json
 import re
 import sys
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import page_kinds
@@ -154,6 +163,86 @@ def norm_url(value):
     return value.strip().rstrip("/")
 
 
+def money(value):
+    """(amount, currency) from {"amount": ..., "currency": ...}, or None."""
+    if not isinstance(value, dict) or isinstance(value.get("amount"), bool):
+        return None
+    cur = value.get("currency")
+    try:
+        amount = Decimal(str(value.get("amount")).strip())
+    except InvalidOperation:
+        return None
+    if not amount.is_finite() or not (isinstance(cur, str) and cur.strip()):
+        return None
+    return amount, cur.strip().casefold()
+
+
+def recorded(intake, handoff, key):
+    """A record kept under funnel_handoff or at the top of intake.json."""
+    for src in (handoff, intake):
+        if src.get(key) is not None:
+            return src[key]
+    return None
+
+
+def checkout_proof(intake, handoff, destination, label):
+    """CHK-28: a sales page's checkout destination is tied to the approved
+    offer. With a checkout_result (the installed checkout) the CTA must be its
+    read-back URL; until one exists, a client-built checkout needs the client's
+    attestation of its URL plus a product/price read-back that matches the
+    approved price. Returns (failure or None, note for the PASS line)."""
+    result = recorded(intake, handoff, "checkout_result")
+    if result is not None:
+        urls = [result.get(k) for k in ("read_back_url", "native_page_url")] \
+            if isinstance(result, dict) else []
+        native = next((u.strip() for u in urls
+                       if isinstance(u, str) and u.strip()), None)
+        if native is None:
+            return (f"checkout_result carries no read_back_url or "
+                    f"native_page_url: the installed checkout's read-back URL "
+                    f"is the only destination primary CTA {label!r} may lead "
+                    f"to", None)
+        if norm_url(native) != norm_url(destination):
+            return (f"primary CTA {label!r} points at {destination!r}, not "
+                    f"the checkout_result's native page URL ({native!r}): once "
+                    f"a checkout is installed the button leads to its "
+                    f"read-back URL", None)
+        return None, "the checkout_result's native page URL"
+    att = recorded(intake, handoff, "checkout_attestation")
+    approved = money(recorded(intake, handoff, "approved_price"))
+    if not isinstance(att, dict):
+        return (f"primary CTA {label!r} leads to a client-built checkout "
+                f"({destination!r}) with no checkout_result and no "
+                f"checkout_attestation: record the client's attestation of "
+                f"the URL with a product/price read-back, or install the "
+                f"checkout", None)
+    problems = []
+    if norm_url(str(att.get("url") or "")) != norm_url(destination):
+        problems.append(f"its url {att.get('url')!r} is not the CTA "
+                        f"destination {destination!r}")
+    if not (isinstance(att.get("attested_by"), str)
+            and att["attested_by"].strip()):
+        problems.append("it names no attested_by")
+    if not (isinstance(att.get("product"), str) and att["product"].strip()):
+        problems.append("it carries no product read-back")
+    if approved is None:
+        problems.append("no approved_price {amount, currency} is recorded to "
+                        "compare against")
+    elif money(att.get("price")) != approved:
+        problems.append(f"its price read-back {att.get('price')!r} does not "
+                        f"match the approved price")
+    bump = recorded(intake, handoff, "approved_price")
+    bump = bump.get("bump") if isinstance(bump, dict) else None
+    if bump is not None and (money(bump) is None
+                             or money(att.get("bump")) != money(bump)):
+        problems.append(f"its bump read-back {att.get('bump')!r} does not "
+                        f"match the approved bump")
+    if problems:
+        return (f"checkout_attestation for primary CTA {label!r} is refused: "
+                + "; ".join(problems), None)
+    return None, "an attested product/price read-back matching the approved price"
+
+
 def find_primary_element(html, label):
     """Return (tag, attrs, markup) of the element carrying the primary
     CTA's label, or None."""
@@ -213,6 +302,7 @@ def validate(run_dir):
         return failures
     html = page_path.read_text(encoding="utf-8", errors="replace")
 
+    carried = None
     if handoff.get("status") == "missing_input":
         reason = handoff.get("reason")
         if not (isinstance(reason, str) and reason.strip()):
@@ -222,12 +312,13 @@ def validate(run_dir):
             return failures
         if failures:
             return failures
-        missing_what = "checkout destination" if checkout else "form identity"
-        print(f"PASS: funnel handoff carried under the recorded missing "
-              f"input ({missing_what} missing: {reason.strip()}); a "
-              f"placeholder primary CTA on this page is carried under that "
-              f"flag, never silently")
-        return []
+        if not checkout:
+            print(f"PASS: funnel handoff carried under the recorded missing "
+                  f"input (form identity missing: {reason.strip()}); a "
+                  f"placeholder primary CTA on this page is carried under "
+                  f"that flag, never silently")
+            return []
+        carried = reason.strip()
 
     form = handoff.get("form")
     if not checkout and (not isinstance(form, dict) or not form.get("name")
@@ -286,14 +377,22 @@ def validate(run_dir):
 
     if checkout:
         declared = declared_checkout(intake, handoff)
+        href = first_group(HREF_RE.search(attrs)) if tag == "a" else None
+        destination = href.strip() if isinstance(href, str) else ""
+        if carried is not None and (destination == ""
+                                    or destination.startswith("#")):
+            print(f"PASS: funnel handoff carried under the recorded missing "
+                  f"input (checkout destination missing: {carried}); the "
+                  f"placeholder primary CTA {label!r} on this page is "
+                  f"carried under that flag, never silently; a live checkout "
+                  f"link is never carried by it (CHK-28)")
+            return []
         if tag != "a":
             failures.append(
                 f"primary CTA {label!r} is a <{tag}>, not a link: a sales "
                 f"page's primary CTA is an anchor to the client's checkout "
                 f"page or payment link")
             return failures
-        href = first_group(HREF_RE.search(attrs))
-        destination = href.strip() if isinstance(href, str) else ""
         if destination == "" or destination.startswith("#"):
             failures.append(
                 f"primary CTA {label!r} is a placeholder link "
@@ -315,12 +414,15 @@ def validate(run_dir):
                 f"checkout destination recorded at intake ({declared!r}): "
                 f"the page must lead where the run's handoff says it does")
             return failures
+        failure, proof = checkout_proof(intake, handoff, destination, label)
+        if failure:
+            return [failure]
         if failures:
             return failures
         print(f"PASS: funnel handoff verified (page kind {route['kind']!r} "
               f"action checkout; copy manifest primary CTA {label!r} typed "
               f"{expect}; the page's primary CTA is the checkout link "
-              f"{destination!r}"
+              f"{destination!r}, proved by {proof}"
               + (f", the destination recorded at intake" if declared
                  else ", no destination recorded at intake for comparison")
               + "; no placeholder destination, no form pop required)")

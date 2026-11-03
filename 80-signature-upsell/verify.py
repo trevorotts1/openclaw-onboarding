@@ -13,8 +13,9 @@ non-zero on ANY failure:
   6. binding core test suite     (components/binding/test_binding.py) —
      staged; proves the S80-06 extra-offer binding at L1 interface level
      against the TEST-ONLY fixture driver only
-  7. renderer determinism: re-render in the staged mirror and require every
-     generated page file to be byte-identical to the packaged pages
+  7. renderer determinism: re-render (render_pages.py --test-only) in the staged
+     mirror and require every generated page file to be byte-identical to the
+     packaged pages
   8. schema validation of the examples: every examples/*.example bundle's
      "result" against schemas/upsell-result.schema.json, and every example
      request against schemas/upsell-request.schema.json
@@ -169,7 +170,7 @@ def main():
 
         # renderer determinism: regenerate in the mirror, compare to package
         run("renderer (staged mirror)",
-            [sys.executable, "render_pages.py"], stage_work / "pages")
+            [sys.executable, "render_pages.py", "--test-only"], stage_work / "pages")
         run("page checker (staged mirror)",
             [sys.executable, "check_pages.py"], stage_work / "pages")
         pkg_pages = tree_hashes(PAGES)

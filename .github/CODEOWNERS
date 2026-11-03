@@ -1,0 +1,8 @@
+# DTY-27: a change to a wrapper pin or to the Skill 81 bytes it pins is an
+# owner-approved act. Enforced when branch protection on main requires review
+# from code owners.
+/49-signature-funnel/scripts/downsell_wrapper.py @trevorotts1
+/81-signature-downsell/validators/ @trevorotts1
+/81-signature-downsell/schemas/ @trevorotts1
+/.github/workflows/downsell-wrapper-pins.yml @trevorotts1
+/.github/CODEOWNERS @trevorotts1

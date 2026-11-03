@@ -24,15 +24,20 @@ invocable command dispatch runs for the downsell_1 role:
      route from the D1 node's paid edge), and the enrichment sidecar
      (difference_kind, rationale, entry_guard_ref). A field with no
      honest source fails the run closed by name; the wrapper never
-     fabricates a value. Native ids are never emitted as nulls at
-     dispatch (CR-S49-005 item 4): a record that lacks them fails
-     closed naming the missing binding.
+     fabricates a value. Native ids: Convert and Flow product and price
+     ids only exist after the Skill 6 install, which runs after design.
+     At the design stage (the default) null ids are accepted and the
+     result carries the standing blocker D1-NATIVE-IDS-PENDING-INSTALL;
+     a non-blank id that is a placeholder ("TBD") or malformed is refused
+     at every stage. --stage install enforces non-blank, well-formed ids
+     (CR-S49-005 item 4 binds the install stage, decided 2026-11-02).
   2. GAUNTLET  runs Skill 81's own contract checks, all fail-closed:
      the enriched request against the landed request schema (stdlib
      schema check, no third-party dependency, no silent skip); the
-     entry guard over the guard state computed from the journey file
-     and the record's extras; validate_copy over the staged page with
-     its approved_amounts_minor set from the record's approved prices;
+     entry guard over the record's extras plus the fixed design-time
+     journey marker (a staged journey file is never evaluated); validate_copy over the staged page with
+     its approved_amounts_minor set from D1's own approved prices (never
+     another offer's), and a one-time D1 held to no recurring-charge copy;
      validate_offer_difference over the record's U1/D1 offers with
      difference_kind and rationale folded in; and, for a non-one-time
      D1 price, validate_trial_disclosure over the staged disclosure.
@@ -65,14 +70,23 @@ invocable command dispatch runs for the downsell_1 role:
      the result blockers, never claimed. Default provider is the offline
      stub; a paid run needs --image-provider kie and --allow-paid.
 
-HONESTY CEILING: this wrapper executes no native action and records
-no install read-back, so a fully validated local run is capped at
-status locally_verified / proof_class L2, never higher, and the
-result names its standing blockers: no verified native action outcome
-exists (the pending-lockout binding point is UNMAPPED,
-D1-ADAPTER-PENDING-LOCKOUT-UNMAPPED, and CR-S81-006 is not
-confirmed), and binding read-back is required but not recorded (the
-install leg is plan-only).
+HONESTY CEILING: this wrapper executes no native action, observes no
+purchase or decline and records no install read-back. A run is
+authored / L1 unless Skill 71 ran all three stages (desktop-wireframe,
+mobile-tablet, visual-mockup) with a non-stub image provider; only then
+is it capped at locally_verified / L2, never higher. A stub provider adds
+D1-STUB-IMAGES. The entry guard is evaluated DESIGN-ONLY (launch enablement
+facts from the record, journey facts ALWAYS from the fixed design-time
+marker; a staged --journey file is shape-checked and hashed, never
+evaluated, and is refused when it claims a verified purchase on a non-test
+launch) and every result carries D1-ENTRY-GUARD-RUNTIME-ONLY: the real
+guard is a runtime-stage gate. The result also names the other standing
+blockers: no verified native action outcome exists (the pending-lockout
+binding point is UNMAPPED, D1-ADAPTER-PENDING-LOCKOUT-UNMAPPED, and
+CR-S81-006 is not confirmed), and binding read-back is required but not
+recorded (the install leg is plan-only). The result artifacts record the
+sha256 of the launch record, the enrichment sidecar, the cited
+per-launch difference-table file and the journey file when one is staged.
 
 The sidecar's difference_kind and rationale MUST be the launch's
 recorded per-launch difference-table values (spec 11 section 4,
@@ -84,7 +98,8 @@ entry_guard_ref.
 The landed validator and schemas are loaded from --skill81-root and
 verified against the SHA-256 pins recorded when they were copied
 verbatim from main at 9ccd653644a9ed179933ea32a801ee631c520125; a
-diverging byte fails the run closed by name.
+diverging byte fails the run closed by name. The validator is executed
+from the very bytes that were hashed (one read, no second load from disk).
 
 Deterministic, stdlib only. Exit 0 ok, 2 fail-closed refusal with a
 named code, 3 usage error.
@@ -102,6 +117,7 @@ import re
 import shlex
 import subprocess
 import sys
+import types
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -167,15 +183,31 @@ NON_ONE_TIME_BILLING = ("trial", "recurring", "installment")
 # and rationale are the launch's recorded difference-table values
 # (CR-S49-005 item 3 sourcing condition); entry_guard_ref names the
 # staged journey entry evidence record (item 2).
-SIDECAR_KEYS = frozenset({"difference_kind", "rationale", "entry_guard_ref"})
+# difference_table_ref names the launch's recorded per-launch difference-table
+# file (spec 11 section 4); its sha256 is recorded in the result artifacts, and
+# difference_table_sha256, when the sidecar pins one, must match the file.
+SIDECAR_KEYS = frozenset({"difference_kind", "rationale", "entry_guard_ref",
+                          "difference_table_ref", "difference_table_sha256"})
 # The journey file is an S49-staged evidence summary carrying exactly
 # the journey facts the entry guard consumes; anything else is the
 # evidence record the sidecar's entry_guard_ref names, not this file.
 JOURNEY_KEYS = frozenset({"main_purchased_verified", "u1_event",
                           "u1_accepted"})
+# Design-time D1 is a design deliverable: no purchase or decline happened. The
+# entry guard ALWAYS runs over this fixed marker (what the runtime stage must
+# observe), never over a staged journey file or facts typed in by the author.
+DESIGN_JOURNEY = {"main_purchased_verified": True,
+                  "u1_event": "explicit_decline", "u1_accepted": False}
+STAGES = ("design", "install")
+PLACEHOLDER_IDS = frozenset({"TBD", "TBC", "TODO", "NULL", "NONE", "NIL", "N/A",
+                             "NA", "PENDING", "PLACEHOLDER", "UNKNOWN", "XXX",
+                             "FIXME", "UNDEFINED"})
+NATIVE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{2,127}$")
 
 STATUS_CAP = "locally_verified"
 PROOF_CAP = "L2"
+STATUS_FLOOR = "authored"
+PROOF_FLOOR = "L1"
 IMAGE_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup",
                 "final-mockups")
 IMAGES_RUN_STAGES = IMAGE_STAGES[:3]
@@ -184,6 +216,24 @@ IMAGES_PENDING_BLOCKER = (
     "the image inventory, generation, the client-approved Design Board "
     "and final-mockups are the downstream stages that need the "
     "client's approval and were not run by this wrapper")
+ENTRY_GUARD_BLOCKER = (
+    "D1-ENTRY-GUARD-RUNTIME-ONLY: the entry guard was evaluated DESIGN-ONLY "
+    "(launch enablement facts plus the fixed design-time journey marker; a "
+    "staged journey file is hashed, never evaluated); no purchase or decline "
+    "event was observed, so the real "
+    "guard (verified main purchase, explicit U1 decline) is a runtime-stage "
+    "gate and is not claimed here")
+NATIVE_IDS_BLOCKER = (
+    "D1-NATIVE-IDS-PENDING-INSTALL: the Convert and Flow product/price ids "
+    "do not exist before the Skill 6 install; they are null in this design "
+    "dispatch, must be non-blank and well-formed at the install stage, and "
+    "are verified there against the native catalog read-back")
+STUB_IMAGES_BLOCKER = (
+    "D1-STUB-IMAGES: the image provider is the offline stub, so the images "
+    "are placeholders and not a render of the page")
+NO_IMAGES_BLOCKER = (
+    "D1-IMAGES-NOT-RUN: no Skill 71 image run (--skill71-root) took place; "
+    "this result carries copy and contract checks only")
 BLOCKERS = (
     "D1-ACTION-OUTCOME-UNVERIFIED: no verified native action outcome "
     "exists for this run; the shared action component was not executed "
@@ -196,6 +246,22 @@ BLOCKERS = (
     "not recorded for extra offers; no verified native binding is "
     "claimed",
 )
+
+
+def _resolve_image_model(provider: str) -> str:
+    """The image-to-image model the paid stages draw with, resolved through Skill 66 now (IMG-19).
+    The free stub provider has no model. Skill 66 missing or silent is a refusal, never a literal id."""
+    if provider == "stub":
+        return "STUB-NO-MODEL"
+    path = Path(__file__).resolve().parents[2] / "shared-utils" / "signature_launch" / "image_model.py"
+    try:
+        spec = importlib.util.spec_from_file_location("signature_launch_image_model", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.resolve()
+    except Exception as exc:  # ImageModelError, a missing file, a broken Skill 66 tree
+        raise WrapperError([f"images: Skill 66 did not resolve the image-to-image model ({exc}); "
+                            "nothing is drawn"])
 
 
 class WrapperError(ValueError):
@@ -352,10 +418,13 @@ def _load_skill81(root: Path):
                 "were copied verbatim from main; the wrapper runs only "
                 "the pinned consumer bytes"])
         raws[rel] = raw
-    spec = importlib.util.spec_from_file_location(
-        "validate_downsell", root / "validators" / "validate_downsell.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    # Execute the validator from the bytes just hashed: loading it again by
+    # path would be a second read a swapped file could win.
+    path = str(root / "validators" / "validate_downsell.py")
+    mod = types.ModuleType("validate_downsell")
+    mod.__file__ = path
+    exec(compile(raws["validators/validate_downsell.py"], path, "exec"),
+         mod.__dict__)
     request_schema = json.loads(
         raws["schemas/downsell-request.schema.json"].decode("utf-8"))
     extension_schema = json.loads(
@@ -483,13 +552,73 @@ def _extras_flag(launch: Mapping[str, Any], key: str) -> Any:
     return extras.get(key) if isinstance(extras, dict) else None
 
 
+def _native_id_problem(value: Any, label: str) -> Optional[str]:
+    """None when `value` is a plausible native id; else the reason. A
+    placeholder ("TBD") is a fabricated value, refused at every stage."""
+    if (not isinstance(value, str) or value != value.strip()
+            or value.upper() in PLACEHOLDER_IDS
+            or not NATIVE_ID_RE.match(value)):
+        return (f"{label}: {value!r} is not a real native id (placeholder "
+                "or malformed); a native id is either absent (null, "
+                "design stage only) or the id the native catalog returned")
+    return None
+
+
+def _difference_table(sidecar: Mapping[str, Any],
+                      sidecar_path: Path) -> Dict[str, str]:
+    """The recorded per-launch difference-table file the sidecar cites
+    (DTY-08): required, must exist, and its sha256 is recorded. Relative refs
+    resolve beside the sidecar."""
+    ref = sidecar.get("difference_table_ref")
+    if _blank(ref) or not isinstance(ref, str):
+        raise WrapperError([
+            "difference_table_ref: the sidecar cites no difference-table "
+            "file; the difference_kind and rationale must come from the "
+            "launch's recorded difference table (spec 11 section 4), and "
+            "the file's sha256 is recorded in the result"])
+    path = Path(ref)
+    if not path.is_absolute():
+        path = sidecar_path.resolve().parent / path
+    raw = _read_bytes(path, "difference table")
+    if not raw.strip():
+        raise WrapperError([f"difference table: {path} is empty"])
+    digest = _sha256(raw)
+    pinned = sidecar.get("difference_table_sha256")
+    if pinned is not None and pinned != digest:
+        raise WrapperError([
+            f"difference table: {path} hashes to {digest}, not the "
+            f"sidecar's difference_table_sha256 {pinned!r}"])
+    return {"path": str(path), "sha256": digest}
+
+
+def _normalise_excludes(u1: Mapping[str, Any], d1: Mapping[str, Any]):
+    """Copies of the U1 and D1 offers whose `excludes` name the other offer by
+    the literal 'U1' / 'D1' the pinned Skill 81 validator reads. The launch
+    plan law and the launcher write the other offer's real offer_id there
+    (DTY-03); that id maps to the label. The record's offers are untouched, a
+    missing exclusion stays missing and the validator still refuses it."""
+    u1n, d1n = copy.deepcopy(dict(u1)), copy.deepcopy(dict(d1))
+    for offer, other_id, label in ((d1n, u1.get("offer_id"), "U1"),
+                                   (u1n, d1.get("offer_id"), "D1")):
+        excludes = offer.get("excludes")
+        if isinstance(excludes, list) and other_id is not None:
+            offer["excludes"] = [label if x == other_id else x
+                                 for x in excludes]
+    return u1n, d1n
+
+
 def enrich(request: Mapping[str, Any], launch: Mapping[str, Any],
            graph: Mapping[str, Any], graph_bytes: bytes,
-           copy_doc: Any, journey: Mapping[str, Any],
-           sidecar: Mapping[str, Any]) -> Dict[str, Any]:
+           copy_doc: Any, journey: Optional[Mapping[str, Any]],
+           sidecar: Mapping[str, Any],
+           stage: str = "design") -> Dict[str, Any]:
     """Build the Skill 81 downsell-request, or raise WrapperError
-    naming every field that has no honest source."""
+    naming every field that has no honest source. `journey` None means
+    the design-time marker (entry guard DESIGN-ONLY); `stage` "install"
+    enforces non-blank native ids."""
     problems: List[str] = []
+    if stage not in STAGES:
+        problems.append(f"stage: {stage!r} is not one of {list(STAGES)}")
 
     # Input shape (adoption map 1.5 dual-accept): page-request 1.0,
     # or page-request 1.1 carrying the prompt-policy citation. The
@@ -595,7 +724,19 @@ def enrich(request: Mapping[str, Any], launch: Mapping[str, Any],
             "the entry guard consumes (CR-S49-005 item 2) and the "
             "wrapper never invents it")
 
-    # Journey facts: exactly the three the guard consumes.
+    # Journey file: optional, shape-checked and hashed, never evaluated
+    # (the guard always runs over DESIGN_JOURNEY). One that claims a
+    # verified purchase on a non-test launch asserts an event that never
+    # happened and is refused (DTY-08).
+    journey = DESIGN_JOURNEY if journey is None else journey
+    if journey.get("main_purchased_verified") is True \
+            and journey is not DESIGN_JOURNEY \
+            and isinstance(launch, dict) and launch.get("test_only") is not True:
+        problems.append(
+            "journey.main_purchased_verified: the staged journey claims a "
+            "verified main purchase while the launch record's test_only is "
+            "not true; a design-time run observes no purchase, so the claim "
+            "is refused (the real guard is a runtime-stage gate)")
     for key in sorted(set(journey) - JOURNEY_KEYS):
         problems.append(
             f"journey: unknown key {key!r}; the staged journey file "
@@ -634,19 +775,22 @@ def enrich(request: Mapping[str, Any], launch: Mapping[str, Any],
     price = None
     if d1 is not None:
         native_product_id = d1.get("native_product_id")
-        if _blank(native_product_id):
-            problems.append(
-                "native_product_id: the record's D1 offer carries no "
-                "native_product_id; the wrapper never emits a null "
-                "native id at dispatch (CR-S49-005 item 4), because "
-                "the install leg requires a matching non-null binding")
         price = _approved_price(d1, "native_price_id", problems)
-        if price is not None and _blank(price.get("native_price_id")):
-            problems.append(
-                "native_price_id: the record D1 offer's approved "
-                "price row carries no native_price_id; the wrapper "
-                "never emits a null native id at dispatch "
-                "(CR-S49-005 item 4)")
+        price_id = price.get("native_price_id") if price is not None \
+            else None
+        for label, value in (("native_product_id", native_product_id),
+                             ("native_price_id", price_id)):
+            if not _blank(value):
+                reason = _native_id_problem(value, label)
+                if reason:
+                    problems.append(reason)
+            elif stage == "install" and (price is not None
+                                         or label == "native_product_id"):
+                problems.append(
+                    f"{label}: the install stage needs the record's D1 "
+                    f"offer to carry a non-blank {label} (CR-S49-005 item "
+                    "4); the ids exist only after the Skill 6 install and "
+                    "are verified against the native catalog read-back")
 
     # Success route: the D1 node's paid edge in the verified graph.
     role_of = {}
@@ -697,8 +841,10 @@ def enrich(request: Mapping[str, Any], launch: Mapping[str, Any],
     enriched["declined_u1_offer_ref"] = u1["offer_id"]
     enriched["downsell_offer_ref"] = d1["offer_id"]
     enriched["difference_kind"] = kind
-    enriched["native_product_id"] = native_product_id
-    enriched["native_price_id"] = price["native_price_id"]
+    enriched["native_product_id"] = \
+        None if _blank(native_product_id) else native_product_id
+    enriched["native_price_id"] = None if _blank(
+        price.get("native_price_id")) else price["native_price_id"]
     enriched["entry_guard_ref"] = entry_guard_ref
     enriched["success_route"] = success_route
     enriched["decline_route"] = DECLINE_ROUTE
@@ -721,12 +867,15 @@ def _page_object(copy_doc: Any) -> Dict[str, Any]:
     return copy_doc if isinstance(copy_doc, dict) else {}
 
 
-def _record_amounts(launch: Mapping[str, Any]) -> List[int]:
+def _record_amounts(launch: Mapping[str, Any],
+                    slot: Optional[str] = None) -> List[int]:
     """Every approved price figure in the record: each price entry's
-    amount plus every schedule row's amount, across all offers."""
+    amount plus every schedule row's amount, across all offers (or, with
+    `slot`, across that slot's offers only: the D1 page is checked against
+    D1's own price, never another offer's)."""
     amounts = set()
     for offer in launch.get("offers") or []:
-        if not isinstance(offer, dict):
+        if not isinstance(offer, dict) or (slot and offer.get("slot") != slot):
             continue
         for price in offer.get("prices") or []:
             if not isinstance(price, dict):
@@ -743,11 +892,43 @@ def _record_amounts(launch: Mapping[str, Any]) -> List[int]:
     return sorted(amounts)
 
 
-def guard_state(launch: Mapping[str, Any],
-                journey: Mapping[str, Any]) -> Dict[str, Any]:
-    """The entry-guard state: journey facts from the journey file,
-    enablement facts from the launch record's extras (launch facts
-    under route law, never from the named evidence record)."""
+_RECURRING_PHRASE = re.compile(
+    r"\$\s?\d[\d,]*(?:\.\d+)?\s*(?:/|per\b|a\b|each\b|every\b)[\s-]*(?:mon|mo|month|yr|year|wk|week)(?:s|ly)?\b"
+    r"|\$\s?\d[\d,]*(?:\.\d+)?\s*(?:monthly|weekly|annually|yearly)\b"
+    r"|\brenew\w*\s+(?:monthly|weekly|annually|yearly|every)", re.I)
+
+
+def _strings(node: Any):
+    if isinstance(node, str):
+        yield node
+    elif isinstance(node, dict):
+        for v in node.values():
+            yield from _strings(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _strings(v)
+
+
+def _billing_mismatch(page: Mapping[str, Any],
+                      price: Optional[Mapping[str, Any]]) -> List[str]:
+    """A one-time D1 price never promises a recurring charge in its copy.
+    (Trial, recurring and installment D1 prices are held to the staged
+    disclosure by validate_trial_disclosure instead.)"""
+    if not price or price.get("billing_type") != "one_time":
+        return []
+    hit = next((m.group(0) for s in _strings(page)
+                for m in [_RECURRING_PHRASE.search(s)] if m), None)
+    return [f"D1-COPY-BILLING-MISMATCH: the D1 price is one_time but the "
+            f"page promises a recurring charge ({hit!r})"] if hit else []
+
+
+def guard_state(launch: Mapping[str, Any]) -> Dict[str, Any]:
+    """The DESIGN-ONLY entry-guard state: journey facts from the fixed
+    design-time marker (a staged journey file is never evaluated: no
+    purchase or decline happens at dispatch), enablement facts from the
+    launch record's extras (launch facts under route law, never from the
+    named evidence record)."""
+    journey = DESIGN_JOURNEY
     return {
         "main_purchased_verified": journey.get("main_purchased_verified"),
         "u1_event": journey.get("u1_event"),
@@ -809,9 +990,7 @@ def _run_images(args, request: Mapping[str, Any],
     run_dir = Path(args.images_run_dir) if args.images_run_dir \
         else work_dir / f"{page_key}-images"
     py = sys.executable
-    model = args.image_model or (
-        "STUB-NO-MODEL" if args.image_provider == "stub"
-        else "gpt-image-2-5-sunburst-image-to-image")
+    model = args.image_model or _resolve_image_model(args.image_provider)
     steps = []
     for stage in IMAGE_STAGES:
         build = [py, str(scripts / "build_production_request.py"),
@@ -957,19 +1136,23 @@ def run(args) -> Dict[str, Any]:
         raise WrapperError(["route graph: the document is not a JSON "
                             "object"])
     copy_doc = _load_json(Path(args.copy), "copy document")
-    journey = _load_json(Path(args.journey), "journey state")
-    if not isinstance(journey, dict):
-        raise WrapperError(["journey state: the document is not a "
-                            "JSON object"])
+    journey = None
+    if args.journey:
+        journey = _load_json(Path(args.journey), "journey state")
+        if not isinstance(journey, dict):
+            raise WrapperError(["journey state: the document is not a "
+                                "JSON object"])
     sidecar = _load_json(Path(args.enrichment), "enrichment sidecar")
     if not isinstance(sidecar, dict):
         raise WrapperError(["enrichment sidecar: the document is not "
                             "a JSON object"])
     vd, request_schema, extension_schema = _load_skill81(
         Path(args.skill81_root))
+    table = _difference_table(sidecar, Path(args.enrichment))
+    stage = getattr(args, "stage", "design")
 
     enriched = enrich(request, launch, graph, graph_bytes, copy_doc,
-                      journey, sidecar)
+                      journey, sidecar, stage)
     enriched_path = work_dir / "downsell-request-enriched.json"
     enriched_path.write_text(
         json.dumps(enriched, indent=2, sort_keys=True) + "\n",
@@ -983,15 +1166,26 @@ def run(args) -> Dict[str, Any]:
             ["enriched request violates the landed downsell-request "
              "schema: " + v for v in violations])
     # 2. The entry guard over the computed state.
-    codes = vd.check_entry_guard(guard_state(launch, journey))
+    state = guard_state(launch)
+    codes = vd.check_entry_guard(state)
     if codes:
         raise WrapperError(
             [f"entry guard: {c}" for c in codes])
+    guard_path = work_dir / "entry-guard-downsell_1.json"
+    guard_path.write_text(json.dumps({
+        "mode": "DESIGN-ONLY",
+        "blocker": "D1-ENTRY-GUARD-RUNTIME-ONLY",
+        "journey_source": "design-time marker",
+        "staged_journey_evaluated": False,
+        "evaluated_state": state}, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8")
     # 3. The staged page under validate_copy, its approved amounts set
     #    from the record's approved prices.
     page = copy.deepcopy(_page_object(copy_doc))
-    page["approved_amounts_minor"] = _record_amounts(launch)
+    page["approved_amounts_minor"] = _record_amounts(launch, ROLE)
     codes = vd.validate_copy(page)
+    codes += _billing_mismatch(page, _approved_price(
+        _select_offer(launch, ROLE, []) or {}, "page copy", []))
     if codes:
         raise WrapperError([f"page copy: {c}" for c in codes])
     # 4. The offer difference, sidecar values folded onto the record's
@@ -999,7 +1193,9 @@ def run(args) -> Dict[str, Any]:
     u1 = _select_offer(launch, "upsell_1", [])
     d1 = _select_offer(launch, "downsell_1", [])
     main_offer = _select_offer(launch, "main", [])
-    d1_extended = copy.deepcopy(d1)
+    # Real offer ids in `excludes` map to the 'U1'/'D1' labels the pinned
+    # validator reads, on copies only (DTY-03).
+    u1, d1_extended = _normalise_excludes(u1, d1)
     d1_extended["difference_kind"] = sidecar["difference_kind"]
     d1_extended["rationale"] = sidecar["rationale"]
     codes = vd.validate_offer_difference(u1, d1_extended, main_offer)
@@ -1078,6 +1274,15 @@ def run(args) -> Dict[str, Any]:
              f"an approved D1 price of {approved_amount!r}; the "
              "wrapper's result-time equality check (CR-S49-005 item "
              "6) cannot be skipped"])
+    renewal = audit.get("renewal_amount_minor")
+    if renewal is not None and price \
+            and price.get("billing_type") not in NON_ONE_TIME_BILLING:
+        raise WrapperError(
+            [f"disclosure cross-check: D1-RESULT-DISCLOSURE-RENEWAL-ON-"
+             f"ONE-TIME: extension disclosure_audit.renewal_amount_minor "
+             f"{renewal!r} on a D1 price that is "
+             f"{price.get('billing_type')!r}; a one-time offer has no "
+             "renewal (wrapper cross-check)"])
     if due_now != approved_amount:
         raise WrapperError(
             [f"disclosure cross-check: D1-RESULT-DISCLOSURE-DUE-NOW-"
@@ -1104,6 +1309,13 @@ def run(args) -> Dict[str, Any]:
          "sha256": _sha256(extension_out.read_bytes())},
     ]
 
+    # The inputs this result rests on, by hash: the guard record, launch,
+    # sidecar, the cited difference table and any staged journey (DTY-08).
+    for ref in (guard_path, Path(args.launch), Path(args.enrichment),
+                Path(table["path"]), *([Path(args.journey)] if journey
+                                       is not None else [])):
+        artifacts.append({"path": str(ref),
+                          "sha256": _sha256(_read_bytes(ref, "result input"))})
     if images:
         artifacts += images["artifacts"]
 
@@ -1111,6 +1323,21 @@ def run(args) -> Dict[str, Any]:
         or os.environ.get("SIGNATURE_LAUNCH_AUTHOR_SESSION") \
         or os.environ.get("OPENCLAW_SESSION_ID") \
         or "s49-downsell-wrapper"
+    # authored / L1 unless all three image stages left records under a real
+    # (non-stub) provider (DTY-14).
+    verified = bool(images) and args.image_provider != "stub" and all(
+        images["stages"].get(st) for st in IMAGES_RUN_STAGES)
+    blockers = list(BLOCKERS) + [ENTRY_GUARD_BLOCKER]
+    pending_ids = enriched["native_product_id"] is None \
+        or enriched["native_price_id"] is None
+    if pending_ids:
+        blockers.append(NATIVE_IDS_BLOCKER)
+    if not images:
+        blockers.append(NO_IMAGES_BLOCKER)
+    else:
+        blockers.append(IMAGES_PENDING_BLOCKER)
+        if args.image_provider == "stub":
+            blockers.append(STUB_IMAGES_BLOCKER)
     result = {
         "schema_version": "1.0",
         "tenant_id": request["tenant_id"],
@@ -1120,13 +1347,13 @@ def run(args) -> Dict[str, Any]:
         "request_id": request["request_id"],
         "input_hash": request["input_hash"],
         "page_id": request["page_id"],
-        "status": STATUS_CAP,
+        "status": STATUS_CAP if verified else STATUS_FLOOR,
         "artifacts": artifacts,
         "author_session": author_session,
         "reviewer_session": None,
         "independent_review": False,
-        "proof_class": PROOF_CAP,
-        "blockers": list(BLOCKERS) + ([IMAGES_PENDING_BLOCKER] if images else []),
+        "proof_class": PROOF_CAP if verified else PROOF_FLOOR,
+        "blockers": blockers,
         "native_bindings_ref": None,
         "test_only": request["test_only"],
     }
@@ -1144,6 +1371,8 @@ def run(args) -> Dict[str, Any]:
         "receipt_validation": mode,
         "enriched_request": str(enriched_path),
         "extension_artifact": str(extension_out),
+        "entry_guard": str(guard_path),
+        "stage": stage,
         "blockers": projected["blockers"],
         **({"images": {"run_dir": images["run_dir"],
                        "stages": images["stages"]}} if images else {}),
@@ -1192,13 +1421,22 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="staged D1 page/copy document JSON "
                          "({work_dir}/copy-downsell_1.json)")
     ap.add_argument("--journey",
-                    help="staged journey entry facts JSON "
-                         "({work_dir}/journey-downsell_1.json); required "
-                         "for downsell_1")
+                    help="optional staged journey entry facts JSON "
+                         "({work_dir}/journey-downsell_1.json); shape-checked "
+                         "and hashed into the result, never evaluated: the "
+                         "entry guard always runs over the fixed design-time "
+                         "marker. A file claiming a verified main purchase "
+                         "on a non-test launch is refused")
+    ap.add_argument("--stage", choices=list(STAGES), default="design",
+                    help="design (default): null native ids accepted with "
+                         "the standing blocker D1-NATIVE-IDS-PENDING-"
+                         "INSTALL; install: non-blank, well-formed native "
+                         "ids required")
     ap.add_argument("--enrichment",
                     help="enrichment sidecar JSON "
-                         "({work_dir}/enrichment-downsell_1.json); "
-                         "required for downsell_1")
+                         "({work_dir}/enrichment-downsell_1.json), citing "
+                         "the launch's difference-table file as "
+                         "difference_table_ref; required for downsell_1")
     ap.add_argument("--skill81-root",
                     help="path to the landed 81-signature-downsell "
                          "tree (validators + schemas, hash-pinned); "
@@ -1257,7 +1495,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                          "label")
     args = ap.parse_args(argv)
     if not args.role_instance:
-        absent = [f"--{f}" for f in ("journey", "enrichment", "skill81-root")
+        absent = [f"--{f}" for f in ("enrichment", "skill81-root")
                   if not getattr(args, f.replace("-", "_"))]
         if absent:
             ap.error("the following arguments are required: " + ", ".join(absent))

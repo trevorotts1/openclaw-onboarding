@@ -6,6 +6,8 @@ department's two procedures apply to them:
 * ``qc_request`` writes the SOP-GIP-02 request: every image in the package, the AF-G1..AF-G8
   automatic-fail battery (read from Skill 71's stage contract, never retyped here), the pass bar
   and the independence rule (the reviewer is never the model that wrote the prompt).
+* ``report_violations`` is the check side of SOP-GIP-02: the package passes only when the expected
+  report names every image with a real average at or above the bar and no automatic failure.
 * ``delivery_record`` writes the SOP-GIP-03 record: for each image, whether it passed QC and
   whether a live hosted link exists. It NEVER publishes and never uploads. When no live link
   exists it records the missing capability by name, so the delivery report says "waiting for an
@@ -36,6 +38,7 @@ DELIVERY_REL = "delivery_record.json"
 LEDGER_REL = "media_library.json"
 GHL_MEDIA_REF = "06-ghl-install-pages/tools/ghl_media.py"
 STAGE_CONTRACT_REF = "71-blackceo-signature-page/references/stage-contract.json"
+QC_CODE = "AF-LAUNCH-IMAGE-QC"
 
 
 def autofail_battery(root: Optional[Path] = None) -> List[Dict[str, str]]:
@@ -99,6 +102,63 @@ def _read(path: Path) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+
+
+def _number(value: Any) -> Optional[float]:
+    """A real finite number (never a bool, never NaN), else None."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value:
+        return None
+    return float(value)
+
+
+def _same_file(recorded: Any, job_dir: Path, image_path: str) -> bool:
+    try:
+        path = Path(str(recorded))
+        return (path if path.is_absolute() else job_dir / path).resolve() == Path(image_path).resolve()
+    except (OSError, ValueError):
+        return False
+
+
+def report_violations(manifest: Dict[str, Any], package_root: Path,
+                      job_dir: Optional[Path] = None) -> List[str]:
+    """SOP-GIP-02 at check time: ``qc/image_qc_report.json`` must exist and cover 100 percent of the
+    package's images, each with a real average of at least PASS_AVERAGE, ``pass`` true and no
+    automatic failure. A missing report, a missing image, a low or non-numeric average and a changed
+    file each fail by name. An empty list passes."""
+    package_root = Path(package_root)
+    job_dir = Path(job_dir) if job_dir else package_root
+    report = _read(job_dir / QC_REPORT_REL)
+    if not isinstance(report, dict) or not isinstance(report.get("assets"), list):
+        return [f"{QC_CODE}: {QC_REPORT_REL} is missing or unreadable; every image in the package needs "
+                "an independent review before it is delivered (SOP-GIP-02)"]
+    images = collect_images(manifest, package_root)
+    if not images:
+        return [f"{QC_CODE}: the package holds no design image to review"]
+    records = [r for r in report["assets"] if isinstance(r, dict)]
+    fails: List[str] = []
+    for img in images:
+        name = Path(img["local_path"]).name
+        found = [r for r in records if _same_file(r.get("local_path"), job_dir, img["local_path"])]
+        if not found:
+            fails.append(f"{QC_CODE}: {img['page']} {name} has no record in {QC_REPORT_REL} (100 percent coverage)")
+            continue
+        for rec in found:
+            average = _number(rec.get("average"))
+            autofails = rec.get("triggered_autofails")
+            if average is None:
+                fails.append(f"{QC_CODE}: {img['page']} {name} has no numeric average")
+            elif average < PASS_AVERAGE:
+                fails.append(f"{QC_CODE}: {img['page']} {name} averages {average}, under the {PASS_AVERAGE} bar")
+            if not isinstance(autofails, list):
+                fails.append(f"{QC_CODE}: {img['page']} {name} does not list its triggered_autofails")
+            elif autofails:
+                fails.append(f"{QC_CODE}: {img['page']} {name} has automatic failure(s) "
+                             f"{', '.join(str(a) for a in autofails)}")
+            if rec.get("pass") is not True:
+                fails.append(f"{QC_CODE}: {img['page']} {name} is not recorded as passed")
+            if rec.get("sha256") not in (None, img["sha256"]):
+                fails.append(f"{QC_CODE}: {img['page']} {name} changed after it was reviewed")
+    return fails
 
 
 def ghl_media_present(repo_root: Optional[Path] = None) -> bool:

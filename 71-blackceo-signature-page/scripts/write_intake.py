@@ -32,6 +32,16 @@ and the to_confirm list in intake.json so the delivery report can name every def
 command line always wins over the answers file. Without --answers-file nothing changes.
 Exit 0 written, 2 invalid input.
 
+Visual direction records (IMG-07/08/09): intake.json carries creative_direction with its
+creative_direction_source (client_choice for --creative-direction or an answers-file direction,
+house_look_accepted when the answers file records the explicit "house look" choice, not_asked
+for an answers-file run that names neither; a bare invocation records no source),
+design_style_source (--design-style-source, or derived from the answers file's own
+status for the style) and palette_status (provided, suggested or default_to_confirm, from the
+answers file or the brand file). A design style whose source is default_to_confirm is an
+unconfirmed default: a test run records it, a production run is refused at intake. The image
+stages that spend money refuse a proposal palette on a production run (scripts/brand_colors.py).
+
 Delivery fields (Item 31, Amendment 4): the intake also records the publish
 target, the automation scope, and the PRESENCE of the three delivery
 credentials (booleans and variable names only; values are never read into
@@ -115,6 +125,7 @@ import json
 import os
 import struct
 import sys
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -127,7 +138,9 @@ import page_kinds
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 
 ENGINES = ("kie", "agnes")
-DESIGN_STYLE_SOURCES = ("client_choice", "recommended_accepted")
+# default_to_confirm: the style is a default the client has not confirmed; a test run may
+# record it, a production run is refused (IMG-08).
+DESIGN_STYLE_SOURCES = ("client_choice", "recommended_accepted", "default_to_confirm")
 
 # Item 19: supplied assets are measured against the slot's RENDERED size:
 # the layout size scaled by this display-density factor (a 2x retina
@@ -165,6 +178,57 @@ def refuse(summary, recovery, role):
     operator. Registry names, provisioning topology and tier backstops
     belong in neither line."""
     return print_refusal(f"{summary} NEXT (operator, role: {role}): {recovery}")
+
+
+def parse_money(text):
+    """{"amount", "currency"} from AMOUNT:CURRENCY, or None when the amount is not a positive
+    finite number or the currency is empty."""
+    amount, _, currency = str(text).partition(":")
+    try:
+        value = Decimal(amount.strip())
+    except InvalidOperation:
+        return None
+    if not value.is_finite() or value <= 0 or not currency.strip():
+        return None
+    return {"amount": amount.strip(), "currency": currency.strip()}
+
+
+def read_json_object(path):
+    """The JSON object in `path`, or None when it is unreadable or not an object."""
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def checkout_records(a):
+    """CHK-28 production recording path: (funnel_handoff keys, refusal or None) from
+    --approved-price, --approved-bump, --checkout-attestation-json and --checkout-result-json,
+    under the keys scripts/validate_handoff.py checkout_proof() reads."""
+    records = {}
+    if a.approved_bump is not None and a.approved_price is None:
+        return {}, "--approved-bump needs --approved-price: the bump is recorded beside the approved price."
+    for flag, text in (("--approved-price", a.approved_price), ("--approved-bump", a.approved_bump)):
+        if text is None:
+            continue
+        money = parse_money(text)
+        if money is None:
+            return {}, (f"{flag} {text!r} is not AMOUNT:CURRENCY with a positive number and a currency "
+                        "code (for example 97:USD).")
+        if flag == "--approved-price":
+            records["approved_price"] = money
+        else:
+            records["approved_price"]["bump"] = money
+    for flag, path, key in (("--checkout-attestation-json", a.checkout_attestation_json, "checkout_attestation"),
+                            ("--checkout-result-json", a.checkout_result_json, "checkout_result")):
+        if path is None:
+            continue
+        doc = read_json_object(path)
+        if doc is None:
+            return {}, f"{flag} {path} is not a readable JSON object."
+        records[key] = doc
+    return records, None
 
 
 def image_pixel_dimensions(path):
@@ -489,6 +553,16 @@ def read_answers(path):
     provider = value("image_provider")
     if provider in ENGINES:
         defaults["image_engine"] = provider
+    # IMG-07: the Creative Direction answer is a direction text, or the explicit "house look" choice
+    direction = value("creative_direction")
+    if isinstance(direction, dict):
+        mode, text = direction.get("mode"), str(direction.get("text") or direction.get("reference") or "").strip()
+    else:
+        mode, text = None, ("" if direction is None else str(direction).strip())
+    if mode == "house_look" or text.lower().replace("_", " ") == "house look":
+        defaults["creative_direction_source"] = "house_look_accepted"
+    elif text:
+        defaults["creative_direction"] = text
     return doc, defaults
 
 
@@ -516,14 +590,19 @@ def main(argv=None):
                         "(thank-you) for that page, which also records its page_role")
     p.add_argument("--brand-owner", required="brand_owner" not in from_answers, default=from_answers.get("brand_owner"))
     p.add_argument("--brand-file", default="brand/client-brand.json" if answers_doc is not None else "assets/brand/blackceo-brand.json")
-    p.add_argument("--creative-direction", default=None)
+    p.add_argument("--creative-direction", default=from_answers.get("creative_direction"),
+                   help="the one external Creative Direction the client named; recorded with its "
+                        "source (client_choice, house_look_accepted from the answers file, or "
+                        "not_asked) as creative_direction_source")
     p.add_argument("--image-cap", type=int, required="image_cap" not in from_answers, default=from_answers.get("image_cap"))
     p.add_argument("--image-engine", choices=ENGINES, default=from_answers.get("image_engine", "kie"))
     p.add_argument("--design-style", choices=design_style.STYLE_IDS, default=from_answers.get("design_style"),
                    help="the client's page design style: A Block, B Circle or C Hybrid "
                         "(references/design-styles.md); ask with `design_style.py question`")
     p.add_argument("--design-style-source", choices=DESIGN_STYLE_SOURCES, default=None,
-                   help="how the style was chosen (default client_choice when --design-style is given)")
+                   help="how the style was chosen (default client_choice when --design-style is given); "
+                        "default_to_confirm records an unconfirmed default and is refused on a "
+                        "production run")
     p.add_argument("--copy-version", choices=list(copy_forms.FORMS), default=from_answers.get("copy_version"),
                    help="the run's copy selection (required intake decision, "
                         "Amendment 6 Items 18/19); selects the copy guide, spec, "
@@ -584,6 +663,17 @@ def main(argv=None):
                    help="record the handoff form identity as an explicit "
                         "missing input with this reason, instead of a form "
                         "identity; never combined with the form flags")
+    # CHK-28: the checkout proof a sales page's primary CTA is verified against.
+    p.add_argument("--approved-price", default=None, metavar="AMOUNT:CURRENCY",
+                   help="the client-approved price, recorded as funnel_handoff.approved_price")
+    p.add_argument("--approved-bump", default=None, metavar="AMOUNT:CURRENCY",
+                   help="the client-approved order bump price, recorded inside approved_price; "
+                        "requires --approved-price")
+    p.add_argument("--checkout-attestation-json", type=Path, default=None,
+                   help="JSON object {url, attested_by, product, price {amount, currency}, optional "
+                        "bump}: the client's attestation of their own checkout")
+    p.add_argument("--checkout-result-json", type=Path, default=None,
+                   help="JSON object with read_back_url or native_page_url: the installed checkout")
     # Item 31 delivery fields (Amendment 4).
     p.add_argument("--publish-target", choices=["ghl", "vercel-embed", "vercel"])
     p.add_argument("--automation-scope", choices=["none", "workflows"], default="none")
@@ -719,8 +809,25 @@ def main(argv=None):
               "with --page-kind sales|opt_in, or record it as a page_kind answer in "
               "the answers file.")
     if a.design_style:
+        source, status = a.design_style_source, None
+        if answers_doc is not None and not source and from_answers.get("design_style") == a.design_style:
+            # the answers file's own status decides the source; a default is never stamped client_choice (IMG-08)
+            status = ((answers_doc.get("answers") or {}).get("design_style") or {}).get("status")
+            source = {"provided": "client_choice",
+                      "default_to_confirm": "default_to_confirm"}.get(status, "recommended_accepted")
         intake["design_style"] = a.design_style
-        intake["design_style_source"] = a.design_style_source or "client_choice"
+        intake["design_style_source"] = source or "client_choice"
+        if status:
+            intake["design_style_status"] = status  # the true status also stays in to_confirm
+        if intake["design_style_source"] == "default_to_confirm" and not a.test_run:
+            return refuse(
+                "the page design style is still an unconfirmed default, so intake stopped "
+                "before writing anything.",
+                "ask the client with `python3 scripts/design_style.py question`, record the "
+                "answer, and rerun with --design-style A|B|C (--design-style-source client_choice, "
+                "or recommended_accepted once the client accepts the recommendation); "
+                "a test run takes --test-run.",
+                "intake")
     elif a.design_style_source:
         print("REFUSED: --design-style-source needs --design-style.")
         return 2
@@ -728,6 +835,25 @@ def main(argv=None):
         print("NOTE design_style: none recorded. Ask the client with "
               "`python3 scripts/design_style.py question` and rerun with --design-style A|B|C; "
               "a production run cannot close intake without it (test runs are exempt).")
+
+    # IMG-07: who chose the direction; a bare legacy invocation (no flag, no answers file) stays byte-identical
+    direction_source = ("client_choice" if a.creative_direction else
+                        from_answers.get("creative_direction_source", "not_asked"))
+    if direction_source != "not_asked" or answers_doc is not None:
+        intake["creative_direction_source"] = direction_source
+
+    # IMG-09: carry the palette status so a proposal palette is never read back as a confirmed one
+    if answers_doc is not None:
+        import brand_colors  # lazy: a launch-context run copies only the scripts it needs
+        if brand_colors._answer(answers_doc, "brand_primary"):
+            intake["palette_status"] = brand_colors.brand_extras_from_answers(answers_doc)["palette_status"]
+    elif brand_path is not None:
+        try:
+            palette_status = json.loads(brand_path.read_text(encoding="utf-8")).get("palette_status")
+        except (OSError, ValueError, AttributeError):
+            palette_status = None
+        if palette_status:
+            intake["palette_status"] = palette_status
 
     waivers = []
     for flag, reason, gate_name in (
@@ -851,6 +977,13 @@ def main(argv=None):
             "behavior": HANDOFF_BEHAVIOR,
             "step_order": list(HANDOFF_STEP_ORDER)}
 
+    checkout, why = checkout_records(a)
+    if why:
+        print(f"REFUSED: {why}")
+        return 2
+    if checkout:
+        intake.setdefault("funnel_handoff", {}).update(checkout)
+
     if launch_prepared is not None:
         updates, _prepared_artifacts = launch_prepared
         intake.update(updates)
@@ -860,15 +993,9 @@ def main(argv=None):
         intake["answers_file_sha256"] = hashlib.sha256(a.answers_file.read_bytes()).hexdigest()
         intake["to_confirm"] = [{"id": t.get("id"), "value": t.get("value"), "reason": t.get("reason")}
                                 for t in answers_doc.get("to_confirm") or []]
-        if from_answers.get("design_style") and a.design_style == from_answers["design_style"] and not a.design_style_source:
-            entry = (answers_doc.get("answers") or {}).get("design_style") or {}
-            # the gate accepts only these two values; the true status stays in design_style_status and to_confirm
-            intake["design_style_source"] = "client_choice" if entry.get("status") == "provided" else "recommended_accepted"
-            intake["design_style_status"] = entry.get("status")
 
     (a.run_dir / "intake.json").write_text(json.dumps(intake, indent=2) + "\n", encoding="utf-8")
     if answers_doc is not None:
-        import brand_colors
         try:
             brand_path = brand_colors.record_from_answers(a.run_dir, a.answers_file)
             print(f"wrote {brand_path} from the answers file (palette_status="

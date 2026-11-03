@@ -82,6 +82,9 @@ PUBLIC API
   block_run(run_dir, task_id=None, *, phase_id="", note="", env=None)
                                                                   -> bool                (never raises)
 
+  launch_card(run_dir, launch_id, *, offer_name="", env=None)    -> task_id str | None  (never raises)
+                                                  CON-21: one card per Black Friday launch (launch mode)
+
 THE BLOCKED STATE (FIX-XC-06)
   Before this helper, a gate failure left a card stranded at `in_progress` forever
   — an invisible failure. `block_run` moves the card to the fail-soft `blocked`
@@ -720,6 +723,30 @@ def block_run(run_dir, task_id: Optional[str] = None, *, phase_id: str = "",
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
         _log(f"block_run best-effort skip ({type(exc).__name__}: {exc}).")
         return False
+
+
+def launch_card(run_dir, launch_id: str, *, offer_name: str = "",
+                env: Optional[dict] = None) -> Optional[str]:
+    """CON-21: land ONE board card for a Black Friday launch (launch mode) so the
+    launch is visible in the Command Center. Idempotent per run_dir (the receipt
+    reuses the card) and per launch_id (stable idempotency key). Opens the card
+    and moves it to in_progress; later steps advance it with ``card_advance`` and
+    the terminal move is ``complete_run`` (review, never done). Fail-soft: returns
+    the task_id or None and never raises, so a CC outage never fails a launch."""
+    try:
+        launch_id = str(launch_id or "").strip()
+        if not launch_id:
+            return None
+        title = "Launch: %s" % (offer_name.strip() or launch_id)
+        return begin_run(
+            run_dir, slug="launch-%s" % launch_id, title=title, department="marketing",
+            source="signature-funnel-launch",
+            description="Black Friday launch %s (Skill 49 launch mode)" % launch_id,
+            env=env,
+        )
+    except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the launch.
+        _log(f"launch_card best-effort skip ({type(exc).__name__}: {exc}).")
+        return None
 
 
 # ---------------------------------------------------------------------------

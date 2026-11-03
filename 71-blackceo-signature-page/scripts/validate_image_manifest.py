@@ -12,6 +12,11 @@ Extended per BLACKCEO-SKILL-71-ENFORCEMENT-FIX-ORDER.md C5:
       false, or marks itself source/asset_kind as one of existing, logo,
       identity, product, library, stock (SOP:154 — existing logo/product/
       identity assets are identified separately from generated images).
+      A supplied-* or stock entry is exempt from generation only when it
+      carries a supplied-asset record (supplied_by, client_record,
+      supplied_at, and the sha256 recorded when the client handed the file
+      over); stock also needs a licence_ref. Stock photography is allowed
+      only when the client supplies the licensed file (DECISIONS, IMG-15).
   --measure
       Open each entry's asset file (asset_file or asset_path, resolved
       relative to the manifest) with Pillow; the actual width/height must
@@ -45,6 +50,7 @@ import argparse
 import json
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -68,6 +74,69 @@ ASSET_STATUSES = {"generated", "qc_failed", "ready"}
 
 # Inventory markers for assets that are NOT generated (SOP:154).
 NON_GENERATED_SOURCES = {"existing", "logo", "identity", "product", "library", "stock"}
+
+
+SUPPLIED_RECORD_KEYS = ("supplied_by", "client_record", "supplied_at")
+
+
+def inventory_items(data):
+    """The inventory's entry list (list, or an object with images/items)."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        items = data.get("images")
+        if items is None:
+            items = data.get("items")
+        if items is not None:
+            return items
+    raise ValueError("inventory must be a list or an object with an images/items array.")
+
+
+def is_supplied_or_stock(entry):
+    """supplied-* or stock source: the file already exists, nothing is generated."""
+    if not isinstance(entry, dict):
+        return False
+    source = str(entry.get("source") or "").strip().lower()
+    return source == "stock" or source.startswith("supplied")
+
+
+def supplied_record_problems(entry, who):
+    """Problems with the supplied-asset record of a supplied-* or stock inventory entry.
+
+    The record names who supplied the file, from which client record, when,
+    and carries the sha256 recorded at hand-over: the gate compares the filed
+    bytes to that hash, so a file can no longer vouch for itself. Stock also
+    needs a licence reference. [] when the entry is neither supplied nor stock.
+    """
+    if not is_supplied_or_stock(entry):
+        return []
+    problems = []
+    record = entry.get("supplied_asset")
+    if not isinstance(record, dict):
+        record = {}
+        problems.append(f"{who} is a supplied or stock asset and needs a supplied_asset record "
+                        f"(supplied_by, client_record, supplied_at, sha256).")
+    for key in SUPPLIED_RECORD_KEYS:
+        if not isinstance(record.get(key), str) or not record[key].strip():
+            problems.append(f"{who}.supplied_asset.{key} is required (who supplied the file, from which "
+                            f"client record, and when).")
+    stamp = record.get("supplied_at")
+    if isinstance(stamp, str) and stamp.strip():
+        try:
+            datetime.fromisoformat(stamp.strip().replace("Z", "+00:00"))
+        except ValueError:
+            problems.append(f"{who}.supplied_asset.supplied_at must be an ISO 8601 timestamp, got {stamp!r}.")
+    sha = record.get("sha256") or entry.get("sha256")
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", sha.strip()):
+        problems.append(f"{who} needs the sha256 recorded when the client supplied the file "
+                        f"(supplied_asset.sha256 or sha256); a hash taken from the filed bytes alone proves nothing.")
+    if str(entry.get("source") or "").strip().lower() == "stock":
+        licence = entry.get("licence")
+        ref = (licence.get("licence_ref") if isinstance(licence, dict) else None) or entry.get("licence_ref")
+        if not isinstance(ref, str) or not ref.strip():
+            problems.append(f"{who} is stock photography with no licence record (licence.licence_ref); stock is "
+                            f"allowed only when the client supplies the licensed file.")
+    return problems
 
 
 def identifier(value):
@@ -163,16 +232,7 @@ def filename_mapping_errors(prefix, item, item_id):
 
 def inventory_generation_count(data):
     """Count inventory entries that need a generated image (order C5)."""
-    if isinstance(data, list):
-        items = data
-    elif isinstance(data, dict):
-        items = data.get("images")
-        if items is None:
-            items = data.get("items")
-        if items is None:
-            raise ValueError("inventory must be a list or an object with an images/items array.")
-    else:
-        raise ValueError("inventory must be a list or an object with an images/items array.")
+    items = inventory_items(data)
 
     count = 0
     for idx, item in enumerate(items, start=1):
@@ -360,6 +420,8 @@ def validate(data, base_dir=None, check_files=False, inventory_data=None, measur
         except ValueError as exc:
             errors.append(f"inventory is invalid: {exc}")
         else:
+            for idx, item in enumerate(inventory_items(inventory_data), start=1):
+                errors.extend(supplied_record_problems(item, f"inventory[{idx}]"))
             masters = sum(
                 1 for entry in entries
                 if entry is not None and identifier(entry[1].get("master_id")) is None

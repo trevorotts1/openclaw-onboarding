@@ -33,7 +33,17 @@ upsell_2 roles (SEPARATE invocations; --slot names the role). It:
      run closed with a named error BEFORE produce.py is invoked: the
      wrapper never fabricates disclosure terms, eligibility evidence,
      routes, capability claims or scarcity facts.
-  2. INVOKE  runs produce.py with the matching --instance.
+     Before any block is read, the launch record must match the request
+     (tenant, location, launch, revision, approval, route graph hash and a
+     recomputed input_hash); copy and journey must carry the request's
+     test_only and the copy's offer_name must be the launch offer's
+     display_name. Then Skill 80's validate_upsell_copy.py is run on the
+     copy (--expected-action-ref native-one-click:<offer_id>, and for
+     upsell_2 --compare the staged U1 copy: --u1-copy, default
+     copy-upsell_1.json beside the request); any non-zero exit fails the run
+     with no result, and the bundle's copy_validation records the real exit.
+  2. INVOKE  runs produce.py with the matching --instance, on a journey whose
+     product names and owned entitlement ids come from the launch record.
   3. EXTRACT takes bundle["result"] out of the bundle.
   4. PROJECT reduces it to exactly the 17 page-result 1.0 fields and
      verifies the echo against the S49 request (a result that does not
@@ -43,8 +53,10 @@ upsell_2 roles (SEPARATE invocations; --slot names the role). It:
              page-type runner (scripts/run_page_type.py): desktop and mobile
              wireframes and mockups, one long review PDF per stage, overview boards,
              in <work_dir>/images-<slot>. The wrapper builds none of that itself. A
-             failed image run fails the wrapper closed; without --bridge-config the
-             wrapper says on stderr that no wireframes or mockups were made.
+             failed image run fails the wrapper closed. A real (non test_only) run with
+             neither flag exits 2 unless --skip-images-approval is recorded; a page
+             whose disposition is not present_offer draws no images (and exits 2 on a
+             real launch, after writing its blocked result).
   6. Writes the projected result at the {result} path dispatch expects.
 
 Operator-staged run inputs (sidecar): an optional enrichment JSON file
@@ -54,9 +66,8 @@ may supply ONLY the keys this wrapper cannot source in-band:
   eligibility.already_owned_action  ("suppress_offer" |
                                      "route_to_final_thank_you")
   payment_capability                (object; only with real S06 evidence)
-Any other sidecar key fails closed. source_landing_copy_ref may also be
-sourced from a sibling result-landing.json in the work dir (the landing
-role's own result artifact path), which is where a real run records it.
+Any other sidecar key fails closed. source_landing_copy_ref comes only from
+the sidecar (UPS-18).
 
 Deterministic, stdlib only. Exit 0 ok, 2 fail-closed / consumer failure,
 3 usage.
@@ -215,6 +226,102 @@ def _load_json(path: Path, what: str) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise EnrichmentError([f"{what}: cannot load {path}: {exc}"])
+
+
+def _norm(text: Any) -> str:
+    """Whitespace-collapsed, case-folded text for name comparison."""
+    return " ".join(str(text or "").split()).casefold()
+
+
+def launch_identity_problems(request: Mapping[str, Any],
+                             launch: Mapping[str, Any]) -> List[str]:
+    """UPS-29: the launch record must be the one the request was built from.
+
+    Compares tenant, location, launch, revision, the approval ref and the
+    route graph hash, and recomputes the request input_hash (dispatch's own
+    derivation, which folds in plan_document_hash(launch)). A stale or
+    foreign launch.json left in the work dir fails here, by field name only,
+    before any block is read from it."""
+    problems: List[str] = []
+    for field in ("tenant_id", "location_id", "launch_id", "revision"):
+        if launch.get(field) != request.get(field):
+            problems.append(f"launch identity: {field} of the launch record "
+                            "differs from the request (stale or foreign launch.json)")
+    if launch.get("plan_approval_ref") != request.get("approval_ref"):
+        problems.append("launch identity: plan_approval_ref of the launch record "
+                        "differs from the request approval_ref")
+    if launch.get("route_graph_hash") != request.get("route_graph_hash"):
+        problems.append("launch identity: route_graph_hash of the launch record "
+                        "differs from the request")
+    try:
+        import dispatch_launch  # the canonical input_hash derivation
+        expected = dispatch_launch.request_input_hash(
+            dict(launch), request.get("page_id"), request.get("page_role"))
+    except (ImportError, KeyError, TypeError, ValueError) as exc:
+        problems.append(f"launch identity: input_hash cannot be recomputed ({exc})")
+    else:
+        if expected != request.get("input_hash"):
+            problems.append("launch identity: the request input_hash does not match "
+                            "plan_document_hash of the launch record (the plan changed)")
+    return problems
+
+
+def derive_journey(journey: Mapping[str, Any], launch: Mapping[str, Any]) -> Dict[str, Any]:
+    """UPS-13/UPS-33: the journey handed to Skill 80 with product names and
+    owned entitlement ids sourced from the launch record.
+
+    Each verified purchase takes its offer_display_name from the launch offer
+    of the same slot (dropped when the record has no such offer), and every
+    entitlement of a launch offer the journey shows as purchased is added to
+    owned_entitlement_ids. Staged owned ids are kept: this only adds, so it
+    can only block more, never present an owned offer."""
+    by_slot = {o.get("slot"): o for o in launch.get("offers") or [] if isinstance(o, dict)}
+    out = dict(journey)
+    owned = list(journey.get("owned_entitlement_ids") or [])
+    records = []
+    for rec in journey.get("verified_purchases") or []:
+        rec = dict(rec) if isinstance(rec, dict) else rec
+        offer = by_slot.get(rec.get("slot")) if isinstance(rec, dict) else None
+        if isinstance(rec, dict):
+            if offer and offer.get("display_name"):
+                rec["offer_display_name"] = offer["display_name"]
+            else:
+                rec.pop("offer_display_name", None)
+        if offer:
+            owned += [e for e in offer.get("entitlement_ids") or [] if e not in owned]
+        records.append(rec)
+    out["verified_purchases"] = records
+    out["owned_entitlement_ids"] = owned
+    return out
+
+
+VALIDATOR_VERDICTS = {0: "pass", 2: "violation", 3: "fail_closed"}
+
+
+def run_copy_validation(produce: str, copy_path: str, expected_action_ref: str,
+                        compare: Optional[str]) -> Dict[str, Any]:
+    """UPS-01: run Skill 80's own validate_upsell_copy.py on the staged copy
+    and return the copy_validation record built from its real exit code.
+    Raises EnrichmentError (naming the violations) on any non-zero exit."""
+    validator = Path(produce).resolve().parent.parent / "80-signature-upsell" \
+        / "scripts" / "validate_upsell_copy.py"
+    if not validator.is_file():
+        raise EnrichmentError([f"copy validation: {validator.name} not found "
+                               "beside the Skill 80 adapters; it is never skipped"])
+    cmd = [sys.executable, str(validator), copy_path,
+           "--expected-action-ref", expected_action_ref]
+    if compare:
+        cmd += ["--compare", compare]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        detail = (proc.stdout + proc.stderr).strip()
+        raise EnrichmentError([f"copy validation: validate_upsell_copy.py exited "
+                               f"{proc.returncode}: {detail[:1500]}"])
+    return {"validator": "scripts/validate_upsell_copy.py",
+            "profile_id": UPSELL_COPY_PROFILE,
+            "exit_code": proc.returncode,
+            "verdict": VALIDATOR_VERDICTS[proc.returncode],
+            "copy_sha256": hashlib.sha256(Path(copy_path).read_bytes()).hexdigest()}
 
 
 # ---------------------------------------------------------------------------
@@ -500,20 +607,9 @@ def _source_landing_copy_ref(sidecar: Mapping[str, Any], work_dir: Path,
     ref = sidecar.get("source_landing_copy_ref")
     if isinstance(ref, str) and ref:
         return ref
-    landing_result = work_dir / "result-landing.json"
-    if landing_result.is_file():
-        try:
-            res = json.loads(landing_result.read_text(encoding="utf-8"))
-            artifacts = res.get("artifacts") or []
-            if artifacts and artifacts[0].get("path"):
-                return artifacts[0]["path"]
-        except ValueError:
-            pass
     problems.append(
-        "source_landing_copy_ref: no source names the landing copy this "
-        "upsell derives from (supply it in the enrichment sidecar, or run "
-        "after the landing role has written result-landing.json into the "
-        "work dir)")
+        "source_landing_copy_ref: the enrichment sidecar must name the landing "
+        "copy this upsell derives from")
     return None
 
 
@@ -539,6 +635,9 @@ def enrich(request: Mapping[str, Any], launch: Mapping[str, Any],
            instance: str) -> Dict[str, Any]:
     """Build the Skill 80 superset request, or raise EnrichmentError
     naming every block that has no honest source."""
+    identity = launch_identity_problems(request, launch)
+    if identity:
+        raise EnrichmentError(identity)
     problems: List[str] = []
     # Input shape (DEFECT 1 cure): the request must be exactly
     # page-request shaped. Any key outside REQUEST_FIELDS fails closed
@@ -584,6 +683,18 @@ def enrich(request: Mapping[str, Any], launch: Mapping[str, Any],
         problems.append(f"assigned_skill: request assigns skill "
                         f"{request.get('assigned_skill')!r}, not 80")
     offer = _select_offer(request, launch, instance, problems)
+    # UPS-13: a launch accepts only copy and journey of its own kind (test
+    # fixtures never feed a real launch and the reverse), and the copy must
+    # be written for the offer the launch record names.
+    test_only = bool(request.get("test_only", False))
+    for label, doc in (("copy", copy_doc), ("journey", journey)):
+        if bool(doc.get("test_only", False)) != test_only:
+            problems.append(f"{label}: test_only {bool(doc.get('test_only', False))} "
+                            f"differs from the request's test_only {test_only}; "
+                            "test fixtures never feed a real launch")
+    if offer and _norm(copy_doc.get("offer_name")) != _norm(offer.get("display_name")):
+        problems.append("copy.offer_name: the copy names a different offer than the "
+                        "launch record's display_name for this slot")
     offer_block = _offer_block(offer, problems) if offer else None
     disclosure = _disclosure_block(offer, sidecar, problems) if offer else None
     eligibility = _eligibility_block(instance, offer, journey, sidecar,
@@ -667,6 +778,17 @@ def image_command(args: argparse.Namespace, request_path: Path, graph_path: Path
     if missing or not runner.is_file():
         raise EnrichmentError([f"image inputs / bridge config: {missing} missing" if missing
                                else f"skill71 root has no {runner.name}"])
+    # CARRIED 9: the page's own per-section image plan (Skill 80 upsell_image_plan.py), built from
+    # the enriched request (which carries the offer record), reaches Skill 71 through --slots, so
+    # U1 and U2 are not drawn from the heading-derived stock fallback.
+    planner = Path(args.produce).parent / "upsell_image_plan.py"
+    plan_path = work_dir / f"image-plan-{args.slot}.json"
+    planned = subprocess.run(
+        [sys.executable, str(planner), "--request", str(work_dir / f"upsell-request-{args.slot}.json"),
+         "--out", str(plan_path)], capture_output=True, text=True)
+    if planned.returncode != 0 or not plan_path.is_file():
+        raise EnrichmentError([f"upsell_image_plan.py exited {planned.returncode}: "
+                               f"{(planned.stdout + planned.stderr).strip()[:400]}"])
     # Dispatch stamps every request with one copy_profile; this page's is the consumer
     # constant, so Skill 71's intake records the upsell form. Nothing else is changed.
     images_request = work_dir / f"page-request-images-{args.slot}.json"
@@ -678,7 +800,8 @@ def image_command(args: argparse.Namespace, request_path: Path, graph_path: Path
            "--request", str(images_request), "--launch-record", args.launch,
            "--route-graph", str(graph_path), "--brand-file", str(pick("brand_file")),
            "--brand-owner", str(pick("brand_owner")), "--image-cap", str(pick("image_cap")),
-           "--run-dir", str(work_dir / f"images-{args.slot}"), "--provider", args.image_provider]
+           "--run-dir", str(work_dir / f"images-{args.slot}"), "--provider", args.image_provider,
+           "--slots", str(plan_path)]
     if pick("design_style"):
         cmd += ["--design-style", str(pick("design_style"))]
     if inputs.get("design_prose_ref"):
@@ -728,6 +851,13 @@ def main(argv: Optional[List[str]] = None) -> int:
                          "placeholders; kie spends money and needs --allow-paid)")
     ap.add_argument("--allow-paid", action="store_true",
                     help="confirms the spend cap is approved for --image-provider kie")
+    ap.add_argument("--u1-copy",
+                    help="the staged U1 copy JSON, compared for U2 distinctness "
+                         "(default for upsell_2: copy-upsell_1.json beside the request)")
+    ap.add_argument("--skip-images-approval",
+                    help="recorded approval ref for a run with no wireframes or mockups; "
+                         "without it a real (non test_only) run needs --bridge-config "
+                         "or --image-inputs")
     ap.add_argument("--bundle-out",
                     help="where to keep the raw bundle (default: "
                          "bundle-<slot>.json beside the request)")
@@ -765,14 +895,44 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"FAIL-CLOSED: cannot read run input: {exc}", file=sys.stderr)
         return EXIT_FAILCLOSED
 
+    test_only = bool(request.get("test_only", False))
+    try:
+        compare = None
+        if args.slot == "upsell_2":
+            compare = args.u1_copy or str(work_dir / "copy-upsell_1.json")
+            if not Path(compare).is_file():
+                raise EnrichmentError([
+                    f"copy validation: upsell_2 needs the staged U1 copy to compare "
+                    f"({compare} not found; pass --u1-copy)"])
+        copy_validation = run_copy_validation(
+            args.produce, args.copy, enriched["action_binding"]["expected_action_ref"],
+            compare)
+    except (EnrichmentError, OSError) as exc:
+        for p in (exc.problems if isinstance(exc, EnrichmentError) else [str(exc)]):
+            print(f"FAIL-CLOSED: {p}", file=sys.stderr)
+        return EXIT_FAILCLOSED
+    # UPS-22: the image step is mandatory for a real launch unless a skip
+    # approval is recorded. ponytail: the ref is recorded, not verified here;
+    # the approval primitive owns that check.
+    if not (args.bridge_config or args.image_inputs or test_only
+            or args.skip_images_approval):
+        print("FAIL-CLOSED: images: neither --bridge-config nor --image-inputs was "
+              "given and no --skip-images-approval is recorded; a real launch "
+              "requires its wireframes and mockups", file=sys.stderr)
+        return EXIT_FAILCLOSED
+
     enriched_path = work_dir / f"upsell-request-{args.slot}.json"
+    journey_path = work_dir / f"journey-derived-{args.slot}.json"
+    journey_path.write_text(json.dumps(derive_journey(_load_json(Path(args.journey), "journey state"),
+                                                      launch), indent=2, sort_keys=True) + "\n",
+                            encoding="utf-8")
     enriched_path.write_text(json.dumps(enriched, indent=2, sort_keys=True) + "\n",
                              encoding="utf-8")
     bundle_path = Path(args.bundle_out) if args.bundle_out \
         else work_dir / f"bundle-{args.slot}.json"
     cmd = [sys.executable, args.produce, "--instance", args.slot,
            "--request", str(enriched_path), "--copy", args.copy,
-           "--journey", args.journey, "--out", str(bundle_path)]
+           "--journey", str(journey_path), "--out", str(bundle_path), "--launch", args.launch]
     if args.copy_artifact_path:
         cmd += ["--copy-artifact-path", args.copy_artifact_path]
     proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -782,12 +942,35 @@ def main(argv: Optional[List[str]] = None) -> int:
         return EXIT_FAILCLOSED
     try:
         bundle = _load_json(bundle_path, "bundle")
+        result = bundle.get("result") if isinstance(bundle, dict) else None
+        if not isinstance(result, dict) or (result.get("hashes") or {}).get(
+                "copy_sha256") != copy_validation["copy_sha256"]:
+            raise EnrichmentError(["copy validation: the validated copy is not the "
+                                   "copy Skill 80 built from (sha256 differs)"])
+        # UPS-01: record what the validator really returned, and claim no test
+        # outcome this run did not produce (Skill 80 hardcodes both).
+        result["copy_validation"] = copy_validation
+        result["test_outcomes"] = [
+            {"test_id": "S80-copy-validator", "level": "L1", "outcome": "pass",
+             "evidence_ref": "validate_upsell_copy.py exit 0 on copy_sha256 "
+                             + copy_validation["copy_sha256"]}
+        ] + [dict(o, outcome="not_run", evidence_ref=None)
+             if o.get("outcome") == "pass" else o
+             for o in result.get("test_outcomes") or []]
+        bundle_path.write_text(json.dumps(bundle, indent=2) + "\n", encoding="utf-8")
         projected = project_result(bundle, request)
     except EnrichmentError as exc:
         for p in exc.problems:
             print(f"FAIL-CLOSED: {p}", file=sys.stderr)
         return EXIT_FAILCLOSED
-    if args.bridge_config or args.image_inputs:
+    # UPS-33: no paid image calls for a page that will not be presented.
+    disposition = (bundle.get("page_plan") or {}).get("disposition") or {}
+    blocked = disposition.get("action") != "present_offer"
+    if blocked:
+        print(f"NOTE images: disposition {disposition.get('action')!r} "
+              f"({disposition.get('reason')!r}); the page is not presented, so no "
+              f"wireframes or mockups were drawn for {args.slot}", file=sys.stderr)
+    elif args.bridge_config or args.image_inputs:
         try:
             cmd = image_command(args, request_path, graph_path, bundle_path, work_dir)
         except EnrichmentError as exc:
@@ -802,14 +985,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         images_dir = work_dir / f"images-{args.slot}"
         page_set.stage_visual_bible(getattr(args, "inputs", None), images_dir)
         found = {a["path"]: a for a in projected["artifacts"]}
-        found.update({a["path"]: a for a in page_set.design_artifacts(args.slot, images_dir)})
+        found.update({a["path"]: a for a in page_set.design_artifacts(args.slot, images_dir, with_provider=True)})
         projected["artifacts"] = [found[k] for k in sorted(found)]
     else:
         print(f"NOTE images: no --bridge-config, so no wireframes or mockups were made "
-              f"for {args.slot}; this result is copy and a TEST ONLY render only",
+              f"for {args.slot}; this result is copy and a "
+              f"{'TEST ONLY render' if test_only else 'recorded-skip render'} only",
               file=sys.stderr)
     Path(args.result).write_text(json.dumps(projected, indent=2) + "\n",
                                  encoding="utf-8")
+    if blocked and not test_only:
+        print(f"FAIL-CLOSED: {args.slot} is {disposition.get('action')!r} but the "
+              "launch requires this page; the blocked result is written, the run "
+              "does not pass", file=sys.stderr)
+        return EXIT_FAILCLOSED
     print(f"wrote {args.result} (slot={args.slot} "
           f"status={projected['status']} proof_class={projected['proof_class']}; "
           f"enriched request {enriched_path}; bundle {bundle_path})")

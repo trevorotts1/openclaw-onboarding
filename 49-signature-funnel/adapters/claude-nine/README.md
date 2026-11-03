@@ -17,8 +17,8 @@ They pick "I'm not sure, help me". Run the engine's help path: colours from thei
 
 ## Progress and delivery
 
-- While pages build, show the status table: `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/progress_report.py --rows-file <rows.json> --harness claude-nine`.
-- At the end, show `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/delivery_report.py --rows-file <rows.json> --answers-file <answers.json> --ledger-file <ledger.json> --harness claude-nine`: every page with desktop and mobile wireframes and mockups, a "To confirm" list, and the image spend.
+- When the package check passes, generate the rows from the package manifest (never hand-write them): `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/progress_report.py --manifest <package-manifest.json> --emit-rows <rows.json>`. Then show the status table: `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/progress_report.py --manifest <package-manifest.json> --rows-file <rows.json> --harness claude-nine`.
+- At the end, show `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/delivery_report.py --manifest <package-manifest.json> --rows-file <rows.json> --answers-file <answers.json> --ledger-file <ledger.json> --harness claude-nine`: every page with desktop and mobile wireframes and mockups, a "To confirm" list, and the image spend. A rows file that was not generated from that same package-manifest.json is refused (REFUSED, non-zero exit). With no package-manifest.json for the run there is no client report; say so plainly, never hand-write rows.
 
 ## Speed
 

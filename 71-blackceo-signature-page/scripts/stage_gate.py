@@ -185,6 +185,38 @@ def fonts_derivable(brand_file):
             and policy.get("when_brand_fonts_missing") == "derive-document")
 
 
+def run_model_request(run_dir, stage=None):
+    """(model, max_chars) the run's production request declares for the model that will render.
+
+    IMG-14: band and ceiling are judged against that model, not the validator's
+    default. The stage's own request (production-request-<stage>.json) wins over
+    production-request.json, which wins over a top-level model on the wireframe
+    inventory. "model_max_chars" is the live prompt-field maximum the request
+    recorded; it can only tighten the policy file's maximum, never loosen it.
+    Either value is None when the run declares none.
+    """
+    names = ([f"production-request-{stage}.json"] if stage else []) + [
+        "production-request.json", "desktop-wireframe/image-inventory.json"]
+    for name in names:
+        try:
+            data = json.loads((run_dir / name).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        model = data.get("model") if isinstance(data, dict) else None
+        if isinstance(model, str) and model.strip() and model.strip().lower() not in BAD_IDS:
+            cap = data.get("model_max_chars")
+            ok = isinstance(cap, int) and not isinstance(cap, bool) and cap > 0
+            return model.strip(), (cap if ok else None)
+    return None, None
+
+
+def model_substitutions(run_dir, stage=None):
+    """{model} and {max_chars} for validator templates; empty (the flag and value
+    are dropped together) when the run declares no model."""
+    model, cap = run_model_request(run_dir, stage)
+    return {"{model}": model or "", "{max_chars}": str(cap) if cap else ""}
+
+
 def resolve_brand_placeholder(cmd, run_dir, stage, receipt, as_argv=False):
     """Substitute {run_dir}/{brand}/{file}/{sauce} in a validator command.
 
@@ -205,6 +237,7 @@ def resolve_brand_placeholder(cmd, run_dir, stage, receipt, as_argv=False):
     substitutions = {
         "{run_dir}": str(run_dir),
         "{brand}": str(brand),
+        **model_substitutions(run_dir, stage),
     }
     if "{copy_version}" in cmd or "{copy_spec}" in cmd:
         # S4 CR-2 / S1 copy wiring: the copy spec path is selected by the
@@ -528,6 +561,7 @@ def substitute_argv(template, substitutions):
     nothing (an unengaged {sauce}) is dropped, as the old string form dropped it.
     """
     argv = []
+    prev_literal_flag = False
     for tok in shlex.split(template):
         substituted = tok
         had_placeholder = False
@@ -537,6 +571,9 @@ def substitute_argv(template, substitutions):
             substituted = substituted.replace(k, v)
         if substituted or not had_placeholder:
             argv.append(substituted)
+        elif prev_literal_flag:
+            argv.pop()  # "--model {model}" with no model: drop the flag with its value
+        prev_literal_flag = (not had_placeholder) and tok.startswith("--") and "=" not in tok
     return argv
 
 def run_one_validator(cmd, run_dir):
@@ -1083,6 +1120,13 @@ def check_review_scores(run_dir, stage, receipt):
         if _is_placeholder_session(author_session):
             failures.append(f"{where}: review author_session is missing or a placeholder "
                             f"({author_session!r})")
+        if reviewer_unknown and not test_run_flag(run_dir):
+            # IMG-11: an UNKNOWN reviewer is the agent that made the artifact
+            # grading itself. The limitation is still recorded by write_review.py,
+            # but only a test run may close on it.
+            failures.append(f"{where}: reviewer_session is UNKNOWN; a production close needs a "
+                            f"named reviewing session independent of the author (UNKNOWN is "
+                            f"allowed only when intake.json sets test_run)")
         if _is_placeholder_session(reviewer_session) and not reviewer_unknown:
             failures.append(f"{where}: review reviewer_session is missing or a placeholder "
                             f"({reviewer_session!r}); reviews must be stamped by "
@@ -1239,6 +1283,42 @@ def _kie74_file(run_dir, task_id):
     return run_dir / KIE74_DIR / f"{safe}.json"
 
 
+def _kie74_receipt_module():
+    """Skill 49's kie74_receipt.py (the one checker of transport receipts), loaded the way
+    stage_executor._kie74_receipt() loads it; None when the sibling skill is absent."""
+    path = SKILL_ROOT.parent / "49-signature-funnel" / "scripts" / "kie74_receipt.py"
+    if not path.is_file():
+        return None
+    import importlib.util
+    saved = list(sys.path)
+    try:
+        spec = importlib.util.spec_from_file_location("kie74_receipt_skill49", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    finally:
+        sys.path[:] = saved
+    return mod
+
+
+def _kie74_binding_problems(run_dir, stage, f, obj, x, alias):
+    """The transport binding of a result file whose task passed the plain checks: the saved bytes
+    re-hash to the binding, the binding names the file the task claims, and a hand-made receipt
+    (no binding, not an alias run, not a test run) cannot prove the image is provider-backed."""
+    binding = obj.get("binding")
+    where = f"stage {stage}: {KIE74_DIR}/{f.name}"
+    if isinstance(binding, dict):
+        mod = _kie74_receipt_module()
+        problems = [f"{where}: {p}" for p in mod.binding_problems(obj, run_dir)] if mod else []
+        if x.get("file") not in (binding.get("file"), binding.get("delivered_file")):
+            problems.append(f"{where} binds {binding.get('file')!r}, not {x.get('file')!r}")
+        return problems
+    if not alias and intake_data(run_dir).get("test_run") is not True:
+        return [f"{where} has no transport binding (task_id, sha256 of the saved bytes, "
+                "credits_before/after) written by stage_executor; a hand-made receipt cannot prove "
+                "the image is provider-backed"]
+    return []
+
+
 def _kie74_problems(run_dir, stage, tasks, alias=False):
     """Each Skill 74 task id must be unique and backed by its own result file in receipts/kie74/.
 
@@ -1272,6 +1352,8 @@ def _kie74_problems(run_dir, stage, tasks, alias=False):
                   and obj.get("adapter_mode") == "active")
         if not ok:
             problems.append(f"stage {stage}: {KIE74_DIR}/{f.name} is not a successful active Skill 74 result for {tid!r}")
+        else:
+            problems += _kie74_binding_problems(run_dir, stage, f, obj, x, alias)
     ids = {}
     d = run_dir / KIE74_DIR
     for f in sorted(d.glob("*.json")) if d.is_dir() else []:
@@ -1495,13 +1577,17 @@ def _layout_references_waived(run_dir):
 
 def _is_supplied_entry(entry):
     """A run inventory entry is a supplied asset when its source begins
-    with "supplied" (e.g. "supplied-logo", "supplied-founder-photo"):
-    the asset already exists and no generation is performed for it
-    (Item 3 supplied-asset path)."""
+    with "supplied" (e.g. "supplied-logo", "supplied-founder-photo") or is
+    "stock": the asset already exists and no generation is performed for it
+    (Item 3 supplied-asset path). Stock is recognised here because the
+    manifest validator exempts it from generation; it takes the same
+    transport slice, which demands the supplied-asset and licence records
+    (IMG-15)."""
     if not isinstance(entry, dict):
         return False
     source = entry.get("source")
-    return isinstance(source, str) and source.strip().lower().startswith("supplied")
+    return isinstance(source, str) and (source.strip().lower().startswith("supplied")
+                                        or source.strip().lower() == "stock")
 
 
 def _supplied_inventory_entries(run_dir):
@@ -1723,14 +1809,29 @@ def _supplied_transport_problems(run_dir, stage, item_id, artifact_rel, task):
         return [f"{who}: supplied-asset sha256 mismatch: the transport "
                 f"entry records {recorded.strip()} but the filed bytes "
                 f"hash to {actual}"]
+    # IMG-15: the transport entry's hash is taken from the filed bytes, so it
+    # cannot vouch for them. The inventory entry must carry the hash recorded
+    # when the client handed the file over, plus who supplied it, from which
+    # client record and when (and a licence reference for stock).
     entry = _supplied_inventory_entries(run_dir).get(str(item_id)) or {}
-    inv_sha = entry.get("sha256")
+    problems = _supplied_record_problems(entry, who)
+    record = entry.get("supplied_asset") if isinstance(entry.get("supplied_asset"), dict) else {}
+    inv_sha = record.get("sha256") or entry.get("sha256")
     if (isinstance(inv_sha, str) and inv_sha.strip()
             and inv_sha.strip().lower() != actual.lower()):
-        return [f"{who}: the filed bytes hash to {actual} but the "
-                f"inventory entry records sha256 {inv_sha.strip()} for "
-                f"this supplied asset"]
-    return []
+        problems.append(f"{who}: the filed bytes hash to {actual} but the "
+                        f"inventory entry records sha256 {inv_sha.strip()} for "
+                        f"this supplied asset")
+    return problems
+
+
+def _supplied_record_problems(entry, who):
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import validate_image_manifest
+    finally:
+        sys.path.pop(0)
+    return validate_image_manifest.supplied_record_problems(entry, who)
 
 
 def check_transport(run_dir, stage, receipt):
@@ -2102,6 +2203,7 @@ def run_item_validators(run_dir, stage, artifact_rel):
             "{brand}": str(brand),
             "{file}": str(run_dir / artifact_rel),
             "{sauce}": sauce,
+            **model_substitutions(run_dir, stage),
         }
         argv = substitute_argv(raw, substitutions)
         line = run_one_validator(argv, run_dir)
@@ -2410,26 +2512,34 @@ def cmd_close_item(run_dir, stage, item_id):
     return 0
 
 
-def _prompt_budget_record(prompt_path):
+def _prompt_budget_record(prompt_path, run_dir=None):
     """Best-effort Decision 1 budget record for a prompt artifact.
 
-    Runs validate_prompt.inspect() on the file (default model, no run
-    context, matching how the stage contract invokes the validator)
-    and returns {"characters", "percent_of_max", "budget"} for the
-    close entry. Any failure returns None: recording the budget never
-    blocks a close that has already passed its validators.
+    Runs validate_prompt.inspect() on the file (no run context) against the
+    model the run's production request declares, the same model and maximum
+    the stage contract passes the validator (IMG-14); a run that declares
+    none is judged against the validator's default. Returns {"characters",
+    "percent_of_max", "budget", "model"} for the close entry. Any failure
+    returns None: recording the budget never blocks a close that has already
+    passed its validators.
     """
     try:
+        if run_dir is None:
+            run_dir = Path(prompt_path).resolve().parent.parent
+        model, cap = run_model_request(Path(run_dir), "image-inventory-prompts")
         import importlib.util
         spec = importlib.util.spec_from_file_location(
             "skill71_validate_prompt", SKILL_ROOT / "scripts" / "validate_prompt.py")
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        result = mod.inspect(Path(prompt_path).read_text(encoding="utf-8"))
+        kwargs = {"model": model} if model else {}
+        result = mod.inspect(Path(prompt_path).read_text(encoding="utf-8"),
+                             max_chars=cap, **kwargs)
         telemetry = result["telemetry"]
         return {"characters": telemetry["characters"],
                 "percent_of_max": telemetry["percent_of_max"],
-                "budget": telemetry["budget"]}
+                "budget": telemetry["budget"],
+                "model": telemetry["model"]}
     except Exception:
         return None
 
@@ -2449,7 +2559,7 @@ def record_item_close(run_dir, stage, item_id, artifact_rel):
     if review_path.exists():
         entry["review_hash"] = sha256_file(review_path)
     if stage == "image-inventory-prompts":
-        budget_record = _prompt_budget_record(run_dir / artifact_rel)
+        budget_record = _prompt_budget_record(run_dir / artifact_rel, run_dir)
         if budget_record is not None:
             entry["prompt_budget"] = budget_record
     state.setdefault("items", {}).setdefault(stage, {})[item_id] = entry

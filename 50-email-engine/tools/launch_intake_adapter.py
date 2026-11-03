@@ -432,10 +432,11 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
             "hash: the plan changed after the intake was approved")
 
     # --- launch record -----------------------------------------------------
-    if launch.get("schema_version") != s49.LAUNCH_SCHEMA_VERSION:
+    if launch.get("schema_version") not in s49.ACCEPTED_LAUNCH_SCHEMA_VERSIONS:
         raise Refusal(
             f"launch record schema_version is "
-            f"{launch.get('schema_version')!r}, expected '1.0'")
+            f"{launch.get('schema_version')!r}, expected one of "
+            f"{list(s49.ACCEPTED_LAUNCH_SCHEMA_VERSIONS)}")
     if launch.get("status") not in s49.BUILDABLE_LAUNCH_STATUSES:
         raise Refusal(
             f"launch record status is {launch.get('status')!r}: only an "
@@ -724,11 +725,11 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
             },
             "approval": {
                 "approval_id": approval.get("approval_id"),
-                "subject_type": approval.get("subject_type"),
-                "subject_hash": approval.get("subject_hash"),
-                "owner_identity_ref": approval.get("owner_identity_ref"),
+                "kind": approval.get("kind"),
+                "plan_hash": approval.get("plan_hash"),
+                "client_identity": approval.get("client_identity"),
                 "source_message_ref": approval.get("source_message_ref"),
-                "recorded_at": approval.get("recorded_at"),
+                "expires_at": approval.get("expires_at"),
                 "scope": approval.get("scope"),
                 "revoked": approval.get("revoked"),
                 "verification_class": approval.get("verification_class"),
@@ -1124,11 +1125,11 @@ def build_fixtures() -> Dict[str, Any]:
     approval = {
         "schema_version": "1.0",
         "approval_id": "approval-fixture-0001",
-        "subject_type": "launch_plan_build",
-        "subject_hash": plan_hash,
-        "owner_identity_ref": "client:jordan-marsh",
+        "kind": "launch_plan_build",
+        "plan_hash": plan_hash,
+        "client_identity": "client:jordan-marsh",
         "source_message_ref": "msg-fixture-0001",
-        "recorded_at": "2026-10-15T14:30:00+00:00",
+        "expires_at": "2099-12-31T23:59:59+00:00",
         "scope": ["launch_plan_build"],
         "revoked": False,
         "verification_class":
@@ -1352,7 +1353,7 @@ def _self_test() -> int:
                 "scope", ["paid_asset_budget"]))
     refuses("approval by a foreign identity is refused",
             lambda f: f["approval"].__setitem__(
-                "owner_identity_ref", "client:someone-else"))
+                "client_identity", "client:someone-else"))
     refuses("deadline without brief provenance is refused",
             lambda f: f["landing_facts"]["landing"].__setitem__(
                 "deadline", {"statement": "Enrollment closes Thursday.",

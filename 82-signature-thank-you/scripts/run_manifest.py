@@ -36,6 +36,13 @@ translator never has to guess):
   loaded from), supplied explicitly by the caller. Absent a
   supplied reference the field is null; this module never invents
   a path.
+- `independent_review.record_sha256` and `provenance.snapshot_sha256`
+  (DTY-02): when supplied, the SHA-256 of the review record file and of
+  the purchase snapshot file the run consumed. Downstream translators
+  re-run validation against a snapshot only when its sha is bound here
+  and treat a recorded review as unproven without the record's sha.
+  Emitted only when supplied (the shipped schema's closed shape is
+  unchanged for runs that do not supply them).
 - An envelope or snapshot naming a different tenant/launch than
   the resolved view is another buyer's run and is rejected.
 - Raw payment credential fields anywhere in the inputs are
@@ -45,6 +52,7 @@ Stdlib only. Deterministic: no clock, no randomness, no network.
 """
 
 import json
+import re
 
 from thank_you_resolver import ENTITLEMENT_VERSION_PATTERN, FORBIDDEN_KEYS
 
@@ -56,6 +64,8 @@ DEFAULT_RESULT_REF = "thank-you-result.json"
 
 REVIEW_STATUSES = ("none", "recorded")
 REVIEW_FIELDS = ("reviewer", "verdict", "record_ref")
+OPTIONAL_REVIEW_FIELDS = ("record_sha256",)
+SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 IDENTITY_KEYS = ("tenant_id", "location_id", "launch_id")
 
@@ -95,13 +105,20 @@ def _review_block(independent_review):
             "with status/reviewer/verdict/record_ref, or None"
         )
     unknown = sorted(set(independent_review)
-                     - {"status", *REVIEW_FIELDS})
+                     - {"status", *REVIEW_FIELDS, *OPTIONAL_REVIEW_FIELDS})
     if unknown:
         raise ManifestError(
             f"invalid_independent_review: unknown field(s) {unknown}; "
             "the committed shape is status/reviewer/verdict/record_ref"
         )
     facts = {field: independent_review.get(field) for field in REVIEW_FIELDS}
+    record_sha = independent_review.get("record_sha256")
+    if record_sha is not None and (
+            not isinstance(record_sha, str)
+            or not SHA256_PATTERN.match(record_sha)):
+        raise ManifestError(
+            "invalid_independent_review: record_sha256 must be 64 "
+            "lowercase hex characters")
     status = independent_review.get("status")
     if status is None:
         status = "recorded" if any(
@@ -112,7 +129,8 @@ def _review_block(independent_review):
             f"of {list(REVIEW_STATUSES)}"
         )
     if status == "none":
-        if any(value not in (None, "") for value in facts.values()):
+        if record_sha or any(value not in (None, "")
+                             for value in facts.values()):
             raise ManifestError(
                 "invalid_independent_review: status 'none' contradicts "
                 "supplied review facts; a run either has a recorded "
@@ -128,7 +146,8 @@ def _review_block(independent_review):
             f"reviewer, verdict and record_ref; missing {missing}; "
             "a recorded review is never emitted half-stated"
         )
-    return {"status": "recorded", **facts}
+    return {"status": "recorded", **facts,
+            **({"record_sha256": record_sha} if record_sha else {})}
 
 
 def _envelope_of(fulfillment_map):
@@ -148,6 +167,7 @@ def _envelope_of(fulfillment_map):
 def build_run_manifest(view, snapshot=None, fulfillment_map=None, *,
                        independent_review=None,
                        envelope_ref=None, snapshot_ref=None, map_ref=None,
+                       snapshot_sha256=None,
                        result_ref=DEFAULT_RESULT_REF):
     """Build the run manifest for one completed resolver run.
 
@@ -168,6 +188,8 @@ def build_run_manifest(view, snapshot=None, fulfillment_map=None, *,
         review applies to this run.
     envelope_ref / snapshot_ref / map_ref: caller-supplied
         references to the inputs as loaded; null when not supplied.
+    snapshot_sha256: SHA-256 of the snapshot file named by
+        snapshot_ref; emitted as provenance.snapshot_sha256 when given.
     result_ref: reference to the companion thank-you result
         document this manifest accompanies.
     """
@@ -230,6 +252,12 @@ def build_run_manifest(view, snapshot=None, fulfillment_map=None, *,
         if ref is not None and (not isinstance(ref, str) or not ref):
             raise ManifestError(f"{name} must be a non-empty string or None")
 
+    if snapshot_sha256 is not None and (
+            not isinstance(snapshot_sha256, str)
+            or not SHA256_PATTERN.match(snapshot_sha256)):
+        raise ManifestError("snapshot_sha256 must be 64 lowercase hex "
+                            "characters or None")
+
     return {
         "manifest_version": MANIFEST_VERSION,
         "tenant_id": view["tenant_id"],
@@ -245,7 +273,34 @@ def build_run_manifest(view, snapshot=None, fulfillment_map=None, *,
         "provenance": {
             "snapshot_ref": snapshot_ref,
             "map_ref": map_ref,
+            **({"snapshot_sha256": snapshot_sha256}
+               if snapshot_sha256 else {}),
         },
+    }
+
+
+def build_design_manifest(tenant_id, location_id, launch_id, *,
+                          test_only=False, result_ref=DEFAULT_RESULT_REF):
+    """The launch-time (design-only) manifest: there is no purchase, so
+    every purchase-side fact is null, stated and never invented. The
+    thank-you page at launch is a design deliverable (DTY-01)."""
+    for name, value in (("tenant_id", tenant_id),
+                        ("location_id", location_id),
+                        ("launch_id", launch_id),
+                        ("result_ref", result_ref)):
+        if not isinstance(value, str) or not value:
+            raise ManifestError(f"{name} must be a non-empty string")
+    return {
+        "manifest_version": MANIFEST_VERSION,
+        "tenant_id": tenant_id,
+        "location_id": location_id,
+        "launch_id": launch_id,
+        "test_only": bool(test_only),
+        "result_ref": result_ref,
+        "independent_review": _review_block(None),
+        "native_bindings_ref": {"envelope_ref": None,
+                                "entitlement_version": None},
+        "provenance": {"snapshot_ref": None, "map_ref": None},
     }
 
 
@@ -269,6 +324,7 @@ def main(argv=None):
     parser.add_argument("--envelope-ref")
     parser.add_argument("--snapshot-ref")
     parser.add_argument("--map-ref")
+    parser.add_argument("--snapshot-sha256")
     parser.add_argument("--result-ref", default=DEFAULT_RESULT_REF)
     parser.add_argument("--out",
                         help="also write the manifest to this path "
@@ -282,6 +338,7 @@ def main(argv=None):
         envelope_ref=args.envelope_ref,
         snapshot_ref=args.snapshot_ref,
         map_ref=args.map_ref,
+        snapshot_sha256=args.snapshot_sha256,
         result_ref=args.result_ref,
     )
     text = json.dumps(manifest, indent=2, sort_keys=True)

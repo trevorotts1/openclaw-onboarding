@@ -1010,11 +1010,11 @@ def _launch_prov_errors(rec, answers):
     if not isinstance(approval, dict):
         errs.append("launch_provenance carries no approval record")
     else:
-        if approval.get("subject_type") != "launch_plan_build":
-            errs.append("approval subject_type is %r, expected "
-                        "'launch_plan_build'" % approval.get("subject_type"))
-        if approval.get("subject_hash") != plan_hash:
-            errs.append("approval subject_hash does not equal "
+        if approval.get("kind") != "launch_plan_build":
+            errs.append("approval kind is %r, expected "
+                        "'launch_plan_build'" % approval.get("kind"))
+        if approval.get("plan_hash") != plan_hash:
+            errs.append("approval plan_hash does not equal "
                         "launch_provenance.plan_hash (the approval is not "
                         "bound to this plan)")
         scope = approval.get("scope")
@@ -1026,8 +1026,8 @@ def _launch_prov_errors(rec, answers):
                         "not recorded as false)")
         if not _nonempty_str(approval.get("approval_id")):
             errs.append("approval record carries no approval_id")
-        if not _nonempty_str(approval.get("owner_identity_ref")):
-            errs.append("approval record names no owner identity")
+        if not _nonempty_str(approval.get("client_identity")):
+            errs.append("approval record names no client identity")
         if not _nonempty_str(approval.get("source_message_ref")):
             errs.append("approval record carries no source message "
                         "reference (the client's own response)")
@@ -1494,11 +1494,11 @@ def _valid_launch_brief():
                       "source_kind": "owner", "source_ref": "fixture"},
             "approval": {
                 "approval_id": "approval-fixture",
-                "subject_type": "launch_plan_build",
-                "subject_hash": plan_hash,
-                "owner_identity_ref": "client:fixture",
+                "kind": "launch_plan_build",
+                "plan_hash": plan_hash,
+                "client_identity": "client:fixture",
                 "source_message_ref": "msg-fixture",
-                "recorded_at": "2026-10-15T14:30:00+00:00",
+                "expires_at": "2099-12-31T23:59:59+00:00",
                 "scope": ["launch_plan_build"], "revoked": False,
                 "verification_class":
                     "recorded_consent_not_cryptographically_sealed",
@@ -1761,7 +1761,7 @@ def self_test():
     check_fail("launch-no-provenance", lb, AF_LAUNCH_PROVENANCE)
 
     lb = _valid_launch_brief()
-    lb["launch_provenance"]["approval"]["subject_hash"] = "f" * 64
+    lb["launch_provenance"]["approval"]["plan_hash"] = "f" * 64
     check_fail("launch-hash-mismatch", lb, AF_LAUNCH_PROVENANCE)
 
     lb = _valid_launch_brief(); lb["launch_provenance"]["approval"]["revoked"] = True

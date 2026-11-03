@@ -14,17 +14,48 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 PKG = HERE.parent
 REPO = PKG.parents[1]
+
+def _skill(name):  # onboarding: 49-signature-funnel; 999: .claude/skills/signature-funnel
+    p = REPO / name
+    return p if p.is_dir() else REPO / ".claude/skills" / name.split("-", 1)[1]
+
 sys.path.insert(0, str(PKG))
 import engine as e  # noqa: E402
 import palette_help as ph  # noqa: E402
 
-BLACKCEO = json.loads((REPO / "71-blackceo-signature-page/assets/brand/blackceo-brand.json").read_text())["palette"]
+BLACKCEO = json.loads((_skill("71-blackceo-signature-page") / "assets/brand/blackceo-brand.json").read_text())["palette"]
 FIX = PKG / "fixtures"
+
+
+_SAID = {}
+
+
+def _say(text):  # stores a CLIENT message, returns its id
+    ref = f"t-{len(_SAID) + 1}"
+    _SAID[ref] = {"role": "client", "text": str(text)}
+    return ref
+
+
+def cite(doc, qid, value):
+    """Record a commercial answer the way a harness must: citing the client's message; a price
+    is echoed and then confirmed by the client's yes."""
+    r = e.record(doc, qid, value, source_message_ref=_say(value))
+    if r.get("action") == "confirm_price":
+        r = e.record(doc, qid, "yes", source_message_ref=_say("yes"))
+    return r
+
+
+def setUpModule():
+    e.TRANSCRIPT_LOOKUP = _SAID.get
+
+
+def tearDownModule():
+    e.TRANSCRIPT_LOOKUP = None
 
 
 def answered(doc, pairs):
     for q, v in pairs:
-        r = e.record(doc, q, v)
+        r = cite(doc, q, v) if q in e.CITED_QUESTIONS else e.record(doc, q, v)
         assert r.get("ok") or r.get("action"), (q, v, r)
     return doc
 
@@ -60,16 +91,16 @@ class Bank(unittest.TestCase):
             for r in q["required_by"]:
                 covered.add(r.split(":", 1)[1])
         required = {}
-        sys.path.insert(0, str(REPO / "49-signature-funnel/scripts"))
+        sys.path.insert(0, str(_skill("49-signature-funnel") / "scripts"))
         vlp = importlib.import_module("validate_launch_plan")
         required["49 launch"] = set(vlp.REQUIRED_LAUNCH_FIELDS)
-        sys.path.insert(0, str(REPO / "83-black-friday-launcher"))
+        sys.path.insert(0, str(_skill("83-black-friday-launcher")))
         try:
             intake83 = importlib.import_module("launcher_core.intake")
             required["83 intake"] = set(intake83.REQUIRED_FIELDS)
         except ImportError:
             self.skipTest("Skill 83 not present in this checkout")
-        wi = (REPO / "71-blackceo-signature-page/scripts/write_intake.py").read_text()
+        wi = (_skill("71-blackceo-signature-page") / "scripts/write_intake.py").read_text()
         required["71 write_intake"] = {re.match(r'"--([a-z-]+)"', c).group(1) for c in wi.split("p.add_argument(")[1:] if "required=True" in c.split("p.add_argument(")[0].split("\n    p.")[0]}
         for who, fields in required.items():
             self.assertFalse(fields - covered, f"{who} fields with no question and no system reason: {sorted(fields - covered)}")
@@ -77,8 +108,8 @@ class Bank(unittest.TestCase):
         legacy = set()
         for q in bank["questions"]:
             legacy.update(q["legacy_ids"])
-        sf = json.loads((REPO / "49-signature-funnel/intake/sf-intake-questions.json").read_text())["questions"]
-        launch = json.loads((REPO / "49-signature-funnel/intake/launch-questions.json").read_text())["questions"]
+        sf = json.loads((_skill("49-signature-funnel") / "intake/sf-intake-questions.json").read_text())["questions"]
+        launch = json.loads((_skill("49-signature-funnel") / "intake/launch-questions.json").read_text())["questions"]
         want = {x["id"] for x in sf} | {x["id"] for x in launch}
         self.assertFalse(want - legacy, f"questions with no canonical id: {sorted(want - legacy)}")
 
@@ -161,7 +192,7 @@ class NotKnowing(unittest.TestCase):
 
     def test_price_unknown_stays_blocked_and_cannot_be_defaulted(self):
         d = e.new_doc()
-        e.record(d, "funnel_shape", "One offer")
+        cite(d, "funnel_shape", "One offer")
         for _ in range(3):
             r = e.record(d, "price", "I don't know")
             self.assertEqual(r["action"], "blocked")
@@ -173,11 +204,11 @@ class NotKnowing(unittest.TestCase):
 
     def test_suggested_price_is_blocking_until_approved(self):
         d = e.new_doc()
-        e.record(d, "funnel_shape", "One offer")
+        cite(d, "funnel_shape", "One offer")
         e.record(d, "price", {"amount_minor": 49700, "currency": "USD", "rationale": "Similar programs charge 400 to 600."})
         self.assertEqual(e.get(d, "price")["status"], "suggested")
         self.assertIn("price", [b["id"] for b in e.check(d)["blocking"]])
-        e.record(d, "price", "$497")
+        cite(d, "price", "$497")
         self.assertNotIn("price", [b["id"] for b in e.check(d)["blocking"]])
 
     def test_finalize_defaults_the_rest_but_never_the_facts(self):
@@ -436,7 +467,7 @@ class TopicsModesAndEstimates(unittest.TestCase):
         e.record(d, "interview_mode", "Help me choose")
         before = e.next_question(d)
         self.assertIsNone(before["estimate"]["note"])
-        e.record(d, "funnel_shape", "One offer")  # opens the price question, closes packages
+        cite(d, "funnel_shape", "One offer")  # opens the price question, closes packages
         after = e.next_question(d)
         self.assertEqual(after["estimate"]["questions"], before["estimate"]["questions"] + 1)
         self.assertIn("was", after["estimate"]["note"])
@@ -454,7 +485,7 @@ class TopicsModesAndEstimates(unittest.TestCase):
 
 class LegacyMapping(unittest.TestCase):
     def test_legacy_answers_cover_what_the_sf_prover_requires(self):
-        sys.path.insert(0, str(REPO / "49-signature-funnel/scripts"))
+        sys.path.insert(0, str(_skill("49-signature-funnel") / "scripts"))
         psi = importlib.import_module("prove_sf_intake")
         d = e.new_doc("legacy")
         answered(d, [

@@ -78,6 +78,22 @@ Verified 2026-10-21 by reading the files in this repo; each row is checkable at 
 | Internal tag-create adapter | `POST /workflow/{loc}/tags/create`, body `{"tag": ...}` | `internal/endpoints.py:52-54`, `utils/ghl_internal_client.py:219-225` |
 | Installed app bundle claim | the `apps/*.json` bundles cited below have no separate tags app — that is not a claim about the Marketplace reference | Sources section |
 
+## Launch step compiler — what is API, what is a named browser step (U-skill44-04)
+
+`tools/engine/cli_anything/gohighlevel/utils/launch_step_compiler.py` compiles one launch-c build into a workflow definition. It never calls a provider; a blocked result carries no workflows, only `blocked_by` reasons and the browser ledger rows still owed. Tests: `tools/engine/tests/test_launch_step_compiler.py`.
+
+| Concern | Rule | Blocked reason / ledger row |
+|---|---|---|
+| Template | The automation's template (or, for `new`, its family default) must be a row of `_matcher/buildable-templates.json` with a non-empty `build_graph`. No fallback to an email chain. | `template_unresolved:*`, `template_unbuildable:*` |
+| Trigger | Only `tag_added` (`contact_tag`, the payload CampaignBuilder already writes) is built by API. `launch_calendar` is accepted only when an absolute schedule node exists (opt-in tag + wait-until-date). Every other type (`payment_succeeded`, `payment_failed`, `form_submitted`, `customer_replied`, ...) has no sandbox-verified payload: the build is blocked, never defaulted to Tag Added, and the trigger is a named `set_trigger` managed-browser step. Add a type to `VERIFIED_TRIGGER_TYPES` only with a sandbox-verified `patch-trigger` payload. | `trigger_unverified:<type>` |
+| Steps | Template graph nodes compile to `sms`, `if_else`, `workflow_goal`, tag, `wait` and pass-through verified actions; email nodes take the bound Skill 50 emails in order (copy verbatim). A free-text if/else condition has no verified payload and becomes a `configure_if_else_condition` browser step. | `email_copy_missing:*`, `tag_unresolved:*`, `unverified_action:*` |
+| Stop on purchase | Every promotional workflow gets an if/else on the purchase tag `launch-buyer-<launch_id>` before each send, routed to one `workflow_goal` on that tag. The post-sale flow must add that tag. The old `contact.verified_purchase` field condition is no longer relied on. A promo build is blocked unless a post-sale build in the same document compiled. | `purchase_tag_unset`, `purchase_tag_not_set:*` |
+| Lifecycle | An absent lifecycle, or one exactly equal to the reader's synthesized contract default (no `lifecycle_source: build_plan`), is blocked. | `guards:<id>:lifecycle_absent`, `guards:<id>:lifecycle_not_authored` |
+| Absolute dates | Each date-anchored email gets a `wait` node `attributes.type = "until_date"` (`rail: managed_browser`, not an API payload) and a `wait_until_date` ledger row; the API builder verifies duration waits only, so a caller must route those nodes to the managed browser. Template `{{token}}` waits resolve from the launch calendar or `bindings["until"]`. | `absolute_wait_unsupported:*` |
+| Read-back | `verify_readback(workflow_def, exported_templates)` is the mechanical WF-9 / QC check: every compiled wait-until date, the purchase goal, the purchase if/else and the post-sale tag must be in the export. | `wait_until_missing:*`, `purchase_goal_missing:*`, `purchase_gate_missing:*` |
+
+Plan reader follow-up (not in this unit): `launch-c/plan_reader.py` still substitutes `DEFAULT_LIFECYCLE` when a Skill 50 plan has no lifecycle meta; until it stops and sets `lifecycle_source`, the compiler is the gate that blocks it.
+
 ## Sources
 
 - `https://github.com/GoHighLevel/highlevel-api-docs` → `apps/workflows.json`, `apps/v3/workflows-v3.json` (single `GET /workflows/`), `apps/contacts.json`, `apps/custom-fields.json`, `apps/conversations.json`, `apps/calendars.json`, `apps/campaigns.json`, `apps/forms.json`, `apps/conversation-ai.json`, `apps/v3/funnels-v3.json`.

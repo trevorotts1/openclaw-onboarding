@@ -7,7 +7,13 @@ A result only counts when it ECHOES its request: same request_id, input_hash,
 page_id, launch and revision. A result authored and "reviewed" by the same
 session never counts as independently reviewed — independent_review=true
 requires a different, named reviewer session (an artifact's reviewer is
-never its author). Proof classes are ordered L0 < L1 < ... < L5, and the
+never its author). "Different named session" is not two strings: a review
+counts only through a review record (shared-utils/signature_launch_contract/
+review_record.py) whose reviewer session is in the dispatch ledger and which
+lists the sha256 of every artifact reviewed (ENF-10). Delivery scope sets the
+minimum proof: scope "client_delivery" refuses any result below
+locally_verified / L2, without design artifacts, or without an independent
+review record; "rehearsal" (the default) keeps L0/L1 legal. Proof classes are ordered L0 < L1 < ... < L5, and the
 checkpoint reports the WEAKEST link per role honestly: a launch is only as
 proven as its least-proven page.
 
@@ -53,6 +59,16 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+# review_record lives in the repo's shared-utils; resolved from the repo root
+# (the same layout dispatch_launch.py reads). If it cannot be loaded, no
+# independent review can be verified, so every such claim is refused.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]
+                       / "shared-utils" / "signature_launch_contract"))
+try:
+    import review_record  # noqa: E402
+except ImportError:  # pragma: no cover - fail closed below
+    review_record = None
+
 EXIT_OK = 0
 EXIT_VIOLATION = 2
 EXIT_FAILCLOSED = 3
@@ -60,6 +76,13 @@ EXIT_FAILCLOSED = 3
 STATUSES = ("authored", "locally_verified", "installed_test_verified",
             "ready_for_activation", "live_verified", "blocked")
 LEVELS = ("L0", "L1", "L2", "L3", "L4", "L5")
+SCOPES = ("rehearsal", "client_delivery")
+# Minimum proof per delivery scope (decision ENF-10): a client delivery is
+# every page locally_verified (L2) with an independent review record;
+# L0/L1 and "authored" are for rehearsal only.
+MIN_STATUS = {"client_delivery": "locally_verified"}
+MIN_PROOF = {"client_delivery": "L2"}
+_SHA256 = re.compile(r"^[a-f0-9]{64}$")
 _RESULT_FIELDS = ("schema_version", "tenant_id", "location_id", "launch_id",
                   "revision", "request_id", "input_hash", "page_id", "status",
                   "artifacts", "author_session", "reviewer_session",
@@ -71,10 +94,18 @@ class ReceiptError(ValueError):
     pass
 
 
-def validate_result(res: Any, request: Optional[Dict[str, Any]]) -> List[str]:
+def validate_result(res: Any, request: Optional[Dict[str, Any]], *,
+                    scope: str = "rehearsal", ledger: Any = None,
+                    review: Any = None) -> List[str]:
+    """Shape + echo + independence + minimum proof for the delivery scope.
+    ledger: the dispatch ledger of recorded sessions; review: this page's
+    review record. independent_review=true counts only when review_record
+    accepts them; two session strings never do."""
     fails: List[str] = []
     if not isinstance(res, dict):
         return ["result is not an object"]
+    if scope not in SCOPES:
+        return [f"unknown delivery scope {scope!r}"]
     for f in _RESULT_FIELDS:
         if f not in res:
             fails.append(f"result missing field {f!r}")
@@ -95,6 +126,41 @@ def validate_result(res: Any, request: Optional[Dict[str, Any]]) -> List[str]:
         elif res["reviewer_session"] == res["author_session"]:
             fails.append("independent_review claimed but reviewer == author "
                          "(an artifact's reviewer is never its author)")
+        elif review_record is None:
+            fails.append("independent_review claimed but review_record is "
+                         "unavailable: nothing can verify it")
+        elif review is None or ledger is None:
+            fails.append("independent_review claimed without a review record "
+                         "and dispatch ledger: two session strings do not "
+                         "make a review")
+        else:
+            fails.extend(review_record.validate_review_record(
+                review, ledger=ledger, author_session=res["author_session"],
+                artifacts=[a for a in res["artifacts"] if isinstance(a, dict)],
+                request_id=res["request_id"]))
+            if review.get("reviewer_session") != res["reviewer_session"]:
+                fails.append("review record reviewer_session differs from "
+                             "the result's reviewer_session")
+    if scope in MIN_STATUS and res["status"] in STATUSES \
+            and res["status"] != "blocked":
+        if STATUSES.index(res["status"]) < STATUSES.index(MIN_STATUS[scope]):
+            fails.append(f"{scope} needs status >= {MIN_STATUS[scope]}, got "
+                         f"{res['status']!r}")
+        if res["proof_class"] in LEVELS and \
+                LEVELS.index(res["proof_class"]) < LEVELS.index(MIN_PROOF[scope]):
+            fails.append(f"{scope} needs proof_class >= {MIN_PROOF[scope]}, "
+                         f"got {res['proof_class']!r}")
+        if not res["independent_review"]:
+            fails.append(f"{scope} needs an independent review record")
+        if not res["artifacts"]:
+            fails.append(f"{scope} needs design artifacts: the result lists none")
+        for a in res["artifacts"]:
+            if isinstance(a, dict) and "path" in a and "sha256" in a and not (
+                    isinstance(a["path"], str) and a["path"].strip()
+                    and isinstance(a["sha256"], str)
+                    and _SHA256.match(a["sha256"])):
+                fails.append(f"{scope} artifact needs a non-empty path and a "
+                             "64-hex sha256")
     if request is not None:
         for f in ("request_id", "input_hash", "page_id", "launch_id",
                   "revision", "tenant_id", "location_id"):
@@ -303,8 +369,13 @@ def _manifest_requests(manifest: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
 def collect(manifest: Dict[str, Any], results: List[Dict[str, Any]],
             requests: Optional[Dict[str, Dict[str, Any]]] = None,
             asset_receipts: Optional[List[Dict[str, Any]]] = None,
-            registry: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """manifest: the dispatch manifest. results: page-result dicts.
+            registry: Optional[Dict[str, Any]] = None,
+            scope: str = "rehearsal", ledger: Any = None,
+            review_records: Optional[Dict[str, Dict[str, Any]]] = None
+            ) -> Dict[str, Any]:
+    """scope/ledger/review_records: delivery scope, dispatch ledger and
+    request_id -> review record, forwarded to validate_result.
+    manifest: the dispatch manifest. results: page-result dicts.
     requests: optional request_id -> request map for FULL echo validation
     (adds tenant/location/test_only); when omitted, echo validation still
     runs against the manifest's own request anchors.
@@ -332,7 +403,8 @@ def collect(manifest: Dict[str, Any], results: List[Dict[str, Any]],
                             "this dispatch")
             continue
         req = (requests or _manifest_requests(manifest)).get(rid)
-        fails = validate_result(res, req)
+        fails = validate_result(res, req, scope=scope, ledger=ledger,
+                                review=(review_records or {}).get(rid))
         if fails:
             problems.extend(f"{role}: {f}" for f in fails)
             continue
@@ -397,6 +469,7 @@ def collect(manifest: Dict[str, Any], results: List[Dict[str, Any]],
                   key=LEVELS.index) if present else None
     return {
         "schema": "signature-launch-checkpoint/v1",
+        "scope": scope,
         "launch_id": manifest["launch_id"], "revision": manifest["revision"],
         "plan_document_hash": manifest["plan_document_hash"],
         "route_graph_hash": manifest["route_graph_hash"],
@@ -443,42 +516,59 @@ def _self_test() -> int:
                                    "location_id": "L", "test_only": True}
                 for rq in manifest["requests"]}
 
+    ledger = {"sessions": [{"session_id": "r1", "model": "m"}, "r2"]}
+    SHA = "ab" * 32
+
     def res(role, status="locally_verified", author="a1", reviewer="r1",
             proof="L2"):
         rq = requests[f"rq-{role}"]
         return {"schema_version": "1.0", "tenant_id": "T", "location_id": "L",
                 "launch_id": "X", "revision": 1, "request_id": rq["request_id"],
                 "input_hash": rq["input_hash"], "page_id": rq["page_id"],
-                "status": status, "artifacts": [], "author_session": author,
+                "status": status,
+                "artifacts": [{"path": f"{role}.png", "sha256": SHA}],
+                "author_session": author,
                 "reviewer_session": reviewer,
                 "independent_review": reviewer is not None,
                 "proof_class": proof, "blockers": [],
                 "native_bindings_ref": None, "test_only": True}
 
-    cp = collect(manifest, [res("landing"), res("checkout"), res("thank_you")])
+    def rec(role, reviewer="r1"):
+        return {"schema": "signature-launch-review-record/v1",
+                "reviewer_session": reviewer, "reviewer_model": "m",
+                "request_id": f"rq-{role}",
+                "reviewed_artifacts": [{"path": f"{role}.png", "sha256": SHA}]}
+
+    recs = {f"rq-{r}": rec(r) for r in ("landing", "checkout", "thank_you")}
+
+    def run(results, **kw):
+        return collect(manifest, results, ledger=ledger,
+                       review_records=recs, **kw)
+
+    cp = run([res("landing"), res("checkout"), res("thank_you")])
     say(cp["aggregate_status"] == "locally_verified" and
         cp["weakest_proof_class"] == "L2",
         "full L2 locally_verified set rolls up honestly")
-    cp = collect(manifest, [res("landing")])
+    cp = run([res("landing")])
     say(cp["aggregate_status"] == "in_progress" and
         cp["missing_roles"] == ["checkout", "thank_you"],
         "partial results report in_progress with named missing roles")
     bad = res("landing"); bad["reviewer_session"] = "a1"
-    cp = collect(manifest, [bad, res("checkout"), res("thank_you")])
+    cp = run([bad, res("checkout"), res("thank_you")])
     say(any("reviewer == author" in p for p in cp["problems"]),
         "self-reviewed result is rejected as a problem, never counted")
-    cp = collect(manifest, [res("landing", "ready_for_activation"),
+    cp = run([res("landing", "ready_for_activation"),
                             res("checkout", "ready_for_activation"),
                             res("thank_you", "ready_for_activation")])
     say(cp["aggregate_status"] == "ready_for_activation",
         "all roles ready + independent review -> ready_for_activation")
-    cp = collect(manifest, [res("landing", "ready_for_activation", reviewer=None),
+    cp = run([res("landing", "ready_for_activation", reviewer=None),
                             res("checkout", "ready_for_activation"),
                             res("thank_you", "ready_for_activation")])
     say(cp["aggregate_status"] != "ready_for_activation",
         "ready_for_activation is withheld when a role lacks independent review")
     stray = res("landing"); stray["request_id"] = "rq-nope"
-    cp = collect(manifest, [stray])
+    cp = run([stray])
     say(cp["aggregate_status"] == "blocked" and cp["problems"],
         "a result that echoes no request in this dispatch is a problem")
     # Review probe E (D6b): with NO requests map supplied, a result whose
@@ -486,7 +576,7 @@ def _self_test() -> int:
     # echo guarantee comes from the manifest itself.
     forged = res("landing", "live_verified", proof="L5")
     forged["input_hash"] = "GARBAGE-NOT-THE-REAL-HASH"
-    cp = collect(manifest, [forged, res("checkout", "live_verified", proof="L5"),
+    cp = run([forged, res("checkout", "live_verified", proof="L5"),
                             res("thank_you", "live_verified", proof="L5")])
     say(cp["aggregate_status"] != "live_verified" and
         any("input_hash" in p for p in cp["problems"]) and
@@ -508,6 +598,14 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--registry",
                     help="prompt-policy registry JSON; when supplied, "
                          "budget-decision citations are verified against it")
+    ap.add_argument("--scope", choices=SCOPES, default="rehearsal",
+                    help="delivery scope; client_delivery refuses results "
+                         "below locally_verified/L2 or without a review record")
+    ap.add_argument("--dispatch-ledger",
+                    help="dispatch ledger JSON (the recorded session ids)")
+    ap.add_argument("--review-records-dir",
+                    help="directory of review-*.json review records "
+                         "(each echoes its request_id)")
     ap.add_argument("--out", help="write the checkpoint JSON here")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
@@ -532,7 +630,14 @@ def main(argv: List[str]) -> int:
                               sorted(Path(args.asset_receipts_dir)
                                      .glob("asset-receipt-*.json"))]
         registry = _load(args.registry) if args.registry else None
-        cp = collect(manifest, results, requests, asset_receipts, registry)
+        ledger = _load(args.dispatch_ledger) if args.dispatch_ledger else None
+        review_records = {}
+        if args.review_records_dir:
+            for p in sorted(Path(args.review_records_dir).glob("review-*.json")):
+                r = _load(str(p))
+                review_records[r["request_id"]] = r
+        cp = collect(manifest, results, requests, asset_receipts, registry,
+                     args.scope, ledger, review_records)
     except (OSError, ValueError, KeyError) as exc:
         print(f"FAIL: {exc}")
         return EXIT_VIOLATION

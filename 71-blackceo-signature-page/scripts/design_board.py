@@ -1003,13 +1003,77 @@ def gate_failures(run_dir: Path, request_name=DEFAULT_REQUEST) -> list:
     return validate(Path(run_dir), require_approval=True, request_name=request_name)
 
 
+def launch_client_ref(run_dir: Path):
+    """The launch's client identity ref: tenant_id of the run's launch record (launch.json), else its
+    page request or intake. None for a run that carries no launch context."""
+    for name in ("launch.json", "page-request.json", "intake.json"):
+        try:
+            value = read_json(run_dir / name).get("tenant_id")
+        except (BoardError, AttributeError):
+            continue
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def run_sessions(run_dir: Path) -> set:
+    """Every session that authored work in this run (stage receipts), plus this process's own."""
+    import os
+    found = {os.environ.get(k) for k in ("CLAUDE_SESSION_ID", "SIGNATURE_AUTHOR_SESSION")}
+    for p in sorted((run_dir / "private" / "receipts").glob("*.json")):
+        try:
+            found.add(read_json(p).get("author_session"))
+        except (BoardError, AttributeError):
+            pass
+    return {s for s in found if isinstance(s, str) and s.strip()}
+
+
+def client_evidence(run_dir: Path, by: str, evidence: str, board_sha256: str) -> dict:
+    """Resolve --evidence to the client's own recorded message and return what approval records of it.
+
+    --evidence is the PATH of a platform record of the client's message: JSON with message_id and
+    sender_ref (and, when the platform records it, board_sha256 and the session that wrote it). Free
+    text is refused. --by must be that sender, and the launch's client identity when the run has one.
+    A record written by a session that authored this run is refused: the agent cannot approve itself.
+    """
+    path = Path(str(evidence)).expanduser()
+    if not str(evidence).strip() or not path.is_file():
+        raise BoardError("--evidence must be the path of the platform record of the client's own "
+                         f"message; {str(evidence)[:40]!r} is not a file")
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raise BoardError(f"--evidence {path.name} is not a readable client message record (JSON)")
+    if not isinstance(record, dict):
+        raise BoardError(f"--evidence {path.name} is not a client message record (a JSON object)")
+    message_id = str(record.get("message_id") or "").strip()
+    sender = str(record.get("sender_ref") or "").strip()
+    if not message_id or not sender:
+        raise BoardError(f"--evidence {path.name} carries no message_id and sender_ref")
+    if by.strip() != sender:
+        raise BoardError(f"--by {by!r} is not the sender of the recorded message ({sender!r}); approved_by "
+                         "is read from the client's record, never typed")
+    ident = launch_client_ref(run_dir)
+    if ident is not None and sender != ident:
+        raise BoardError(f"the recorded message is from {sender!r}, not this launch's client ({ident!r})")
+    if record.get("board_sha256") not in (None, board_sha256):
+        raise BoardError("the client's message is about a different board than the one on record")
+    wrote = {str(record.get(k)) for k in ("session", "author_session", "recorded_by_session") if record.get(k)}
+    if wrote & run_sessions(run_dir):
+        raise BoardError("the evidence record was written by a session that worked on this run; "
+                         "the client's approval must come from the client's own channel")
+    return {"evidence_ref": str(path.resolve()), "evidence_sha256": sha256_file(path),
+            "evidence_message_id": message_id, "approved_by": sender}
+
+
 def approve(run_dir: Path, by: str, evidence: str, request_name=DEFAULT_REQUEST) -> dict:
     fails = validate(run_dir, request_name=request_name)
     if fails:
         raise BoardError("a board that fails QC is never approved: " + " | ".join(fails))
     rec = load_record(run_dir)
-    rec["approval"] = {"decision": "approved", "party": "client", "approved_by": by,
-                       "evidence_ref": evidence, "approved_at": now_iso(), **approval_binding(rec)}
+    proof = client_evidence(run_dir, by, evidence, rec["board"]["sha256"])
+    rec["approval"] = {"decision": "approved", "party": "client", **proof,
+                       "approved_at": now_iso(), **approval_binding(rec)}
     save_record(run_dir, rec)
     return rec["approval"]
 
@@ -1049,8 +1113,9 @@ def main(argv=None) -> int:
         if name == "validate":
             s.add_argument("--require-approval", action="store_true")
         if name == "approve":
-            s.add_argument("--by", required=True)
-            s.add_argument("--evidence", required=True)
+            s.add_argument("--by", required=True, help="the client identity ref (must match the record)")
+            s.add_argument("--evidence", required=True,
+                           help="PATH of the platform record of the client's own message")
     a = ap.parse_args(argv)
     run_dir = a.run_dir.resolve()
     if not run_dir.is_dir():

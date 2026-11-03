@@ -3,7 +3,13 @@
   "spec_version": 1,
   "copy_version": "product-selection",
   "page_role": "product_selection",
-  "status": "Structure extracted from Skill 78's own references (selection-copy-profile.md page shape, selection-ui-contract.md). Skill 78 states that no pre-existing exact selection-page copy framework was supplied; this is the new design contract, not BlackCEO source copy. No character or word band is invented: the copy is checked for its sections, its order, one button per package card and no button elsewhere.",
+  "status": "Structure extracted from Skill 78's own references (selection-copy-profile.md page shape, selection-ui-contract.md). Skill 78 states that no pre-existing exact selection-page copy framework was supplied; this is the new design contract, not BlackCEO source copy, and it was RATIFIED as built on 2026-11-02 (five-section selection structure; see structure_approval). No character or word band is invented: the copy is checked for its sections, its order, one button per package card and no button elsewhere.",
+  "structure_approval": {
+    "decision": "ratified_as_built",
+    "date": "2026-11-02",
+    "structure": "product selection, 5 sections",
+    "basis": "Decision taken as recommended on 2026-11-02 (repair project bfl-s49-repair-20261102, decision STR-17): ratify as built, because the structure already matches Skill 49 page_types, Skill 71 copy specs and funnel_structure.json. A later change to its sections is a new decision with its own date."
+  },
   "guide": {
     "file": "78-signature-product-selection/references/selection-copy-profile.md",
     "title": "Skill 78 copy profile - specificity-led comparison",
@@ -112,6 +118,10 @@
         {
           "element": "comparison_rows",
           "unit_kind": "bullet",
+          "unit_kinds": [
+            "bullet",
+            "row"
+          ],
           "min": 1,
           "max": 200,
           "kind": "hard",

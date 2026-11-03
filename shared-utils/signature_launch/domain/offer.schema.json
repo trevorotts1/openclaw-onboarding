@@ -42,6 +42,14 @@
         "minLength": 1
       }
     },
+    "entitlements_removed_vs_u1": {
+      "type": "array",
+      "description": "Downsell only: the upsell_1 entitlements this offer does not grant, computed by the downsell extension builder from the two offers; never authored.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
     "requires": {
       "type": "array",
       "items": {
@@ -146,6 +154,32 @@
           "native_price_id",
           "schedule",
           "approval_status"
+        ],
+        "allOf": [
+          {
+            "description": "A trial, recurring or installment price must record the charges that follow the first one; an empty schedule is how a trial got printed as a one-time charge.",
+            "if": {
+              "properties": {
+                "billing_type": {
+                  "enum": [
+                    "trial",
+                    "recurring",
+                    "installment"
+                  ]
+                }
+              },
+              "required": [
+                "billing_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "schedule": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
         ]
       }
     },

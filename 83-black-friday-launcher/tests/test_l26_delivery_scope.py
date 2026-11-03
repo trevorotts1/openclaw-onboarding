@@ -26,7 +26,7 @@ sys.path.insert(0, str(SKILL_ROOT))
 from launcher_core import cli, council, intake, launch_plan, package, route  # noqa: E402
 
 
-def base_intake() -> dict:
+def _base_intake_raw() -> dict:
     return {
         "schema_version": "1.0",
         "tenant_id": "tenant-a",
@@ -37,8 +37,9 @@ def base_intake() -> dict:
         "brand": {"ref": "brand-a", "hash": "a" * 64},
         "copy_profile": "signature_12_section",
         "approval": {"ref": "approval-1", "hash": "b" * 64},
-        "entitlement_attestation": {"basis": "purchase", "evidence_ref": "ev-1",
-                                    "attested_by": "operator", "purchase_reference": "order-1"},
+        "entitlement_attestation": {"basis": "purchase", "evidence_ref": "TEST-ONLY-EVIDENCE",
+                                    "attested_by": "operator", "purchase_reference": "TEST-ONLY-PURCHASE-REFERENCE",
+                                "amount_minor": 49700, "currency": "USD"},
         "offers": [{"offer_id": "main-1", "name": "Launch", "role": "main",
                     "price": {"amount_minor": 49700, "currency": "USD"}}],
     }
@@ -50,7 +51,8 @@ def stub_council(_launch):
 
 
 def plan_fixture() -> dict:
-    return json.loads(BF_PLAN.read_text(encoding="utf-8"))
+    from test_delivery_units import bound_plan
+    return bound_plan()  # bound to this file's intake: tenant-a, loc-a, revision 1, approval 'b'*64 (CON-04)
 
 
 def lane_deliveries(plan: dict, run_dir: Path) -> dict:
@@ -75,7 +77,8 @@ def lane_deliveries(plan: dict, run_dir: Path) -> dict:
                         "request_id": f"lane-{unit['id']}",
                         "input_hash": "d" * 64},
         }
-    return out
+    from test_delivery_units import with_skill44_builds
+    return with_skill44_builds(plan, run_dir, out)
 
 
 def pieces_for(run_dir: Path, graph: dict, normalized: dict) -> dict:
@@ -213,6 +216,62 @@ class CliScopeTests(_Base):
         self.assertEqual(rc, 2)
         self.assertIn("AF-LAUNCH-SCOPE-CONFLICT", err)
         self.assertEqual(out.strip(), "")  # a refused assembly emits nothing
+
+
+
+CHECKOUT_TERMS = {
+    "guarantee_ref": "TEST-ONLY-GUARANTEE-REF", "guarantee_text": "Test-only guarantee text.",
+    "terms_ref": "TEST-ONLY-TERMS-REF", "terms_text": "Test-only terms text.",
+    "consent_ref": "TEST-ONLY-CONSENT-REF", "consent_text": "Test-only consent text.",
+}
+
+
+_ANSWERS_DIR = tempfile.TemporaryDirectory()  # the client's answers files for the inline intakes below
+
+
+def _answers_doc(offers: list) -> dict:
+    """A client-intake-answers/v1 doc that says exactly what the inline offers say (every entry provided)."""
+    answers = {"billing": {"value": "one_time", "status": "provided"}}
+    mains = []
+    for o in offers:
+        item = {"offer_id": o["offer_id"], "display_name": o["name"],
+                "price": {"amount_minor": o["price"]["amount_minor"], "currency": o["price"]["currency"]},
+                "deliverables": list((o.get("level") or {}).get("deliverables") or [])}
+        if o["role"] == "main":
+            mains.append(item)
+        else:
+            answers[o["role"]] = {"value": item, "status": "provided"}
+    answers["packages"] = {"value": mains, "status": "provided"}
+    return {"schema": "client-intake-answers/v1", "answers": answers}
+
+
+def with_checkout_facts(payload: dict) -> dict:
+    """The owner-supplied checkout facts intake requires (CHK-16): terms block + delivery per offer,
+    and the price provenance (source_ref per offer plus the answers file they resolve in)."""
+    payload.setdefault("checkout_terms", dict(CHECKOUT_TERMS))
+    mains = 0
+    for o in payload["offers"]:
+        o.setdefault("delivery", {"destination": f"https://members.example.com/{o['offer_id']}",
+                                  "owner_confirmed": True})
+        if o["role"] in ("upsell_1", "downsell_1", "upsell_2") or (
+                o["role"] == "main" and payload["journey_mode"] != "single_simple"):
+            o.setdefault("level", {"state": "supplied", "name": o["name"],
+                                   "deliverables": [f"{o['name']} access"]})
+        if o["role"] == "main":
+            o["price"].setdefault("source_ref", f"answers-file:packages[{mains}]")
+            mains += 1
+        else:
+            o["price"].setdefault("source_ref", f"answers-file:{o['role']}")
+    if "answers_file" not in payload:
+        text = json.dumps(_answers_doc(payload["offers"]), indent=1, sort_keys=True)
+        path = Path(_ANSWERS_DIR.name) / f"answers-{hashlib.sha256(text.encode()).hexdigest()[:16]}.json"
+        path.write_text(text, encoding="utf-8")
+        payload["answers_file"] = str(path)
+    return payload
+
+
+def base_intake(*args, **kwargs) -> dict:
+    return with_checkout_facts(_base_intake_raw(*args, **kwargs))
 
 
 if __name__ == "__main__":

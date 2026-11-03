@@ -12,9 +12,11 @@ Contract (references/native-order-summary-integration.md):
 
 - Identity: every event in one call must share one tenant/location/
   launch identity; a mixed-tenant or mixed-launch stream is rejected.
-  Grouping is by native_order_ref only. The adapter has NO email or
-  contact-identity input, so purchases can never be grouped by a
-  shared email address; two orders stay two snapshots.
+  Grouping is by native_order_ref, plus the v1.2 parent_order_ref
+  chain (DTY-21): a one-click extra the provider gives its OWN order
+  ref groups under the initial order it names. The adapter has NO
+  email or contact-identity input, so purchases can never be grouped
+  by a shared email address; unlinked orders stay separate snapshots.
 - An initial order can carry main plus bump in ONE event; later extras
   (U1/D1/U2) arrive as further events under the same native order and
   are appended to that order's snapshot.
@@ -47,11 +49,20 @@ Contract (references/native-order-summary-integration.md):
   "<event_id>::<native_line_ref>" of its source event — and the
   snapshot's event_ids manifest is exactly those IDs, satisfying the
   resolver's O-01 provenance cross-check.
-- Verified: a snapshot is marked verified only when every contributing
-  event carries a non-empty evidence_ref and a provider. With
-  require_live_evidence=True (production mode), test_only events,
-  test-marked providers, and evidence-less events are refused
-  outright, so test evidence can never be promoted into production.
+- Verified (DTY-20): require_live_evidence defaults to True for any
+  stream that is not entirely test events. In that mode test_only
+  events, test-marked providers and evidence-less events are refused,
+  and every event must exist in the S44 inbox (evidence_store.get_event
+  returns it with the same evidence_ref); an evidence_ref that is merely
+  a non-empty string proves nothing and is refused. A non-test snapshot
+  is verified only when that store check ran. Each snapshot carries an
+  "integrity" sha256 over its canonical content; verify_snapshot_integrity
+  lets a consumer reject a hand-assembled or edited snapshot.
+  The "integrity" value is an HMAC-SHA256 keyed from the environment
+  variable S82_SNAPSHOT_HMAC_KEY, so recomputing the hash is not enough
+  to forge a snapshot. Without that key a live (non-test_only) snapshot
+  is refused; a test_only snapshot falls back to an explicit, public
+  test key (it proves nothing about live purchases).
 - Accepted event versions: "1.0", "1.1" (CR-S44-001) and "1.2"
   (CR-S44-003, S49 ruling;
   shared-utils/signature_launch/domain/purchase-event.schema.json v1.2).
@@ -64,9 +75,9 @@ Contract (references/native-order-summary-integration.md):
   adds OPTIONAL contact_ref
   (purchase-event.v1.1.schema.json:48). "1.2" adds OPTIONAL
   parent_order_ref (opaque provider order id of the initial order, or
-  null; purchase-event.schema.json:56). That field is NOT an identity,
-  NOT a grouping or grant key and NOT an exported snapshot property:
-  grouping stays native_order_ref, dedupe stays event_id, and the
+  null; purchase-event.schema.json:56). It is the LINK that groups a
+  later extra under its initial order (DTY-21); it is NOT a grant key
+  and NOT an exported snapshot property: dedupe stays event_id and the
   snapshot never carries it. The field is version-scoped exactly as the
   schemas are: it is defined only by a "1.2" stamp and is refused on
   both "1.0" and "1.1" (neither schema declares it, and both set
@@ -77,6 +88,8 @@ Stdlib only. Deterministic: no clock, no randomness, no network.
 """
 
 import copy
+import hashlib
+import hmac
 import json
 import os
 import sys
@@ -157,6 +170,11 @@ REFUND_TRANSITIONS = {
 }
 
 
+SNAPSHOT_KEY_ENV = "S82_SNAPSHOT_HMAC_KEY"
+# Public on purpose: signs test_only snapshots when no real key is set.
+TEST_ONLY_SNAPSHOT_KEY = b"s82-test-only-snapshot-key-not-a-secret"
+
+
 class AdapterError(ValueError):
     """Raised when no honest snapshot can be built from the stream."""
 
@@ -176,11 +194,11 @@ def _require(mapping, key, where):
 
 
 def _validate_parent_order_ref(event, where):
-    """Validate the v1.2 parent_order_ref forms; never interpret the value.
+    """Validate the v1.2 parent_order_ref forms.
 
     Allowed: absent, null, or a non-empty opaque string (schema type
-    ["string", "null"], minLength 1). The value is opaque here — it is
-    not resolved, not compared, not exported. The field is defined by
+    ["string", "null"], minLength 1). Used only as the grouping link
+    (_order_roots); never exported. The field is defined by
     the v1.2 schema ONLY (purchase-event.schema.json:56); neither
     purchase-event.v1.0.schema.json nor purchase-event.v1.1.schema.json
     declares it and both set additionalProperties false (line 4). So a
@@ -380,8 +398,70 @@ def _merge_order_lines(order_events, offer_catalog):
         raise AdapterError(str(exc)) from exc
 
 
+def _snapshot_key(snapshot):
+    """Env key if set; else the test key for test_only; else refuse."""
+    key = os.environ.get(SNAPSHOT_KEY_ENV, "").strip()
+    if key:
+        return key.encode("utf-8")
+    if snapshot.get("test_only") is True:
+        return TEST_ONLY_SNAPSHOT_KEY
+    raise AdapterError(
+        f"snapshot_key_required: set {SNAPSHOT_KEY_ENV} to sign or verify a "
+        "live snapshot; no key, no live snapshot")
+
+
+def snapshot_integrity(snapshot):
+    """HMAC-SHA256 over the snapshot's canonical content, excluding itself."""
+    body = {k: v for k, v in snapshot.items() if k != "integrity"}
+    return hmac.new(_snapshot_key(snapshot), _canonical(body).encode("utf-8"),
+                    hashlib.sha256).hexdigest()
+
+
+def verify_snapshot_integrity(snapshot):
+    """True only for a snapshot whose keyed integrity matches its content.
+
+    Fails closed (False) when no key is available for a live snapshot.
+    ponytail: one deployment-wide key; per-tenant keys if tenants must not
+    be able to vouch for each other's snapshots.
+    """
+    if not isinstance(snapshot, dict):
+        return False
+    try:
+        expected = snapshot_integrity(snapshot)
+    except AdapterError:
+        return False
+    given = snapshot.get("integrity")
+    return isinstance(given, str) and hmac.compare_digest(given, expected)
+
+
+def _order_roots(events):
+    """native_order_ref -> root order ref, following parent_order_ref links."""
+    parent = {}
+    present = {e["native_order_ref"] for e in events}
+    for event in events:
+        ref, link = event["native_order_ref"], event.get("parent_order_ref")
+        # a link to an order this stream does not carry groups nothing
+        if link and link != ref and link in present:
+            if parent.setdefault(ref, link) != link:
+                raise AdapterError(
+                    f"parent_order_conflict: order {ref!r} names two "
+                    "different parent_order_ref values")
+    roots = {}
+    for ref in {e["native_order_ref"] for e in events}:
+        seen, cur = {ref}, ref
+        while cur in parent:
+            cur = parent[cur]
+            if cur in seen:
+                raise AdapterError(
+                    f"parent_order_cycle: order chain through {ref!r} loops")
+            seen.add(cur)
+        roots[ref] = cur
+    return roots
+
+
 def build_snapshots(events, journey_ids=None, offer_catalog=None,
-                    revision=1, require_live_evidence=False):
+                    revision=1, require_live_evidence=None,
+                    evidence_store=None):
     """Build one verified snapshot per native order from an event stream.
 
     events: list of normalized purchase events (packet shape).
@@ -393,8 +473,12 @@ def build_snapshots(events, journey_ids=None, offer_catalog=None,
         carry the fixture extension fields.
     revision: snapshot revision unless every contributing event agrees
         on its own revision extension.
-    require_live_evidence: production mode — refuse test_only events,
-        test-marked providers, and events without an evidence_ref.
+    require_live_evidence: None (default) means True unless every event
+        is a test event. True refuses test_only events, test-marked
+        providers, events without an evidence_ref, and events the S44
+        store cannot return with that same evidence_ref.
+    evidence_store: object with get_event(tenant_id, provider, event_id)
+        (the S44 Store); required whenever live evidence is required.
 
     Returns {native_order_ref: snapshot}. Raises AdapterError when no
     honest snapshot can be built.
@@ -416,6 +500,10 @@ def build_snapshots(events, journey_ids=None, offer_catalog=None,
         )
     tenant_id, location_id, launch_id = next(iter(identities))
 
+    if require_live_evidence is None:
+        require_live_evidence = not all(
+            event["test_only"] is True or _is_test_provider(event["provider"])
+            for event in events)
     if require_live_evidence:
         for event in events:
             if event["test_only"] is True or _is_test_provider(event["provider"]):
@@ -430,12 +518,27 @@ def build_snapshots(events, journey_ids=None, offer_catalog=None,
                     "missing_evidence_ref: require_live_evidence=True refuses "
                     f"event {event['event_id']!r} without an evidence_ref"
                 )
+            if evidence_store is None:
+                raise AdapterError(
+                    "evidence_store_required: a non-test launch needs the "
+                    "S44 store to prove each event's evidence_ref; none "
+                    "supplied"
+                )
+            stored = evidence_store.get_event(
+                event["tenant_id"], event["provider"], event["event_id"])
+            if not stored or stored.get("evidence_ref") != event["evidence_ref"]:
+                raise AdapterError(
+                    "evidence_not_in_store: event "
+                    f"{event['event_id']!r} has no S44 record carrying "
+                    "this evidence_ref; a bare string is not evidence"
+                )
 
     events = _dedupe_events(events)
 
+    roots = _order_roots(events)
     by_order = {}
     for event in events:
-        by_order.setdefault(event["native_order_ref"], []).append(event)
+        by_order.setdefault(roots[event["native_order_ref"]], []).append(event)
 
     snapshots = {}
     for order_ref, order_events in by_order.items():
@@ -468,9 +571,12 @@ def build_snapshots(events, journey_ids=None, offer_catalog=None,
             str(event["evidence_ref"]).strip() for event in order_events
         ) and all(
             str(event["provider"]).strip() for event in order_events
-        )
+        ) and (require_live_evidence or all(
+            event["test_only"] is True or _is_test_provider(event["provider"])
+            for event in order_events
+        ))
 
-        snapshots[order_ref] = {
+        snapshot = {
             "schema_version": "1.0",
             "tenant_id": tenant_id,
             "location_id": location_id,
@@ -482,7 +588,9 @@ def build_snapshots(events, journey_ids=None, offer_catalog=None,
             else ", ".join(sorted(providers)),
             "native_order_ref": order_ref,
             "native_transaction_ref": next(
-                (event.get("native_transaction_ref") for event in order_events
+                (event.get("native_transaction_ref")
+                 for event in sorted(order_events,
+                                     key=lambda e: e["native_order_ref"] != order_ref)
                  if event.get("native_transaction_ref")),
                 None,
             ),
@@ -495,6 +603,8 @@ def build_snapshots(events, journey_ids=None, offer_catalog=None,
                 for event in order_events
             ),
         }
+        snapshot["integrity"] = snapshot_integrity(snapshot)
+        snapshots[order_ref] = snapshot
     return snapshots
 
 
@@ -519,13 +629,22 @@ def main(argv=None):
     parser.add_argument("--events", required=True,
                         help="JSON file holding a list of purchase events")
     parser.add_argument("--require-live-evidence", action="store_true",
-                        help="production mode: refuse test/evidence-less events")
+                        help="force live-evidence mode (default for non-test streams)")
+    parser.add_argument("--s44-db", help="S44 store database proving evidence_ref")
     args = parser.parse_args(argv)
     with open(args.events, encoding="utf-8") as fh:
         events = json.load(fh)
     try:
+        store = None
+        if args.s44_db:
+            sys.path.insert(0, os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "..", "..",
+                "44-convert-and-flow-operator", "tools", "siglaunch", "store"))
+            from store import Store  # noqa: E402
+            store = Store(args.s44_db)
         snapshots = build_snapshots(
-            events, require_live_evidence=args.require_live_evidence
+            events, require_live_evidence=args.require_live_evidence or None,
+            evidence_store=store,
         )
     except AdapterError as exc:
         print(f"FAIL: {exc}", file=sys.stderr)

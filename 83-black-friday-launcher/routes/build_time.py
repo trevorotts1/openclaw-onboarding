@@ -5,6 +5,11 @@ customer action. This module therefore accepts ONLY the approved launch
 record. It has no event, purchase, journey-state or navigation parameter, and
 it never calls route_law.navigate. Each enabled page gets its own build entry
 from the real adapter wiring.
+
+`plan` is the build-time planning helper used by the fixtures and tests; the CLI
+(`route`, `dispatch`, `assemble`) does not call it. The graph it plans from is
+compiled through `route_law.compile_route`, which enforces the doc 02 edge law
+(`graph_violations`), so a drifting graph raises here too.
 """
 from __future__ import annotations
 

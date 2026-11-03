@@ -17,6 +17,12 @@ from receiver import (EXIT_BLOCKED, EXIT_GATE, EXIT_OK, EXIT_VALIDATION,
 from store import Store
 
 
+def _cc_approved(ref, kind, phash, scope, **kw):
+    """Stub approval_record.verify: the approval gate itself is proven in
+    test_receiver_approval.py; these suites test everything after the gate."""
+    return {"ok": True, "authority": "test-stub"}
+
+
 class FakeExecutor:
     def __init__(self, token_state="healthy"):
         self.token_state = token_state
@@ -75,7 +81,8 @@ class ReceiverTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.store = Store(str(Path(self.tmp.name) / "s44.db"))
         self.fake = FakeExecutor()
-        self.rx = Receiver(self.store, self.fake, configured_location="LOC1")
+        self.rx = Receiver(self.store, self.fake, configured_location="LOC1",
+                           approval_verifier=_cc_approved)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -215,7 +222,8 @@ class ReceiverTests(unittest.TestCase):
             healed = False
 
         fake = DepFake()
-        rx = Receiver(self.store, fake, configured_location="LOC1")
+        rx = Receiver(self.store, fake, configured_location="LOC1",
+                      approval_verifier=_cc_approved)
         code, receipt = rx.dispatch(req)
         self.assertNotEqual(code, EXIT_OK)
         self.assertEqual(receipt["status_claimed"], "partial")

@@ -287,7 +287,7 @@ class PromptContractTests(unittest.TestCase):
         self.assertNotIn("production labels", wire)
         self.assertIn("production labels", strict)
         prompt = exe.stage_prompt("desktop-wireframe", SECTION, 1, 1440, _request([SECTION]), "16:9")
-        self.assertIn("Print the slot label with its pixel size, ratio and treatment (overlay-light)", prompt)
+        self.assertIn('Print "IMG-01 3:2 overlay-light" as this slot\'s label.', prompt)
         self.assertIn("Wireframe annotations are allowed", prompt)
 
     def test_declared_treatment_wins_and_role_default_fills_the_rest(self):

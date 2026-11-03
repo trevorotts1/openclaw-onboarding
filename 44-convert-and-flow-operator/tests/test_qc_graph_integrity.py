@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -137,6 +138,73 @@ def _run(tmp_path, export, validator_env=None):
         check=False,
     )
     return result
+
+
+def _gated_run(tmp_path, export):
+    """Run QC with everything the S44-24 exit gate requires: signed PLAN MODE file, QC model, grades."""
+    # draft/inactive/no-re-entry state so WF-4/5/6 machine-assert against DRAFT + ONCE
+    export = {"status": "draft", "active": False, "allowMultiple": False, **export}
+    env, _ = _setup(tmp_path, export)
+    tree = tmp_path / "tree"
+    skill = tree / "44-convert-and-flow-operator"
+    verifier_dir = tree / "shared-utils" / "signature_launch_contract"
+    skill.mkdir(parents=True)
+    verifier_dir.mkdir(parents=True)
+    script = skill / "qc-built-workflow.sh"
+    shutil.copy2(QC_SCRIPT, script)
+    (skill / "tools").symlink_to(ROOT / "tools")
+    (verifier_dir / "approval_record.py").write_text(
+        "class ApprovalRefused(Exception):\n"
+        "    def __init__(self, code, message=''):\n"
+        "        super().__init__(code + ': ' + message)\n"
+        "        self.code = code\n"
+        "\n"
+        "def verify(approval_id, kind, plan_hash, scope, **kw):\n"
+        "    if approval_id != 'appr-good-0001' or kind != 'launch_plan_build' or plan_hash != 'abcd1234':\n"
+        "        raise ApprovalRefused('APPROVAL-NOT-FROM-AUTHORITY', 'unknown approval')\n"
+        "    if not set(scope) <= {'publish:DRAFT', 'reentry:ONCE'}:\n"
+        "        raise ApprovalRefused('APPROVAL-SCOPE', 'scope not covered')\n"
+        "    return {'ok': True}\n",
+        encoding="utf-8",
+    )
+    plan = tmp_path / "plan.json"
+    plan.write_text(
+        json.dumps(
+            {
+                "approval_id": "appr-good-0001",
+                "plan_hash": "abcd1234",
+                "publish_intent": "DRAFT",
+                "re_entry": "ONCE",
+                "build_model": "build-model-a",
+            }
+        ),
+        encoding="utf-8",
+    )
+    items = "WF-1 WF-2 WF-8 WF-9 WF-10 WF-11 WF-13 WF-14 WF-16 WF-17 WF-19 WF-20".split()
+    grades = tmp_path / "grades.json"
+    grades.write_text(
+        json.dumps(
+            {
+                "workflow_id": "WFTEST009",
+                "grades": {i: {"grade": "PASS", "observed": "read from export"} for i in items},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return subprocess.run(
+        [
+            "bash", str(script), "WFTEST009",
+            "--deps", str(_manifest(tmp_path)), "--json",
+            "--publish-intent", "DRAFT", "--re-entry", "ONCE",
+            "--plan-mode-file", str(plan), "--qc-model", "qc-model-b",
+            "--grades", str(grades),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
 
 
 def _items(result):
@@ -278,9 +346,10 @@ def test_pure_unverified_is_never_success(tmp_path):
 
 
 def test_wf24_passes_when_trigger_targets_root(tmp_path):
-    result, wf24 = _wf24_result(tmp_path, _wf24_export(target="n1"))
+    result = _gated_run(tmp_path, _wf24_export(target="n1"))
     assert result.returncode == 0, result.stdout + result.stderr
-    assert wf24["status"] == "PASS"
+    assert _items(result)["WF-24"]["status"] == "PASS"
+    assert json.loads(result.stdout)["exit_gate"] == "PASS"
 
 
 def test_wf24_fails_when_trigger_targets_non_root(tmp_path):

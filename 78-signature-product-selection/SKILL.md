@@ -1,7 +1,7 @@
 ---
 name: signature-product-selection
 description: Build the specificity-led Product Selection page (the order page: the page where a buyer chooses between packages, with its desktop and mobile wireframes and mockups) for a Signature Launch with multiple meaningful packages or tiers. Normalizes approved offers into an accurate comparison matrix (included, not included, limited, conditional), an optional evidence-backed recommendation, accessible selection UI model, and a validated selection.json intent that preserves the native product/price mapping into Skill 79 checkout. Invoke only when the approved launch has multiple meaningful choices; one simple offer skips this skill entirely and uses Skill 79 combined explanation/checkout mode. Never collects payment, never trusts a URL price, never invents tiers, prices, popularity, or savings claims.
-version: 0.2.5
+version: 0.2.6
 ---
 
 # Signature Product Selection (Skill 78) - the order page (package selection)
@@ -19,13 +19,34 @@ between packages. The order form that takes payment is Skill 79 (checkout).
 
 ## Invocation boundary
 
-- Journey mode `multiple_options` only. `single_simple` returns a decline
-  result directing the caller to Skill 79 combined mode; it never renders a
-  fake one-button selection page.
+- Journey mode `multiple_options` only. `check_invocation` (in
+  `scripts/selection_core.py`) returns `decline_single_offer` for
+  `single_simple`, and for any launch with a single main offer whatever its
+  journey mode claims, directing the caller to Skill 79 combined mode; it never
+  renders a fake one-button selection page.
 - An explicitly requested standalone comparison page may run with its own
   approved brief.
-- Input offers must be approved. Unknown price is never zero, never free.
+- Any other journey mode (`folded_levels`, `free_entry`, ...) has no selection
+  page in its route graph: `check_invocation` returns `decline` and
+  `validate_catalog` refuses it (`S78-JOURNEY-MODE-DECLINE`).
+- Input offers must be approved. Unknown price is never zero, never free. A
+  `recommended_unapproved` price is covered only when the launch record is
+  `approved`/`building` and carries a `plan_approval_ref` (the plan approval
+  binds every stated price; an optional `approval_verifier` callable can veto
+  the ref). Anywhere else it is `S78-UNAPPROVED-PRICE`.
 - Selection output is `selection.json`: intent only, never payment evidence.
+
+## Native ids and the 78 to 79 handoff
+
+- Outside `test_only`, `emit_binding_plan.py` refuses a null or blank native
+  product/price id on the catalog or on any target (`S78-BINDING-INCOMPLETE`);
+  `build_selection` refuses it as `S78-MISSING-NATIVE-MAPPING`. The ids are
+  created or read back by Skill 06's installer, under its own scoped approval,
+  and written back into `launch.json`; this skill only consumes them.
+- `79-signature-order-form/scripts/selection_flow.py::selection_from_intent` is
+  the one adapter from a `selection.json` intent to Skill 79's `Selection`
+  (`amount_minor_snapshot` becomes `amount_minor`; `revision` feeds both the
+  launch and the offer revision). It refuses an intent with no native price id.
 
 ## What it produces
 

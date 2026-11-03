@@ -101,6 +101,26 @@ twice. The rule:
   exactly once, keyed by the same dedupe key. A page **refresh**
   rebuilds the identical record (same key) and changes nothing.
 
+### What is wired today (DTY-22)
+
+`post_confirmation_observation(view, store)` in
+`scripts/confirmation_observation.py` posts the record to the S44
+store's action ledger (`Store.claim_action`) under
+`(tenant_id, order_ref, "*", "confirmation_shown", dedupe_key)`. The
+claim is atomic and idempotent: the first call posts, a repeat call for the
+same view (the refresh case) finds the existing claim and adds nothing, so the store holds exactly one
+`confirmation_shown` record per journey (tests: fake store and the real
+S44 `Store`). **No page or renderer calls `post_confirmation_observation`
+yet**; render and refresh are exercised by direct calls in tests. The
+page-to-POST wiring is open work. It posts ONLY when the view carries S44's `ev1:` version;
+the derived fallback below can never equal S44's `ev1` key, so a view
+without `ev1` is refused rather than posted. **Not wired:** S44's
+event worker does not yet read this record before its own send; the
+single onboarding send rests on the worker's own per-transaction claim
+(`apply_verified_purchase_tag`), and the page emits no send. The page-
+to-worker dedupe described above is a contract, not shipped behavior,
+until S44 consumes the record.
+
 ### Observation record shape
 
 ```json
@@ -184,6 +204,17 @@ independently reviewed by S82 (verdicts cited there).
 5. **Receipts, not plans:** each item above as actual saved-object
    exports/read-backs with tenant identity — a plan file, a stub ID,
    or a fixture run does not close any of them (doc 14 section 1/12).
+
+**Status correction (S49 repair, DTY-22):** items 2 and 3 are
+**PENDING a real declined payment and a delivered confirmation**. The
+sandbox has no payment provider, so item 2's "failure" was an unpaid
+draft invoice, not a declined charge, and item 3's single send was
+shown in a sandbox without a real delivered confirmation. The native
+leg was CLAIMED with no raw native payloads on file. Items 2 and 3
+stay open until re-run with a real declined payment and a delivered
+confirmation, saving the raw native payloads. Items 1, 4 and 5 stand
+as filed below; read the 2026-10-16 status below with items 2 and 3
+excluded.
 
 **Status (2026-10-16):** all five items were filed by S44 at L4
 under Trevor's sandbox-only test-payments ruling

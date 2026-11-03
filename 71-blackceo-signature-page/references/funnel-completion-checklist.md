@@ -46,6 +46,20 @@ checklist, not the old boundary sentence, governs until it lands.
 8. Payment provider presence is checked and recorded as a boolean only
    (`payment.provider_present`). Presence, never credential material.
 
+## Install rail: Skill 6 is the only one
+
+Every install action in this checklist (funnel and step creation, page
+content, media upload, bindings, autosave, verify) goes through Skill 6,
+`06-ghl-install-pages`, and nothing else. Enter at its dispatcher,
+`06-ghl-install-pages/tools/v2_dispatcher.py` (after the STEP-0 engine
+selector), and let its plan emitters (`ghl_builder.py`, `ghl_rest_canvas.py`),
+its splice guards (head assets kept, raw card fields refused, images must be
+GHL media links) and its verify gates (`ghl_verify.py`, `ghl_gate.py`) run.
+Never hand-drive the page builder, paste code outside those emitters, or
+build a second install path from this checklist. The "browser" rows in the
+table below name the lane Skill 6 uses for that object; they are not a
+separate way in.
+
 ## Rails (Amendment 5A, final)
 
 Each object in the receipt carries its own `rail`, and the validator

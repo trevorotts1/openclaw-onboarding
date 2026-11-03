@@ -11,7 +11,9 @@
 
 Amendment 6 deltas covered here: the SOP evidentiary fields on every
 review (Item 2), the UNKNOWN-session rule (no session env still writes,
-reviewer_session UNKNOWN, independent_review false, never INDEPENDENT),
+reviewer_session UNKNOWN, independent_review false, never INDEPENDENT; a
+production close refuses an UNKNOWN reviewer, only a test_run intake may
+close on it: IMG-11),
 mockup.html and bible markdown coverage (Item 3), and the per-artifact
 average replacing cross-file pooling (Item 12).
 
@@ -252,16 +254,29 @@ class GateV2CloseTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertIn("review changed after close", proc.stdout + proc.stderr)
 
-    def test_unknown_session_review_closes_but_is_not_independent(self):
-        # The UNKNOWN-session review is a complete record, so the stage
-        # closes; independence is what it can never claim (Item 7 stamp
-        # coverage lives in PerFileAndCoversTest).
+    def test_unknown_session_review_blocks_production_close(self):
+        # IMG-11: an UNKNOWN reviewer is a complete record (it is still
+        # written) but a production close refuses it.
+        put_receipt(self.run, "copy")
+        proc = run_write_review(self.run, "copy", "stage", None,
+                                scores_json(clarity=9), contract=self.contract)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        proc = self.close_copy()
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("reviewer_session is UNKNOWN", proc.stdout)
+        self.assertIn("test_run", proc.stdout)
+
+    def test_unknown_session_review_closes_only_in_test_run(self):
+        write(self.run / "intake.json", json.dumps({"test_run": True}))
         put_receipt(self.run, "copy")
         proc = run_write_review(self.run, "copy", "stage", None,
                                 scores_json(clarity=9), contract=self.contract)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         proc = self.close_copy()
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        review = json.loads((self.run / "private" / "reviews" / "copy" / "stage.review.json").read_text())
+        self.assertEqual(review["reviewer_session"], "UNKNOWN")
+        self.assertFalse(review["independent_review"])
 
     def test_artifact_changed_after_review_fails_hash_match(self):
         put_receipt(self.run, "copy")

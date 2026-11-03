@@ -113,8 +113,11 @@ def make_workdir(record_mutator=None):
     return wd, record, graph, by_role
 
 
+U1_COPY = S80_FIX / "copy-upsell1-public.valid.json"
+
+
 def run_wrapper(wd, slot, *, copy_path, journey_path, enrichment=None,
-                artifact_path=None):
+                artifact_path=None, u1_copy=U1_COPY, extra=()):
     cmd = [sys.executable, str(WRAPPER), "--slot", slot,
            "--request", str(wd / f"request-{slot}.json"),
            "--result", str(wd / f"result-{slot}.json"),
@@ -125,7 +128,9 @@ def run_wrapper(wd, slot, *, copy_path, journey_path, enrichment=None,
         cmd += ["--enrichment", str(enrichment)]
     if artifact_path is not None:
         cmd += ["--copy-artifact-path", artifact_path]
-    return subprocess.run(cmd, capture_output=True, text=True)
+    if slot == "upsell_2" and u1_copy is not None:
+        cmd += ["--u1-copy", str(u1_copy)]
+    return subprocess.run(cmd + list(extra), capture_output=True, text=True)
 
 
 def assert_receipt_valid(testcase, wd, slot, request):
@@ -217,15 +222,17 @@ class Upsell2EndToEndTests(unittest.TestCase):
     def test_upsell_2_from_downsell_1_recurring(self):
         wd, record, graph, by_role = make_workdir(self._recurring_u2)
         self.addCleanup(shutil.rmtree, wd, True)
-        # Landing-copy ref sourced from the landing role's own result
-        # artifact in the work dir (no sidecar key for it here).
-        shutil.copy(FIXTURES / "result-landing.fixture.json",
-                    wd / "result-landing.json")
+        # CARRIED 46 removed the result-landing.json fallback: the sidecar
+        # itself must name the landing copy (recurring terms plus the ref).
+        sidecar = wd / "sidecar-upsell_2-recurring.json"
+        doc = load(FIXTURES / "enrichment-upsell_2-recurring.json")
+        doc["source_landing_copy_ref"] = "TEST-ONLY-landing-copy-ref"
+        sidecar.write_text(json.dumps(doc), encoding="utf-8")
         proc = run_wrapper(
             wd, "upsell_2",
             copy_path=S80_FIX / "copy-upsell2-public.valid.json",
             journey_path=ADAPT_FIX / "journey-upsell2-from-downsell1.testonly.json",
-            enrichment=FIXTURES / "enrichment-upsell_2-recurring.json",
+            enrichment=sidecar,
             artifact_path="80-signature-upsell/fixtures/"
                           "copy-upsell2-public.valid.json")
         self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -653,6 +660,13 @@ class Upsell1ImagesTests(unittest.TestCase):
             self.assertEqual(len(request["sections"]), 8, stage)
             self.assertEqual(request["metadata"]["canonical_ids"], list("12345678"), stage)
             self.assertTrue((run / stage).is_dir(), stage)
+        # CARRIED 9: the plan written from the enriched request reaches Skill 71 through --slots
+        plan = load(wd / "image-plan-upsell_1.json")
+        self.assertEqual(sorted(plan), list("12345678"))
+        self.assertIn("TEST ONLY", plan["1"][0]["subject"])
+        self.assertNotIn("Editorial photograph that illustrates", json.dumps(plan))
+        self.assertIn(plan["1"][0]["subject"],
+                      json.dumps(load(run / "production-request-visual-mockup.json")))
         self.assertEqual(len(list((run / "desktop-wireframe").glob("section-*.png"))), 8)
         self.assertEqual(len(list((run / "visual-mockup" / "mobile").glob("part-*.png"))), 8)
         # the stub provider never composes review PDFs or overview boards (a placeholder is not
@@ -700,6 +714,170 @@ class Upsell1ImagesTests(unittest.TestCase):
                            enrichment=FIXTURES / "enrichment-upsell_1.json")
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("no wireframes or mockups were made", proc.stderr)
+
+
+def real_inputs(wd, copy_path, journey_path):
+    """The same copy and journey with test_only cleared, as a real launch stages them.
+    A real launch's journey must cite resolvable ledger evidence (S80 UPS-02), so the
+    test-only evidence refs are swapped for conforming ledger refs."""
+    out = []
+    for name, src in (("copy.json", copy_path), ("journey.json", journey_path)):
+        doc = load(src)
+        doc["test_only"] = False
+        for rec in doc.get("verified_purchases") or []:
+            rec["evidence_ref"] = "ledger:order-0001"
+        (wd / name).write_text(json.dumps(doc))
+        out.append(wd / name)
+    return out
+
+
+class UpsellRepairTests(unittest.TestCase):
+    """U-upsell-01: UPS-01 / UPS-13 / UPS-29 / UPS-22 / UPS-33."""
+
+    def workdir(self, mutator=None):
+        wd, record, graph, by_role = make_workdir(mutator)
+        self.addCleanup(shutil.rmtree, wd, True)
+        return wd
+
+    def assert_refused(self, proc, wd, slot, *names):
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        for name in names:
+            self.assertIn(name, proc.stderr)
+        self.assertFalse((wd / f"result-{slot}.json").exists(),
+                         "no result may be written for a refused run")
+
+    # UPS-01
+    def test_negative_copy_fixtures_exit_2_and_write_no_result(self):
+        for name in ("copy-neg-invented-scarcity", "copy-neg-invented-testimonial",
+                     "copy-neg-duplicate-reason", "copy-neg-private-label-leak"):
+            wd = self.workdir()
+            proc = run_wrapper(wd, "upsell_1", copy_path=S80_FIX / f"{name}.json",
+                               journey_path=ADAPT_FIX / "journey-main-only.testonly.json",
+                               enrichment=FIXTURES / "enrichment-upsell_1.json")
+            self.assert_refused(proc, wd, "upsell_1", "validate_upsell_copy.py exited 2")
+
+    def test_copy_validation_is_taken_from_the_subprocess(self):
+        wd = self.workdir()
+        proc = run_wrapper(wd, "upsell_1", copy_path=U1_COPY,
+                           journey_path=ADAPT_FIX / "journey-main-only.testonly.json",
+                           enrichment=FIXTURES / "enrichment-upsell_1.json")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        result = load(wd / "bundle-upsell_1.json")["result"]
+        self.assertEqual(result["copy_validation"], {
+            "validator": "scripts/validate_upsell_copy.py",
+            "profile_id": "signature-upsell-eight-section", "exit_code": 0,
+            "verdict": "pass",
+            "copy_sha256": __import__("hashlib").sha256(U1_COPY.read_bytes()).hexdigest()})
+        self.assertEqual(result["test_outcomes"][0]["test_id"], "S80-copy-validator")
+        self.assertEqual([t for t in result["test_outcomes"] if t["outcome"] == "pass"],
+                         result["test_outcomes"][:1],
+                         "no outcome beyond the real validator run may claim pass")
+
+    def test_upsell_2_needs_the_u1_copy_and_refuses_a_renamed_u1(self):
+        wd = self.workdir()
+        kw = dict(copy_path=S80_FIX / "copy-upsell2-public.valid.json",
+                  journey_path=ADAPT_FIX / "journey-upsell2-from-upsell1.testonly.json",
+                  enrichment=FIXTURES / "enrichment-upsell_2-onetime.json")
+        self.assert_refused(run_wrapper(wd, "upsell_2", u1_copy=None, **kw), wd,
+                            "upsell_2", "staged U1 copy")
+        proc = run_wrapper(wd, "upsell_2", copy_path=S80_FIX / "copy-neg-u2-renamed-u1.json",
+                           **{k: v for k, v in kw.items() if k != "copy_path"})
+        self.assert_refused(proc, wd, "upsell_2", "validate_upsell_copy.py exited 2")
+
+    # UPS-13
+    def test_real_launch_refuses_test_only_copy_and_journey(self):
+        wd = self.workdir(lambda r: r.__setitem__("test_only", False))
+        proc = run_wrapper(wd, "upsell_1", copy_path=U1_COPY,
+                           journey_path=ADAPT_FIX / "journey-main-only.testonly.json",
+                           enrichment=FIXTURES / "enrichment-upsell_1.json")
+        self.assert_refused(proc, wd, "upsell_1", "copy: test_only", "journey: test_only")
+
+    def test_copy_offer_name_must_match_the_launch_offer(self):
+        wd = self.workdir()
+        copy_path = wd / "copy.json"
+        doc = load(U1_COPY)
+        doc["offer_name"] = "Some Other Offer"
+        copy_path.write_text(json.dumps(doc))
+        proc = run_wrapper(wd, "upsell_1", copy_path=copy_path,
+                           journey_path=ADAPT_FIX / "journey-main-only.testonly.json",
+                           enrichment=FIXTURES / "enrichment-upsell_1.json")
+        self.assert_refused(proc, wd, "upsell_1", "copy.offer_name")
+
+    def test_acknowledgement_name_comes_from_the_launch_record(self):
+        wd = self.workdir()
+        journey = load(ADAPT_FIX / "journey-main-only.testonly.json")
+        journey["verified_purchases"][0]["offer_display_name"] = "Stale Journey Name"
+        (wd / "journey.json").write_text(json.dumps(journey))
+        proc = run_wrapper(wd, "upsell_1", copy_path=U1_COPY, journey_path=wd / "journey.json",
+                           enrichment=FIXTURES / "enrichment-upsell_1.json")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        plan = load(wd / "bundle-upsell_1.json")["page_plan"]
+        text = plan["acknowledgement_blocks"][0]["text"]
+        self.assertIn("TEST ONLY Core Programme", text)
+        self.assertNotIn("Stale Journey Name", text)
+
+    # UPS-29
+    def test_changed_launch_identity_is_refused_before_enrich(self):
+        def tenant(r): r["tenant_id"] = "OTHER"
+        def location(r): r["location_id"] = "OTHER"
+        def launch_id(r): r["launch_id"] = "OTHER"
+        def revision(r): r["revision"] = 2
+        def price(r): r["offers"][1]["prices"][0]["amount_minor"] += 100
+        for mutate in (tenant, location, launch_id, revision, price):
+            wd = self.workdir()
+            record = load(wd / "launch.json")
+            mutate(record)
+            (wd / "launch.json").write_text(json.dumps(record))
+            proc = run_wrapper(wd, "upsell_1", copy_path=U1_COPY,
+                               journey_path=ADAPT_FIX / "journey-main-only.testonly.json",
+                               enrichment=FIXTURES / "enrichment-upsell_1.json")
+            self.assert_refused(proc, wd, "upsell_1", "launch identity")
+            self.assertFalse((wd / "upsell-request-upsell_1.json").exists())
+
+    # UPS-22
+    def test_real_launch_without_image_flags_exits_2_unless_a_skip_is_recorded(self):
+        wd = self.workdir(lambda r: r.__setitem__("test_only", False))
+        copy_path, journey_path = real_inputs(
+            wd, U1_COPY, ADAPT_FIX / "journey-main-only.testonly.json")
+        kw = dict(copy_path=copy_path, journey_path=journey_path,
+                  enrichment=FIXTURES / "enrichment-upsell_1.json")
+        self.assert_refused(run_wrapper(wd, "upsell_1", **kw), wd, "upsell_1",
+                            "--skip-images-approval")
+        proc = run_wrapper(wd, "upsell_1", extra=("--skip-images-approval", "APPR-SKIP-1"), **kw)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    # UPS-33
+    def _blocked_run(self, test_only):
+        brand = SKILL71 / "assets" / "brand" / "blackceo-brand.json"
+
+        def mutate(record):
+            record["test_only"] = test_only
+            record["brand_ref"] = "brand.json"
+            record["brand_hash"] = __import__("hashlib").sha256(brand.read_bytes()).hexdigest()
+        wd = self.workdir(mutate)
+        copy_path = S80_FIX / "copy-upsell2-public.valid.json"
+        journey_path = ADAPT_FIX / "journey-upsell2-already-owned.testonly.json"
+        if not test_only:
+            copy_path, journey_path = real_inputs(wd, copy_path, journey_path)
+        config = wd / "bridge-config.json"
+        config.write_text(json.dumps({"skill71": {"root": str(SKILL71)}, "landing": {
+            "brand_owner": "blackceo", "image_cap": 40, "brand_file": str(brand)}}))
+        proc = run_wrapper(wd, "upsell_2", copy_path=copy_path, journey_path=journey_path,
+                           enrichment=FIXTURES / "enrichment-upsell_2-onetime.json",
+                           extra=("--bridge-config", str(config)))
+        return wd, proc
+
+    def test_owned_entitlement_draws_no_images(self):
+        wd, proc = self._blocked_run(test_only=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(load(wd / "result-upsell_2.json")["status"], "blocked")
+        self.assertFalse((wd / "images-upsell_2").exists())
+
+    def test_blocked_page_of_a_real_launch_exits_2_with_the_blocked_result_and_no_images(self):
+        wd, proc = self._blocked_run(test_only=False)
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertEqual(load(wd / "result-upsell_2.json")["status"], "blocked")
+        self.assertFalse((wd / "images-upsell_2").exists())
 
 
 if __name__ == "__main__":

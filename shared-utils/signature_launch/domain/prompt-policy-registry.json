@@ -5,8 +5,8 @@
     {
       "policy_id": "kie-rule-12-band",
       "entry_status": "active",
-      "supersedes": "kie-rule-12-band",
-      "entry_hash": "ace1998862604904b5e2e224c0f85c87daf1ea07b74d2b60608589a4631e0532",
+      "supersedes": "kie-rule-12-band-r1",
+      "entry_hash": "0981c8f0e6e754d6f473fffbb385e92655be70808356cc0d3c3761c07dbb741c",
       "provenance": {
         "content_owners": [
           "Skill 71",
@@ -21,12 +21,12 @@
         "statement": "The KIE rule 12 band (95 to 100 percent of the model's live field maximum, floor 80 percent, genuine specification only) is Skill 71's native authoring target, superseding Amendment 6 Part C where they conflict.",
         "length_basis": "percentage_band",
         "parameters": {
-          "floor_percent_of_max": null,
-          "target_percent_of_max": null,
-          "floor_chars": 5000,
+          "floor_percent_of_max": 80,
+          "target_percent_of_max": 95,
+          "floor_chars": null,
           "preferred_min_chars": null,
-          "preferred_max_chars": 19000,
-          "ceiling_rule": "A ceiling is enforced only when the cap status is published or owner_observed AND a numeric cap is present; under not_published no ceiling is enforced, nothing is truncated to fit an imagined limit, and length is recorded as telemetry only (S63 note item 1, from the launch_prompt_policy.py branch structure and prompt-policy.md sections 1 and 7). Settled operative band (MAIN settlement of U1, 2026-10-17): floor 5,000 characters, normal target about 9,000 characters, preferred maximum 19,000 characters, under the owner-stated hard ceiling of 32,000 characters for agnes-image-2.5-flash (owner-stated 2026-10-17) and the owner's working practice of about 19,000 characters. S63's merged code does not yet enforce the 32,000 figure; the code-side cap record still reads NOT_PUBLISHED with null caps, and recording it in the repo rides S63's future candidate version."
+          "preferred_max_chars": null,
+          "ceiling_rule": "A ceiling is enforced only when the cap status is published or owner_observed AND a numeric cap is present; under not_published no ceiling is enforced, nothing is truncated to fit an imagined limit, and length is recorded as telemetry only (S63 note item 1, from the launch_prompt_policy.py branch structure and prompt-policy.md sections 1 and 7). Operative band: floor 80 percent and target 95 to 100 percent of the model's live field maximum (length_basis percentage_band); no fixed character floor, target or preferred maximum applies, and the earlier fixed figures (5,000 floor, 9,000 target, 19,000 preferred maximum) are retired. Owner-stated hard ceiling of 32,000 characters for agnes-image-2.5-flash (owner-stated 2026-10-17) and the owner's working practice of about 19,000 characters. S63's merged code does not yet enforce the 32,000 figure; the code-side cap record still reads NOT_PUBLISHED with null caps, and recording it in the repo rides S63's future candidate version."
         },
         "padding_rule": "Expansion must add genuine visual control, not fluff or repetitive padding. The compiler REJECTS padding (repeated sentences, duplicated 8-word-gram ratio > 0.08) before spend (AF-PROMPT-PADDING). (Skill 63 references/prompt-policy.md section 5.) Padding detection hard-fails (Amendment 6 Part C-rule 4): repeated n-gram blocks, untraceable boilerplate, and element sections that do not reference the image's specific subject fail at close. Prompts are authored by genuine specification only; packet doc 07 section 6 prescribes the test 'incomplete long padding fails' and doc 15 section 6 forbids adding filler to satisfy a cosmetic count.",
         "verbatim_fields_exempt": true
@@ -424,7 +424,7 @@
       }
     },
     {
-      "policy_id": "kie-rule-12-band",
+      "policy_id": "kie-rule-12-band-r1",
       "entry_status": "superseded",
       "supersedes": null,
       "entry_hash": "b3584da0c21b197c900fc1f47f0e4dcf722c6d74cd4d6124418f8500a3c7285b",

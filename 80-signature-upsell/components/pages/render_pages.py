@@ -17,7 +17,15 @@ native action exists. These pages cannot charge anything; they are local
 proof only. No timestamps: identical inputs give identical bytes on every
 run.
 
-Usage: python3 render_pages.py
+DESIGN-ONLY STATUS: Upsell 1 and Upsell 2 are design deliverables (copy,
+adapters, wireframes and mockups through Skill 71). There is no production
+HTML builder here: nothing consumes the client's brand tokens or the Skill
+71 image map, so these pages are never publishable. This renderer therefore
+runs ONLY in test_only mode: it requires the explicit --test-only flag and
+refuses any bundle that does not carry test_only true. Otherwise it exits 2
+and writes nothing.
+
+Usage: python3 render_pages.py --test-only
 Writes, under this script's directory:
   <page-dir>/<state>.html  for each bundle and each render state
   index.html               listing of every generated page/state
@@ -412,11 +420,25 @@ def render_index(manifest_pages):
     return "\n".join(out) + "\n"
 
 
-def main():
+REFUSAL = (
+    "render_pages.py refused: Skill 80 upsell pages are DESIGN-ONLY "
+    "deliverables (see SKILL.md, Status). This renderer is TEST ONLY and "
+    "builds no publishable page; %s. Nothing was written."
+)
+
+
+def main(argv):
+    if "--test-only" not in argv:
+        print(REFUSAL % "pass --test-only to render the TEST ONLY fixtures", file=sys.stderr)
+        return 2
+    bundles = [load_json(ADAPTER_FIXTURES / name) for name in BUNDLE_FILES]
+    for bundle in bundles:
+        if bundle["result"].get("test_only") is not True or bundle["page_plan"].get("test_only") is not True:
+            print(REFUSAL % "a bundle is not test_only", file=sys.stderr)
+            return 2
     manifest_pages = []
     written = []
-    for bundle_name in BUNDLE_FILES:
-        bundle = load_json(ADAPTER_FIXTURES / bundle_name)
+    for bundle_name, bundle in zip(BUNDLE_FILES, bundles):
         result = bundle["result"]
         plan = bundle["page_plan"]
         copy_rel = result["artifacts"][0]["path"]
@@ -460,4 +482,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))
