@@ -20,6 +20,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -43,7 +44,7 @@ COPY_EXAMPLES = S71 / "tests" / "fixtures" / "copy_examples"
 S80_FIXTURES = REPO_ROOT / "80-signature-upsell" / "components" / "80-signature-upsell" / "fixtures"
 S80_JOURNEYS = REPO_ROOT / "80-signature-upsell" / "components" / "adapters" / "fixtures"
 S81_PAGE = REPO_ROOT / "81-signature-downsell" / "fixtures" / "valid-downsell-page.json"
-S81_EXTENSION = REPO_ROOT / "81-signature-downsell" / "fixtures" / "valid-downsell-result-trial-matched.json"
+S81_EXTENSION = REPO_ROOT / "81-signature-downsell" / "fixtures" / "valid-downsell-result.json"
 S49_FIXTURES = REPO_ROOT / "49-signature-funnel" / "scripts" / "fixtures"
 
 BRAND_OWNER = "blackceo"  # Skill 71 refuses a brand file whose brand_id is not the run's owner
@@ -58,7 +59,22 @@ DELIVERABLES = {
 }
 # the offer names the upsell copy fixtures were written for: the upsell page binds copy.offer_name to the offer
 OFFER_NAMES = {"upsell_1": "TEST ONLY Deep Work Library", "upsell_2": "TEST ONLY Implementation Studio"}
-D1_PRICE_MINOR = 100  # the trial price the pinned Skill 81 page fixture shows (its example amounts are refused unless the record prices them)
+D1_PRICE_MINOR = 3700  # the one-time D1 price the pinned Skill 81 result fixture records (due_now_minor); the page copy is re-priced to it
+# The intake accepts one_time prices only, and Skill 49 refuses a one_time D1 whose copy promises a renewal, so the
+# fixture's $1-trial-then-$27-a-month page is re-priced to a one-time D1 (the same way Skill 49's own wrapper test does).
+_RENEWAL_PROMISE = ('After the trial, $27 per month continues the membership unless you cancel. The first renewal charge is '
+                    'on day 31, and renewals are monthly after that. You can cancel anytime before a renewal charge to '
+                    'stop future charges. If you cancel, your access continues until the end of the trial or the current '
+                    'paid month, then your membership access ends and you will not be charged again. ')
+
+
+def _one_time_d1_page() -> str:
+    text = S81_PAGE.read_text(encoding="utf-8")
+    text = json.dumps(json.loads(text))
+    assert _RENEWAL_PROMISE in text
+    page = json.loads(re.sub(r"\$1(?!\d)", "$%d" % (D1_PRICE_MINOR // 100), text.replace(_RENEWAL_PROMISE, "")))
+    page["page"]["approved_amounts_minor"] = [D1_PRICE_MINOR]
+    return json.dumps(page)
 
 
 def _design_prose(chars: int = 14500) -> str:
@@ -98,7 +114,7 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         brand = (S71 / "assets" / "brand" / "blackceo-brand.json").read_bytes()
         self.brand_file = self.root / "brand.json"
         self.brand_file.write_bytes(brand)
-        doc = dispatch_tests.payload("elevation", design_style="B", image_provider="kie", image_cap=200,
+        doc = dispatch_tests.payload("elevation", design_style="B", image_provider="kie", image_cap=264,
                                      brand_file=str(self.brand_file), brand_owner=BRAND_OWNER)
         doc["brand"]["hash"] = _sha256(self.brand_file)  # the landing build re-hashes the brand file
         # every price names an entry of the client's answers file, which must say what this launch's offers say
@@ -159,7 +175,7 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         bridge = write("landing-bridge.json", json.dumps({
             "skill71": {"root": str(S71), "python": sys.executable},
             "landing": {"run_dir": str(self.root / "landing-run"), "page_version": "standard", "page_kind": "sales",
-                        "brand_owner": BRAND_OWNER, "image_cap": 200, "launch_record": str(out / "launch.json"),
+                        "brand_owner": BRAND_OWNER, "image_cap": 264, "launch_record": str(out / "launch.json"),
                         # the 14 production stages are closed by an agent-driven process, never in an offline run:
                         # the landing lane is a declared draft, so the bridge places its result with the gate open
                         "draft": True,
@@ -171,7 +187,7 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
             "checkout_manuscript": str(write("checkout-manuscript.md", self._checkout_manuscript(doc))),
             "copy": {"upsell_1": rebound(S80_FIXTURES / "copy-upsell1-public.valid.json", "copy-upsell_1.json"),
                      "upsell_2": rebound(S80_FIXTURES / "copy-upsell2-public.valid.json", "copy-upsell_2.json"),
-                     "downsell_1": S81_PAGE,
+                     "downsell_1": write("copy-downsell_1.json", _one_time_d1_page()),
                      "thank_you": COPY_EXAMPLES / "thank-you-path-b.md"},
             "journey": {"upsell_1": S80_JOURNEYS / "journey-main-only.testonly.json",
                         "upsell_2": S80_JOURNEYS / "journey-upsell2-from-upsell1.testonly.json",
