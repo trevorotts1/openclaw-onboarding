@@ -92,11 +92,19 @@ out="$(RUN_AT_PIN=1 run_update 'touch "$CC_APP_DIR/update-ran"')"
   || fail "AT_PIN did not stamp commandCenterBuildFresh=true: '$out' $(jq -c . "$TMP/state.json")"
 [[ ! -e "$TMP/app/update-ran" ]] && pass "AT_PIN deploys nothing (update.sh not run)" \
   || fail "AT_PIN ran update.sh"
-printf '#!/bin/sh\nexit "${STUB_INV_RC:-1}"\n' > "$old_stub"   # mismatch
-out="$(RUN_AT_PIN=1 run_update 'touch "$CC_APP_DIR/update-ran"')"
-[[ "$(jq -r '.commandCenterBuildFresh' "$TMP/state.json")" == "false" && "$out" == *"ccBuildFresh(6)"* ]] \
-  && pass "AT_PIN + content MISMATCH -> commandCenterBuildFresh=false, stays degraded ($out)" \
-  || fail "AT_PIN masked a content mismatch: '$out' $(jq -c . "$TMP/state.json")"
+# CHECKOUT CURRENCY IS NOT BUILD CURRENCY: update-skills.sh fast-forwards the
+# checkout to origin/main BEFORE this runs, so a pin-current checkout can carry a
+# .next sealed at the previous revision. Skipping the deploy there stamped
+# commandCenterBuildFresh=false on a healthy box. The router must deploy and let
+# the rebuild reseal; the stub update.sh reseals by flipping the oracle to 0.
+rm -f "$TMP/app/update-ran"
+printf '#!/bin/sh\nexit "${STUB_INV_RC:-1}"\n' > "$old_stub"   # mismatch until rebuilt
+out="$(RUN_AT_PIN=1 run_update 'touch "$CC_APP_DIR/update-ran"; cd "$CC_APP_DIR"; sleep 1; mkdir -p .next; touch .next/BUILD_ID; printf "#!/bin/sh\nexit 0\n" > scripts/lib/build-inventory.sh')"
+[[ -e "$TMP/app/update-ran" ]] && pass "AT_PIN + content MISMATCH deploys (update.sh ran)" \
+  || fail "AT_PIN + content MISMATCH skipped the deploy"
+[[ -z "$out" && "$(jq -r '.commandCenterBuildFresh' "$TMP/state.json")" == "true" ]] \
+  && pass "AT_PIN + content MISMATCH -> rebuilt at HEAD, commandCenterBuildFresh=true, run is done" \
+  || fail "AT_PIN + content MISMATCH did not end verified: '$out' $(jq -c . "$TMP/state.json")"
 printf '#!/bin/sh\nexit "${STUB_INV_RC:-0}"\n' > "$old_stub"   # restore VERIFIED default
 
 echo "$P Results: $PASS passed, $FAIL failed"

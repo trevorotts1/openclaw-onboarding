@@ -1445,9 +1445,17 @@ def check_standard_ready_board_join(fs, oc_root, ws, company_dir, departments_di
 
     # Company scoping — same fail-safe asymmetry as the standalone gate.
     company_slug = bj.resolve_company_slug(company_dir, company_ids)
+    key_early = bj.make_keyer(df, canonical_dept_slug)
+    if company_slug is None and bj.single_company_board_foreign(
+            company_dir, company_ids, displayed_rows,
+            {key_early(c) for c in chosen}, key_early):
+        return {
+            "pass": False, "db_found": True, "db_path": db_path,
+            "detail": "the workspaces table holds a single company_id belonging to a "
+                      "different company — refusing to vouch this board",
+        }
     if company_slug is not None:
         _board_ids = {str(c) for c in (company_ids or ())}
-        key_early = bj.make_keyer(df, canonical_dept_slug)
         if company_slug not in _board_ids:
             _resolved = bj.resolve_scope_by_content(
                 displayed_rows, {key_early(c) for c in chosen}, key_early)

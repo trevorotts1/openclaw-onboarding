@@ -1546,21 +1546,25 @@ cc_route_update_through_canonical_path() {
   local update_sh="$DASHBOARD_DIR/update.sh"
   local atomic_deploy="$DASHBOARD_DIR/scripts/atomic-deploy.sh"
   if [[ "${CC_AT_PIN:-0}" == "1" ]]; then
-    log "INFO" "phase=6 (update-only): no Command Center deploy: the checkout already contains the pinned release"
     # Nothing is deployed on this pass, but the FINAL check still requires
-    # commandCenterBuildFresh. Returning here without stamping left the key unset
-    # on every pin-current box, so a successful run ended done-degraded
-    # (ccBuildFresh(6)). Stamp it from the same live content oracle every other
-    # path uses (build-inventory.sh --verify): true only when the served .next
-    # really verifies against this checkout.
+    # commandCenterBuildFresh. Stamp it from the same live content oracle every
+    # other path uses (build-inventory.sh --verify): true only when the served
+    # .next really verifies against this checkout.
     if cc_served_build_current; then
-      log "INFO" "phase=6 (update-only): content verification PASSED — served .next verifies against $DASHBOARD_DIR (build-inventory VERIFIED)"
+      log "INFO" "phase=6 (update-only): no Command Center deploy: the checkout already contains the pinned release and the served .next verifies against it (build-inventory VERIFIED)"
       [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = true' 2>/dev/null || true
-    else
-      log "WARN" "phase=6 (update-only): content verification FAILED — served .next does not verify against $DASHBOARD_DIR (missing/mismatched/obsolete manifest) — commandCenterBuildFresh=false"
-      [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = false' 2>/dev/null || true
+      return 0
     fi
-    return 0
+    # CHECKOUT CURRENCY IS NOT BUILD CURRENCY. update-skills.sh fast-forwards this
+    # checkout to origin/main BEFORE run-full-install.sh --update-only is invoked,
+    # so HEAD can advance with no rebuild while the sealed manifest still names the
+    # previous revision: the content oracle can only answer MISMATCH. Returning 0
+    # here stamped .commandCenterBuildFresh=false and ended the run done-degraded
+    # (ccBuildFresh(6)) on a box that was otherwise fine. Fall through to the
+    # canonical deploy, retargeted to HEAD, so the checkout is rebuilt and resealed.
+    log "WARN" "phase=6 (update-only): the checkout contains the pinned release but the served .next does not verify against it (checkout advanced without a rebuild) — deploying through the canonical path to rebuild at HEAD instead of skipping the deploy"
+    CC_AT_PIN=0
+    export CC_UPDATE_TARGET="$(git -C "$DASHBOARD_DIR" rev-parse HEAD)"
   fi
   if [[ "${CC_ZERO_DOWNTIME:-0}" == "1" ]]; then
     # The live tree is still the running release: run the TARGET's updater,

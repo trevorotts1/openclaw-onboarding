@@ -555,6 +555,23 @@ def resolve_scope_by_content(displayed_rows, chosen_keys, key):
         return ranked[0][0]
     return None          # ambiguous tie -> fail-closed; the phantom slug stands.
 
+def single_company_board_foreign(company_dir, company_ids, displayed_rows, chosen_keys, key):
+    """True when the board holds exactly ONE company_id that is neither one of this
+    company's own spellings nor shares any chosen department with this company.
+
+    resolve_company_slug() returns None for a single-company board (nothing to
+    disambiguate), so the join runs UNFILTERED. That is only safe when the one
+    company_id is this company's: a board whose single company_id belongs to a
+    DIFFERENT tenant used to be joined anyway and reported as THIS company's drift
+    (CHOSEN_NOT_DISPLAYED / DISPLAYED_NOT_CHOSEN) instead of the CANNOT-VOUCH the
+    multi-company path already returns for exactly the same row set."""
+    ids = {str(c) for c in (company_ids or ()) if c is not None and str(c) != ""}
+    if len(ids) != 1:
+        return False
+    if ids & set(company_slug_candidates(company_dir)):
+        return False
+    return resolve_scope_by_content(displayed_rows, chosen_keys, key) is None
+
 
 # ── THE JOIN ──────────────────────────────────────────────────────────────────
 def make_keyer(df, canonical_dept_slug):
@@ -843,6 +860,16 @@ def main(argv=None):
                 company_slug = _resolved
                 slug_source = ("content-resolved (multi-company board; company_id not "
                                "derivable from company-config — matched on chosen depts)")
+        elif company_slug is None and single_company_board_foreign(
+                company_dir, company_ids, displayed_rows, {key(c) for c in chosen}, key):
+            _only = sorted(str(c) for c in company_ids)[0]
+            print(f"AF-BOARD-JOIN-DRIFT: CANNOT VOUCH — the workspaces table holds a "
+                  f"single company_id '{_only}', which is neither one of this "
+                  f"company's ids ({', '.join(company_slug_candidates(company_dir)) or 'none'}) "
+                  f"nor shares any department this company chose. The board belongs to a "
+                  f"different company; joining it unfiltered would report this company's "
+                  f"drift on someone else's rows. Refusing to vouch.", file=sys.stderr)
+            return RC_CANNOT_VOUCH
     if company_slug is not None:
         displayed_rows = [r for r in displayed_rows if r[2] == company_slug]
         archived_rows = [r for r in archived_rows if r[2] == company_slug]
