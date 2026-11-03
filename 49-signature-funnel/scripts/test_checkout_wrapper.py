@@ -29,6 +29,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -228,6 +229,60 @@ class TestOrderBumpSectionFollowsTheBump(CheckoutWrapperCase):
         with self.assertRaises(cw.WrapperError) as ctx:
             cw.check_copy(self.text, self.no_bump_launch, self.request, TERMS)
         self.assertIn("section 3", str(ctx.exception))
+
+
+class TestProduceTellsSkill71WhetherTheLaunchHasABump(CheckoutWrapperCase):
+    """F5 across the seam: the S71 build applies its conditional section-3 rule only if produce() hands it the
+    launch's bump fact (--has-order-bump, field has_order_bump). The S71 scripts here are stand-ins that log argv."""
+
+    class Stop(Exception):
+        pass
+
+    def produce_with(self, launch, build_text, text):
+        s71 = self.td / "s71"
+        (s71 / "scripts").mkdir(parents=True)
+        for name in ("shared_page_service.py", "stage_executor.py"):
+            (s71 / "scripts" / name).write_text("", encoding="utf-8")
+        (s71 / "scripts" / "build_production_request.py").write_text(build_text, encoding="utf-8")
+        self.launch_path.write_text(json.dumps(launch), encoding="utf-8")
+        manuscript = self.td / "manuscript.md"
+        manuscript.write_text(text, encoding="utf-8")
+        args = type("A", (), dict(
+            manuscript=str(manuscript), launch=str(self.launch_path), skill71_root=str(s71), run_dir=str(self.run_dir),
+            request=str(self.request_path), brand_owner="b", image_cap="2", brand_file="f", route_graph="g",
+            design_style=None, slots=None, design_prose=None, model=None, provider="stub", allow_paid=False,
+            inputs=None, checkout_terms=str(self.terms_path)))()
+        seen = []
+
+        def fake_run(cmd, label):
+            seen.append([str(c) for c in cmd])
+            if "build_production_request.py" in str(cmd[1]):
+                raise self.Stop()
+        with mock.patch.object(cw, "run", fake_run), mock.patch.object(cw.page_set, "stage_visual_bible"):
+            with self.assertRaises(self.Stop):
+                cw.produce(args, self.request)
+        return next(c for c in seen if "build_production_request.py" in c[1])
+
+    def setUp(self):
+        super().setUp()
+        self.launch = json.loads(self.launch_path.read_text(encoding="utf-8"))
+        self.text = MANUSCRIPT.read_text(encoding="utf-8")
+        self.no_bump_text = "".join(
+            part for part in __import__("re").split(r"(?m)^(?=##\s+Section\s+\d+)", self.text)
+            if not part.startswith("## Section 3"))
+        self.no_bump_launch = dict(self.launch, offers=[o for o in self.launch["offers"] if o.get("slot") != "bump"])
+
+    def test_a_no_bump_funnel_says_false(self):
+        cmd = self.produce_with(self.no_bump_launch, "--has-order-bump", self.no_bump_text)
+        self.assertEqual(cmd[cmd.index("--has-order-bump") + 1], "false")
+
+    def test_a_funnel_with_a_bump_says_true(self):
+        cmd = self.produce_with(self.launch, "--has-order-bump", self.text)
+        self.assertEqual(cmd[cmd.index("--has-order-bump") + 1], "true")
+
+    def test_a_build_script_that_does_not_know_the_flag_is_not_handed_it(self):
+        cmd = self.produce_with(self.launch, "", self.text)
+        self.assertNotIn("--has-order-bump", cmd)
 
 
 class TestCardFieldGuard(unittest.TestCase):

@@ -532,6 +532,28 @@ class DownsellCopyBoundToOwnPriceTests(unittest.TestCase):
         self.assertIn("D1-COPY-BILLING-MISMATCH", proc.stderr)
         self.assertFalse(paths["result"].exists())
 
+    def test_a_one_time_page_with_a_dollar_monthly_phrase_is_refused(self):
+        for phrase in (" Then $5 monthly continues.", " Then $5 per mo continues.", " Then $5 per-month continues."):
+            with self.subTest(phrase=phrase):
+                page = _one_time_page(100)
+                page["page"]["sections"][6]["body"] += phrase
+                paths, proc = self.run_one_dollar_d1(page)
+                self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+                self.assertIn("D1-COPY-BILLING-MISMATCH", proc.stderr)
+
+    def test_a_renewal_amount_on_a_one_time_d1_extension_is_refused(self):
+        """The result extension may not claim a renewal for an offer the record prices as one-time."""
+        paths = stage(_request(None, "1.0"))
+        _edit(paths, "launch.json", lambda doc: _offer(doc, "downsell_1").update(prices=[self.ONE_DOLLAR]))
+        _edit(paths, "extension-downsell_1.json",
+              lambda doc: doc["downsell_result_extension"]["disclosure_audit"].update(due_now_minor=100,
+                                                                                      renewal_amount_minor=2700))
+        paths["copy-downsell_1.json"].write_text(json.dumps(_one_time_page(100)) + "\n")
+        proc = run_wrapper(paths)
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("D1-RESULT-DISCLOSURE-RENEWAL-ON-ONE-TIME", proc.stderr)
+        self.assertFalse(paths["result"].exists())
+
 
 class DownsellOfferIdNormalisationTests(unittest.TestCase):
     """DTY-03: the launcher writes real offer ids in `excludes`."""

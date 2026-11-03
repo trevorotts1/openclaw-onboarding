@@ -173,7 +173,8 @@ class DispatchTests(unittest.TestCase):
         self.assertIn("Nothing was spent", text)
 
     def test_the_dispatch_report_has_no_waiting_choices_when_the_client_chose_everything(self):
-        doc = payload("elevation", design_style="B", image_provider="kie", image_cap=200)
+        # 264 = the pictures landing + sales + the five route pages need: Skill 49 now refuses a smaller cap up front
+        doc = payload("elevation", design_style="B", image_provider="kie", image_cap=264)
         report = run_dispatch(doc, self.out, landing_pages=["landing", "sales"])
         self.assertEqual(report["to_confirm"], [])
         self.assertIn("Every choice came from you", "\n".join(launch_bridge.summary_lines(report)))

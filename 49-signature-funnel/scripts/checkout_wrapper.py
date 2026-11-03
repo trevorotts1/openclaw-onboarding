@@ -220,6 +220,11 @@ def _record_amounts(offer: dict) -> set:
     return out
 
 
+def request_offers(launch: dict, request: dict) -> list:
+    refs = request.get("offer_refs")
+    return [o for o in launch.get("offers") or [] if isinstance(o, dict) and (refs is None or o.get("offer_id") in refs)]
+
+
 def check_copy(text: str, launch: dict, request: dict, terms: dict) -> None:
     """CHK-13: sections 2-4 carry exactly what the launch record and the approved checkout_terms say."""
     if not isinstance(terms, dict) or any(not isinstance(terms.get(k), str) or not terms[k].strip()
@@ -228,8 +233,7 @@ def check_copy(text: str, launch: dict, request: dict, terms: dict) -> None:
                            f"text, {', '.join(TERMS_KEYS)}) is required; pass --checkout-terms FILE or stage "
                            "checkout-terms.json beside the launch record")
     body = sections(text)
-    refs = request.get("offer_refs")
-    offers = [o for o in launch.get("offers") or [] if isinstance(o, dict) and (refs is None or o.get("offer_id") in refs)]
+    offers = request_offers(launch, request)
     mains = [o for o in offers if o.get("slot") == "main"]
     bumps = [o for o in offers if o.get("slot") == "bump"]
     # Section 3 is the order bump: required only when the launch has a bump offer. Without one, 1,2,4,5 is the
@@ -294,6 +298,9 @@ def artifacts(run_dir: Path) -> list:
     return [found[k] for k in sorted(found)]
 
 
+HAS_ORDER_BUMP_FLAG = "--has-order-bump"  # value true|false; the S71 build_production_request.py field is has_order_bump
+
+
 def produce(args, request) -> dict:
     if request.get("page_role") != ROLE or request.get("assigned_skill") != SKILL:
         raise WrapperError(f"the request is for page_role {request.get('page_role')!r}, skill "
@@ -307,7 +314,9 @@ def produce(args, request) -> dict:
     if hits:
         raise WrapperError("the manuscript holds a card, expiry or security-code field; the payment form is "
                            f"the native checkout form only ({hits[0]!r})")
-    check_copy(text, load(args.launch, "launch record"), request, terms_block(args))
+    launch = load(args.launch, "launch record")
+    check_copy(text, launch, request, terms_block(args))
+    has_order_bump = any(o.get("slot") == "bump" for o in request_offers(launch, request))
     s71 = Path(args.skill71_root) / "scripts"
     for name in ("shared_page_service.py", "build_production_request.py", "stage_executor.py"):
         if not (s71 / name).is_file():
@@ -329,6 +338,10 @@ def produce(args, request) -> dict:
                             ("--model", args.model)):
             if value:
                 build += [flag, value]
+        # S71 applies its conditional section-3 rule (1,2,4,5 without a bump) only when told whether the
+        # launch has one; a build script that does not yet know the flag is not handed it.
+        if HAS_ORDER_BUMP_FLAG in (s71 / "build_production_request.py").read_text(encoding="utf-8"):
+            build += [HAS_ORDER_BUMP_FLAG, "true" if has_order_bump else "false"]
         run(build, f"build_production_request.py ({stage})")
         execute = [sys.executable, s71 / "stage_executor.py", run_dir, "--stages", stage, "--request", name,
                    "--provider", args.provider] + (["--allow-paid"] if args.allow_paid else [])

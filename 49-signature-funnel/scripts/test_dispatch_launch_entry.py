@@ -288,6 +288,50 @@ class AnImageCapBelowThePlanIsRefusedBeforeAnythingStarts(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
 
 
+class TheLibraryPathRefusesACapBelowThePlanToo(unittest.TestCase):
+    """F8 on the launcher path: the Black Friday launcher calls dl.dispatch() as a library with no
+    strict_cap, so the refusal must be dispatch()'s default, as a DispatchError (the launcher names it)."""
+    def need(self):
+        launch, _approval = approved_launch()
+        return pset.offered_image_ceilings(pset.build_page_set(launch))["total"]
+
+    def library_run(self, cap, **kw):
+        started = []
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            inner = dl._simulated_executor("library-cap-test")
+
+            def executor(request, *rest):
+                started.append(request["page_role"])
+                return inner(request, *rest)
+            executor.simulated = True
+            launch, approval = approved_launch()
+            try:
+                manifest = dl.dispatch(launch, approval, client_identity_ref=CLIENT, worker_identity_ref=WORKER,
+                                       out_dir=tdp / "dispatch", executor=executor,
+                                       image_inputs={"image_provider": "stub", "image_cap": cap}, **kw)
+            except dl.DispatchError as exc:
+                return None, exc, started
+            return manifest, None, started
+
+    def test_a_cap_one_image_short_is_a_dispatch_error_and_nothing_starts(self):
+        manifest, exc, started = self.library_run(self.need() - 1)
+        self.assertIsNone(manifest)
+        self.assertIsNotNone(exc, "the library default must refuse, not run every lane")
+        self.assertIn("Nothing was started", str(exc))
+        self.assertEqual(started, [])
+
+    def test_a_cap_that_covers_the_pages_runs_every_page(self):
+        manifest, exc, started = self.library_run(self.need())
+        self.assertIsNone(exc)
+        self.assertTrue(started)
+        self.assertTrue(manifest["swarm"]["cap_preview"]["fits"])
+
+    def test_no_image_inputs_means_no_cap_to_check(self):
+        launch, approval = approved_launch()
+        dl.dispatch(launch, approval, client_identity_ref=CLIENT, worker_identity_ref=WORKER)
+
+
 class ALongRefusalKeepsItsTail(unittest.TestCase):
     """F4: wrappers print progress first and the refusal last; the head-only cut hid the cause."""
     def test_the_last_line_of_a_long_stderr_reaches_the_error(self):

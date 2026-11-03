@@ -445,7 +445,7 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
              landing_pages: Optional[List[str]] = None,
              extra_pages: Tuple[str, ...] = (),
              limiter: Any = None,
-             strict_cap: bool = False,
+             strict_cap: Optional[bool] = None,
              ) -> Dict[str, Any]:
     """Full dispatch. Returns the manifest dict; writes requests (+ results
     when an executor ran) under out_dir when given.
@@ -456,7 +456,9 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
     spend cap and the KIE limiter apply (page_swarm). extra_pages: opted-in
     design pages that ride on a route request (today downsell_2). strict_cap: refuse the
     whole run, before any page starts, when the image cap is below what the page set needs
-    (stub or paid); the command line always sets it."""
+    (stub or paid). None (the default) means refuse whenever image_inputs are given, so a
+    library caller never gets a silently dropped page; only an explicit False opts out.
+    A refusal is a DispatchError, like every other reason dispatch stops."""
     simulated = bool(executor) and getattr(executor, "simulated", False)
     if simulated and not launch.get("test_only"):
         raise DispatchError(
@@ -541,10 +543,20 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
             (out_dir / f"request-{r['page_role']}.json").write_text(
                 json.dumps(r, indent=2) + "\n", encoding="utf-8")
     if executor:
-        run = swarm.execute(requests, executor, page_set=page_set,
-                            out_dir=out_dir, launch_id=launch["launch_id"],
-                            workers=parallel, image_inputs=image_inputs,
-                            limiter=limiter, strict_cap=strict_cap)
+        try:
+            run = swarm.execute(requests, executor, page_set=page_set,
+                                out_dir=out_dir, launch_id=launch["launch_id"],
+                                workers=parallel, image_inputs=image_inputs,
+                                limiter=limiter,
+                                strict_cap=image_inputs is not None
+                                if strict_cap is None else strict_cap)
+        except swarm.SwarmError as exc:  # nothing was started; close the card the way a failed page does
+            if out_dir:
+                _emit(launch["launch_id"], {"event_type": "stage_blocked", "stage": "dispatch",
+                                            "failures": [str(exc)]})
+                if task_id:
+                    _board("block_run", out_dir, task_id, note=str(exc))
+            raise DispatchError(str(exc)) from exc
         manifest["swarm"] = run["swarm"]
         failed = [o for o in run["outcomes"] if o["status"] != "ok"]
         for o in run["outcomes"]:

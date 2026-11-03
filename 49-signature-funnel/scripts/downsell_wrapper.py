@@ -893,7 +893,8 @@ def _record_amounts(launch: Mapping[str, Any],
 
 
 _RECURRING_PHRASE = re.compile(
-    r"\$\s?\d[\d,]*(?:\.\d+)?\s*(?:/|per\b|a\b|each\b|every\b)\s*(?:mo|month|yr|year|wk|week)"
+    r"\$\s?\d[\d,]*(?:\.\d+)?\s*(?:/|per\b|a\b|each\b|every\b)[\s-]*(?:mo|month|yr|year|wk|week)s?\b"
+    r"|\$\s?\d[\d,]*(?:\.\d+)?\s*(?:monthly|weekly|annually|yearly)\b"
     r"|\brenew\w*\s+(?:monthly|weekly|annually|yearly|every)", re.I)
 
 
@@ -1273,6 +1274,15 @@ def run(args) -> Dict[str, Any]:
              f"an approved D1 price of {approved_amount!r}; the "
              "wrapper's result-time equality check (CR-S49-005 item "
              "6) cannot be skipped"])
+    renewal = audit.get("renewal_amount_minor")
+    if renewal is not None and price \
+            and price.get("billing_type") not in NON_ONE_TIME_BILLING:
+        raise WrapperError(
+            [f"disclosure cross-check: D1-RESULT-DISCLOSURE-RENEWAL-ON-"
+             f"ONE-TIME: extension disclosure_audit.renewal_amount_minor "
+             f"{renewal!r} on a D1 price that is "
+             f"{price.get('billing_type')!r}; a one-time offer has no "
+             "renewal (wrapper cross-check)"])
     if due_now != approved_amount:
         raise WrapperError(
             [f"disclosure cross-check: D1-RESULT-DISCLOSURE-DUE-NOW-"

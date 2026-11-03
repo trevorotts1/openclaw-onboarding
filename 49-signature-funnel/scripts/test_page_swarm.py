@@ -66,11 +66,11 @@ def fake_executor(log=None, sleep=0.0, fail=(), transient_once=(), seen=None):
 
 
 def go(mode="multiple_options", executor=None, parallel=1, inputs=None, limiter=None, extras=(),
-       landing_pages=("landing", "sales"), out=None):
+       landing_pages=("landing", "sales"), out=None, **kw):
     launch, approval = approved_launch(mode)
     return dl.dispatch(launch, approval, client_identity_ref=CLIENT, worker_identity_ref=WORKER,
                        out_dir=out, executor=executor, parallel=parallel, image_inputs=inputs,
-                       landing_pages=list(landing_pages), extra_pages=tuple(extras), limiter=limiter)
+                       landing_pages=list(landing_pages), extra_pages=tuple(extras), limiter=limiter, **kw)
 
 
 class WhatAFullFunnelDispatches(unittest.TestCase):
@@ -163,7 +163,8 @@ class OneFailureNeverStopsTheRest(unittest.TestCase):
 class LimiterAndSpendCap(unittest.TestCase):
     def test_the_free_stub_takes_no_tokens_and_has_no_cap(self):
         limiter = CountingLimiter()
-        m = go(executor=fake_executor(), parallel=6, inputs=dict(STUB_INPUTS, image_cap=0), limiter=limiter)
+        m = go(executor=fake_executor(), parallel=6, inputs=dict(STUB_INPUTS, image_cap=0), limiter=limiter,
+               strict_cap=False)  # the run-time stub ledger never enforces; the default would refuse a cap of 0 first
         self.assertEqual(limiter.tokens, 0)
         self.assertEqual(set(m["swarm"]["statuses"].values()), {"ok"})
         self.assertFalse(m["swarm"]["spend"]["enforced"])
@@ -182,7 +183,8 @@ class LimiterAndSpendCap(unittest.TestCase):
         # product_selection 20, checkout 20 fit under 150; upsell_1 (32) would pass it and is skipped
         out = Path(tempfile.mkdtemp())
         with self.assertRaises(dl.DispatchError):  # skipped pages fail the dispatch by name (next test)
-            go(executor=fake_executor(seen=seen), parallel=6, inputs=paid_inputs(150), limiter=limiter, out=out)
+            go(executor=fake_executor(seen=seen), parallel=6, inputs=paid_inputs(150), limiter=limiter, out=out,
+               strict_cap=False)  # the run-time ledger is the second line of defence behind the up-front refusal
         m = json.loads((out / "dispatch-manifest.json").read_text(encoding="utf-8"))
         statuses = m["swarm"]["statuses"]
         self.assertEqual([k for k, v in statuses.items() if v == "ok"], ["landing", "product_selection", "checkout"])
@@ -193,7 +195,7 @@ class LimiterAndSpendCap(unittest.TestCase):
 
     def test_a_page_skipped_for_the_cap_fails_the_dispatch_by_name_not_silently(self):
         with self.assertRaises(dl.DispatchError) as cm:
-            go(executor=fake_executor(), inputs=paid_inputs(150), limiter=CountingLimiter())
+            go(executor=fake_executor(), inputs=paid_inputs(150), limiter=CountingLimiter(), strict_cap=False)
         self.assertIn("upsell_1 skipped_cap", str(cm.exception))
         self.assertIn("image cap 150", str(cm.exception))
 
