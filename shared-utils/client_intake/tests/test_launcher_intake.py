@@ -23,8 +23,12 @@ sys.path.insert(0, str(PKG))
 import engine as e  # noqa: E402
 import launcher_intake as li  # noqa: E402
 
-SKILL83 = REPO / "83-black-friday-launcher"
-SKILL71 = REPO / "71-blackceo-signature-page" / "scripts"
+def _skill(name):  # onboarding: 49-signature-funnel; 999: .claude/skills/signature-funnel
+    p = REPO / name
+    return p if p.is_dir() else REPO / ".claude/skills" / name.split("-", 1)[1]
+
+SKILL83 = _skill("83-black-friday-launcher")
+SKILL71 = _skill("71-blackceo-signature-page") / "scripts"
 sys.path.insert(0, str(SKILL83))
 sys.path.insert(0, str(SKILL83 / "fixtures"))
 intake83 = importlib.import_module("launcher_core.intake")

@@ -224,7 +224,8 @@ def image_ceiling(doc: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     skill is not beside this one. Shown with the cap so a ceiling below the need is named before a run."""
     try:
         mode, offers, _ = derive_offers(doc)
-        scripts = REPO / "49-signature-funnel" / "scripts"
+        scripts = next((d / "scripts" for d in _skill_dirs("49-signature-funnel") if (d / "scripts").is_dir()),
+                       REPO / "49-signature-funnel" / "scripts")
         if str(scripts) not in sys.path:
             sys.path.insert(0, str(scripts))
         import page_set  # noqa: E402
@@ -286,9 +287,17 @@ def _image_plan(doc: Dict[str, Any], system: Dict[str, Any], warnings: List[str]
 
 
 # ---------------------------------------------------------------- what Skill 83's own intake declares
+def _skill_dirs(numbered: str) -> List[Path]:
+    """Where a sibling skill can live: repo tree (NN-name), 999 tree (.claude/skills/name), then the installed skills dirs."""
+    plain = numbered.split("-", 1)[1]
+    out = [REPO / numbered, REPO / ".claude" / "skills" / plain]
+    for home in (Path.home() / ".claude" / "skills", Path.home() / ".openclaw" / "skills"):
+        out += [home / numbered, home / plain]
+    return out
+
+
 def _roots83() -> List[Path]:
-    return [REPO / "83-black-friday-launcher", Path.home() / ".claude" / "skills" / "83-black-friday-launcher",
-            Path.home() / ".openclaw" / "skills" / "83-black-friday-launcher"]
+    return _skill_dirs("83-black-friday-launcher")
 
 
 def _load83(name: str) -> Any:

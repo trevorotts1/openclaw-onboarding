@@ -17,6 +17,11 @@ import pytest
 HERE = Path(__file__).resolve()
 CONTRACT = HERE.parents[1]
 REPO = HERE.parents[3]
+
+def _skill(name):  # onboarding: 49-signature-funnel; 999: .claude/skills/signature-funnel
+    p = REPO / name
+    return p if p.is_dir() else REPO / ".claude/skills" / name.split("-", 1)[1]
+
 FIXTURES = REPO / "shared-utils" / "client_intake" / "fixtures"
 sys.path.insert(0, str(CONTRACT))
 import offer_mapper as om  # noqa: E402
@@ -30,8 +35,8 @@ def _load(name, path):
     return mod
 
 
-vlp = _load("sf49_validate_launch_plan", REPO / "49-signature-funnel" / "scripts" / "validate_launch_plan.py")
-vco = _load("s79_validate_checkout", REPO / "79-signature-order-form" / "scripts" / "validate_checkout.py")
+vlp = _load("sf49_validate_launch_plan", _skill("49-signature-funnel") / "scripts" / "validate_launch_plan.py")
+vco = _load("s79_validate_checkout", _skill("79-signature-order-form") / "scripts" / "validate_checkout.py")
 
 IDENT = dict(tenant_id="t1", location_id="loc1", launch_id="L1", revision=1, brand_ref="brand:1", brand_hash="h" * 64,
              route_graph_ref="route-graph:L1:rev1", route_graph_hash="g" * 64, plan_approval_ref="approval:1")
@@ -211,7 +216,7 @@ def test_unknown_or_amountless_prices_and_unapproved_plans_fail_closed():
 
 
 # ---------------------------------------------------------------- Skill 83 intake: resolve_offer (PRD-03)
-FIXTURES_83 = REPO / "83-black-friday-launcher" / "fixtures"
+FIXTURES_83 = _skill("83-black-friday-launcher") / "fixtures"
 
 
 def _ref(role, mains_seen):

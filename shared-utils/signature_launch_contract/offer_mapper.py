@@ -66,7 +66,11 @@ def _engine():
 
 
 def _78():
-    build = _load("build_selection_plan", REPO / "78-signature-product-selection" / "scripts" / "build_selection_plan.py")
+    # repo tree keeps Skill 78 at 78-signature-product-selection; a 999 install at .claude/skills/signature-product-selection
+    d = next((p for p in (REPO / "78-signature-product-selection",
+                          REPO / ".claude" / "skills" / "signature-product-selection") if p.is_dir()),
+             REPO / "78-signature-product-selection")
+    build = _load("build_selection_plan", d / "scripts" / "build_selection_plan.py")
     return build, sys.modules["selection_core"]
 
 

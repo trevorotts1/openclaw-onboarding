@@ -18,6 +18,11 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
+
+def _skill(name):  # onboarding: 49-signature-funnel; 999: .claude/skills/signature-funnel
+    p = ROOT / name
+    return p if p.is_dir() else ROOT / ".claude/skills" / name.split("-", 1)[1]
+
 CONTRACT = ROOT / "shared-utils" / "signature_launch_contract"
 FIXTURE = CONTRACT / "fixtures" / "black-friday.json"
 
@@ -32,12 +37,12 @@ def _load(name: str, path: Path):
 law = _load("t_calendar_law", CONTRACT / "calendar_law.py")
 validator = _load("t_validate_launch_plan", CONTRACT / "validate_launch_plan.py")
 reader = _load("t_plan_reader",
-               ROOT / "44-convert-and-flow-operator" / "automation-templates" / "launch-c" / "plan_reader.py")
-sys.path.insert(0, str(ROOT / "83-black-friday-launcher"))
+               _skill("44-convert-and-flow-operator") / "automation-templates" / "launch-c" / "plan_reader.py")
+sys.path.insert(0, str(_skill("83-black-friday-launcher")))
 from launcher_core import launch_plan as skill83  # noqa: E402
 
-sys.path.insert(0, str(ROOT / "49-signature-funnel" / "scripts"))
-generator = _load("t_s49_launch_plan", ROOT / "49-signature-funnel" / "scripts" / "launch_plan.py")
+sys.path.insert(0, str(_skill("49-signature-funnel") / "scripts"))
+generator = _load("t_s49_launch_plan", _skill("49-signature-funnel") / "scripts" / "launch_plan.py")
 
 SCHEMA = validator.load_json(validator.SCHEMA_PATH)
 BASE = json.loads(FIXTURE.read_text(encoding="utf-8"))
