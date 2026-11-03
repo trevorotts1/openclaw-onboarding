@@ -13,7 +13,7 @@ The doc is plain JSON (answers.schema.json). Every function mutates the doc in m
 atomically, so any harness can stop and resume from the file. stdlib only; palette_help needs Pillow for
 logo files only.
 
-CLI:  engine.py FILE next | record ID VALUE | help ID [--logo F --site URL --palette N --mood "..."] |
+CLI:  engine.py FILE next | record ID VALUE [--ref MESSAGE_ID] | help ID [--logo F --site URL --palette N --mood "..."] |
       check | finalize | report | show      (FILE is created on first use;
       --mode launch|legacy|bf|page, --page-kind sales|opt_in for a page run)
 """
@@ -24,6 +24,7 @@ import os
 import re
 import sys
 import tempfile
+from decimal import Decimal
 from datetime import date, datetime, time
 from pathlib import Path
 
@@ -480,16 +481,45 @@ def wants_help(q, value):
             or any("not sure" in _norm(c) and _norm(c) == n for c in q["choices"]))
 
 
+# Currencies the interview can price in. A symbol or code outside this set is never
+# guessed: the client is asked which currency they mean.
+ISO_CURRENCIES = ("USD", "EUR", "GBP")
+_SYMBOL_CURRENCY = {"$": "USD", "\u20ac": "EUR", "\u00a3": "GBP"}
+_AMOUNT = r"(\d{1,3}(?:,\d{3})+|\d+)(\.\d{1,2})?"
+_MONEY_RE = re.compile(r"^(?:([A-Za-z]{3})\s*)?([$\u20ac\u00a3])?\s*" + _AMOUNT + r"(?:\s*([A-Za-z]{3}))?$")
+_PRICE_QUESTION = "What price should I use? One number like 497, or $497, or USD 497."
+
+
+def _parse_money(text):
+    """(money, None) or (None, the question to ask). Strict: one amount, comma thousands only,
+    at most two decimals, at most one currency marker (a $/euro/pound symbol or an ISO code from
+    ISO_CURRENCIES). k/m suffixes, a second number, other separators and unknown currency
+    markers are refused, never guessed. A bare number reads as USD; the caller echoes it."""
+    t = str(text).strip()
+    m = _MONEY_RE.match(t)
+    if m:
+        pre, sym, whole, frac, post = m.groups()
+        marks = [x for x in (pre, sym, post) if x]
+        if len(marks) <= 1:
+            code = ((pre or post or "").upper() or _SYMBOL_CURRENCY.get(sym or "", "USD"))
+            if code in ISO_CURRENCIES:
+                minor = int((Decimal(whole.replace(",", "") + (frac or "")) * 100).to_integral_value())
+                return {"amount_minor": minor, "currency": code}, None
+            return None, "Which currency is that price in? I can use " + ", ".join(ISO_CURRENCIES) + "."
+        return None, "I see two currency markers. Which one currency is the price in?"
+    if len(re.findall(r"\d+(?:[.,]\d+)*", t)) > 1:
+        return None, "I see more than one number. Which single price should I use? Please send just that one number."
+    if re.search(r"\d[.,]\d{3,}", t):
+        return None, "A price can have at most two decimal places, with commas only for thousands, like 1,497.00."
+    if re.search(r"\d\s*[kKmM]\b|thousand|million", t):
+        return None, "Please write the full number, for example 1500 instead of 1.5k."
+    if re.search(r"[^\d\s,.$\u20ac\u00a3A-Za-z]|[A-Za-z]{2,}", t) and re.search(r"\d", t):
+        return None, "Which currency is that price in? I can use " + ", ".join(ISO_CURRENCIES) + ", written like USD 497."
+    return None, _PRICE_QUESTION
+
+
 def _money(text):
-    t = str(text).replace(",", "")
-    m = re.search(r"(\d+(?:\.\d{1,2})?)", t)
-    if not m:
-        return None
-    cur = "USD"
-    for sym, c in (("€", "EUR"), ("£", "GBP"), ("eur", "EUR"), ("gbp", "GBP")):
-        if sym in t.lower():
-            cur = c
-    return {"amount_minor": round(float(m.group(1)) * 100), "currency": cur}
+    return _parse_money(text)[0]
 
 
 def _pick(text, choices):
@@ -501,6 +531,43 @@ def _pick(text, choices):
         if n and (n.startswith(_norm(c)) or _norm(c).startswith(n)):
             return c
     return None
+
+
+def _bad_price(p):
+    """The question to ask when a price dict is not a positive integer amount in an ISO currency."""
+    amt, cur = p.get("amount_minor"), p.get("currency")
+    if not cur:
+        return "Which currency is the price in?"
+    if cur not in ISO_CURRENCIES:
+        return "Which currency is that? I can use " + ", ".join(ISO_CURRENCIES) + "."
+    if not isinstance(amt, int) or isinstance(amt, bool) or amt <= 0:
+        return "A price must be a positive whole number of cents."
+    return None
+
+
+PRICE_STATUSES = ("provided", "recommended_unapproved")
+
+
+def _bad_package(p):
+    """The refusal for a package dict: it needs a name, a valid price, and a price_status limited to
+    provided or recommended_unapproved (never 'approved': approval is the client's, at the plan)."""
+    if not (isinstance(p.get("display_name"), str) and p["display_name"].strip()):
+        return "Every package needs a name."
+    if not isinstance(p.get("price"), dict):
+        return f"Package {p['display_name']!r} needs a price with a currency."
+    bad = _bad_price(p["price"])
+    if bad:
+        return f"Package {p['display_name']!r}: {bad}"
+    if p.get("price_status", "provided") not in PRICE_STATUSES:
+        return f"Package {p['display_name']!r}: price_status can only be provided or recommended_unapproved, never {p['price_status']!r}."
+    return None
+
+
+_FUNNEL_SHAPES = (
+    ("single_simple", r"\b(?:single|one)(?: simple)? offer\b|^(?:one|single|just one)$"),
+    ("multiple_options", r"\b(?:few|several|multiple|couple of)\s+(?:\w+\s+)?(?:packages|options|tiers)\b|\bpackages\b"),
+    ("folded_levels", r"\blevels? (?:that )?build\b|\bbuild(?:s|ing)? on each other\b|\bfolded levels\b"),
+)
 
 
 def _need(msg):
@@ -526,14 +593,18 @@ def _normalize(doc, q, raw):
         k = m.group(1)
         return ({"block": "A", "circle": "B", "hybrid": "C"}.get(k, k.upper()), "provided", None)
     if qid == "funnel_shape":
-        if pick and pick.startswith("Levels") or "level" in low:
-            return "folded_levels", "provided", None
-        if pick == "A few packages" or "package" in low or "multiple" in low:
-            return "multiple_options", "provided", None
-        if pick == "One offer" or "single" in low or low in ("one", "one offer"):
-            return "single_simple", "provided", None
+        exact = next((c for c in ch if _norm(c) == low), None)  # an exact choice first
+        if exact:
+            return ("folded_levels" if exact.startswith("Levels") else "multiple_options" if exact == "A few packages"
+                    else "single_simple"), "provided", None
         if text in ("single_simple", "multiple_options", "folded_levels"):
             return text, "provided", None
+        # free text: anchored phrases only, a negated mention ("no levels") never counts, and
+        # anything that is not exactly one shape is asked back, never guessed
+        pos = re.sub(r"\b(?:no|not|without|never|don'?t (?:want|have|need))\s+(?:\w+\s+){0,2}?(?:levels?|packages?|tiers?|options)\b", " ", low)
+        hits = [k for k, rx in _FUNNEL_SHAPES if re.search(rx, pos)]
+        if len(hits) == 1:
+            return hits[0], "provided", None
         return _need("Is it one offer, a few packages to choose from, or levels that build on each other?")
     if qid == "page_set":
         if low in ("all", "core"):
@@ -590,18 +661,20 @@ def _normalize(doc, q, raw):
             return "no", "provided", None
         return _need("A simple yes or no please.")
     if qid == "price":
-        if pick == "It is free" or low in ("free", "it is free", "0"):
-            return {"amount_minor": 0, "currency": "USD"}, "provided", None
-        if isinstance(text, dict):
-            if text.get("rationale"):  # a suggestion with its reasoning stays a proposal
-                return text, "suggested", "Suggested price; it needs your approval."
-            return text, "provided", None
-        m = _money(text)
+        if isinstance(text, dict):  # a dict skips the parser: only a reasoned suggestion is kept, as a proposal
+            bad = _bad_price(text)
+            if bad or not text.get("rationale"):
+                return _need(bad or "Send the price as the client's own words, like $497; a pre-built price is not accepted.")
+            return text, "suggested", "Suggested price; it needs your approval."
+        free = pick == "It is free" or low in ("free", "it is free")
+        m, why = ({"amount_minor": 0, "currency": "USD"}, None) if free else _parse_money(text)
         if m and pick != "Suggest one for me to review":
+            if m["amount_minor"] <= 0 and doc.get("meta", {}).get("mode") == "bf":
+                return _need("A free main offer is not valid in the Black Friday launcher. Is this a lead magnet? A lead magnet needs another journey mode. What paid price should I use for the main offer?")
             return m, "provided", None
         if pick == "Suggest one for me to review" or "suggest" in low:
             return _need("Tell me what it includes and roughly who buys it. I will suggest a range with my reasoning for you to approve.")
-        return _need("What price should I use? A number like 497 is fine.")
+        return _need(why)
     if t == "money":  # paid_render_approval
         if pick in ("No paid pieces", "Decide later") or low.startswith("no") or low.startswith("decide"):
             return {"approved": False, "decide_later": pick == "Decide later"}, "provided", None
@@ -659,21 +732,31 @@ def _normalize(doc, q, raw):
         return {"community_url": url.group(0).rstrip(".,;"), "bonus": bonus, "founder_text_confirmed": True}, "provided", None
     if t == "packages":
         rows = text if isinstance(text, list) else [ln for ln in str(text).splitlines() if ln.strip()]
-        pk = []
+        pk, bad, st = [], [], "provided"
         for row in rows:
             if isinstance(row, dict):
+                err = _bad_package(row)
+                if err:
+                    return _need(err)
+                if row.get("price_status") == "recommended_unapproved":
+                    st = "suggested"
                 pk.append(row)
                 continue
-            sym = re.findall(r"[\$€£]\s*\d[\d,]*(?:\.\d+)?", row)
-            m = _money(sym[-1]) if sym else _money(row.split("|")[-1]) if "|" in row else None
-            name = re.split(r"\s*(?:\||:|\s-\s|\(|\$|€|£)\s*", row.strip(" -*\u2022"), maxsplit=1)[0].strip()
-            rest = [x.strip() for x in re.split(r"\|", row)[1:] if x.strip() and not re.fullmatch(r"[\$€£]?\s*[\d,.]+(\s*(usd|eur|gbp))?", x.strip(), re.I)]
+            sym = re.findall(r"[$\u20ac\u00a3]\s*\d[\d,]*(?:\.\d+)?", row)
+            cell = row.split("|")[-1].strip() if "|" in row else sym[0] if len(sym) == 1 else None
+            m = _money(cell) if cell else None
+            name = re.split(r"\s*(?:\||:|\s-\s|\(|\$|\u20ac|\u00a3)\s*", row.strip(" -*\u2022"), maxsplit=1)[0].strip()
+            rest = [x.strip() for x in re.split(r"\|", row)[1:] if x.strip() and not re.fullmatch(r"[\$\u20ac\u00a3]?\s*[\d,.]+(\s*[A-Za-z]{3})?", x.strip(), re.I)]
             inc = [i.strip() for r in rest for i in re.split(r";", r) if i.strip()]
-            if name and m:
+            if name and m and m["amount_minor"] > 0:
                 pk.append({"display_name": name, "deliverables": inc, "price": m})
-        if len(pk) < 2 or any(not (p.get("display_name") and isinstance(p.get("price"), dict)) for p in pk):
+            else:
+                bad.append(row.strip()[:60])
+        if bad:
+            return _need("I could not read one clear price in: " + "; ".join(bad) + ". Each package needs a name and one price, like: Premium | 12 lessons; 4 live calls | $497")
+        if len(pk) < 2:
             return _need("I need at least two, each with a name and a price, one per line. For example: Premium | 12 lessons; 4 live calls | $497")
-        return pk, "provided", None
+        return pk, st, None
     if t == "list":
         items = text if isinstance(text, list) else [s.strip(" -*•") for s in re.split(r"\n|;|,(?=\s)", text) if s.strip(" -*•")]
         return (items, "provided", None) if items else _need("Please give me at least one.")
@@ -684,9 +767,88 @@ def _normalize(doc, q, raw):
     return text, "provided", None
 
 
-def record(doc, qid, value, *, source="client", status=None, note=None):
+# The commercial answers a client must have said in their own words. Each one recorded as
+# 'provided' cites a source_message_ref that resolves to a CLIENT message in the transcript
+# store, so an agent-chosen price or shape can never pass as the client's answer.
+CITED_QUESTIONS = ("price", "packages", "deliverables", "funnel_shape", "entitlement")
+_CLIENT_ROLES = ("client", "user", "customer", "inbound")
+TRANSCRIPT_LOOKUP = None  # tests / a harness may set a callable(ref) -> {"role", "text"} or None
+
+
+def client_message(ref):
+    """The text of the client message `ref` names in the transcript store, or None.
+    The store is the JSON or JSONL file named by CLIENT_INTAKE_TRANSCRIPT_STORE (an operator
+    setting the agent does not write): messages {id, role, text}. A missing store, an unknown
+    id or a non-client role all resolve to None."""
+    if not isinstance(ref, str) or not ref.strip():
+        return None
+    if TRANSCRIPT_LOOKUP is not None:
+        msg = TRANSCRIPT_LOOKUP(ref.strip())
+    else:
+        path = os.environ.get("CLIENT_INTAKE_TRANSCRIPT_STORE")
+        msg = None
+        try:
+            raw = Path(path).read_text(encoding="utf-8") if path else ""
+            try:
+                rows = json.loads(raw)
+                rows = rows.get("messages", []) if isinstance(rows, dict) else rows
+            except ValueError:
+                rows = [json.loads(ln) for ln in raw.splitlines() if ln.strip()]
+            msg = next((r for r in rows if isinstance(r, dict) and str(r.get("id", r.get("message_id"))) == ref.strip()), None)
+        except (OSError, ValueError, TypeError):
+            msg = None
+    if not isinstance(msg, dict) or str(msg.get("role", "")).lower() not in _CLIENT_ROLES:
+        return None
+    text = msg.get("text", msg.get("content"))
+    return text if isinstance(text, str) and text.strip() else None
+
+
+def _numbers(text):
+    return {Decimal(n.replace(",", "")) for n in re.findall(r"\d[\d,]*(?:\.\d+)?", text)}
+
+
+def _client_said(doc, q, raw, v, msg):
+    """True when the cited client message really carries this answer: the raw text sits inside
+    it, or the message on its own normalizes to the same answer. Listed items and package
+    prices must each appear in it."""
+    nm = _norm(msg)
+    if isinstance(raw, str):
+        if _norm(raw) and _norm(raw) in nm:
+            return True
+        out = _normalize(doc, q, msg)
+        return isinstance(out, tuple) and out[0] == v
+    nums = _numbers(msg)
+    for it in raw if isinstance(raw, list) else []:
+        if isinstance(it, dict):
+            if Decimal(it["price"]["amount_minor"]) / 100 not in nums:
+                return False
+        elif _norm(it) not in nm:
+            return False
+    return isinstance(raw, list) and bool(raw)
+
+
+def _refused(code, message):
+    return {"ok": False, "error": code, "message": message}
+
+
+def _cite_error(doc, q, raw, v, source, ref):
+    """None when a 'provided' commercial answer is properly cited, else the refusal."""
+    if source != "client":
+        return _refused("source_not_client", f"{q['id']} is a commercial answer: its source must be the client, not {source!r}.")
+    msg = client_message(ref)
+    if msg is None:
+        return _refused("source_message_ref_required",
+                        f"{q['id']} is a never-default commercial answer. Cite a source_message_ref that resolves to the client's own message in the transcript store.")
+    if not _client_said(doc, q, raw, v, msg):
+        return _refused("source_message_mismatch", f"The cited client message does not say this {q['id']}. Cite the message where the client said it.")
+    return None
+
+
+def record(doc, qid, value, *, source="client", status=None, note=None, source_message_ref=None):
     """Store an answer. Returns {"ok": True, ...}; {"ok": False, "message"} when the answer is incomplete;
-    or the help payload when the client said they do not know."""
+    or the help payload when the client said they do not know. Price, packages, deliverables, funnel
+    shape and entitlement recorded as provided need source_message_ref (see CITED_QUESTIONS). A price is
+    echoed back first ("I heard USD 497.00, correct?") and recorded only after the client says yes."""
     q = question(qid)
     if wants_help(q, value):
         return resolve_unknown(doc, qid)
@@ -694,14 +856,45 @@ def record(doc, qid, value, *, source="client", status=None, note=None):
         reply = _help_reply(doc, q, value)  # a reply to the help message: logo, website, 1-3, "yes", feel words
         if reply is not None:
             return reply
-    out = _normalize(doc, q, value)
+    ref = source_message_ref
+    pend = ((get(doc, qid) or {}).get("pending") or {}) if qid == "price" else {}
+    reply = _norm(value) if isinstance(value, str) else ""
+    confirmed = bool(pend.get("money")) and reply in _YES
+    if pend.get("money") and reply in ("no", "n", "nope"):
+        _set(doc, qid, None, "unknown", "client", keep_count=False)
+        return _need(_PRICE_QUESTION)
+    if confirmed:  # the client said yes to the echo: the price came from the earlier message
+        out, raw = (pend["money"], "provided", None), pend["raw"]
+        err = _cite_error(doc, q, raw, pend["money"], source, pend.get("ref")) or (
+            _refused("source_message_ref_required", "Cite the message where the client said yes.") if client_message(ref) is None else None)
+        if err:
+            return err
+        ref_for_entry = pend["ref"]
+    else:
+        out = _normalize(doc, q, value)
+        ref_for_entry = ref
     if isinstance(out, dict):
         return out
     v, st, nt = out
+    if qid in CITED_QUESTIONS and status == "provided" and st != "provided":
+        return _refused("status_not_provided", f"{qid} was not given as a final answer, so it cannot be recorded as provided.")
     st = status or st
     if q["never_default"] and st == "default_to_confirm":
         raise ValueError(f"{qid} is never defaulted")
+    if qid in CITED_QUESTIONS and st == "provided" and not confirmed:
+        err = _cite_error(doc, q, value, v, source, ref)
+        if err:
+            return err
+        if qid == "price":  # echo first; nothing is recorded until the client says yes
+            _pend(doc, qid, money=v, ref=ref, raw=value)
+            shown = "free (USD 0.00)" if v["amount_minor"] == 0 else f"{v['currency']} {v['amount_minor'] / 100:,.2f}"
+            assumed = "" if re.search(r"[A-Za-z$\u20ac\u00a3]", str(value)) else " (no currency given, so I took USD)"
+            return {"ok": False, "action": "confirm_price", "heard": v, "message": f"I heard {shown}{assumed}, correct? Say yes to record it, or give me the right price."}
     e = _set(doc, qid, v, st, source, note or nt)
+    if qid in CITED_QUESTIONS and st == "provided":
+        e["source_message_ref"] = ref_for_entry
+        if confirmed:
+            e["confirmation_ref"] = ref
     if st == "unknown":
         e["unknown_count"] = e.get("unknown_count", 0) + 1
     autofill_roles(doc)
@@ -1260,8 +1453,18 @@ def to_launch_known(doc):
 def image_inputs(doc):
     """The C3 image inputs these answers decide (the lanes add brand_file and refs)."""
     v = view(doc)
+    pra = v.get("paid_render_approval") or {}
+    approved = bool(pra.get("approved"))
+    # the money and the Command Center approval id go to image_plan.resolve as paid_render_approval_ref (+ cap and
+    # currency); 83 verifies the record itself. "No paid pieces" / "Decide later" carry no ref and allow nothing paid,
+    # and a free-text yes is never an approval ref.
+    ref = pra.get("approval_id") if approved and isinstance(pra.get("approval_id"), str) and pra["approval_id"].strip() else None
     return {"design_style": v.get("design_style"), "image_cap": v.get("image_cap"), "image_provider": v.get("image_provider"),
-            "paid_render_approved": bool((v.get("paid_render_approval") or {}).get("approved")), "page_set": v.get("page_set")}
+            "paid_render_approved": approved, "page_set": v.get("page_set"),
+            "paid_render_approval_ref": ref,
+            "image_cap_minor": pra.get("cap_minor") if ref else None,
+            "image_currency": pra.get("currency") if ref else None,
+            "allow_paid": ref is not None}
 
 
 # ---------------------------------------------------------------- CLI
@@ -1290,7 +1493,7 @@ def main(argv=None):
         q = next_question(doc)
         print(json.dumps(q, indent=2) if q else json.dumps({"done": True, "check": check(doc)}, indent=2))
     elif cmd == "record" and len(a) >= 4:
-        print(json.dumps(record(doc, a[2], a[3]), indent=2))
+        print(json.dumps(record(doc, a[2], a[3], source_message_ref=_flag(a, "--ref")), indent=2))
     elif cmd == "help" and len(a) >= 3:
         print(json.dumps(resolve_unknown(doc, a[2], logo=_flag(a, "--logo"), website=_flag(a, "--site"), palette=_flag(a, "--palette"), mood=_flag(a, "--mood")), indent=2))
     elif cmd == "check":

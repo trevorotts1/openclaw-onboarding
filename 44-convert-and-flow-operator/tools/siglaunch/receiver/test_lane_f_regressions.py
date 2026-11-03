@@ -18,6 +18,12 @@ from receiver import (EXIT_BLOCKED, EXIT_OK, EXIT_VALIDATION, Receiver,
                       judge_receipt, plan_hash)
 from store import Store
 
+
+def _cc_approved(ref, kind, phash, scope, **kw):
+    """Stub approval_record.verify: the approval gate itself is proven in
+    test_receiver_approval.py; these suites test everything after the gate."""
+    return {"ok": True, "authority": "test-stub"}
+
 # Packaged layout: the fixture pair is vendored at
 # tools/siglaunch/fixtures/ (in the room layout the same tests
 # resolve rooms/S44/fixtures/ via parent.parent.parent).
@@ -164,7 +170,8 @@ class LaneFBase(unittest.TestCase):
 
     def receiver(self, fake):
         return Receiver(self.store, fake,
-                        configured_location=FAKE_LOCATION)
+                        configured_location=FAKE_LOCATION,
+                        approval_verifier=_cc_approved)
 
 
 class Gap1Tests(LaneFBase):

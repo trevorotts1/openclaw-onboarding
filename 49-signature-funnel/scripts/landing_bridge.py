@@ -47,7 +47,14 @@ The bridge config is a JSON object with exactly two sections:
               "launch_record": "<abs path to the launch record JSON>",
               "brand_file": "<abs path to the approved brand file>",
               "consent_statements": "<optional abs path to a JSON list
-                                      of {id, text, required} objects>"}
+                                      of {id, text, required} objects>",
+              "image_inputs": "<abs path; the shared image inputs file; REQUIRED unless draft>",
+              "image_plan": {"image_inputs": "<abs path, the same file>", "image_cap": <int>,
+                             "brand_owner": "<str>", "design_style": "A|B|C",
+                             "image_provider": "stub|kie"},   (the approved 83 image plan; REQUIRED
+                                                               unless draft; every value must equal
+                                                               the image inputs file and this config)
+              "draft": <optional bool; true declares an unfinished run>}
 
 page_kind: a funnel's main page is the 12-section signature SALES page, so a
 funnel run sets "sales" (Standard or Long-Form); "opt_in" is the signature
@@ -68,13 +75,27 @@ runs' artifacts listed (the opt-in run's paths are prefixed with its run directo
 landing role is never reported ahead of either page. The route graph is unchanged: the opt-in page is
 a second page of the landing role, not a new node.
 
-IMAGE STAGES: with "landing"."image_inputs" (the shared image inputs file) the bridge also DRAWS the
+IMAGE STAGES: with "landing"."image_inputs" (the shared image inputs file; a run that is not a declared
+draft must have it, because a landing lane that drew nothing is refused) the bridge also DRAWS the
 page's desktop wireframe, mobile wireframe and visual mockup stages through Skill 71's own request
 builder and stage executor, with the client's design style, instead of only reporting the gate's
 verdict. The page copy is the run's copy/internal-manuscript.md (staged from "landing"."manuscript"
-when given); with no copy yet the bridge says so ("waiting_for_copy") and draws nothing. Every design
-file the stages made is listed in the page result. The free stub provider is the default; the paid
-provider needs the inputs file's recorded approval.
+when given); with no copy yet the bridge says so ("waiting_for_copy") and draws nothing (a refusal
+unless the run is a declared draft). The copy is checked against Skill 71's copy structure gate
+(validate_copy_structure.py, the spec of the run's page_version) BEFORE anything is drawn; a manuscript
+that fails it is refused and nothing is drawn, draft or not. Every design file the stages made is
+listed in the page result. The free stub provider is the default; the paid provider needs the inputs
+file's recorded approval, and draws with the model Skill 66 resolves at dispatch time (shared-utils/
+signature_launch/image_model.py), recorded in the summary and in every production request.
+
+The image inputs file, the approved image plan, the config's image_cap and brand_owner must all agree
+(cap, owner, style, provider, file); any difference is a refusal before anything is staged.
+
+STAGE GATE AND DRAFTS: the stage gate's "report" exit is honoured. Anything but exit 0 means production
+is not closed, and the bridge refuses (exit 2) so an unfinished page is never delivered as built. Only a
+config that declares "landing"."draft": true places a result with an open gate; the draft flag, the gate
+exit and the receipt validation mode are written to bridge-receipt-<result name>.json beside the result
+and named in the summary, so a later assemble/check can refuse a draft or a vendored-schema fallback.
 
 FAIL-CLOSED DISCIPLINE: page_version, page_kind, brand_owner and image_cap come
 from the bridge config ONLY. The bridge never invents them (no
@@ -105,12 +126,13 @@ multi-session production process); the bridge records the gate's
 verdict and stops there. The result is then emitted by
 write_page_result.py and validated with the page-result 1.0 receipt
 rules (collect_launch_receipts.validate_result, imported when
-importable, else the vendored page-result schema via a stdlib schema
-check) BEFORE it is placed at the dispatch {result} path. An invalid
-result is never placed. When the fallback runs, its use is announced
-on stderr and named in the bridge summary ("receipt_validation"),
-and the fallback enforces the independent-review cross-check too,
-so the downgrade is visible and drops no receipt rule.
+importable from the sibling file beside this bridge and nowhere else, else
+the vendored page-result schema via a stdlib schema check) BEFORE it is
+placed at the dispatch {result} path. An invalid result is never placed.
+When the fallback runs, its use is announced on stderr, named in the bridge
+summary and in the receipt sidecar ("receipt_validation"), and the fallback
+enforces the independent-review cross-check too, so the downgrade is
+visible and drops no receipt rule.
 
 The pipeline command is substitutable through the bridge config
 ("landing"."pipeline_command": a non-empty argv list run with the run
@@ -128,7 +150,6 @@ import argparse
 import hashlib
 import importlib.util
 import json
-import os
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -315,14 +336,23 @@ def load_bridge_config(path: Path) -> Dict[str, Any]:
         if opt_in_run_dir == run_dir:
             raise BridgeError("bridge config: landing.opt_in.run_dir must differ "
                               "from landing.run_dir (one run directory per page)")
-    image_inputs = None
+    draft = landing.get("draft", False)
+    if not isinstance(draft, bool):
+        raise BridgeError("bridge config: landing.draft must be true or false when present")
+    image_inputs = inputs_path = None
     if landing.get("image_inputs") is not None:
         import page_set
+        inputs_path = _require_abs_path(landing, "image_inputs", "landing")
         try:
-            image_inputs = page_set.load_image_inputs(
-                _require_abs_path(landing, "image_inputs", "landing"))
+            image_inputs = page_set.load_image_inputs(inputs_path)
         except page_set.PageSetError as exc:
             raise BridgeError(f"bridge config: {exc}")
+        _check_image_plan(landing, inputs_path, image_inputs, image_cap, brand_owner)
+    elif not draft:
+        raise BridgeError(
+            "bridge config: landing.image_inputs is missing, so this landing lane would draw nothing "
+            "(no wireframes, no mockups); the lane is refused. Set landing.image_inputs to the shared image "
+            "inputs file of the approved image plan, or declare landing.draft true for an unfinished run")
     manuscripts = {}
     for key, section, label in (("manuscript", landing, "landing"),
                                 ("opt_in_manuscript", opt_in or {}, "landing.opt_in")):
@@ -351,9 +381,43 @@ def load_bridge_config(path: Path) -> Dict[str, Any]:
         "pipeline_command": pipeline_command,
         "opt_in_run_dir": opt_in_run_dir,
         "image_inputs": image_inputs,
+        "image_inputs_file": inputs_path,
+        "draft": draft,
         "manuscript": manuscripts.get("manuscript"),
         "opt_in_manuscript": manuscripts.get("opt_in_manuscript"),
     }
+
+
+def _check_image_plan(landing: Dict[str, Any], inputs_path: Path, inputs: Dict[str, Any],
+                      image_cap: int, brand_owner: str) -> None:
+    """The look, provider, spend cap and owner the page is drawn with must be the ones the client
+    approved in the 83 image plan (STR-16). The plan rides in landing.image_plan; the image inputs
+    file, this config's image_cap and brand_owner, and the plan must all agree, or the lane is refused."""
+    for key, mine in (("image_cap", image_cap), ("brand_owner", brand_owner)):
+        if inputs.get(key) != mine:
+            raise BridgeError(
+                f"bridge config: landing.{key} is {mine!r} but the image inputs file says {inputs.get(key)!r}; "
+                "one launch is drawn with one cap and one owner")
+    plan = landing.get("image_plan")
+    if plan is None:
+        if landing.get("draft"):
+            return
+        raise BridgeError("bridge config: landing.image_plan is missing; the approved image plan is what "
+                          "the image inputs, cap, owner and style are checked against")
+    if not isinstance(plan, dict):
+        raise BridgeError("bridge config: landing.image_plan must be an object")
+    planned_file = _require_abs_path(plan, "image_inputs", "landing.image_plan")
+    if planned_file.resolve() != inputs_path.resolve():
+        raise BridgeError(
+            f"bridge config: landing.image_inputs {inputs_path} is not the approved plan's image inputs "
+            f"file {planned_file}; another file could hold another provider, cap or style")
+    for key, mine in (("image_cap", inputs.get("image_cap")), ("brand_owner", inputs.get("brand_owner")),
+                      ("design_style", inputs.get("design_style")),
+                      ("image_provider", inputs.get("image_provider"))):
+        if plan.get(key) != mine:
+            raise BridgeError(
+                f"bridge config: the image inputs file has {key} {mine!r} but the approved image plan has "
+                f"{plan.get(key)!r}; the lane is drawn only with what the client approved")
 
 
 # ---------------------------------------------------------------------------
@@ -452,33 +516,24 @@ def resolve_graph_bytes(req: Dict[str, Any], work_dir: Path) -> bytes:
 # ---------------------------------------------------------------------------
 
 def _load_receipts_validator() -> (Optional[Any], Optional[str]):
-    """collect_launch_receipts.validate_result from the sibling
-    dispatch tree this bridge was staged with, when importable.
+    """collect_launch_receipts.validate_result from the sibling file
+    beside this bridge, when importable. No environment variable or
+    other directory can swap the validator (ENF-09).
 
     Returns (validate_result, None) on success, or (None, reason)
     when the module cannot be imported. The caller announces the
     fallback whenever the reason is not None, so the downgrade is
     never silent (independent review D2)."""
-    here = Path(__file__).resolve()
-    candidates = []
-    env = os.environ.get("S49_SCRIPTS_DIR")
-    if env:
-        candidates.append(Path(env))
-    for parent in here.parents:
-        candidates.append(parent / "49-signature-funnel" / "scripts")
-    for cand in candidates:
-        target = cand / "collect_launch_receipts.py"
-        if target.is_file():
-            try:
-                spec = importlib.util.spec_from_file_location(
-                    "collect_launch_receipts", target)
-                mod = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(mod)
-                return mod.validate_result, None
-            except Exception as exc:
-                return None, f"{target} could not be imported ({exc})"
-    return None, ("no collect_launch_receipts.py found under "
-                  "S49_SCRIPTS_DIR or the sibling dispatch tree")
+    target = Path(__file__).resolve().parent / "collect_launch_receipts.py"
+    if not target.is_file():
+        return None, f"no collect_launch_receipts.py beside the bridge ({target})"
+    try:
+        spec = importlib.util.spec_from_file_location("collect_launch_receipts", target)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.validate_result, None
+    except Exception as exc:
+        return None, f"{target} could not be imported ({exc})"
 
 
 def _schema_violations(instance: Any, schema: Dict[str, Any],
@@ -649,6 +704,43 @@ _STATUS_RANK = ("blocked", "authored", "locally_verified", "installed_test_verif
 IMAGE_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup")
 
 
+def _resolve_image_model(provider: str) -> str:
+    """The image-to-image model the paid stages draw with, resolved through Skill 66 now (IMG-19).
+    The free stub provider has no model. Skill 66 missing or silent is a refusal, never a literal id."""
+    if provider == "stub":
+        return "STUB-NO-MODEL"
+    path = Path(__file__).resolve().parents[2] / "shared-utils" / "signature_launch" / "image_model.py"
+    try:
+        spec = importlib.util.spec_from_file_location("signature_launch_image_model", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.resolve()
+    except Exception as exc:  # ImageModelError, a missing file, a broken Skill 66 tree
+        raise BridgeError(f"image model: Skill 66 did not resolve the image-to-image model ({exc}); "
+                          "nothing is drawn")
+
+
+def _check_copy(cfg: Dict[str, Any], manuscript: Path, page_version: str) -> None:
+    """Skill 71's copy structure gate (char/word bands, CTA positions, handoff) on the manuscript the
+    pages are about to be drawn from. A hard failure refuses the lane before anything is drawn (STR-07)."""
+    root = cfg["skill_root"]
+    spec = root / "references" / "copy-specs" / f"{page_version}-v6.json"
+    cmd = [cfg["python"], str(root / "scripts" / "validate_copy_structure.py"), str(manuscript),
+           "--spec", str(spec), "--json"]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600.0)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise BridgeError(f"Skill 71 copy structure gate: {exc}")
+    if proc.returncode != 0:
+        try:
+            fails = json.loads(proc.stdout).get("fails") or []
+        except ValueError:
+            fails = []
+        detail = "; ".join(fails[:6]) or (proc.stdout + proc.stderr).strip()[:600]
+        raise BridgeError(f"copy structure gate failed (exit {proc.returncode}) for {manuscript}: {detail}. "
+                          "The copy is not drawn; fix the manuscript first")
+
+
 def _draw_images(cfg: Dict[str, Any], run_dir: Path, page_kind: str,
                  page_version: str) -> Dict[str, Any]:
     """Draw the page's three image stages through Skill 71's request builder and stage executor.
@@ -656,6 +748,11 @@ def _draw_images(cfg: Dict[str, Any], run_dir: Path, page_kind: str,
     Needs the page copy at <run_dir>/copy/internal-manuscript.md (staged from landing.manuscript
     when given). With none, nothing is drawn and the summary says "waiting_for_copy"."""
     inputs, root, python = cfg["image_inputs"], cfg["skill_root"], cfg["python"]
+    # The resolved model rides with the inputs every request of this run is built from (IMG-19). The shared
+    # inputs file stays untouched (page_set.load_image_inputs rejects unknown keys); the record sits in the run.
+    (run_dir / "image-inputs.resolved.json").write_text(
+        json.dumps({**inputs, "image_inputs_file": str(cfg["image_inputs_file"])}, indent=2, sort_keys=True,
+                   default=str) + "\n", encoding="utf-8")
     source = cfg["opt_in_manuscript"] if run_dir == cfg["opt_in_run_dir"] else cfg["manuscript"]
     if source is not None:
         _stage_file(run_dir, "copy/internal-manuscript.md", _read_bytes(source, "manuscript"), "manuscript")
@@ -663,8 +760,9 @@ def _draw_images(cfg: Dict[str, Any], run_dir: Path, page_kind: str,
     if not manuscript.is_file():
         return {"status": "waiting_for_copy",
                 "note": f"no page copy at {manuscript}; the stages are drawn once the copy exists"}
+    _check_copy(cfg, manuscript, page_version)
     provider = inputs["image_provider"]
-    model = "STUB-NO-MODEL" if provider == "stub" else "gpt-image-2-5-sunburst-image-to-image"
+    model = cfg["image_model"]
     for stage in IMAGE_STAGES:
         request_name = f"production-request-{stage}.json"
         build = [python, str(root / "scripts" / "build_production_request.py"),
@@ -679,8 +777,8 @@ def _draw_images(cfg: Dict[str, Any], run_dir: Path, page_kind: str,
         if inputs["allow_paid"]:
             draw.append("--allow-paid")
         _run(draw, f"Skill 71 stage_executor ({stage})", timeout=1800.0)
-    return {"status": "drawn", "provider": provider, "design_style": inputs.get("design_style"),
-            "stages": list(IMAGE_STAGES)}
+    return {"status": "drawn", "provider": provider, "model": model,
+            "design_style": inputs.get("design_style"), "stages": list(IMAGE_STAGES)}
 
 
 def _produce(cfg: Dict[str, Any], req: Dict[str, Any], request_raw: bytes,
@@ -715,6 +813,8 @@ def _produce(cfg: Dict[str, Any], req: Dict[str, Any], request_raw: bytes,
     inputs = cfg.get("image_inputs")
     if inputs and inputs.get("design_style"):
         intake_argv += ["--design-style", inputs["design_style"]]
+    if inputs and inputs.get("creative_direction"):
+        intake_argv += ["--creative-direction", inputs["creative_direction"]]
     _run(intake_argv, "Skill 71 write_intake (launch-context import)",
          timeout=600.0)
 
@@ -740,6 +840,12 @@ def _produce(cfg: Dict[str, Any], req: Dict[str, Any], request_raw: bytes,
                             "means every required stage is closed, any "
                             "other exit means production is still in "
                             "progress in the run directory"}
+        if proc.returncode != 0 and not cfg["draft"]:
+            detail = (proc.stdout + proc.stderr).strip()[:400]
+            raise BridgeError(
+                f"Skill 71 stage_gate report exited {proc.returncode} for {run_dir}: production is not "
+                "closed (copy gate, wireframes, review), so the page is not delivered. Declare "
+                f"landing.draft true to place an unfinished run as a draft. {detail}")
 
     # Phase 3: emit the page result inside the run, validate it with
     # S49's receipt rules.
@@ -825,6 +931,9 @@ def bridge(request_path: Path, result_path: Path, work_dir: Path,
            config_path: Path, landing_pages: Optional[List[str]] = None) -> Dict[str, Any]:
     cfg = load_bridge_config(config_path)
     _check_planned_pages(cfg, landing_pages)
+    if cfg["image_inputs"]:  # resolve once, now, and record it with the inputs every request is built from
+        cfg["image_model"] = cfg["image_inputs"]["image_model"] = _resolve_image_model(
+            cfg["image_inputs"]["image_provider"])
     req, request_raw = check_request(request_path)
 
     run_dir: Path = cfg["run_dir"]
@@ -851,6 +960,11 @@ def bridge(request_path: Path, result_path: Path, work_dir: Path,
             f"{req['copy_profile']!r}, but the opt-in page is Long-Form only and "
             "the plan-bound copy profile cannot be changed here; dispatch the "
             "full funnel with copy_profile 'long-form'")
+    if cfg["page_version"] != req["copy_profile"]:
+        raise BridgeError(
+            f"page-request: the approved copy_profile is {req['copy_profile']!r} but landing.page_version is "
+            f"{cfg['page_version']!r}; the sales page is built only in the copy form the client approved "
+            "(Standard 12 or Long-Form 15)")
     brand_raw = _read_bytes(cfg["brand_file_cfg"], "brand file")
     if _sha256(brand_raw) != req["brand_hash"]:
         raise BridgeError(
@@ -891,6 +1005,14 @@ def bridge(request_path: Path, result_path: Path, work_dir: Path,
         summary = {"opt_in_run_dir": str(opt_dir), "opt_in_pipeline": o_pipeline,
                    "opt_in_result_status": o_result.get("status"),
                    "opt_in_receipt_validation": o_mode}
+    if not cfg["draft"]:  # a landing lane that drew nothing is not a delivered page (STR-16)
+        for key, pipe in [(main_key, pipeline)] + ([("landing", o_pipeline)] if opt_dir is not None else []):
+            status = (pipe.get("images") or {}).get("status")
+            if status != "drawn":
+                raise BridgeError(
+                    f"page {key}: the landing lane drew nothing (images: {status or 'not requested'}); "
+                    "it is not delivered. Give the lane its page copy and image inputs, or declare "
+                    "landing.draft true")
     designs = _check_designs([(main_key, run_dir, pipeline), ("landing", opt_dir, o_pipeline)])
     if designs:
         summary["designs"] = designs
@@ -901,6 +1023,16 @@ def bridge(request_path: Path, result_path: Path, work_dir: Path,
         placed = merged_path.read_bytes()
     result_path.parent.mkdir(parents=True, exist_ok=True)
     result_path.write_bytes(placed)
+    # What a later assemble/check needs to refuse an unfinished or downgraded delivery (ENF-09); the
+    # page-result schema is closed, so it rides beside the result, not inside it.
+    receipt = {"request_id": req["request_id"], "draft": cfg["draft"],
+               "receipt_validation": validation_mode, "pipeline_exit": pipeline.get("exit"),
+               "image_model": cfg.get("image_model")}
+    if opt_dir is not None:
+        receipt.update(opt_in_receipt_validation=summary["opt_in_receipt_validation"],
+                       opt_in_pipeline_exit=o_pipeline.get("exit"))
+    receipt_path = result_path.parent / f"bridge-receipt-{result_path.stem}.json"
+    receipt_path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     return {
         "role": ROLE,
         "request_id": req["request_id"],
@@ -909,6 +1041,8 @@ def bridge(request_path: Path, result_path: Path, work_dir: Path,
         "result_status": result.get("status"),
         "proof_class": result.get("proof_class"),
         "receipt_validation": validation_mode,
+        "draft": cfg["draft"],
+        "bridge_receipt": str(receipt_path),
         "pipeline": pipeline,
         **summary,
     }

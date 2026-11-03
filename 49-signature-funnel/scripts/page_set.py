@@ -75,14 +75,28 @@ def slug_of(page_key: str) -> str:
 def deliverables_for(page_key: str) -> List[Dict[str, Any]]:
     """The page's deliverables with {slug} resolved (a copy; callers may not mutate the file)."""
     slug = slug_of(page_key)
-    return [dict(d, glob=d["glob"].format(slug=slug)) for d in page_types()["deliverables"]]
+    return [dict(d, **{k: d[k].format(slug=slug) for k in ("glob", "labeled_glob") if k in d})
+            for d in page_types()["deliverables"]]
+
+
+def images_per_section() -> int:
+    """Section images the drawn stages make per section: one per image deliverable (desktop and
+    mobile wireframe, desktop and mobile mockup), read from the deliverables, never a typed 4."""
+    return sum(1 for d in page_types()["deliverables"] if d["needs"] == "images")
 
 
 def image_estimate(page_key: str, long_form: bool = False) -> int:
-    """Images one page makes: 4 per section (desktop + mobile wireframe, desktop + mobile mockup)."""
+    """Images one page makes: images_per_section() for every section of its copy form."""
     p = page_types()["pages"][page_key]
     n = p.get("long_form_sections", p["sections"]) if long_form else p["sections"]
-    return 4 * int(n)
+    return images_per_section() * int(n)
+
+
+def section_counts(page_key: str, long_form: Optional[bool] = None) -> List[int]:
+    """The section counts a page's image set may have: its copy form's (None = either form)."""
+    p = page_types()["pages"][page_key]
+    short, long_ = int(p["sections"]), int(p.get("long_form_sections", p["sections"]))
+    return sorted({long_} if long_form else {short} if long_form is False else {short, long_})
 
 
 def _entry(page_key: str, shape: str, source: str) -> Dict[str, Any]:
@@ -163,6 +177,23 @@ def legacy_page_set(funnel_size: int) -> Dict[str, Any]:
             "to_confirm": []}
 
 
+def offered_image_ceilings(page_set: Dict[str, Any]) -> Dict[str, Any]:
+    """The picture ceilings to offer the client for THIS page set, never a fixed 12/24/36.
+
+    `per_page` shows every page's own image count; `options` are the caps worth choosing, one per
+    lane in page order: each is the running total and names the lanes it builds. A cap between two
+    options builds the same lanes as the lower one, so only these are offered; the last option
+    (`total`) builds every page. A cap below the first option builds nothing."""
+    per_page = [{"page_key": p["page_key"], "label": p["label"], "image_estimate": p["image_estimate"]}
+                for p in page_set["pages"]]
+    options, running, built = [], 0, []
+    for lane in lane_plan(page_set)["parallel"]:
+        running += lane["image_estimate"]
+        built.append(lane["lane"])
+        options.append({"image_cap": running, "builds": list(built)})
+    return {"per_page": per_page, "total": sum(x["image_estimate"] for x in per_page), "options": options}
+
+
 def plain_summary(page_set: Dict[str, Any]) -> str:
     """The page list in plain English for the client, with anything we chose for them marked
     'to confirm' and how to change it. Short lines, no jargon."""
@@ -202,47 +233,97 @@ def lane_plan(page_set: Dict[str, Any]) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------------------------
 # Deliverable completeness
 # ---------------------------------------------------------------------------------------------
-def check_deliverables(page_key: str, run_dir: Path, *, rendered: bool) -> Dict[str, Any]:
+def check_deliverables(page_key: str, run_dir: Path, *, rendered: bool,
+                       long_form: Optional[bool] = None) -> Dict[str, Any]:
     """Which deliverables of this page exist in run_dir.
 
     `rendered` says the paid provider composed PDFs and boards; on a stub run those are reported in
-    `render_pending` and the page is NOT complete (images_complete only)."""
+    `render_pending` and the page is NOT complete (images_complete only).
+
+    A section-image kind is present only with one image per section of the page's copy form
+    (section_counts; `long_form` None accepts either) and the same count in every kind. A kind with
+    any other count (1 of 15 landing sections, a set from the other copy form) is named in
+    `wrong_count` and in `missing`, so it is never complete.
+
+    A deliverable with a `labeled_glob` also has the labeled client copies Skill 71 writes to
+    review-pdfs/<device>-<kind>s/ on the paid provider: these are the files the launcher's design check
+    counts, so they are listed in `files`, and a `rendered` run without them names the deliverable in
+    `labeled_missing` and is not complete. (The mockup ones exist only after final-mockups closes.)"""
     run_dir = Path(run_dir)
     present, missing, render_pending, files = [], [], [], []
+    allowed = section_counts(page_key, long_form)
+    found_by = {d["id"]: sorted(p for p in run_dir.glob(d["glob"]) if p.is_file())
+                for d in deliverables_for(page_key)}
+    counts = {d["id"]: len(found_by[d["id"]]) for d in deliverables_for(page_key) if d["needs"] == "images"}
+    labeled = {d["id"]: sorted(p for p in run_dir.glob(d["labeled_glob"]) if p.is_file())
+               for d in deliverables_for(page_key) if "labeled_glob" in d}
+    reference = max(counts.values(), default=0)
+    wrong_count = [i for i, n in counts.items() if n and (n not in allowed or n != reference)]
     for d in deliverables_for(page_key):
-        found = sorted(p for p in run_dir.glob(d["glob"]) if p.is_file())
-        if found:
+        found = found_by[d["id"]]
+        if found and d["id"] in wrong_count:
+            files += found
+            missing.append(d["id"])
+        elif found:
             present.append(d["id"])
             files += found
         elif d["needs"] == "render" and not rendered:
             render_pending.append(d["id"])
         else:
             missing.append(d["id"])
-    return {"page_key": page_key, "present": present, "missing": missing,
+    files += [p for found in labeled.values() for p in found]
+    labeled_missing = [i for i, found in labeled.items() if rendered and not found]
+    return {"page_key": page_key, "present": present, "missing": missing, "labeled_missing": labeled_missing,
+            "section_counts": counts, "expected_sections": allowed, "wrong_count": wrong_count,
             "render_pending": render_pending, "files": [str(f) for f in files],
             "images_complete": not any(d["id"] in missing for d in deliverables_for(page_key)
                                        if d["needs"] == "images"),
-            "complete": not missing and not render_pending}
+            "complete": not missing and not render_pending and not labeled_missing}
 
 
-def design_artifacts(page_key: str, run_dir: Path, relative: bool = False) -> List[Dict[str, str]]:
-    """Every deliverable file of the page as page-result artifacts ({path, sha256}), sorted by path.
-    Includes the stage records so the result also shows which provider drew the images.
+def _record_provider(path: Path, key: str = "provider") -> Optional[str]:
+    """The provider a stage record (or the visual bible) names, or None when unreadable or absent."""
+    try:
+        value = json.loads(Path(path).read_text(encoding="utf-8"))[key]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return value if isinstance(value, str) and value else None
+
+
+def design_artifacts(page_key: str, run_dir: Path, relative: bool = False,
+                     with_provider: bool = False) -> List[Dict[str, Any]]:
+    """Every deliverable file of the page as page-result artifacts ({path, sha256}), sorted by path;
+    with_provider=True adds `provider` to every artifact (the package manifest form the stub guard
+    reads). The page-result 1.0 schema allows only path and sha256 per artifact, so a result that is
+    validated against it keeps the default until that schema names `provider`. Includes the stage records so the result also shows which provider drew the images.
+    `provider` is read from the stage-executor-record.json of the stage folder the file sits in; a file
+    outside a stage (review PDFs, boards, the visual bible) takes the run's provider, which is "stub"
+    as soon as any stage was drawn by the stub, so the stub guard sees it. None = no record names one.
     relative=True names each path from run_dir (the form Skill 71's own page results use)."""
     run_dir = Path(run_dir)
     paths = set(check_deliverables(page_key, run_dir, rendered=True)["files"])
     paths |= {str(p) for p in run_dir.glob("*/stage-executor-record.json")}
     paths |= {str(p) for p in run_dir.glob("visual-bible.json")}
+    stage = {d.name: _record_provider(d / "stage-executor-record.json") for d in run_dir.iterdir() if d.is_dir()}
+    seen = {v for v in stage.values() if v}
+    run_wide = "stub" if "stub" in seen else (sorted(seen)[0] if seen else None)
     shown = (lambda p: str(Path(p).relative_to(run_dir))) if relative else (lambda p: p)
-    return sorted(({"path": shown(p), "sha256": hashlib.sha256(Path(p).read_bytes()).hexdigest()}
-                   for p in paths), key=lambda a: a["path"])
+
+    def provider(p: str) -> Optional[str]:
+        parts = Path(p).relative_to(run_dir).parts
+        return stage.get(parts[0]) or run_wide if len(parts) > 1 else run_wide
+
+    return sorted(({"path": shown(p), "sha256": hashlib.sha256(Path(p).read_bytes()).hexdigest(),
+                    **({"provider": provider(p)} if with_provider else {})} for p in paths),
+                  key=lambda a: a["path"])
 
 
 # ---------------------------------------------------------------------------------------------
 # C3: the shared image inputs file
 # ---------------------------------------------------------------------------------------------
 IMAGE_INPUT_KEYS = ("design_style", "brand_file", "brand_owner", "image_cap", "image_provider",
-                    "paid_render_approval_ref", "design_prose_ref", "visual_bible_ref", "test_only")
+                    "paid_render_approval_ref", "design_prose_ref", "visual_bible_ref", "test_only",
+                    "design_style_source", "creative_direction")
 
 
 def load_image_inputs(path) -> Dict[str, Any]:
@@ -263,6 +344,12 @@ def load_image_inputs(path) -> Dict[str, Any]:
     style = doc.get("design_style")
     if style is not None and style not in STYLES:
         raise PageSetError(f"image inputs: design_style must be A, B or C (or null to ask), got {style!r}")
+    src = doc.get("design_style_source")
+    if src is not None and src not in ("client_choice", "default_to_confirm"):
+        raise PageSetError(f"image inputs: design_style_source must be client_choice or default_to_confirm, got {src!r}")
+    cd = doc.get("creative_direction")
+    if cd is not None and not isinstance(cd, str):
+        raise PageSetError("image inputs: creative_direction must be text or null")
     cap = doc.get("image_cap")
     if isinstance(cap, bool) or not isinstance(cap, int) or cap < 0:
         raise PageSetError(f"image inputs: image_cap must be an integer >= 0, got {cap!r}")

@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-10-27T14:33:09.070948Z",
-  "count": 16,
+  "generated_at": "2026-11-02T17:24:24.468410Z",
+  "count": 19,
   "templates": [
     {
       "key": "launch-a/launch-a-prelaunch-window",
@@ -63,6 +63,16 @@
       "kind": "sequence_stack"
     },
     {
+      "key": "launch-b/abandoned-checkout-recovery",
+      "path": "launch-b/abandoned-checkout-recovery.json",
+      "kind": "sequence_stack"
+    },
+    {
+      "key": "launch-b/launch-b-retarget-visited-sales-no-checkout",
+      "path": "launch-b/retarget-visited-sales-no-checkout.json",
+      "kind": "sequence_stack"
+    },
+    {
       "key": "launch-b/launch-post-sale-purchase",
       "path": "launch-b/post-sale-purchase.json",
       "kind": "sequence_stack"
@@ -75,6 +85,11 @@
     {
       "key": "launch-c/failed-payment-recovery",
       "path": "launch-c/failed-payment-recovery.json",
+      "kind": "sequence_stack"
+    },
+    {
+      "key": "launch-c/launch-c-onboarding-first-hour-day-week",
+      "path": "launch-c/onboarding-first-hour-day-week.json",
       "kind": "sequence_stack"
     },
     {

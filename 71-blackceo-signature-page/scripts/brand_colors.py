@@ -32,6 +32,8 @@ assets/brand/client-brand.template.json when the run has none) and points intake
 plus fonts, logo and photos. A palette the client did not know (status default_to_confirm) is a neutral
 palette that belongs to no client; it passes `check` and prints TO CONFIRM so the build is never blocked
 silently and the default is reported at delivery. Nothing provided and no default applied still fails.
+A proposal palette still never reaches a paid render on a production run: failure() refuses
+image-generation-qc and final-mockups until the client confirms it (test runs are exempt).
 Exit codes: 0 resolved/recorded, 1 unresolved/refused, 2 usage.
 """
 from __future__ import annotations
@@ -64,6 +66,9 @@ ASK = (
 )
 SENTINEL = "CLIENT_MUST_SUPPLY"
 PALETTE_STATUSES = ("provided", "suggested", "default_to_confirm")
+# The stages that make the client-facing paid pictures. A proposal palette (suggested or
+# default_to_confirm) may carry internal design work but never a paid render on a production run (IMG-09).
+PAID_IMAGE_STAGES = ("image-generation-qc", "final-mockups")
 
 
 def _json(path):
@@ -178,6 +183,11 @@ def failure(run_dir, stage=None):
         return None
     res = resolve(run_dir)
     if res.ok:
+        intake = _json(Path(run_dir) / "intake.json") or {}
+        if stage in PAID_IMAGE_STAGES and res.status != "provided" and not intake.get("test_run"):
+            return (f"brand colors are only a proposal (palette_status {res.status}), not confirmed by the "
+                    f"client: no paid image render may start on a production run. Ask the client: {ASK} "
+                    "Record the answer with scripts/brand_colors.py record.")
         return None
     return ("brand colors unresolved, no image stage may start. Tried: "
             + "; ".join(res.tried) + f". Ask the client: {ASK} Record the answer with "

@@ -25,7 +25,9 @@ provisional by design.
 This wrapper produces the S06 install PLAN for the D1 page and nothing
 else. It performs NO install, NO network call, and NO file write: the
 plan object is handed to Skill 6's native install rail later. A plan
-is not evidence of an installed binding.
+is not evidence of an installed binding. Status: design only; not
+installed. ``install_d1_page`` refuses and names the scheduled Skill 06
+work items (S06-02, UPS-08) instead of doing nothing.
 
 The shape mirrors the committed S06 plan layer: the product binding is
 CALLER-SUPPLIED (this wrapper never invents a native product or price
@@ -51,6 +53,33 @@ class InstallPlanError(Exception):
         self.code = code
         self.detail = detail
         self.missing = list(missing or [])
+
+
+# DTY-11: the D1 page is design-only until Skill 6 ships a native
+# install step for it. Skill 06 work items that schedule that step:
+# S06-02 (commerce driver) and UPS-08 (extra-offer install). Any client
+# summary line for D1 reads DESIGN_ONLY_STATUS until Skill 6 records a
+# binding read-back for it.
+DESIGN_ONLY_STATUS = "design only; not installed"
+SCHEDULED_SKILL06_WORK_ITEMS = ("S06-02", "UPS-08")
+
+
+class InstallRefusedError(InstallPlanError):
+    """The D1 install was requested but no installer exists. Raised by
+    ``install_d1_page``; ``detail`` names the scheduled Skill 06 work
+    items so the refusal is never a silent no-op."""
+
+
+def install_d1_page(*_args, **_kwargs):
+    """Refuse. This package has no installer: Skill 6's native install
+    step for D1 is scheduled work (``SCHEDULED_SKILL06_WORK_ITEMS``), not
+    shipped code. Always raises ``InstallRefusedError``; never returns,
+    never writes, never calls the network."""
+    raise InstallRefusedError(
+        "D1-INSTALL-DESIGN-ONLY",
+        f"{DESIGN_ONLY_STATUS}: no D1 installer exists; the native "
+        "install is scheduled Skill 06 work item(s) "
+        + " / ".join(SCHEDULED_SKILL06_WORK_ITEMS))
 
 
 # Required fields of schemas/downsell-request.schema.json, in the
@@ -269,6 +298,9 @@ def build_install_plan(request, product_binding, page_bundle):
         "provisional": True,
         "executes_install": False,
         "network_calls": False,
+        "installed": False,
+        "install_status": DESIGN_ONLY_STATUS,
+        "scheduled_skill06_work_items": list(SCHEDULED_SKILL06_WORK_ITEMS),
         "skill": 81,
         "page_role": "downsell_1",
         "request_id": request["request_id"],

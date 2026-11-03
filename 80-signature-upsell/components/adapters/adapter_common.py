@@ -16,11 +16,19 @@ Contracts consumed (read-only, another worker's reviewed artifacts):
   * schemas/upsell-request.schema.json / upsell-result.schema.json
   * profiles/upsell-profile.json (profile id signature-upsell-eight-section)
 Requests are validated here with lightweight stdlib checks that mirror the
-request schema's load-bearing rules; the test suite additionally validates
-requests and results against the actual JSON Schemas.
+request schema's load-bearing rules, and then (UPS-14) against the shipped
+request schema itself at runtime, failing closed; build_result does the same
+for the result against the shipped result schema (see schema_errors).
+
+Purchase honesty (UPS-02/UPS-03): build time has no buyer. A build result is
+a DESIGN deliverable; the purchase state it was built from is a staged
+journey file, not a ledger, so a non-test result is stamped
+design_only/unverified_at_build and eligibility is enforced at runtime by
+Skill 6/44.
 """
 
 import hashlib
+import importlib.util
 import json
 import re
 from pathlib import Path
@@ -99,6 +107,21 @@ ADAPTER_VERIFICATION_SOURCES = frozenset(
     {"native_purchase_ledger", "provider_event_readback", "s44_event_adapter"}
 )
 
+# UPS-03: ONE shared marker guard for every prior-purchase evidence_ref
+# (original, U1 and D1). Mirrors the request schema's `not` guard. A marker
+# means the "evidence" is a claim made by the visitor's browser.
+CLIENT_CLAIM_EVIDENCE_MARKERS = ("acceptedU1=true", "client-side", "client_side")
+_CLIENT_CLAIM_RE = re.compile(r"acceptedU1\s*=\s*true|client[-_]side", re.IGNORECASE)
+# A reference a ledger could resolve at runtime (prefixed record ref only;
+# the schema's bare separator-id and URL forms prove structure, not a ledger).
+LEDGER_REF_RE = re.compile(
+    r"^(?:ledger|provider-event|s44|native|catalog):[A-Za-z0-9][A-Za-z0-9._/-]*$"
+)
+# UPS-02: what a build-time eligibility verdict may honestly say.
+DESIGN_ONLY_VERDICT = "design_only/unverified_at_build"
+COPY_PROFILE_ID = "signature-upsell-eight-section"
+COPY_VALIDATOR = "scripts/validate_upsell_copy.py"
+
 CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 # Minor-unit exponents (doc 02 section 3: do not hardcode two decimals for
 # every currency). Default is 2; well-known zero- and three-decimal
@@ -114,6 +137,15 @@ JOURNEY_SLOT_BY_INSTANCE_SLOT = {"upsell_1": "upsell_1", "downsell_1": "downsell
 
 class AdapterError(ValueError):
     """Raised when a request/copy/journey cannot produce a truthful page."""
+
+
+def client_claim_problem(evidence_ref, label: str) -> Optional[str]:
+    """Shared UPS-03 guard: a problem string if evidence_ref is a client-side
+    claim, else None. Used for the original purchase (request AND journey),
+    the U2 qualifying purchase and any wrapper purchase block."""
+    if _CLIENT_CLAIM_RE.search(str(evidence_ref or "")):
+        return "%s evidence_ref is a client-side claim, not purchase proof" % label
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +179,28 @@ def format_amount_minor(amount_minor: int, currency: str) -> str:
     return "%s %d.%0*d" % (currency, whole, exp, frac)
 
 
+def _interval_phrase(terms: Mapping) -> str:
+    """'per month' / 'every 2 weeks' (the recurrence phrase)."""
+    count = terms["interval_count"]
+    interval = terms["interval"]
+    return "per %s" % interval if count == 1 else "every %d %ss" % (count, interval)
+
+
+def _first_charge_phrase(terms: Mapping, trial: bool) -> str:
+    """When the first recurring charge happens. Uses the request's own
+    first_recurring_charge text; otherwise states it relative to the
+    acceptance or the end of the trial. Never invents a calendar date."""
+    given = terms.get("first_recurring_charge")
+    if given:
+        return str(given)
+    if trial:
+        return "when the trial ends (after %s)" % terms["trial_period"]
+    count = terms["interval_count"]
+    return "%d %s%s after you accept" % (
+        count, terms["interval"], "" if count == 1 else "s"
+    )
+
+
 def render_disclosure(disclosure: Mapping) -> str:
     """Render the adjacent-to-CTA disclosure from the commercial fields.
 
@@ -154,6 +208,16 @@ def render_disclosure(disclosure: Mapping) -> str:
     recurring_terms (integer minor units only), never trusted from a
     free-text field, so the amount a visitor sees always matches the
     approved offer mapping (spec 10 section 6).
+
+    UPS-19: one template per billing shape, each stating what is due today,
+    what recurs, and when the first recurring charge happens:
+      one_time               amount, once
+      recurring              amount today, then amount per interval
+      installment            amount today, then N-1 further payments
+      trial / trial+recurring trial amount today for the trial period, THEN
+                             amount (amount_minor) per interval; the trial
+                             amount and the recurring amount are never both
+                             called "today"
     """
     amount = format_amount_minor(disclosure["amount_minor"], disclosure["currency"])
     billing = disclosure["billing_type"]
@@ -170,37 +234,195 @@ def render_disclosure(disclosure: Mapping) -> str:
             "Billing type %r requires recurring_terms (interval, cycles, "
             "trial) so the obligation can be disclosed." % (billing,)
         )
-    interval = terms["interval"]
-    count = terms["interval_count"]
-    per = interval if count == 1 else "every %d %ss" % (count, interval)
+    per = _interval_phrase(terms)
     cycles = terms.get("cycles")
-    parts: List[str] = ["%s today," % amount]
-    if cycles is None:
-        parts.append(
-            "then %s per %s until cancelled, charged to your original "
-            "payment method when you accept." % (amount, per)
-        )
-    elif cycles >= 2:
-        parts.append(
-            "then %s per %s for %d further payments (%d payments total), "
-            "charged to your original payment method when you accept."
-            % (amount, per, cycles - 1, cycles)
-        )
-    else:
-        parts.append(
-            "charged to your original payment method when you accept. "
-            "No further charges for this offer."
-        )
-    body = " ".join(parts)
     trial_amount = terms.get("trial_amount_minor")
     trial_period = terms.get("trial_period")
-    if trial_amount is not None and trial_period:
-        return "Trial: %s for %s, then %s" % (
-            format_amount_minor(trial_amount, disclosure["currency"]),
-            trial_period,
-            body,
+    has_trial = trial_amount is not None and bool(trial_period)
+    if billing == "trial" and not has_trial:
+        raise AdapterError(
+            "A trial disclosure requires trial_amount_minor and trial_period."
         )
-    return body
+    if billing == "installment" and (type(cycles) is not int or cycles < 2):
+        raise AdapterError(
+            "An installment disclosure requires cycles >= 2 (the number of "
+            "payments in the plan)."
+        )
+    if has_trial:
+        due_now = format_amount_minor(trial_amount, disclosure["currency"])
+        if cycles is None:
+            then = "%s %s until cancelled" % (amount, per)
+        elif cycles == 1:
+            then = "a single payment of %s" % amount
+        else:
+            then = "%s %s for %d payments" % (amount, per, cycles)
+        return (
+            "Due today: %s for a trial lasting %s. After the trial: %s. First "
+            "recurring charge: %s. Charged to your original payment method "
+            "when you accept." % (
+                due_now, trial_period, then, _first_charge_phrase(terms, True)
+            )
+        )
+    if cycles is None:
+        return (
+            "%s today, then %s %s until cancelled, charged to your "
+            "original payment method when you accept." % (amount, amount, per)
+            + _first_charge_tail(terms)
+        )
+    if cycles >= 2:
+        if billing == "installment":
+            return (
+                "Due today: %s. Then %s %s for %d further payments (%d "
+                "payments total). First recurring charge: %s. Charged to your "
+                "original payment method when you accept." % (
+                    amount, amount, per, cycles - 1, cycles,
+                    _first_charge_phrase(terms, False),
+                )
+            )
+        return (
+            "%s today, then %s %s for %d further payments (%d payments "
+            "total), charged to your original payment method when you accept."
+            % (amount, amount, per, cycles - 1, cycles)
+            + _first_charge_tail(terms)
+        )
+    return (
+        "%s today, charged to your original payment method when you accept. "
+        "No further charges for this offer." % amount
+    )
+
+
+def _first_charge_tail(terms: Mapping) -> str:
+    """Recurring (non-trial, non-installment) text keeps its established
+    wording; the first recurring charge is appended only when the request
+    states it."""
+    given = terms.get("first_recurring_charge")
+    return " First recurring charge: %s." % given if given else ""
+
+
+# ---------------------------------------------------------------------------
+# Runtime schema validation (UPS-14) - stdlib, fails closed
+# ---------------------------------------------------------------------------
+# jsonschema is not guaranteed on a client box (CON-13), so the shipped
+# schemas are applied by a small stdlib validator covering exactly the
+# keywords the two schemas use. A keyword it does not know raises (fail
+# closed) instead of being silently ignored.
+
+_SCHEMA_ANNOTATIONS = frozenset({"$schema", "$id", "title", "description"})
+_SCHEMA_KEYWORDS = frozenset({
+    "type", "const", "enum", "minLength", "pattern", "minimum", "maximum",
+    "minItems", "maxItems", "items", "required", "properties",
+    "additionalProperties", "anyOf", "allOf", "not", "if", "then",
+})
+_SCHEMA_CACHE: Dict[str, dict] = {}
+
+
+def _type_ok(value, name: str) -> bool:
+    if name == "null":
+        return value is None
+    if name == "boolean":
+        return isinstance(value, bool)
+    if name == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if name == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if name == "string":
+        return isinstance(value, str)
+    if name == "array":
+        return isinstance(value, list)
+    if name == "object":
+        return isinstance(value, dict)
+    raise AdapterError("Unsupported schema type %r." % (name,))
+
+
+def _json_eq(a, b) -> bool:
+    return a == b and isinstance(a, bool) == isinstance(b, bool)
+
+
+def schema_errors(value, schema, at: str = "$") -> List[str]:
+    """Violations of `schema` by `value` (empty list = valid)."""
+    if schema is True:
+        return []
+    if not isinstance(schema, Mapping):
+        raise AdapterError("Unsupported schema node at %s." % at)
+    unknown = set(schema) - _SCHEMA_KEYWORDS - _SCHEMA_ANNOTATIONS
+    if unknown:
+        raise AdapterError(
+            "Schema keyword(s) %s at %s are not supported by the runtime "
+            "validator." % (sorted(unknown), at)
+        )
+    if "type" in schema:
+        names = schema["type"] if isinstance(schema["type"], list) else [schema["type"]]
+        if not any(_type_ok(value, n) for n in names):
+            return ["%s: expected type %s" % (at, "/".join(names))]
+    errs: List[str] = []
+    if "const" in schema and not _json_eq(value, schema["const"]):
+        errs.append("%s: must equal %r" % (at, schema["const"]))
+    if "enum" in schema and not any(_json_eq(value, e) for e in schema["enum"]):
+        errs.append("%s: %r is not an allowed value" % (at, value))
+    if isinstance(value, str):
+        if len(value) < schema.get("minLength", 0):
+            errs.append("%s: shorter than %d characters" % (at, schema["minLength"]))
+        if "pattern" in schema and not re.search(schema["pattern"], value):
+            errs.append("%s: does not match the required pattern" % at)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if "minimum" in schema and value < schema["minimum"]:
+            errs.append("%s: below minimum %s" % (at, schema["minimum"]))
+        if "maximum" in schema and value > schema["maximum"]:
+            errs.append("%s: above maximum %s" % (at, schema["maximum"]))
+    if isinstance(value, list):
+        if len(value) < schema.get("minItems", 0):
+            errs.append("%s: fewer than %d items" % (at, schema["minItems"]))
+        if "maxItems" in schema and len(value) > schema["maxItems"]:
+            errs.append("%s: more than %d items" % (at, schema["maxItems"]))
+        if "items" in schema:
+            for i, item in enumerate(value):
+                errs.extend(schema_errors(item, schema["items"], "%s[%d]" % (at, i)))
+    if isinstance(value, dict):
+        for key in schema.get("required", ()):
+            if key not in value:
+                errs.append("%s: missing required key %r" % (at, key))
+        props = schema.get("properties", {})
+        for key, sub in props.items():
+            if key in value:
+                errs.extend(schema_errors(value[key], sub, "%s.%s" % (at, key)))
+        extra = schema.get("additionalProperties", True)
+        for key in value:
+            if key in props:
+                continue
+            if extra is False:
+                errs.append("%s: unexpected key %r" % (at, key))
+            elif isinstance(extra, Mapping):
+                errs.extend(schema_errors(value[key], extra, "%s.%s" % (at, key)))
+    if "anyOf" in schema and not any(
+        not schema_errors(value, s, at) for s in schema["anyOf"]
+    ):
+        errs.append("%s: matches none of the allowed alternatives" % at)
+    for s in schema.get("allOf", ()):
+        errs.extend(schema_errors(value, s, at))
+    if "not" in schema and not schema_errors(value, schema["not"], at):
+        errs.append("%s: matches a forbidden form" % at)
+    if "if" in schema and "then" in schema and not schema_errors(value, schema["if"], at):
+        errs.extend(schema_errors(value, schema["then"], at))
+    return errs
+
+
+def _shipped_schema_errors(instance, schema_path) -> List[str]:
+    key = str(schema_path)
+    if key not in _SCHEMA_CACHE:
+        _SCHEMA_CACHE[key] = load_json(schema_path)
+    return schema_errors(instance, _SCHEMA_CACHE[key])
+
+
+def validate_against_schema(instance, schema_path, label: str) -> None:
+    """Fail closed: raise AdapterError listing why `instance` is not valid
+    against the shipped schema at schema_path."""
+    errs = _shipped_schema_errors(instance, schema_path)
+    if errs:
+        raise AdapterError(
+            "%s fails the shipped %s: %s%s"
+            % (label, Path(schema_path).name, "; ".join(errs[:6]),
+               " (+%d more)" % (len(errs) - 6) if len(errs) > 6 else "")
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +518,39 @@ def validate_request(request: Mapping, instance: str) -> None:
                 "request offer action ref %r."
                 % (binding.get("expected_action_ref"), expected_ref)
             )
+    # UPS-14: the enriched request must also satisfy the shipped schema
+    # (extra keys, patterns, required fields), failing closed. Violations
+    # inside the eligibility block / entry_context are NOT raised here: they
+    # are purchase-evidence problems that the eligibility gate turns into a
+    # blocked_unverified result (eligibility_schema_problems).
+    hard, _ = _split_request_schema_errors(request)
+    if hard:
+        raise AdapterError(
+            "request fails the shipped upsell-request.schema.json: %s"
+            % "; ".join(hard[:6])
+        )
+
+
+def _split_request_schema_errors(request: Mapping):
+    errs = _shipped_schema_errors(request, REQUEST_SCHEMA_PATH)
+    gate = [e for e in errs if e.startswith(("$.eligibility", "$.entry_context"))]
+    hard = [e for e in errs if e not in gate]
+    if request.get("test_only"):
+        # The stdlib mirror has always treated action_binding as optional
+        # (D-03) and the stored TEST ONLY negative fixtures omit it; a real
+        # launch request must carry it.
+        hard = [e for e in hard if e != "$: missing required key 'action_binding'"]
+    return hard, gate
+
+
+def eligibility_schema_problems(request: Mapping) -> List[str]:
+    """Shipped-schema violations inside the eligibility block (bad source
+    enum, evidence-ref pattern, slot/entry-context pairing). Purchase proof
+    that fails the schema is no proof: these block eligibility."""
+    return [
+        "request eligibility violates the shipped request schema: %s" % e
+        for e in _split_request_schema_errors(request)[1]
+    ]
 
 
 def validate_routes_for_instance(request: Mapping, instance: str) -> None:
@@ -412,10 +667,29 @@ def original_purchase_check(request: Mapping, journey: Optional[Mapping]) -> Dic
             "verification_source %r is not an adapter source; client-side "
             "claims are not purchase proof" % (orig.get("verification_source"),)
         )
+    # UPS-03: the shared marker guard, on the request claim AND on the
+    # journey record (the original purchase used to skip it).
+    problems.extend(eligibility_schema_problems(request))
+    claim = client_claim_problem(orig.get("evidence_ref"), "original purchase")
+    if claim:
+        problems.append(claim)
     rec = journey_record_for(journey, "main")
     if rec is None:
         problems.append("journey state carries no verified main purchase record")
     else:
+        claim = client_claim_problem(rec.get("evidence_ref"), "journey main-purchase")
+        if claim:
+            problems.append(claim)
+        if not request.get("test_only") and not LEDGER_REF_RE.match(
+            str(rec.get("evidence_ref") or "")
+        ):
+            # UPS-02: a real launch's journey must point at a resolvable
+            # ledger/provider/S44/native/catalog record, not a bare id.
+            problems.append(
+                "journey main-purchase evidence_ref is not a resolvable "
+                "ledger reference (ledger:/provider-event:/s44:/native:/"
+                "catalog:)"
+            )
         if rec.get("evidence_ref") != orig.get("evidence_ref"):
             problems.append(
                 "journey main-purchase evidence_ref does not match the request"
@@ -485,6 +759,66 @@ def decide_presentation(
 
 
 # ---------------------------------------------------------------------------
+# Copy validation (UPS-01): the real validator's outcome, never a literal
+# ---------------------------------------------------------------------------
+
+_VALIDATOR_MODULE = None
+
+
+def _validator():
+    global _VALIDATOR_MODULE
+    if _VALIDATOR_MODULE is None:
+        path = SKILL_DIR / "scripts" / "validate_upsell_copy.py"
+        spec = importlib.util.spec_from_file_location("validate_upsell_copy", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _VALIDATOR_MODULE = mod
+    return _VALIDATOR_MODULE
+
+
+def run_copy_validation(
+    copy_sha256: str, copy_artifact_path: str, expected_action_ref: str
+) -> Dict[str, object]:
+    """Run the Skill 80 copy validator on the recorded copy artifact.
+
+    The artifact is found relative to the components dir or the cwd and
+    must hash to copy_sha256 (so the validated bytes are the recorded
+    bytes). Not findable/hash mismatch -> verdict "not_run" (the result
+    schema has no null exit code, so exit_code 3 = nothing validated).
+    Single-document checks only; the U2-vs-U1 --compare pass needs the staged
+    U1 copy and belongs to the caller.
+    """
+    out = {
+        "validator": COPY_VALIDATOR,
+        "profile_id": COPY_PROFILE_ID,
+        "exit_code": 3,
+        "verdict": "not_run",
+        "copy_sha256": copy_sha256,
+    }
+    path = None
+    for base in (WORK_DIR, Path.cwd()):
+        cand = Path(copy_artifact_path)
+        cand = cand if cand.is_absolute() else base / cand
+        if cand.is_file() and sha256_file(cand) == copy_sha256:
+            path = cand
+            break
+    if path is None:
+        return out
+    mod = _validator()
+    try:
+        report = mod.validate_copy_report(
+            mod.load_json(str(path), "copy"),
+            mod.load_json(str(PROFILE_PATH), "profile"),
+            expected_action_ref=expected_action_ref,
+        )
+    except mod.FailClosed:
+        return dict(out, exit_code=3, verdict="fail_closed")
+    if report["violations"]:
+        return dict(out, exit_code=2, verdict="violation")
+    return dict(out, exit_code=0, verdict="pass")
+
+
+# ---------------------------------------------------------------------------
 # Result assembly (spec 10 section 7 upsell-result.json)
 # ---------------------------------------------------------------------------
 
@@ -499,10 +833,26 @@ def build_result(
     disposition: Mapping,
     test_outcomes: Sequence[Mapping],
     extra_blockers: Sequence[str] = (),
+    copy_validation: Optional[Mapping] = None,
 ) -> Dict[str, object]:
     disclosure = request["disclosure"]
     offer = request["offer"]
-    blocked = disposition["action"] != "present_offer"
+    test_only = bool(request.get("test_only", False))
+    # UPS-01: copy_validation is never a literal. A caller that ran the
+    # validator passes its real outcome; otherwise it is run (or recorded
+    # not_run) here from the recorded copy artifact.
+    if copy_validation is None:
+        copy_validation = run_copy_validation(
+            copy_sha256, copy_artifact_path, native_action_ref(offer["offer_id"])
+        )
+    copy_failed = copy_validation.get("verdict") in ("violation", "fail_closed")
+    # UPS-02: nothing at build time proves a purchase. For a real launch an
+    # "eligible" verdict can only come from the staged journey this result
+    # was built from, so it is stamped design_only/unverified_at_build.
+    eligibility = dict(eligibility_check)
+    if not test_only and eligibility.get("verdict") == "eligible":
+        eligibility["verdict"] = DESIGN_ONLY_VERDICT
+    blocked = disposition["action"] != "present_offer" or copy_failed
     blockers: List[str] = [
         "S80-06 extra-offer binding is integrated at interface-conformance "
         "level only (S79 confirmed interface, revision 2, fixture level): "
@@ -511,6 +861,22 @@ def build_result(
         "only, NOT installed or live proof."
     ]
     blockers.extend(extra_blockers)
+    if eligibility.get("verdict") == DESIGN_ONLY_VERDICT:
+        blockers.append(
+            "%s: this result is a design deliverable. Purchase eligibility "
+            "was not and cannot be verified at build; it is enforced at "
+            "runtime by Skill 6/44 from the native purchase ledger." % DESIGN_ONLY_VERDICT
+        )
+    if copy_validation.get("verdict") == "not_run":
+        blockers.append(
+            "copy_validation not_run: the copy validator could not be run "
+            "against the recorded copy artifact; copy is unvalidated."
+        )
+    elif copy_failed:
+        blockers.append(
+            "copy_validation %s: the copy validator did not pass; the page "
+            "is blocked." % copy_validation["verdict"]
+        )
     if disposition["action"] == "block_unverified":
         blockers.append(
             "blocked_unverified: eligibility could not be verified from "
@@ -523,7 +889,7 @@ def build_result(
             % (disposition["action"], disposition["reason"])
         )
     disclosure_text = render_disclosure(disclosure)
-    return {
+    result = {
         "schema_version": "1.0",
         "tenant_id": request["tenant_id"],
         "location_id": request["location_id"],
@@ -540,7 +906,7 @@ def build_result(
         "proof_class": "L1",
         "blockers": blockers,
         "native_bindings_ref": None,
-        "test_only": bool(request.get("test_only", False)),
+        "test_only": test_only,
         "instance": request["instance"],
         "source_hash": copy_sha256,
         "approved_offer_mapping": {
@@ -576,14 +942,8 @@ def build_result(
                 "only until then).",
             ],
         },
-        "eligibility_check": dict(eligibility_check),
-        "copy_validation": {
-            "validator": "scripts/validate_upsell_copy.py",
-            "profile_id": "signature-upsell-eight-section",
-            "exit_code": 0,
-            "verdict": "pass",
-            "copy_sha256": copy_sha256,
-        },
+        "eligibility_check": eligibility,
+        "copy_validation": dict(copy_validation),
         "hashes": {
             "copy_sha256": copy_sha256,
             "ui_sha256": None,
@@ -591,6 +951,9 @@ def build_result(
         },
         "test_outcomes": [dict(t) for t in test_outcomes],
     }
+    # UPS-14: the bundle result must satisfy the shipped result schema.
+    validate_against_schema(result, RESULT_SCHEMA_PATH, "result")
+    return result
 
 
 def build_page_plan(

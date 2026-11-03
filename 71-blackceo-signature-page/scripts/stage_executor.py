@@ -32,6 +32,15 @@ Providers:
 What the switch is: `--provider kie --allow-paid` plus a client-owned
 KIE_API_KEY in the environment. Everything else is inert.
 
+The ceiling and the receipts (IMG-21, IMG-06). The kie route also needs intake.json
+`image_cap` (the approved picture ceiling). Each paid render is reserved in
+<run_dir>/image-spend-ledger.json before the call and refused once the cap is used, so
+the Design Board, the final mockups and every QC retry count; a direct run of a NEXT
+command spends nothing past it. Each delivered image gets receipts/kie74/<task_id>.json
+written here (never by hand): the adapter result plus a binding of task id, sha256 of
+the saved bytes and the measured credits_before/credits_after. receipt_gate_problems()
+re-hashes the PNGs; shared_page_service.py applies it to every production run.
+
 Input: <run_dir>/production-request.json (see
 references/generation-execution.md). Sections drive the jobs; each
 later stage attaches the actual PNGs the earlier stages wrote as
@@ -60,6 +69,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -68,8 +78,14 @@ import struct
 import subprocess
 import sys
 import tempfile
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+
+try:
+    import fcntl  # ponytail: POSIX lock; without it (Windows) the ceiling is still checked, just not race-proof
+except ImportError:
+    fcntl = None
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import circle_image  # noqa: E402  design styles B and C: circle slots
@@ -623,11 +639,11 @@ def declared_copy_version(run_dir: Path, request: dict):
     return None
 
 
-def allowed_section_sequences(spec: dict) -> list:
+def allowed_section_sequences(spec: dict, request=None) -> list:
     """The sequence the spec accepts: its own, plus each optional-children expansion
     (5 -> 5A,5B,5C). page_role.allowed_sequences is the one resolver; the request
     builder reads the same function, so the two never disagree."""
-    return page_role.allowed_sequences(spec)
+    return page_role.allowed_sequences(spec, request)
 
 
 STRUCTURES_FILE = SKILL_ROOT / "references" / "page-structures.json"
@@ -658,6 +674,27 @@ def page_role_for(run_dir: Path, request: dict) -> str:
     return page_role.declared_role(run_dir, request)  # also reads a role form's copy_version
 
 
+def check_band_layout_tags(role, ids, request):
+    """A role with a declared layout (references/page-structures.json layouts.<role>, the upsell
+    bands) must carry, section for section, the layout_tag that layout declares: every upsell band
+    is drawn from its declared layout, never from the heading. Roles without a layout are unchanged."""
+    try:
+        data = json.loads(STRUCTURES_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ExecutorError(f"cannot read {STRUCTURES_FILE.name}: {exc}")
+    layout = (data.get("layouts") or {}).get(role)
+    if not isinstance(layout, dict):
+        return
+    by_id = {canon_section_id(s["id"]): s["layout_tag"] for s in layout.get("sections") or []}
+    for i, section_id in enumerate(ids):
+        want, got = by_id.get(section_id), request["sections"][i].get("layout_tag")
+        if got != want:
+            raise ExecutorError(
+                f"band layout: section {section_id} of {role} carries layout_tag {got!r} but "
+                f"references/page-structures.json layouts.{role} declares {want!r}; every upsell band "
+                "is drawn from its declared layout")
+
+
 def check_section_count(run_dir: Path, request: dict, paid: bool = False):
     """Fail closed unless the request carries one section per canonical section of
     the page it builds, in order: the selected form's copy sections (Standard 12,
@@ -665,7 +702,8 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
     page role's own sequence (references/copy-specs/roles/<role>.json, checkout 5)
     for a run whose page_role has one. A non-landing page role with an entry in
     references/page-structures.json is checked against that entry's sequence
-    instead (Downsell 8).
+    instead (Downsell 8). An upsell role also carries the layout_tag its declared band layout
+    names for each section (check_band_layout_tags).
 
     Never band-compressed: a request that merges sections to fit fewer images
     is refused by name before any prompt is composed or any call is made.
@@ -726,7 +764,7 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
             raise ExecutorError(f"page kind: {exc}")
         label = f"{version} copy"
     ids = [canon_section_id(s["section_id"]) for s in request["sections"]]
-    allowed = allowed_section_sequences(spec)
+    allowed = allowed_section_sequences(spec, request)
     if ids not in allowed:
         want = allowed[0]
         raise ExecutorError(
@@ -735,6 +773,7 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
             f"{[i for i in want if i not in ids]}, unexpected "
             f"{[i for i in ids if i not in want]}. One request section per canonical "
             "copy section, in order; never band-compress sections")
+    check_band_layout_tags(role, ids, request)
     sources, absent = [], []
     for path in _copy_source_candidates(run_dir, request):
         if not path.is_file():
@@ -1144,6 +1183,119 @@ def require_png(path: Path) -> None:
             f"PNG, so this one is refused instead of being renamed")
 
 
+LEDGER = "image-spend-ledger.json"  # per-run, one entry per paid render (reserved, then confirmed)
+
+
+def image_ceiling(run_dir: Path) -> int:
+    """The approved picture ceiling: intake.json image_cap. A paid run with no recorded ceiling is
+    refused, so a direct run of a NEXT command can never spend past what the client approved."""
+    try:
+        cap = json.loads((run_dir / "intake.json").read_text(encoding="utf-8")).get("image_cap")
+    except (OSError, ValueError, AttributeError):
+        cap = None
+    if isinstance(cap, bool) or not isinstance(cap, int) or cap < 0:
+        raise ExecutorError(
+            "refusing the paid route: intake.json carries no approved image_cap (a whole number, 0 or "
+            "more), so there is no ceiling to spend against (no API call was made)")
+    return cap
+
+
+def _ledger_edit(run_dir: Path, edit):
+    """Apply edit(calls) to the run's ledger under an exclusive lock; returns edit's result."""
+    path = run_dir / LEDGER
+    with open(path, "a+", encoding="utf-8") as fh:
+        if fcntl:
+            fcntl.flock(fh, fcntl.LOCK_EX)
+        fh.seek(0)
+        text = fh.read()
+        try:
+            calls = json.loads(text)["calls"] if text.strip() else []
+        except (ValueError, KeyError, TypeError):
+            raise ExecutorError(f"{LEDGER} is unreadable; refusing to spend against a broken ledger")
+        out = edit(calls)
+        fh.seek(0)
+        fh.truncate()
+        fh.write(json.dumps({"calls": calls}, indent=2, sort_keys=True) + "\n")
+    return out
+
+
+def reserve_render(run_dir: Path, cap: int, label: str) -> str:
+    """Count one paid render against the ceiling BEFORE the call (parallel workers cannot overshoot);
+    a crash leaves the reservation in place, which fails closed."""
+    rid = uuid.uuid4().hex
+
+    def edit(calls):
+        if len(calls) >= cap:
+            raise ExecutorError(
+                f"image ceiling reached: {len(calls)} of {cap} approved paid renders are already used in "
+                f"this run ({LEDGER}); no API call was made for {label}")
+        calls.append({"id": rid, "label": label, "status": "reserved", "at": now_iso()})
+    _ledger_edit(run_dir, edit)
+    return rid
+
+
+def settle_render(run_dir: Path, rid: str, **fields) -> None:
+    """Confirm the reservation with the render's facts, or (no fields) release it: the provider rendered nothing."""
+    def edit(calls):
+        calls[:] = [dict(c, status="done", **fields) if (c["id"] == rid and fields) else c
+                    for c in calls if c["id"] != rid or fields]
+    _ledger_edit(run_dir, edit)
+
+
+def _kie74_receipt():
+    """Skill 49's kie74_receipt.py, the one writer and checker of transport receipts (a sibling skill)."""
+    path = SKILL_ROOT.parent / "49-signature-funnel" / "scripts" / "kie74_receipt.py"
+    if not path.is_file():
+        raise ExecutorError(f"{path} not found: transport receipts cannot be written or checked without it")
+    saved = list(sys.path)
+    try:
+        spec = importlib.util.spec_from_file_location("kie74_receipt_skill49", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    finally:
+        sys.path[:] = saved
+    return mod
+
+
+def _json_out(text: str) -> dict:
+    """The adapter prints one JSON object (indented); fall back to its last line."""
+    for candidate in (text.strip(), (text.strip().splitlines() or [""])[-1]):
+        try:
+            value = json.loads(candidate)
+        except ValueError:
+            continue
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def receipt_gate_problems(run_dir: Path) -> list:
+    """The production gate: every image the executor delivered must be bound to a provider task by a
+    transport receipt whose PNG bytes re-hash; an absent receipt store fails."""
+    delivered, claims_provider = [], False
+    for rec in sorted(run_dir.glob(f"*/{RECORD}")):
+        try:
+            data = json.loads(rec.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return [f"{rec.relative_to(run_dir)} is unreadable"]
+        entries = [e for e in (data.get("images") or []) + (data.get("items") or [])
+                   if isinstance(e, dict) and e.get("file")]
+        delivered += [e["file"] for e in entries]
+        claims_provider |= any((x.get("provider"), x.get("mode")) != ("stub", "stub") for x in [data] + entries)
+    if delivered and not claims_provider and not (run_dir / LEDGER).exists() \
+            and not (run_dir / "receipts" / "kie74").exists():
+        return []  # stub placeholders only: nothing claims a provider, nothing was spent, nothing to bind
+    problems =_kie74_receipt().store_problems(run_dir, delivered)
+    try:  # the ledger can never show more paid renders than the approved ceiling
+        used = len(json.loads((run_dir / LEDGER).read_text(encoding="utf-8"))["calls"])
+        cap = image_ceiling(run_dir)
+        if used > cap:
+            problems.append(f"{LEDGER} shows {used} paid renders, over the approved image_cap {cap}")
+    except (OSError, ValueError, KeyError, TypeError, ExecutorError):
+        pass  # no ledger: nothing was spent here; a missing receipt store is already a problem above
+    return problems
+
+
 class KieProvider:
     name = "kie"
     mode = "active"
@@ -1151,13 +1303,23 @@ class KieProvider:
     def __init__(self, adapter: Path, run_dir: Path):
         self.adapter = adapter
         self.run_dir = run_dir
-        self.receipts = run_dir / "receipts" / "kie74"
+
+    def credits(self) -> float:
+        """The account balance as the transport measures it (adapter `credits`)."""
+        proc = subprocess.run([sys.executable, str(self.adapter), "credits", "--mode", "active"],
+                              capture_output=True, text=True)
+        value = (_json_out(proc.stdout).get("data") or {}).get("credits")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ExecutorError("Skill 74 returned no numeric credit balance; a receipt cannot bind the "
+                                "spend, so the render is refused (no paid render was made)")
+        return value
 
     def generate(self, job: dict, request: dict) -> dict:
         model = request.get("model")
         if not model:
             raise ExecutorError("--provider kie needs 'model' in the production request")
         require_text_capable(model)
+        cap = image_ceiling(self.run_dir)
         slug = f"{job['stage']}-{job['index']:02d}-{len(job['out'].parts)}"
         req_dir = self.run_dir / "generation-requests" / job["stage"]
         req_dir.mkdir(parents=True, exist_ok=True)
@@ -1166,34 +1328,42 @@ class KieProvider:
         out_dir.mkdir(parents=True, exist_ok=True)
         req = {"model": model, "input": build_input(job, request)}
         req_path.write_text(json.dumps(req, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        proc = subprocess.run(
-            [sys.executable, str(self.adapter), "run", "--request", str(req_path),
-             "--save-dir", str(out_dir), "--mode", "active"],
-            capture_output=True, text=True)
-        raw = (proc.stdout or "").strip().splitlines()
+        before = self.credits()
+        rid = reserve_render(self.run_dir, cap, str(job["out"].relative_to(self.run_dir)))
+        spent = False
         try:
-            result = json.loads(raw[-1]) if raw else {}
-        except ValueError:
-            raise ExecutorError(
-                f"Skill 74 returned no JSON for {job['out']}: {(proc.stderr or '')[:300]}")
-        if result.get("state") != "success" or not result.get("saved_paths"):
-            raise ExecutorError(
-                f"Skill 74 did not save {job['out']}: state={result.get('state')!r} "
-                f"error={(result.get('error') or {}).get('msg', '')[:200]}")
+            proc = subprocess.run(
+                [sys.executable, str(self.adapter), "run", "--request", str(req_path),
+                 "--save-dir", str(out_dir), "--mode", "active"],
+                capture_output=True, text=True)
+            result = _json_out(proc.stdout)
+            if not result:
+                raise ExecutorError(
+                    f"Skill 74 returned no JSON for {job['out']}: {(proc.stderr or '')[:300]}")
+            if result.get("state") != "success" or not result.get("saved_paths"):
+                raise ExecutorError(
+                    f"Skill 74 did not save {job['out']}: state={result.get('state')!r} "
+                    f"error={(result.get('error') or {}).get('msg', '')[:200]}")
+            spent = True
+        finally:
+            if not spent:
+                settle_render(self.run_dir, rid)
+        settle_render(self.run_dir, rid, task_id=result.get("task_id"))
         source = Path(result["saved_paths"][0])
         if not source.is_file():
             raise ExecutorError(f"Skill 74 reported {source} but it is not on disk")
         require_png(source)
         job["out"].parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, job["out"])
-        self.receipts.mkdir(parents=True, exist_ok=True)
-        receipt = {"adapter": "74-kie-live-adapter", "mode": "active", "model": model,
-                   "task_id": result.get("task_id"), "saved_paths": [str(job["out"])],
-                   "file": str(job["out"].relative_to(self.run_dir)),
-                   "at": now_iso(), "adapter_result": result}
-        (self.receipts / f"{slug}.json").write_text(
-            json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        return {"provider": "kie", "mode": "active", "model": model,
+        rel = str(job["out"].relative_to(self.run_dir))
+        after = self.credits()
+        try:
+            receipt = _kie74_receipt().write_bound_receipt(self.run_dir, result, rel, before, after)
+        except ValueError as exc:
+            raise ExecutorError(f"transport receipt refused for {rel}: {exc}")
+        settle_render(self.run_dir, rid, task_id=result.get("task_id"), file=rel, sha256=sha256(job["out"]),
+                      credits_before=before, credits_after=after)
+        return {"provider": "kie", "mode": "active", "model": model, "receipt": str(receipt),
                 "task_id": result.get("task_id"), "saved_paths": [str(job["out"])]}
 
 
@@ -1221,6 +1391,7 @@ def make_provider(args, run_dir: Path):
         raise ExecutorError(
             "refusing the paid route: KIE_API_KEY is not set in this environment "
             "(no API call was made)")
+    image_ceiling(run_dir)  # no ceiling, no paid run: refused before anything is written
     return KieProvider(find_adapter(args.kie_adapter), run_dir)
 
 
@@ -1587,6 +1758,12 @@ def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
            "prompt": prompt}
     result = provider.generate(job, request)
     circle_record = mask_circle_slot(out, run_dir, stage, slot) if circle else None
+    if circle_record and result.get("receipt"):  # the receipt keeps the provider's bytes; the mask is derived
+        try:
+            _kie74_receipt().rebind_derived(Path(result["receipt"]), run_dir, circle_record["raw_file"],
+                                            str(out.relative_to(run_dir)))
+        except ValueError as exc:
+            raise ExecutorError(f"transport receipt cannot follow the circle mask of {out.name}: {exc}")
     entry = {"stage": stage, "item": item, "file": str(out.relative_to(run_dir)),
              "sha256": sha256(out), "provider": result.get("provider"),
              "mode": result.get("mode"), "model": result.get("model"),

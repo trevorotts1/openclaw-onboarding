@@ -1,4 +1,5 @@
-/* S79 checkout components (draft, fixture level).
+/* REVIEW-ONLY DRAFT: not installable. Do not paste into Skill 06 custom code. Bump and consent are native order-form settings, never custom inputs.
+   S79 checkout components (draft, fixture level).
    Brand values come from Skill 71 brand tokens at install time; the token
    names below are the binding contract, the values shown are neutral
    fallbacks for standalone review only. No dark styling: bright, human,

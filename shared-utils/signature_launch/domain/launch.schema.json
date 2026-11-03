@@ -5,7 +5,11 @@
   "title": "Signature Launch approved-domain record",
   "properties": {
     "schema_version": {
-      "const": "1.2"
+      "enum": [
+        "1.0",
+        "1.1",
+        "1.2"
+      ]
     },
     "tenant_id": {
       "type": "string",
@@ -128,6 +132,20 @@
               "minLength": 1
             }
           },
+          "relationships": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Optional. included_in names the main offers whose buyers hold this (bump) offer's entitlements by design; their order forms do not sell it, and the bump-subset-of-main rule skips them.",
+            "properties": {
+              "included_in": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          },
           "native_product_id": {
             "type": [
               "string",
@@ -235,6 +253,36 @@
           },
           "test_only": {
             "type": "boolean"
+          },
+          "intended_buyer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primary_outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limited_deliverables": {
+            "type": "array",
+            "items": {
+              "type": [
+                "string",
+                "object"
+              ]
+            }
+          },
+          "conditional_deliverables": {
+            "type": "array",
+            "items": {
+              "type": [
+                "string",
+                "object"
+              ]
+            }
           }
         },
         "required": [
@@ -350,6 +398,34 @@
     },
     "test_only": {
       "type": "boolean"
+    },
+    "selection_faq": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "question",
+          "answer"
+        ],
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1
+          },
+          "answer": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "trust_items": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     }
   },
   "required": [

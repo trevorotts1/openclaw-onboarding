@@ -47,15 +47,46 @@ PREFLIGHT
 echo "== open and decided seams =="
 "$PY" -m launcher_core.cli seams
 
+# unittest never loads conftest.py, so the offline GHL read-back that every TEST-ONLY fixture needs (PRD-12)
+# is installed here, exactly as conftest.py installs it for pytest: once before any setUpClass, and again
+# around every test (test_entitlement_readback resets the seam itself). Fixtures name TEST-ONLY references
+# only; the transport resolves those and nothing else, and no test is skipped.
+run_unittest() {
+    "$PY" - "$HERE" "$@" <<'RUNNER'
+import sys
+import unittest
+
+here, argv = sys.argv[1], sys.argv[2:]
+sys.path[:0] = [here, here + "/fixtures"]
+from launcher_core import entitlement
+from test_only_readback import test_only_transport
+
+entitlement.set_transport(test_only_transport())
+_run = unittest.TestCase.run
+
+
+def run(self, result=None):
+    entitlement.set_transport(test_only_transport())
+    try:
+        return _run(self, result)
+    finally:
+        entitlement.set_transport(test_only_transport())
+
+
+unittest.TestCase.run = run
+unittest.main(module=None, argv=["unittest", "discover", *argv], exit=True)
+RUNNER
+}
+
 echo "== unit + integration checks =="
-"$PY" -m unittest discover -s tests -p 'test_*.py' -v
+run_unittest -s tests -p 'test_*.py' -v
 
 echo "== route invariants, adapter wiring and the offline browser diagnostic =="
 # BrowserDiagnosticTests lives in this file and runs here exactly once, through
 # discovery. It probes this machine for browser tooling, prints exactly what it
 # found, and proves the landing -> checkout route wiring and the Skill 79 order
 # form binding without driving a browser; a failure fails this script.
-"$PY" -m unittest discover -s "$HERE/routes/tests" -p 'test_routes.py' -v
+run_unittest -s "$HERE/routes/tests" -p 'test_routes.py' -v
 
 echo "== worked-example fixtures =="
 "$PY" "$HERE/fixtures/run_fixtures.py"

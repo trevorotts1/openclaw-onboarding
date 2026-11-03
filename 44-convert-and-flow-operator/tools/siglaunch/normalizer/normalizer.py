@@ -41,6 +41,24 @@ from typing import Optional
 
 import jsonschema
 
+# S44-19 (decision: native GHL for Black Friday 2026). The siglaunch
+# pipeline has no runner (no CLI, webhook, poller or production catalog).
+# The declared Black Friday 2026 purchase path is the native Convert and
+# Flow post-sale workflows; this module refuses to run as a production
+# entry until a runner exists and an owner-approved change flips the flag.
+BLACK_FRIDAY_2026_PURCHASE_PATH = "native-ghl-post-sale-workflows"
+PRODUCTION_ENTRY_ENABLED = False
+EXIT_NOT_PRODUCTION = 6
+
+
+def main(argv=None) -> int:
+    import sys
+    print("siglaunch %s is not a production entry: the Black Friday 2026 "
+          "purchase path is %s (no runner exists; refusing)."
+          % (__name__ if __name__ != "__main__" else "module",
+             BLACK_FRIDAY_2026_PURCHASE_PATH), file=sys.stderr)
+    return EXIT_NOT_PRODUCTION
+
 # Staging note: the schema is vendored beside this module (copied from
 # packet/reference/schemas/purchase-event.schema.json) so the staged
 # tree is self-contained; the work-tree original resolved it from the
@@ -243,3 +261,7 @@ def ingest(store, readback: dict, ctx: LaunchContext,
     seen = store.record_event_if_unseen(
         event["tenant_id"], event["provider"], event["event_id"], event)
     return ("accepted" if seen else "duplicate"), result
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

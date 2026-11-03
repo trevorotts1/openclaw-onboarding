@@ -98,6 +98,8 @@ def build(plan, authored=None):
         raise ValueError(f"the plan outcome is {plan.get('outcome')!r}; a selection page is built only from a 'plan'")
     authored = authored or {}
     matrix = plan["comparison_matrix"]
+    if not matrix.get("rows"):
+        raise ValueError("the plan's comparison matrix has no rows; a Compare section with nothing to compare is refused")
     names = matrix["offer_names"]
     headline = authored.get("bridge_headline") or "Thanks for your interest. Choose the package that fits you."
     paragraph = authored.get("how_to_choose") or derived_paragraph(plan)

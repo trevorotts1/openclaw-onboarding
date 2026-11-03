@@ -428,8 +428,13 @@ def _resolve_fields(task: dict) -> List[dict]:
         # as unbound standard fields.
         if entry.get("quick_add_category") == "Payments":
             entry["order_element"] = True
-            binding = task.get("order_binding") or {}
+            # CHK-19: a per-element binding (task["order_element_bindings"],
+            # keyed by tile name) wins over the task-level order_binding, so
+            # Collect Payment keeps its own product/price.
+            binding = ((task.get("order_element_bindings") or {}).get(element)
+                       or task.get("order_binding") or {})
             entry["order_product_ref"] = binding.get("product_ref") or None
+            entry["order_price_ref"] = binding.get("price_ref") or None
             entry["order_binding_source"] = (
                 binding.get("source") or binding.get("binding_source") or None)
         if source == "standard":
@@ -880,13 +885,13 @@ def _run_preflight(task: dict, fields: List[dict], dep_plan: dict,
     # before any browser step is emitted.
     order_fields = [f for f in fields if f.get("order_element")]
     if order_fields:
-        binding = task.get("order_binding") or {}
-        bound = bool(binding.get("product_ref")) and all(
-            f.get("order_product_ref") for f in order_fields)
+        bound = all(f.get("order_product_ref") for f in order_fields)
         if bound:
             detail = (f"Payments tile(s) {[f['element'] for f in order_fields]} "
-                      f"bound to product_ref {binding.get('product_ref')!r} "
-                      "via task['order_binding']")
+                      "bound to product_ref(s) "
+                      f"{[f['order_product_ref'] for f in order_fields]!r} "
+                      "via task['order_binding'] / "
+                      "task['order_element_bindings']")
         else:
             detail = ("Payments tile(s) "
                       f"{[f['element'] for f in order_fields]} require "

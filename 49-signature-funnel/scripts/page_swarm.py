@@ -11,13 +11,16 @@ test_page_swarm.py with fake pages and a fake limiter (no paid call anywhere):
     No lane waits for another: the look every page follows (design style, brand file, owner,
     provider) is in the shared image inputs file all lanes read from the start. The landing run's
     visual-bible.json is written when the swarm ends, as the record of what it drew; no later page
-    prompt reads it, so holding the other pages back for it bought nothing.
+    prompt reads it, so holding the other pages back for it bought nothing. Nothing here falls
+    back to a result file the landing lane writes (no result-landing.json): the upsell lanes start
+    with the landing lane, so they take their landing-copy reference from the launch inputs only.
   * Every paid image start takes a token from Skill 71's shared KIE limiter (20 starts per 10
     seconds per account, lockfile-persisted); a lane takes one token per image it plans to start,
     again for its single retry. The free stub provider takes none.
   * A per-launch spend ledger enforces image_cap: lanes are reserved in page order and a lane that
     would pass the cap is skipped, never started (status skipped_cap), so no new paid image work
-    begins past the cap.
+    begins past the cap. dry_run_cap() runs the same ledger with no lane started, for the stub too,
+    and execute(strict_cap=True) refuses a run whose cap would skip a lane before anything starts.
   * One page failing never stops the others. Results come back in the order the lanes were given,
     whatever order they finished in.
 
@@ -136,6 +139,23 @@ class SpendLedger:
             self.path.write_text(json.dumps(self.to_dict(), indent=2) + "\n", encoding="utf-8")
 
 
+def dry_run_cap(lanes: List[Dict[str, Any]], image_cap: int) -> Dict[str, Any]:
+    """Run the spend ledger over the lanes WITHOUT starting any (no money, no provider), enforcing
+    the cap whatever the provider: which lanes the cap would skip, in page order, before a run.
+
+    `lanes` are {"lane", "image_estimate", ...} (ps.lane_plan(page_set)["parallel"]). The real run
+    reserves in this same order with the same rule, so the skipped lanes here are the skipped lanes
+    there; a stub practice run that passes while this reports a skip is the trap this closes."""
+    ledger = SpendLedger(image_cap, enforce=True)
+    for lane in lanes:
+        ledger.reserve(lane["lane"], int(lane.get("image_estimate", 0)))
+    needed = sum(int(l.get("image_estimate", 0)) for l in lanes)
+    skipped = [{"lane": e["lane"], "image_estimate": e["reserved"]}
+               for e in ledger.entries if e["status"] == "skipped_cap"]
+    return {"image_cap": ledger.cap, "needed": needed, "reserved": ledger.reserved,
+            "fits": not skipped, "would_skip": skipped}
+
+
 # ---------------------------------------------------------------------------------------------
 # The lane runner
 # ---------------------------------------------------------------------------------------------
@@ -215,12 +235,16 @@ def write_visual_bible(out_dir: Path, launch_id: str, inputs: Optional[Dict[str,
 def execute(requests: List[Dict[str, Any]], executor: Callable[..., Dict[str, Any]], *,
             page_set: Dict[str, Any], out_dir: Optional[Path], launch_id: str,
             workers: int = 1, image_inputs: Optional[Dict[str, Any]] = None,
-            limiter=None) -> Dict[str, Any]:
+            limiter=None, strict_cap: bool = False) -> Dict[str, Any]:
     """Run every request of a launch (plus the page set's extra pages) as lanes.
 
     `executor(request)` runs a route lane; `executor(request, lane_key)` runs an extra page that
     rides on its parent's request (today: downsell_2). Returns
-    {"outcomes": [...], "swarm": {report}}; the caller decides what a failed lane means."""
+    {"outcomes": [...], "swarm": {report}}; the caller decides what a failed lane means.
+
+    The report's `cap_preview` is dry_run_cap over these lanes, for the stub too. `strict_cap=True`
+    refuses the whole run before any lane starts when that preview would skip a lane (stub or paid),
+    so a cap too small for the page set fails before any money, not after the other pages built."""
     plan = ps.lane_plan(page_set)
     estimates = {l["lane"]: l["image_estimate"] for l in plan["parallel"]}
     by_role = {r["page_role"]: r for r in requests}
@@ -232,6 +256,12 @@ def execute(requests: List[Dict[str, Any]], executor: Callable[..., Dict[str, An
                 raise SwarmError(f"extra page {l['lane']} rides on {l['request_role']}, which this launch lacks")
             lanes.append({"lane": l["lane"], "request": by_role[l["request_role"]], "extra": True,
                           "image_estimate": l["image_estimate"]})
+    preview = dry_run_cap(lanes, image_inputs["image_cap"]) if image_inputs is not None else None
+    if strict_cap and preview and not preview["fits"]:
+        names = ", ".join(f"{x['lane']} ({x['image_estimate']} images)" for x in preview["would_skip"])
+        raise SwarmError(f"image cap {preview['image_cap']} is smaller than this launch needs "
+                         f"({preview['needed']} images): {names} would be skipped. Nothing was started; "
+                         "raise the cap or build fewer pages")
     paid = bool(image_inputs) and image_inputs.get("image_provider") == "kie"
     # the free stub makes no paid start: no limiter tokens, no cap (the ledger only records)
     out_dir = Path(out_dir) if out_dir else None
@@ -256,6 +286,7 @@ def execute(requests: List[Dict[str, Any]], executor: Callable[..., Dict[str, An
               "statuses": {o["lane"]: o["status"] for o in outcomes},
               "attempts": {o["lane"]: o["attempts"] for o in outcomes},
               "spend": ledger.to_dict() if ledger else None,
+              "cap_preview": preview,
               "visual_bible": str(out_dir / BIBLE_NAME) if out_dir and (out_dir / BIBLE_NAME).is_file() else None}
     return {"outcomes": outcomes, "swarm": report}
 

@@ -5,7 +5,13 @@
   "page_role": "thank_you",
   "owning_skill": 82,
   "page_label": "thank-you page",
-  "status": "PROPOSED structure, pending Trevor's approval. The owner supplied no precise thank-you layout (82-signature-thank-you/references/layout-and-copy-profiles.md, preamble). This spec merges the two structures already in the repo: Skill 82's order of parts (header, order summary, access blocks, what happens next, support and manage) and Skill 49's TY bands (a welcome, 4 to 6 numbered next steps, a signed close of up to 170 characters, no offer button, exactly one celebration hero image). It is the page type's canonical section sequence for the Skill 71 pipeline, in the same shape as the landing specs, so the section-count check, the request builder, the wireframe prompt and the copy validator read it through scripts/page_role.py and never fork the pipeline. Change this file, not the code, when Trevor changes the layout.",
+  "status": "RATIFIED as built on 2026-11-02 (five-section thank-you structure; see structure_approval). The owner supplied no precise thank-you layout (82-signature-thank-you/references/layout-and-copy-profiles.md, preamble). This spec merges the two structures already in the repo: Skill 82's order of parts (header, order summary, access blocks, what happens next, support and manage) and Skill 49's TY bands (a welcome, 4 to 6 numbered next steps, a signed close of up to 170 characters, no offer button, exactly one celebration hero image). It is the page type's canonical section sequence for the Skill 71 pipeline, in the same shape as the landing specs, so the section-count check, the request builder, the wireframe prompt and the copy validator read it through scripts/page_role.py and never fork the pipeline. Change this file, not the code, when Trevor changes the layout.",
+  "structure_approval": {
+    "decision": "ratified_as_built",
+    "date": "2026-11-02",
+    "structure": "thank-you, 5 sections",
+    "basis": "Decision taken as recommended on 2026-11-02 (repair project bfl-s49-repair-20261102, decision STR-17): ratify as built, because the structure already matches Skill 49 page_types, Skill 71 copy specs and funnel_structure.json. A later change to its sections is a new decision with its own date."
+  },
   "guide": {
     "file": "82-signature-thank-you/references/layout-and-copy-profiles.md",
     "layout_reference": "82-signature-thank-you/references/wireframe-mockup-layout.md",

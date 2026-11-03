@@ -67,6 +67,9 @@ SHARED_REFS = (
     ("shared-utils/signature_launch/design/tokens/tokens.py",
      "scripts/launch_context.py:421",
      "emitting the tokens component for the run's brand"),
+    ("shared-utils/signature_launch/design/image_slots.py",
+     "scripts/validate_page.py",
+     "checking every page image against the image-map (slot id, URL, QC'd file hash)"),
 )
 
 # Local assets the production scripts declare by constant.
@@ -237,14 +240,36 @@ def check_shared(root: Path):
             if path.is_file():
                 rows.append(("PASS", "shared tokens component", ""))
             else:
-                # emit_design_tokens records component_not_in_tree and carries
-                # on, so this is a recorded degradation, not a failed call.
+                # A token-driven page is REFUSED without the component (the
+                # call below shows the refusal); a plain call records
+                # component_not_in_tree. Reported, not gating: a lone install
+                # that never imports a launch request does not need it.
+                try:
+                    lc.emit_design_tokens(str(root), None, token_driven=True)
+                    refusal = "NOT refused (unexpected)"
+                except lc.LaunchContextError as refused:
+                    refusal = "a token-driven page is refused: " + str(refused)[-160:]
                 rows.append(("DEGRADED", "shared tokens component",
-                             f"resolved to {path} (absent); design tokens are recorded as "
-                             f"component_not_in_tree rather than emitted"))
+                             f"resolved to {path} (absent); {refusal}"))
         except Exception as exc:                       # noqa: BLE001
             rows.append(("FAIL", "shared tokens component",
                          f"{type(exc).__name__}: {exc}"))
+        try:
+            rec = lc.verify_design_css(str(root))
+            if rec["status"] == "verified":
+                rows.append(("PASS", "shared design.css hash matches the recorded SHA-256", ""))
+        except lc.LaunchContextError as exc:
+            rows.append(("FAIL", "shared design.css hash mismatch", str(exc)[-220:]))
+        except Exception as exc:                       # noqa: BLE001
+            rows.append(("FAIL", "shared design.css hash check", f"{type(exc).__name__}: {exc}"))
+        try:
+            slots = Path(lc.shared_component_path(str(root), lc.IMAGE_SLOTS_REF))
+            rows.append(("PASS" if slots.is_file() else "DEGRADED", "shared image-slot contract",
+                         "" if slots.is_file() else
+                         f"resolved to {slots} (absent); validate_page.py refuses a page "
+                         "with content images until it is installed"))
+        except Exception as exc:                       # noqa: BLE001
+            rows.append(("FAIL", "shared image-slot contract", f"{type(exc).__name__}: {exc}"))
     except Exception as exc:                           # noqa: BLE001
         rows.append(("FAIL", "shared consumers import", f"{type(exc).__name__}: {exc}"))
     finally:
@@ -252,8 +277,9 @@ def check_shared(root: Path):
         sys.path.remove(str(scripts))
 
     css = root.parent / "shared-utils/signature_launch/design/design.css"
-    rows.append(("PASS" if css.is_file() else "REF", "shared design.css (recorded component ref)",
-                 "" if css.is_file() else f"absent at {css}; recorded in a produced page, no read path in this tree"))
+    if not css.is_file():
+        rows.append(("REF", "shared design.css (recorded component ref)",
+                     f"absent at {css}; a token-driven page import is refused without it"))
     return rows
 
 

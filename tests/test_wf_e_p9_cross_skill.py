@@ -10,8 +10,10 @@ What it proves (checklist C10, plan §14.2):
 
   B12  A folded-levels launch gets the APPROVED native contract and nothing
        invented: landing -> checkout with no product_selection node, every
-       level kept distinct, and the unsupported checkout shape recorded as an
-       explicit `contract_gap` rather than guessed into a Skill 79 mode.
+       level kept distinct, and its checkout realised as one native
+       combined_single_offer order form per main price choice (the owner's
+       decision DECISIONS-NEEDED[4], which replaced the earlier `contract_gap`),
+       never one main offer relabelled as the whole launch.
   B13  Only a GENUINE decline routes to D1. payment_pending / payment_failed /
        requires_customer_action retain the stage; a clicked button is not
        payment; abandoned checkout is never a decline.
@@ -43,6 +45,7 @@ Run:  python3 -m pytest tests/test_wf_e_p9_cross_skill.py -q
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import socket
 import sys
@@ -86,6 +89,7 @@ import render_thank_you  # noqa: E402
 import route_law  # noqa: E402
 import s49_launch_shape  # noqa: E402
 import thank_you_resolver  # noqa: E402
+from purchase_event_adapter import snapshot_integrity  # noqa: E402
 from fixture_driver import FixtureDriver  # noqa: E402
 from launcher_core import (  # noqa: E402
     checkout as checkout83,
@@ -94,6 +98,19 @@ from launcher_core import (  # noqa: E402
     page_designs as page_designs83,
     route as route83,
 )
+
+sys.path.insert(0, str(LAUNCH83 / "fixtures"))
+import test_only_readback  # noqa: E402  Skill 83's TEST-ONLY GHL read-back transport (read-only, offline)
+from launcher_core import entitlement as entitlement83  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _offline_ghl_readback():
+    """intake83.validate() reads the entitlement attestation back from GHL; offline, only the TEST-ONLY refs resolve."""
+    test_only_readback.install()
+    yield
+    entitlement83.set_transport(None)
+
 
 SKILL62_VIDEOS = CWFE62 / "generate_videos.py"
 THANK_YOU_SNAPSHOT = ROOT / "82-signature-thank-you" / "fixtures" / "test-only-snapshot.json"
@@ -104,26 +121,63 @@ GOLDEN_50 = ROOT / "50-email-engine" / "examples" / "golden-signature-launch-10"
 # Fixtures — synthetic, offline, test_only everywhere
 # ---------------------------------------------------------------------------
 
+_ANSWERS_DIR = tempfile.TemporaryDirectory()  # the client's answers files for the intakes below
+
+
+def _answers_file_for(offers: list) -> str:
+    """Write the client-intake-answers/v1 doc that says exactly what these offers say (the shape Skill 83's tests use)."""
+    answers = {"billing": {"value": "one_time", "status": "provided"}}
+    mains = []
+    for o in offers:
+        item = {"offer_id": o["offer_id"], "display_name": o["name"],
+                "price": {"amount_minor": o["price"]["amount_minor"], "currency": o["price"]["currency"]},
+                "deliverables": list((o.get("level") or {}).get("deliverables") or [])}
+        if o["role"] == "main":
+            mains.append(item)
+        else:
+            answers[o["role"]] = {"value": item, "status": "provided"}
+    answers["packages"] = {"value": mains, "status": "provided"}
+    text = json.dumps({"schema": "client-intake-answers/v1", "answers": answers}, indent=1, sort_keys=True)
+    path = Path(_ANSWERS_DIR.name) / f"answers-{hashlib.sha256(text.encode()).hexdigest()[:16]}.json"
+    path.write_text(text, encoding="utf-8")
+    return str(path)
+
+
 def launch_intake(mode: str, mains: int = 1, **overrides) -> dict:
     """A minimal launch intake that passes Skill 83's own validator."""
     offers = [{"offer_id": f"main-{i + 1}", "name": f"TEST ONLY Level {i + 1}",
                "role": "main",
-               "price": {"amount_minor": 49700 + 50000 * i, "currency": "USD"}}
+               "price": {"amount_minor": 49700 + 50000 * i, "currency": "USD",
+                         "source_ref": f"answers-file:packages[{i}]"},
+               "delivery": {"destination": f"https://members.example.com/main-{i + 1}",
+                            "owner_confirmed": True}}
               for i in range(mains)]
+    if mode != "single_simple":
+        for offer in offers:
+            offer["level"] = {"state": "supplied", "name": offer["name"],
+                              "deliverables": [f"{offer['name']} access"]}
     doc = {
         "schema_version": "1.0",
         "tenant_id": "TEST-TENANT",
         "location_id": "TEST-LOCATION",
-        "launch_id": "TEST-LAUNCH",
+        "launch_id": "test-launch",
         "revision": 1,
         "journey_mode": mode,
         "brand": {"ref": "brand-test", "hash": "a" * 64},
         "copy_profile": "signature_12_section",
         "approval": {"ref": "approval-test", "hash": "b" * 64},
-        "entitlement_attestation": {"basis": "purchase", "evidence_ref": "ev-test",
+        "entitlement_attestation": {"basis": "purchase", "evidence_ref": test_only_readback.TEST_ONLY_CONTACT,
                                     "attested_by": "operator-test",
-                                    "purchase_reference": "order-test"},
+                                    "purchase_reference": test_only_readback.TEST_ONLY_ORDER,
+                                    "amount_minor": entitlement83.load_declaration()["purchase_price"]["amount_minor"],
+                                    "currency": entitlement83.load_declaration()["purchase_price"]["currency"]},
         "offers": offers,
+        "answers_file": _answers_file_for(offers),
+        "checkout_terms": {
+            "guarantee_ref": "TEST-ONLY-GUARANTEE-REF", "guarantee_text": "Test-only guarantee text.",
+            "terms_ref": "TEST-ONLY-TERMS-REF", "terms_text": "Test-only terms text.",
+            "consent_ref": "TEST-ONLY-CONSENT-REF", "consent_text": "Test-only consent text.",
+        },
         "test_only": True,
     }
     doc.update(overrides)
@@ -141,6 +195,15 @@ def launch_record(mode: str = "folded_levels") -> dict:
         "extras": {"upsell_1": True, "downsell_1": True, "upsell_2": True},
         "test_only": True,
     }
+
+
+def resolve_order_view(snap, *args, **kwargs):
+    """Stamp the fixture snapshot as the S82 adapter would (F-harden-01: the
+    resolver refuses unstamped or edited snapshots), then run the real
+    resolver. The refusal itself is covered by 82 tests/test_resolver_integrity.py."""
+    if isinstance(snap, dict):
+        snap = {**snap, "integrity": snapshot_integrity(snap)}
+    return thank_you_resolver.resolve_order_view(snap, *args, **kwargs)
 
 
 def snapshot() -> dict:
@@ -219,23 +282,27 @@ class TestB12FoldedLevels:
         assert mapping["supplied"].get("main_price") is None
 
     def test_the_unsupported_checkout_shape_is_an_explicit_gap_never_a_guessed_mode(self):
+        # The old `contract_gap` (no Skill 79 mode for several mains) is closed by DECISIONS-NEEDED[4]: one
+        # native combined_single_offer order form per main price choice. Nothing is guessed: the mapping still
+        # names no single main offer or price, and each instance carries its own main.
         doc = intake83.validate(launch_intake("folded_levels", mains=3))
         mapping = checkout83.order_form_mapping(doc, route83.compile_route(doc))
-        assert mapping["checkout_mode"] is None
-        assert mapping["checkout_mode_state"] == "contract_gap"
-        # The gap names itself, and checkout_mode stays in the unknown set.
-        assert "checkout_mode" in mapping["unknown"]
-        assert any("contract" in note and "express neither" in note
-                   for note in mapping["notes"]), mapping["notes"]
-        # The contract has exactly two modes; neither is invented for this shape.
+        assert mapping["checkout_mode"] == "combined_single_offer"
+        assert mapping["checkout_mode_state"] == "resolved"
+        assert mapping["realisation"] == "per_offer_instances"
+        assert "main_offer_id" in mapping["unknown"] and "main_price" in mapping["unknown"]
+        assert [i["main_offer_id"] for i in mapping["instances"]] == ["main-1", "main-2", "main-3"]
+        assert {i["selection_ref"] for i in mapping["instances"]} == {None}
+        assert len({i["page_id"] for i in mapping["instances"]}) == 3
+        # The contract still has exactly two modes, and the journey table names the realised one.
         assert set(mapping["contract_modes"]) == {"combined_single_offer", "post_selection"}
-        assert checkout83.MODE_BY_JOURNEY["folded_levels"] is None
+        assert checkout83.MODE_BY_JOURNEY["folded_levels"] == "combined_single_offer"
         assert checkout83.MODE_BY_JOURNEY["single_simple"] == "combined_single_offer"
-        assert checkout83.MODE_BY_JOURNEY["multiple_options"] == "post_selection"
+        assert checkout83.MODE_BY_JOURNEY["multiple_options"] == "combined_single_offer"
 
     def test_the_two_supported_shapes_still_resolve(self):
         for mode, expected in (("single_simple", "combined_single_offer"),
-                               ("multiple_options", "post_selection")):
+                               ("multiple_options", "combined_single_offer")):
             doc = intake83.validate(launch_intake(mode, mains=1 if mode == "single_simple" else 2))
             mapping = checkout83.order_form_mapping(doc, route83.compile_route(doc))
             assert mapping["checkout_mode"] == expected, mode
@@ -332,7 +399,7 @@ class TestB14U2Eligibility:
                 line_item("LINE-U1", "upsell_1", "EV-U1", status="pending"),
                 line_item("LINE-U2", "upsell_2", "EV-U2")]
         with pytest.raises(thank_you_resolver.ResolverError) as exc:
-            thank_you_resolver.resolve_order_view(with_lines(snapshot(), base))
+            resolve_order_view(with_lines(snapshot(), base))
         assert "u2_without_qualification" in str(exc.value)
         assert "no PAID" in str(exc.value)
 
@@ -341,21 +408,21 @@ class TestB14U2Eligibility:
                 line_item("LINE-BUMP", "bump", "EV-BUMP"),
                 line_item("LINE-U2", "upsell_2", "EV-U2")]
         with pytest.raises(thank_you_resolver.ResolverError) as exc:
-            thank_you_resolver.resolve_order_view(with_lines(snapshot(), base))
+            resolve_order_view(with_lines(snapshot(), base))
         assert "u2_without_qualification" in str(exc.value)
 
     def test_a_verified_paid_u1_qualifies_u2(self):
         base = [line_item("LINE-MAIN", "main", "EV-MAIN"),
                 line_item("LINE-U1", "upsell_1", "EV-U1"),
                 line_item("LINE-U2", "upsell_2", "EV-U2")]
-        view = thank_you_resolver.resolve_order_view(with_lines(snapshot(), base))
+        view = resolve_order_view(with_lines(snapshot(), base))
         assert [item["slot"] for item in view["items"]] == ["main", "upsell_1", "upsell_2"]
 
     def test_a_redelivered_u2_line_is_one_purchase_not_two(self):
         item = line_item("LINE-U2", "upsell_2", "EV-U2")
         base = [line_item("LINE-MAIN", "main", "EV-MAIN"),
                 line_item("LINE-U1", "upsell_1", "EV-U1"), item, copy.deepcopy(item)]
-        view = thank_you_resolver.resolve_order_view(with_lines(snapshot(), base))
+        view = resolve_order_view(with_lines(snapshot(), base))
         assert len([i for i in view["items"] if i["slot"] == "upsell_2"]) == 1
 
     def test_a_conflicting_redelivery_is_refused_not_merged(self):
@@ -365,7 +432,7 @@ class TestB14U2Eligibility:
         base = [line_item("LINE-MAIN", "main", "EV-MAIN"),
                 line_item("LINE-U1", "upsell_1", "EV-U1"), first, second]
         with pytest.raises(thank_you_resolver.ResolverError) as exc:
-            thank_you_resolver.resolve_order_view(with_lines(snapshot(), base))
+            resolve_order_view(with_lines(snapshot(), base))
         assert "duplicate_conflict" in str(exc.value)
 
     def test_the_graph_carries_exactly_one_canonical_u2_node(self):
@@ -396,7 +463,7 @@ class TestB14U2Eligibility:
 class TestB15ThankYouTenantChecks:
     def test_a_cross_tenant_order_reference_is_refused(self):
         with pytest.raises(thank_you_resolver.ResolverError) as exc:
-            thank_you_resolver.resolve_order_view(
+            resolve_order_view(
                 snapshot(),
                 expected_identity={"tenant_id": "OTHER-TENANT",
                                    "location_id": "TEST-LOCATION",
@@ -406,7 +473,7 @@ class TestB15ThankYouTenantChecks:
 
     def test_a_wrong_launch_scope_is_refused(self):
         with pytest.raises(thank_you_resolver.ResolverError) as exc:
-            thank_you_resolver.resolve_order_view(
+            resolve_order_view(
                 snapshot(),
                 expected_identity={"tenant_id": "TEST-TENANT",
                                    "location_id": "TEST-LOCATION",
@@ -417,7 +484,7 @@ class TestB15ThankYouTenantChecks:
         unverified = snapshot()
         unverified["verified"] = False
         with pytest.raises(thank_you_resolver.ResolverError) as exc:
-            thank_you_resolver.resolve_order_view(unverified)
+            resolve_order_view(unverified)
         assert "unverified_snapshot" in str(exc.value)
 
     @pytest.mark.parametrize("context", [
@@ -427,31 +494,31 @@ class TestB15ThankYouTenantChecks:
     ])
     def test_query_string_and_url_claims_are_never_authority(self, context):
         with pytest.raises(thank_you_resolver.ResolverError) as exc:
-            thank_you_resolver.resolve_order_view(snapshot(), request_context=context)
+            resolve_order_view(snapshot(), request_context=context)
         assert "query_string_authority_rejected" in str(exc.value)
 
     def test_access_is_granted_only_for_a_paid_item_with_granted_fulfillment(self):
-        granted = thank_you_resolver.resolve_order_view(
+        granted = resolve_order_view(
             snapshot(), fulfillment_map={"base-a": {"state": "granted",
                                                     "delivery_url": "https://test.invalid/a",
                                                     "next_action": "access"}})
         assert len(granted["access_blocks"]) == 1
-        pending = thank_you_resolver.resolve_order_view(
+        pending = resolve_order_view(
             snapshot(), fulfillment_map={"base-a": {"state": "pending"}})
         assert pending["access_blocks"] == []
-        missing = thank_you_resolver.resolve_order_view(snapshot())
+        missing = resolve_order_view(snapshot())
         assert missing["access_blocks"] == []
 
     def test_an_unapproved_fulfillment_action_is_refused_not_passed_through(self):
         with pytest.raises(thank_you_resolver.ResolverError) as exc:
-            thank_you_resolver.resolve_order_view(
+            resolve_order_view(
                 snapshot(),
                 fulfillment_map={"base-a": {"state": "granted",
                                             "next_action": "buy_more"}})
         assert "invalid_next_action" in str(exc.value)
 
     def test_the_rendered_error_discloses_no_order_data(self):
-        view = thank_you_resolver.resolve_order_view(
+        view = resolve_order_view(
             snapshot(), fulfillment_map={"base-a": {"state": "granted"}})
         for kind in render_thank_you.ERROR_KINDS:
             fragment = render_thank_you.render_error(kind)
@@ -472,11 +539,11 @@ def plan_approval(launch: dict, **overrides) -> dict:
     record = {
         "schema_version": "1.0",
         "approval_id": "APPR-TEST",
-        "subject_type": s49_launch_shape.PLAN_BUILD_APPROVAL_TYPE,
-        "subject_hash": s49_launch_shape.plan_document_hash(launch),
-        "owner_identity_ref": "client-test",
+        "kind": s49_launch_shape.PLAN_BUILD_APPROVAL_TYPE,
+        "plan_hash": s49_launch_shape.plan_document_hash(launch),
+        "client_identity": "client-test",
         "source_message_ref": "msg-test",
-        "recorded_at": "2026-10-21T00:00:00Z",
+        "expires_at": "2099-01-01T00:00:00Z",
         "scope": [s49_launch_shape.PLAN_BUILD_APPROVAL_TYPE],
         "revoked": False,
         "verification_class": sorted(s49_launch_shape.VERIFICATION_CLASSES)[0],
@@ -487,7 +554,7 @@ def plan_approval(launch: dict, **overrides) -> dict:
 
 NOW = datetime(2026, 10, 22, tzinfo=timezone.utc)
 PLAN_LAUNCH = {"tenant_id": "TEST-TENANT", "location_id": "TEST-LOCATION",
-               "launch_id": "TEST-LAUNCH", "revision": 1}
+               "launch_id": "TEST-LAUNCH", "revision": 1, "test_only": True}
 
 
 class TestB16StaleApprovalBlocks:
@@ -499,14 +566,14 @@ class TestB16StaleApprovalBlocks:
         assert result["subject_hash"] == s49_launch_shape.plan_document_hash(PLAN_LAUNCH)
 
     @pytest.mark.parametrize("overrides,expected", [
-        ({"subject_hash": "0" * 64}, "does not match the current plan"),
-        ({"revoked": True}, "revoked"),
-        ({"scope": []}, "authorizes nothing"),
-        ({"scope": ["launch_plan_build_narrowed"]}, "authorizes nothing"),
-        ({"subject_type": "design_board"}, "approval types are separate"),
-        ({"recorded_at": "2099-01-01T00:00:00Z"}, "in the future"),
-        ({"recorded_at": "not-a-timestamp"}, "not a valid timestamp"),
-        ({"source_message_ref": ""}, "platform reference"),
+        ({"plan_hash": "0" * 64}, "APPROVAL-HASH"),
+        ({"revoked": True}, "APPROVAL-REVOKED"),
+        ({"scope": []}, "APPROVAL-SCOPE"),
+        ({"scope": ["launch_plan_build_narrowed"]}, "APPROVAL-SCOPE"),
+        ({"kind": "design_board"}, "APPROVAL-KIND"),
+        ({"expires_at": "2026-10-21T00:00:00Z"}, "APPROVAL-EXPIRED"),
+        ({"expires_at": "not-a-timestamp"}, "APPROVAL-EXPIRED"),
+        ({"source_message_ref": ""}, "source_message_ref"),
         ({"verification_class": "self_asserted"}, "verification_class"),
     ])
     def test_a_stale_or_malformed_approval_blocks_the_action(self, overrides, expected):
@@ -522,12 +589,12 @@ class TestB16StaleApprovalBlocks:
             s49_launch_shape.check_plan_build_approval(
                 PLAN_LAUNCH, plan_approval(other),
                 client_identity_ref="client-test", worker_identity_ref="worker-test", now=NOW)
-        assert "another plan" in str(exc.value)
+        assert "APPROVAL-HASH" in str(exc.value)
 
     def test_the_worker_cannot_approve_its_own_work(self):
         with pytest.raises(s49_launch_shape.ShapeError) as exc:
             s49_launch_shape.check_plan_build_approval(
-                PLAN_LAUNCH, plan_approval(PLAN_LAUNCH, owner_identity_ref="worker-test"),
+                PLAN_LAUNCH, plan_approval(PLAN_LAUNCH, client_identity="worker-test"),
                 client_identity_ref="worker-test", worker_identity_ref="worker-test", now=NOW)
         assert "self-approval" in str(exc.value)
 
@@ -841,6 +908,12 @@ class TestB22InstalledRepoDrift:
             (root / "83-black-friday-launcher" / "SKILL.md").write_text(
                 "---\nname: black-friday-launcher\n---\n", encoding="utf-8")
             (root / "49-signature-funnel").mkdir()
+            # a skill tree resolves only with its SKILL.md and counts as present only at its manifest minimum
+            # version (tree-49: v2.1.28)
+            (root / "49-signature-funnel" / "SKILL.md").write_text(
+                "---\nname: signature-funnel\n---\n", encoding="utf-8")
+            (root / "49-signature-funnel" / "skill-version.txt").write_text(
+                (ROOT / "49-signature-funnel" / "skill-version.txt").read_text(encoding="utf-8"), encoding="utf-8")
             before = sorted(p.name for p in root.rglob("*"))
             report = dependencies83.check(root=root)
             after = sorted(p.name for p in root.rglob("*"))

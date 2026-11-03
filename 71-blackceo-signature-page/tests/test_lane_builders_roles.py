@@ -12,12 +12,14 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import shlex
 import sys
 import tempfile
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -47,6 +49,15 @@ def load(name):
 
 exe = load("stage_executor")
 builder = load("build_production_request")
+
+
+def band_sections(role, ids):
+    """Request sections for `ids`; an upsell band carries the layout_tag its declared layout names."""
+    layout = json.loads(exe.STRUCTURES_FILE.read_text(encoding="utf-8"))["layouts"].get(role) or {"sections": []}
+    tags = {s["id"]: s["layout_tag"] for s in layout["sections"]}
+    return [{"section_id": i, **({"layout_tag": tags[i]} if i in tags else {})} for i in ids]
+
+
 runner = load("run_page_type")
 role_runner = load("run_page_role_stages")
 forms = load("copy_forms")
@@ -122,7 +133,7 @@ class RoleFormGuardTests(RunCase):
                                    ("thank_you", "thank-you", ["1", "2", "3", "4", "5"])):
             got = exe.check_section_count(self.run, {
                 "page_role": role, "copy_version": version,
-                "sections": [{"section_id": i} for i in ids]}, paid=True)
+                "sections": band_sections(role, ids)}, paid=True)
             self.assertEqual(got[:2], (version, ids), role)
 
     def test_the_builder_refuses_a_copy_version_that_belongs_to_another_role(self):
@@ -148,7 +159,7 @@ class RoleFormGuardTests(RunCase):
     def test_a_registered_role_is_checked_from_its_own_role_even_unpaid(self):
         # finding 14: no declared copy_version must not mean "skip the check" for a page type
         got = exe.check_section_count(self.run, {"page_role": "upsell_1",
-                                                 "sections": [{"section_id": i} for i in UPSELL_IDS]})
+                                                 "sections": band_sections("upsell_1", UPSELL_IDS)})
         self.assertEqual(got[:2], ("upsell", UPSELL_IDS))
         with self.assertRaises(exe.ExecutorError) as ctx:
             exe.check_section_count(self.run, {"page_role": "upsell_1",
@@ -436,6 +447,9 @@ class RoleStagesRunnerOutputTests(unittest.TestCase):
         self.addCleanup(setattr, role_runner.subprocess, "run", self.original_run)
         role_runner.subprocess.run = lambda argv: types.SimpleNamespace(returncode=0)  # no subprocess
         # and no provider: only the printed advice is checked
+        self.addCleanup(setattr, role_runner, "resolve_model", role_runner.resolve_model)
+        role_runner.resolve_model = lambda provider: STUB if provider == "stub" else "skill66-fake-i2i"
+        # and no Skill 66 call: RoleStagesRunnerModelTests owns how the model is resolved (IMG-19)
 
     def output(self, *extra):
         out = io.StringIO()
@@ -491,6 +505,9 @@ class RoleStagesRunnerOutputTests(unittest.TestCase):
         self.addCleanup(setattr, role_runner.subprocess, "run", self.original_run)
         role_runner.subprocess.run = lambda argv: types.SimpleNamespace(returncode=0)  # no subprocess
         # and no provider: only the printed advice is checked
+        self.addCleanup(setattr, role_runner, "resolve_model", role_runner.resolve_model)
+        role_runner.resolve_model = lambda provider: STUB if provider == "stub" else "skill66-fake-i2i"
+        # and no Skill 66 call: RoleStagesRunnerModelTests owns how the model is resolved (IMG-19)
 
     def output(self, *extra):
         out = io.StringIO()
@@ -528,6 +545,101 @@ class RoleStagesRunnerOutputTests(unittest.TestCase):
         text = self.output("--provider", "kie")
         self.assertIn("stages done with the kie provider", text)
         self.assertNotIn("PREVIEW", text)
+
+
+FAKE_ADAPTER = """#!/usr/bin/env python3
+import json, os
+print(json.dumps({"state": "success", "data": {"source": "fake", "changed": True, "routes": {
+    "Text to Image": os.environ["FAKE_LATEST"] + "-text-to-image",
+    "Image to Image": os.environ["FAKE_LATEST"] + "-image-to-image"}}}))
+"""
+
+
+class RoleStagesRunnerModelTests(unittest.TestCase):
+    """IMG-19: the page-role runner holds no model id; a real run draws with Skill 66's default,
+    resolved through shared-utils/signature_launch/image_model.py, and refuses when that cannot answer."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.run = self.root / "run"
+        (self.run / "copy").mkdir(parents=True)
+        (self.run / "copy" / "internal-manuscript.md").write_text(
+            (FIXTURES / "thank-you-path-b.md").read_text(encoding="utf-8"), encoding="utf-8")
+        (self.run / "intake.json").write_text(json.dumps({"copy_version": "thank-you"}))
+        self.calls = []
+        real = role_runner.subprocess.run
+        self.addCleanup(setattr, role_runner.subprocess, "run", real)
+
+        def fake(argv, **kw):  # the runner's own builds and executor runs are recorded, never run;
+            if kw:  # anything else (Skill 66 asking the Skill 74 adapter) runs for real
+                return real(argv, **kw)
+            self.calls.append([str(x) for x in argv])
+            return types.SimpleNamespace(returncode=0)
+        role_runner.subprocess.run = fake
+        self.addCleanup(setattr, role_runner, "IMAGE_MODEL_PATH", role_runner.IMAGE_MODEL_PATH)
+
+    def main(self, *extra):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = role_runner.main([str(self.run), *extra])
+        return code, out.getvalue()
+
+    def models(self):
+        builds = [c for c in self.calls if Path(c[1]).name == "build_production_request.py"]
+        return [c[c.index("--model") + 1] for c in builds]
+
+    def test_the_runner_source_holds_no_model_id(self):
+        source = (SCRIPTS / "run_page_role_stages.py").read_text(encoding="utf-8")
+        registry = json.loads((ROOT.parent / "66-kie-image" / "models.json").read_text(encoding="utf-8"))
+        ids = {m["canonical_model_id"] for m in registry["models"]}
+        self.assertTrue(ids)
+        self.assertEqual(sorted(i for i in ids if i in source), [])
+        self.assertNotIn("DEFAULT_MODEL", source)
+
+    def test_a_real_run_draws_with_the_resolved_model_in_every_production_request(self):
+        resolver = self.root / "image_model.py"
+        resolver.write_text("def resolve():\n    return 'skill66-fake-i2i'\n", encoding="utf-8")
+        role_runner.IMAGE_MODEL_PATH = resolver
+        code, _ = self.main("--provider", "kie")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.models(), ["skill66-fake-i2i"] * 3)  # one build per default stage
+
+    def test_a_resolver_that_cannot_answer_refuses_before_anything_runs(self):
+        role_runner.IMAGE_MODEL_PATH = self.root / "absent" / "image_model.py"
+        code, text = self.main("--provider", "kie", "--allow-paid")
+        self.assertEqual(code, 1)
+        self.assertIn("Nothing was drawn", text)
+        self.assertEqual(self.calls, [])
+        broken = self.root / "image_model.py"
+        broken.write_text("def resolve():\n    raise RuntimeError('Skill 66 is down')\n", encoding="utf-8")
+        role_runner.IMAGE_MODEL_PATH = broken
+        code, text = self.main("--provider", "kie", "--allow-paid")
+        self.assertEqual((code, self.calls), (1, []))
+        self.assertIn("Skill 66 is down", text)
+
+    def test_the_stub_provider_names_no_model_and_never_asks_skill_66(self):
+        role_runner.IMAGE_MODEL_PATH = self.root / "absent" / "image_model.py"
+        code, _ = self.main()
+        self.assertEqual(code, 0)
+        self.assertEqual(self.models(), [STUB] * 3)
+
+    @unittest.skipUnless(
+        (ROOT.parent / "shared-utils" / "signature_launch" / "image_model.py").is_file(),
+        "shared-utils/signature_launch/image_model.py lands with U-s49-dispatch-02; QC re-runs this then")
+    def test_changing_the_skill66_default_changes_the_model_in_every_production_request(self):
+        adapter = self.root / "kie_live_adapter.py"  # Skill 74 `latest-family`, the way Skill 66 asks it
+        adapter.write_text(FAKE_ADAPTER, encoding="utf-8")
+        seen = []
+        for latest in ("gpt-image-8", "gpt-image-9"):
+            self.calls.clear()
+            with mock.patch.dict(os.environ, {"KIE_LIVE_ADAPTER_PATH": str(adapter), "FAKE_LATEST": latest}):
+                code, _ = self.main("--provider", "kie", "--allow-paid")
+            self.assertEqual(code, 0)
+            self.assertEqual(self.models(), [f"{latest}-image-to-image"] * 3)
+            seen.append(self.models()[0])
+        self.assertNotEqual(*seen)
 
 
 if __name__ == "__main__":

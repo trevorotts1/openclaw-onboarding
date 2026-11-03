@@ -76,7 +76,7 @@ class Unit:
 
     def __init__(self, text, kind, section, child=None, part=None, step_no=None):
         self.text = text
-        self.kind = kind          # para | bullet | step | cta_button | cta_microcopy
+        self.kind = kind          # para | bullet | row | step | cta_button | cta_microcopy
         self.section = section
         self.child = child        # e.g. "5A" while inside that child of Section 5
         self.part = part          # founder-letter part number while inside Section 12
@@ -174,7 +174,17 @@ def parse_manuscript(text):
                 continue
             mb = re.match(r"^[-*]\s+(.*)$", chunk)
             mn = re.match(r"^(\d+)\.\s+(.*)$", chunk)
-            if mb:
+            if chunk.startswith("|"):
+                # a matrix (table) row; the divider row under a header makes that header a label, not a row
+                flush()
+                if re.fullmatch(r"\|[\s:|-]+\|?", chunk):
+                    if units and units[-1].kind == "row":
+                        units.pop()
+                    continue
+                t = _clean(" ".join(c.strip() for c in chunk.strip("|").split("|")))
+                if t:
+                    units.append(Unit(t, "row", section, child, part))
+            elif mb:
                 flush()
                 t = _clean(mb.group(1))
                 if t:
@@ -332,13 +342,20 @@ def validate(units, section_order, structure_notes, spec, manifest=None,
                 rep.warns.append(
                     f"{label}: {w} words matches neither declared band ({names})")
 
+        if sspec.get("required", True) and not sunits:
+            rep.fails.append(f"structure: {label} is empty; a required section carries copy")
+
         for ec in sspec.get("element_counts", []):
-            found = [u for u in sunits if u.kind == ec["unit_kind"]]
+            kinds = ec.get("unit_kinds") or [ec["unit_kind"]]
+            found = [u for u in sunits if u.kind in kinds]
             if not found:
-                rep.flags.append(
-                    f"{label}: no {ec['unit_kind']} entries found, so the "
-                    f"{ec['element']} count ({ec['min']}-{ec['max']}) could not "
-                    f"be verified mechanically; reviewer confirms")
+                what = f"no {' or '.join(kinds)} entries found, so the " \
+                       f"{ec['element']} count ({ec['min']}-{ec['max']}) could not be verified"
+                if sspec.get("required", True):
+                    # a required section whose rows cannot be parsed is a failure, not a flag
+                    rep.fails.append(f"{label}: {what}; a required section's rows must parse")
+                else:
+                    rep.flags.append(f"{what} mechanically; reviewer confirms")
             else:
                 lim = {"unit": "entries", "min": ec["min"], "max": ec["max"],
                        "kind": ec.get("kind", "hard"), "scope": "count",
@@ -396,9 +413,12 @@ def validate(units, section_order, structure_notes, spec, manifest=None,
             sc = sr.get("step_count")
             if sc:
                 if not steps:
-                    rep.flags.append(
-                        f"{label}: no numbered steps found, so the step count "
-                        f"could not be verified mechanically; reviewer confirms")
+                    line = (f"{label}: no numbered steps found, so the step count "
+                            f"could not be verified")
+                    if sspec.get("required", True):
+                        rep.fails.append(f"{line}; a required section's steps must parse")
+                    else:
+                        rep.flags.append(f"{line} mechanically; reviewer confirms")
                 else:
                     lim = {"unit": "steps", "min": sc["min"], "max": sc["max"],
                            "kind": sc.get("kind", "hard"), "scope": "count",

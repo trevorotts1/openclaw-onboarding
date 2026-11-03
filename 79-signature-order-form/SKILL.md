@@ -1,7 +1,7 @@
 ---
 name: signature-order-form
 description: "Skill 79: Signature Order Form, Checkout and Signature Bump Sale. Builds the reusable native Convert and Flow checkout in two modes (combined explanation-plus-checkout for one simple offer, and post-selection checkout after Skill 78 Product Selection), owns the order bump on the original checkout, the offer details and price display, and the guarantee/terms block. Status: landed in this repository; this file makes no installation, distribution-discovery or live-payment claim."
-version: 0.1.6
+version: 0.1.7
 ---
 
 # Skill 79: Signature Order Form, Checkout and Signature Bump Sale
@@ -63,6 +63,9 @@ offered on that original checkout.
   interface contract for the native binding.
 - `references/components/`: component drafts (order bump, offer details,
   guarantee/terms, both page assemblies) with their binding README.
+  REVIEW-ONLY: these drafts are design references and are not installable;
+  never paste them into a Skill 06 custom-code block. Order bump and consent
+  are native order-form settings, never custom inputs.
 - `scripts/`: the fixture-level reference models: bump model, quote display
   and billing audit, purchase state machine, selection resolver, purchase
   event handoff, the cross-field checkout validator, the native-binding

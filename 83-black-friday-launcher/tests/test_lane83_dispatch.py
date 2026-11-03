@@ -1,7 +1,8 @@
 """Lane 83: `cli dispatch` turns an intake into a Skill 49 launch record and builds every page.
 
 Free: the page skills are replaced by tests/lane83_fake_consumer.py (no network, no provider), and a
-KIE adapter that fails loudly if it is ever started proves zero paid calls.
+KIE adapter that fails loudly if it is ever started proves zero paid calls. Because the fake consumer
+fabricates the design files, nothing here proves the real adapter chain: that is test_e2e_real_adapters.py.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -25,6 +26,8 @@ sys.path.insert(0, str(SKILL_ROOT))
 sys.path.insert(0, str(SKILL_ROOT / "routes"))
 
 import substrate  # noqa: E402
+sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
+from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402
 from launcher_core import (checks, cli, image_plan, intake, launch_bridge,  # noqa: E402
                            package, route)
 
@@ -36,22 +39,24 @@ CONSUMER = HERE / "lane83_fake_consumer.py"
 def payload(name: str, **plan) -> dict:
     doc = json.loads((FIXTURES / name / "intake.json").read_text(encoding="utf-8"))
     doc["image_plan"] = {"brand_file": "/tmp/test-brand.json", "brand_owner": "TEST-ONLY Client", **plan}
+    # a test-only dispatch records the approval ref of the verified record (approval_for: APPR-TEST), so the
+    # intake assembled against that run carries the same ref
+    doc["approval"] = {**doc["approval"], "ref": "APPR-TEST"}
     return doc
 
 
-def launch_for(doc: dict) -> dict:
+def launch_for(doc: dict, **choices) -> dict:
     normalized = intake.validate(doc)
     inputs, _ = image_plan.resolve(normalized.get("image_plan"), test_only=normalized["test_only"])
-    return launch_bridge.to_launch_record(normalized, route.compile_route(normalized), inputs)
+    return launch_bridge.to_launch_record(normalized, route.compile_route(normalized), inputs, **choices)
 
 
-def approval_for(doc: dict, **over) -> dict:
-    launch = launch_for(doc)
-    record = {"schema_version": "1.0", "approval_id": "APPR-TEST", "subject_type": "launch_plan_build",
-              "subject_hash": substrate.dispatch().vlp.plan_document_hash(launch),
-              "owner_identity_ref": CLIENT, "source_message_ref": "msg-test-1",
-              "recorded_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-              "scope": ["launch_plan_build"], "revoked": False,
+def approval_for(doc: dict, choices=None, **over) -> dict:
+    launch = launch_for(doc, **(choices or {}))
+    record = {"schema_version": "1.0", "approval_id": "APPR-TEST", "kind": "launch_plan_build",
+              "plan_hash": substrate.dispatch().vlp.plan_document_hash(launch), "client_identity": CLIENT,
+              "source_message_ref": "msg-test-1", "scope": ["launch_plan_build"],
+              "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "revoked": False,
               "verification_class": "recorded_consent_not_cryptographically_sealed"}
     record.update(over)
     return record
@@ -70,9 +75,17 @@ def consumer_config(extra_by_role=None, sleep=0.0) -> dict:
 def run_dispatch(doc, out, **kw):
     if "adapters_config" not in kw:
         kw["adapters_config"] = consumer_config()
-    return launch_bridge.run(doc, out, approval=kw.pop("approval", None) or approval_for(doc),
+    choices = {k: kw[k] for k in ("landing_pages", "extra_pages") if k in kw}  # the plan hash binds them
+    return launch_bridge.run(doc, out, approval=kw.pop("approval", None) or approval_for(doc, choices),
                              client_identity_ref=kw.pop("client", CLIENT),
                              worker_identity_ref=kw.pop("worker", WORKER), **kw)
+
+
+def confirm_defaults(package_dir, to_confirm):
+    """Record the client's confirmation of every default the dispatch report lists (ENF-07 to_confirm gate)."""
+    (Path(package_dir) / "client-confirmations.json").write_text(
+        json.dumps({"confirmations": [{"field": e["field"], "confirmation_ref": "TEST-CLIENT-CONFIRMATION"}
+                                      for e in to_confirm]}), encoding="utf-8")
 
 
 ELEVATION_ROLES = ["landing", "product_selection", "checkout", "upsell_1", "downsell_1", "upsell_2", "thank_you"]
@@ -87,7 +100,7 @@ class BridgeRecordTests(unittest.TestCase):
         self.assertEqual(launch["status"], "approved")
         self.assertEqual(launch["image_provider"], "kie")
         self.assertEqual(len(launch["route_graph_hash"]), 64)
-        self.assertEqual(launch["plan_approval_ref"], "TEST-ONLY-APPROVAL")
+        self.assertEqual(launch["plan_approval_ref"], "APPR-TEST")  # the verified approval ref payload() records
 
     def test_the_record_carries_every_offer_and_price_from_the_intake_unchanged(self):
         doc = payload("elevation")
@@ -160,7 +173,8 @@ class DispatchTests(unittest.TestCase):
         self.assertIn("Nothing was spent", text)
 
     def test_the_dispatch_report_has_no_waiting_choices_when_the_client_chose_everything(self):
-        doc = payload("elevation", design_style="B", image_provider="kie", image_cap=200)
+        # 264 = the pictures landing + sales + the five route pages need: Skill 49 now refuses a smaller cap up front
+        doc = payload("elevation", design_style="B", image_provider="kie", image_cap=264)
         report = run_dispatch(doc, self.out, landing_pages=["landing", "sales"])
         self.assertEqual(report["to_confirm"], [])
         self.assertIn("Every choice came from you", "\n".join(launch_bridge.summary_lines(report)))
@@ -175,7 +189,8 @@ class DispatchTests(unittest.TestCase):
                                  council={"step": "council_launch_planning", "skill": "x", "entry_point": "x",
                                           "status": "not_ready", "advice_state": "pending_live_session",
                                           "blocks_build": False, "is_permission": False},
-                                 require_designs=True, to_confirm=report["to_confirm"])
+                                 require_designs=True, to_confirm=report["to_confirm"],
+                                 checkout_readback=TEST_ONLY_CHECKOUT_READBACK)
         manifest = built["manifest"]
         self.assertTrue(manifest["designs_required"])
         up1 = next(p for p in manifest["pieces"] if p["role"] == "upsell_1")
@@ -201,8 +216,13 @@ class DispatchTests(unittest.TestCase):
         pieces = {r: json.loads((self.out / "pieces" / f"{r}.json").read_text()) for r in report["pages"]}
         built = package.assemble(self.out / "package", normalized, route.compile_route(normalized), pieces,
                                  source_root=self.out, require_designs=True, to_confirm=report["to_confirm"],
+                                 checkout_readback=TEST_ONLY_CHECKOUT_READBACK,
                                  council={"step": "s", "skill": "x", "entry_point": "x", "status": "not_ready",
                                           "advice_state": "p", "blocks_build": False, "is_permission": False})
+        self.assertTrue(report["to_confirm"])
+        unconfirmed = checks.check_package(Path(built["manifest_path"]), self.out / "package")
+        self.assertTrue(any(f.startswith("AF-LAUNCH-TO-CONFIRM") for f in unconfirmed), unconfirmed)
+        confirm_defaults(self.out / "package", report["to_confirm"])
         self.assertEqual(checks.check_package(Path(built["manifest_path"]), self.out / "package"), [])
         d2 = [p for p in built["manifest"]["pieces"] if "downsell_2" in json.dumps(p)]
         self.assertTrue(d2, "downsell_2 is in the package manifest")
@@ -215,6 +235,7 @@ class DispatchTests(unittest.TestCase):
         pieces = {r: json.loads((self.out / "pieces" / f"{r}.json").read_text()) for r in report["pages"]}
         built = package.assemble(self.out / "package", normalized, route.compile_route(normalized), pieces,
                                  source_root=self.out, require_designs=True,
+                                 checkout_readback=TEST_ONLY_CHECKOUT_READBACK,
                                  council={"step": "s", "skill": "x", "entry_point": "x", "status": "not_ready",
                                           "advice_state": "p", "blocks_build": False, "is_permission": False})
         fails = checks.check_package(Path(built["manifest_path"]), self.out / "package")
@@ -224,20 +245,22 @@ class DispatchTests(unittest.TestCase):
         doc = payload("elevation")
         with self.assertRaises(launch_bridge.BridgeError) as ctx:
             run_dispatch(doc, self.out, client=WORKER, worker=WORKER,
-                         approval=approval_for(doc, owner_identity_ref=WORKER))
+                         approval=approval_for(doc, client_identity=WORKER))
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-BRIDGE-DISPATCH")
         self.assertFalse((self.out / "pieces").exists() and any((self.out / "pieces").iterdir()))
 
     def test_a_stale_approval_hash_is_refused(self):
         doc = payload("elevation")
         with self.assertRaises(launch_bridge.BridgeError) as ctx:
-            run_dispatch(doc, self.out, approval=approval_for(doc, subject_hash="0" * 64))
-        self.assertIn("does not match the current plan", str(ctx.exception))
+            run_dispatch(doc, self.out, approval=approval_for(doc, plan_hash="0" * 64))
+        self.assertIn("APPROVAL-HASH", str(ctx.exception))
 
     def test_agnes_is_refused_by_name_before_anything_runs(self):
+        # a practice run draws stub pictures with any service (test_lane83_image_plan); paid pictures need a built one
+        doc = payload("elevation", image_provider="agnes")
+        doc["test_only"] = False
         with self.assertRaises(image_plan.ImagePlanError) as ctx:
-            run_dispatch(payload("elevation", image_provider="agnes"), self.out,
-                         approval={})
+            run_dispatch(doc, self.out, approval={})
         self.assertIn("agnes", ctx.exception.detail)
         self.assertFalse((self.out / "dispatch").exists())
         self.assertFalse(self.marker.exists())
@@ -297,9 +320,11 @@ class DispatchTests(unittest.TestCase):
             dispatch = staticmethod(stop)
 
         config = consumer_config()
-        with mock.patch.object(launch_bridge.substrate, "dispatch", return_value=Spy):
-            with self.assertRaises(launch_bridge.BridgeError):
-                run_dispatch(doc, self.out, adapters_config=config, **kw)
+        # this spy checks what Skill 49 is handed; the allow-list is proved in test_launch_bridge_record.AdapterAllowListTests
+        with mock.patch.object(launch_bridge, "_validate_supplied_adapters", lambda *a, **k: None, create=True):
+            with mock.patch.object(launch_bridge.substrate, "dispatch", return_value=Spy):
+                with self.assertRaises(launch_bridge.BridgeError):
+                    run_dispatch(doc, self.out, adapters_config=config, **kw)
         return seen
 
     @unittest.skipUnless("image_inputs" in __import__("inspect").signature(substrate.dispatch().dispatch).parameters,
@@ -314,10 +339,17 @@ class DispatchTests(unittest.TestCase):
     @unittest.skipUnless("limiter" in __import__("inspect").signature(substrate.dispatch().dispatch).parameters,
                          "Skill 49's dispatch has no swarm arguments in this checkout")
     def test_a_paid_run_hands_skill_49_the_cap_ledger_inputs_and_the_kie_limiter(self):
-        doc = payload("elevation", image_cap=9, paid_render_approval_ref="TEST-APPROVAL-REF")
+        brand = Path(self.tmp.name) / "brand.json"
+        brand.write_text(json.dumps({"palette_status": "provided"}), encoding="utf-8")
+        doc = payload("elevation", brand_file=str(brand), design_style="B", image_cap=9, image_cap_minor=72,
+                      image_currency="USD", paid_render_approval_ref="TEST-APPROVAL-REF")
         doc["test_only"] = False
         sentinel = object()
-        with mock.patch.object(substrate.dispatch().swarm, "kie_limiter", return_value=sentinel):
+        with mock.patch.object(substrate.dispatch().swarm, "kie_limiter", return_value=sentinel), \
+                mock.patch.object(image_plan, "_verify_paid_budget", return_value=None):
+            # the budget approval itself is proved in test_image_plan_spend.py
+            doc["approval"] = {"ref": "APPR-TEST",
+                               "hash": substrate.dispatch().vlp.plan_document_hash(launch_for(doc))}
             seen = self._spy_dispatch(doc, approval={})
         self.assertIs(seen["limiter"], sentinel)
         self.assertEqual((seen["image_inputs"]["image_provider"], seen["image_inputs"]["image_cap"],
@@ -373,12 +405,13 @@ class LandingPagesTests(unittest.TestCase):
         files = Path(self.tmp.name) / "inputs"
         files.mkdir()
 
-        def f(name):
+        def f(name, text="{}"):
             path = files / name
-            path.write_text("{}", encoding="utf-8")
+            path.write_text(text, encoding="utf-8")
             return str(path)
         roles = ("upsell_1", "upsell_2", "downsell_1")
-        return {"bridge_config": f("bridge.json"), "author_session": "sess", "checkout_manuscript": f("checkout.md"),
+        # the bridge refuses a bridge config with no landing section, so this one carries an empty one
+        return {"bridge_config": f("bridge.json", '{"landing": {}}'), "author_session": "sess", "checkout_manuscript": f("checkout.md"),
                 "copy": {r: f(f"copy-{r}.json") for r in roles},
                 "journey": {r: f(f"journey-{r}.json") for r in roles},
                 "enrichment": {r: f(f"enr-{r}.json") for r in roles}}
@@ -435,7 +468,7 @@ class LandingPagesTests(unittest.TestCase):
     def test_the_two_image_input_files_each_hold_only_what_their_reader_accepts(self):
         self.real_config_run(lambda *a: None)
         shared = json.loads((self.out / "image_inputs.json").read_text())
-        self.assertEqual(sorted(shared), sorted(image_plan.C3_KEYS))
+        self.assertEqual(sorted(shared), sorted(set(image_plan.C3_KEYS) | set(image_plan.C3_CARRIED_KEYS)))
         order = json.loads((self.out / "order-page-inputs.json").read_text())
         self.assertEqual((order["provider"], order["test_run"]), ("stub", True))
         substrate.dispatch().pset.load_image_inputs(self.out / "image_inputs.json")  # Skill 49's strict reader
@@ -470,6 +503,7 @@ class LandingPagesTests(unittest.TestCase):
         pieces = {r: json.loads((self.out / "pieces" / f"{r}.json").read_text()) for r in report["pages"]}
         return package.assemble(self.out / "package", normalized, route.compile_route(normalized), pieces,
                                 source_root=self.out, require_designs=True, to_confirm=report["to_confirm"],
+                                checkout_readback=TEST_ONLY_CHECKOUT_READBACK,
                                 landing_pages=report["landing_pages"],
                                 council={"step": "s", "skill": "x", "entry_point": "x", "status": "not_ready",
                                          "advice_state": "p", "blocks_build": False, "is_permission": False})
@@ -482,6 +516,10 @@ class LandingPagesTests(unittest.TestCase):
         self.assertTrue(all(Path(a["path"]).name.startswith("sales-page_")
                             for a in sales["artifacts"] if a.get("kind")))
         manifest_path = Path(built["manifest_path"])
+        self.assertTrue(report["to_confirm"])
+        unconfirmed = checks.check_package(manifest_path, self.out / "package")
+        self.assertTrue(any(f.startswith("AF-LAUNCH-TO-CONFIRM") for f in unconfirmed), unconfirmed)
+        confirm_defaults(self.out / "package", report["to_confirm"])
         self.assertEqual(checks.check_package(manifest_path, self.out / "package"), [])
         # remove the sales page's mobile mockup PDF from the delivered package: the check names the page
         manifest = json.loads(manifest_path.read_text())
@@ -530,8 +568,10 @@ class CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             doc = payload("elevation")
-            (tmp / "intake.json").write_text(json.dumps(doc), encoding="utf-8")
             (tmp / "approval.json").write_text(json.dumps(approval_for(doc)), encoding="utf-8")
+            # the CLI takes a test fixture's TEST-ONLY placeholder ref and records the approval record's verified ref
+            doc["approval"]["ref"] = json.loads((FIXTURES / "elevation" / "intake.json").read_text())["approval"]["ref"]
+            (tmp / "intake.json").write_text(json.dumps(doc), encoding="utf-8")
             (tmp / "adapters.json").write_text(json.dumps(consumer_config()), encoding="utf-8")
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):

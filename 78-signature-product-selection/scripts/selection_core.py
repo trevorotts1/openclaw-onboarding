@@ -50,6 +50,7 @@ V_TEST_ONLY_LEAK = "S78-TEST-ONLY-IN-PRODUCTION"
 V_RECURRING_INTERVAL = "S78-RECURRING-INTERVAL-MISSING"
 V_TRIAL_TERMS = "S78-TRIAL-TERMS-MISSING"
 V_ASSET_PROVENANCE = "S78-ASSET-PROVENANCE"
+V_JOURNEY_MODE = "S78-JOURNEY-MODE-DECLINE"
 
 UNPROVEN_CLAIM_PATTERNS = [
     r"\bmost popular\b",
@@ -63,6 +64,33 @@ UNPROVEN_CLAIM_PATTERNS = [
 ]
 
 APPROVED_STATUSES = ("approved", "provided")
+
+# Price states the client's plan approval itself covers (49 validate_launch_plan:
+# approving the plan approves every stated price inside it; the ledger state
+# then reads approved_recommendation). One vocabulary, read in one place.
+RECOMMENDED_STATUSES = ("recommended_unapproved", "approved_recommendation")
+APPROVED_RECORD_STATUSES = ("approved", "building")
+SELECTION_JOURNEY_MODES = ("multiple_options", "standalone_comparison")
+
+
+def plan_approval_covers(launch: Optional[Mapping[str, Any]], verifier=None) -> bool:
+    """True when the record is approved/building AND carries a plan_approval_ref
+    (and, when a verifier is supplied, the verifier accepts that ref). Shape
+    only by default: minting and verifying the approval is the Command Center
+    approval service's job, never this module's."""
+    if not launch or launch.get("status") not in APPROVED_RECORD_STATUSES:
+        return False
+    ref = launch.get("plan_approval_ref")
+    if not isinstance(ref, str) or not ref.strip():
+        return False
+    return bool(verifier(launch)) if verifier else True
+
+
+def price_is_approved(price: Mapping[str, Any], launch: Optional[Mapping[str, Any]] = None, verifier=None) -> bool:
+    status = price.get("approval_status")
+    if status in APPROVED_STATUSES:
+        return True
+    return status in RECOMMENDED_STATUSES and plan_approval_covers(launch, verifier)
 
 # ISO 4217 minor-unit exponents for the currencies that differ from 2.
 # Doc 02 section 3: do not hardcode two decimal places for every currency.
@@ -104,28 +132,34 @@ class Violation(Exception):
         self.message = message
 
 
+def _nonblank(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
 def _main_offers(launch: Mapping[str, Any]) -> List[Mapping[str, Any]]:
     return [o for o in launch.get("offers", []) if o.get("slot") == "main"]
 
 
 def check_invocation(launch: Mapping[str, Any]) -> str:
-    """Return 'proceed' or 'decline_single_offer'. Raise Violation if the
-    catalog itself is unusable. A single simple offer is always declined,
-    whatever the journey mode claims; an explicitly requested standalone
-    comparison (journey_mode 'standalone_comparison') proceeds on the same
-    multiple-offer rule with its own approved brief."""
+    """Return 'proceed', 'decline_single_offer' or 'decline'. Raise Violation
+    if the catalog itself is unusable. A single simple offer is always
+    declined, whatever the journey mode claims. Only multiple_options and an
+    explicitly requested standalone_comparison (its own approved brief)
+    proceed; any other stated journey mode (folded_levels, free_entry, ...)
+    has no selection page in its route graph and returns 'decline'. A record
+    that states no mode is judged on the multiple-offer rule alone."""
     mains = _main_offers(launch)
     mode = launch.get("journey_mode")
     if mode == "single_simple" or len(mains) == 1:
         return "decline_single_offer"
     if len(mains) == 0:
         raise Violation(V_NO_MAIN_OFFERS, "No main offers in catalog; nothing to select.")
-    if len(mains) < 2:
-        return "decline_single_offer"
+    if mode is not None and mode not in SELECTION_JOURNEY_MODES:
+        return "decline"
     return "proceed"
 
 
-def _check_price(price: Mapping[str, Any], offer_id: Any) -> None:
+def _check_price(price: Mapping[str, Any], offer_id: Any, launch: Optional[Mapping[str, Any]] = None, verifier=None) -> None:
     status = price.get("approval_status")
     if status == "unknown" or price.get("amount_minor") is None:
         raise Violation(
@@ -139,11 +173,12 @@ def _check_price(price: Mapping[str, Any], offer_id: Any) -> None:
             f"Offer {offer_id!r} price {price.get('price_choice_id')!r} amount_minor "
             f"{price.get('amount_minor')!r} is not a non-negative integer minor-unit amount.",
         )
-    if status not in APPROVED_STATUSES:
+    if not price_is_approved(price, launch, verifier):
         raise Violation(
             V_UNAPPROVED_PRICE,
             f"Offer {offer_id!r} price {price.get('price_choice_id')!r} approval_status "
-            f"{status!r} is not approved for publication.",
+            f"{status!r} is not approved for publication (a recommended price is "
+            "covered only by an approved record with a verified plan_approval_ref).",
         )
     schedule = price.get("schedule") or []
     if price.get("billing_type") == "installment" and schedule:
@@ -171,8 +206,14 @@ def _check_price(price: Mapping[str, Any], offer_id: Any) -> None:
         )
 
 
-def validate_catalog(launch: Mapping[str, Any], *, production: bool = False) -> None:
+def validate_catalog(launch: Mapping[str, Any], *, production: bool = False, approval_verifier=None) -> None:
     """Fail closed on any catalog fact that would make a comparison page lie."""
+    mode = launch.get("journey_mode")
+    if mode is not None and mode not in SELECTION_JOURNEY_MODES and mode != "single_simple":
+        raise Violation(
+            V_JOURNEY_MODE,
+            f"Journey mode {mode!r} has no selection page; this skill declines it.",
+        )
     seen = set()
     for offer in launch.get("offers", []):
         oid = offer.get("offer_id")
@@ -191,7 +232,7 @@ def validate_catalog(launch: Mapping[str, Any], *, production: bool = False) -> 
                 "an approved price cannot be published.",
             )
         for price in prices:
-            _check_price(price, oid)
+            _check_price(price, oid, launch, approval_verifier)
 
 
 def validate_assets(launch: Mapping[str, Any]) -> List[Dict[str, Any]]:
@@ -335,6 +376,7 @@ def build_selection(
     selected_at: str,
     source_page_id: str,
     session_ref: str,
+    approval_verifier=None,
 ) -> Dict[str, Any]:
     """Construct selection.json intent. Carries the approved native mapping
     verbatim; contains no amount authority of its own beyond the approved
@@ -347,8 +389,8 @@ def build_selection(
     price = next((p for p in offer.get("prices", []) if p["price_choice_id"] == price_choice_id), None)
     if price is None:
         raise Violation(V_SELECTION_PRICE_DRIFT, f"Price choice {price_choice_id!r} is not on offer {offer_id!r}.")
-    _check_price(price, offer_id)
-    if not offer.get("native_product_id") or not price.get("native_price_id"):
+    _check_price(price, offer_id, launch, approval_verifier)
+    if not _nonblank(offer.get("native_product_id")) or not _nonblank(price.get("native_price_id")):
         raise Violation(
             V_MISSING_NATIVE_MAPPING,
             f"Offer {offer_id!r} / price {price_choice_id!r} has no verified native "
@@ -376,7 +418,7 @@ def build_selection(
     }
 
 
-def validate_binding(selection: Mapping[str, Any], launch: Mapping[str, Any], *, expected_revision: int) -> None:
+def validate_binding(selection: Mapping[str, Any], launch: Mapping[str, Any], *, expected_revision: int, approval_verifier=None) -> None:
     """Revalidate a selection against the current approved catalog at
     checkout time (doc 02 s5, doc 08 s7). Tenant, location, and launch must
     all match; the current price must still be approved; any drift in
@@ -395,7 +437,7 @@ def validate_binding(selection: Mapping[str, Any], launch: Mapping[str, Any], *,
     price = next((p for p in offer.get("prices", []) if p["price_choice_id"] == selection.get("price_choice_id")), None)
     if price is None:
         raise Violation(V_SELECTION_PRICE_DRIFT, "Selected price choice no longer exists on the offer.")
-    if price.get("approval_status") not in APPROVED_STATUSES:
+    if not price_is_approved(price, launch, approval_verifier):
         raise Violation(
             V_UNAPPROVED_PRICE,
             f"Selected price {selection.get('price_choice_id')!r} is no longer approved "

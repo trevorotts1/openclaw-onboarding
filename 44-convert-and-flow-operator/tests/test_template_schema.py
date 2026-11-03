@@ -57,6 +57,9 @@ EXPECTED_BUILDABLE_KEYS = {
     "launch-a/launch-optin-register-login",
     "launch-a/launch-a-prelaunch-window",
     "launch-ai/customer-replied-conversation-ai",
+    "launch-b/abandoned-checkout-recovery",
+    "launch-b/launch-b-retarget-visited-sales-no-checkout",
+    "launch-c/launch-c-onboarding-first-hour-day-week",
 }
 
 
@@ -182,8 +185,8 @@ def test_build_graph_integrity_and_exact_complement():
 
         assert reached == node_ids, (path, node_ids - reached)
 
-    assert graph_count == 16
-    assert prose_count == 33
+    assert graph_count == 19
+    assert prose_count == 30
 
 
 def test_buildable_manifest_matches_disk_exactly():
@@ -191,8 +194,8 @@ def test_buildable_manifest_matches_disk_exactly():
     expected = _manifest_from_disk(files)
     actual = buildable.load_manifest(_MANIFEST_PATH)
 
-    assert len(expected) == 16
-    assert len(actual) == 16
+    assert len(expected) == 19
+    assert len(actual) == 19
     assert set(actual) == set(expected)
     assert actual == expected
 
@@ -215,7 +218,7 @@ def test_matcher_only_describes_manifest_templates_as_buildable():
             assert description["build_graph"], key
             actual_buildable.add(key)
 
-    assert len(actual_buildable) == 16
+    assert len(actual_buildable) == 19
     assert EXPECTED_BUILDABLE_KEYS <= actual_buildable
 
     prose = catalog.get("soap-opera-sequence", group="sales-close-sequences")

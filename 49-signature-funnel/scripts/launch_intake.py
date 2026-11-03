@@ -122,6 +122,15 @@ def _norm(text: Any) -> str:
     return " ".join(str(text or "").casefold().split())
 
 
+def _split_list(text: Any) -> List[str]:
+    """A free-text list answer -> items. Same split as the shared engine's `list` answers
+    (shared-utils/client_intake/engine.py): newline, semicolon or comma-then-space."""
+    if isinstance(text, (list, tuple)):
+        return [str(x).strip() for x in text if str(x).strip()]
+    return [s.strip(" -*\u2022") for s in re.split(r"\n|;|,(?=\s)", str(text or ""))
+            if s.strip(" -*\u2022")]
+
+
 def load_bank_doc(path: Optional[Path] = None) -> Dict[str, Any]:
     """The whole bank document: questions plus the top-level introduction,
     question_estimate_template and coaching block the client surface shows."""
@@ -172,15 +181,32 @@ def new_session(*, tenant_id: str, location_id: str, launch_id: str,
     return s
 
 
+def _skill_roots() -> List[Path]:
+    """The repo checkout first, then any installed skills tree (OpenClaw, Claude Code,
+    claude-nine, container)."""
+    home = Path.home()
+    return list(Path(__file__).resolve().parents) + [
+        home / ".openclaw" / "skills", home / ".claude" / "skills",
+        home / ".claude-nine" / "skills", Path("/data/.openclaw/skills")]
+
+
+def _selection_core():
+    """Skill 78's selection_core (currency-exponent-aware money formatting)."""
+    import importlib.util
+    for root in _skill_roots():
+        f = root / "78-signature-product-selection" / "scripts" / "selection_core.py"
+        if f.is_file():
+            spec = importlib.util.spec_from_file_location("selection_core", f)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod
+    raise IntakeError("78-signature-product-selection not found; install or update the onboarding skills")
+
+
 def _client_intake():
     """shared-utils/client_intake/engine.py: the repo checkout first, then any installed
     skills tree (OpenClaw, Claude Code, claude-nine, container), nested or flat."""
-    here = Path(__file__).resolve()
-    home = Path.home()
-    roots = [p for p in here.parents] + [
-        home / ".openclaw" / "skills", home / ".claude" / "skills",
-        home / ".claude-nine" / "skills", Path("/data/.openclaw/skills")]
-    for root in roots:
+    for root in _skill_roots():
         for d in (root / "shared-utils" / "client_intake", root / "client_intake"):
             if (d / "engine.py").is_file():
                 sys.path.insert(0, str(d))
@@ -500,6 +526,30 @@ def _h_free_text(s, q, raw, value, ref):
             _set(s, t, value.get(t, raw), "provided", q["id"], ref)
 
 
+def _h_list(target: str, key: str):
+    """A list answer: the items land on `target` only. A structured payload may carry
+    the list already; a target the client supplied earlier is never overwritten."""
+    def handler(s, q, raw, value, ref):
+        if target in s["answers"]:
+            return
+        items = _split_list(value.get(key, raw))
+        if items:
+            _set(s, target, items, "provided", q["id"], ref)
+        elif not _norm(raw):
+            _set(s, target, None, "unknown", q["id"], ref)
+        else:  # "none" / "nothing" is an answer: an empty list
+            _set(s, target, [], "provided", q["id"], ref)
+    return handler
+
+
+def _h_exclusions(s, q, raw, value, ref):
+    if "offers.main.exclusions" in s["answers"]:
+        return
+    none = _norm(raw).strip(" .!") in ("none", "nothing", "no", "n/a", "nope")
+    _set(s, "offers.main.exclusions",
+         [] if none else _split_list(value.get("exclusions", raw)), "provided", q["id"], ref)
+
+
 def _h_proof(s, q, raw, value, ref):
     choice = _match_choice(raw, q["choices"])
     if choice and _norm(choice) == "none yet":
@@ -512,9 +562,9 @@ def _recommend_journey(s) -> str:
     text = _norm((_get(s, "offers.main.description") or {}).get("value", "")) + " " + \
         _norm(" ".join(map(str, (_get(s, "offers.main.deliverables") or {})
                            .get("value", []) or [])))
-    for token in ("package", "tier", "level", "vip", "premium", "pass"):
-        if token in text:
-            return "multiple_options"
+    # whole words only: "compassionate" and "Passion" are not a "pass" / "package"
+    if re.search(r"\b(?:package|tier|level|vip|premium)s?\b", text):
+        return "multiple_options"
     return "single_simple"
 
 
@@ -694,7 +744,8 @@ def _h_budget(s, q, raw, value, ref):
 
 _HANDLERS = {
     "m0_mode": _h_mode, "a1_offer": _h_free_text, "a2_transformation": _h_free_text,
-    "a3_pains": _h_free_text, "a4_deliverables": _h_free_text, "a5_proof": _h_proof,
+    "a3_pains": _h_free_text, "a4_deliverables": _h_list("offers.main.deliverables", "deliverables"),
+    "a4b_exclusions": _h_exclusions, "a5_proof": _h_proof,
     "b1_journey": _h_journey, "b2_price": _h_price, "b3_billing": _h_billing,
     "c1_bump": _make_extra_handler("bump", None),
     "c2_u1": _make_extra_handler("upsell_1", "upsell_1"),
@@ -714,7 +765,7 @@ def _money_display(amount_minor: Optional[int], currency: str) -> str:
         return "price not set yet"
     if amount_minor == 0:
         return "free"
-    return f"{currency} {amount_minor / 100:,.2f}"
+    return _selection_core().format_money(amount_minor, currency)
 
 
 def _offer_from_answers(session: Dict[str, Any], slot: str, field: str,
@@ -737,6 +788,8 @@ def _offer_from_answers(session: Dict[str, Any], slot: str, field: str,
             display = str(v)
             deliverables = (_get(session, "offers.main.deliverables") or {}) \
                 .get("value", []) or []
+        deliverables = _split_list(deliverables)  # a raw string is never listed per character
+        exclusions = _split_list((_get(session, "offers.main.exclusions") or {}).get("value"))
         amount = price.get("amount_minor") if isinstance(price, dict) else None
         status = "approved" if e["state"] == "approved_recommendation" else (
             "recommended_unapproved" if price_e and
@@ -744,7 +797,7 @@ def _offer_from_answers(session: Dict[str, Any], slot: str, field: str,
             "unknown" if amount is None else "provided")
         return {"offer_id": offer_id, "slot": "main",
                 "display_name": display or offer_id,
-                "deliverables": list(deliverables), "exclusions": [],
+                "deliverables": deliverables, "exclusions": exclusions,
                 "entitlement_ids": [offer_id.lower()], "requires": [],
                 "excludes": [], "native_product_id": None,
                 "prices": [{"price_choice_id": f"{offer_id}-USD",
@@ -752,7 +805,8 @@ def _offer_from_answers(session: Dict[str, Any], slot: str, field: str,
                             "amount_minor": amount, "billing_type": billing,
                             "native_price_id": None, "schedule": list(schedule),
                             "terms_source": None, "approval_status": status}],
-                "source_kind": "test_fixture" if session.get("test_only") else "owner",
+                "source_kind": "test_fixture" if session.get("test_only") else
+                ("recommendation" if e["state"] == "recommended_unapproved" else "owner"),
                 "source_ref": f"intake:{session['session_id']}",
                 "test_only": bool(session.get("test_only"))}
     if not isinstance(v, dict) or not v.get("display_name"):
@@ -818,7 +872,8 @@ def _package_offers(session: Dict[str, Any],
                         "amount_minor": amount, "billing_type": "one_time",
                         "native_price_id": None, "schedule": [],
                         "terms_source": None, "approval_status": status}],
-            "source_kind": "test_fixture" if session.get("test_only") else "owner",
+            "source_kind": "test_fixture" if session.get("test_only") else
+            ("recommendation" if e["state"] == "recommended_unapproved" else "owner"),
             "source_ref": f"intake:{session['session_id']}",
             "test_only": bool(session.get("test_only"))})
     return out
@@ -883,7 +938,7 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
         missing.append("brand assets (logo / colors / founder photo)")
 
     launch: Dict[str, Any] = {
-        "schema_version": "1.0", "tenant_id": session["tenant_id"],
+        "schema_version": "1.2", "tenant_id": session["tenant_id"],
         "location_id": session["location_id"], "launch_id": session["launch_id"],
         "revision": session["plan_revision"], "journey_mode": journey,
         "status": "collecting",
@@ -978,6 +1033,10 @@ def plan_hash(launch: Dict[str, Any]) -> str:
     return vlp.plan_document_hash(launch)
 
 
+_BILLING_WORDS = {"one_time": "one payment", "recurring": "billed monthly",
+                  "installment": "paid in parts"}
+
+
 def render_summary(session: Dict[str, Any]) -> str:
     """The plain-language plan (doc 03 §8) with REAL names and prices — no
     bracketed placeholders. Only callable once a plan exists."""
@@ -988,16 +1047,30 @@ def render_summary(session: Dict[str, Any]) -> str:
 
     def price_of(o):
         p = o["prices"][0]
-        return _money_display(p["amount_minor"], p["currency"])
+        shown = _money_display(p["amount_minor"], p["currency"])
+        code = str(p.get("currency") or "").upper()
+        sym = _selection_core().CURRENCY_SYMBOLS.get(code)
+        if code != "USD" and sym and shown.startswith(sym):
+            return f"{shown} = {code} {shown[len(sym):]}"  # a bare symbol is ambiguous (JPY/CNY)
+        return shown
 
     lines = ["Here is the launch I recommend."]
     lines.append("1. Your first page introduces the result. It does not show a price.")
     lines.append("2. Interested visitors leave their first name, last name, email and phone.")
     main = by_slot.get("main")
+    mains = [o for o in plan["offers"] if o["slot"] == "main"]
+
+    def main_detail(o):  # name, price, billing and deliverable count: all that is being approved
+        n = len(o.get("deliverables") or [])
+        billing = _BILLING_WORDS.get(o["prices"][0].get("billing_type"), "one payment")
+        return (f"{o['display_name']} ({price_of(o)}, {billing}, "
+                f"{n} deliverable{'s' if n != 1 else ''})")
     if plan["journey_mode"] == "multiple_options":
-        mains = [o for o in plan["offers"] if o["slot"] == "main"]
-        named = ", ".join(f"{o['display_name']} ({price_of(o)})" for o in mains)
-        lines.append(f"3. They compare your packages — {named} — then check out.")
+        lines.append("3. They compare your packages — " + "; ".join(map(main_detail, mains))
+                     + " — then check out.")
+    elif plan["journey_mode"] == "folded_levels":
+        lines.append(f"3. Your sales page presents {len(mains)} levels, and they pick one at "
+                     "checkout — " + "; ".join(map(main_detail, mains)) + ".")
     else:
         lines.append(f"3. They go straight to checkout for "
                      f"{main['display_name']} ({price_of(main)}).")
@@ -1108,7 +1181,8 @@ def approve(session: Dict[str, Any], approval: Dict[str, Any],
     assertion = vlp.assert_plan_build_approved(
         session["plan"], approval,
         client_identity_ref=session["client_identity_ref"],
-        worker_identity_ref=worker_identity_ref)
+        worker_identity_ref=worker_identity_ref,
+        test_only=(session["plan"].get("test_only") is True))
     # Pin the FULL plan the client approved, next to the record the gate bound.
     # The digest is canonical JSON; a later rebuild that differs proves the plan
     # changed after approval (plan_hash_mismatch), never a second approval.
@@ -1213,13 +1287,13 @@ def _self_test() -> int:
         base.update(kw)
         return new_session(**base)
 
+    from datetime import datetime, timedelta, timezone
+
     def approval_for(session, **over):
-        a = {"schema_version": "1.0", "approval_id": "APPR-1",
-             "subject_type": "launch_plan_build",
-             "subject_hash": session["plan_hash"],
-             "owner_identity_ref": "client-1",
-             "source_message_ref": "msg-123", "recorded_at": _now(),
-             "scope": ["launch_plan_build"], "revoked": False,
+        a = {"schema_version": "1.0", "approval_id": "APPR-1", "kind": "launch_plan_build",
+             "plan_hash": session["plan_hash"], "client_identity": "client-1",
+             "source_message_ref": "msg-123", "scope": ["launch_plan_build"],
+             "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "revoked": False,
              "verification_class": "recorded_consent_not_cryptographically_sealed"}
         a.update(over)
         return a
@@ -1262,8 +1336,8 @@ def _self_test() -> int:
     say("Sunrise Coaching" in summary and "497" in summary,
         "expert: summary names the real product and price")
     a = approve(s, approval_for(s), worker_identity_ref="worker-9")
-    say(s["state"] == "approved" and a["verification_class"].startswith("recorded"),
-        "expert: approval binds and is honestly classed as recorded consent")
+    say(s["state"] == "approved" and a["verification_class"] == "local_test_record",
+        "expert: approval binds and is honestly classed as a local test record")
     begin_build(s)
     say(s["state"] == "building" and s["plan"]["status"] == "building",
         "approved session enters building (doc 03 §3, D4)")
@@ -1298,19 +1372,19 @@ def _self_test() -> int:
         "presenting the plan moves recommendation_ready -> "
         "awaiting_plan_approval (D4)")
     try:
-        approve(s2, approval_for(s2, owner_identity_ref="someone-else"),
+        approve(s2, approval_for(s2, client_identity="someone-else"),
                 worker_identity_ref="worker-9")
         say(False, "unrelated client identity must not approve")
     except vlp.ApprovalError:
         say(True, "unrelated client identity cannot approve another launch")
     try:
-        approve(s2, approval_for(s2, owner_identity_ref="worker-9"),
+        approve(s2, approval_for(s2, client_identity="worker-9"),
                 worker_identity_ref="worker-9")
         say(False, "worker self-approval must fail")
     except vlp.ApprovalError:
         say(True, "worker cannot self-approve (identity == worker refused)")
     try:
-        approve(s2, approval_for(s2, subject_hash="0" * 64),
+        approve(s2, approval_for(s2, plan_hash="0" * 64),
                 worker_identity_ref="worker-9")
         say(False, "stale hash approval must fail")
     except vlp.ApprovalError:

@@ -19,6 +19,11 @@ cannot redirect storage, widen its own authority, or smuggle a price:
 select re-runs the core approval checks, and reject_query_authority is
 exposed so the runtime can screen inbound query strings.
 
+STATUS: no host calls this adapter or the session scripts yet (PRD-05: nothing wires a visitor session
+to a running page). They are built and unit-tested, but they are NOT part of the skill's "done" claim;
+runtime-manifest.json ("done_claim") says the same, and a descriptor is not an installation. The
+build chain that exists today is build_selection_plan -> run_image_stages -> emit_page_result.
+
 Usage:
   selection_runtime.py <request.json> [--durable-base <dir>]
   selection_runtime.py --self-test

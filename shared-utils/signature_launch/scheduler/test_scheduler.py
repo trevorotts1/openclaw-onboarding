@@ -54,6 +54,9 @@ class SchedulerTests(unittest.TestCase):
     def test_every_fixture_schedules_without_stalling(self):
         for path in sorted(FIXTURES.glob("*.json")):
             plan = json.loads(path.read_text(encoding="utf-8"))
+            for page in plan["pages"]:  # a fixture page may be planned with no approved URL yet; give it one
+                if page.get("url") is None:
+                    page["url"] = "https://example.com/%s/%s" % (path.stem, page["id"])
             waves = scheduler.schedule_waves(plan)
             covered = [unit for wave in waves for unit in wave]
             self.assertEqual(len(covered), len(set(covered)), path.name)

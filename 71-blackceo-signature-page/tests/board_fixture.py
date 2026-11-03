@@ -137,6 +137,13 @@ def board_lines(plan) -> list:
     return [a for lst in plan["expected"]["anchors"].values() for a in lst]
 
 
+def client_message(run_dir: Path, by="Test Client") -> Path:
+    """The platform record of the client's own message (outside the run): the evidence approve() takes."""
+    path = Path(run_dir).parent / "client-message.json"
+    path.write_text(json.dumps({"message_id": "message-123", "sender_ref": by}), encoding="utf-8")
+    return path
+
+
 def seed_board(run_dir: Path, approved=True, provider="kie", board_text=None) -> dict:
     """Make the board the way the executor does (minus the paid call), read it back and approve.
     The board image carries the palette; the in-process OCR double shows `board_text` (default:
@@ -152,7 +159,7 @@ def seed_board(run_dir: Path, approved=True, provider="kie", board_text=None) ->
     (run_dir / "readback.txt").write_text("\n".join(anchors), encoding="utf-8")
     design_board.finalize(run_dir, "\n".join(anchors), "reader")
     if approved:
-        design_board.approve(run_dir, "Test Client", "message-123")
+        design_board.approve(run_dir, "Test Client", client_message(run_dir))
     return plan
 
 
@@ -167,5 +174,5 @@ def seed_real_board(run_dir: Path, approved=True) -> dict:
                               {"provider": "kie", "mode": "active", "model": "m", "task_id": "t1"}, 1)
     design_board.finalize(run_dir, "\n".join(anchors), "reader")
     if approved:
-        design_board.approve(run_dir, "Test Client", "message-123")
+        design_board.approve(run_dir, "Test Client", client_message(run_dir))
     return plan

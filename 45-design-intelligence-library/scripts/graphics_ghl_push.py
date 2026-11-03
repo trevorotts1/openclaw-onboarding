@@ -94,6 +94,27 @@ ghl_media = _load_canonical_ghl_media()
 
 
 # ---------------------------------------------------------------------------
+# S06-06 / ENF-19: a push writes into the client's LIVE GHL sub-account, so it needs the
+# SAME launcher approval record Skill 6 needs to publish (allowed_write_target
+# approved_live_publication, test_only false, this location, not revoked/expired), read
+# from the launch approval store. Loaded from Skill 6 (one check, never a fork); if it
+# cannot be found the push is refused (fail closed).
+# ---------------------------------------------------------------------------
+def _load_publish_approval():
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        cand = parent / "06-ghl-install-pages" / "tools" / "ghl_publish_approval.py"
+        if cand.is_file():
+            spec = importlib.util.spec_from_file_location("_ghl_publish_approval_graphics", str(cand))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)  # type: ignore[union-attr]
+            return mod
+    raise RuntimeError(
+        "REFUSE push: Skill 6 ghl_publish_approval.py not found "
+        "(<repo>/06-ghl-install-pages/tools/) - cannot verify the launcher approval record")
+
+
+# ---------------------------------------------------------------------------
 # small helpers
 # ---------------------------------------------------------------------------
 def _now_iso() -> str:
@@ -206,11 +227,18 @@ def _url_live(url: str, opener=None, timeout: int = 30) -> dict:
 # push_graphics_media — create the per-job folder + upload every QC-passed asset.
 # ---------------------------------------------------------------------------
 def push_graphics_media(job_dir, *, folder_name: str | None = None, job_slug: str | None = None,
-                        opener=None, liveness_opener=None) -> dict:
+                        opener=None, liveness_opener=None, approval_ref=None,
+                        approval_store: str | None = None) -> dict:
     """Create the per-job GHL folder and upload every QC-PASSED asset. Writes the gate-readable
     ledger to <job>/media_library.json (MERGED with any prior seed) and returns the same dict.
-    Idempotent per file (a re-run never re-uploads an already-hosted asset)."""
+    Idempotent per file (a re-run never re-uploads an already-hosted asset).
+
+    REFUSES (PublishApprovalError, a RuntimeError) unless ``approval_ref`` resolves to a
+    launcher approval record for the client's location (see _load_publish_approval)."""
     job_dir = Path(job_dir).resolve()
+    # Approval first: nothing is read, created or uploaded without the record.
+    _load_publish_approval().require_live_write(
+        approval_ref, location_id=ghl_media.resolve_location_id(), store_dir=approval_store)
     slug = (job_slug or job_dir.name).strip()
     fname = (folder_name or f"GRAPHICS {slug}").strip()
 
@@ -407,6 +435,9 @@ def main():
     ap.add_argument("--folder-name", default=None,
                     help='per-job folder name, e.g. "<Client> Graphics <Job> v<N>".')
     ap.add_argument("--job-slug", default=None)
+    ap.add_argument("--approval-ref", default=None,
+                    help="launcher approval_ref (record in the launch approval store) "
+                         "authorizing this live write; the push is refused without it.")
     ap.add_argument("--gate", action="store_true",
                     help="run the HARD closeout gate (no upload, exit 1 on fail).")
     args = ap.parse_args()
@@ -424,7 +455,8 @@ def main():
         return 1
 
     try:
-        res = push_graphics_media(job_dir, folder_name=args.folder_name, job_slug=args.job_slug)
+        res = push_graphics_media(job_dir, folder_name=args.folder_name, job_slug=args.job_slug,
+                                  approval_ref=args.approval_ref)
     except RuntimeError as exc:
         print(f"GRAPHICS GHL PUSH: ABORTED — {exc}", file=sys.stderr)
         return 2
@@ -571,17 +603,43 @@ def _selftest() -> int:
             (base / "renders" / n).write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64)
         _setup(base, qc=GOOD_QC, job={"has_ghl": True})
         saved = {k: os.environ.get(k) for k in ("GHL_API_KEY", "GHL_LOCATION_ID")}
-        os.environ["GHL_API_KEY"] = "pit-fixture"
+        os.environ["GHL_API_KEY"] = "pit-0f3a9c1e-7b2d-4e65-9a18-c4d2b6e8f0a1"  # real-shaped (the resolver skips placeholder-shaped values)
         os.environ["GHL_LOCATION_ID"] = "loc-fixture"
         try:
-            out = push_graphics_media(base, opener=_mock_opener, liveness_opener=_mock_live)
+            store = base / "approval-store"
+            store.mkdir()
+
+            def _put(ref, **over):
+                rec = {"approval_ref": ref, "allowed_write_target": "approved_live_publication",
+                       "test_only": False, "location_id": "loc-fixture", "page_ids": []}
+                rec.update(over)
+                (store / f"{ref}.json").write_text(json.dumps(rec))
+
+            # K — no record / free string / test_only record -> the push is REFUSED and nothing
+            #     is uploaded (S06-06: the same record Skill 6 needs to publish).
+            _put("APPR-TEST", test_only=True, allowed_write_target="approved_test_location")
+            for label, ref in (("none", None), ("free string", "yes"), ("bare bool", True),
+                               ("test_only record", "APPR-TEST")):
+                try:
+                    push_graphics_media(base, opener=_mock_opener, liveness_opener=_mock_live,
+                                        approval_ref=ref, approval_store=str(store))
+                    fails.append(f"K {label}: push was NOT refused")
+                except RuntimeError:
+                    pass
+            if (base / "media_library.json").exists():
+                fails.append("K refused push still wrote media_library.json")
+
+            _put("APPR-LIVE")
+            kw = dict(opener=_mock_opener, liveness_opener=_mock_live,
+                      approval_ref="APPR-LIVE", approval_store=str(store))
+            out = push_graphics_media(base, **kw)
             if out.get("upload_count") != 2:
                 fails.append(f"J push: expected 2 uploads (passed only), got {out.get('upload_count')}")
             ok, r = gate_graphics_media_complete(base)
             if not ok:
                 fails.append(f"J push->gate: expected PASS after hosting, got {r}")
             # idempotent re-run does not double-upload.
-            out2 = push_graphics_media(base, opener=_mock_opener, liveness_opener=_mock_live)
+            out2 = push_graphics_media(base, **kw)
             if out2.get("upload_count") != 2:
                 fails.append(f"J idempotent: re-run changed upload_count to {out2.get('upload_count')}")
         except Exception as exc:  # noqa: BLE001
@@ -600,7 +658,7 @@ def _selftest() -> int:
         return 1
     print("graphics_ghl_push gate selftest -> PASS (10 cases: complete/empty/missing-upload/"
           "null-folder/incomplete/agent-skip/owner-skip/false-token/no-passed + end-to-end "
-          "push-hosts-passed-only/idempotent/gate-passes)")
+          "push-hosts-passed-only/idempotent/gate-passes + approval-record refusals)")
     return 0
 
 

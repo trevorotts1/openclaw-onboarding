@@ -5,8 +5,8 @@ Two owner-specified shapes, kept separate and never merged
 
 | Fixture | Shape | Status |
 |---|---|---|
-| `elevation/intake.json` | 12-section no-price signature page → **separate** three-level product selection → native order form | builds green offline |
-| `seven-figure-preneur/intake.json` | three levels **folded into** the signature page → native order form, **no** product selection page | builds green offline (`folded_levels`) |
+| `elevation/intake.json` | 12-section no-price signature page → **separate** three-level product selection → native order form | routes, assembles and passes the completeness checks offline |
+| `seven-figure-preneur/intake.json` | three levels **folded into** the signature page → native order form, **no** product selection page | routes and assembles (`folded_levels`) but **delivery-blocked** until Skill 79 names a checkout mode |
 
 `run_fixtures.py` builds both packages from the real S49 compiler, the real
 adapter map, the launcher's package completeness checks and the Skill 79
@@ -21,6 +21,13 @@ The settled `folded_levels` journey mode compiles `landing → checkout` with no
 launcher's route layer and the real S49 `compile_launch_route.py`. The example
 is not relabelled `single_simple`, does not gain a selection page, and keeps its
 three separate prices.
+
+**Delivery-blocked, not green.** The Skill 79 contract's two checkout modes
+(`combined_single_offer`, `post_selection`) express neither three folded main offers nor a missing selection
+page, so this shape records `checkout_mode_state: contract_gap` and the package check fails with
+`AF-LAUNCH-CHECKOUT-MODE` until Skill 79 names a mode for `folded_levels`. The manifest records
+`checkout.delivery_blocked: true`. The fixture runner asserts exactly that block; it does not treat the
+package as deliverable.
 
 The fixture also carries one offer relationship (`BUMP.included_in =
 ["MAIN-B","MAIN-C"]`) so the cross-sale surface on the thank-you page is
@@ -69,8 +76,9 @@ For each shape:
    is bound to the real S79 contract;
 6. the Council planning step is recorded and cannot block;
 7. the cross-sale surface rides on the thank-you page with teaching pending;
-8. a package assembled from those build units passes every completeness check
-   and is self-contained.
+8. a package assembled from those build units is self-contained and, for Elevation, passes every
+   completeness check. The 7FigurePreneur package fails exactly one gate by design,
+   `AF-LAUNCH-CHECKOUT-MODE`, and its manifest records the withheld delivery.
 
 Plus, for 7FigurePreneur: no `product_selection` page exists in the route, and a
 not-ready Council result neither fails the build nor changes the compiled graph.
@@ -82,7 +90,18 @@ page pipeline and is outside this offline task.
 ## Run
 
 ```bash
-TMPDIR=<recovery>/tmp/<dir> python3 -I fixtures/run_fixtures.py
+TMPDIR=<scratch-dir> python3 fixtures/run_fixtures.py
+```
+
+Use a plain `python3` that can import `jsonschema` (`requirements.txt`); `python3 -I` hides user
+site-packages and makes the Skill 79 validator report unavailable, which is the failure `verify.sh` removed.
+
+The fixtures hold intakes only. To assemble one through the CLI, give `assemble` the page results from
+`dispatch` and one of `--launch-plan` or `--page-only`:
+
+```bash
+python3 -m launcher_core.cli assemble --intake fixtures/elevation/intake.json \
+    --pieces <run-dir>/pieces --out <package-dir> --page-only
 ```
 
 Outputs land in a fresh directory under `TMPDIR`; the worktree stays clean.

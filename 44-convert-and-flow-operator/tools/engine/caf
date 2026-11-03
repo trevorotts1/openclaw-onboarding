@@ -68,11 +68,12 @@ export CAF_ALLOWED_LOCATION_IDS="$_caf_allowed_raw"
 unset _caf_allowed_raw
 export CAF_DRAFT_ONLY="${GOHIGHLEVEL_DRAFT_ONLY:-${CAF_DRAFT_ONLY:-true}}"
 export CAF_DRY_RUN="${GOHIGHLEVEL_DRY_RUN:-${CAF_DRY_RUN:-}}"
-# Write-approval token: canonical GOHIGHLEVEL_APPROVAL_TOKEN -> CAF_APPROVAL_TOKEN.
-# The safety gate requires it for surgical update/patch writes (ZHC-/ZHC_ names are
-# standing-approved without it). Stays in secrets/.env; never wired into
-# openclaw.json env.vars. Empty when unset = surgical writes stay gated (safe).
-export CAF_APPROVAL_TOKEN="${GOHIGHLEVEL_APPROVAL_TOKEN:-${CAF_APPROVAL_TOKEN:-}}"
+# Write approval (S44-16): an env token or ZHC- name is NOT approval. The gate needs
+# the id of a Command Center approval record (CAF_APPROVAL_ID, from the owner-facing
+# flow) and fetches the record itself; the id alone approves nothing. Draft-off
+# (CAF_DRAFT_ONLY=false) also needs a 'publish' record, else triggers stay inactive.
+export CAF_APPROVAL_ID="${GOHIGHLEVEL_APPROVAL_ID:-${CAF_APPROVAL_ID:-}}"
+unset CAF_APPROVAL_TOKEN GOHIGHLEVEL_APPROVAL_TOKEN
 
 # Validate required vars
 if [ -z "$GHL_API_KEY" ]; then

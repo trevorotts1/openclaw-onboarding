@@ -23,12 +23,26 @@ ROUTES = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROUTES.parent
 sys.path.insert(0, str(ROUTES))
 sys.path.insert(0, str(SKILL_ROOT))
+sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
 
 import adapters  # noqa: E402
 import build_time  # noqa: E402
 import route_law  # noqa: E402
 import substrate  # noqa: E402
-from launcher_core import checks, checkout as checkout_core, intake  # noqa: E402
+from launcher_core import checks, checkout as checkout_core, entitlement, intake  # noqa: E402
+from launcher_core.check_rules import checkout as checkout_rule  # noqa: E402
+import test_only_readback  # noqa: E402
+from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402
+
+
+def setUpModule():
+    """intake.validate verifies the TEST-ONLY entitlement references through the offline read-back
+    (fixtures/test_only_readback.py), the same one tests/conftest.py installs for the 83 suite."""
+    entitlement.set_transport(test_only_readback.test_only_transport())
+
+
+def tearDownModule():
+    entitlement.set_transport(None)
 
 
 def make_launch_record(**overrides):
@@ -518,40 +532,56 @@ def fixture_intake(name):
     return json.loads((FIXTURES / name / "intake.json").read_text(encoding="utf-8"))
 
 
-def fixture_checkout_mapping(name):
+def fixture_checkout_mapping(name, readback=None):
     """The real Skill 79 mapping for a worked example, through the real compiler."""
     payload = fixture_intake(name)
     normalized = intake.validate(payload)
     graph = route_law.compile_route(
         make_launch_record(journey_mode=payload["journey_mode"]))["graph"]
-    return checkout_core.order_form_mapping(normalized, graph)
+    return checkout_core.order_form_mapping(normalized, graph, readback=readback)
+
+
+def delivery_gate(mapping):
+    """The violations the package check raises for a mapping: the instance replay for the per-offer
+    realisation, the mode rule for a single request (check_rules/checkout.violations)."""
+    if mapping["realisation"] == "per_offer_instances":
+        return checkout_rule.instance_violations(mapping)
+    return checks.checkout_mode_violations(mapping)
 
 
 class CheckoutDeliveryGateTests(unittest.TestCase):
-    """An unresolved Skill 79 checkout mode blocks delivery (L25-BF-41).
+    """Several mains are one native combined_single_offer order form per main price choice.
 
-    The folded-level shape has no mode in the Skill 79 contract. Nothing is
-    invented to fill it, so the delivery stays blocked rather than passing.
+    Since CARRIED 49 (DECISIONS-NEEDED[4]) folded_levels has a mode, so the delivery is no longer
+    withheld for an unresolved mode. It is judged by the instances: blocked until the Skill 06
+    read-back supplies every commercial fact the Skill 79 validator needs, open once it does.
+    The test names predate the realisation and are kept so the run history stays comparable.
     """
 
     def test_folded_levels_delivery_is_blocked_while_the_mode_is_unresolved(self):
-        mapping = fixture_checkout_mapping("seven-figure-preneur")
-        self.assertIsNone(mapping["checkout_mode"])
-        self.assertEqual(mapping["checkout_mode_state"], "contract_gap")
+        mapping = fixture_checkout_mapping("seven-figure-preneur")  # no read-back: nothing commercial invented
+        self.assertEqual(mapping["realisation"], "per_offer_instances")
+        self.assertEqual(mapping["checkout_mode"], "combined_single_offer")
+        self.assertEqual(mapping["checkout_mode_state"], "resolved")
         self.assertIs(mapping["delivery_blocked"], True)
-        self.assertTrue(mapping["delivery_blockers"], mapping)
-        fails = checks.checkout_mode_violations(mapping)
-        self.assertEqual(len(fails), 1, fails)
-        self.assertIn("AF-LAUNCH-CHECKOUT-MODE", fails[0])
-        self.assertIn("blocked", fails[0])
+        self.assertEqual(len(mapping["delivery_blockers"]), 3, mapping["delivery_blockers"])
+        self.assertTrue(all(b.startswith("AF-LAUNCH-CHECKOUT-REJECTED") for b in mapping["delivery_blockers"]),
+                        mapping["delivery_blockers"])
+        self.assertEqual(checks.checkout_mode_violations(mapping), [])  # the mode itself is resolved
+        fails = delivery_gate(mapping)
+        self.assertTrue(fails)
+        self.assertTrue(all(f.startswith("AF-LAUNCH-CHECKOUT-REJECTED") for f in fails), fails)
 
     def test_a_resolved_mode_is_not_blocked(self):
-        mapping = fixture_checkout_mapping("elevation")
-        self.assertEqual(mapping["checkout_mode"], "post_selection")
+        mapping = fixture_checkout_mapping("elevation", TEST_ONLY_CHECKOUT_READBACK)
+        self.assertEqual(mapping["realisation"], "per_offer_instances")
+        self.assertEqual(mapping["checkout_mode"], "combined_single_offer")
         self.assertEqual(mapping["checkout_mode_state"], "resolved")
+        self.assertEqual([i["validation"]["result"] for i in mapping["instances"]], ["accepted"] * 3)
         self.assertIs(mapping["delivery_blocked"], False)
         self.assertEqual(mapping["delivery_blockers"], [])
         self.assertEqual(checks.checkout_mode_violations(mapping), [])
+        self.assertEqual(delivery_gate(mapping), [])
 
     def test_every_state_except_a_resolved_nonempty_mode_is_blocked(self):
         for checkout in ({"checkout_mode": None, "checkout_mode_state": "resolved"},
@@ -569,11 +599,13 @@ class CheckoutDeliveryGateTests(unittest.TestCase):
 
     def test_delivery_flags_agree_with_the_gate_on_both_fixtures(self):
         for name in ("elevation", "seven-figure-preneur"):
-            mapping = fixture_checkout_mapping(name)
-            with self.subTest(fixture=name):
-                blocked = bool(checks.checkout_mode_violations(mapping))
-                self.assertIs(mapping["delivery_blocked"], blocked)
-                self.assertEqual(bool(mapping["delivery_blockers"]), blocked)
+            for readback in (None, TEST_ONLY_CHECKOUT_READBACK):
+                mapping = fixture_checkout_mapping(name, readback)
+                with self.subTest(fixture=name, readback=readback is not None):
+                    blocked = bool(delivery_gate(mapping))
+                    self.assertIs(mapping["delivery_blocked"], blocked)
+                    self.assertEqual(bool(mapping["delivery_blockers"]), blocked)
+                    self.assertIs(blocked, readback is None)
 
 
 class BrowserDiagnosticTests(unittest.TestCase):

@@ -15,6 +15,11 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 LAUNCH = HERE.parent
 ROOT = HERE.parents[2]
+
+def _skill(name):  # onboarding: 49-signature-funnel; 999: .claude/skills/signature-funnel
+    p = ROOT / name
+    return p if p.is_dir() else ROOT / ".claude/skills" / name.split("-", 1)[1]
+
 SHARED = ROOT / "shared-utils"
 CONTRACT = ROOT / "shared-utils" / "signature_launch_contract"
 CONTRACT_FIXTURES = CONTRACT / "fixtures"
@@ -399,7 +404,7 @@ class ContractConsumptionTests(unittest.TestCase):
     """Read L01/L02/L04 contracts read-only; never edit them."""
 
     def test_l02_planner_output_drives_this_lane(self):
-        scripts = ROOT / "49-signature-funnel" / "scripts"
+        scripts = _skill("49-signature-funnel") / "scripts"
         self.assertTrue((scripts / "launch_plan.py").is_file())
         sys.path.insert(0, str(scripts))
         try:
@@ -461,7 +466,7 @@ class ContractConsumptionTests(unittest.TestCase):
         self.assertTrue(answers["conversation_ai"]["never_default"] is False)
 
     def test_l04_receipt_contract_is_consumed_read_only(self):
-        receipt = ROOT / "83-black-friday-launcher" / "receipt.schema.json"
+        receipt = _skill("83-black-friday-launcher") / "receipt.schema.json"
         if not receipt.is_file():
             self.skipTest("L04 receipt schema not merged into this branch yet")
         schema = json.loads(receipt.read_text(encoding="utf-8"))

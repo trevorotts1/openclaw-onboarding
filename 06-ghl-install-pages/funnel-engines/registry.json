@@ -190,6 +190,54 @@
       },
       "notes": "Third registered engine (registered on branch skill62/cinematic-engine, not yet merged to main). Client runtime uses the CLIENT's own configured providers (Kie.ai on the client's own KIE_API_KEY; never Anthropic, never operator keys); the deterministic phase provers are model-free. No paid generation without an approved budget cap. Publish is human-approved (preview + production URLs only after explicit approval).",
       "readiness": {"status": "skeleton", "certify_capable": false, "note": "offline build complete (CWFE-MANIFEST.json build_status COMPLETE offline); live E2E deliberately HELD pending operator-approved live run"}
+    },
+    {
+      "id": "black-friday-launcher",
+      "skill": "83-black-friday-launcher",
+      "name": "Black Friday Launcher",
+      "summary": "Composes a whole Black Friday (or any offer) LAUNCH from the separate signature page skills: fail-closed intake behind an entitlement attestation, the route graph (landing, optional product selection, native checkout order form + bump, upsell/downsell, thank-you), Council planning advice, page requests dispatched through Skill 49, and an assembled package with a manifest and receipt. A launch request goes here, not to the direct-response Skill 56 stack.",
+      "entry": "83-black-friday-launcher/launcher_core/cli.py",
+      "entry_contract": "Run from the skill directory as `python3 -m launcher_core.cli dispatch` (intake -> route -> Skill 49 page dispatch -> package). Intake is fail-closed (no defaulted price, level or entitlement); every page is delivered through Skill 6, which stays the ONE GHL delivery rail.",
+      "launch_mode": {"name": "black_friday_launch", "entrypoint_arg": "dispatch"},
+      "delivery_rail": "06-ghl-install-pages",
+      "delivery_delegation": "The launcher authors nothing itself: it dispatches page requests through Skill 49 (and 71/78/79/80/81/82), and every page install, checkout order form and upsell/downsell step is delivered by Skill 6 (ghl_builder.py / ghl_rest_canvas.py). The launcher composes and checks; Skill 6 delivers.",
+      "priority": 12,
+      "confidence_threshold": 0.55,
+      "match": {
+        "names": [
+          "black friday launcher",
+          "black friday launch",
+          "black friday funnel",
+          "black friday",
+          "black-friday-launcher",
+          "launch funnel",
+          "product launch funnel"
+        ],
+        "keywords": [
+          "black friday",
+          "launch",
+          "product launch",
+          "offer launch",
+          "launch plan",
+          "folded levels"
+        ],
+        "signals": [
+          "black friday",
+          "product selection",
+          "order form",
+          "order bump",
+          "upsell",
+          "downsell",
+          "thank you",
+          "checkout",
+          "landing page"
+        ],
+        "anti_signals": [
+          "vsl only",
+          "webinar registration only"
+        ]
+      },
+      "notes": "Registered with higher priority than Skill 56 so a launch request is composed by the launcher (route graph, product selection, signature pages) instead of the direct-response asset stack. A bare 'launch' alone does not clear the threshold; it needs corroborating launch/page signals, so a plain 'signature funnel' or 'sales page' request still routes to 49 / 56. Client runtime uses the CLIENT's own configured providers (never Anthropic, never operator keys)."
     }
   ]
 }

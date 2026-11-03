@@ -44,9 +44,10 @@ What is proven:
      consumer process runs (no intake.json, no staged request).
   4. Fail-closed: a configured brand file whose bytes do not hash to
      the request's brand_hash aborts before anything is staged.
-  5. Schema fallback: with S49's receipts module not importable, the
-     bridge still validates the emitted result against the vendored
-     page-result schema (S49_SCRIPTS_DIR pointed at an empty dir).
+  5. S49_SCRIPTS_DIR cannot swap the receipt validator: the sibling
+     collect_launch_receipts.py is the only one the bridge loads (ENF-09).
+     With the sibling absent the bridge validates against the vendored
+     page-result schema (the isolated-bridge tests below).
   6. Skill 71's own shipped test for the real validation half
      (tests/test_launch_profile.py from main) passes against the
      fetched real tree, with no network use.
@@ -74,6 +75,16 @@ What is proven:
      with the request on the citation each refuse by name at exit 2
      before anything is staged.
 
+ 11. ENF-09: a stage_gate report that exits non-zero is a refusal (exit 2)
+     unless the config declares landing.draft; the draft flag, the gate exit
+     and the receipt validation mode are recorded in the bridge receipt.
+ 12. STR-07: the copy structure gate runs before anything is drawn; a
+     manuscript with a wrong-length section and no founder letter is refused.
+ 13. STR-16: the image inputs file, cap, owner, style and provider must equal
+     the approved image plan; a lane that drew nothing is refused.
+ 14. IMG-19: the paid image model is resolved through Skill 66 at dispatch
+     time and recorded in every production request.
+
 Run: python3 tests/test_landing_bridge.py [-v]
 """
 
@@ -98,6 +109,7 @@ REPO_ROOT = HERE.parents[1]  # scripts -> 49-signature-funnel -> repo root
 FIXTURES = HERE / "fixtures"
 S49_SCRIPTS = HERE
 SKILL71_MAIN = REPO_ROOT / "71-blackceo-signature-page"
+SHARED_DESIGN_REL = Path("shared-utils") / "signature_launch" / "design"
 PY = sys.executable
 
 sys.path.insert(0, str(S49_SCRIPTS))
@@ -147,17 +159,12 @@ def fixture_launch(full_funnel: bool = False) -> (dict, dict):
     launch["route_graph_hash"] = clr.graph_hash(graph)
     launch["status"] = "approved"
     launch["plan_approval_ref"] = "APPR-FIXTURE-1"
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    approval = {
-        "schema_version": "1.0", "approval_id": "APPR-FIXTURE-1",
-        "subject_type": "launch_plan_build",
-        "subject_hash": vlp.plan_document_hash(launch),
-        "owner_identity_ref": "client-fixture",
-        "source_message_ref": "fixture-msg-1", "recorded_at": now,
-        "scope": ["launch_plan_build"], "revoked": False,
-        "verification_class":
-            "recorded_consent_not_cryptographically_sealed",
-    }
+    from datetime import timedelta
+    approval = {"schema_version": "1.0", "approval_id": "APPR-FIXTURE-1", "kind": "launch_plan_build",
+                "plan_hash": vlp.plan_document_hash(launch), "client_identity": "client-fixture",
+                "source_message_ref": "fixture-msg-1", "scope": ["launch_plan_build"],
+                "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "revoked": False,
+                "verification_class": "recorded_consent_not_cryptographically_sealed"}
     return launch, approval
 
 
@@ -172,6 +179,12 @@ class LandingBridgeCase(unittest.TestCase):
             [PY, str(HERE / "make_fake_skill71.py"), str(self.fake)],
             capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        # The shared design components (U-structure-02: design.css, tokens, image slots) sit beside
+        # the skill tree, as in the repository layouts; a token-driven page cannot be imported
+        # without them, so the tmp layout carries the real files.
+        shutil.copytree(REPO_ROOT / SHARED_DESIGN_REL,
+                        self.td / SHARED_DESIGN_REL,
+                        ignore=shutil.ignore_patterns("__pycache__", "tests"))
         # Fixture inputs.
         self.launch, self.approval = fixture_launch()
         self.launch_path = self.td / "launch.json"
@@ -192,6 +205,7 @@ class LandingBridgeCase(unittest.TestCase):
             "image_cap": 12,
             "launch_record": str(self.launch_path),
             "brand_file": str(self.brand_path),
+            "draft": True,  # the fake gate never closes; tests of a finished lane pass draft=False
         }
         landing.update(overrides)
         if drop:
@@ -458,17 +472,16 @@ class TestFullFunnelGetsAllPages(LandingBridgeCase):
         self.assertFalse(self.opt_in_dir.exists())
 
 
-class TestLandingDrawsItsImages(LandingBridgeCase):
-    """LANE-49: with the shared image inputs the bridge also DRAWS the page's wireframe and mockup
-    stages (stub provider, real Skill 71 request builder and stage executor), with the client's design
-    style, and lists every design file in the result. The real Skill 71 tree is the consumer here."""
+class RealTreeCase(LandingBridgeCase):
+    """The real Skill 71 tree is the consumer (it has the request builder, the executor and the copy gate),
+    with a stub-provider image inputs file and the approved image plan that matches it."""
 
     def setUp(self):
         super().setUp()
         brand = (SKILL71_MAIN / "assets" / "brand" / "blackceo-brand.json").read_bytes()
         self.brand_path.write_bytes(brand)
         self.launch["brand_hash"] = sha256(brand)
-        self.approval["subject_hash"] = vlp.plan_document_hash(self.launch)
+        self.approval["plan_hash"] = vlp.plan_document_hash(self.launch)
         self.launch_path.write_bytes(dump(self.launch))
         self.inputs = self.td / "image_inputs.json"
         self.inputs.write_text(json.dumps({
@@ -476,12 +489,31 @@ class TestLandingDrawsItsImages(LandingBridgeCase):
             "image_cap": 12, "image_provider": "stub"}), encoding="utf-8")
         self.manuscript = SKILL71_MAIN / "tests" / "fixtures" / "copy_examples" / "standard-path-b.md"
 
+    def plan(self, **over):
+        return dict({"image_inputs": str(self.inputs), "image_cap": 12, "brand_owner": "blackceo",
+                     "design_style": "A", "image_provider": "stub"}, **over)
+
     def config(self, **over):
         over.setdefault("brand_owner", "blackceo")  # the real brand file belongs to this owner
         over.setdefault("manuscript", str(self.manuscript))
+        over.setdefault("image_plan", self.plan())
         cfg = self.write_bridge_config(image_inputs=str(self.inputs), **over)
         cfg["skill71"]["root"] = str(SKILL71_MAIN)  # the real tree has the builder and the executor
         self.bridge_config_path.write_text(json.dumps(cfg), encoding="utf-8")
+
+    def refused(self, needle):
+        """Run the bridge on the fixture request; it must refuse (exit 2) naming needle, placing nothing."""
+        proc, result_path = self.run_bridge_directly(self.make_request(), self.run_dir)
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn(needle, proc.stdout)
+        self.assertFalse(result_path.exists())
+        return proc
+
+
+class TestLandingDrawsItsImages(RealTreeCase):
+    """LANE-49: with the shared image inputs the bridge also DRAWS the page's wireframe and mockup
+    stages (stub provider, real Skill 71 request builder and stage executor), with the client's design
+    style, and lists every design file in the result."""
 
     def test_the_three_image_stages_are_drawn_and_every_design_file_is_in_the_result(self):
         self.config()
@@ -495,13 +527,35 @@ class TestLandingDrawsItsImages(LandingBridgeCase):
         for device in ("desktop", "mobile"):
             self.assertEqual(len([n for n in names if n.startswith(f"visual-mockup/{device}/part-")]), 12)
 
+    def test_the_clients_creative_direction_reaches_skill_71_intake(self):
+        # IMG-07 dispatch path: a direction the client named in the shared image inputs lands in the
+        # run's intake.json through the bridge, not only through a direct write_intake call.
+        direction = "like the Acme homepage"
+        self.inputs.write_text(json.dumps({
+            "design_style": "A", "design_style_source": "client_choice", "creative_direction": direction,
+            "brand_file": str(self.brand_path), "brand_owner": "blackceo",
+            "image_cap": 12, "image_provider": "stub"}), encoding="utf-8")
+        self.config()
+        manifest, out = self.emit_dispatch()
+        self.run_landing_adapter(out)
+        intake = json.loads((self.run_dir / "intake.json").read_text(encoding="utf-8"))
+        self.assertEqual(intake["creative_direction"], direction)
+        self.assertEqual(intake["creative_direction_source"], "client_choice")
+
+    def test_without_a_creative_direction_intake_records_none(self):
+        self.config()  # the shared image inputs carry no creative_direction key
+        manifest, out = self.emit_dispatch()
+        self.run_landing_adapter(out)
+        intake = json.loads((self.run_dir / "intake.json").read_text(encoding="utf-8"))
+        self.assertIsNone(intake["creative_direction"])
+
     def test_a_planned_two_page_set_draws_both_pages_side_by_side(self):
         import landing_bridge as lb
         import threading
         self.launch, self.approval = fixture_launch(full_funnel=True)
         brand = (SKILL71_MAIN / "assets" / "brand" / "blackceo-brand.json").read_bytes()
         self.launch["brand_hash"] = sha256(brand)
-        self.approval["subject_hash"] = vlp.plan_document_hash(self.launch)
+        self.approval["plan_hash"] = vlp.plan_document_hash(self.launch)
         self.launch_path.write_bytes(dump(self.launch))
         opt_dir = self.td / "run-opt-in"
         own_copy = SKILL71_MAIN / "tests" / "fixtures" / "copy_examples" / "long-form-path-b.md"
@@ -554,6 +608,142 @@ class TestLandingDrawsItsImages(LandingBridgeCase):
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertIn("paid_render_approval_ref", proc.stdout)
         self.assertFalse((self.run_dir / "page-request.json").exists())
+
+
+class TestCopyGateBeforeDrawing(RealTreeCase):
+    """STR-07: the copy structure gate runs on the manuscript before any image is drawn."""
+
+    def bad_manuscript(self) -> Path:
+        # a wrong-length section 2 (its body cut to one line) and no founder letter (section 12 dropped)
+        lines = self.manuscript.read_text(encoding="utf-8").split("\n")
+        bad = self.td / "bad-copy.md"
+        bad.write_text("\n".join(lines[:39] + ["Too short.", ""] + lines[60:265]), encoding="utf-8")
+        return bad
+
+    def test_a_manuscript_failing_the_copy_gate_is_refused_before_anything_is_drawn(self):
+        self.config(manuscript=str(self.bad_manuscript()))
+        proc = self.refused("copy structure gate failed")
+        self.assertIn("section 12", proc.stdout)
+        self.assertFalse(list(self.run_dir.glob("production-request-*.json")))
+        self.assertFalse((self.run_dir / "desktop-wireframe").exists())
+        self.assertFalse((self.run_dir / "page-result.json").exists())
+
+    def test_a_declared_draft_does_not_excuse_a_bad_manuscript(self):
+        self.config(manuscript=str(self.bad_manuscript()), draft=True)
+        self.refused("copy structure gate failed")
+        self.assertFalse((self.run_dir / "desktop-wireframe").exists())
+
+
+class TestImagePlanReconciled(RealTreeCase):
+    """STR-16: the look, provider, cap and owner the lane draws with are the approved image plan's, and
+    a landing lane that drew nothing is refused."""
+
+    def test_a_lane_without_image_inputs_is_refused_as_drawing_nothing(self):
+        self.config(draft=False)
+        cfg = json.loads(self.bridge_config_path.read_text(encoding="utf-8"))
+        cfg["landing"].pop("image_inputs")
+        self.bridge_config_path.write_text(json.dumps(cfg), encoding="utf-8")
+        self.refused("draw nothing")
+        self.assertFalse(self.run_dir.exists())
+
+    def test_inputs_that_differ_from_the_approved_plan_are_refused_before_staging(self):
+        other = self.td / "other-inputs.json"  # same values, another file: a plan names exactly one
+        other.write_bytes(self.inputs.read_bytes())
+        for label, plan, needle in (
+                ("another file", self.plan(image_inputs=str(other)), "not the approved plan's image inputs file"),
+                ("cap", self.plan(image_cap=99), "image_cap"),
+                ("owner", self.plan(brand_owner="someone-else"), "brand_owner"),
+                ("style", self.plan(design_style="B"), "design_style"),
+                ("provider", self.plan(image_provider="kie"), "image_provider"),
+                ("no plan", None, "image_plan is missing")):
+            with self.subTest(label):
+                self.config(draft=False, image_plan=plan)
+                if plan is None:
+                    cfg = json.loads(self.bridge_config_path.read_text(encoding="utf-8"))
+                    cfg["landing"].pop("image_plan")
+                    self.bridge_config_path.write_text(json.dumps(cfg), encoding="utf-8")
+                self.refused(needle)
+                self.assertFalse(self.run_dir.exists())
+
+    def test_a_config_cap_or_owner_that_differs_from_the_inputs_is_refused(self):
+        self.config(image_cap=99)
+        self.refused("image_cap")
+        self.assertFalse(self.run_dir.exists())
+
+    def test_a_finished_lane_that_waited_for_copy_drew_nothing_and_is_refused(self):
+        self.config(draft=False, pipeline_command=[PY, "-c", "pass"])  # the gate is out of the way
+        cfg = json.loads(self.bridge_config_path.read_text(encoding="utf-8"))
+        cfg["landing"].pop("manuscript")
+        self.bridge_config_path.write_text(json.dumps(cfg), encoding="utf-8")
+        self.refused("drew nothing")
+
+    def test_a_matching_plan_that_drew_its_pages_is_delivered(self):
+        self.config(draft=False, pipeline_command=[PY, "-c", "pass"])
+        proc, result_path = self.run_bridge_directly(self.make_request(), self.run_dir)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["pipeline"]["images"]["status"], "drawn")
+        self.assertIs(json.loads(proc.stdout)["draft"], False)
+
+
+FAKE_ADAPTER = """#!/usr/bin/env python3
+import json, os
+print(json.dumps({"state": "success", "data": {"source": "fake", "changed": True, "routes": {
+    "Text to Image": os.environ["FAKE_LATEST"] + "-text-to-image",
+    "Image to Image": os.environ["FAKE_LATEST"] + "-image-to-image"}}}))
+"""
+
+
+class TestImageModelResolvedThroughSkill66(RealTreeCase):
+    """IMG-19: no wrapper carries a model id; the paid model is Skill 66's default at dispatch time."""
+
+    def setUp(self):
+        super().setUp()
+        sys.path.insert(0, str(REPO_ROOT / "shared-utils" / "signature_launch"))
+        self.addCleanup(sys.path.remove, str(REPO_ROOT / "shared-utils" / "signature_launch"))
+        import image_model
+        self.image_model = image_model
+
+    def test_resolve_returns_the_skill66_default_and_the_bridge_source_holds_no_id(self):
+        registry = json.loads((self.image_model.SKILL66_ROOT / "models.json").read_text(encoding="utf-8"))
+        default = [m["canonical_model_id"] for m in registry["models"]
+                   if m["family"] == "gpt-image-2-5-sunburst" and "image-to-image" in m["tasks"]]
+        with mock.patch.dict(os.environ, {"KIE_LIVE_ADAPTER_PATH": ""}):  # Skill 74 off: models.json default
+            self.assertEqual([self.image_model.resolve()], default)
+        self.assertNotIn(default[0], BRIDGE.read_text(encoding="utf-8"))
+
+    def test_changing_the_skill66_default_changes_the_model_in_every_production_request(self):
+        import landing_bridge as lb
+        adapter = self.td / "kie_live_adapter.py"  # Skill 74 `latest-family`, the way Skill 66 asks it
+        adapter.write_text(FAKE_ADAPTER, encoding="utf-8")
+        self.inputs.write_text(json.dumps({
+            "design_style": "A", "brand_file": str(self.brand_path), "brand_owner": "blackceo",
+            "image_cap": 12, "image_provider": "kie", "paid_render_approval_ref": "APPR-FIXTURE-1"}),
+            encoding="utf-8")
+        self.config(image_plan=self.plan(image_provider="kie"))
+        manifest, out = self.emit_dispatch()
+        real_run = lb._run
+
+        def never_pay(argv, *a, **k):
+            if "stage_executor.py" in argv[1]:
+                return subprocess.CompletedProcess(argv, 0, "", "")
+            return real_run(argv, *a, **k)
+        seen = []
+        for latest in ("gpt-image-8", "gpt-image-9"):
+            shutil.rmtree(self.run_dir, ignore_errors=True)
+            env = {"KIE_LIVE_ADAPTER_PATH": str(adapter), "FAKE_LATEST": latest}
+            with mock.patch.dict(os.environ, env), mock.patch.object(lb, "_run", never_pay):
+                with self.assertRaises(lb.BridgeError):  # nothing was drawn, so the delivery check refuses
+                    lb.bridge(out / "request-landing.json", out / "result-landing.json", out,
+                              self.bridge_config_path, ["sales"])
+            models = {json.loads(f.read_text(encoding="utf-8"))["model"]
+                      for f in self.run_dir.glob("production-request-*.json")}
+            self.assertEqual(len(list(self.run_dir.glob("production-request-*.json"))), 3)
+            self.assertEqual(models, {f"{latest}-image-to-image"})
+            recorded = json.loads((self.run_dir / "image-inputs.resolved.json").read_text(encoding="utf-8"))
+            self.assertEqual(recorded["image_model"], f"{latest}-image-to-image")
+            self.assertEqual(recorded["image_inputs_file"], str(self.inputs))
+            seen.append(models)
+        self.assertNotEqual(seen[0], seen[1])
 
 
 class TestFailClosed(LandingBridgeCase):
@@ -723,15 +913,50 @@ class TestPromptPolicyDualAccept(LandingBridgeCase):
                                            "prompt_policy_id")
 
 
-class TestSchemaFallback(LandingBridgeCase):
-    def test_bridge_validates_via_vendored_schema_without_receipts(self):
+class TestStageGateAndReceipts(LandingBridgeCase):
+    """ENF-09: the stage gate's exit is honoured, the receipt validator cannot be swapped, and what the
+    bridge validated with and how production stood is recorded beside the result."""
+
+    def finished_lane_config(self):
+        inputs = self.td / "image_inputs.json"
+        inputs.write_text(json.dumps({
+            "design_style": "A", "brand_file": str(self.brand_path),
+            "brand_owner": "Fixture Brand Owner", "image_cap": 12, "image_provider": "stub"}), encoding="utf-8")
+        plan = {"image_inputs": str(inputs), "image_cap": 12, "brand_owner": "Fixture Brand Owner",
+                "design_style": "A", "image_provider": "stub"}
+        self.write_bridge_config(draft=False, image_inputs=str(inputs), image_plan=plan)
+
+    def test_an_open_stage_gate_is_refused_and_places_nothing(self):
+        self.finished_lane_config()  # the fake gate exits 1: production is not closed
+        proc, result_path = self.run_bridge_directly(self.make_request(), self.run_dir)
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("stage_gate report exited 1", proc.stdout)
+        self.assertFalse(result_path.exists())
+
+    def test_a_declared_draft_is_placed_and_recorded_as_one(self):
+        self.write_bridge_config()  # draft true
+        proc, result_path = self.run_bridge_directly(self.make_request(), self.run_dir)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        summary = json.loads(proc.stdout)
+        self.assertIs(summary["draft"], True)
+        self.assertEqual(summary["pipeline"]["exit"], 1)
+        receipt = json.loads(Path(summary["bridge_receipt"]).read_text(encoding="utf-8"))
+        self.assertEqual(receipt["draft"], True)
+        self.assertEqual(receipt["pipeline_exit"], 1)
+        self.assertEqual(receipt["receipt_validation"], "collect_launch_receipts.validate_result")
+        self.assertEqual(receipt["request_id"], json.loads(result_path.read_text(encoding="utf-8"))["request_id"])
+
+    def test_S49_SCRIPTS_DIR_cannot_swap_the_receipt_validator(self):
         self.write_bridge_config()
-        empty = self.td / "empty-scripts"
-        empty.mkdir()
-        _manifest, out = self.emit_dispatch()
-        result = self.run_landing_adapter(
-            out, env_extra={"S49_SCRIPTS_DIR": str(empty)})
-        self.assertEqual(result["status"], "authored")
+        poisoned = self.td / "poisoned-scripts"
+        poisoned.mkdir()
+        (poisoned / "collect_launch_receipts.py").write_text(
+            "def validate_result(result, request):\n    return ['poisoned validator ran']\n", encoding="utf-8")
+        proc, result_path = self.run_bridge_directly(
+            self.make_request(), self.run_dir, env_extra={"S49_SCRIPTS_DIR": str(poisoned)})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertNotIn("poisoned", proc.stdout + proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["receipt_validation"], "collect_launch_receipts.validate_result")
 
 
 def load_bridge_module(bridge_path=None):
@@ -872,6 +1097,9 @@ class TestReceiptsFallbackRules(LandingBridgeCase):
         summary = json.loads(proc.stdout)
         self.assertEqual(summary["receipt_validation"],
                          "vendored_schema_fallback")
+        # ...and in the receipt beside the result, where assemble/check can refuse it.
+        receipt = json.loads(Path(summary["bridge_receipt"]).read_text(encoding="utf-8"))
+        self.assertEqual(receipt["receipt_validation"], "vendored_schema_fallback")
 
     def test_fallback_enforces_independent_review_rule(self):
         self.write_bridge_config()

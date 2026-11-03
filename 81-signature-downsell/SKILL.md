@@ -1,12 +1,12 @@
 ---
 name: signature-downsell
 description: Build the Signature Downsell page (D1) - the reshaped alternative offer shown only after an explicit Upsell 1 decline. Derives an exact eight-section page from the 12-section landing format (keep sections 1-7, remove 8-11, replace section 12 with a renumbered section 8, "When Time Runs Out", listing 7 missed-out consequences), a CTA in every section, truthful scarcity only, a guarded native one-click action shared with the checkout system, and routes: D1 paid goes to the SAME Upsell 2 when enabled else the final thank-you; D1 declined goes to the final thank-you with the original order untouched.
-version: 0.1.6
+version: 0.1.7
 ---
 
 # Signature Downsell Page (Skill 81)
 
-Status: BUILD CANDIDATE from the S81 room (Signature Launch packet v1.0, spec 11). Not merged, not installed, not live. Batch merge requires Trevor's explicit approval of an exact candidate.
+Status: design package (Signature Launch packet v1.0, spec 11), shipped in this repo at the version above. **Design only; not installed.** The package holds the copy contract, design profile, schemas, validators, fixtures and tests. It has no runtime: nothing here installs the D1 page or its one-click action, and Skill 6 has no D1 install step yet (scheduled Skill 06 work items S06-02 and UPS-08). Every D1 result and client summary line must read "design only; not installed" until Skill 6 records a binding read-back for D1.
 
 ## Route responsibility (packet 02 section 4, binding)
 

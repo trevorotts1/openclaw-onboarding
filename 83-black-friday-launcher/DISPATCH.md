@@ -1,8 +1,8 @@
 # Dispatch, designs and delivery (Skill 83, lane 83)
 
 What `python3 -m launcher_core.cli dispatch` does, what it asks the client, what it will not do, and what
-the package must hold before it counts as delivered. SKILL.md and DECISIONS-PENDING.md point here; they are
-edited by the turn-on workflow, so this file carries the new behavior until that merges.
+the package must hold before it counts as delivered. SKILL.md and DECISIONS-PENDING.md point here, and SKILL.md
+carries the entry commands, the pictures and approvals summary and the tracked-items table.
 
 ## One command, every page
 
@@ -10,7 +10,8 @@ edited by the turn-on workflow, so this file carries the new behavior until that
 python3 -m launcher_core.cli dispatch --intake intake.json --out RUN \
     --approval approval.json --client CLIENT_ID --worker WORKER_ID \
     (--adapters adapters.json | --adapter-inputs inputs.json) [--parallel N] [--landing-pages landing,sales] [--extra-page downsell_2]
-python3 -m launcher_core.cli assemble --intake intake.json --pieces RUN/pieces --out PACKAGE
+python3 -m launcher_core.cli assemble --intake intake.json --pieces RUN/pieces --out PACKAGE \
+    (--launch-plan launch-plan.json [--deliveries deliveries.json] | --page-only)
 python3 -m launcher_core.cli check --manifest PACKAGE/package-manifest.json --root PACKAGE
 ```
 
@@ -36,6 +37,16 @@ python3 -m launcher_core.cli check --manifest PACKAGE/package-manifest.json --ro
    wrappers refuse any other key) and `order-page-inputs.json` holds the same values in the shape Skill 78 reads.
 6. `assemble` requires every page's designs by default. `--allow-no-designs` exists for old-style plan-only
    packages and is recorded in the manifest as `designs_required: false`.
+7. `assemble` needs exactly one of `--launch-plan` or `--page-only` (`AF-LAUNCH-PLAN-REQUIRED` otherwise).
+   `--page-only` labels the package page-only: no Black Friday calendar and no planned email, text or
+   automation is delivered or checked. Say so in the client summary.
+8. The upsell, downsell and thank-you pages in this package are design deliverables. Purchase handling,
+   native product and price ids and the live page are created later, by Skill 06 and Skill 44. Until Skill 06
+   records read-backs, client summaries say "designs only" for those pages, never "live" or "delivered".
+9. The checkout page is the native Convert and Flow order form, but Skill 06 has no capability today to install
+   a native order form, order bump or one-click upsell and downsell step (S06-02). The decided build target is
+   the funnel order-form step, with one live capture on an approved test location still owed (CHK-19). Until
+   that lands, a checkout design is not an installed checkout.
 
 ## Build order and parallel lanes
 
@@ -81,39 +92,57 @@ never-default money and ownership rules) are unchanged below.
 Every default is recorded in `to_confirm` with a reason and a one-line way to change it, travels into the
 manifest and receipt, and is read out at delivery by `launch_bridge.summary_lines`.
 
-Design style note for the integrator: Skill 71's `write_intake.py` accepts only `client_choice` and
-`recommended_accepted` as the style source and its gate `gate:intake_design_style` closes only on those. The
-bridge records `design_style_source: "default_to_confirm"` for a defaulted style; the intake lane must add
-that value to Skill 71 before a production run can close with it.
+Design style: a defaulted style is a proposal, never a client choice. The bridge records
+`design_style_source: "default_to_confirm"` for it. Skill 71's `write_intake.py` accepts only `client_choice`
+and `recommended_accepted` as the style source, and its gate `gate:intake_design_style` closes only on those,
+so a production run does not close intake on a defaulted style. Ask the client for A, B or C and record the
+answer as `client_choice`; a defaulted style never becomes `client_choice` on its own. A `test_only` practice
+run carries the flagged default and is exempt. Tracked as IMG-08 and CON-05; the intake-side refusal of
+`default_to_confirm` on a non-test run is in the images stream.
 
 ## What the package must hold (AF-LAUNCH-PAGE-DESIGNS)
 
 For every page, desktop and mobile wireframe sections and review PDF, desktop and mobile mockup sections and
 review PDF, and an overview board, each file labeled with its own page (`upsell-1_DESKTOP_WIREFRAMES.pdf`).
-The required set is read from `49-signature-funnel/structure/page_types.json` when that file exists, else the
-built-in set above (the check reports which). Placeholder pictures fail a package that is not `test_only`.
+The required set is read from `49-signature-funnel/structure/page_types.json` when its entries name these
+kinds, else the built-in set above. Today the file's entries do not map to these kinds, so the check reports
+`builtin` for every run (tracked as IMG-13). Placeholder pictures fail a package that is not `test_only`, but
+the rule reads the image provider from each page's design artifacts and the upsell pages' results carry none,
+so it cannot fire for them yet (tracked as UPS-23).
 The design board and the final mockups are recorded as `awaiting_client_approval` until the client approves.
 
 ## Graphics department hooks
 
-`launcher_core/graphics_hooks.py` writes the SOP-GIP-02 image QC request and the SOP-GIP-03 delivery record.
-It never uploads or publishes; with no live hosted link it records the missing capability. Skill 71 carries
+`launcher_core/graphics_hooks.py` can write the SOP-GIP-02 image QC request and the SOP-GIP-03 delivery record.
+`dispatch`, `assemble` and `check` do not call it today, so a launch run produces neither file unless a caller
+invokes the module directly (tracked as IMG-12). It never uploads or publishes; with no live hosted link it
+records the missing capability. Skill 71 carries
 the AF-G1..AF-G8 list as data, the independent reviewer model rule, the text read-back and logo accuracy
 checks, and the text-capable model and PNG rule (see `71-blackceo-signature-page/references/qc-contract.md`).
 
-## Out of scope (recorded follow-ups)
+## Tracked items (not built here)
 
-The package ends at approved local files. Skill 44, 50 and 06 install steps, live link checks, SOP-DIU-602,
-607 and 610 wiring, the SOP-07 and Skill 06 registry registration of Skill 83, the Command Center launch
-view, and the 999 package parity gap are not built here. SKILL.md's Entry now lists `dispatch` and
-`questions` beside the other commands, matching `launcher_core/cli.py`, and its "It does not build pages"
-line remains true: this skill composes the page-results Skills 71, 78, 79, 80, 81 and 82 return, it does
-not author them. A wording drift is left in SKILL.md's Entry — it spells `--landing-pages <file>` where
-`cli.py` takes a comma list (`landing,sales`) — and the turn-on workflow owns SKILL.md, so this file is
-authoritative until that branch merges. The attestation boundary label stops at this lane's edge the same
-way: `launcher_core/entitlement.py` records `evidence_kind`, `proves_purchase` and `attestation_boundary`
-on every gate result, and `package.py` copies that full block into `package-manifest.json`, but
-`receipt.json` (its entitlement block is an explicit subset in `package.py`) and the route/launch record
-(`launcher_core/route.py`) carry only `basis`, `requires_purchase` and `billing`, and `checks.py` does not
-re-check the label at package-check time. Those files are owned outside this lane; until they carry the
-label, `package-manifest.json` is the only artifact that tells a buyer the gate is not proof of purchase.
+The package ends at approved local files. Each item below is tracked, not forgotten; none is claimed as done.
+
+| Item | Tracked in |
+| --- | --- |
+| Skill 44, 50 and 06 install and build steps for the launch automations | SKILL.md "Launch mode (Skill 49/83)" routes the agent; S44-25 |
+| Native order form, bump and one-click steps installed by Skill 06 | S06-02, CHK-19 |
+| Live link checks and a hosted link for every image | IMG-12 (SOP-GIP-03 hosting is its own approval) |
+| SOP-DIU-602, 607 and 610 wiring | follow-up, no defect id yet |
+| SOP-07 and Skill 06 registry registration of Skill 83 | follow-up, no defect id yet |
+| Command Center launch view | CON-21, CON-22 |
+| 999 package parity gap | CON-06, CON-07, CON-08 |
+| Attestation boundary label on `receipt.json`, the route record and `checks.py` | follow-up below |
+
+SKILL.md's Entry lists `dispatch` and `questions` beside the other commands and spells `--landing-pages` as the
+comma list (`landing,sales`), matching `launcher_core/cli.py`. Its "does not build pages" line remains true:
+this skill composes the page-results Skills 71, 78, 79, 80, 81 and 82 return, it does not author them.
+
+The attestation boundary label stops at this lane's edge: `launcher_core/entitlement.py` records
+`evidence_kind`, `proves_purchase` and `attestation_boundary` on every gate result, and `package.py` copies
+that full block into `package-manifest.json`, but `receipt.json` (its entitlement block is an explicit subset
+in `package.py`) and the route/launch record (`launcher_core/route.py`) carry only `basis`,
+`requires_purchase` and `billing`, and `checks.py` does not re-check the label at package-check time. Until they
+carry the label, `package-manifest.json` is the only artifact that tells a buyer the gate is not proof of
+purchase.

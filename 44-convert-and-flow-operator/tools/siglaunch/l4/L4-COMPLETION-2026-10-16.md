@@ -156,3 +156,18 @@ events:
 The version changed exactly when the underlying native state
 changed (grant of the extra, then its refund) and for no other
 reason.
+
+## Addendum 2026-11-02 — scope of this record for products (S44-13, S44-20)
+
+This record proves the purchase pipeline over invoice line items only. It
+does not prove that a catalog product or price can be created: product
+creation was not usable in the sandbox (see the mapping disclosure), and
+no checkout surface, order form, bump or payment provider was exercised.
+Nothing here may be cited as evidence that a launch has a sellable
+product. The launch-side owners are now: Skill 44 creates the product and
+price with read-back (`shared-utils/ghl/products_prices.py`), Skill 06
+places the order form and bump, and the payment-provider connection is an
+operator manual gate; Skill 83 refuses "ready" while a commerce unit's
+native product or price id is null. Provisioning keys products by
+(location, logical id) and records native ids from a live read-back; the
+executor re-reads the native object instead of trusting the ledger.

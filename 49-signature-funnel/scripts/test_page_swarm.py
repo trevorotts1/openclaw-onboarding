@@ -66,11 +66,11 @@ def fake_executor(log=None, sleep=0.0, fail=(), transient_once=(), seen=None):
 
 
 def go(mode="multiple_options", executor=None, parallel=1, inputs=None, limiter=None, extras=(),
-       landing_pages=("landing", "sales"), out=None):
+       landing_pages=("landing", "sales"), out=None, **kw):
     launch, approval = approved_launch(mode)
     return dl.dispatch(launch, approval, client_identity_ref=CLIENT, worker_identity_ref=WORKER,
                        out_dir=out, executor=executor, parallel=parallel, image_inputs=inputs,
-                       landing_pages=list(landing_pages), extra_pages=tuple(extras), limiter=limiter)
+                       landing_pages=list(landing_pages), extra_pages=tuple(extras), limiter=limiter, **kw)
 
 
 class WhatAFullFunnelDispatches(unittest.TestCase):
@@ -163,7 +163,8 @@ class OneFailureNeverStopsTheRest(unittest.TestCase):
 class LimiterAndSpendCap(unittest.TestCase):
     def test_the_free_stub_takes_no_tokens_and_has_no_cap(self):
         limiter = CountingLimiter()
-        m = go(executor=fake_executor(), parallel=6, inputs=dict(STUB_INPUTS, image_cap=0), limiter=limiter)
+        m = go(executor=fake_executor(), parallel=6, inputs=dict(STUB_INPUTS, image_cap=0), limiter=limiter,
+               strict_cap=False)  # the run-time stub ledger never enforces; the default would refuse a cap of 0 first
         self.assertEqual(limiter.tokens, 0)
         self.assertEqual(set(m["swarm"]["statuses"].values()), {"ok"})
         self.assertFalse(m["swarm"]["spend"]["enforced"])
@@ -182,7 +183,8 @@ class LimiterAndSpendCap(unittest.TestCase):
         # product_selection 20, checkout 20 fit under 150; upsell_1 (32) would pass it and is skipped
         out = Path(tempfile.mkdtemp())
         with self.assertRaises(dl.DispatchError):  # skipped pages fail the dispatch by name (next test)
-            go(executor=fake_executor(seen=seen), parallel=6, inputs=paid_inputs(150), limiter=limiter, out=out)
+            go(executor=fake_executor(seen=seen), parallel=6, inputs=paid_inputs(150), limiter=limiter, out=out,
+               strict_cap=False)  # the run-time ledger is the second line of defence behind the up-front refusal
         m = json.loads((out / "dispatch-manifest.json").read_text(encoding="utf-8"))
         statuses = m["swarm"]["statuses"]
         self.assertEqual([k for k, v in statuses.items() if v == "ok"], ["landing", "product_selection", "checkout"])
@@ -193,7 +195,7 @@ class LimiterAndSpendCap(unittest.TestCase):
 
     def test_a_page_skipped_for_the_cap_fails_the_dispatch_by_name_not_silently(self):
         with self.assertRaises(dl.DispatchError) as cm:
-            go(executor=fake_executor(), inputs=paid_inputs(150), limiter=CountingLimiter())
+            go(executor=fake_executor(), inputs=paid_inputs(150), limiter=CountingLimiter(), strict_cap=False)
         self.assertIn("upsell_1 skipped_cap", str(cm.exception))
         self.assertIn("image cap 150", str(cm.exception))
 
@@ -255,23 +257,19 @@ class CommandLine(unittest.TestCase):
         launch, approval = approved_launch(mode)
         (td / "launch.json").write_text(json.dumps(launch), encoding="utf-8")
         (td / "approval.json").write_text(json.dumps(approval), encoding="utf-8")
-        consumer = td / "consumer.py"
-        consumer.write_text(
-            "import json,sys,time\n"
-            f"time.sleep({sleep})\n"
-            "req=json.load(open(sys.argv[1]))\n"
-            "res={'schema_version':'1.0','tenant_id':req['tenant_id'],'location_id':req['location_id'],"
-            "'launch_id':req['launch_id'],'revision':req['revision'],'request_id':req['request_id'],"
-            "'input_hash':req['input_hash'],'page_id':req['page_id'],'status':'authored','artifacts':[],"
-            "'author_session':'cli-test','reviewer_session':None,'independent_review':False,"
-            "'proof_class':'L0','blockers':[],'native_bindings_ref':None,'test_only':req['test_only']}\n"
-            "json.dump(res,open(sys.argv[2],'w'))\n", encoding="utf-8")
-        cfg = {"adapters": {r: {"command": [sys.executable, str(consumer), "{request}", "{result}"]}
-                            for r in (*dl.PAGE_ROLES, *extra_adapters)}}
+        consumer = HERE.parents[1] / "83-black-friday-launcher" / "tests" / "lane83_fake_consumer.py"
+        labels = HERE.parents[1] / "71-blackceo-signature-page" / "scripts" / "deliverable_labels.py"
+
+        def cmd(r):
+            return ([sys.executable, str(consumer), "{request}", "{result}", str(labels), "--sleep", str(sleep)]
+                    + (["--pages", "{landing_pages}"] if r == "landing" else [])
+                    + (["--instance", "downsell_2"] if r == "downsell_2" else []))
+
+        cfg = {"adapters": {r: {"command": cmd(r)} for r in (*dl.PAGE_ROLES, *extra_adapters)}}
         (td / "adapters.json").write_text(json.dumps(cfg), encoding="utf-8")
         inputs = td / "image_inputs.json"
         inputs.write_text(json.dumps({"design_style": "A", "brand_file": "/x/b.json", "brand_owner": "Acme",
-                                      "image_cap": 100, "image_provider": "stub"}), encoding="utf-8")
+                                      "image_cap": 10 ** 4, "image_provider": "stub"}), encoding="utf-8")  # covers every page: a smaller cap is refused
         proc = subprocess.run(
             [sys.executable, str(HERE / "dispatch_launch.py"), "--launch", str(td / "launch.json"),
              "--approval", str(td / "approval.json"), "--client", CLIENT, "--worker", WORKER,

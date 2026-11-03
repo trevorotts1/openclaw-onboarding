@@ -47,11 +47,24 @@ checks:
      * LOGO ACCURACY (AF-G2): a section that declares logo_expected true must
        carry a logo_check record naming the logo reference, the method and a
        verdict; a missing record or any verdict other than "pass" FAILs it.
+       When the run's brand file names the client's logo file, the record must
+       also carry logo_check.logo_sha256 equal to that file's hash (presence:
+       the check was made against the client's actual logo), and at least one
+       section must expect the logo unless the record states logo_waived with
+       a reason. A producer can no longer skip the check by leaving
+       logo_expected off.
 
-Usage: validate_production_record.py <production-record.json> [--ocr]
+Usage: validate_production_record.py <production-record.json> [--ocr] [--model ID] [--if-present]
+
+  --model ID   the model the run's production request names as the renderer
+               (IMG-14); every section's generation.model_id must equal it.
+  --if-present exit 0 when the record file does not exist (the visual-mockup
+               layout proof, which has never carried a required record); a
+               record that exists is validated in full.
 
 Exit codes: 0 pass, 1 one named FAIL line per failure, 2 unreadable input.
 """
+import hashlib
 import json
 import re
 import sys
@@ -75,8 +88,10 @@ def garbled_words(expected_text, readback_text):
 LOGO_VERDICTS = ("pass", "fail")
 
 
-def logo_failures(label, section):
-    """AF-G2: a section that expects the client's logo must carry a passing logo_check."""
+def logo_failures(label, section, logo_sha=None):
+    """AF-G2: a section that expects the client's logo must carry a passing logo_check.
+
+    logo_sha is the hash of the client's logo file on disk, when the run names one."""
     if section.get("logo_expected") is not True:
         return []
     check = section.get("logo_check")
@@ -87,6 +102,11 @@ def logo_failures(label, section):
     for key in ("logo_ref", "method"):
         if not isinstance(check.get(key), str) or not check[key].strip():
             out.append(f"section {label}: AF-G2 logo_check.{key} is required")
+    if logo_sha:
+        recorded = check.get("logo_sha256")
+        if not isinstance(recorded, str) or recorded.strip().lower() != logo_sha:
+            out.append(f"section {label}: AF-G2 logo_check.logo_sha256 must equal the sha256 of the "
+                       f"client's logo file ({logo_sha[:12]}...); the check was not made against it")
     verdict = check.get("verdict")
     if verdict not in LOGO_VERDICTS:
         out.append(f"section {label}: AF-G2 logo_check.verdict must be one of {list(LOGO_VERDICTS)}")
@@ -126,15 +146,42 @@ def _design_board():
     return design_board
 
 
-def check_record(data, base_dir=None, ocr=None):
+def client_logo_sha(base_dir):
+    """sha256 of the client's logo file named by the run's resolved brand file, else None."""
+    run_dir = Path(base_dir)
+    if not (run_dir / "intake.json").is_file() and (run_dir.parent / "intake.json").is_file():
+        run_dir = run_dir.parent
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import brand_colors
+        brand = brand_colors.resolve(run_dir).brand or {}
+        raw = (brand.get("logo") or {}).get("files")
+    except Exception:
+        return None
+    finally:
+        sys.path.pop(0)
+    raw = raw[0] if isinstance(raw, list) and raw else raw
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    named = Path(raw)
+    skill_root = Path(__file__).resolve().parents[1]
+    for cand in ([named] if named.is_absolute() else [run_dir / named, skill_root / named]):
+        if cand.is_file():
+            return hashlib.sha256(cand.read_bytes()).hexdigest()
+    return None
+
+
+def check_record(data, base_dir=None, ocr=None, model=None):
     """Return a list of named failure strings; empty means the record passes.
 
     base_dir, when given, is the folder slice paths resolve against; slice
     existence and pixel dimensions are checked only then. ocr, when given, is a
     callable(path) -> text (design_board.ocr_text in production); with a base_dir
-    it adds the AF-G1 text read-back leg for every slice on disk.
+    it adds the AF-G1 text read-back leg for every slice on disk. model, when
+    given, is the run's declared renderer: each section must record it.
     """
     failures = []
+    logo_sha = client_logo_sha(base_dir) if base_dir is not None else None
     if not isinstance(data, dict):
         return ["production record is not a JSON object"]
     if data.get("artifact") not in ("wireframe", "mockup"):
@@ -225,7 +272,11 @@ def check_record(data, base_dir=None, ocr=None):
                         f"section {label}: slice is {actual[0]}x{actual[1]} on disk but the record claims "
                         f"{width}x{height} (native-aspect output must match the filed bytes)")
 
-        failures.extend(logo_failures(label, section))
+        failures.extend(logo_failures(label, section, logo_sha))
+        if model and gen.get("model_id") != model:
+            failures.append(f"section {label}: generation.model_id {gen.get('model_id')!r} is not the "
+                            f"model the run's request names ({model!r}); the record must name the "
+                            f"model that renders")
 
         qc = section.get("text_qc")
         if (ocr is not None and base_dir is not None and slice_name
@@ -259,17 +310,32 @@ def check_record(data, base_dir=None, ocr=None):
                 failures.append(f"section {label}: text_qc.verdict must be 'pass' when no garbled word is present")
             if recomputed and qc.get("verdict") == "pass":
                 failures.append(f"section {label}: text_qc.verdict claims 'pass' but the section is garbled")
+    if (logo_sha and not any(isinstance(x, dict) and x.get("logo_expected") is True for x in sections)
+            and not str(data.get("logo_waived") or "").strip()):
+        failures.append("AF-G2 the client's logo is on file but no section expects it (logo_expected); "
+                        "declare it on the section that carries the logo, or state logo_waived with the reason")
     return failures
 
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     use_ocr = "--ocr" in argv
-    argv = [a for a in argv if a != "--ocr"]
-    if len(argv) != 1:
-        print("FAIL: usage: validate_production_record.py <production-record.json> [--ocr]")
+    if_present = "--if-present" in argv
+    argv = [a for a in argv if a not in ("--ocr", "--if-present")]
+    model = None
+    if "--model" in argv:
+        at = argv.index("--model")
+        model = argv[at + 1].strip() if at + 1 < len(argv) else ""
+        argv = argv[:at] + argv[at + 2:]
+    if model is not None and model.startswith("{"):  # unresolved {model} placeholder: none declared
+        model = None
+    if len(argv) != 1 or model == "":
+        print("FAIL: usage: validate_production_record.py <production-record.json> [--ocr] [--model ID] [--if-present]")
         return 2
     path = Path(argv[0])
+    if if_present and not path.exists():
+        print(f"PASS: no production record at {path.name}; nothing to read back at this stage.")
+        return 0
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
@@ -283,7 +349,7 @@ def main(argv=None):
             print(f"FAIL: could not load the Design Board text reader: {exc}")
             return 2
     try:
-        failures = check_record(data, base_dir=path.parent, ocr=ocr)
+        failures = check_record(data, base_dir=path.parent, ocr=ocr, model=model)
     except Exception as exc:  # the reader (tesseract) is missing or crashed: unreadable, not a pass
         print(f"FAIL: the text read-back could not run: {exc}")
         return 2

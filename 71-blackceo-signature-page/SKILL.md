@@ -1,7 +1,7 @@
 ---
 name: blackceo-signature-page
 description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, signature sales page, opt-in, registration, challenge, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system. The signature sales page and the signature landing (opt-in) page are the two page kinds of this skill's landing role (`--page-kind sales|opt_in`). Direct-response sales pages (VSL, 8-section main, high-ticket, order-bump asset stacks) belong to Skill 56 `sales-page-assets`.
-version: 1.3.12
+version: 1.3.13
 ---
 
 # BlackCEO Signature Page — Skill 71
@@ -81,7 +81,7 @@ Do not load all three style libraries at once. Load only the selected family/sty
 
 ### Design / wireframes / mockups
 
-Fonts, colors, logo, and page look come only from the brand file. An agent never proposes page tokens. Brand colors are resolved before any wireframe, mockup or image: `scripts/brand_colors.py check <run_dir>` looks up the client's colors in the run's brand file (`private/brand.json`, then `intake.json` -> `brand_file`) and, when none are known, prints the client ask; the operator flow asks the client, then records the answer with `scripts/brand_colors.py record`. No other client's palette is ever used. An unconfirmed default is permitted and is always labelled a proposal: `palette_status: default_to_confirm` (or `suggested`) is a proposal for the client to confirm, never an accepted palette, it may carry the internal design work, and it may not ship until the client confirms it. No image stage starts (`stage_gate.py check`, `stage_executor.py`) without resolved client colors, proposal or not.
+Fonts, colors, logo, and page look come only from the brand file. An agent never proposes page tokens. Brand colors are resolved before any wireframe, mockup or image: `scripts/brand_colors.py check <run_dir>` looks up the client's colors in the run's brand file (`private/brand.json`, then `intake.json` -> `brand_file`) and, when none are known, prints the client ask; the operator flow asks the client, then records the answer with `scripts/brand_colors.py record`. No other client's palette is ever used. An unconfirmed default is permitted and is always labelled a proposal: `palette_status: default_to_confirm` (or `suggested`) is a proposal for the client to confirm, never an accepted palette, it may carry the internal design work, and it may not ship until the client confirms it. No image stage starts (`stage_gate.py check`, `stage_executor.py`) without resolved client colors, proposal or not; on a production run a proposal palette also refuses the paid stages (`image-generation-qc`, `final-mockups`) until the client confirms it, and `write_intake.py` records the status as `palette_status`.
 
 ## Page kinds: signature sales page and signature landing (opt-in) page
 
@@ -150,7 +150,7 @@ The client never receives loose section images: every image stage ends with `scr
 ## Design style: A Block, B Circle, C Hybrid
 
 At intake the client chooses one page design style after seeing an example link for each: ask with
-`python3 scripts/design_style.py question`, record with `scripts/write_intake.py ... --design-style A|B|C`.
+`python3 scripts/design_style.py question`, record with `scripts/write_intake.py ... --design-style A|B|C`; `--design-style-source` records how it was chosen (`client_choice`, `recommended_accepted`, or `default_to_confirm` for an unconfirmed default, which a production run refuses at intake).
 A production run cannot close `intake` without the choice (`gate:intake_design_style`). The choice drives the
 wireframe and mockup prompts (`scripts/stage_executor.py` adds the style block), each image slot's `shape`
 (`rect` or `circle`), and the shape QC check. Circle slots are generated SQUARE (subject centered, safe margins),
@@ -167,7 +167,7 @@ A page may use exactly one external Creative Direction family/style, or Secret-S
 - one Visual-Artist Direction; or
 - no external direction, with the BlackCEO Secret Super Sauce primary.
 
-If the intake does not name an external Creative Direction, the page is `SECRET_SAUCE_ONLY`. "No direction supplied" never means "choice delegated to the agent". An external style is used only when the owner names it at intake. `scripts/validate_visual_direction.py` enforces this at the visual-mockup gate.
+If the intake does not name an external Creative Direction, the page is `SECRET_SAUCE_ONLY`. "No direction supplied" never means "choice delegated to the agent". An external style is used only when the owner names it at intake. Ask the client at intake: their own look reference, an external direction, or the house look (the explicit default the client accepts); `write_intake.py --creative-direction` records the direction and `creative_direction_source` records who chose it (`client_choice`, `house_look_accepted`, or `not_asked`). `scripts/validate_visual_direction.py` enforces this at the visual-mockup gate.
 
 Never mix external families on one page. The Secret Super Sauce is the adaptive BlackCEO house layer, not a second external style. Where a Sauce dimension conflicts with a defining trait of the selected style, the selected style wins for that dimension and compatible BlackCEO qualities remain active.
 
@@ -194,7 +194,7 @@ Run `scripts/validate_prompt.py` on final prompts (with `--sauce-only` on `SECRE
 Ask whether the owner/client has an explicit image-engine preference when generation is in scope. Record the answer in the intake stage with `scripts/write_intake.py <run_dir> ... --image-engine kie|agnes` (default kie); `stage_gate.py` reads it, and the intake stage will not close without `image_engine` in `intake.json`.
 
 - If **Kie.ai** is selected or no preference is given and Kie is available, every image request follows `references/kie-generation-route.md`: **Skill 66 `kie-image`** (policy: model selection, ratio rules, image QC), then **Skill 74 `kie-live-adapter`** (transport: validate, preflight at price x 1.30, prompt-budget check, `submit --mode active`, wait, save immediately). Video requests use **Skill 67 `kie-video`** the same way. Never hardcode a model id, price, endpoint or rate figure in this skill; those come from the policy owner, `price`, and `kie-common-rules.md`.
-- The default GPT Image model is the newest generation in KIE's live catalog, resolved by `latest-family` (rule 13; GPT Image 2.5 Sunburst today). The N43 ratio rules apply: 3:1, 1:3, 9:21 use the legacy route only; on the default route 5:4 becomes 4:3, 4:5 becomes 3:4, 2:1 becomes 16:9, 1:2 becomes 9:16. An explicit client model request or a department pin overrides the default.
+- The default GPT Image model is the newest generation in KIE's live catalog, resolved by `latest-family` (rule 13) through Skill 66 at run time; this skill never names the model id. The N43 ratio rules apply: 3:1, 1:3, 9:21 use the legacy route only; on the default route 5:4 becomes 4:3, 4:5 becomes 3:4, 2:1 becomes 16:9, 1:2 becomes 9:16. An explicit client model request or a department pin overrides the default.
 - If **Agnes** is explicitly selected/available, use **Skill 63 `agnes-image`**.
 - If another configured provider is explicitly selected, honor it if the current client environment supports it.
 - `stage_gate.py close image-generation-qc` requires the receipt's `transport` block, with a per-provider branch (A23): on the KIE route, Skill 74, mode active, the real KIE task ids, model ids, preflight and budget results, N43 ratios; on the Agnes route (Skill 63, only when intake records `image_engine: "agnes"`), the synchronous shape: `task_id` null or omitted, `request_id` only if Agnes returned one, mode `sync`, no polling artefacts, and never a KIE task ID (Agnes issues none; attaching one fails the gate). A hand-rolled createTask has no such receipt and cannot close the stage.

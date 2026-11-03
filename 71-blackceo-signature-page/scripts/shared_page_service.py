@@ -29,7 +29,11 @@ Modes:
   generation (default): requires --pipeline-command. Success is wired to
       image files on disk for the stages the run executed -- readable
       image bytes and desktop/mobile mockup widths -- never to the
-      pipeline command merely exiting 0. Zero images is FAILED.
+      pipeline command merely exiting 0. Zero images is FAILED. Unless
+      --test-run, each delivered image must also be bound to a provider task
+      by a transport receipt (receipts/kie74/) whose PNG bytes re-hash; an
+      absent receipt store is FAILED (a run of stub placeholders only, with
+      no spend ledger, claims no provider and is exempt).
   validation-only (--validation-only): admits and stages the request,
       runs write_intake.py, generates nothing, and says so with the
       MODE=validation-only line. It can never read as a generated run.
@@ -56,6 +60,7 @@ SCRIPTS = SKILL_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 import design_style  # noqa: E402  the client's A / B / C choice rides through to the intake
 import stage_gate  # noqa: E402  (artifact/format/dimension success check)
+import stage_executor  # noqa: E402  (IMG-06: the transport-receipt gate a production run must pass)
 WRITE_INTAKE = SCRIPTS / "write_intake.py"
 REQUEST_SCHEMA = SKILL_ROOT / "references" / "page-request.schema.json"
 MARKER = "shared_image_service"
@@ -253,6 +258,15 @@ def main(argv=None) -> int:
         print(f"FAILED: the generation run produced {image_count} image(s) "
               "and does not prove a generation run")
         return 2
+    if not a.test_run:  # IMG-06: a production run proves each image came from a provider task
+        problems = stage_executor.receipt_gate_problems(run_dir)
+        if problems:
+            print("FAILED")
+            for line in problems:
+                print(f"- {line}")
+            print("FAILED: a production run needs the executor's transport receipts "
+                  "(receipts/kie74/); the images are not proven provider-backed")
+            return 2
     print(f"shared image service: page_role {role!r} admitted; "
           f"{image_count} image(s) verified on disk for the stages that ran")
     return 0

@@ -73,7 +73,6 @@ import hashlib
 import json
 import re
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -341,11 +340,30 @@ def validate_launch(launch: Any) -> List[str]:
         bent = set(bump.get("entitlement_ids") or [])
         if not bent:
             fail(f"bump offer {bump['offer_id']!r} grants no entitlements")
+        # A main the bump is included_in grants the bump by design (its order form does not sell it).
+        hosts = set((bump.get("relationships") or {}).get("included_in") or [])
         for m in mains:
+            if m["offer_id"] in hosts:
+                continue
             if bent and bent <= set(m.get("entitlement_ids") or []):
                 fail(f"bump offer {bump['offer_id']!r} entitlements are a "
                      f"subset of main offer {m['offer_id']!r} — the bump "
                      "would sell the buyer what they already selected")
+
+    # UPS-25: U2 must add something new: its deliverables may not already be
+    # included in the main offer, U1 or D1 (identical or renamed U1 fails).
+    def _dset(o: Dict[str, Any]) -> set:
+        d = o.get("deliverables")
+        return {x.strip().casefold() for x in d if isinstance(x, str) and x.strip()} \
+            if isinstance(d, list) else set()
+
+    for u2 in by_slot["upsell_2"]:
+        mine = _dset(u2)
+        for other in mains + by_slot["upsell_1"] + by_slot["downsell_1"]:
+            if mine and mine <= _dset(other):
+                fail(f"upsell_2 offer {u2['offer_id']!r} deliverables are all "
+                     f"already in {other['slot']} offer {other['offer_id']!r} — "
+                     "U2 must differ from main, U1 and D1")
 
     # Approval discipline. The full binding (hash, identity, revocation) is
     # the approval GATE's job (assert_plan_build_approved below); this shape
@@ -393,141 +411,124 @@ APPROVAL_TYPES = ("launch_plan_build", "paid_asset_budget", "test_location_use",
                   "live_payment_test", "customer_send_activation",
                   "page_publication", "batch_merge", "release_publication",
                   "fleet_rollout")
-VERIFICATION_CLASSES = ("authenticated_platform_record",
-                        "recorded_consent_not_cryptographically_sealed")
+VERIFICATION_CLASSES = ("authenticated_platform_record",)
+# ENF-01: the old recorded_consent_not_cryptographically_sealed class was a
+# JSON file the AI session wrote itself. It is retired: no override path.
+_APPROVAL_RECORD = (Path(__file__).resolve().parents[2] / "shared-utils" /
+                    "signature_launch_contract" / "approval_record.py")
 
 
-def _check_approval_record(approval: Any, *, expected_type: str,
-                           expected_subject_hash: str,
+def _approval_verifier():
+    """Load the one approval verifier (shared-utils approval_record.py) by path
+    (49 has same-named modules on sys.path). Missing = fail closed."""
+    import importlib.util
+    if not _APPROVAL_RECORD.is_file():
+        raise ApprovalError(
+            "approval not verified against platform record: the approval "
+            "verifier (approval_record.py) is not installed")
+    spec = importlib.util.spec_from_file_location("approval_record", _APPROVAL_RECORD)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _check_approval_record(launch: Dict[str, Any], approval: Any, *,
+                           expected_type: str,
                            client_identity_ref: str,
                            worker_identity_ref: str,
-                           max_age_hours: Optional[float],
-                           now: Optional[datetime]) -> Dict[str, Any]:
-    """The single approval-record discipline (doc 03 §9), shared by the plan
-    gate and by every scoped side-effect approval. Checks, in order: record
-    shape; the type matches what is being authorized (approval types are
-    separate — a budget approval never authorizes a build, a build approval
-    never authorizes a publication); the SCOPE actually contains that type
-    (a narrowed or emptied scope authorizes nothing, doc 03 §9); not
-    revoked; verification class recognized; subject hash == the current
-    plan's document hash; the approver IS the launch's client identity; the
-    approver is NOT the worker operating the run; the record carries the
-    stable platform reference of the client's own response; the record is
-    not expired and not from the future."""
-    if not isinstance(approval, dict):
-        raise ApprovalError("approval record is not an object")
-    for f in ("schema_version", "approval_id", "subject_type", "subject_hash",
-              "owner_identity_ref", "source_message_ref", "recorded_at",
-              "scope", "revoked", "verification_class"):
-        if f not in approval:
-            raise ApprovalError(f"approval record is missing field {f!r}")
-    if approval["schema_version"] != "1.0":
-        raise ApprovalError("approval schema_version is not 1.0")
-    if approval["subject_type"] != expected_type:
-        raise ApprovalError(
-            f"approval type {approval['subject_type']!r} does not authorize "
-            f"{expected_type!r} (types are separate, doc 03 §9)")
-    scope = approval["scope"]
-    if not isinstance(scope, list) or not scope or \
-            not all(isinstance(s, str) and s.strip() for s in scope) or \
-            expected_type not in scope:
-        raise ApprovalError(
-            f"approval scope {scope!r} does not cover {expected_type!r} — a "
-            "narrowed, emptied, or foreign scope authorizes nothing "
-            "(doc 03 §9: the gate checks type, identity, hash, SCOPE, and "
-            "revocation)")
-    if approval["revoked"] is not False:
-        raise ApprovalError("approval has been revoked")
-    if approval["verification_class"] not in VERIFICATION_CLASSES:
-        raise ApprovalError("approval verification_class is not recognized")
-    if approval["subject_hash"] != expected_subject_hash:
-        raise ApprovalError(
-            "approval subject_hash does not match the current plan — the plan "
-            "changed after approval (or this approval belongs to another plan)")
-    owner = approval["owner_identity_ref"]
-    if not isinstance(owner, str) or not owner.strip():
-        raise ApprovalError("approval names no owner identity")
-    if owner != client_identity_ref:
-        raise ApprovalError(
-            "the approver is not this launch's client identity — an unrelated "
-            "identity cannot approve another launch")
-    if owner == worker_identity_ref:
-        raise ApprovalError(
-            "the worker operating the run cannot approve its own work "
-            "(self-approval is refused)")
-    if not isinstance(approval["source_message_ref"], str) \
-            or not approval["source_message_ref"].strip():
-        raise ApprovalError(
-            "approval carries no platform reference to the client's own "
-            "response — recorded consent requires the owner's actual message")
+                           test_only: bool = False,
+                           cap: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """The single approval discipline (doc 03 §9, ENF-01), shared by the plan
+    gate and every scoped approval. What the caller hands in is NEVER trusted:
+    only its approval_id is used, and approval_record.verify fetches the record
+    from Command Center (minted from the client's own reply carrying the plan
+    hash prefix) and checks kind, scope, plan hash, client identity, cap,
+    revocation and expiry. A hand-written JSON file or dict cannot satisfy it.
+    test_only=True (explicit argument, and the plan must itself be test_only)
+    lets verify read a local record; the result is then labeled
+    'local_test_record', never 'authenticated_platform_record'."""
+    if not isinstance(test_only, bool):
+        raise ApprovalError("test_only must be exactly True or False")
+    if test_only and launch.get("test_only") is not True:
+        raise ApprovalError("a local test approval can only back a test_only plan")
+    if not isinstance(client_identity_ref, str) or not client_identity_ref.strip():
+        raise ApprovalError("approval names no client identity")
+    if not isinstance(worker_identity_ref, str) or not worker_identity_ref.strip():
+        raise ApprovalError("no worker identity")
+    if client_identity_ref == worker_identity_ref:
+        raise ApprovalError("the worker operating the run cannot approve its own "
+                            "work (self-approval is refused)")
+    if isinstance(approval, dict):
+        approval_id, record = approval.get("approval_id"), approval
+    else:
+        approval_id, record = approval, None
+    if isinstance(approval_id, Path):
+        approval_id = str(approval_id)
+    if not isinstance(approval_id, str) or not approval_id.strip():
+        raise ApprovalError("approval not verified against platform record: "
+                            "no approval_id")
+    ver = _approval_verifier()
     try:
-        recorded = datetime.fromisoformat(
-            str(approval["recorded_at"]).replace("Z", "+00:00"))
-    except ValueError:
-        raise ApprovalError("approval recorded_at is not a valid timestamp")
-    if recorded.tzinfo is None:
-        recorded = recorded.replace(tzinfo=timezone.utc)
-    now = now or datetime.now(timezone.utc)
-    if recorded > now:
-        raise ApprovalError("approval recorded_at is in the future")
-    if max_age_hours is not None and \
-            (now - recorded).total_seconds() > max_age_hours * 3600:
+        out = ver.verify(approval_id, expected_type, plan_document_hash(launch),
+                         [expected_type], client_identity=client_identity_ref,
+                         cap=cap, test_only=test_only,
+                         record=record if test_only else None)
+    except (ver.ApprovalRefused, ver.ApprovalUnavailable) as exc:
         raise ApprovalError(
-            f"approval is expired (older than {max_age_hours} hours) — "
-            "re-confirm before acting")
-    return {"ok": True, "approval_id": approval["approval_id"],
-            "subject_hash": expected_subject_hash,
-            "verification_class": approval["verification_class"]}
+            f"approval not verified against platform record: {exc}") from exc
+    res = {"ok": True, "approval_id": out["approval_id"],
+           "subject_hash": out["plan_hash"],
+           "verification_class": "authenticated_platform_record"
+           if out.get("authority") == "command-center" else "local_test_record"}
+    if cap:
+        res.update(cap_minor=cap["cap_minor"], currency=cap["currency"])
+    return res
 
 
 def assert_plan_build_approved(launch: Dict[str, Any], approval: Any, *,
                                client_identity_ref: str,
                                worker_identity_ref: str,
-                               max_age_hours: Optional[float] = 72.0,
-                               now: Optional[datetime] = None) -> Dict[str, Any]:
-    """Assert that THIS launch plan may be built, under doc 03 §9.
-
-    Raises ApprovalError on any failure; returns an assertion dict on
-    success. The plan gate: type launch_plan_build AND that type inside the
-    record's scope, subject hash == the current plan's document hash (any
-    commercial change — a price, an offer, the route, the revision —
-    invalidates it), approver is the client and not the worker, provenance
-    reference present, not revoked, not expired. Without an external
-    signing key the honest verification class is recorded consent, and the
-    assertion says so — it is never dressed up as cryptographic proof."""
+                               test_only: bool = False) -> Dict[str, Any]:
+    """Assert THIS launch plan may be built: a launch_plan_build approval
+    verified against the platform record and bound to the current plan hash
+    (any commercial change invalidates it). Raises ApprovalError otherwise."""
     return _check_approval_record(
-        approval, expected_type="launch_plan_build",
-        expected_subject_hash=plan_document_hash(launch),
+        launch, approval, expected_type="launch_plan_build",
         client_identity_ref=client_identity_ref,
-        worker_identity_ref=worker_identity_ref,
-        max_age_hours=max_age_hours, now=now)
+        worker_identity_ref=worker_identity_ref, test_only=test_only)
 
 
 def assert_scoped_approval(launch: Dict[str, Any], approval: Any,
                            approval_type: str, *,
                            client_identity_ref: str,
                            worker_identity_ref: str,
-                           max_age_hours: Optional[float] = 72.0,
-                           now: Optional[datetime] = None) -> Dict[str, Any]:
-    """Assert a SCOPED side-effect approval (doc 02 §9, doc 03 §9): test
-    location use, page publication, live payment test, customer send. The
-    record gets exactly the plan gate's discipline — separate type, scope
-    containing the type, plan-hash binding, client identity, no worker
-    self-approval, provenance reference, revocation, expiry. The plan-build
-    approval itself is NOT a scoped approval: it is checked by
-    assert_plan_build_approved and never substitutes for one of these."""
+                           test_only: bool = False,
+                           cap: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Assert a SCOPED side-effect approval (test location use, page
+    publication, paid_asset_budget, ...) with the plan gate's discipline.
+    paid_asset_budget REQUIRES cap={"cap_minor": int, "currency": "USD"}: the
+    verified record's own cap must cover it (IMG-03), and the result carries
+    approval_id, cap_minor and currency. launch_plan_build is not a scoped
+    approval and never substitutes for one."""
     if approval_type == "launch_plan_build":
         raise ApprovalError(
             "launch_plan_build is the plan gate, not a scoped approval — use "
             "assert_plan_build_approved")
     if approval_type not in APPROVAL_TYPES:
         raise ApprovalError(f"unknown approval type {approval_type!r}")
+    if approval_type == "paid_asset_budget":
+        if not (isinstance(cap, dict) and _is_int(cap.get("cap_minor"))
+                and cap["cap_minor"] >= 0
+                and isinstance(cap.get("currency"), str)
+                and _CURRENCY_RE.match(cap["currency"])):
+            raise ApprovalError("paid_asset_budget needs a spend cap "
+                                "{cap_minor: int, currency: ISO code}")
+    elif cap is not None:
+        raise ApprovalError("only paid_asset_budget carries a spend cap")
     return _check_approval_record(
-        approval, expected_type=approval_type,
-        expected_subject_hash=plan_document_hash(launch),
+        launch, approval, expected_type=approval_type,
         client_identity_ref=client_identity_ref,
-        worker_identity_ref=worker_identity_ref,
-        max_age_hours=max_age_hours, now=now)
+        worker_identity_ref=worker_identity_ref, test_only=test_only, cap=cap)
 
 
 def _load_json(path: str) -> Any:
@@ -608,71 +609,50 @@ def _self_test() -> int:
     say(validate_launch(pre) == [],
         "pre-approval record with recommended_unapproved prices validates")
 
-    # Approval gate: scope contents are checked (doc 03 §9, review D1) and
-    # scoped approvals get the same discipline (review D6).
-    from datetime import datetime as _dt, timezone as _tz
+    # UPS-25: U2 may not repeat U1/D1/main deliverables.
+    ext = {"upsell_1": True, "downsell_1": False, "upsell_2": True}
+    u1, u2 = offer("U1", "upsell_1"), offer("U2", "upsell_2")
+    u2["deliverables"] = ["x"]
+    bad = plan_launch([offer("M", "main"), u1, u2], extras=ext)
+    bad["offers"][0]["deliverables"] = ["m"]
+    say(validate_launch(bad) != [], "U2 identical to U1 is refused (UPS-25)")
+    u2["deliverables"] = ["y"]
+    say(validate_launch(bad) == [], "U2 with its own deliverables validates")
 
-    def approval(scope, atype="launch_plan_build", owner="client:acme",
-                 **over):
-        rec = {"schema_version": "1.0", "approval_id": "A-1",
-               "subject_type": atype,
-               "subject_hash": plan_document_hash(good),
-               "owner_identity_ref": owner,
-               "source_message_ref": "msg-1",
-               "recorded_at": _dt.now(_tz.utc).isoformat(),
-               "scope": scope, "revoked": False,
-               "verification_class":
-                   "recorded_consent_not_cryptographically_sealed"}
-        rec.update(over)
-        return rec
+    # Approval gate (ENF-01): only a verifier-confirmed record passes; the
+    # verifier is stubbed here (the real one needs Command Center).
+    from types import SimpleNamespace
 
-    gate_kw = dict(client_identity_ref="client:acme",
-                   worker_identity_ref="worker:s49")
-    try:
-        assert_plan_build_approved(good, approval(["launch_plan_build"]),
-                                   **gate_kw)
-        say(True, "gate accepts a valid approval whose scope covers the build")
-    except ApprovalError:
-        say(False, "gate accepts a valid approval whose scope covers the build")
-    for bad_scope, label in (([], "empty scope"),
-                             (["paid_asset_budget"], "foreign-only scope"),
-                             (["something_else"], "unrelated scope")):
-        try:
-            assert_plan_build_approved(good, approval(bad_scope), **gate_kw)
-            say(False, f"gate refuses an approval with {label} (D1)")
-        except ApprovalError:
-            say(True, f"gate refuses an approval with {label} (D1)")
-    try:
-        assert_scoped_approval(
-            good, approval(["test_location_use"], atype="test_location_use"),
-            "test_location_use", **gate_kw)
-        say(True, "scoped approval passes the full gate discipline")
-    except ApprovalError:
-        say(False, "scoped approval passes the full gate discipline")
-    try:
-        assert_scoped_approval(
-            good, approval(["test_location_use"], atype="test_location_use",
-                           owner="worker:s49", source_message_ref=""),
-            "test_location_use", **gate_kw)
-        say(False, "scoped approval fabricated by the worker is refused (D6)")
-    except ApprovalError:
-        say(True, "scoped approval fabricated by the worker is refused (D6)")
-    try:
-        assert_scoped_approval(
-            good, approval(["test_location_use"], atype="test_location_use",
-                           recorded_at="2020-01-01T00:00:00+00:00"),
-            "test_location_use", **gate_kw)
-        say(False, "stale scoped approval is refused as expired (D6)")
-    except ApprovalError:
-        say(True, "stale scoped approval is refused as expired (D6)")
-    try:
-        assert_scoped_approval(
-            good, approval(["launch_plan_build"]), "launch_plan_build",
-            **gate_kw)
-        say(False, "plan-build approval cannot pose as a scoped approval")
-    except ApprovalError:
-        say(True, "plan-build approval cannot pose as a scoped approval")
+    class _Refused(Exception):
+        pass
 
+    def _verify(aid, kind, plan_hash, scope, *, client_identity=None, cap=None,
+                test_only=False, record=None):
+        if aid != "MINTED-0001":
+            raise _Refused("no such approval")
+        return {"approval_id": aid, "plan_hash": plan_hash,
+                "authority": "command-center"}
+
+    global _approval_verifier
+    real, _approval_verifier = _approval_verifier, lambda: SimpleNamespace(
+        verify=_verify, ApprovalRefused=_Refused, ApprovalUnavailable=OSError)
+    try:
+        gate_kw = dict(client_identity_ref="client:acme",
+                       worker_identity_ref="worker:s49")
+        r = assert_plan_build_approved(good, "MINTED-0001", **gate_kw)
+        say(r["verification_class"] == "authenticated_platform_record",
+            "gate accepts an approval the verifier confirms")
+        for label, ap in (("hand-written dict", {"approval_id": "made-up-1",
+                                                 "source_message_ref": "msg-1"}),
+                          ("blank id", "")):
+            try:
+                assert_plan_build_approved(good, ap, **gate_kw)
+                say(False, f"gate refuses a {label}")
+            except ApprovalError as exc:
+                say("not verified against platform record" in str(exc),
+                    f"gate refuses a {label}")
+    finally:
+        _approval_verifier = real
     print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
     return 0 if ok else 1
 

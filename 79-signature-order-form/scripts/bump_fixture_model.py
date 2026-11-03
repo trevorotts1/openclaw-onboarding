@@ -15,11 +15,24 @@ packet launch-example.json (BUMP-USD 2700 minor units).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import FrozenSet, Tuple
 
 
 class BumpError(ValueError):
     pass
+
+
+def parse_aware(value, label: str = "timestamp") -> datetime:
+    """Parse an ISO-8601 date-time (Z accepted) and require a UTC offset.
+    Raw string comparison is wrong across offsets and accepts junk (CHK-07)."""
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00")) if isinstance(value, str) else None
+    except ValueError:
+        parsed = None
+    if parsed is None or parsed.tzinfo is None:
+        raise BumpError(f"{label} must be a timezone-aware ISO-8601 date-time")
+    return parsed
 
 
 @dataclass(frozen=True)
@@ -51,7 +64,7 @@ class BumpConfig:
     # mapping and that mapping can expire (doc 09 sections 6 and 11).
     native_product_id: str | None = None
     native_price_id: str | None = None
-    price_mapping_expires_at: str | None = None  # ISO-8601, compared lexicographically only when caller supplies `now` in the same format
+    price_mapping_expires_at: str | None = None  # tz-aware ISO-8601; compared as datetimes only when caller supplies `now`
 
     def __post_init__(self) -> None:
         if self.default_selected is not False:
@@ -123,7 +136,8 @@ def initial_quote(main_offer_id: str, main_price: PriceChoice, main_quantity: in
         raise BumpError("bump currency does not match main offer currency")
     if main_offer_id not in config.applicable_main_offer_ids:
         return Quote(**{**q.__dict__, "bump_state": "disabled_unavailable"})
-    if now is not None and config.price_mapping_expires_at is not None and now > config.price_mapping_expires_at:
+    if (now is not None and config.price_mapping_expires_at is not None
+            and parse_aware(now, "now") >= parse_aware(config.price_mapping_expires_at, "price_mapping_expires_at")):
         # Expired native price mapping: bump unavailable, base purchase stays
         # usable when permitted (doc 09 section 6 unavailable rule).
         return Quote(**{**q.__dict__, "bump_state": "disabled_unavailable"})

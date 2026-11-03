@@ -78,6 +78,7 @@ sys.path.insert(0, str(HERE))
 import copy_forms  # noqa: E402
 import stage_executor as exe  # noqa: E402
 import page_role  # noqa: E402  the one allowed-sequence resolver
+from page_role import BUMP_SECTION  # noqa: E402  (build() has a `page_role` parameter of its own)
 import role_spec  # noqa: E402
 import wireframe_spec  # noqa: E402
 import page_kinds  # noqa: E402
@@ -476,10 +477,10 @@ def spec_slots(entry: dict, style_id) -> list:
     return out
 
 
-def sections_from_manuscript(text: str, spec: dict, slots: dict, style_id=None) -> list:
+def sections_from_manuscript(text: str, spec: dict, slots: dict, style_id=None, order_bump=None) -> list:
     names = spec.get("role_names") or {}
     units, order, _notes = parse_manuscript(text)
-    allowed = page_role.allowed_sequences(spec)  # the same resolver the executor's check reads
+    allowed = page_role.allowed_sequences(spec, {"order_bump": order_bump})  # the same resolver the executor's check reads
     if order not in allowed:
         want = allowed[0]
         raise BuildError(
@@ -561,6 +562,20 @@ UPSELL_RATIOS = {"1": "16:9", "2": "4:3", "3": "3:2", "4": "4:3", "5": "3:2", "6
                  "7": "4:3", "8": "3:2"}
 
 
+def upsell_layouts(plan):
+    """{section id: layout entry} for the bundle's upsell instance from page-structures.json
+    `layouts`, or None while that file declares no layouts at all."""
+    layouts = json.loads(Path(exe.STRUCTURES_FILE).read_text(encoding="utf-8")).get("layouts")
+    if layouts is None:
+        return None
+    instance = (plan or {}).get("instance")
+    entry = layouts.get(instance) if isinstance(layouts.get(instance), dict) else None
+    if not entry:
+        raise BuildError(f"the bundle's page_plan.instance {instance!r} has no layout in "
+                         f"page-structures.json layouts ({', '.join(k for k in layouts if k != 'note')})")
+    return {x["id"]: x for x in entry["sections"]}
+
+
 def sections_from_copy_json(copy_doc: dict, bundle: dict, spec: dict, slots: dict) -> list:
     """Request sections from Skill 80's validated upsell copy and its result bundle.
 
@@ -585,6 +600,8 @@ def sections_from_copy_json(copy_doc: dict, bundle: dict, spec: dict, slots: dic
             f"missing {[i for i in sequence if i not in order]}, unexpected "
             f"{[i for i in order if i not in sequence]}")
     names = {x["id"]: x["framework_name"] for x in spec["sections"]}
+    layouts = upsell_layouts(plan)
+    fell_back = []
     out = []
     for sid, doc in zip(sequence, docs):
         cta = (doc.get("cta") or {}).get("text")
@@ -595,15 +612,29 @@ def sections_from_copy_json(copy_doc: dict, bundle: dict, spec: dict, slots: dic
         if sid == "1":
             lines += ack
         lines.append(disclosure)
-        default = [{"slot_id": f"IMG-{int(sid):03d}", "aspect_ratio": UPSELL_RATIOS[sid],
-                    "art_direction": f"Editorial photograph that illustrates: {doc['heading']}"}]
+        if layouts is not None:  # the declared band layout: never a picture derived from the heading
+            band = layouts[sid]
+            default = [{**band["slot"],
+                        "art_direction": f"{band['geometry']} Image plate only; no plan was passed "
+                                         "(--slots from 80-signature-upsell upsell_image_plan.py gives "
+                                         "the offer-specific plan)"}]
+            if sid not in slots:
+                fell_back.append(sid)
+        else:  # ponytail: page-structures.json carries no `layouts` yet; drop this branch once it does
+            default = [{"slot_id": f"IMG-{int(sid):03d}", "aspect_ratio": UPSELL_RATIOS[sid],
+                        "art_direction": f"Editorial photograph that illustrates: {doc['heading']}"}]
         entry = {"section_id": sid, "section_name": names[sid], "copy": "\n".join(lines),
                  "cta": cta, "terms": disclosure, "decline": spec["decline_label"],
                  "slots": slots.get(sid, default),
                  "behavior_notes": "One-click accept CTA; decline never charges"}
+        if layouts is not None:
+            entry["layout_tag"] = layouts[sid]["layout_tag"]
         if sid == "1":
             entry["ack"] = ack
         out.append(entry)
+    if fell_back:
+        print(f"NOTE: no image plan for upsell section(s) {', '.join(fell_back)}; each carries its "
+              "declared layout's image plate", file=sys.stderr)
     return out
 
 
@@ -694,12 +725,16 @@ def folded_levels(run_dir):
         return None
     if not isinstance(launch, dict) or launch.get("journey_mode") != "folded_levels":
         return None
-    mains = [o for o in launch.get("offers") or [] if isinstance(o, dict) and o.get("role") == "main"]
+    # a launch record names an offer's place in the journey as "slot" (83 to_launch_record); "role"
+    # is read only as a legacy alias
+    mains = [o for o in launch.get("offers") or []
+             if isinstance(o, dict) and (o.get("slot") or o.get("role")) == "main"]
     return len(mains) if len(mains) >= 2 else None
 
 
 def build(stage, version, manuscript_text, slots, prose, references, model, style, run_dir=Path("."),
-          page_role="landing", sections=None, structure=None, page_doc=None, page_kind=None):
+          page_role="landing", sections=None, structure=None, page_doc=None, page_kind=None,
+          order_bump=None):
     notes = {"dropped_role_label_headings": [], "terminal_periods_added": []}
     if structure:  # a role with its own entry in references/page-structures.json (downsell_1)
         version, spec = structure["copy_version"], structure
@@ -729,7 +764,7 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
                 raise BuildError(f"--copy-version {version!r} is not one of {', '.join(copy_forms.FORMS)}")
             spec = copy_forms.load_spec(version)
         if sections is None:
-            sections = sections_from_manuscript(manuscript_text, spec, slots, exe.style_id_for(Path(run_dir), {}))
+            sections = sections_from_manuscript(manuscript_text, spec, slots, exe.style_id_for(Path(run_dir), {}), order_bump)
         elif stage not in wireframe_spec.WIREFRAME_STAGES:
             # A wireframe prompt carries the page type's lines itself (wireframe_spec.prompt_block);
             # the mockup stages take them through the section layout.
@@ -771,6 +806,10 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
         request["page_role"] = built_role
     if spec.get("form"):
         request["_role_spec"] = spec  # the wireframe block reads it; never written out
+    if order_bump is not None:  # the funnel's bump decision; the executor reads the same key
+        if spec.get("page_role") not in BUMP_SECTION:
+            raise BuildError(f"the order bump decision applies to a checkout page, not the {spec_label(spec)}")
+        request["order_bump"] = bool(order_bump)
     if structure:
         page = page_doc.get("page") if isinstance(page_doc.get("page"), dict) else page_doc
         request["page_role"] = structure["role"]
@@ -858,6 +897,9 @@ def main(argv=None) -> int:
     p.add_argument("--page-kind", choices=page_kinds.kind_ids(), default=None,
                    help="sales or opt_in (default: the run's intake.json page_kind); "
                         "references/page-kinds.json")
+    p.add_argument("--no-bump", action="store_true",
+                   help="checkout only: the funnel has no order bump, so the page has no section 3 "
+                        "(without the flag the checkout keeps all five sections)")
     p.add_argument("--slots", type=Path)
     p.add_argument("--design-prose", type=Path)
     p.add_argument("--references", default="")
@@ -893,7 +935,7 @@ def main(argv=None) -> int:
                         load(a.slots), load(a.design_prose),
                         [r for r in a.references.split(",") if r], a.model, a.style, run_dir,
                         a.page_role, sections=sections, structure=structure, page_doc=page_doc,
-                        page_kind=a.page_kind)
+                        page_kind=a.page_kind, order_bump=False if a.no_bump else None)
     except (BuildError, exe.ExecutorError, OSError, ValueError) as exc:
         print(f"REFUSED: {exc}")
         return 1

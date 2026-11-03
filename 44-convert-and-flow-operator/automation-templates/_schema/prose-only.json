@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "reason": "Templates whose build_graph cannot be derived from the stated prose without inventing structure. Each entry names the specific fact the source does not state. A template leaves this list only when its source states every wait value and every branch target.",
-  "count": 33,
+  "count": 30,
   "entries": [
     {
       "path": "automation-templates/engagement-broadcast/attractive-character-story-rotation.json",
@@ -54,18 +54,6 @@
     {
       "path": "automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack.json",
       "missing": "the post-event wait is '~2h', the cart-close wait is 'final cart-close day' with no declared datetime field, the indoctrination cadence is 'one per day ... compress to 1-2' against a fixed 'Wait 1 day between each', and the clicked-buy-link and DND branches have no node position"
-    },
-    {
-      "path": "automation-templates/launch-b/abandoned-checkout-recovery.json",
-      "missing": "the 'email opened in 2h?' skip target is stated verbally ('Yes -> skip') rather than at a named node, and the messenger-subscribed guard adds a nested arm whose false target is not stated"
-    },
-    {
-      "path": "automation-templates/launch-b/retarget-visited-sales-no-checkout.json",
-      "missing": "the nudge runs from three separate triggers (page visit, tag added retarget-b-visited-sales, second page visit), and Beat 2 says 'T+2h' while the workflow structure sends Email #1 immediately on a tag that is itself added 60 minutes after the visit"
-    },
-    {
-      "path": "automation-templates/launch-c/onboarding-first-hour-day-week.json",
-      "missing": "the 'optional SMS A1' and 'Email follow-up only if the start link was not clicked (optional; skip when no click signal exists)' are build choices rather than stated conditions, so their branch targets are not fixed"
     },
     {
       "path": "automation-templates/launch-c/review-referral-ask.json",

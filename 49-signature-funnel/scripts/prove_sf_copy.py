@@ -25,6 +25,15 @@ char band here measures len(str(value).strip()); every word band measures
 len(str(value).split()). ANY self-reported count field in the ledger is IGNORED — the
 prover always re-measures the actual text.
 
+STR-19 — PAGE-SET COMPLETENESS. A ledger holding only the main page used to pass, so
+upsell / downsell / thank-you copy could be absent with no copy gate firing. The required
+page types are now DERIVED from the LOCKED funnel size (structure funnel_matrix, the same
+3/5/7 table P6 / P7 / P8 use; the microcopy-only checkout carries no ledger copy and is
+not required here) and every absent page type FAILS.            -> AF-FUN-SECTION-MISSING
+The locked size is --funnel-size, else the brief.json beside the ledger (the P0 locked
+brief), else the ledger's own funnel_size (self-declared, so never trusted over the brief;
+a ledger that contradicts the brief FAILS, and an unresolvable size is fail-closed).
+
 stdlib only. Exit 0 = pass, exit 2 = contract violation, exit 3 = usage / fail-closed.
 """
 
@@ -136,7 +145,43 @@ def _check_wordband(sec, spec, af, fail, label, field="copy"):
                  f"(under-length is as much a hard miss as over-length)")
 
 
-def verify(structure: Dict[str, Any], ledger: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], List[str]]:
+def required_page_types(structure: Dict[str, Any], size: Any) -> List[str]:
+    """Page types the copy ledger MUST carry for a locked funnel size, from the structure's
+    funnel_matrix. microcopy_only pages (checkout) carry no ledger copy and are skipped.
+    Raises ValueError on a size the matrix does not define (caller fails closed)."""
+    matrix = (structure.get("funnel_matrix") or {}).get(str(size))
+    if not isinstance(matrix, list) or isinstance(size, bool):
+        raise ValueError(f"funnel size {size!r} is not in the funnel_matrix (3/5/7)")
+    profiles = structure.get("profiles") or {}
+    return [p for p in matrix if not (profiles.get(p) or {}).get("microcopy_only")]
+
+
+def _completeness(structure: Dict[str, Any], ledger: Dict[str, Any], pages: List[Any],
+                  funnel_size: Optional[int], fail) -> None:
+    declared = ledger.get("funnel_size")
+    declared = declared if isinstance(declared, int) and not isinstance(declared, bool) else None
+    if funnel_size is not None and declared is not None and int(funnel_size) != declared:
+        fail("AF-FUN-SECTION-MISSING",
+             f"copy ledger declares funnel_size {declared} but the locked brief size is "
+             f"{int(funnel_size)} — the ledger does not describe this funnel")
+        return
+    size = int(funnel_size) if funnel_size is not None else declared
+    try:
+        required = required_page_types(structure, size)
+    except ValueError as exc:
+        fail("AF-FUN-SECTION-MISSING",
+             f"required page types cannot be derived ({exc}) — completeness cannot be proven (fail-closed)")
+        return
+    supplied = {str(p.get("page_type", "")).strip().lower() for p in pages if isinstance(p, dict)}
+    for ptype in required:
+        if ptype not in supplied:
+            fail("AF-FUN-SECTION-MISSING",
+                 f"page '{ptype}': the {size}-step funnel requires its copy but the ledger has "
+                 f"no '{ptype}' page (ledger carries {sorted(supplied)})")
+
+
+def verify(structure: Dict[str, Any], ledger: Dict[str, Any],
+           funnel_size: Optional[int] = None) -> Tuple[List[Tuple[str, str]], List[str]]:
     violations: List[Tuple[str, str]] = []
     notes: List[str] = []
 
@@ -152,8 +197,10 @@ def verify(structure: Dict[str, Any], ledger: Dict[str, Any]) -> Tuple[List[Tupl
     pages = ledger.get("pages")
     if not isinstance(pages, list) or not pages:
         fail("AF-FUN-PROFILE-UNKNOWN", "copy ledger has no non-empty 'pages' array")
+        _completeness(structure, ledger, [], funnel_size, fail)
         return violations, notes
 
+    _completeness(structure, ledger, pages, funnel_size, fail)
     for page in pages:
         if not isinstance(page, dict):
             fail("AF-FUN-PROFILE-UNKNOWN", "a page entry is not an object")
@@ -452,6 +499,19 @@ def _load_structure(path_arg: Optional[str]) -> Dict[str, Any]:
     return json.loads(p.read_text(encoding="utf-8", errors="replace"))
 
 
+def _brief_size_beside(ledger_path: str) -> Optional[int]:
+    """The P0 locked brief's funnel_size, read from brief.json next to the ledger (the run
+    dir layout). None when there is no readable brief or it carries no integer size."""
+    if ledger_path == "-":
+        return None
+    try:
+        size = json.loads((Path(ledger_path).resolve().parent / "brief.json")
+                          .read_text(encoding="utf-8")).get("funnel_size")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return size if isinstance(size, int) and not isinstance(size, bool) else None
+
+
 def _report(violations, notes) -> None:
     for note in notes:
         print(f"NOTE: {note}")
@@ -580,13 +640,34 @@ def _valid_thank_you_page() -> Dict[str, Any]:
     ]}
 
 
-def _valid_ledger() -> Dict[str, Any]:
+def _valid_derived_page(ptype: str) -> Dict[str, Any]:
+    """A passing downsell / upsell-2 / downsell-2 page: the upsell page with the profile's
+    own replacement Section 8 (items count and name pattern per the structure contract)."""
+    page = _valid_upsell_page()
+    page["page_type"] = ptype
+    sec8 = page["sections"][-1]
+    if ptype in ("downsell", "downsell-2"):
+        sec8["name"] = "When Time Runs Out"
+    sec8["items"] = [f"Reason {i}: you keep the momentum you started and move faster" for i in range(1, 8)]
+    return page
+
+
+def _valid_ledger(size: int = 3) -> Dict[str, Any]:
+    """A COMPLETE copy ledger for the locked size (3/5/7): every page type the funnel_matrix
+    requires (the 7-step checkout is microcopy-only and carries no ledger copy)."""
+    by_type = {"main": _valid_main_page(), "upsell": _valid_upsell_page(),
+               "thank-you": _valid_thank_you_page()}
+    for t in ("downsell", "upsell-2", "downsell-2"):
+        by_type[t] = _valid_derived_page(t)
+    order = {3: ["main", "upsell", "thank-you"],
+             5: ["main", "upsell", "downsell", "upsell-2", "thank-you"],
+             7: ["main", "upsell", "downsell", "upsell-2", "downsell-2", "thank-you"]}[size]
     return {
         "funnel_type": "signature_funnel",
-        "funnel_size": 3,
+        "funnel_size": size,
         "product_title": "The 5AM Reset",
         "offer_token_ledger": ["The 5AM Reset"],
-        "pages": [_valid_main_page(), _valid_upsell_page(), _valid_thank_you_page()],
+        "pages": [by_type[t] for t in order],
     }
 
 
@@ -693,6 +774,22 @@ def run_self_test(structure) -> int:
     else:
         print("SELF-TEST ok: valid fixture PASSES (0 violations).")
     n_pass, n_fail = 1 if not v else 0, 0
+    for size in (5, 7):
+        v5, _ = verify(structure, _valid_ledger(size))
+        if v5:
+            ok = False
+            print(f"SELF-TEST FAIL: complete {size}-step ledger produced {len(v5)} violation(s): {v5}")
+        else:
+            n_pass += 1
+            print(f"SELF-TEST ok: complete {size}-step ledger PASSES (0 violations).")
+    main_only = _valid_ledger(7)
+    main_only["pages"] = main_only["pages"][:1]
+    missing = [m for c, m in verify(structure, main_only)[0] if c == "AF-FUN-SECTION-MISSING"]
+    if len(missing) == len(required_page_types(structure, 7)) - 1:
+        print(f"SELF-TEST ok: main-only 7-step ledger -> AF-FUN-SECTION-MISSING x{len(missing)} (one per absent page type).")
+    else:
+        ok = False
+        print(f"SELF-TEST FAIL: main-only 7-step ledger produced {len(missing)} page-set violation(s).")
     cases = _violation_cases()
     for name, expected, build in cases:
         vio, _ = verify(structure, build())
@@ -717,6 +814,9 @@ def main(argv: List[str]) -> int:
                     "Exit 0 = pass, 2 = violation, 3 = usage/fail-closed.")
     ap.add_argument("--ledger", help="path to the funnel COPY ledger JSON ('-' reads stdin)")
     ap.add_argument("--structure", help="path to funnel_structure.json (defaults to ../structure/)")
+    ap.add_argument("--funnel-size", type=int, default=None,
+                    help="the LOCKED brief funnel size (3/5/7). Default: funnel_size in the "
+                         "brief.json beside the ledger, else the ledger's own declared size.")
     ap.add_argument("--self-test", action="store_true",
                     help="construct a VALID fixture (must PASS) + each VIOLATION fixture (must FAIL)")
     args = ap.parse_args(argv)
@@ -746,7 +846,8 @@ def main(argv: List[str]) -> int:
         print("USAGE/IO ERROR: copy ledger must be a JSON object.")
         return EXIT_FAILCLOSED
 
-    violations, notes = verify(structure, ledger)
+    locked = args.funnel_size if args.funnel_size is not None else _brief_size_beside(args.ledger)
+    violations, notes = verify(structure, ledger, funnel_size=locked)
     _report(violations, notes)
     return EXIT_OK if not violations else EXIT_VIOLATION
 

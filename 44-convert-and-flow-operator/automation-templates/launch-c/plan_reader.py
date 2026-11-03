@@ -11,8 +11,11 @@
 # be status "draft" in the Skill 50 plan or the read FAILS CLOSED.
 #
 # L07 (UL-010) COMPILER DUTIES
-#   * validate the launch calendar: IANA zone, offset agreement, DST gap/overlap
-#     and strict phase order (doors_open < launch < doors_close)
+#   * call the shared launch-plan validator FIRST (shared-utils/
+#     signature_launch_contract/validate_launch_plan.py) and refuse with its exact
+#     error text; this reader keeps only Skill 44 checks (credentials, build-plan
+#     binding, IANA zone / offset / DST resolution). Calendar ORDER is the shared
+#     law's; the reader keeps no private order of its own.
 #   * compile absolute (calendar-anchored) and relative (enrollment-anchored)
 #     schedule nodes, apply past-time policy and close-time suppression
 #   * enforce every declared dependency and required output; a missing page URL,
@@ -25,6 +28,7 @@
 # USAGE
 #   plan_reader.py --launch-plan plan.json --build-plan pre.json [--build-plan ...]
 #                  [--sequence-map map.json] [--now 2026-11-01T00:00:00-05:00]
+#                  [--acknowledge-dropped-sends <dropped_sends_hash>]
 #                  --out automation-builds.json
 #   plan_reader.py --selftest
 #
@@ -33,15 +37,26 @@
 #   _meta.sequence_id / _meta.source_ids.sequence_id, then by file stem, then by
 #   the single sequence id its workflow keys/names/tags name. Ambiguity fails.
 #
-# EXIT CODES: 0 ok / 2 usage-or-structural-invalid / 3 IO
+# LATE START: promotional sends already in the past are DROPPED (state stays
+# ready for the still-future steps) and listed under owner_acknowledgement; the
+# owner acknowledges that exact list by passing its dropped_sends_hash back.
+#
+# BLACK FRIDAY: launch_calendar.black_friday drives teaser / countdown /
+# cyber_monday / last_call anchors (sequence kinds of the same names, plus
+# pre_launch starting at the teaser) and the four calendar nodes.
+#
+# EXIT CODES: 0 ok / 2 usage-or-structural-invalid / 3 IO /
+#             4 BLOCKED (output written, but a build is blocked or has no workflow)
 # =============================================================================
 """Skill 50 build plans -> launch automation builds (launch-c)."""
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import re
 import sys
+from functools import lru_cache
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -49,20 +64,11 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 EXIT_OK = 0
 EXIT_INVALID = 2
 EXIT_IO = 3
+EXIT_BLOCKED = 4
 
 SCHEMA_VERSION = "1.0.0"
 
-FAMILIES = {
-    "pre_launch", "opt_in", "event_reminders", "post_sale", "upsell_downsell",
-    "abandoned_checkout", "page_retargeting", "onboarding_review", "win_back",
-    "failed_payment", "conversation_ai_reply",
-}
-RAILS = {"ghl_api", "skill44_engine", "unknown"}
 STEP_TYPES = {"email", "wait"}
-UNIT_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
-LAUNCH_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
-CLOCK_RE = re.compile(r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
-CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 # Credential-shaped keys must never travel in a plan; sender configuration is a
 # named reference and binds under a *_ref key.
 CREDENTIAL_KEY_RE = re.compile(
@@ -70,10 +76,15 @@ CREDENTIAL_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Black Friday phases (DECISIONS: cyber_monday and last_call are their own
+# promotional kinds). Each is anchored to launch_calendar.black_friday.<kind>_at.
+BLACK_FRIDAY_KINDS = ("teaser", "countdown", "cyber_monday", "last_call")
+BLACK_FRIDAY_FIELDS = tuple("%s_at" % kind for kind in BLACK_FRIDAY_KINDS)
 # Phase ranks: a phase may only wait on a strictly earlier phase.
-PHASE_RANK = {"pre_launch": 0, "main_launch": 1, "doors_closing": 2}
+PHASE_RANK = {"pre_launch": 0, "teaser": 0, "countdown": 1, "main_launch": 2,
+              "cyber_monday": 3, "last_call": 4, "doors_closing": 5}
 PROMOTIONAL_KINDS = {
-    "pre_launch", "main_launch", "doors_closing",
+    "pre_launch", "main_launch", "doors_closing", *BLACK_FRIDAY_KINDS,
     "upsell_followup", "downsell_followup", "abandoned_checkout",
 }
 # Access/entitlement mail is transactional: a purchase never cancels it.
@@ -144,6 +155,69 @@ def load_json(path, label):
         _fail("INVALID-JSON", "%s %s: %s" % (label, p, exc))
 
 
+@lru_cache(maxsize=1)
+def _launch_contract():
+    """(validator module, schema path) of the shared launch-plan contract, from the
+    repo checkout or the installed skills tree, imported by path (same lookup as
+    the Skill 50 launch adapter) so a same-named module can never shadow it."""
+    here = Path(__file__).resolve()
+    candidates = [p / "shared-utils" / "signature_launch_contract" for p in here.parents]
+    candidates += [
+        Path.home() / ".openclaw" / "skills" / "shared-utils" / "signature_launch_contract",
+        Path("/data/.openclaw/skills/shared-utils/signature_launch_contract"),
+    ]
+    for directory in candidates:
+        validator = directory / "validate_launch_plan.py"
+        schema = directory / "launch-plan.schema.json"
+        if validator.is_file() and schema.is_file():
+            spec = importlib.util.spec_from_file_location("_launch_contract_validator", validator)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module, schema
+    _fail("LAUNCH-PLAN-CONTRACT",
+          "shared launch contract (shared-utils/signature_launch_contract) not found; "
+          "the plan cannot be proven against the contract it claims to follow")
+
+
+@lru_cache(maxsize=1)
+def _calendar_law():
+    """The ONE launch calendar law (shared-utils/signature_launch_contract/calendar_law.py),
+    imported by path from the same directory as the shared validator."""
+    spec = importlib.util.spec_from_file_location(
+        "_launch_calendar_law", _launch_contract()[1].parent / "calendar_law.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _assert_calendar_law(calendar, black_friday_required):
+    """Phase ORDER is the shared law's, never a private rule of this reader."""
+    violations = _calendar_law().violations(calendar, black_friday_required=black_friday_required)
+    _require(not violations, "CALENDAR-PHASE-ORDER", "; ".join(violations))
+
+
+@lru_cache(maxsize=1)
+def _buildable_keys():
+    """Template keys of this skill's OWN sibling manifest (_matcher/buildable-templates.json).
+    A missing or unreadable manifest yields no keys, so every template is refused (fail closed)."""
+    path = Path(__file__).resolve().parents[1] / "_matcher" / "buildable-templates.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return frozenset(t["key"] for t in data.get("templates", [])
+                         if isinstance(t, dict) and t.get("key"))
+    except (OSError, ValueError, AttributeError):
+        return frozenset()
+
+
+def _shared_errors(plan):
+    """Error strings from the shared validator (empty list = the contract accepts it)."""
+    module, schema_path = _launch_contract()
+    try:
+        return list(module.validate_plan(plan, module.load_json(schema_path)))
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        _fail("LAUNCH-PLAN-CONTRACT", "shared validator could not read the plan: %s" % exc)
+
+
 def _walk_keys(node, path=""):
     if isinstance(node, dict):
         for key, value in node.items():
@@ -204,7 +278,7 @@ def _zone_time(dt, zone, label):
     return resolved, ambiguous
 
 
-def read_calendar(calendar):
+def read_calendar(calendar, black_friday_required=False):
     _require(isinstance(calendar, dict), "CALENDAR-SHAPE",
              "launch_calendar is missing or is not an object")
     for field in ("launch_at", "doors_open_at", "doors_close_at", "timezone"):
@@ -227,9 +301,6 @@ def read_calendar(calendar):
         compiled[field] = resolved.isoformat()
         compiled["dst_ambiguous"] = compiled["dst_ambiguous"] or ambiguous
 
-    _require(values["doors_open_at"] < values["launch_at"] < values["doors_close_at"],
-             "CALENDAR-PHASE-ORDER",
-             "strict phase order required: doors_open_at < launch_at < doors_close_at")
     compiled["phases"] = {
         "doors_open": values["doors_open_at"].isoformat(),
         "launch": values["launch_at"].isoformat(),
@@ -240,145 +311,80 @@ def read_calendar(calendar):
     if black_friday is not None:
         _require(isinstance(black_friday, dict), "CALENDAR-SHAPE",
                  "launch_calendar.black_friday is not an object")
-        order = ["teaser_at", "countdown_at", "cyber_monday_at", "last_call_at"]
-        previous = values["doors_open_at"]
-        for field in order:
-            raw = _parse_datetime(black_friday.get(field),
-                                  "launch_calendar.black_friday.%s" % field)
+        for field in BLACK_FRIDAY_FIELDS:
+            label = "launch_calendar.black_friday.%s" % field
             resolved, ambiguous = _zone_time(
-                raw, zone, "launch_calendar.black_friday.%s" % field)
-            _require(resolved > previous, "CALENDAR-PHASE-ORDER",
-                     "black_friday.%s must be strictly after %s"
-                     % (field, previous.isoformat()))
-            previous = resolved
+                _parse_datetime(black_friday.get(field), label), zone, label)
+            values[field] = resolved
             compiled.setdefault("black_friday", {})[field] = resolved.isoformat()
             compiled["dst_ambiguous"] = compiled["dst_ambiguous"] or ambiguous
-        _require(previous < values["doors_close_at"], "CALENDAR-PHASE-ORDER",
-                 "black_friday.last_call_at must be before doors_close_at")
 
-    return compiled, {
-        "doors_open_at": values["doors_open_at"],
-        "launch_at": values["launch_at"],
-        "doors_close_at": values["doors_close_at"],
-    }
+    # Zone/offset/DST resolution lives here; phase ORDER is delegated to the shared law.
+    _assert_calendar_law(calendar, black_friday_required)
+    return compiled, values
 
 
 # ------------------------------------------------------------------- launch plan
 def read_launch_plan(plan, source="launch-plan"):
     _require(isinstance(plan, dict), "LAUNCH-PLAN-SHAPE", "%s is not an object" % source)
-    _require(plan.get("schema_version") == SCHEMA_VERSION,
-             "LAUNCH-PLAN-VERSION", "schema_version must be %r" % SCHEMA_VERSION)
-    launch_id = plan.get("launch_id")
-    _require(isinstance(launch_id, str) and LAUNCH_ID_RE.match(launch_id),
-             "LAUNCH-PLAN-ID", "launch_id is missing or malformed")
+    # The shared contract validator goes first and is refused with its own text.
+    # Everything it proves (shape, ids, waits_for, drafts, calendar order) is not
+    # re-checked here; only Skill 44 concerns follow.
+    errors = _shared_errors(plan)
+    _require(not errors, "LAUNCH-PLAN-CONTRACT", "; ".join(errors))
     reject_credentials(plan, source)
 
-    calendar_doc, calendar_times = read_calendar(plan.get("launch_calendar"))
-    offer = plan.get("offer")
-    if offer is not None:
-        _require(isinstance(offer, dict), "LAUNCH-PLAN-OFFER", "offer is not an object")
-        _require(isinstance(offer.get("name"), str) and offer["name"].strip(),
-                 "LAUNCH-PLAN-OFFER", "offer.name is missing")
-        price = offer.get("price_usd")
-        _require(isinstance(price, (int, float)) and not isinstance(price, bool) and price >= 0,
-                 "LAUNCH-PLAN-OFFER", "offer.price_usd must be a non-negative number")
-        _require(isinstance(offer.get("currency"), str)
-                 and CURRENCY_RE.match(offer["currency"]),
-                 "LAUNCH-PLAN-OFFER", "offer.currency must be a 3-letter code")
-        _require(isinstance(offer.get("payment_plans"), bool),
-                 "LAUNCH-PLAN-OFFER", "offer.payment_plans must be boolean")
-
+    # A launch with a Black Friday email sequence must carry launch_calendar.black_friday;
+    # the shared calendar law then orders its phases (read_calendar).
+    black_friday_launch = any(
+        isinstance(seq, dict) and seq.get("kind") in BLACK_FRIDAY_KINDS
+        for seq in plan.get("email_sequences", []))
+    if black_friday_launch and isinstance(plan["launch_calendar"], dict):
+        _require("black_friday" in plan["launch_calendar"], "CALENDAR-BLACK-FRIDAY",
+                 "a Black Friday email sequence needs launch_calendar.black_friday "
+                 "(%s)" % ", ".join(BLACK_FRIDAY_FIELDS))
+    calendar_doc, calendar_times = read_calendar(plan["launch_calendar"], black_friday_launch)
     units = {}            # id -> kind
-    pages = {}
-    email_sequences = {}  # id -> sequence object (insertion order = plan order)
-    text_sets = {}
-    automations = []
+    pages, email_sequences, text_sets, automations = {}, {}, {}, []
+    targets = {"pages": pages, "email_sequences": email_sequences, "text_sets": text_sets}
+    edges = {}
+    # commerce_units (optional contract array) only take part in waits_for ordering.
+    for kind in ("pages", "email_sequences", "text_sets", "automations", "commerce_units"):
+        for item in plan.get(kind, []):
+            units[item["id"]] = kind
+            edges[item["id"]] = list(item["waits_for"])
+            if kind == "automations":
+                template = item.get("template")
+                new = item.get("new_template")
+                approved_new = (template == "new" and isinstance(new, dict)
+                                and bool(str(new.get("owner_approved_reason") or "").strip())
+                                and bool(new.get("compile_spec")))
+                _require(template in _buildable_keys() or approved_new,
+                         "LAUNCH-PLAN-TEMPLATE-UNBUILDABLE",
+                         "automation %r template %r is not in buildable-templates.json "
+                         "(a 'new' template needs new_template.owner_approved_reason and "
+                         "new_template.compile_spec)" % (item["id"], template))
+                automations.append(item)
+            elif kind in targets:
+                targets[kind][item["id"]] = item
 
-    for kind in ("pages", "email_sequences", "text_sets", "automations"):
-        items = plan.get(kind)
-        _require(isinstance(items, list), "LAUNCH-PLAN-SHAPE", "%s must be a list" % kind)
-        for item in items:
-            _require(isinstance(item, dict), "LAUNCH-PLAN-SHAPE", "%s entry is not an object" % kind)
-            unit_id = item.get("id")
-            _require(isinstance(unit_id, str) and UNIT_ID_RE.match(unit_id),
-                     "LAUNCH-PLAN-UNIT-ID", "%s unit id %r is malformed" % (kind, unit_id))
-            _require(unit_id not in units, "LAUNCH-PLAN-DUPLICATE-ID",
-                     "unit id %r appears twice" % unit_id)
-            units[unit_id] = kind
-            if kind == "pages":
-                url = item.get("url")
-                _require(url is None or (isinstance(url, str) and url.strip()),
-                         "LAUNCH-PLAN-PAGE-URL",
-                         "page %r url must be an approved URL or null" % unit_id)
-                pages[unit_id] = item
-            elif kind == "email_sequences":
-                _require(item.get("draft_only") is True,
-                         "LAUNCH-PLAN-NOT-DRAFT", "email sequence %r is not draft_only" % unit_id)
-                _require(item.get("kind") in PHASE_RANK or item.get("kind") in {
-                    "upsell_followup", "downsell_followup", "abandoned_checkout",
-                    "welcome_access"},
-                    "LAUNCH-PLAN-SEQUENCE-KIND",
-                    "email sequence %r kind %r is not canonical" % (unit_id, item.get("kind")))
-                count = item.get("email_count")
-                _require(isinstance(count, int) and not isinstance(count, bool) and count >= 1,
-                         "LAUNCH-PLAN-SEQUENCE-COUNT",
-                         "email sequence %r email_count must be >= 1" % unit_id)
-                _require(item.get("provider") == "skill50",
-                         "LAUNCH-PLAN-SEQUENCE-PROVIDER",
-                         "email sequence %r provider must be 'skill50'" % unit_id)
-                email_sequences[unit_id] = item
-            elif kind == "text_sets":
-                _validate_text_set(item)
-                text_sets[unit_id] = item
-
-    # waits_for resolution + acyclicity over every unit.
-    edges = {unit_id: [] for unit_id in units}
-    for kind in ("pages", "email_sequences", "text_sets", "automations"):
-        for item in plan[kind]:
-            waits = item.get("waits_for")
-            _require(isinstance(waits, list), "LAUNCH-PLAN-WAITS",
-                     "%s %r waits_for must be a list" % (kind, item["id"]))
-            _require(len(waits) == len(set(waits)), "LAUNCH-PLAN-WAITS",
-                     "%s %r waits_for contains duplicates" % (kind, item["id"]))
-            for dep in waits:
-                _require(dep in units, "LAUNCH-PLAN-UNRESOLVED-WAITS",
-                         "%s %r waits for unknown unit %r" % (kind, item["id"], dep))
-                edges[item["id"]].append(dep)
     order = _assert_acyclic(edges)
 
     # Strict phase order between email sequences (a later phase never gates an
     # earlier one).
     for seq_id, sequence in email_sequences.items():
-        rank = PHASE_RANK.get(sequence.get("kind"))
+        rank = PHASE_RANK.get(sequence["kind"])
         for dep in sequence["waits_for"]:
             dep_rank = PHASE_RANK.get(email_sequences.get(dep, {}).get("kind"))
             if rank is not None and dep_rank is not None:
                 _require(dep_rank < rank, "EMAIL-SEQUENCE-PHASE-ORDER",
                          "email sequence %r (%s) waits for %r (%s); phases run "
-                         "pre_launch -> main_launch -> doors_closing"
-                         % (seq_id, sequence.get("kind"), dep,
-                            email_sequences[dep].get("kind")))
-
-    for item in plan["automations"]:
-        unit_id = item["id"]
-        family = item.get("family")
-        _require(family in FAMILIES, "LAUNCH-PLAN-FAMILY",
-                 "automation %r family %r is not canonical" % (unit_id, family))
-        rail = item.get("build_rail")
-        _require(rail in RAILS, "LAUNCH-PLAN-RAIL",
-                 "automation %r build_rail %r is not canonical" % (unit_id, rail))
-        _require(item.get("draft_only") is True,
-                 "LAUNCH-PLAN-NOT-DRAFT", "automation %r is not draft_only" % unit_id)
-        template = item.get("template")
-        _require(isinstance(template, str) and template.strip(),
-                 "LAUNCH-PLAN-TEMPLATE", "automation %r template is missing" % unit_id)
-        trigger = item.get("trigger")
-        _require(isinstance(trigger, dict) and isinstance(trigger.get("type"), str) and trigger["type"],
-                 "LAUNCH-PLAN-TRIGGER", "automation %r trigger.type is missing" % unit_id)
-        automations.append(item)
+                         "pre_launch -> countdown -> main_launch -> cyber_monday "
+                         "-> last_call -> doors_closing"
+                         % (seq_id, sequence["kind"], dep, email_sequences[dep]["kind"]))
 
     return {
-        "launch_id": launch_id,
+        "launch_id": plan["launch_id"],
         "units": units,
         "pages": pages,
         "email_sequences": email_sequences,
@@ -389,31 +395,6 @@ def read_launch_plan(plan, source="launch-plan"):
         "calendar": calendar_doc,
         "calendar_times": calendar_times,
     }
-
-
-def _validate_text_set(item):
-    unit_id = item["id"]
-    messages = item.get("messages")
-    _require(isinstance(messages, int) and not isinstance(messages, bool) and messages >= 1,
-             "LAUNCH-PLAN-TEXT-SET", "text set %r messages must be >= 1" % unit_id)
-    _require(isinstance(item.get("promotional"), bool), "LAUNCH-PLAN-TEXT-SET",
-             "text set %r promotional must be boolean" % unit_id)
-    _require(item.get("draft_only") is True, "LAUNCH-PLAN-NOT-DRAFT",
-             "text set %r is not draft_only" % unit_id)
-    _require(item.get("opt_out_keyword") == "STOP", "LAUNCH-PLAN-TEXT-SET",
-             "text set %r opt_out_keyword must be STOP" % unit_id)
-    _require(item.get("includes_reply_invitation") is True, "LAUNCH-PLAN-TEXT-SET",
-             "text set %r must include a reply invitation" % unit_id)
-    window = item.get("send_window")
-    _require(isinstance(window, dict), "LAUNCH-PLAN-TEXT-SET",
-             "text set %r send_window is missing" % unit_id)
-    for field in ("start", "end"):
-        _require(isinstance(window.get(field), str) and CLOCK_RE.match(window[field]),
-                 "LAUNCH-PLAN-TEXT-SET",
-                 "text set %r send_window.%s must be HH:MM" % (unit_id, field))
-    _require(isinstance(window.get("timezone"), str) and window["timezone"].strip(),
-             "LAUNCH-PLAN-TEXT-SET",
-             "text set %r send_window.timezone is missing" % unit_id)
 
 
 def _assert_acyclic(edges):
@@ -614,12 +595,18 @@ def _workflow_offsets(workflow):
 def _sequence_anchor(kind, times, duration):
     """Anchor datetime for an absolute phase, or None for a relative phase.
 
-    Promotional phases are pinned so their LAST email lands just before the
-    phase boundary (doors open for pre-launch, doors close for doors-closing);
-    main launch starts at the launch instant. A 60 s guard keeps even the last
-    send strictly before the boundary.
+    Black Friday phases START at their approved calendar date (teaser, countdown,
+    cyber_monday, last_call); pre_launch starts at the teaser when the calendar
+    carries one. Otherwise promotional phases are pinned so their LAST email
+    lands just before the phase boundary (doors open for pre-launch, doors close
+    for doors-closing); main launch starts at the launch instant. A 60 s guard
+    keeps even the last send strictly before the boundary.
     """
     guard = timedelta(seconds=CLOSE_GUARD_SECONDS)
+    if kind in BLACK_FRIDAY_KINDS:
+        return kind + "_at", times[kind + "_at"]
+    if kind == "pre_launch" and "teaser_at" in times:
+        return "teaser_at", times["teaser_at"]
     if kind == "pre_launch":
         return "doors_open_at", times["doors_open_at"] - guard - timedelta(seconds=duration)
     if kind == "main_launch":
@@ -634,7 +621,8 @@ def compile_schedule(sequence_kind, workflow, times, now):
 
     Policy:
       * promotional sends at/after doors_close_at are SUPPRESSED (close-time)
-      * promotional sends at/before `now` are SUPPRESSED (past-time)
+      * promotional sends at/before `now` are SUPPRESSED (past-time): dropped,
+        never blocking, and listed for owner acknowledgement (build_document)
       * transactional access (welcome_access) is never suppressed
       * relative phases carry a runtime close-time guard instead of a wall time
     """
@@ -671,7 +659,7 @@ def compile_schedule(sequence_kind, workflow, times, now):
             node["suppress_after"] = close_at.isoformat()
         if node["status"] == "suppressed":
             suppressed.append({"step_id": step["id"], "reason": node["reason"],
-                               "workflow_key": workflow["key"]})
+                               "workflow_key": workflow["key"], "at": node["at"]})
         nodes.append(node)
     return {
         "workflow_key": workflow["key"],
@@ -687,18 +675,19 @@ def compile_schedule(sequence_kind, workflow, times, now):
 
 
 def compile_calendar_nodes(calendar_times, now):
-    nodes = []
-    for phase, key in (("doors_open", "doors_open_at"),
-                       ("launch", "launch_at"),
-                       ("doors_close", "doors_close_at")):
-        at = calendar_times[key]
-        nodes.append({
-            "phase": phase,
-            "kind": "absolute",
-            "at": at.isoformat(),
-            "status": "past" if at <= now else "scheduled",
-        })
-    return nodes
+    phases = [("doors_open", "doors_open_at"), ("launch", "launch_at"),
+              ("doors_close", "doors_close_at")]
+    phases += [(kind, kind + "_at") for kind in BLACK_FRIDAY_KINDS
+               if kind + "_at" in calendar_times]
+    nodes = [{
+        "phase": phase,
+        "kind": "absolute",
+        "at": calendar_times[key].isoformat(),
+        "status": "past" if calendar_times[key] <= now else "scheduled",
+    } for phase, key in phases]
+    # Black Friday adds phases around the three base ones: keep time order
+    # (stable, so the three base nodes keep their order on a plain launch).
+    return sorted(nodes, key=lambda node: datetime.fromisoformat(node["at"]))
 
 
 # ----------------------------------------------------------------- binding meta
@@ -787,7 +776,7 @@ def _dependency_blocker(dep, plan, bound, build_states):
     return None
 
 
-def build_document(plan_path, plan, bound, unbound, warnings, now=None):
+def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowledged=None):
     now = now or datetime.now(timezone.utc)
     email_sequences = plan["email_sequences"]
     times = dict(plan["calendar_times"])
@@ -795,6 +784,7 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None):
     builds = []
     build_states = {}
     journal = {}
+    all_dropped = []
 
     for automation in plan["order"]:
         if plan["units"].get(automation) != "automations":
@@ -852,10 +842,18 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None):
                 for item in suppressed:
                     item["email_sequence"] = seq_id
                 schedule_suppressed.extend(suppressed)
-                if suppressed:
+                # Past sends are DROPPED, not blocking (late start); only a send
+                # that cannot land before doors close blocks the build.
+                if any(i["reason"] == "CLOSE-TIME-SUPPRESSED" for i in suppressed):
                     reason = "schedule_suppressed:%s" % seq_id
                     if reason not in blocked_by:
                         blocked_by.append(reason)
+
+        dropped = [item for item in schedule_suppressed
+                   if item["reason"] == "PAST-TIME-SUPPRESSED"]
+        all_dropped.extend(dict(item, automation=automation["id"]) for item in dropped)
+        if schedule_nodes and not any(n["status"] == "scheduled" for n in schedule_nodes):
+            blocked_by.append("no_future_sends")
 
         unit_key = "%s/%s" % (plan["launch_id"], automation["id"])
         expected_hash = _sha256({
@@ -864,6 +862,10 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None):
             "schedule": schedule_nodes,
         })
         journal[unit_key] = expected_hash
+
+        # Nothing to build is blocked, never "ready" (S44-04 reader half).
+        if not workflows and "no_buildable_workflow" not in blocked_by:
+            blocked_by.append("no_buildable_workflow")
 
         state = "blocked" if (missing or blocked_by) else "ready"
         build_states[automation["id"]] = state
@@ -894,20 +896,31 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None):
                 "suppressed": schedule_suppressed,
             },
             "suppressed": schedule_suppressed,
+            "dropped_sends": dropped,
             "state": state,
             "blocked_by": blocked_by,
         })
 
+    dropped_hash = _sha256(all_dropped)
+    _require(acknowledged in (None, dropped_hash), "ACKNOWLEDGEMENT-MISMATCH",
+             "--acknowledge-dropped-sends does not match the dropped sends of this "
+             "compile (dropped_sends_hash %s)" % dropped_hash)
     return {
         "schema_version": SCHEMA_VERSION,
         "launch_id": plan["launch_id"],
         "draft_only": True,
+        "owner_acknowledgement": {
+            "required": bool(all_dropped),
+            "acknowledged": bool(all_dropped) and acknowledged == dropped_hash,
+            "dropped_sends_hash": dropped_hash,
+            "dropped_sends": all_dropped,
+        },
         "sources": {"launch_plan": str(plan_path), "build_plans": sorted(
             path for path, _doc, _wfs in bound.values())},
         "calendar": plan["calendar"],
         "schedule_policy": {
             "now": now.isoformat(),
-            "past_time": "suppress_promotional",
+            "past_time": "drop_with_owner_acknowledgement",
             "close_time": "suppress_promotional",
             "close_guard_seconds": CLOSE_GUARD_SECONDS,
             "timezone": plan["calendar"]["timezone"],
@@ -944,9 +957,33 @@ def run(args):
     explicit = read_sequence_map(args.sequence_map)
     bound, unbound = bind_build_plans(
         args.build_plan or [], parsed["email_sequences"], explicit)
-    return build_document(args.launch_plan, parsed, bound, unbound, [],
-                          now=_parse_now(getattr(args, "now", None)))
+    document = build_document(
+        args.launch_plan, parsed, bound, unbound, [],
+        now=_parse_now(getattr(args, "now", None)),
+        acknowledged=getattr(args, "acknowledge_dropped_sends", None))
+    validate_output(document)
+    return document
 
+
+def validate_output(document):
+    """Refuse to hand on an automation-build document the schema does not accept."""
+    module, _ = _launch_contract()
+    schema = load_json(Path(__file__).resolve().with_name("automation-build.schema.json"),
+                       "automation-build.schema")
+    errors = []
+    try:
+        module._validate_node(document, schema, schema, "", errors)
+    except ValueError as exc:
+        errors.append(str(exc))
+    _require(not errors, "OUTPUT-SCHEMA",
+             "automation-build.schema.json rejects the output: %s" % "; ".join(errors[:8]))
+
+
+def blocked_builds(document):
+    """Ids of builds that cannot be built (blocked or carrying no workflow); an
+    empty build list is itself blocked."""
+    ids = [b["id"] for b in document["builds"] if b["state"] == "blocked" or not b["workflows"]]
+    return ids or ([] if document["builds"] else ["(no automation builds)"])
 
 def _selftest():
     plan = {
@@ -960,6 +997,8 @@ def _selftest():
         },
         "offer": {"name": "Selftest", "price_usd": 1, "currency": "USD",
                   "payment_plans": False},
+        "a2p_ready": False,
+        "conversation_ai": {"requested": False, "mode": "none"},
         "pages": [{"id": "page_landing", "kind": "landing",
                    "url": "https://example.com", "waits_for": []}],
         "email_sequences": [
@@ -967,7 +1006,8 @@ def _selftest():
              "email_count": 1, "draft_only": True, "waits_for": []}],
         "text_sets": [],
         "automations": [
-            {"id": "auto_pre_launch", "family": "pre_launch", "template": "new",
+            {"id": "auto_pre_launch", "family": "pre_launch",
+             "template": "launch-a/launch-a-prelaunch-window",
              "build_rail": "skill44_engine", "draft_only": True,
              "trigger": {"type": "tag_added"}, "waits_for": ["email_pre_launch"]}],
     }
@@ -1013,7 +1053,7 @@ def _selftest():
         read_launch_plan(cyclic)
         raise AssertionError("cycle was accepted")
     except ReaderError as exc:
-        assert exc.code == "LAUNCH-PLAN-CYCLE", exc.code
+        assert exc.code == "LAUNCH-PLAN-CONTRACT" and "cycle" in exc.message, exc.code
 
     broken = json.loads(json.dumps(plan))
     broken["launch_calendar"]["timezone"] = "Mars/Olympus"
@@ -1043,10 +1083,17 @@ def _selftest():
         assert exc.code == "CALENDAR-OFFSET", exc.code
 
     out_of_order = json.loads(json.dumps(plan))
-    out_of_order["launch_calendar"]["launch_at"] = "2026-11-03T09:00:00-05:00"
+    out_of_order["launch_calendar"]["doors_close_at"] = "2026-11-03T08:00:00-05:00"
     try:
         read_launch_plan(out_of_order)
-        raise AssertionError("non-strict phase order was accepted")
+        raise AssertionError("out-of-order calendar was accepted")
+    except ReaderError as exc:
+        assert exc.code == "LAUNCH-PLAN-CONTRACT", exc.code
+
+    # read_calendar on its own delegates order to the shared law (CALENDAR-PHASE-ORDER).
+    try:
+        read_calendar(out_of_order["launch_calendar"])
+        raise AssertionError("out-of-order calendar was accepted by read_calendar")
     except ReaderError as exc:
         assert exc.code == "CALENDAR-PHASE-ORDER", exc.code
 
@@ -1061,6 +1108,9 @@ def main(argv=None):
     parser.add_argument("--out")
     parser.add_argument("--now", default=None,
                         help="Evaluation instant for past-time policy (ISO-8601, default: now)")
+    parser.add_argument("--acknowledge-dropped-sends", default=None, metavar="HASH",
+                        help="owner acknowledgement: the dropped_sends_hash of a late "
+                             "compile, passed back to accept that exact list of dropped sends")
     parser.add_argument("--selftest", action="store_true")
     args = parser.parse_args(argv)
 
@@ -1079,6 +1129,11 @@ def main(argv=None):
     except OSError as exc:
         print("plan-reader: IO: %s" % exc, file=sys.stderr)
         return EXIT_IO
+    blocked = blocked_builds(document)
+    if blocked:
+        print("plan-reader: BLOCKED: nothing can be built for: %s (see blocked_by in %s)"
+              % (", ".join(blocked), args.out), file=sys.stderr)
+        return EXIT_BLOCKED
     return EXIT_OK
 
 

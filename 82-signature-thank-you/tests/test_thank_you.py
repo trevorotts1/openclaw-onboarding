@@ -22,7 +22,10 @@ from pathlib import Path
 SKILL_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SKILL_DIR / "scripts"))
 
-from thank_you_resolver import ResolverError, resolve_order_view  # noqa: E402
+from thank_you_resolver import ResolverError  # noqa: E402
+import os.path as _osp  # noqa: E402
+sys.path.insert(0, _osp.dirname(_osp.abspath(__file__)))
+from stamped_resolver import resolve_order_view  # noqa: E402
 from validate_thank_you import validate_thank_you  # noqa: E402
 from validate_entitlements import validate_entitlements  # noqa: E402
 
@@ -35,7 +38,9 @@ def _packet_reference_dir():
     ``S82_PACKET_REFERENCE`` env override, then a tolerant ancestor
     walk from the skill directory up to the first ancestor carrying
     ``packet/reference`` (the tolerant-walk shape INTEGRATION
-    suggested in CR-INT-S82-001, mirroring S78's CR-INT-S78-001 fix).
+    suggested in CR-INT-S82-001, mirroring S78's CR-INT-S78-001 fix),
+    then this repository's vendored packet copy at
+    ``79-signature-order-form/fixtures/packet``.
     The suite asserts identically in every layout whose tree carries
     the packet at any ancestor depth.
     """
@@ -47,6 +52,13 @@ def _packet_reference_dir():
         if (candidate / "launch-example.json").is_file() and \
                 (candidate / "acceptance-cases.json").is_file():
             return candidate
+        # Vendored packet copy shipped in this repository (same fallback
+        # as Skill 81's CR-INT-S81-001): the repo layout has no
+        # ancestor packet/reference, so the suite must collect without env.
+        vendored = ancestor / "79-signature-order-form" / "fixtures" / "packet"
+        if (vendored / "launch-example.json").is_file() and \
+                (vendored / "acceptance-cases.json").is_file():
+            return vendored
     raise ImportError(
         "S82 tests: packet/reference (launch-example.json + "
         "acceptance-cases.json) not found in any ancestor of "
@@ -56,6 +68,10 @@ def _packet_reference_dir():
 
 
 REF = _packet_reference_dir()
+# Shared test corpus: sibling modules that carry their own copy of the
+# packet lookup (test_render) honour this override, so publishing the
+# resolved directory lets them collect in the repo layout with no env var.
+os.environ.setdefault("S82_PACKET_REFERENCE", str(REF))
 LAUNCH = json.loads((REF / "launch-example.json").read_text())
 CASES = json.loads((REF / "acceptance-cases.json").read_text())["cases"]
 OFFERS = {o["offer_id"]: o for o in LAUNCH["offers"]}
@@ -124,6 +140,9 @@ def make_fulfillment(snapshot, states=None):
                     "state": "granted",
                     "delivery_url": f"https://example.test/access/{ent}",
                     "next_action": "access",
+                    # S44 map attests the destination checks the buyer
+                    # itself (DTY-18); the flag never comes from a caller.
+                    "destination_independently_authorizes": True,
                 }
             else:
                 fulfillment[ent] = {"state": "pending", "delivery_url": None,
@@ -370,6 +389,71 @@ class NegativeTest(unittest.TestCase):
         with self.assertRaises(ResolverError) as ctx:
             resolve_order_view(poisoned, {})
         self.assertIn("forbidden_field", str(ctx.exception))
+
+
+class AccessLinkAndStatusRecomputeTest(unittest.TestCase):
+    """DTY-18 (https-only access links tied to S44's map) and DTY-19
+    (item status recomputed from the snapshot, never trusted from the view)."""
+
+    def _honest(self, offers=("MAIN-A",), statuses=None):
+        snapshot = make_snapshot(list(offers), statuses=statuses)
+        fulfillment = make_fulfillment(snapshot)
+        view = resolve_order_view(snapshot, fulfillment,
+                                  expected_identity=IDENTITY)
+        return snapshot, fulfillment, view
+
+    def test_protocol_relative_and_http_delivery_urls_build_no_view(self):
+        for bad in ("//attacker.example/phish", "http://example.test/a",
+                    "https:///no-host"):
+            with self.subTest(url=bad):
+                snapshot = make_snapshot(["MAIN-A"])
+                fulfillment = make_fulfillment(snapshot)
+                fulfillment["base-a"]["delivery_url"] = bad
+                with self.assertRaises(ResolverError) as ctx:
+                    resolve_order_view(snapshot, fulfillment,
+                                       expected_identity=IDENTITY)
+                self.assertIn("invalid_access_link", str(ctx.exception))
+
+    def test_tampered_view_url_fails_validation_and_matches_no_s44_url(self):
+        snapshot, fulfillment, view = self._honest()
+        self.assertEqual(validate_thank_you(view, snapshot, fulfillment), [])
+        view["access_blocks"][0]["delivery_url"] = "//attacker.example/phish"
+        errors = validate_thank_you(view, snapshot, fulfillment)
+        self.assertTrue(any(e.startswith("insecure_destination") for e in errors), errors)
+        self.assertTrue(any(e.startswith("delivery_url_mismatch") for e in errors), errors)
+
+    def test_authorize_flag_comes_from_s44_map_not_the_view(self):
+        snapshot, fulfillment, view = self._honest()
+        view["access_blocks"][0]["destination_independently_authorizes"] = True
+        del fulfillment["base-a"]["destination_independently_authorizes"]
+        errors = validate_thank_you(view, snapshot, fulfillment)
+        self.assertTrue(any(e.startswith("missing_independent_authorization")
+                            for e in errors), errors)
+
+    def test_pending_item_relabelled_paid_returns_status_mismatch(self):
+        snapshot, fulfillment, view = self._honest(
+            ("MAIN-A", "U1"), statuses={"U1": "pending"})
+        self.assertEqual(validate_thank_you(view, snapshot, fulfillment), [])
+        tampered = copy.deepcopy(view)
+        for item in tampered["items"]:
+            if item["offer_id"] == "U1":
+                item["display_status"] = "paid"
+        tampered["confirmation"] = {
+            "status": "confirmed", "all_set": True,
+            "headline": "You are all set. Your purchase is confirmed.",
+        }
+        errors = validate_thank_you(tampered, snapshot, fulfillment)
+        self.assertTrue(any(e.startswith("status_mismatch") for e in errors), errors)
+        # the lie is also caught by the snapshot-derived confirmation rule
+        self.assertTrue(any(e.startswith("false_confirmation") for e in errors), errors)
+
+    def test_currency_and_billing_must_equal_the_snapshot(self):
+        snapshot, fulfillment, view = self._honest()
+        view["items"][0]["currency"] = "EUR"
+        view["items"][0]["billing"] = {"billing_type": "one_time"}
+        errors = validate_thank_you(view, snapshot, fulfillment)
+        self.assertTrue(any(e.startswith("currency_mismatch") for e in errors), errors)
+        self.assertTrue(any(e.startswith("billing_mismatch") for e in errors), errors)
 
 
 if __name__ == "__main__":

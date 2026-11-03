@@ -40,7 +40,9 @@ from test_thank_you import (  # noqa: E402
     make_fulfillment,
     make_snapshot,
 )
-from thank_you_resolver import resolve_order_view  # noqa: E402
+import os.path as _osp  # noqa: E402
+sys.path.insert(0, _osp.dirname(_osp.abspath(__file__)))
+from stamped_resolver import resolve_order_view  # noqa: E402
 from validate_thank_you import validate_thank_you  # noqa: E402
 from render_thank_you import format_amount, render_thank_you  # noqa: E402
 

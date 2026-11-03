@@ -623,13 +623,40 @@ def subaccount_matches(current_location_id: str, target: str) -> MatchGuard:
 
 # ── Publish guard (A13.1 / guardrail 4) ───────────────────────────────────────
 
-def may_publish(approval: str | None) -> bool:
-    """Return True ONLY on an explicit affirmative LIVE answer. Default = draft.
-    Any absent/ambiguous/negative answer => False."""
-    if not approval:
-        return False
-    a = approval.strip().lower()
-    return a in ("live", "publish", "yes", "approved", "go", "go ahead", "true")
+def may_publish(approval, *, location_id=None, page_id=None,
+                evidence_root: str | None = None,
+                store_dir: str | None = None) -> bool:
+    """S06-06: True ONLY when ``approval`` is an approval_ref that resolves to a
+    launch-store record naming this location and page, with
+    allowed_write_target == approved_live_publication, test_only false, not
+    revoked/expired, AND ghl_gate has passed for this page (``evidence_root``).
+    A free string ("yes"/"live"), a bare boolean, or a record passed in memory
+    is never authority. Default = draft. See ghl_publish_approval."""
+    import ghl_publish_approval as pa  # lazy: it lazy-imports ghl_gate -> this module
+    return not pa.publish_refusals(
+        approval, location_id=location_id, page_id=page_id,
+        evidence_root=evidence_root, store_dir=store_dir)
+
+
+def page_autosave(page_id: str, page_data: dict, *, funnel_id: str,
+                  page_version: int, location_id: str,
+                  integrations: dict | None = None, publish=False,
+                  approval=None, evidence_root: str | None = None,
+                  store_dir: str | None = None, session: str | None = None) -> dict:
+    """Guarded autosave step. ``publish`` must be exactly False (draft) unless a
+    launcher approval record authorizes this page (see ``may_publish``);
+    ``publish=True`` with no record, a free string, or a ``test_only`` record
+    raises ``ghl_publish_approval.PublishApprovalError``."""
+    import ghl_publish_approval as pa
+    import ghl_rest_canvas as rc
+    if publish is not False:
+        pa.require_publish(approval, location_id=location_id, page_id=page_id,
+                           evidence_root=evidence_root, store_dir=store_dir)
+    return rc.page_autosave(
+        page_id, page_data, funnel_id=funnel_id, page_version=page_version,
+        integrations=integrations, publish=publish is not False, session=session,
+        approval=approval, location_id=location_id, evidence_root=evidence_root,
+        store_dir=store_dir)
 
 
 # ── Two-saves invariant (transcript steps 17→18, ~08:31–09:05) ────────────────
@@ -1867,6 +1894,8 @@ def emit_rest_save_plan(
     session: str | None = None,
     seo: dict | None = None,
     copy_md_path: str | None = None,
+    evidence_root: str | None = None,
+    approval_store: str | None = None,
 ) -> dict:
     """Emit the ordered REST-autosave plan (read→splice→autosave→verify→revert
     baseline), per solution §5.2. The steps the agent runs IN-BROWSER, in order:
@@ -1881,11 +1910,17 @@ def emit_rest_save_plan(
          custom-code node's ``rawCustomCode`` to ``new_value`` (e.g. the marker +
          a real ``<img src=<cdn_url>>``). Pure transform — the pristine
          ``page_data`` baseline is preserved for the revert.
-      4. ``page_autosave`` — POST the edited blob as a DRAFT (``publish`` is gated
-         by ``may_publish(approval)`` — default DRAFT; the live pointer never
-         moves while ``pageType`` is ``draft``).
-      5. ``verify_preview`` — ``verify_url(preview_url, marker)`` (HTTP 200 AND
-         marker in body — never trust no-error).
+      4. ``page_autosave`` — POST the edited blob as a DRAFT. ``publish`` needs an
+         approval RECORD (``approval`` = an approval_ref read from the launch
+         store, allowed_write_target approved_live_publication, not test_only)
+         AND ``ghl_gate`` passed for this page (``evidence_root``), so the first
+         emission (before verification) is always DRAFT; re-emit with
+         ``evidence_root`` after verify_all passed to get a publish step. The
+         live pointer never moves while ``pageType`` is ``draft``.
+      5. ``verify_preview`` — ``ghl_verify.verify_all`` (``render_check``: the
+         headless RENDERED DOM, HTTP 200, marker in the rendered DOM, no render
+         errors). The raw-body ``verify_url`` marker check is a pre-screen only
+         and never advances the ledger to 'previewed'.
       6. ``revert_baseline`` — re-POST the pristine baseline as a new draft
          version (byte-identical restore; the live pointer never moves).
 
@@ -1931,7 +1966,13 @@ def emit_rest_save_plan(
     if not guard.ok:
         return _rest_refuse_plan("rest_save", guard)
 
-    publish = may_publish(approval)
+    # S06-06: publish needs a launcher approval record AND ghl_gate passed for
+    # this page; anything less stays DRAFT (and says why when approval was given).
+    import ghl_publish_approval as _pa
+    publish_refusals = _pa.publish_refusals(
+        approval, location_id=location_id, page_id=page_id,
+        evidence_root=evidence_root, store_dir=approval_store)
+    publish = not publish_refusals
 
     # Step 3 (pure transform): produce the edited blob now so the autosave step
     # carries the spliced body. The input page_data is NOT mutated (deep-copied
@@ -1963,21 +2004,33 @@ def emit_rest_save_plan(
     read_step["step"] = "page_read"
 
     # 4. AUTOSAVE the edited blob (DRAFT unless may_publish gated it True).
-    save_step = rc.page_autosave(
+    save_step = page_autosave(
         page_id, edited, funnel_id=funnel_id, page_version=page_version,
-        integrations=integrations, publish=publish, session=session,
+        location_id=location_id, integrations=integrations,
+        publish=publish, approval=approval, evidence_root=evidence_root,
+        store_dir=approval_store, session=session,
     )
     save_step["step"] = "page_autosave"
 
-    # 5. VERIFY the preview (HTTP 200 AND marker present — never no-error alone).
+    # 5. VERIFY the preview through the canonical verifier: ghl_verify.verify_all
+    # drives render_check (headless RENDERED DOM, HTTP 200, marker in the rendered
+    # DOM, no render errors). The raw-body verify_url marker check proves only that
+    # bytes were stored (GHL returns 200 + the marker for a page that never
+    # renders), so it never advances a page to 'previewed' (S06-24).
     verify_step = {
         "step": "verify_preview",
-        "action": "verify_url",
+        "action": "verify_all",
+        "call": "ghl_verify.verify_all(run_dir, [{page_id, preview_url, marker, step}]) "
+                "-> ghl_builder.render_check",
+        "page_id": page_id,
         "url": preview_url,
         "marker": marker,
-        "expect": {"ok": True, "http": 200, "marker_found": True},
-        "note": "ghl_builder.verify_url(preview_url, marker): HTTP 200 AND marker "
-                "in body; a passing preview advances the ledger to 'previewed'",
+        "expect": {"PASS": True, "http": 200, "marker_in_rendered_dom": True,
+                   "render_errors": []},
+        "note": "ghl_verify.verify_all -> render_check: HTTP 200 AND marker in "
+                "the RENDERED DOM AND no render errors; only a PASS row "
+                "advances the ledger to 'previewed' and satisfies ghl_gate. "
+                "NOT ghl_builder.verify_url (raw bytes, pre-screen only).",
     }
     # FIX-COPY-02: pin the APPROVED copy source on the verify descriptor so the
     # copy-fidelity gate asserts the approved copy rendered (not just the marker).
@@ -2053,6 +2106,11 @@ def emit_rest_save_plan(
     }
     if seo_meta is not None:
         plan["seo"] = seo_meta
+    if approval and publish_refusals:
+        # An approval was offered but did not authorize a live publish (no record,
+        # test_only, wrong page/location, or the gate has not passed yet): the plan
+        # stays DRAFT and names why, so nothing publishes before verification.
+        plan["publish_refused"] = publish_refusals
     if copy_md_path:
         plan["copy_md_path"] = copy_md_path
     # Self-verify the two-saves invariant (CODE save before PAGE save) — the REST
@@ -2373,6 +2431,8 @@ def _main_subcommands() -> int:
     p = sub.add_parser("resume"); p.add_argument("run_id"); p.add_argument("manifest_path")
     p = sub.add_parser("gates"); p.add_argument("--runtime", action="store_true"); p.add_argument("--captured", action="store_true")
     p = sub.add_parser("may-publish"); p.add_argument("approval", nargs="?", default="")
+    p.add_argument("--location-id", default=None); p.add_argument("--page-id", default=None)
+    p.add_argument("--evidence-root", default=None)
     p = sub.add_parser("subaccount"); p.add_argument("current"); p.add_argument("target")
     # REST-autosave canvas wire-in plan emitters (solution §5.2). Each reads a
     # JSON spec file (the params include page-data blobs) and prints the plan.
@@ -2436,7 +2496,9 @@ def _main_subcommands() -> int:
         else: print(json.dumps(load_gates(), indent=2))
         return 0
     if args.cmd == "may-publish":
-        ok = may_publish(args.approval); print("PUBLISH" if ok else "DRAFT"); return 0 if ok else 1
+        ok = may_publish(args.approval, location_id=args.location_id,
+                         page_id=args.page_id, evidence_root=args.evidence_root)
+        print("PUBLISH" if ok else "DRAFT"); return 0 if ok else 1
     if args.cmd == "subaccount":
         guard = subaccount_matches(args.current, args.target)
         print(json.dumps(guard.as_dict(), indent=2))

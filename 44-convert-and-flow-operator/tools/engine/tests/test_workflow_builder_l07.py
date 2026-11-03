@@ -140,6 +140,8 @@ def synthetic_document():
     launch_plan = {
         "schema_version": "1.0.0",
         "launch_id": "l07-build",
+        "a2p_ready": False,
+        "conversation_ai": {"requested": False, "mode": "none"},
         "offer": {"name": "Synthetic", "price_usd": 1, "currency": "USD",
                   "payment_plans": False},
         "launch_calendar": dict(CALENDAR),
@@ -154,11 +156,11 @@ def synthetic_document():
         ],
         "text_sets": [],
         "automations": [
-            {"id": "auto_pre_launch", "family": "pre_launch", "template": "new",
+            {"id": "auto_pre_launch", "family": "pre_launch", "template": "launch-a/launch-a-prelaunch-window",
              "build_rail": "skill44_engine", "draft_only": True,
              "trigger": {"type": "tag_added"},
              "waits_for": ["email_pre_launch", "page_landing"]},
-            {"id": "auto_post_sale", "family": "post_sale", "template": "new",
+            {"id": "auto_post_sale", "family": "post_sale", "template": "launch-b/launch-post-sale-purchase",
              "build_rail": "skill44_engine", "draft_only": True,
              "trigger": {"type": "payment_succeeded"},
              "waits_for": ["email_welcome_access", "page_landing"]},
@@ -174,6 +176,59 @@ def synthetic_document():
         path.write_text(json.dumps(_build_plan(seq_id, count)))
         argv += ["--build-plan", str(path)]
     assert plan_reader.main(argv) == 0
+    return json.loads((temp / "out.json").read_text())
+
+
+def full_launch_document():
+    """Reader over a launch plan that also carries non-email automations."""
+    launch_plan = {
+        "schema_version": "1.0.0",
+        "launch_id": "l07-full",
+        "a2p_ready": False,
+        "conversation_ai": {"requested": False, "mode": "none"},
+        "offer": {"name": "Synthetic", "price_usd": 1, "currency": "USD",
+                  "payment_plans": False},
+        "launch_calendar": dict(CALENDAR),
+        "pages": [{"id": "page_landing", "kind": "landing",
+                   "url": "https://example.test", "waits_for": []}],
+        "email_sequences": [
+            {"id": "email_pre_launch", "kind": "pre_launch", "provider": "skill50",
+             "email_count": 2, "draft_only": True, "waits_for": []},
+            {"id": "email_welcome_access", "kind": "welcome_access",
+             "provider": "skill50", "email_count": 2, "draft_only": True,
+             "waits_for": []},
+        ],
+        "text_sets": [],
+        "automations": [
+            {"id": "auto_pre_launch", "family": "pre_launch", "template": "launch-a/launch-a-prelaunch-window",
+             "build_rail": "skill44_engine", "draft_only": True,
+             "trigger": {"type": "tag_added"},
+             "waits_for": ["email_pre_launch", "page_landing"]},
+            {"id": "auto_post_sale", "family": "post_sale", "template": "launch-b/launch-post-sale-purchase",
+             "build_rail": "skill44_engine", "draft_only": True,
+             "trigger": {"type": "payment_succeeded"},
+             "waits_for": ["email_welcome_access", "page_landing"]},
+            {"id": "auto_cart_recovery", "family": "abandoned_checkout",
+             "template": "launch-b/abandoned-checkout-recovery", "build_rail": "skill44_engine", "draft_only": True,
+             "trigger": {"type": "checkout_abandoned"},
+             "waits_for": ["page_landing"]},
+            {"id": "auto_cart_followup", "family": "abandoned_checkout",
+             "template": "launch-b/abandoned-checkout-recovery", "build_rail": "skill44_engine", "draft_only": True,
+             "trigger": {"type": "tag_added"},
+             "waits_for": ["auto_cart_recovery", "email_pre_launch"]},
+        ],
+    }
+    temp = Path(tempfile.mkdtemp(prefix="l07-full-"))
+    plan_path = temp / "plan.json"
+    plan_path.write_text(json.dumps(launch_plan))
+    argv = ["--launch-plan", str(plan_path), "--out", str(temp / "out.json"),
+            "--now", NOW]
+    for seq_id, count in (("email_pre_launch", 2), ("email_welcome_access", 2)):
+        path = temp / ("%s.json" % seq_id)
+        path.write_text(json.dumps(_build_plan(seq_id, count)))
+        argv += ["--build-plan", str(path)]
+    rc = plan_reader.main(argv)  # exits 4 once any build is blocked; out.json is still written
+    assert rc in (0, 4), rc
     return json.loads((temp / "out.json").read_text())
 
 
@@ -198,6 +253,8 @@ class CompileTests(unittest.TestCase):
             self.assertNotIn(wb.GUARD_PURCHASE, ids,
                              "a purchase must never cancel entitled access")
         self.assertEqual(pre["settings"]["senderProfileRef"], "sender-config:default")
+        self.assertTrue(pre["settings"]["marketing"])
+        self.assertFalse(access["settings"]["marketing"])
         self.assertTrue(pre["settings"]["suppression"]["stopOnUnsubscribe"])
         self.assertTrue(pre["settings"]["suppression"]["stopOnVerifiedPurchase"])
         self.assertFalse(access["settings"]["suppression"]["stopOnVerifiedPurchase"])
@@ -210,18 +267,68 @@ class CompileTests(unittest.TestCase):
         build = next(b for b in document["builds"] if b["id"] == "auto_pre_launch")
         stripped = dict(build)
         stripped["lifecycle"] = {}
-        with self.assertRaises(wb.WorkflowCompileError) as ctx:
-            wb.compile_launch_builds({"draft_only": True, "builds": [stripped]})
-        self.assertEqual(ctx.exception.code, "MISSING-GUARDS")
+        result = wb.compile_launch_builds({"draft_only": True, "builds": [stripped]})
+        self.assertEqual(dict(result), {})
+        self.assertEqual([r["code"] for r in result.refusals], ["MISSING-GUARDS"])
 
     def test_blocked_build_refuses_compile(self):
         document = synthetic_document()
         build = dict(document["builds"][0])
         build["state"] = "blocked"
         build["blocked_by"] = ["email_count:email_pre_launch"]
-        with self.assertRaises(wb.WorkflowCompileError) as ctx:
-            wb.compile_launch_builds({"draft_only": True, "builds": [build]})
-        self.assertEqual(ctx.exception.code, "BUILD-BLOCKED")
+        result = wb.compile_launch_builds({"draft_only": True, "builds": [build]})
+        self.assertEqual(dict(result), {})
+        self.assertEqual([r["code"] for r in result.refusals], ["BUILD-BLOCKED"])
+
+    def test_compile_settings_marketing_follows_promotional(self):
+        kw = dict(sender={}, lifecycle={}, phase=None, close_at=None)
+        self.assertIs(wb.compile_settings(promotional=True, **kw)["marketing"], True)
+        self.assertIs(wb.compile_settings(promotional=False, **kw)["marketing"], False)
+
+    def test_full_launch_plan_refuses_per_build_instead_of_raising(self):
+        document = full_launch_document()
+        result = wb.compile_launch_builds(document)  # must not raise
+        refused = {r["id"]: r for r in result.refusals}
+        compiled_units = {wf.get("source_unit") for wf in result.values()}
+        for build in document["builds"]:
+            # no build vanishes: it is either refused or compiled
+            self.assertTrue(build["id"] in refused or build["id"] in compiled_units,
+                            build["id"])
+            if build["state"] == "ready" and not build["workflows"]:
+                self.assertEqual(refused[build["id"]]["code"], wb.NO_BUILDABLE_WORKFLOW)
+                self.assertEqual(refused[build["id"]]["reason"], wb.NO_BUILDABLE_WORKFLOW)
+            if "no_buildable_workflow" in (build.get("blocked_by") or []):
+                self.assertEqual(refused[build["id"]]["code"], "BUILD-BLOCKED")
+        for build_id in ("auto_pre_launch", "auto_post_sale"):
+            self.assertNotIn(build_id, refused)
+            self.assertIn(build_id, compiled_units)
+        self.assertTrue(result.refusals)
+        for refusal in result.refusals:
+            self.assertEqual(refusal["state"], "blocked")
+
+    def test_ready_build_with_zero_workflows_is_refused_blocked(self):
+        builds = synthetic_document()["builds"]
+        intact = next(b for b in builds if b["id"] == "auto_post_sale")
+        stripped = copy.deepcopy(next(b for b in builds if b["id"] == "auto_pre_launch"))
+        stripped.update(workflows=[], state="ready", blocked_by=[])
+        result = wb.compile_launch_builds(
+            {"draft_only": True, "builds": [stripped, copy.deepcopy(intact)]})
+        self.assertEqual(len(result.refusals), 1)
+        refusal = result.refusals[0]
+        self.assertEqual(refusal["id"], "auto_pre_launch")
+        self.assertEqual(refusal["code"], wb.NO_BUILDABLE_WORKFLOW)
+        self.assertEqual(refusal["reason"], wb.NO_BUILDABLE_WORKFLOW)
+        self.assertEqual(refusal["state"], "blocked")
+        self.assertTrue(result)  # the intact build still compiled
+        self.assertEqual({wf.get("source_unit") for wf in result.values()},
+                         {"auto_post_sale"})
+
+    def test_refusals_surface_as_build_errors(self):
+        campaign = wb.compile_launch_builds(full_launch_document())
+        client = FakeClient()
+        stats = wb.CampaignBuilder(client).build(campaign, folder_name="Synthetic")
+        self.assertTrue(any(wb.NO_BUILDABLE_WORKFLOW in e for e in stats["errors"]),
+                        stats["errors"])
 
     def test_declared_dependency_must_exist(self):
         campaign = {
@@ -237,6 +344,8 @@ class CompileTests(unittest.TestCase):
             plan = {
                 "schema_version": "1.0.0",
                 "launch_id": "l07-build",
+                "a2p_ready": False,
+                "conversation_ai": {"requested": False, "mode": "none"},
                 "offer": {"name": "Synthetic", "price_usd": 1,
                           "currency": "USD", "payment_plans": False},
                 "launch_calendar": {
@@ -255,7 +364,7 @@ class CompileTests(unittest.TestCase):
                 "text_sets": [],
                 "automations": [
                     {"id": "auto_pre_launch", "family": "pre_launch",
-                     "template": "new", "build_rail": "skill44_engine",
+                     "template": "launch-a/launch-a-prelaunch-window", "build_rail": "skill44_engine",
                      "draft_only": True, "trigger": {"type": "tag_added"},
                      "waits_for": ["email_pre_launch", "page_landing"]},
                 ],

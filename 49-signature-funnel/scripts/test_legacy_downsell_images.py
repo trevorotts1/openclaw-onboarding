@@ -5,12 +5,17 @@ design-only checkout (named in the receipt): three stages (desktop wireframe, mo
 visual mockup), offline stub provider, each page checked against structure/page_types.json.
 Run: python3 test_legacy_downsell_images.py
 """
+import contextlib
+import importlib.util
+import io
 import json
+import os
 import pathlib
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 SCRIPTS = pathlib.Path(__file__).resolve().parent
 REPO = SCRIPTS.parents[1]
@@ -141,6 +146,78 @@ class LegacyPageImagesTests(unittest.TestCase):
         proc, _ = self.run_tool(LEDGER, "--image-provider", "kie")
         self.assertEqual(proc.returncode, 2)
         self.assertIn("--allow-paid", proc.stderr)
+
+
+FAKE_ADAPTER = """#!/usr/bin/env python3
+import json, os
+print(json.dumps({"state": "success", "data": {"source": "fake", "changed": True, "routes": {
+    "Text to Image": os.environ["FAKE_LATEST"] + "-text-to-image",
+    "Image to Image": os.environ["FAKE_LATEST"] + "-image-to-image"}}}))
+"""
+
+
+class ImageModelResolvedThroughSkill66(unittest.TestCase):
+    """IMG-19: the tool holds no model id; the paid model is Skill 66's default, resolved once per run."""
+
+    def setUp(self):
+        sys.path.insert(0, str(SCRIPTS))
+        self.addCleanup(sys.path.remove, str(SCRIPTS))
+        spec = importlib.util.spec_from_file_location("legacy_downsell_images_under_test", TOOL)
+        self.tool = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.tool)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = pathlib.Path(tmp.name)
+        (self.root / "ledger.json").write_text(json.dumps(LEDGER))
+
+    def run_main(self, *extra):
+        """main() with every subprocess stubbed (no paid call); returns (exit code, stderr, argv list)."""
+        seen, real = [], subprocess.run
+
+        def fake_run(cmd, **kw):
+            if not pathlib.Path(cmd[1]).name.startswith(("build_production_request", "stage_executor")):
+                return real(cmd, **kw)  # Skill 66's own call to the Skill 74 adapter is real
+            seen.append(list(cmd))
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        err = io.StringIO()
+        with mock.patch.object(self.tool.subprocess, "run", fake_run), contextlib.redirect_stderr(err):
+            code = self.tool.main(["--ledger", str(self.root / "ledger.json"), "--skill71-root", str(SKILL71),
+                                   "--brand-file", str(BRAND), "--brand-owner", "blackceo",
+                                   "--out-dir", str(self.root / "out"), "--page", "downsell", *extra])
+        return code, err.getvalue(), seen
+
+    def models(self, seen):
+        return [c[c.index("--model") + 1] for c in seen if "--model" in c]
+
+    def test_the_source_holds_no_hard_coded_model_id(self):
+        self.assertNotIn("gpt-image-2-5-sunburst-image-to-image", TOOL.read_text(encoding="utf-8"))
+
+    def test_changing_the_skill66_default_changes_the_model_in_every_production_request(self):
+        adapter = self.root / "kie_live_adapter.py"  # Skill 74 `latest-family`, the way Skill 66 asks it
+        adapter.write_text(FAKE_ADAPTER, encoding="utf-8")
+        seen_models = []
+        for latest in ("gpt-image-8", "gpt-image-9"):
+            with mock.patch.dict(os.environ, {"KIE_LIVE_ADAPTER_PATH": str(adapter), "FAKE_LATEST": latest}):
+                _, _, seen = self.run_main("--image-provider", "kie", "--allow-paid")
+            models = self.models(seen)
+            self.assertEqual(models, [f"{latest}-image-to-image"] * 3)  # one build per stage
+            seen_models.append(models[0])
+        self.assertNotEqual(*seen_models)
+
+    def test_skill66_selector_missing_refuses_and_builds_nothing(self):
+        empty = self.root / "no-skill66"
+        empty.mkdir()
+        source = (REPO / "shared-utils" / "signature_launch" / "image_model.py").read_text(encoding="utf-8")
+        broken = self.root / "image_model.py"
+        broken.write_text("\n".join(f"SKILL66_ROOT = Path({str(empty)!r})" if ln.startswith("SKILL66_ROOT =") else ln
+                                    for ln in source.splitlines()), encoding="utf-8")
+        real = importlib.util.spec_from_file_location
+        redirect = lambda name, path, *a, **k: real(name, broken if name == "signature_launch_image_model" else path, *a, **k)
+        with mock.patch.object(self.tool.importlib.util, "spec_from_file_location", redirect):
+            code, err, seen = self.run_main("--image-provider", "kie", "--allow-paid")
+        self.assertEqual(code, 2)
+        self.assertIn("Skill 66 did not resolve", err)
+        self.assertEqual(seen, [])
 
 
 if __name__ == "__main__":

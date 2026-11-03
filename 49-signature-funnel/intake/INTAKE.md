@@ -6,7 +6,7 @@ question is shown, never which question is asked or where the answer goes.
 
 | Piece | File |
 |---|---|
-| Question bank (42 questions) | `shared-utils/client_intake/question-bank.json` |
+| Question bank (60 questions) | `shared-utils/client_intake/question-bank.json` |
 | Engine: `next`, `record`, `resolve_unknown`, `check`, `finalize` | `shared-utils/client_intake/engine.py` |
 | Colour help: logo, website, three palettes, safe default | `shared-utils/client_intake/palette_help.py`, `palette-defaults.json` |
 | Answers file contract (C1) | `shared-utils/client_intake/answers.schema.json` |
@@ -83,3 +83,9 @@ time, timezone or AI mode blocks the launch plan by name and is never filled in.
 Every legacy and launch question id maps to one canonical id through `legacy_ids` in the bank. A test fails if a question
 in `sf-intake-questions.json` or `launch-questions.json`, or a field required by the launch record, Skill 83 intake or
 Skill 71 `write_intake.py`, has no question and no stated system reason.
+
+## Deliverables and exclusions (launch interview)
+
+`a4_deliverables` stores a list (split on new lines, semicolons or commas) on `offers.main.deliverables` only. What is
+NOT included is its own question, `a4b_exclusions`, stored on `offers.main.exclusions`; until it is answered the plan
+carries `exclusions: []`, and "none" is a valid answer. The raw deliverables text is never copied to exclusions.

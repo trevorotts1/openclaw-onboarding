@@ -9,17 +9,23 @@ import importlib
 import json
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 PKG = HERE.parent
 REPO = PKG.parents[1]
+
+def _skill(name):  # onboarding: 49-signature-funnel; 999: .claude/skills/signature-funnel
+    p = REPO / name
+    return p if p.is_dir() else REPO / ".claude/skills" / name.split("-", 1)[1]
+
 CONTRACT = PKG / "session_contract.json"
 FIXTURE = PKG / "fixtures/session_contract.complete_plan.json"
 ANSWERS = REPO / "shared-utils/client_intake/fixtures"
 
 sys.path.insert(0, str(REPO / "shared-utils/client_intake"))
-sys.path.insert(0, str(REPO / "49-signature-funnel/scripts"))
+sys.path.insert(0, str(_skill("49-signature-funnel") / "scripts"))
 import engine as e  # noqa: E402
 
 li = importlib.import_module("launch_intake")
@@ -51,11 +57,10 @@ def digest(plan):
 
 
 def approval_for(session, **over):
-    a = {"schema_version": "1.0", "approval_id": "APPR-L01",
-         "subject_type": "launch_plan_build", "subject_hash": session["plan_hash"],
-         "owner_identity_ref": session["client_identity_ref"],
-         "source_message_ref": "msg-l01", "recorded_at": li._now(),
-         "scope": ["launch_plan_build"], "revoked": False,
+    a = {"schema_version": "1.0", "approval_id": "APPR-L01", "kind": "launch_plan_build",
+         "plan_hash": session["plan_hash"], "client_identity": session["client_identity_ref"],
+         "source_message_ref": "msg-l01", "scope": ["launch_plan_build"],
+         "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "revoked": False,
          "verification_class": "recorded_consent_not_cryptographically_sealed"}
     a.update(over)
     return a
@@ -136,6 +141,21 @@ class TypedAdapters(unittest.TestCase):
 def collected_transcript():
     """A realistic client conversation through the real engine, saved and reloaded —
     no hand-edited answers file."""
+    said = {}
+
+    def say(text):  # a CLIENT message in a local transcript store; returns its id
+        ref = f"rt-{len(said) + 1}"
+        said[ref] = {"role": "client", "text": str(text)}
+        return ref
+
+    prev, e.TRANSCRIPT_LOOKUP = e.TRANSCRIPT_LOOKUP, said.get
+    try:
+        return _collect(say)
+    finally:
+        e.TRANSCRIPT_LOOKUP = prev
+
+
+def _collect(say):
     d = e.new_doc("launch", harness="claude-nine")
     for qid, value in (
             ("interview_mode", "I know what I want"), ("business_name", "Bright Path Studio"),
@@ -157,7 +177,13 @@ def collected_transcript():
             ("access_url", "https://brightpath.example/access"),
             ("payment_plans", "Paid in full"), ("sender_name", "Bright Path Studio"),
             ("reply_to_email", "hello@brightpath.example"), ("a2p_ready", "No, not yet")):
-        assert e.record(d, qid, value).get("ok"), (qid, value)
+        if qid in e.CITED_QUESTIONS:
+            r = e.record(d, qid, value, source_message_ref=say(value))
+            if r.get("action") == "confirm_price":
+                r = e.record(d, qid, "yes", source_message_ref=say("yes"))
+        else:
+            r = e.record(d, qid, value)
+        assert r.get("ok"), (qid, value)
     e.finalize(d)
     return d
 
@@ -285,8 +311,8 @@ class ApprovalInvalidation(unittest.TestCase):
         s = self.ready()
         with self.assertRaisesRegex(Exception, "revoked"):
             li.approve(s, approval_for(s, revoked=True), worker_identity_ref="worker-9")
-        with self.assertRaisesRegex(Exception, "subject_hash"):
-            li.approve(s, approval_for(s, subject_hash="0" * 64), worker_identity_ref="worker-9")
+        with self.assertRaisesRegex(Exception, "APPROVAL-HASH"):
+            li.approve(s, approval_for(s, plan_hash="0" * 64), worker_identity_ref="worker-9")
 
     def test_reingesting_the_answers_file_after_approval_invalidates_it(self):
         s = self.ready()

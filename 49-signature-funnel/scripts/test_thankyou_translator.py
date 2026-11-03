@@ -16,12 +16,19 @@ pair-rule refusal set, and the receipts-acceptance closure of a Q11
 prompt item citing the governing policy against the registry of
 record.
 
-Exit 0 when every case passes.
+Cases 18 onward cover the design-only launch mode (DTY-01) and the
+recomputed-trust rules (DTY-02): a forged result + manifest pair is
+refused, validation is recomputed from the snapshot whose sha the
+manifest binds, and a recorded review needs its record file (sha bound)
+and a dispatch-registered reviewer. Refusals print to stderr.
+
+Exit 0 when every case passes (also collected by pytest as one test).
 """
 
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import subprocess
 import sys
@@ -95,10 +102,59 @@ def resolve_s82_root(repo_root: Path) -> Path:
         f"{repo_root} and {repo_root / '.claude' / 'skills'}")
 
 
-def stage(td: Path, req=None, res=None, man=None, with_artifact=True):
+S82_ROOT = resolve_s82_root(resolve_repo_root(HERE))
+
+
+def _sha(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def stage(td: Path, req=None, res=None, man=None, with_artifact=True,
+          trust=True, view=None):
+    """Stage the three inputs. trust=True also stages what a genuine
+    purchase-time run leaves behind: the purchase snapshot (sha bound in
+    the manifest), a review record (sha bound) and the dispatch session
+    registry. trust=False stages the documents exactly as given."""
     req = load("page-request.json") if req is None else req
-    res = load("thank-you-result.json") if res is None else res
-    man = load("thank-you-run-manifest.json") if man is None else man
+    res = copy.deepcopy(load("thank-you-result.json") if res is None
+                        else res)
+    man = copy.deepcopy(load("thank-you-run-manifest.json") if man is None
+                        else man)
+    if trust:
+        ident = {k: req[k] for k in ("tenant_id", "location_id",
+                                     "launch_id", "revision", "test_only")}
+        snap = json.loads((S82_ROOT / "fixtures" / "test-only-snapshot.json")
+                          .read_text(encoding="utf-8"))
+        snap.update(ident)
+        if view is None:
+            view = json.loads((S82_ROOT / "fixtures"
+                               / "test-only-order-view.json")
+                              .read_text(encoding="utf-8"))
+            view.update(ident)
+            # Skill 82's validators (DTY-18) take a link's expected URL and its
+            # independent-authorization flag from the S44 fulfillment map, never
+            # from the view. The translator hands them no map, so any block that
+            # carries a delivery_url is refused (delivery_url_mismatch, then
+            # missing_independent_authorization). A block with no delivery_url
+            # renders no link and is not checked, so the fixture view stages its
+            # access blocks link-free (entitlement and next_action kept).
+            for block in view.get("access_blocks") or []:
+                block.pop("delivery_url", None)
+        res["order_view"] = view
+        (td / "purchase-snapshot.json").write_text(
+            json.dumps(snap, indent=2), encoding="utf-8")
+        man["provenance"]["snapshot_ref"] = "purchase-snapshot.json"
+        man["provenance"]["snapshot_sha256"] = _sha(
+            td / "purchase-snapshot.json")
+        rev = man["independent_review"]
+        if rev["status"] == "recorded":
+            (td / "review-record.md").write_text("verified\n",
+                                                 encoding="utf-8")
+            rev["record_ref"] = "review-record.md"
+            rev["record_sha256"] = _sha(td / "review-record.md")
+            (td / "dispatch-session-registry.json").write_text(
+                json.dumps({"sessions": [rev["reviewer"]]}),
+                encoding="utf-8")
     (td / "page-request.json").write_text(json.dumps(req, indent=2),
                                           encoding="utf-8")
     (td / "thank-you-result.json").write_text(json.dumps(res, indent=2),
@@ -116,6 +172,32 @@ def run(td: Path, author: str = AUTHOR):
         [sys.executable, str(TRANSLATOR), str(td / "page-request.json"),
          str(td / "page-result.json"), str(td), "--author-session", author],
         capture_output=True, text=True)
+
+
+def review_kw(out) -> dict:
+    """ENF-10: a result claiming independent_review counts only through a review
+    record whose reviewer session is in the dispatch ledger and which lists the
+    sha256 of every artifact (two session strings are not a review). The
+    collector's own inputs for that, built from the translated result."""
+    if not out.get("independent_review"):
+        return {}
+    reviewer = out["reviewer_session"]
+    return {"ledger": {"sessions": [{"session_id": reviewer,
+                                     "model": "fixture-reviewer-model"}]},
+            "review": {"schema": "signature-launch-review-record/v1",
+                       "reviewer_session": reviewer,
+                       "reviewer_model": "fixture-reviewer-model",
+                       "request_id": out["request_id"],
+                       "reviewed_artifacts": [
+                           {"path": a["path"], "sha256": a["sha256"]}
+                           for a in out["artifacts"]]}}
+
+
+def collect_kw(out) -> dict:
+    kw = review_kw(out)
+    return ({"ledger": kw["ledger"],
+             "review_records": {out["request_id"]: kw["review"]}}
+            if kw else {})
 
 
 def manifest_for(req):
@@ -156,7 +238,7 @@ def main() -> int:
                       "page-result 1.0 JSON Schema")
         except Exception as exc:  # noqa: BLE001
             say(False, f"happy path JSON Schema validation: {exc}")
-        fails = receipts.validate_result(out, req0)
+        fails = receipts.validate_result(out, req0, **review_kw(out))
         say(fails == [], f"happy path passes collect_launch_receipts."
                          f"validate_result (fails={fails})")
         manifest = {"launch_id": req0["launch_id"],
@@ -170,7 +252,7 @@ def main() -> int:
                                   "assigned_skill": 82,
                                   "input_hash": req0["input_hash"]}]}
         cp = receipts.collect(manifest, [out],
-                              {req0["request_id"]: req0})
+                              {req0["request_id"]: req0}, **collect_kw(out))
         say(cp["roles_reported"] == ["thank_you"] and not cp["problems"],
             f"happy path is counted by collect() (problems={cp['problems']})")
         say(out["independent_review"] is True and
@@ -197,8 +279,8 @@ def main() -> int:
         res["location_id"] = "WRONG-LOCATION"
         stage(td, res=res)
         proc = run(td)
-        print("identity-mismatch output:", proc.stdout.strip())
-        say(proc.returncode == 2 and "location_id" in proc.stdout,
+        print("identity-mismatch output:", proc.stderr.strip())
+        say(proc.returncode == 2 and "location_id" in proc.stderr,
             "identity mismatch on location_id refused, naming the field")
         say(not (td / "page-result.json").exists(),
             "identity mismatch writes no page-result")
@@ -217,7 +299,7 @@ def main() -> int:
         say(out["independent_review"] is False and
             out["reviewer_session"] is None,
             "status none yields independent_review false, reviewer null")
-        say(receipts.validate_result(out, req0) == [],
+        say(receipts.validate_result(out, req0, **review_kw(out)) == [],
             "review-none output still passes receipt validation")
 
     # Case 4: S82 errors non-empty yields status blocked with the
@@ -243,8 +325,8 @@ def main() -> int:
         del man["native_bindings_ref"]
         stage(td, man=man)
         proc = run(td)
-        print("missing-block output:", proc.stdout.strip())
-        say(proc.returncode == 2 and "native_bindings_ref" in proc.stdout,
+        print("missing-block output:", proc.stderr.strip())
+        say(proc.returncode == 2 and "native_bindings_ref" in proc.stderr,
             "missing native_bindings_ref block refused, naming the field")
 
     # Case 6: a claimed artifact absent on disk fails closed.
@@ -252,9 +334,9 @@ def main() -> int:
         td = Path(tds)
         stage(td, with_artifact=False)
         proc = run(td)
-        print("missing-artifact output:", proc.stdout.strip())
+        print("missing-artifact output:", proc.stderr.strip())
         say(proc.returncode == 2 and "thank-you-render.html"
-            in proc.stdout,
+            in proc.stderr,
             "absent claimed artifact refused, naming the artifact")
 
     # Case 7: a review recorded by the author session itself is
@@ -263,8 +345,8 @@ def main() -> int:
         td = Path(tds)
         stage(td)
         proc = run(td, author="SWARM")
-        print("self-review output:", proc.stdout.strip())
-        say(proc.returncode == 2 and "independent_review" in proc.stdout,
+        print("self-review output:", proc.stderr.strip())
+        say(proc.returncode == 2 and "independent_review" in proc.stderr,
             "reviewer == author refused, naming independent_review")
 
     # Case 8: an S82 status claiming install-level proof is capped at
@@ -299,17 +381,17 @@ def main() -> int:
         man["native_bindings_ref"] = {"envelope_ref": None,
                                       "entitlement_version": None}
         man["provenance"] = {"snapshot_ref": None, "map_ref": None}
-        out_path = stage(td, man=man)
+        out_path = stage(td, man=man)  # stage binds the purchase snapshot
         proc = run(td)
         print("no-envelope stdout:", proc.stdout.strip())
         say(proc.returncode == 0,
             f"no-envelope real manifest (envelope_ref null) translates "
-            f"(got {proc.returncode}: {proc.stdout.strip()})")
+            f"(got {proc.returncode}: {proc.stderr.strip()})")
         out = json.loads(out_path.read_text(encoding="utf-8"))
         say(out["native_bindings_ref"] is None,
             "no-envelope output carries envelope_ref null verbatim as "
             "native_bindings_ref")
-        say(receipts.validate_result(out, req0) == [],
+        say(receipts.validate_result(out, req0, **review_kw(out)) == [],
             "no-envelope output passes collect_launch_receipts."
             "validate_result with zero problems")
 
@@ -328,7 +410,7 @@ def main() -> int:
         print("1.1 happy-path stdout:", proc.stdout.strip())
         say(proc.returncode == 0,
             f"1.1 citation-carrying echo source translates (got "
-            f"{proc.returncode}: {proc.stdout.strip()})")
+            f"{proc.returncode}: {proc.stderr.strip()})")
         if out_path11.exists():
             out11 = json.loads(out_path11.read_text(encoding="utf-8"))
         out_path10 = stage(td0)
@@ -345,11 +427,12 @@ def main() -> int:
         say(out11 == out10,
             "1.1 translation output is identical to the 1.0 output "
             "(acceptance is the only effect of the 1.1 echo source)")
-        say(receipts.validate_result(out11, req11) == [],
+        say(receipts.validate_result(out11, req11, **review_kw(out11)) == [],
             "1.1 translation passes collect_launch_receipts."
             "validate_result against the 1.1 request with zero fails")
         cp = receipts.collect(manifest_for(req11), [out11],
-                              {req11["request_id"]: req11})
+                              {req11["request_id"]: req11},
+                              **collect_kw(out11))
         say(cp["roles_reported"] == ["thank_you"] and not cp["problems"],
             f"collect() rollup over the translated 1.1 result reports "
             f"thank_you with zero problems (got problems "
@@ -405,18 +488,20 @@ def main() -> int:
         say(proc.returncode == 0,
             f"1.1 translation succeeds against the emitter-built S82 "
             f"companion manifest (got {proc.returncode}: "
-            f"{proc.stdout.strip()})")
+            f"{proc.stderr.strip()})")
         if out_path.exists():
             out_real = json.loads(out_path.read_text(encoding="utf-8"))
             say(out_real["independent_review"] is True
                 and out_real["reviewer_session"] == "SWARM",
                 "real-manifest translation carries the manifest's "
                 "recorded independent review")
-            say(receipts.validate_result(out_real, req11) == [],
+            say(receipts.validate_result(out_real, req11,
+                                         **review_kw(out_real)) == [],
                 "real-manifest translation passes validate_result "
                 "with zero fails")
             cp = receipts.collect(manifest_for(req11), [out_real],
-                                  {req11["request_id"]: req11})
+                                  {req11["request_id"]: req11},
+                                  **collect_kw(out_real))
             say(not cp["problems"],
                 f"collect() rollup over the real-manifest translation "
                 f"has zero problems (got {cp['problems']})")
@@ -429,9 +514,9 @@ def main() -> int:
         td = Path(tds)
         out_path = stage(td, req=req)
         proc = run(td)
-        say(proc.returncode == 2 and "prompt_policy_id" in proc.stdout,
+        say(proc.returncode == 2 and "prompt_policy_id" in proc.stderr,
             f"1.1 source missing prompt_policy_id refused naming the "
-            f"field (exit {proc.returncode}: {proc.stdout.strip()})")
+            f"field (exit {proc.returncode}: {proc.stderr.strip()})")
         say(not out_path.exists(),
             "no page-result written for the missing-citation refusal")
 
@@ -443,10 +528,10 @@ def main() -> int:
         td = Path(tds)
         out_path = stage(td, req=req)
         proc = run(td)
-        say(proc.returncode == 2 and "prompt_policy_id" in proc.stdout
-            and "1.1" in proc.stdout,
+        say(proc.returncode == 2 and "prompt_policy_id" in proc.stderr
+            and "1.1" in proc.stderr,
             f"1.0 source carrying prompt_policy_id refused naming the "
-            f"pair rule (exit {proc.returncode}: {proc.stdout.strip()})")
+            f"pair rule (exit {proc.returncode}: {proc.stderr.strip()})")
         say(not out_path.exists(),
             "no page-result written for the 1.0-with-field refusal")
 
@@ -463,10 +548,10 @@ def main() -> int:
             out_path = stage(td, req=req)
             proc = run(td)
             say(proc.returncode == 2
-                and "prompt_policy_id" in proc.stdout,
+                and "prompt_policy_id" in proc.stderr,
                 f"1.1 source with {label} prompt_policy_id refused "
                 f"naming the field (exit {proc.returncode}: "
-                f"{proc.stdout.strip()})")
+                f"{proc.stderr.strip()})")
             say(not out_path.exists(),
                 f"no page-result written for the {label} refusal")
 
@@ -481,10 +566,10 @@ def main() -> int:
             out_path = stage(td, req=req)
             proc = run(td)
             say(proc.returncode == 2
-                and "schema_version" in proc.stdout,
+                and "schema_version" in proc.stderr,
                 f"echo source with schema_version {label} refused "
                 f"naming the defect (exit {proc.returncode}: "
-                f"{proc.stdout.strip()})")
+                f"{proc.stderr.strip()})")
             say(not out_path.exists(),
                 f"no page-result written for the {label} refusal")
 
@@ -501,7 +586,7 @@ def main() -> int:
         say(proc.returncode == 0 and out_path.exists(),
             f"translator accepts an unregistered non-empty citation "
             f"(registry refusal is not the echo source's layer; got "
-            f"{proc.returncode}: {proc.stdout.strip()})")
+            f"{proc.returncode}: {proc.stderr.strip()})")
 
     # Case 17: the policy linkage for this role is proven at
     # RECEIPTS acceptance (map 1.6 item 3): a Q11 prompt asset
@@ -516,6 +601,10 @@ def main() -> int:
                  encoding="utf-8"))
         artifact_sha = load("thank-you-result.json")["artifacts"][0][
             "sha256"]
+        active_hash = next(
+            e["entry_hash"] for e in registry["entries"]
+            if e["policy_id"] == "kie-rule-12-band"
+            and e["entry_status"] == "active")
         receipt = {
             "schema_version": "1.0",
             "tenant_id": req11["tenant_id"],
@@ -534,9 +623,7 @@ def main() -> int:
             "budget_decision": {
                 "decision": "OK",
                 "prompt_policy_id": "kie-rule-12-band",
-                "registry_entry_hash":
-                    "b3584da0c21b197c900fc1f47f0e4dcf722c6d74cd4d612441"
-                    "8f8500a3c7285b"},
+                "registry_entry_hash": active_hash},
             "output_path": "thank-you-render.html",
             "prompt_artifact_path": "thank-you-render.html",
             "prompt_hash": artifact_sha,
@@ -545,7 +632,7 @@ def main() -> int:
         cp = receipts.collect(manifest_for(req11), [out11],
                               {req11["request_id"]: req11},
                               asset_receipts=[receipt],
-                              registry=registry)
+                              registry=registry, **collect_kw(out11))
         closed = cp["prompt_items"]["closed"]
         say(not cp["problems"] and len(closed) == 1
             and closed[0]["prompt_policy_id"] == "kie-rule-12-band",
@@ -553,8 +640,180 @@ def main() -> int:
             f"registry of record with zero problems (got problems "
             f"{cp['problems']}, closed {closed})")
 
+    new_cases(req0)
     print("TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
     return 0 if ok else 1
+
+
+def _images_dir(td: Path) -> Path:
+    """A thank-you Skill 71 run folder holding one design file."""
+    d = td / "thank_you-run" / "desktop-wireframe"
+    d.mkdir(parents=True)
+    (d / "section-01.png").write_bytes(b"\x89PNG fixture")
+    return td / "thank_you-run"
+
+
+def new_cases(req0) -> None:
+    # Case 18: design-only needs no S82 document and no snapshot.
+    with tempfile.TemporaryDirectory() as tds:
+        td = Path(tds)
+        (td / "page-request.json").write_text(json.dumps(req0),
+                                              encoding="utf-8")
+        images = _images_dir(td)
+        proc = subprocess.run(
+            [sys.executable, str(TRANSLATOR), str(td / "page-request.json"),
+             str(td / "page-result.json"), str(td), "--design-only",
+             "--images-run-dir", str(images), "--author-session", AUTHOR],
+            capture_output=True, text=True)
+        say(proc.returncode == 0,
+            f"design-only translates with no snapshot, result or manifest "
+            f"(got {proc.returncode}: {proc.stderr.strip()})")
+        out = json.loads((td / "page-result.json").read_text(
+            encoding="utf-8"))
+        say(out["status"] == "authored" and out["proof_class"] == "L0"
+            and out["independent_review"] is False
+            and out["reviewer_session"] is None
+            and "THANK-YOU-RUNTIME-NOT-INSTALLED" in out["blockers"]
+            and any(a["path"].endswith("section-01.png")
+                    for a in out["artifacts"]),
+            "design-only is authored/L0, no review, carries the standing "
+            "blocker THANK-YOU-RUNTIME-NOT-INSTALLED and the design files")
+        say(any("design deliverable only" in b for b in out["blockers"]),
+            "design-only blockers say plainly the page is a design "
+            "deliverable only (status stays 'authored': the page-result "
+            "schema enum has no 'design_only')")
+        say(json.loads(proc.stdout)["design_only"] is True,
+            "design-only says so in its summary line")
+        say(receipts.validate_result(out, req0) == [],
+            "design-only output passes collect_launch_receipts."
+            "validate_result")
+        try:
+            import jsonschema
+            jsonschema.validate(out, json.loads(
+                (PACKET_SCHEMAS / "page-result.schema.json")
+                .read_text(encoding="utf-8")))
+            say(True, "design-only output validates against the packet "
+                      "page-result 1.0 JSON Schema")
+        except Exception as exc:  # noqa: BLE001
+            say(False, f"design-only JSON Schema validation: {exc}")
+
+    # Case 19: design-only with no design files is refused to stderr.
+    with tempfile.TemporaryDirectory() as tds:
+        td = Path(tds)
+        (td / "page-request.json").write_text(json.dumps(req0),
+                                              encoding="utf-8")
+        proc = subprocess.run(
+            [sys.executable, str(TRANSLATOR), str(td / "page-request.json"),
+             str(td / "page-result.json"), str(td), "--design-only",
+             "--author-session", AUTHOR], capture_output=True, text=True)
+        say(proc.returncode == 2 and "no artifacts" in proc.stderr
+            and proc.stdout.strip() == ""
+            and not (td / "page-result.json").exists(),
+            "design-only without design files refused 'no artifacts' on "
+            "stderr, nothing on stdout, nothing written")
+
+    # Case 20: the forged pair. Hand-written result (true booleans, no
+    # artifacts) + manifest (made-up reviewer, no snapshot, unresolved
+    # record) used to become locally_verified/L2 with independent_review.
+    with tempfile.TemporaryDirectory() as tds:
+        td = Path(tds)
+        res = load("thank-you-result.json")
+        res["artifacts"] = []
+        stage(td, res=res, trust=False, with_artifact=False)
+        proc = run(td)
+        say(proc.returncode != 0 and not (td / "page-result.json").exists()
+            and all(s in proc.stderr for s in (
+                "validation recomputed", "record_ref unresolved",
+                "no artifacts")) and proc.stdout.strip() == "",
+            f"forged pair refused naming validation recomputed, record_ref "
+            f"unresolved and no artifacts (exit {proc.returncode}: "
+            f"{proc.stderr.strip()})")
+
+    # Case 21: true validation booleans do not rescue a tampered view.
+    with tempfile.TemporaryDirectory() as tds:
+        td = Path(tds)
+        view = json.loads((S82_ROOT / "fixtures" / "test-only-order-view.json")
+                          .read_text(encoding="utf-8"))
+        view.update({k: req0[k] for k in ("tenant_id", "location_id",
+                                          "launch_id", "revision",
+                                          "test_only")})
+        view["order_ref"] = "SOMEONE-ELSES-ORDER"
+        stage(td, view=view)
+        proc = run(td)
+        say(proc.returncode == 2 and "validation recomputed" in proc.stderr
+            and "order_ref_mismatch" in proc.stderr,
+            f"validators recomputed over order_view catch a wrong order "
+            f"despite validation booleans true ({proc.stderr.strip()})")
+
+    # Case 22: a snapshot whose sha is not the bound one is refused.
+    with tempfile.TemporaryDirectory() as tds:
+        td = Path(tds)
+        stage(td)
+        snap = json.loads((td / "purchase-snapshot.json").read_text(
+            encoding="utf-8"))
+        snap["note"] = "edited after the manifest bound it"
+        (td / "purchase-snapshot.json").write_text(json.dumps(snap),
+                                                   encoding="utf-8")
+        proc = run(td)
+        say(proc.returncode == 2 and "validation recomputed" in proc.stderr
+            and "snapshot_sha256" in proc.stderr,
+            "snapshot not matching manifest.provenance.snapshot_sha256 "
+            "refused")
+
+    # Case 23: review record edited, and a reviewer the dispatch never
+    # recorded, are each refused.
+    with tempfile.TemporaryDirectory() as tds:
+        td = Path(tds)
+        stage(td)
+        (td / "review-record.md").write_text("edited\n", encoding="utf-8")
+        proc = run(td)
+        say(proc.returncode == 2 and "record_ref unresolved" in proc.stderr,
+            "review record not matching record_sha256 refused")
+    with tempfile.TemporaryDirectory() as tds:
+        td = Path(tds)
+        stage(td)
+        (td / "dispatch-session-registry.json").write_text(
+            json.dumps({"sessions": ["some-other-session"]}),
+            encoding="utf-8")
+        proc = run(td)
+        say(proc.returncode == 2 and "reviewer unregistered" in proc.stderr,
+            "reviewer absent from the dispatch session registry refused")
+
+    # Case 24: Skill 82's emitter carries the sha bindings and builds the
+    # design-time manifest. The shipped schema's closed shape does not yet
+    # list the two sha fields, so the schema is checked on the design-time
+    # manifest and on the emitter's output without them.
+    sys.path.insert(0, str(S82_ROOT / "scripts"))
+    import run_manifest as s82_emitter  # noqa: E402
+    dm = s82_emitter.build_design_manifest(
+        req0["tenant_id"], req0["location_id"], req0["launch_id"],
+        test_only=True)
+    try:
+        import jsonschema
+        jsonschema.validate(dm, json.loads(
+            (S82_ROOT / "schemas" / "run-manifest.schema.json")
+            .read_text(encoding="utf-8")))
+        say(dm["independent_review"]["status"] == "none"
+            and dm["provenance"]["snapshot_ref"] is None,
+            "design-time manifest is schema-valid with every purchase "
+            "fact null")
+    except Exception as exc:  # noqa: BLE001
+        say(False, f"design-time manifest schema validation: {exc}")
+    view = json.loads((S82_ROOT / "fixtures" / "test-only-order-view.json")
+                      .read_text(encoding="utf-8"))
+    mm = s82_emitter.build_run_manifest(
+        view, snapshot_ref="s.json", snapshot_sha256="a" * 64,
+        independent_review={"status": "recorded", "reviewer": "r",
+                            "verdict": "v", "record_ref": "r.md",
+                            "record_sha256": "b" * 64})
+    say(mm["provenance"]["snapshot_sha256"] == "a" * 64
+        and mm["independent_review"]["record_sha256"] == "b" * 64,
+        "run manifest emitter binds snapshot_sha256 and record_sha256")
+
+
+def test_thankyou_translator():
+    """pytest entry: the whole case list is one test."""
+    assert main() == 0
 
 
 if __name__ == "__main__":
