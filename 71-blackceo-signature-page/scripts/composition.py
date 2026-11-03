@@ -417,13 +417,14 @@ def block(stage: str, resolved: dict, typed_refs: list | None = None) -> str:
             else:
                 lines.append(f"SLOT {label} (treatment {tid}): {text}")
             if slot.get("mobile_role") and stage == "final-mockups":
-                lines.append(f"Mobile role: {slot['mobile_role']}")
+                lines.append(f"Mobile role of {label}: {slot['mobile_role']}")
         # words over the photo, behind it or overlapping it: never an image column
         # beside a text column. Masks and plain splits keep a column by design.
         needs_negative = needs_negative or t["text_relation"] in ("over", "overlap-card", "behind")
     for labels, tid, text in pending:
         lines.append(f"SLOTS {', '.join(labels)} (treatment {tid}): {text}"
-                     + (f" Print {', '.join(labels)} as the labels of these slots." if wire else ""))
+                     + ((f' Print "{labels[0]}" as this slot\'s label.' if len(labels) == 1
+                         else f" Print {', '.join(labels)} as the labels of these slots.") if wire else ""))
     if needs_negative:
         lines.append(library()["universal_section_negative"])
     if wire:

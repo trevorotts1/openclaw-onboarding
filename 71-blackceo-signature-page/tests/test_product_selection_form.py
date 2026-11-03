@@ -160,6 +160,21 @@ class FormTests(unittest.TestCase):
         for l, i, t in zip(lines, (1, 2), ("mask-circle", "mask-arch")):
             self.assertIn(f"PKG-{i} 600 x 600 1:1 {t}", l.split("Print", 1)[1])
 
+    def test_grouped_mobile_roles_name_their_slot_and_a_single_label_reads_singular(self):
+        # a 2-slot section goes through the grouped path: the role lines print before the SLOTS
+        # lines, so each role must carry its own slot id, and a run of one slot is not "these slots"
+        resolved = {"role": "selection-packages", "slots": [
+            {"slot": {"slot_id": f"PKG-{i}", "aspect_ratio": "1:1", "delivery_px": {"desktop": [600, 600]},
+                      "mobile_role": role}, "treatment": t}
+            for i, role, t in ((1, "sits above its card", "mask-circle"), (2, "sits below its title", "mask-arch"))]}
+        final = comp.block("final-mockups", resolved)
+        self.assertIn("Mobile role of PKG-1: sits above its card", final)
+        self.assertIn("Mobile role of PKG-2: sits below its title", final)
+        self.assertNotIn("Mobile role: ", final)
+        wire = comp.block("desktop-wireframe", resolved)
+        self.assertNotIn("as the labels of these slots", wire)  # two runs of one slot each
+        self.assertEqual(wire.count("as this slot's label."), 2)
+
     def prompt(self, stage, index, width):
         request = stub_request(self.run, stage)
         request["_brand_block"] = exe.require_brand_colors(self.run)
