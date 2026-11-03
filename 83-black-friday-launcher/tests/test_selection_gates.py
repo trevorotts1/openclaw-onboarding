@@ -335,7 +335,7 @@ class LevelsTests(unittest.TestCase):
               "MAIN-PRO": ["Core course", "Community access", "Two private reviews"],
               "MAIN-ELITE": ["Core course", "Community access", "Two private reviews", "Private strategy day"]}
 
-    def launch(self, with_levels):
+    def build_launch(self, with_levels):
         doc = json.loads((FIXTURES / "elevation" / "intake.json").read_text(encoding="utf-8"))
         doc["image_plan"] = {"brand_file": "/tmp/test-brand.json", "brand_owner": "TEST-ONLY Client"}
         if with_levels:
@@ -348,7 +348,7 @@ class LevelsTests(unittest.TestCase):
         return launch_bridge.to_launch_record(normalized, route.compile_route(normalized), inputs)
 
     def test_levels_supplied_gives_a_comparison_row_per_dimension(self):
-        launch = self.launch(True)
+        launch = self.build_launch(True)
         text, _ = ems.build(build_plan(launch))
         rows = compare_rows(text)
         dimensions = {d for items in self.LEVELS.values() for d in items}
@@ -358,7 +358,7 @@ class LevelsTests(unittest.TestCase):
         self.assertTrue(validate_manuscript(text, launch))
 
     def test_without_levels_the_selection_page_is_refused_not_padded(self):
-        launch = self.launch(True)  # supplied levels, then every offer's deliverables emptied (as in the adapter test)
+        launch = self.build_launch(True)  # supplied levels, then every offer's deliverables emptied (as in the adapter test)
         for offer in launch["offers"]:
             offer["deliverables"], offer["limited_deliverables"] = [], []
         with self.assertRaises(Violation) as caught:

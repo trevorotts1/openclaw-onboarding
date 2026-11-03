@@ -820,10 +820,10 @@ class UpsellRepairTests(unittest.TestCase):
     def test_changed_launch_identity_is_refused_before_enrich(self):
         def tenant(r): r["tenant_id"] = "OTHER"
         def location(r): r["location_id"] = "OTHER"
-        def launch(r): r["launch_id"] = "OTHER"
+        def launch_id(r): r["launch_id"] = "OTHER"
         def revision(r): r["revision"] = 2
         def price(r): r["offers"][1]["prices"][0]["amount_minor"] += 100
-        for mutate in (tenant, location, launch, revision, price):
+        for mutate in (tenant, location, launch_id, revision, price):
             wd = self.workdir()
             record = load(wd / "launch.json")
             mutate(record)

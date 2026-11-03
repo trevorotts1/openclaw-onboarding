@@ -42,8 +42,8 @@ def _intake():
         return launch_intake.validate(json.load(f))
 
 
-@pytest.fixture
-def launch():
+@pytest.fixture(name="launch")
+def launch_fixture():
     it = _intake()
     graph = route.compile_route(it)
     catalog = {o["offer_id"]: {"product_id": "prod_" + o["offer_id"],
