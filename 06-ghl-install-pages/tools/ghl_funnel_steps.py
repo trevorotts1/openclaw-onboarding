@@ -154,8 +154,21 @@ def payment_gate(status: Optional[Dict[str, Any]]) -> Optional[str]:
     return None
 
 
+_MINT = object()
+
+
+class VerifiedApproval:
+    """Proof that require_approval passed for one plan+location. Minted only by require_approval."""
+    __slots__ = ("plan_hash", "location_id")
+
+    def __init__(self, mint: object, plan_hash: str, location_id: str):
+        if mint is not _MINT:
+            raise ApprovalRefused("VerifiedApproval is minted only by require_approval")
+        self.plan_hash, self.location_id = plan_hash, location_id
+
+
 def require_approval(record: Optional[Dict[str, Any]], plan: Dict[str, Any],
-                     location_id: str, verifier: Optional[Callable[[Dict[str, Any]], bool]]) -> None:
+                     location_id: str, verifier: Optional[Callable[[Dict[str, Any]], bool]]) -> VerifiedApproval:
     """Refuse unless a verified publish/automation_write record binds this plan+location."""
     if not isinstance(record, dict) or record.get("scope") not in APPROVAL_SCOPES:
         raise ApprovalRefused("no publish/automation_write approval record")
@@ -165,6 +178,7 @@ def require_approval(record: Optional[Dict[str, Any]], plan: Dict[str, Any],
         raise ApprovalRefused("approval record does not carry this plan's hash prefix")
     if verifier is None or verifier(record) is not True:
         raise ApprovalRefused("approval record not verified by the approval service")
+    return VerifiedApproval(_MINT, plan["plan_hash"], location_id)
 
 
 def verify_funnel_readback(plan: Dict[str, Any], readback: Dict[str, Any],
@@ -203,7 +217,9 @@ def install_funnel(plan: Dict[str, Any], driver: Any, funnel_id: str, location_i
                    approval: Optional[Dict[str, Any]],
                    verifier: Optional[Callable[[Dict[str, Any]], bool]]) -> Dict[str, Any]:
     """Create/attach/place/link then read back. Refuses every write without approval."""
-    require_approval(approval, plan, location_id, verifier)
+    grant = require_approval(approval, plan, location_id, verifier)  # always, whatever the driver is
+    if isinstance(driver, RestCanvasFunnelDriver):
+        driver.accept_grant(grant)  # hand over the proof; the verifier is not called twice
     preflight = getattr(driver, "preflight", None)
     if preflight:
         preflight()  # fail closed on a missing capture BEFORE the first write
@@ -322,6 +338,24 @@ class RestCanvasFunnelDriver:
                  capture: Optional[Dict[str, Any]], allow_synthetic: bool = False):
         self.run_eval, self.location_id = run_eval, location_id
         self.capture, self.allow_synthetic = capture, allow_synthetic
+        self._grant: Optional[VerifiedApproval] = None
+
+    def authorize(self, plan: Dict[str, Any], approval: Optional[Dict[str, Any]],
+                  verifier: Optional[Callable[[Dict[str, Any]], bool]]) -> None:
+        """The only way to unlock the write methods: the same verified approval as install_funnel."""
+        self._grant = None
+        self.accept_grant(require_approval(approval, plan, self.location_id, verifier))
+
+    def accept_grant(self, grant: Any) -> None:
+        """Unlock with a VerifiedApproval minted for this driver's location; anything else re-locks."""
+        self._grant = None
+        if not isinstance(grant, VerifiedApproval) or grant.location_id != self.location_id:
+            raise ApprovalRefused("RestCanvasFunnelDriver: not a verified approval for this location")
+        self._grant = grant
+
+    def _require_approved(self, method: str) -> None:
+        if self._grant is None:
+            raise ApprovalRefused(f"RestCanvasFunnelDriver.{method}: no verified approval (call authorize)")
 
     def preflight(self) -> None:
         problems = validate_commerce_capture(self.capture)
@@ -338,6 +372,7 @@ class RestCanvasFunnelDriver:
         return res.get("body")
 
     def _route(self, key: str, **vals: Any) -> None:
+        self._require_approved(key)
         self.preflight()
         r = self.capture[key]
         vals.update(location_id=self.location_id)
@@ -352,6 +387,7 @@ class RestCanvasFunnelDriver:
         return {"connected": c if isinstance(c, bool) else None, "provider": _dig(body, r["provider_path"])}
 
     def create_step(self, funnel_id: str, name: str, step_type: str) -> str:
+        self._require_approved("create_step")
         self.preflight()
         ev = _rc.step_create(funnel_id, name, name.replace("_", "-"),
                              step_type=self.capture["step_types"][step_type])["eval"]

@@ -34,6 +34,10 @@ Rules enforced here (packet doc 12 sections 2, 3, 5, 6; doc 18 A13/A20):
   closed (DTY-18), so no view is built for them. The independent
   validator additionally requires the S44 map's own
   destination_independently_authorizes=true.
+- The snapshot's adapter integrity hash must verify
+  (purchase_event_adapter.verify_snapshot_integrity); the "verified"
+  boolean alone is never trusted, so a hand-assembled or edited snapshot
+  is refused as snapshot_integrity_failed (F-harden-01).
 - Raw payment credential fields anywhere in the input are rejected.
 - S44's order-level entitlement version (the ev1 value of CR-S82-002
   item 5) is carried through to the view's `entitlement_version` field
@@ -285,6 +289,15 @@ def resolve_order_view(snapshot, fulfillment_map=None, expected_identity=None,
         )
     if snapshot.get("schema_version") != "1.0":
         raise ResolverError("unsupported_schema_version: snapshot schema_version must be '1.0'")
+    # F-harden-01: the verified boolean is a claim anyone can type. Only a
+    # snapshot the adapter stamped, and nobody edited since, is trusted.
+    from purchase_event_adapter import verify_snapshot_integrity  # lazy: it imports this module
+    if not verify_snapshot_integrity(snapshot):
+        raise ResolverError(
+            "snapshot_integrity_failed: snapshot carries no matching "
+            "adapter integrity hash; a hand-assembled or edited snapshot "
+            "builds nothing"
+        )
 
     for key in IDENTITY_KEYS + ("revision", "native_order_ref", "journey_id"):
         _require(snapshot, key, "snapshot")
