@@ -25,8 +25,8 @@ def main(argv):
     declared = json.loads(Path(b.exe.STRUCTURES_FILE).read_text(encoding="utf-8")).get("layouts") or {}
     real = b.sections_from_manuscript
 
-    def tagged(text, spec, slots, style_id=None):
-        out = real(text, spec, slots, style_id)
+    def tagged(text, spec, slots, style_id=None, *rest):  # rest: 71's order_bump, passed through untouched
+        out = real(text, spec, slots, style_id, *rest)
         if isinstance(declared.get(role), dict):
             bands = b.upsell_layouts({"instance": role})
             for section in out:
