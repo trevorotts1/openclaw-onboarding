@@ -29,7 +29,7 @@ never silently replaced.
 }
 ```
 
-**2. `<prefix>/receipts/<releaseId>.dependencies.json`** — new receipt:
+**2. `<prefix>/receipts/<releaseId>.dependencies.json`** (new receipt):
 
 ```
 schema       "wise-elders.council-runtime-dependencies/v1"
@@ -53,9 +53,9 @@ version and an integrity digest; the installed package's own `package.json`
 reports that same version; every **literal** declared relative export target
 exists on disk (subpath *patterns* such as zod's `./v4/locales/*` are not files
 and are skipped, not reported missing);
-the three runtime graph roots — the advertised package entry plus the plugin
-bridge entries — and the contracts modules are present and hashed;
-and the emitted module graph reachable from those roots is Node-ESM loadable —
+the three runtime graph roots (the advertised package entry plus the plugin
+bridge entries) and the contracts modules are present and hashed;
+and the emitted module graph reachable from those roots is Node-ESM loadable:
 every relative specifier carries an extension, every target exists inside the
 release root, every bare specifier names a package installed under that root.
 Modules no listed root reaches are outside this check; the claim is bounded to
@@ -77,7 +77,7 @@ explicit `.js` extensions, which TypeScript keeps verbatim in the emit. No
 loader hook, transpiler, monkeypatch or hand-written schema copy exists in
 either tree.
 
-**3. `--print-runtime-root`** — a diagnostic source of an explicit plugin
+**3. `--print-runtime-root`**: a diagnostic source of an explicit plugin
 `runtimeRoot`, when one is wanted:
 
 ```bash

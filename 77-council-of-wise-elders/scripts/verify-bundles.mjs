@@ -76,7 +76,10 @@ if (archiveErrors.length === 0) pass(distribution
 // A missing, stale or broken build fails visibly with an actionable error.
 const gate = checkEntryPoint(root, manifest);
 if (gate.ok) {
-  pass(`entry point verified: ${gate.entry.path} sha256 ${gate.entry.sha256} (hash + load)`);
+  pass(
+    `entry point verified: ${gate.entry.path} sha256 ${gate.entry.sha256} (hash + load` +
+    `${gate.fromArchive ? ", from the .skill archive: a source tree generates runtime/dist locally and never commits it" : ""})`,
+  );
 } else {
   for (const problem of gate.problems) fail(problem);
 }

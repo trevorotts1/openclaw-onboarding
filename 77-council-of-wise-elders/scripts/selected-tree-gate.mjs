@@ -1038,6 +1038,40 @@ export function proveSameRelease({
 }
 
 /**
+ * Are these two paths the same selection? Path equality is the easy answer, but
+ * one box legitimately carries one release at two roots: update-skills.sh copies
+ * the source folder into the skills root while the agent resolver reads the 999
+ * packaging, and the install-record names whichever tree ran last. A different
+ * path is therefore still agreement when the release's own manifest proves one
+ * tree is the distribution of the other (either direction). Nothing else is
+ * accepted: two unrelated trees stay a disagreement, and a proof that cannot run
+ * is a refusal, never a pass.
+ */
+function sameSelectedRelease(a, b) {
+  if (samePath(a, b)) return true;
+  if (!existsSync(a) || !existsSync(b)) return false;
+  const pa = safeReal(a);
+  const pb = safeReal(b);
+  const va = readVersion(pa);
+  const vb = readVersion(pb);
+  if (!va || va !== vb) return false;
+  for (const [selectedDir, maintainedDir] of [[pa, pb], [pb, pa]]) {
+    try {
+      if (proveSameRelease({
+        selectedDir,
+        maintainedDir,
+        selectedVersion: va,
+        maintainedVersion: vb,
+        entryChecksPassed: true,
+      }).ok) return true;
+    } catch {
+      // A proof that cannot run is a refusal, never a pass.
+    }
+  }
+  return false;
+}
+
+/**
  * Full gate. Returns {ok, selectionProven, agentSelected, problems, warnings, selected, copies, records}.
  * `load` runs the entry-point smoke load (node --check + --help); hash and
  * byte comparison always run for packaged artifacts.
@@ -1116,12 +1150,19 @@ export function checkSelectedTree(opts = {}) {
   // live CLI consults, and it must name a copy this box can actually see.
   if (agentSelected) {
     if (records.length) {
-      const agrees = records.some((r) => samePath(r.skillDir, agentSelected));
-      if (!agrees) {
+      // Same release at two roots is not a contradiction (see sameSelectedRelease).
+      const agreeing = records.find((r) => sameSelectedRelease(r.skillDir, agentSelected));
+      if (!agreeing) {
         problems.push(
           `agent evidence names ${agentSelected} but the live install-record(s) name ` +
           `${records.map((r) => r.skillDir).join(", ")}: the two disagree, so neither proves what the agent reads — ` +
           `reconcile the resolver state before any update or gate can pass`,
+        );
+      } else if (!samePath(agreeing.skillDir, agentSelected)) {
+        warnings.push(
+          `DIFFERENT ROOTS, ONE RELEASE: the agent resolver reads ${agentSelected} while the install-record ` +
+          `${agreeing.recordPath} names ${agreeing.skillDir}; the two trees are proven one release, so the record ` +
+          `stands for this run (this gate does not re-point it)`,
         );
       }
     } else if (!discoveredCopies.some((c) => samePath(c.physical, agentSelected) || samePath(c.path, agentSelected))) {

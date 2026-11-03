@@ -1,4 +1,4 @@
-# council-before-dispatch — distribution and per-box provisioning
+# council-before-dispatch: distribution and per-box provisioning
 
 This directory is the plugin's distribution home inside Skill 77
 (`77-council-of-wise-elders/extensions/<plugin-id>/`). The root `extensions/`
@@ -52,8 +52,8 @@ twelve members:
 
 Extract that package over the existing directory without a delete step
 (`tar -xzf <tarball> --strip-components=1 -C <dir>` or an equivalent copy). Files
-the box already owned and this package does not declare — operator patches,
-local notes, an older `install/skill-prose-fix.patch` — are left exactly where
+the box already owned and this package does not declare (operator patches,
+local notes, an older `install/skill-prose-fix.patch`) are left exactly where
 they are. Never install with a synchronise/`--delete` mode: the extension
 directory holds box-owned edits this repository does not track.
 
@@ -117,7 +117,7 @@ The binding is validated against config, and it only ever **narrows**:
 
 1. `channels.telegram.accounts.<accountId>.allowFrom` is read first. Empty,
    missing, or holding no exact sender id is `NO_AUTHORIZED_SENDERS` even when
-   the binding names senders — a binding file cannot authorize a sender the
+   the binding names senders: a binding file cannot authorize a sender the
    account does not already authorize.
 2. Every binding `senderIds` entry must be in that same account's `allowFrom`
    (a strict subset). One entry outside it is
@@ -175,7 +175,7 @@ Neither the `.skill` archive nor this plugin tarball vendors `zod`. The installe
 runs `npm ci` in the staged runtime, which fetches the locked, integrity-pinned
 dependency from the registry recorded in `package-lock.json`; installation
 therefore requires network access. The preflight and the dependency receipt prove
-the installed files are present and statically consistent — they are not runtime
+the installed files are present and statically consistent; they are not runtime
 resolution proof.
 
 ## Readiness semantics
@@ -204,7 +204,7 @@ dependency receipt. Only a real ask, sent by the owner, proves the path.
 ## Why `runtimeRoot` is never the skill tree
 
 The skill tree's `runtime/` is gitignored (`node_modules/`, `dist/`), is rewritten
-by `update-skills.sh`, and — as shipped — contains no build at all. Provisioning
+by `update-skills.sh`, and, as shipped, contains no build at all. Provisioning
 refuses a `runtimeRoot` inside a numbered skill directory
 (`RUNTIME_ROOT_IS_SOURCE_SKILL`) and always prefers `<prefix>/active.json`
 `releasePath`, which is the dependency-complete, atomically rolled-back release.

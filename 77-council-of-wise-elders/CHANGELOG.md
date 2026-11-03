@@ -1,5 +1,16 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.79: the two-root wire release
+
+In plain English: a box that carries this skill at two roots (the skills directory the updater copies into, plus the root the agent resolver reads) no longer needs a hand repair to finish a roll. The selected-tree gate compared paths only, so a distribution the same run had already proven to be the same release was still refused, the wire exited TREE_GATE and no `.wired` sentinel was written. The gate now accepts a different path when the release's own manifest proves one tree is the distribution of the other, and refuses everything else. The same gate also runs before the build, so a refusal can no longer leave the launch state on a release the service never adopted. The package verifier accepts the executable the package's own archive ships when its hash and byte length match the recorded runtime entry, and the extension prose no longer carries em dash characters.
+
+- Selected-tree gate: an install-record at one root and agent-resolver evidence at another agree only on the full same-release recomputation proof, tried in both directions; a version mismatch, a tampered tree or a different canonical aggregate is still refused, and the acceptance is announced as `DIFFERENT ROOTS, ONE RELEASE`.
+- Wire order: the selected-tree gate runs before the runtime build, so a gate refusal leaves `active.json`, `service.json` and the running service on the same previous release instead of stranding the launch state on a release the service never adopted.
+- Package verifier: `runtime/dist` is generated locally and never committed, so the entry-point gate falls back to the executable inside `council-of-wise-elders.skill` and accepts it only when its sha256 and byte length equal `manifest.runtime_entry`. An archive carrying another build, or no such member, still fails.
+- Em dash rule: `extensions/council-before-dispatch/INSTALL.md`, `CONTRACT.md`, `fixtures/binding.sample.json` and `fixtures/box-config.sample.json` no longer carry em dash characters, so the skill's own final gate passes.
+- Tests: new cases cover the two-root agreement and its tampered and version-mismatch negatives, plus the archive entry fallback (accepted build, another build, missing member, stale on-disk build).
+- Version carriers: `version`, `skill-version.txt`, `SKILL.md` frontmatter and the regenerated manifest all read 1.0.79.
+
 ## v1.0.78: the directory-regression release (source and test surface reconciled)
 
 In plain English: the batch that shipped 1.0.75-1.0.77 left six directory-test failures behind. This release fixes the causes, not the expectations: the PDF contract check now runs before the renderer, the critical-front-door contract is checked on the code that can actually write config, the readiness fixture ships a real plugin package and gains a genuine missing-plugin negative, and the changelog no longer lags the version carriers. It also makes the critical contract run in the vendored distribution instead of assuming the onboarding repository layout. Source only: no box was written, no provider or Telegram call made, and no paid Council session run.

@@ -657,6 +657,65 @@ test("(same release) a plain mismatch is never dressed up as a distribution", (t
   assert.ok(!gate.warnings.join("\n").includes("SAME RELEASE"), "a non-distribution must not be accepted");
 });
 
+// --- the two-root box: one release, two roots, one install-record -----------
+// update-skills.sh copies the source folder into the skills root and the agent
+// resolver reads the 999 packaging. The record names one root; the agent reads
+// the other. That is one release, and the gate must say so instead of demanding
+// a hand re-point of the record on every roll.
+
+function twoRootGate(home, canonical, dist, prefix) {
+  return checkSelectedTree({
+    home,
+    skillDir: canonical,
+    prefix,
+    agentSelected: dist,
+    agentSource: "distribution test",
+    load: false,
+  });
+}
+
+test("(two roots) an install-record at one root agrees with the distribution at the other", (t) => {
+  const { home, canonical, dist } = distributionFixture(t);
+  const prefix = makePrefix(home, canonical);
+  const gate = twoRootGate(home, canonical, dist, prefix);
+  assert.equal(gate.ok, true, gate.problems.join(" | "));
+  const problems = gate.problems.join("\n");
+  assert.ok(!problems.includes("the two disagree"), "one release at two roots is not a disagreement");
+  const warnings = gate.warnings.join("\n");
+  assert.match(warnings, /SAME RELEASE: distribution .* proven by manifest recomputation/);
+  assert.match(warnings, /DIFFERENT ROOTS, ONE RELEASE/);
+});
+
+test("(two roots) a tampered distribution never reconciles a record at another root", (t) => {
+  const { home, canonical, dist } = distributionFixture(t);
+  const prefix = makePrefix(home, canonical);
+  writeFileSync(join(dist, "runtime", "dist", "blackceo-council.mjs"), `${GOOD_ENTRY}// planted\n`);
+  const gate = twoRootGate(home, canonical, dist, prefix);
+  assert.equal(gate.ok, false);
+  const problems = gate.problems.join("\n");
+  assert.match(problems, /SAME-RELEASE PROOF REFUSED/);
+  assert.match(problems, /the two disagree/);
+});
+
+test("(two roots) a distribution of another version never reconciles the record", (t) => {
+  const { home, canonical, dist, canonicalManifest } = distributionFixture(t);
+  const prefix = makePrefix(home, canonical);
+  writeFileSync(join(dist, "version"), "1.0.59\n");
+  writeFileSync(join(dist, "skill-version.txt"), "v1.0.59\n");
+  writeFileSync(
+    join(dist, "SKILL.md"),
+    readFileSync(join(dist, "SKILL.md"), "utf8").replace(/^version:\s*\S+$/m, "version: 1.0.59"),
+  );
+  restampDistribution(dist, {
+    skill_version: "1.0.59",
+    canonical_aggregate_sha256: canonicalManifest.aggregate_sha256,
+  });
+  const gate = twoRootGate(home, canonical, dist, prefix);
+  assert.equal(gate.ok, false);
+  const problems = gate.problems.join("\n");
+  assert.match(problems, /the two disagree/);
+});
+
 // --- reviewer bypasses: each one is refused, and says why -------------------
 
 test("(bypass 1) an impostor tree cannot borrow the canonical aggregate", (t) => {
