@@ -15,6 +15,14 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 PKG = Path(__file__).resolve().parents[1]
+ROOT = PKG.parents[1]
+
+
+def _skill(name):  # onboarding: 49-signature-funnel; 999: .claude/skills/signature-funnel
+    p = ROOT / name
+    return p if p.is_dir() else ROOT / ".claude/skills" / name.split("-", 1)[1]
+
+
 _spec = importlib.util.spec_from_file_location("launch_events", PKG / "launch_events.py")
 le = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(le)
@@ -194,7 +202,7 @@ class LaunchCardTest(unittest.TestCase):
 
     def _mc_board(self):
         spec = importlib.util.spec_from_file_location(
-            "mc_board_under_test", PKG.parents[1] / "49-signature-funnel/scripts/mc_board.py")
+            "mc_board_under_test", _skill("49-signature-funnel") / "scripts/mc_board.py")
         mod = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = mod  # dataclasses resolve their module by name
         spec.loader.exec_module(mod)

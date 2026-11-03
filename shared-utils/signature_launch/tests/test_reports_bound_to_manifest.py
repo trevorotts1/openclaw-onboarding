@@ -10,11 +10,18 @@ import sys
 import unittest
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[3]
+REPO = ROOT = Path(__file__).resolve().parents[3]
+
+
+def _skill(name):  # onboarding: 49-signature-funnel; 999: .claude/skills/signature-funnel
+    p = ROOT / name
+    return p if p.is_dir() else ROOT / ".claude/skills" / name.split("-", 1)[1]
+
+
 EXP = REPO / "shared-utils/signature_launch/experience"
-sys.path.insert(0, str(REPO / "83-black-friday-launcher/tests"))
+sys.path.insert(0, str(_skill("83-black-friday-launcher") / "tests"))
 from test_lane83_designs import Base  # noqa: E402
-sys.path.insert(0, str(REPO / "83-black-friday-launcher/fixtures"))
+sys.path.insert(0, str(_skill("83-black-friday-launcher") / "fixtures"))
 import test_only_readback  # noqa: E402
 from launcher_core import entitlement  # noqa: E402
 
@@ -94,7 +101,8 @@ ADAPTER_READMES = [
 class AdapterDocs(unittest.TestCase):
     def test_adapter_docs_pass_the_manifest(self):
         for rel in ADAPTER_READMES:
-            cmds = [c for c in re.findall(r"`([^`]+)`", (REPO / rel).read_text())
+            first, _, rest = rel.partition("/")
+            cmds = [c for c in re.findall(r"`([^`]+)`", (_skill(first) / rest).read_text())
                     if "progress_report.py" in c or "delivery_report.py" in c]
             self.assertTrue(cmds, rel)
             for c in cmds:

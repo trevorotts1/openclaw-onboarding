@@ -47,7 +47,7 @@ class Trees(unittest.TestCase):
         # 83's `cli dispatch` runs its dependency preflight (every sibling skill tree, client_intake, the registry
         # map) BEFORE the front door, so the fixture links the real siblings in; the pinned trees stay the copies.
         for src in REPO.iterdir():
-            if src.is_dir() and src.name[:1].isdigit() and not (root / src.name).exists():
+            if src.is_dir() and (src.name[:1].isdigit() or (src / "SKILL.md").is_file()) and not (root / src.name).exists():
                 (root / src.name).symlink_to(src, target_is_directory=True)
         for src in (REPO / "shared-utils").iterdir():
             if src.is_dir() and not (root / "shared-utils" / src.name).exists():

@@ -150,6 +150,21 @@ def test_cli_is_neutral_and_synced(tmp_path):
     assert (nine / NINE_CLI).read_bytes() == (onb / ONB_CLI).read_bytes()
 
 
+PROGRESS = "shared-utils/signature_launch/experience/progress_report.py"
+
+
+def test_progress_report_is_neutral_and_synced(tmp_path):
+    # delivery_report.py (neutral) calls progress_report's CON-19 API, so a stale 999 copy cannot be a declared divergence
+    assert PROGRESS not in parity.DIVERGENT
+    onb, nine = build(tmp_path, "launcher", drift=False)
+    _write(onb / PROGRESS, "onboarding progress_report\n")
+    _write(nine / PROGRESS, "a stale 999 progress_report without RowsRefused\n")
+    report = parity.check(onb, nine, ["launcher"])
+    assert any(f.startswith("[launcher] drift: " + PROGRESS) for f in report["failures"])
+    assert sync.main(["--onboarding", str(onb), "--nine", str(nine), "--family", "launcher"]) == 0
+    assert (nine / PROGRESS).read_bytes() == (onb / PROGRESS).read_bytes()
+
+
 def test_excluded_pack_file_present_in_999_refuses_the_sync(tmp_path, capsys):
     onb, nine = build(tmp_path, "ghl-install-pages", drift=False)
     onb_rel, nine_rel = parity.FAMILIES["ghl-install-pages"][0]

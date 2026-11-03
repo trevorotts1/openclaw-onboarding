@@ -18,7 +18,17 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-SKILL66_ROOT = Path(__file__).resolve().parents[2] / "66-kie-image"
+
+def _skill66_root() -> Path:
+    """Skill 66 beside shared-utils: <repo>/66-kie-image (onboarding) or <repo>/.claude/skills/66-kie-image
+    (deployed). The first that holds the selector wins; neither means the onboarding path, so resolve()
+    refuses by name."""
+    repo = Path(__file__).resolve().parents[2]
+    cands = [repo / "66-kie-image", repo / ".claude" / "skills" / "66-kie-image"]
+    return next((c for c in cands if (c / "scripts" / "select_image_model.py").is_file()), cands[0])
+
+
+SKILL66_ROOT = _skill66_root()
 
 
 class ImageModelError(RuntimeError):

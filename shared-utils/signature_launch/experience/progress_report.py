@@ -19,7 +19,20 @@ import harness_profile  # noqa: E402
 
 FINISHED = ("done", "failed", "blocked")
 SCHEMA = "bfl-rows/1"
-_LAUNCHER = Path(__file__).resolve().parents[3] / "83-black-friday-launcher"
+
+
+def _sibling(names, rel=""):
+    """A sibling skill under either layout (onboarding `NN-name/`, 999 `.claude/skills/name/`), found by
+    walking up; none found gives the onboarding spelling."""
+    for base in Path(__file__).resolve().parents:
+        for b in (base, base / ".claude" / "skills", base / "skills"):
+            for name in names:
+                if (b / name / "SKILL.md").is_file():
+                    return b / name / rel
+    return Path(__file__).resolve().parents[3] / names[0] / rel
+
+
+_LAUNCHER = _sibling(("83-black-friday-launcher", "black-friday-launcher"))
 
 
 class RowsRefused(Exception):
@@ -85,7 +98,7 @@ def load_bound_rows(rows_file, manifest_path, root=None):
     if doc["rows"] != derive_rows(manifest_path, root):
         raise RowsRefused("the rows differ from what the checked manifest yields")
     return doc["rows"]
-_LABELS = Path(__file__).resolve().parents[3] / "71-blackceo-signature-page" / "scripts"
+_LABELS = _sibling(("71-blackceo-signature-page", "blackceo-signature-page"), "scripts")
 
 
 def label_of(row):

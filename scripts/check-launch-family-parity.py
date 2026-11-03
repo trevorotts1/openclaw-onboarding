@@ -97,10 +97,11 @@ NINE_ONLY = {
 # 999 copy must keep the listed seam tokens. launcher_core/cli.py is NOT here:
 # it is a pinned file (front_door.py pins every launcher_core/*.py by bytes and
 # 999 only receives the pin through the sync), so it is an ordinary neutral
-# file and must be byte-identical in both repos.
+# file and must be byte-identical in both repos. experience/progress_report.py
+# is NOT here either: it is neutral because delivery_report.py, which is
+# neutral, calls its CON-19 API (RowsRefused, --manifest, --emit-rows).
 DIVERGENT = {
     _SL + "experience/render_question.py": ("D3 999 questions path", ()),
-    _SL + "experience/progress_report.py": ("D3 999 questions path", ()),
     _SL + "experience/test_experience.py": ("D3 999 questions path", ()),
     _SL + "experience/README.md": ("D3 999 questions path", ()),
 }

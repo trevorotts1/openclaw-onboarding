@@ -20,8 +20,15 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+def _skill(name):  # onboarding: 49-signature-funnel; 999: .claude/skills/signature-funnel
+    p = ROOT / name
+    return p if p.is_dir() else ROOT / ".claude/skills" / name.split("-", 1)[1]
+
+
 DESIGN = ROOT / "shared-utils" / "signature_launch" / "design"
-SKILL = ROOT / "71-blackceo-signature-page"
+SKILL = _skill("71-blackceo-signature-page")
 SCRIPTS = SKILL / "scripts"
 PY = sys.executable
 
