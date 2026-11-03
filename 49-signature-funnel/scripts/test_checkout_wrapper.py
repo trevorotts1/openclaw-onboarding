@@ -232,8 +232,9 @@ class TestOrderBumpSectionFollowsTheBump(CheckoutWrapperCase):
 
 
 class TestProduceTellsSkill71WhetherTheLaunchHasABump(CheckoutWrapperCase):
-    """F5 across the seam: the S71 build applies its conditional section-3 rule only if produce() hands it the
-    launch's bump fact (--has-order-bump, field has_order_bump). The S71 scripts here are stand-ins that log argv."""
+    """F5 across the seam: the S71 build keeps checkout section 3 unless produce() hands it --no-bump, which it
+    must do exactly when the launch has no bump. The S71 scripts here are stand-ins that log argv; the real S71
+    build is exercised end to end by TestNoBumpLaunchBuildsThroughTheRealSkill71."""
 
     class Stop(Exception):
         pass
@@ -272,17 +273,41 @@ class TestProduceTellsSkill71WhetherTheLaunchHasABump(CheckoutWrapperCase):
             if not part.startswith("## Section 3"))
         self.no_bump_launch = dict(self.launch, offers=[o for o in self.launch["offers"] if o.get("slot") != "bump"])
 
-    def test_a_no_bump_funnel_says_false(self):
-        cmd = self.produce_with(self.no_bump_launch, "--has-order-bump", self.no_bump_text)
-        self.assertEqual(cmd[cmd.index("--has-order-bump") + 1], "false")
+    def test_a_no_bump_funnel_is_handed_no_bump(self):
+        cmd = self.produce_with(self.no_bump_launch, "", self.no_bump_text)
+        self.assertIn("--no-bump", cmd)
 
-    def test_a_funnel_with_a_bump_says_true(self):
-        cmd = self.produce_with(self.launch, "--has-order-bump", self.text)
-        self.assertEqual(cmd[cmd.index("--has-order-bump") + 1], "true")
-
-    def test_a_build_script_that_does_not_know_the_flag_is_not_handed_it(self):
+    def test_a_funnel_with_a_bump_is_not_handed_no_bump(self):
         cmd = self.produce_with(self.launch, "", self.text)
-        self.assertNotIn("--has-order-bump", cmd)
+        self.assertNotIn("--no-bump", cmd)
+
+
+class TestNoBumpLaunchBuildsThroughTheRealSkill71(CheckoutWrapperCase):
+    """F5 end to end, no stand-ins: the real wrapper subprocess against the real Skill 71 in this repo. A launch
+    without an order bump builds four checkout sections (1,2,4,5); the with-bump control keeps all five."""
+
+    def built_sections(self):
+        return [json.loads((self.run_dir / f"production-request-{stage}.json").read_text(encoding="utf-8"))
+                ["sections"] for stage in ("desktop-wireframe", "mobile-tablet", "visual-mockup")]
+
+    def test_a_no_bump_launch_builds_four_sections(self):
+        launch = json.loads(self.launch_path.read_text(encoding="utf-8"))
+        launch["offers"] = [o for o in launch["offers"] if o.get("slot") != "bump"]
+        self.launch_path.write_text(json.dumps(launch), encoding="utf-8")
+        manuscript = self.td / "no-bump.md"
+        manuscript.write_text("".join(
+            part for part in __import__("re").split(r"(?m)^(?=##\s+Section\s+\d+)", MANUSCRIPT.read_text(encoding="utf-8"))
+            if not part.startswith("## Section 3")), encoding="utf-8")
+        proc = self.wrap(manuscript=manuscript, extra=("--design-style", "C", "--checkout-terms", str(self.terms_path)))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        for sections in self.built_sections():
+            self.assertEqual([x["section_id"] for x in sections], list("1245"))
+
+    def test_the_with_bump_control_keeps_five_sections(self):
+        proc = self.wrap(extra=("--design-style", "C", "--checkout-terms", str(self.terms_path)))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        for sections in self.built_sections():
+            self.assertEqual([x["section_id"] for x in sections], list("12345"))
 
 
 class TestCardFieldGuard(unittest.TestCase):

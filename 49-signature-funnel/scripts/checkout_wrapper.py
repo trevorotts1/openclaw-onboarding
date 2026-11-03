@@ -298,7 +298,7 @@ def artifacts(run_dir: Path) -> list:
     return [found[k] for k in sorted(found)]
 
 
-HAS_ORDER_BUMP_FLAG = "--has-order-bump"  # value true|false; the S71 build_production_request.py field is has_order_bump
+NO_BUMP_FLAG = "--no-bump"  # S71 build_production_request.py: drops checkout section 3 (r71b contract)
 
 
 def produce(args, request) -> dict:
@@ -338,10 +338,10 @@ def produce(args, request) -> dict:
                             ("--model", args.model)):
             if value:
                 build += [flag, value]
-        # S71 applies its conditional section-3 rule (1,2,4,5 without a bump) only when told whether the
-        # launch has one; a build script that does not yet know the flag is not handed it.
-        if HAS_ORDER_BUMP_FLAG in (s71 / "build_production_request.py").read_text(encoding="utf-8"):
-            build += [HAS_ORDER_BUMP_FLAG, "true" if has_order_bump else "false"]
+        # S71 keeps all five checkout sections unless told the launch has no order bump (no source sniffing:
+        # a name mismatch must fail loudly in S71, not be skipped silently here).
+        if not has_order_bump:
+            build.append(NO_BUMP_FLAG)
         run(build, f"build_production_request.py ({stage})")
         execute = [sys.executable, s71 / "stage_executor.py", run_dir, "--stages", stage, "--request", name,
                    "--provider", args.provider] + (["--allow-paid"] if args.allow_paid else [])

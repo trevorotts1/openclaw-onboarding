@@ -893,7 +893,7 @@ def _record_amounts(launch: Mapping[str, Any],
 
 
 _RECURRING_PHRASE = re.compile(
-    r"\$\s?\d[\d,]*(?:\.\d+)?\s*(?:/|per\b|a\b|each\b|every\b)[\s-]*(?:mo|month|yr|year|wk|week)s?\b"
+    r"\$\s?\d[\d,]*(?:\.\d+)?\s*(?:/|per\b|a\b|each\b|every\b)[\s-]*(?:mon|mo|month|yr|year|wk|week)(?:s|ly)?\b"
     r"|\$\s?\d[\d,]*(?:\.\d+)?\s*(?:monthly|weekly|annually|yearly)\b"
     r"|\brenew\w*\s+(?:monthly|weekly|annually|yearly|every)", re.I)
 

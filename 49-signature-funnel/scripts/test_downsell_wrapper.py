@@ -533,13 +533,23 @@ class DownsellCopyBoundToOwnPriceTests(unittest.TestCase):
         self.assertFalse(paths["result"].exists())
 
     def test_a_one_time_page_with_a_dollar_monthly_phrase_is_refused(self):
-        for phrase in (" Then $5 monthly continues.", " Then $5 per mo continues.", " Then $5 per-month continues."):
+        for phrase in (" Then $5 monthly continues.", " Then $5 per mo continues.", " Then $5 per-month continues.",
+                       " Then $5/monthly continues.", " Then $5/yearly continues."):
             with self.subTest(phrase=phrase):
                 page = _one_time_page(100)
                 page["page"]["sections"][6]["body"] += phrase
                 paths, proc = self.run_one_dollar_d1(page)
                 self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
                 self.assertIn("D1-COPY-BILLING-MISMATCH", proc.stderr)
+
+    def test_the_recurring_phrase_catches_every_billing_word_form_and_no_ordinary_words(self):
+        for phrase in ("$37/monthly", "$37 per monthly", "$37/yearly", "$37/weekly", "$37/mon",
+                       "$37 monthly", "$37 per-month", "$37 annually", "$37 per mo", "$37 a months"):
+            with self.subTest(caught=phrase):
+                self.assertTrue(dw._RECURRING_PHRASE.search(phrase), phrase)
+        for phrase in ("$37 a moment", "$37 per more", "$37 a monday"):
+            with self.subTest(clean=phrase):
+                self.assertIsNone(dw._RECURRING_PHRASE.search(phrase), phrase)
 
     def test_a_renewal_amount_on_a_one_time_d1_extension_is_refused(self):
         """The result extension may not claim a renewal for an offer the record prices as one-time."""
