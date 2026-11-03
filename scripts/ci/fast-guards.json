@@ -3342,6 +3342,28 @@
   }
  },
  {
+  "name": "update-skills-verify-ordering-guard",
+  "was": "(new, update-skills verify ordering 2026-11-03)",
+  "script": "scripts/ci/fast-guards.d/update-skills-verify-ordering-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "update-skills.sh",
+     "tests/unit/update-skills-verify-ordering.test.sh"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "update-skills.sh",
+     "tests/unit/update-skills-verify-ordering.test.sh"
+    ]
+   }
+  }
+ },
+ {
   "name": "wave-list-integrity-guard",
   "was": "wave-list-integrity-guard.yml",
   "script": "scripts/ci/fast-guards.d/wave-list-integrity-guard.sh",

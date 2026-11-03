@@ -7364,6 +7364,11 @@ PYEOF
   echo "  Installing skills to $SKILLS_DIR..."
   NEW_SKILLS_CSV=""
   SKIPPED_COUNT=0
+  # SKILLDRIFT ORDERING FIX (2026-11-03). Post-copy verify.sh is QUEUED here and
+  # run once, after the whole loop, by the pass below the loop. Running it inline
+  # verified a skill before its higher-numbered siblings existed, so a skill whose
+  # verify reads a later sibling (49 -> 71/83) reported a false WARN FAILED.
+  _POST_COPY_VERIFY_QUEUE=""
   for SKILL_DIR in "$EXTRACTED_DIR"/[0-9]*/; do
     [ -d "$SKILL_DIR" ] || continue
     SKILL_NAME=$(basename "$SKILL_DIR")
@@ -7508,20 +7513,32 @@ X11EOF
       fi
     fi
 
-    # VERIFY AFTER COPY (Fix 11.3). Sits AFTER the stamp-pin block on purpose:
-    # a skill whose pin was just restamped must be verified against the new
-    # pin, not the stale one. FAIL-SAFE: warn and continue, matching the
-    # stamp-pin rule above — one skill's check never takes down the roll.
+    # VERIFY AFTER COPY (Fix 11.3). QUEUED, not run here (skilldrift ordering
+    # fix 2026-11-03): the pass after this loop runs it once every sibling is
+    # copied, so a skill whose check reads a higher-numbered sibling sees it.
+    # Sits AFTER the stamp-pin block on purpose: a skill whose pin was just
+    # restamped must be verified against the new pin, not the stale one.
     if [ -f "$SKILLS_DIR/$SKILL_NAME/verify.sh" ]; then
-      if ! bash "$SKILLS_DIR/$SKILL_NAME/verify.sh" >>"${LOG_FILE:-/dev/null}" 2>&1; then
-        echo "    [verify] WARN: $SKILL_NAME post-copy verify.sh FAILED -- continuing (run 'bash $SKILLS_DIR/$SKILL_NAME/verify.sh' by hand)"
-      fi
+      _POST_COPY_VERIFY_QUEUE="$_POST_COPY_VERIFY_QUEUE $SKILL_NAME"
     fi
 
     echo "    Updated: $SKILL_NAME"
     # FIX 1: state transition -- files are on disk = DOWNLOADED (NOT installed).
     command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "downloaded"
   done
+
+  # >>> POST-COPY-VERIFY-PASS-BEGIN (skilldrift ordering fix 2026-11-03)
+  # VERIFY AFTER COPY (Fix 11.3), run ONCE here instead of inside the copy loop
+  # above: every skill folder is on disk by now, so a skill whose verify.sh
+  # reads a higher-numbered sibling sees it (49-signature-funnel -> 71, 83).
+  # FAIL-SAFE, unchanged: a failed verify WARNs and the roll continues — one
+  # skill's check never takes down the update, including under set -e.
+  for _PCV_SKILL in $_POST_COPY_VERIFY_QUEUE; do
+    if ! bash "$SKILLS_DIR/$_PCV_SKILL/verify.sh" >>"${LOG_FILE:-/dev/null}" 2>&1; then
+      echo "    [verify] WARN: $_PCV_SKILL post-copy verify.sh FAILED -- continuing (run 'bash $SKILLS_DIR/$_PCV_SKILL/verify.sh' by hand)"
+    fi
+  done
+  # <<< POST-COPY-VERIFY-PASS-END
 
   # ----------------------------------------------------------
   # SKILL-NUMBER COLLISION NOTE (2026-10-05, made report-only 2026-10-29). /def
