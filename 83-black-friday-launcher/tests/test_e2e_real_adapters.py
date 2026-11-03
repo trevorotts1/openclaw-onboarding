@@ -195,10 +195,11 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
             (work / name).write_text(_design_prose(), encoding="utf-8")
         # the downsell wrapper assembles its result around the extension record the Skill 81 side stages beside it
         # (the fixture matched to the page fixture above); it checks it against the launch record and the route,
-        # so it names this launch's upsell_2 page (Skill 49 ids a page <LAUNCH_ID>-<ROLE>)
+        # so it names this launch's upsell_2 page (Skill 49 ids a page <launch_id>-<ROLE>: the launch id as
+        # given, the role in upper case)
         extension = json.loads(S81_EXTENSION.read_text(encoding="utf-8"))
         extension["downsell_result_extension"]["route_result"]["canonical_u2_page_id"] = \
-            f"{launch_id.upper()}-UPSELL_2"
+            f"{launch_id}-UPSELL_2"
         (work / "extension-downsell_1.json").write_text(json.dumps(extension), encoding="utf-8")
         (work / "copy-thank_you.md").write_text((COPY_EXAMPLES / "thank-you-path-b.md").read_text(encoding="utf-8"),
                                                 encoding="utf-8")

@@ -63,6 +63,7 @@ class LaunchSchemaParity(unittest.TestCase):
             doc = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(doc["properties"]["schema_version"]["enum"], ["1.0", "1.1", "1.2"], path)
             self.assertIn("delivery_bindings", doc["properties"], path)
+            self.assertIn("included_in", doc["properties"]["offers"]["items"]["properties"]["relationships"]["properties"], path)
 
     def test_real_83_record_passes_71_launch_context(self):
         lc = _load(S71 / "scripts" / "launch_context.py", "con01_launch_context")

@@ -65,6 +65,7 @@ def _offer(normalized: Dict[str, Any], offer: Dict[str, Any], by_role: Dict[str,
     if offer["role"] == "downsell_1" and "upsell_1" in by_role:
         excludes = [by_role["upsell_1"]]
     level = offer.get("level") or {}
+    included_in = list((offer.get("relationships") or {}).get("included_in", [])) if offer["role"] == "bump" else []
     return {
         "offer_id": offer["offer_id"],
         "slot": offer["role"],
@@ -79,6 +80,8 @@ def _offer(normalized: Dict[str, Any], offer: Dict[str, Any], by_role: Dict[str,
         "source_kind": canon["source_kind"],
         "source_ref": canon["source_ref"],
         "test_only": test_only,
+        # the levels whose buyers hold this bump (route.offer_entitlements grants it); Skill 49's bump-subset rule skips them
+        **({"relationships": {"included_in": included_in}} if included_in else {}),
     }
 
 

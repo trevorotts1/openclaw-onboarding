@@ -89,15 +89,13 @@ def offer_entitlements(intake: Dict[str, Any]) -> Dict[str, List[str]]:
     """offer_id -> the entitlement ids a buyer of that offer holds, in intake order, own id first.
 
     `included_in` is cumulative access: a level listed as included_in a bigger level is granted to its
-    buyers too, transitively (Level 3 holds Levels 1 and 2). A bump is never folded into a main's grant:
-    Skill 49's validator refuses a bump whose entitlements a main already holds, and a bump already
-    included in the chosen package is suppressed at the order form, not granted twice."""
+    buyers too, transitively (Level 3 holds Levels 1 and 2). A bump listed included_in a level is no
+    exception: that level's buyers hold the bump's entitlement, and that level's order form does not sell
+    the bump (Skill 49's validator skips the bump-subset check for the levels the bump is included_in)."""
     offers = intake["offers"]
     own = {o["offer_id"]: o["offer_id"].lower() for o in offers}
     contains: Dict[str, List[str]] = {o["offer_id"]: [] for o in offers}
     for o in offers:
-        if o["role"] == "bump":
-            continue
         for host in (o.get("relationships") or {}).get("included_in", []):
             contains[host].append(o["offer_id"])  # targets were checked against the offer ids by intake
 

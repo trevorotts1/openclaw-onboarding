@@ -24,7 +24,7 @@ import substrate  # noqa: E402
 import adapters  # noqa: E402
 sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
 from test_only_readback import paid_image_plan, patch_paid_budget  # noqa: E402
-from launcher_core import image_plan, intake, launch_bridge, route  # noqa: E402
+from launcher_core import checkout_instances, image_plan, intake, launch_bridge, route  # noqa: E402
 
 BRAND = str(Path(tempfile.gettempdir()) / "test-brand.json")
 
@@ -93,13 +93,32 @@ class CumulativeEntitlementTests(unittest.TestCase):
         self.assertEqual(by_id["U1"]["requires"], ["MAIN-ESS"])
         self.assertEqual((by_id["BUMP"]["entitlement_ids"], by_id["BUMP"]["requires"]), (["bump"], []))
 
-    def test_a_bump_included_in_a_level_is_not_folded_into_that_levels_grant(self):
+    def test_a_bump_included_in_a_level_is_granted_to_that_levels_buyers(self):
         doc = payload()
         next(o for o in doc["offers"] if o["offer_id"] == "BUMP")["relationships"] = {"included_in": ["MAIN-PRO"]}
         launch = record(doc)
         pro = next(o for o in launch["offers"] if o["offer_id"] == "MAIN-PRO")
-        self.assertEqual(pro["entitlement_ids"], ["main-pro"])
+        self.assertEqual(pro["entitlement_ids"], ["main-pro", "bump"])
         self.assertEqual(launch_bridge.check_launch_record(launch), [])
+
+    def test_rehearsal_02_shape_bump_included_in_b_and_c_gives_them_access_while_a_still_sells_it(self):
+        # F10: BUMP included_in MAIN-B and MAIN-C (rehearsal intake 02). B and C buyers hold the bump, A does not
+        doc = payload()
+        next(o for o in doc["offers"] if o["offer_id"] == "BUMP")["relationships"] = {
+            "included_in": ["MAIN-PRO", "MAIN-ELITE"]}
+        launch = record(doc)
+        ents = {o["offer_id"]: o["entitlement_ids"] for o in launch["offers"]}
+        self.assertIn("bump", ents["MAIN-PRO"])
+        self.assertIn("bump", ents["MAIN-ELITE"])
+        self.assertEqual(ents["MAIN-ESS"], ["main-ess"])
+        self.assertEqual(launch_bridge.check_launch_record(launch), [])
+        # the order forms agree: only the level that does not hold the bump sells it
+        self.assertEqual(checkout_instances.bump_applies_to(intake.validate(doc)),
+                         {"MAIN-ESS": True, "MAIN-PRO": False, "MAIN-ELITE": False})
+        # the exemption is only for the levels the bump is included_in: a level that is not one still may not hold it
+        broken = json.loads(json.dumps(launch))
+        next(o for o in broken["offers"] if o["offer_id"] == "MAIN-ESS")["entitlement_ids"].append("bump")
+        self.assertTrue(any("subset of main offer 'MAIN-ESS'" in v for v in launch_bridge.check_launch_record(broken)))
 
 
 class DeliveryBindingTests(unittest.TestCase):

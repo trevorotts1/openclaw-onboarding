@@ -340,7 +340,11 @@ def validate_launch(launch: Any) -> List[str]:
         bent = set(bump.get("entitlement_ids") or [])
         if not bent:
             fail(f"bump offer {bump['offer_id']!r} grants no entitlements")
+        # A main the bump is included_in grants the bump by design (its order form does not sell it).
+        hosts = set((bump.get("relationships") or {}).get("included_in") or [])
         for m in mains:
+            if m["offer_id"] in hosts:
+                continue
             if bent and bent <= set(m.get("entitlement_ids") or []):
                 fail(f"bump offer {bump['offer_id']!r} entitlements are a "
                      f"subset of main offer {m['offer_id']!r} — the bump "
