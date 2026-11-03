@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "tenant_id": "TEST-TENANT",
   "location_id": "TEST-LOCATION",
-  "launch_id": "TEST-FIXTURE-ELEVATION",
+  "launch_id": "test-fixture-elevation",
   "revision": 1,
   "answers_file": "fixtures/elevation/answers.json",
   "journey_mode": "multiple_options",

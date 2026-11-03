@@ -13,6 +13,7 @@ from __future__ import annotations
 import datetime
 import functools
 import importlib.util
+import re
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -123,6 +124,26 @@ def contract_violations(plan: Any) -> List[str]:
         return list(module.validate_plan(plan, module.load_json(module.SCHEMA_PATH)))
     except (OSError, ValueError, KeyError, TypeError) as exc:
         return [f"the shared launch-plan validator is unusable ({exc})"]
+
+
+def launch_id_violation(launch_id: Any) -> Optional[str]:
+    """Why the launch-plan schema would refuse this launch_id, or None.
+
+    Reads the schema's own ``launch_id`` pattern and minLength, so intake refuses at the door exactly
+    what the plan would refuse after the pages are built. None when the contract is not installed:
+    ``validate_plan`` then refuses the plan by name."""
+    module = _contract_module()
+    if module is None:
+        return None
+    try:
+        rule = module.load_json(module.SCHEMA_PATH)["properties"]["launch_id"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if not isinstance(launch_id, str) or len(launch_id) < rule.get("minLength", 0) \
+            or not re.search(rule.get("pattern", ""), launch_id):
+        return (f"{launch_id!r} does not match the launch plan's launch_id rule "
+                f"(pattern {rule.get('pattern')}, at least {rule.get('minLength', 0)} characters)")
+    return None
 
 
 def validate_plan(plan: Any) -> None:

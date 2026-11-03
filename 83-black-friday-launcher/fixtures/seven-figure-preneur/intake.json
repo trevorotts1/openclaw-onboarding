@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "tenant_id": "TEST-TENANT",
   "location_id": "TEST-LOCATION",
-  "launch_id": "TEST-FIXTURE-7FIGUREPRENEUR",
+  "launch_id": "test-fixture-7figurepreneur",
   "revision": 1,
   "answers_file": "fixtures/seven-figure-preneur/answers.json",
   "journey_mode": "folded_levels",

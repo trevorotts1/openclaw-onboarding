@@ -82,7 +82,7 @@ def _price_choice(offer: Dict[str, Any], price: Dict[str, Any], test_only: bool)
     return {
         "price_choice_id": price["price_choice_id"],
         "currency": price["currency"],
-        "currency_exponent": _s78("selection_core").currency_exponent(price["currency"]),
+        "currency_exponent": checkout_module.currency_exponent(price["currency"]),
         "amount_minor": price["amount_minor"],
         "billing_type": price["billing_type"],
         "native_product_id": offer.get("native_product_id"),
