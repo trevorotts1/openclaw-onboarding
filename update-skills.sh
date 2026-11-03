@@ -7519,7 +7519,7 @@ X11EOF
     # Sits AFTER the stamp-pin block on purpose: a skill whose pin was just
     # restamped must be verified against the new pin, not the stale one.
     if [ -f "$SKILLS_DIR/$SKILL_NAME/verify.sh" ]; then
-      _POST_COPY_VERIFY_QUEUE="$_POST_COPY_VERIFY_QUEUE $SKILL_NAME"
+      _POST_COPY_VERIFY_QUEUE="${_POST_COPY_VERIFY_QUEUE:-} $SKILL_NAME"
     fi
 
     echo "    Updated: $SKILL_NAME"

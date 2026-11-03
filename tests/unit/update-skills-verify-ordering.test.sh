@@ -266,6 +266,58 @@ RC_C=$?
   || bad "(C) a phase above did not complete, so the control proves nothing"
 
 echo ""
+echo "== phase D: skill75-style extraction -- the copy body must not need the queue initialised =="
+# tests/unit/updater-preserves-skill75-interrupt-state.test.sh extracts the copy
+# body with its own anchors (below the queue's initialisation line) and runs it
+# under set -euo pipefail. A queue append that reads an unset variable therefore
+# kills that simulation with "unbound variable" even though the real updater
+# initialises the queue above the extraction anchor. Both an unset and a set
+# queue are exercised so the fix cannot hide a second failure.
+awk '/^    # Remove old version if exists\./{on=1} on{print} on && /echo "    Updated: \$SKILL_NAME"/{exit}' "$UPDATER" > "$WORK/skillsnippet.inc"
+if [ ! -s "$WORK/skillsnippet.inc" ]; then
+  echo "FATAL: could not extract the skill75-style copy body (anchor drift?)"
+  exit 2
+fi
+SNIP_SKILLS="$WORK/snippet-skills"
+SNIP_RELEASE="$WORK/snippet-release/01-snippet"
+mkdir -p "$SNIP_SKILLS" "$SNIP_RELEASE"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$SNIP_RELEASE/verify.sh"
+echo 'snippet body' > "$SNIP_RELEASE/SKILL.md"
+{
+  echo 'oc_skill_box_state_save()  { :; }'
+  echo 'oc_skill_box_state_restore() { :; }'
+  echo 'oc_remove_tree_guarded() { rm -rf "$1"; }'
+  echo 'obs_set_status() { :; }'
+  echo 'install_one_skill() {'
+  cat "$WORK/skillsnippet.inc"
+  echo '}'
+} > "$WORK/skillsnippet.sh"
+bash -n "$WORK/skillsnippet.sh" || { echo "FATAL: skill75-style extracted copy body does not parse"; exit 2; }
+
+run_snippet() {  # $1 = unset|set -> rc; output captured in $WORK/snippet-$1.out
+  (
+    set -euo pipefail
+    . "$WORK/skillsnippet.sh"
+    SKILLS_DIR="$SNIP_SKILLS"
+    SKILL_DIR="$SNIP_RELEASE/"
+    SKILL_NAME=01-snippet
+    if [ "$1" = "set" ]; then _POST_COPY_VERIFY_QUEUE=""; else unset _POST_COPY_VERIFY_QUEUE; fi
+    install_one_skill
+  ) >"$WORK/snippet-$1.out" 2>&1
+}
+
+for _case in unset set; do
+  rc=0; run_snippet "$_case" || rc=$?
+  if grep -q 'unbound variable' "$WORK/snippet-$_case.out"; then
+    bad "(D) copy body with the queue $_case aborts on 'unbound variable' (the skill75 simulation would die)"
+  elif [ "$rc" -ne 0 ]; then
+    bad "(D) copy body with the queue $_case exited non-zero (rc=$rc) without an unbound-variable message"
+  else
+    ok "(D) copy body finishes clean with the queue $_case (no unbound variable, rc=0)"
+  fi
+done
+
+echo ""
 echo "----------------------------------------"
 echo "  PASS: $PASS    FAIL: $FAIL"
 echo "----------------------------------------"
