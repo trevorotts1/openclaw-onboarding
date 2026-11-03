@@ -24,7 +24,7 @@ sys.path.insert(0, str(SKILL_ROOT / "routes"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import substrate  # noqa: E402
-from launcher_core import checks, image_stages, page_designs  # noqa: E402
+from launcher_core import checks, image_stages, launch_bridge, package, page_designs  # noqa: E402
 from test_page_designs_real import write_stage_state  # noqa: E402
 
 S71 = "71-blackceo-signature-page/scripts"
@@ -38,10 +38,10 @@ STAGE_OF = {"wireframe_desktop_section": "desktop-wireframe", "wireframe_mobile_
             "mockup_desktop_section": "final-mockups", "mockup_mobile_section": "final-mockups"}
 
 
-def png() -> bytes:
+def png(shade: int = 200) -> bytes:
     from PIL import Image
     buf = io.BytesIO()
-    Image.new("RGB", (400, 300), (200, 200, 200)).save(buf, "PNG")
+    Image.new("RGB", (400, 300), (shade, 200, 200)).save(buf, "PNG")
     return buf.getvalue()
 
 
@@ -52,23 +52,23 @@ def sha(path: Path) -> str:
 class PaidRun:
     """One page's run folder, grown stage by stage the way a kie run grows it."""
 
-    def __init__(self, root: Path) -> None:
-        self.run = root / f"images-{PAGE}"
+    def __init__(self, root: Path, run: str = f"images-{PAGE}", intake: dict = None, sections: int = SECTIONS) -> None:
+        self.run, self.sections = root / run, sections
         self.run.mkdir(parents=True)
-        (self.run / "intake.json").write_text(json.dumps({"page_role": PAGE}), encoding="utf-8")
-        self.png = png()
+        (self.run / "intake.json").write_text(json.dumps(intake or {"page_role": PAGE}), encoding="utf-8")
+        self.png = png(sum(run.encode()) % 150)  # a distinct hash per run, as two real runs have
 
     def draw(self, stage: str) -> None:
         """The stage's raw section pictures, then Skill 71's compose step (labeled copies, review PDFs)."""
         devices = {"desktop-wireframe": [""], "mobile-tablet": [""],
                    "visual-mockup": ["desktop/", "mobile/"], "final-mockups": ["desktop/", "mobile/"]}[stage]
         for prefix in devices:
-            for n in range(1, SECTIONS + 1):
+            for n in range(1, self.sections + 1):
                 target = self.run / stage / f"{prefix}{'part' if prefix else 'section'}-{n:02d}.png"
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(self.png)
         (self.run / stage / "stage-executor-record.json").write_text(json.dumps({"provider": "kie"}), encoding="utf-8")
-        assert combine.build_stage(self.run, stage, SECTIONS) == 0
+        assert combine.build_stage(self.run, stage, self.sections) == 0
 
     def board(self) -> None:
         """The combined overview board the paid final-mockups composition writes."""
@@ -167,6 +167,88 @@ class PaidRunDesignsSeamTests(unittest.TestCase):
                 # a second pass changes nothing
                 self.assertEqual(image_stages.refresh_pieces(launch, paid.run), [PAGE])
                 self.assertEqual(json.loads(piece_path.read_text(encoding="utf-8")), piece)
+
+
+class LandingLaneRefreshTests(unittest.TestCase):
+    """The landing lane (Skill 49 landing_bridge -> launch_bridge.split_landing): the sales-only slot is "landing"
+    but its files are labeled sales-page_*; an opt-in run's files are listed as "<its folder>/path"."""
+
+    SECTIONS = 15
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.launch = Path(self.tmp.name) / "launch"
+
+    def run_of(self, name: str, page_kind: str) -> PaidRun:
+        paid = PaidRun(self.launch / "work", name, {"page_role": "landing", "page_kind": page_kind}, self.SECTIONS)
+        (paid.run / "private").mkdir()
+        return paid
+
+    def draw_stages(self, paid: PaidRun, *stages: str) -> None:
+        for stage in stages:
+            paid.draw(stage)
+
+    def dispatch(self, pages, runs):
+        """What the landing bridge lists (sales run bare, opt-in run prefixed) and split_landing stores."""
+        arts = []
+        for key, paid, prefix in runs:
+            arts += [{**a, "path": prefix + a["path"]} for a in page_set.design_artifacts(key, paid.run, relative=True)]
+        result = {"role": "landing", "request_id": "r1", "input_hash": "h1", "status": "ok",
+                  "artifacts": sorted(arts, key=lambda a: a["path"])}
+        pieces = launch_bridge.split_landing(result, pages)
+        (self.launch / "dispatch").mkdir(parents=True)
+        (self.launch / "pieces").mkdir()
+        (self.launch / "dispatch" / "result-landing.json").write_text(json.dumps(result), encoding="utf-8")
+        for slot, piece in pieces.items():
+            (self.launch / "pieces" / f"{slot}.json").write_text(json.dumps(piece), encoding="utf-8")
+        return pieces
+
+    def piece(self, slot: str) -> dict:
+        return json.loads((self.launch / "pieces" / f"{slot}.json").read_text(encoding="utf-8"))
+
+    def kinds_of(self, piece: dict, slug: str) -> set:
+        return {page_designs.classify(a["path"]) for a in piece["artifacts"]
+                if Path(a["path"]).name.startswith(slug + "_")} - {None}
+
+    def test_sales_only_lane_slot_landing_gets_the_sales_pages_final_mockups(self):
+        sales = self.run_of("sales-run", "sales")
+        self.draw_stages(sales, "desktop-wireframe", "mobile-tablet", "visual-mockup")
+        self.dispatch(["sales"], [("sales", sales, "")])
+        self.assertFalse({"mockup_desktop_section", "mockup_mobile_section"} & self.kinds_of(self.piece("landing"), "sales-page"))
+        self.draw_stages(sales, "final-mockups")
+        self.assertEqual(image_stages.refresh_pieces(self.launch, sales.run), ["landing"])
+        self.assertEqual(self.kinds_of(self.piece("landing"), "sales-page") & set(checks.SECTION_KINDS), set(checks.SECTION_KINDS))
+        stored = json.loads((self.launch / "dispatch" / "result-landing.json").read_text(encoding="utf-8"))
+        self.assertLessEqual({(a["path"], a["sha256"]) for a in self.piece("landing")["artifacts"]},
+                             {(a["path"], a["sha256"]) for a in stored["artifacts"]})
+
+    def test_landing_plus_sales_lane_matches_each_file_to_its_own_run_and_every_file_stays_findable(self):
+        sales, opt = self.run_of("sales-run", "sales"), self.run_of("optin-run", "opt_in")
+        for paid in (sales, opt):
+            self.draw_stages(paid, "desktop-wireframe", "mobile-tablet", "visual-mockup")
+        self.dispatch(["landing", "sales"], [("sales", sales, ""), ("landing", opt, f"{opt.run.name}/")])
+        (self.launch / "dispatch" / "landing-bridge.json").write_text(json.dumps(
+            {"landing": {"run_dir": str(sales.run), "opt_in": {"run_dir": str(opt.run)}}}), encoding="utf-8")
+        for paid in (sales, opt):
+            self.draw_stages(paid, "final-mockups")
+        self.assertEqual(image_stages.refresh_pieces(self.launch, opt.run), ["landing"])
+        self.assertEqual(image_stages.refresh_pieces(self.launch, sales.run), ["sales"])
+        roots = package._landing_run_roots(self.launch)
+        for slot, slug in (("landing", "landing"), ("sales", "sales-page")):
+            piece = self.piece(slot)
+            self.assertTrue(set(checks.SECTION_KINDS) <= self.kinds_of(piece, slug), (slot, self.kinds_of(piece, slug)))
+            for art in piece["artifacts"]:
+                src = package._artifact_source(art["path"], self.launch, roots)
+                self.assertTrue(src.is_file(), (slot, art["path"]))
+                self.assertEqual(sha(src), art["sha256"], (slot, art["path"]))
+        # the opt-in run's files keep the folder prefix and no bare entry took another run's hash
+        self.assertTrue(any(a["path"].startswith("optin-run/final-mockups/") for a in self.piece("landing")["artifacts"]))
+        self.assertFalse(any(a["path"].startswith("optin-run/") for a in self.piece("sales")["artifacts"]))
+        before = (self.piece("landing"), self.piece("sales"))
+        image_stages.refresh_pieces(self.launch, opt.run)
+        image_stages.refresh_pieces(self.launch, sales.run)
+        self.assertEqual((self.piece("landing"), self.piece("sales")), before)  # a second pass changes nothing
 
 
 if __name__ == "__main__":

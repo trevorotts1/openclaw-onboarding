@@ -265,12 +265,24 @@ def _upsert(result: Dict[str, Any], fresh: List[Dict[str, Any]], old: set) -> bo
     return True
 
 
-def _file_in(folder: Path, path: Any) -> bool:
-    """True when ``path`` (absolute, or relative to ``folder``) is an existing file inside ``folder``."""
-    if not isinstance(path, str) or not path:
-        return False
-    target = Path(path) if Path(path).is_absolute() else folder / path
-    return target.is_file() and target.resolve().is_relative_to(folder)
+def _own_form(page_run: Path, artifacts: Sequence[Any]) -> Optional[str]:
+    """How a piece names this run's files, or None when it lists none of them: "prefix" (``<run folder>/path``,
+    the form landing_bridge gives an opt-in run's files, resolved from the run's parent exactly as
+    package._artifact_source does), "absolute", or "relative" (from the run). A file counts only when it sits
+    inside the run AND carries the hash listed for it. The prefix form is tried first: it names the run, while
+    a bare name can match another run's identical file (two runs share generic names and some bytes)."""
+    def mine(digest: Any, target: Path) -> bool:
+        return target.is_file() and target.resolve().is_relative_to(page_run) and (not digest or _sha(target) == digest)
+
+    listed = [(a.get("path"), a.get("sha256")) for a in artifacts if isinstance(a, dict) and isinstance(a.get("path"), str)]
+    if any(p.startswith(page_run.name + "/") and mine(d, page_run.parent / p) for p, d in listed):
+        return "prefix"
+    for p, d in listed:
+        if Path(p).is_absolute() and mine(d, Path(p)):
+            return "absolute"
+        if not Path(p).is_absolute() and mine(d, page_run / p):
+            return "relative"
+    return None
 
 
 def _write_json(path: Path, doc: Any) -> None:
@@ -280,29 +292,42 @@ def _write_json(path: Path, doc: Any) -> None:
 def refresh_pieces(run_dir: Path, page_run: Path) -> List[str]:
     """Re-list one page's design files in its piece after its final-mockups stage closed. Returns the slots refreshed.
 
-    A piece (``pieces/<slot>.json``, slot = a Skill 49 page_key) belongs to the page run when one of its
-    artifacts is a file inside it. The run's files are listed again with Skill 49's own
-    ``page_set.design_artifacts`` in the form the piece already uses (absolute, or relative to the run;
-    with the provider when the piece names one) and merged by path. The piece must stay one of the
+    A piece (``pieces/<slot>.json``) belongs to the page run when one of its artifacts is that file inside it
+    (same bytes; see ``_own_form``). The run's files are listed again with Skill 49's own
+    ``page_set.design_artifacts``, for the page key the PIECE names (a landing-lane piece's page_kind: the
+    sales-only slot "landing" is the "sales" page), in the form the piece already uses (absolute, relative to
+    the run, or prefixed with the run folder name as the opt-in run's files are; with the provider when the
+    piece names one) and merged by path. The piece must stay one of the
     dispatch's own artifacts (``package._bind_piece``), so every stored dispatch result that lists the
     piece's files, and the dispatch manifest's copy of it, takes the same files.
     """
     run_dir, page_run = Path(run_dir), Path(page_run).resolve()
     page_set = _page_set()
-    keys = set(page_set.page_types()["pages"])
+    pages = page_set.page_types()["pages"]
+    by_kind = {v["page_kind"]: k for k, v in pages.items() if v.get("page_kind")}  # opt_in -> landing, sales -> sales
+    intake = _read(page_run / "intake.json")
+    run_kind = intake.get("page_kind") if isinstance(intake, dict) else None
     stored = [p for p in sorted((run_dir / "dispatch").glob("*result-*.json"))]
     manifest_path = run_dir / "dispatch" / "dispatch-manifest.json"
     manifest = _read(manifest_path)
     refreshed: List[str] = []
     for piece_path in sorted((run_dir / "pieces").glob("*.json")):
         piece = _read(piece_path)
-        if piece_path.stem not in keys or not isinstance(piece, dict):
+        if piece_path.stem not in pages or not isinstance(piece, dict):
             continue
-        owned = [a for a in piece.get("artifacts") or [] if isinstance(a, dict) and _file_in(page_run, a.get("path"))]
-        if not owned:
+        # the page key comes from the piece, not its slot: the sales-only lane's slot is "landing" but it is the sales page
+        kind = piece.get("page_kind")
+        key = by_kind.get(kind, piece_path.stem)
+        if kind in by_kind and run_kind != kind:  # a landing-lane piece is refreshed only from the run of its own kind
             continue
-        fresh = page_set.design_artifacts(piece_path.stem, page_run, relative=not Path(owned[0]["path"]).is_absolute(),
-                                          with_provider=any("provider" in a for a in owned))
+        form = _own_form(page_run, piece.get("artifacts") or [])
+        if form is None:
+            continue
+        fresh = page_set.design_artifacts(key, page_run, relative=form != "absolute",
+                                          with_provider=any(isinstance(a, dict) and "provider" in a
+                                                          for a in piece["artifacts"]))
+        if form == "prefix":
+            fresh = [{**a, "path": f"{page_run.name}/{a['path']}"} for a in fresh]
         old = {(a.get("path"), a.get("sha256")) for a in piece["artifacts"] if isinstance(a, dict)}
         _upsert(piece, fresh, old)
         _write_json(piece_path, piece)
