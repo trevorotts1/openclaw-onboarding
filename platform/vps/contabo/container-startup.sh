@@ -192,7 +192,7 @@ let list;
 try { list = JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { process.exit(1); }
 if (!Array.isArray(list)) { process.exit(1); }
 const hit = (s) => /ghl[-_]community[-_]mcp/.test(String(s || ""));
-const keep = list.filter((x) => x && !hit(x.name) && !hit(x.pm_exec_path) && !hit(x.script) && !hit(x.pm_exec_path_args));
+const keep = list.filter((x) => x && !hit(x.name) && !hit(x.pm_exec_path) && !hit(x.script) && !hit(x.pm_exec_path_args) && !hit(x.cwd));
 if (keep.length === list.length) { process.exit(0); }
 try { fs.writeFileSync(p, JSON.stringify(keep, null, 2)); } catch (e) { process.exit(1); }
 process.exit(0);

@@ -4798,16 +4798,21 @@ wire_ghl_mcp() {
       # "ghl-community-mcp" does NOT contain the token "ghl-mcp", so this
       # check can never pass on the retired entry alone.
       local _OCROOT_FOR_MCP="${OC_PERSISTENT_CONFIG_DIR:-${OC_CONFIG:-$HOME/.openclaw}}"
-      if command -v openclaw >/dev/null 2>&1; then
-        openclaw mcp list 2>/dev/null | grep -q 'ghl-mcp' || \
-          _MISSING="$_MISSING official-ghl-mcp-registration"
-      elif [ -f "$_OCROOT_FOR_MCP/openclaw.json" ]; then
-        grep -q '"ghl-mcp"' "$_OCROOT_FOR_MCP/openclaw.json" 2>/dev/null || \
-          _MISSING="$_MISSING official-ghl-mcp-registration"
-      else
-        _MISSING="$_MISSING official-ghl-mcp-registration"
+      # A CLI that cannot answer is NOT proof the registration is missing: that
+      # read "cannot tell" as "absent" and refused the retirement transaction on
+      # a box whose openclaw.json holds the official entry. Fall through to the
+      # config when the CLI gives nothing, then fail only if BOTH say no.
+      local _ghl_reg_ok=0
+      if command -v openclaw >/dev/null 2>&1 && \
+         openclaw mcp list 2>/dev/null | grep -q 'ghl-mcp'; then
+        _ghl_reg_ok=1
       fi
-      unset _OCROOT_FOR_MCP
+      if [ "$_ghl_reg_ok" = "0" ] && [ -f "$_OCROOT_FOR_MCP/openclaw.json" ] && \
+         grep -q '"ghl-mcp"' "$_OCROOT_FOR_MCP/openclaw.json" 2>/dev/null; then
+        _ghl_reg_ok=1
+      fi
+      [ "$_ghl_reg_ok" = "1" ] || _MISSING="$_MISSING official-ghl-mcp-registration"
+      unset _OCROOT_FOR_MCP _ghl_reg_ok
 
       if [ -n "$_MISSING" ]; then
         {

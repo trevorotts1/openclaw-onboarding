@@ -319,6 +319,20 @@ jobs:
           chmod +x tests/unit/ghl-mcp-deployment-parity.test.sh
           bash tests/unit/ghl-mcp-deployment-parity.test.sh
 
+      # GU-019/020/021. These four tests were rc=0 locally but referenced by NO
+      # workflow, so their whole subject — retirement durability, the retirement
+      # transaction, the content gate and the retained tool — was unwatched.
+      - name: Run GHL MCP retirement tests (durability, transaction, content gate, tool retained)
+        run: |
+          for f in \
+            tests/unit/ghl-mcp-retirement.test.sh \
+            tests/unit/ghl-mcp-retirement-transaction.test.sh \
+            tests/unit/ghl-mcp-retirement-content-current-gate.test.sh \
+            tests/unit/ghl-mcp-retirement-tool-retained.test.sh; do
+            chmod +x "$f"
+            bash "$f"
+          done
+
       # skill 36 v2.0.2. The autostart script and the runtime gate carried two
       # copies of one path/platform derivation, under a comment claiming they
       # were identical. They were not: the gate knew two platforms to the

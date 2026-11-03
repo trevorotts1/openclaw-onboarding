@@ -266,8 +266,50 @@ if [ -n "${_S36_PIN:-}" ] && [ -f "${_S36_PIN:-}" ]; then
 fi
 
 # Retired process identity: the install dir, the launch wrapper, or the dist main.
+#
+# A RELATIVE argv ("node dist/main.js") names no install path at all, and that
+# is exactly what the legacy launcher produces with cwd = the install dir, so
+# matching only the absolute path read a live retired service as absent.
+_s36_mcp_dir() {
+  local c
+  for c in "${GHL_MCP_DIR:-}" \
+           "$HOME/.openclaw/mcp-servers/ghl-community-mcp" \
+           "/data/.openclaw/mcp-servers/ghl-community-mcp" \
+           "/data/mcp-servers/ghl-community-mcp" \
+           "$HOME/mcp-servers/ghl-community-mcp"; do
+    [ -n "$c" ] && [ -d "$c" ] && { printf '%s' "$c"; return 0; }
+  done
+  return 1
+}
+
+_s36_pid_cwd() {  # <pid>
+  local p="$1" d=""
+  [ -r "/proc/$p/cwd" ] && d="$(readlink "/proc/$p/cwd" 2>/dev/null || true)"
+  if [ -z "$d" ] && command -v lsof >/dev/null 2>&1; then
+    d="$(lsof -a -p "$p" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)"
+  fi
+  printf '%s' "$d"
+}
+
+# lsof reports the PHYSICAL path (/private/var/... for /var/...).
+_s36_same_dir() {  # <a> <b>
+  [ -n "$1" ] && [ -n "$2" ] || return 1
+  [ "$1" = "$2" ] && return 0
+  local a b
+  a="$(cd "$1" 2>/dev/null && pwd -P)" || return 1
+  b="$(cd "$2" 2>/dev/null && pwd -P)" || return 1
+  [ "$a" = "$b" ]
+}
+
 _s36_process_running() {
-  ps -A -o command= 2>/dev/null | grep -E '[g]hl-community-mcp'
+  ps -A -o command= 2>/dev/null | grep -qE '[g]hl-community-mcp' && return 0
+  local d p
+  d="$(_s36_mcp_dir)" || return 1
+  for p in $(pgrep -f 'dist/main\.js' 2>/dev/null || \
+             ps -A -o pid=,command= 2>/dev/null | awk '/dist\/main\.js/ {print $1}'); do
+    _s36_same_dir "$(_s36_pid_cwd "$p")" "$d" && return 0
+  done
+  return 1
 }
 
 # Listener on the configured port. rc 2 = cannot tell (no lsof and no ss).
@@ -340,9 +382,12 @@ echo "── Section E: Core .md files wired ──"
 assert "AGENTS.md has Tier Escalation Protocol (relocated from SOUL.md)" "[ -f \"$WORKSPACE/AGENTS.md\" ] && grep -q 'Tier Escalation Protocol' \"$WORKSPACE/AGENTS.md\""
 assert "SOUL.md does NOT carry the legacy skill-36 Tier Escalation Protocol" "[ ! -f \"$WORKSPACE/SOUL.md\" ] || ! grep -q '🔴 GHL Tier Escalation Protocol' \"$WORKSPACE/SOUL.md\""
 assert "AGENTS.md has canonical state block"  "[ -f \"$WORKSPACE/AGENTS.md\" ] && grep -qE 'CANONICAL|Canonical' \"$WORKSPACE/AGENTS.md\""
-assert "AGENTS.md references GHL_COMMUNITY_MCP_URL" "grep -q 'GHL_COMMUNITY_MCP_URL' \"$WORKSPACE/AGENTS.md\" 2>/dev/null"
-assert "TOOLS.md has GHL MCP tool reference" "[ -f \"$WORKSPACE/TOOLS.md\" ] && grep -qE 'ghl-community-mcp|ghl_list_products' \"$WORKSPACE/TOOLS.md\""
-assert "MEMORY.md has GHL MCP install record" "[ -f \"$WORKSPACE/MEMORY.md\" ] && grep -qE 'GHL MCP Setup|skill 36|ghl-community-mcp' \"$WORKSPACE/MEMORY.md\""
+# RETIRED means the workspace must NOT advertise the community MCP. These three
+# assertions used to require the reference, so a correctly-retired workspace
+# FAILED and a box still advertising the retired tool PASSED.
+assert "AGENTS.md carries no retired community MCP URL" "! grep -q 'GHL_COMMUNITY_MCP_URL' \"$WORKSPACE/AGENTS.md\" 2>/dev/null"
+assert "TOOLS.md carries no retired community MCP tool reference" "! grep -qE 'ghl-community-mcp|ghl_list_products' \"$WORKSPACE/TOOLS.md\" 2>/dev/null"
+assert "MEMORY.md carries no retired community MCP install record" "! grep -qE 'ghl-community-mcp|ghl_list_products|GHL_COMMUNITY_MCP_URL' \"$WORKSPACE/MEMORY.md\" 2>/dev/null"
 
 echo ""
 echo "── Section F: Doc archived to master files ──"

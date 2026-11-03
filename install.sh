@@ -8147,6 +8147,29 @@ oc_ghl_mcp_scan() {
                 *"mcp-servers/ghl-community-mcp"*) OC_GHL_MCP_V_PROCESS=present ;;
                 *) OC_GHL_MCP_V_PROCESS=absent ;;
             esac
+            if [ "$OC_GHL_MCP_V_PROCESS" = "absent" ]; then
+                # A RELATIVE argv ("node dist/main.js") names no install path,
+                # so it counts only when the process cwd IS the install dir.
+                for _vpid in $(printf '%s\n' "$_out" | awk '/dist\/main\.js/ {print $1}'); do
+                    _vcwd=""
+                    [ -r "/proc/$_vpid/cwd" ] && _vcwd="$(readlink "/proc/$_vpid/cwd" 2>/dev/null || true)"
+                    if [ -z "$_vcwd" ] && command -v lsof >/dev/null 2>&1; then
+                        _vcwd="$(lsof -a -p "$_vpid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)"
+                    fi
+                    # lsof answers with the physical path (/private/var/... for
+                    # /var/...), so match through a physical resolution too.
+                    case "$_vcwd" in
+                        *"mcp-servers/ghl-community-mcp"*) OC_GHL_MCP_V_PROCESS=present; break ;;
+                    esac
+                    if [ -n "$_vcwd" ] && [ -d "$_vcwd" ]; then
+                        _vcwd="$(cd "$_vcwd" 2>/dev/null && pwd -P || printf '%s' "$_vcwd")"
+                        case "$_vcwd" in
+                            *"mcp-servers/ghl-community-mcp"*) OC_GHL_MCP_V_PROCESS=present; break ;;
+                        esac
+                    fi
+                done
+                unset _vpid _vcwd
+            fi
         fi
     fi
 

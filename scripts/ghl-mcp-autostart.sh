@@ -396,17 +396,50 @@ _ghl_pm2_home_with_app() {
   return 0
 }
 
+# cwd of one PID: /proc first (Linux containers), lsof second (macOS). lsof
+# answers with the PHYSICAL path (/private/var/... for /var/...), so compare
+# through _ghl_same_dir, never raw strings.
+_ghl_pid_cwd() {  # <pid>
+  local p="$1" d=""
+  [ -r "/proc/$p/cwd" ] && d="$(readlink "/proc/$p/cwd" 2>/dev/null || true)"
+  if [ -z "$d" ] && command -v lsof >/dev/null 2>&1; then
+    d="$(lsof -a -p "$p" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)"
+  fi
+  printf '%s' "$d"
+}
+
+_ghl_same_dir() {  # <a> <b>
+  [ -n "$1" ] && [ -n "$2" ] || return 1
+  [ "$1" = "$2" ] && return 0
+  local a b
+  a="$(cd "$1" 2>/dev/null && pwd -P)" || return 1
+  b="$(cd "$2" 2>/dev/null && pwd -P)" || return 1
+  [ "$a" = "$b" ]
+}
+
 # PIDs whose COMMAND LINE carries one of THIS INSTALL's exact paths. Never a
 # broad name: "ghl", "node" and the port are deliberately absent.
+#
+# A RELATIVE argv ("node dist/main.js") carries no install path at all, and the
+# legacy launcher produces exactly that with cwd = the install dir — so it was
+# invisible here and a live retired service read as off. Match the relative
+# forms too, but ONLY when the process cwd IS this install dir.
 _ghl_matched_pids() {
   command -v pgrep >/dev/null 2>&1 || return 0
-  local pat p cmd out=""
+  local pat p cmd out="" rel
   for pat in "$MCP_DIR/dist/main.js" "$MCP_DIR/.ghl-mcp-launch.sh" "$RETIRE_SUPERVISE"; do
     [ -n "$pat" ] || continue
     for p in $(pgrep -f -- "$pat" 2>/dev/null || true); do
       case " $out " in *" $p "*) continue ;; esac
       cmd="$(ps -o command= -p "$p" 2>/dev/null || true)"
       case "$cmd" in *"$pat"*) out="$out $p" ;; esac
+    done
+  done
+  for rel in "dist/main.js" ".ghl-mcp-launch.sh" ".ghl-mcp-supervise.sh"; do
+    for p in $(pgrep -f -- "$rel" 2>/dev/null || true); do
+      case " $out " in *" $p "*) continue ;; esac
+      _ghl_same_dir "$(_ghl_pid_cwd "$p")" "$MCP_DIR" || continue
+      out="$out $p"
     done
   done
   printf '%s' "$out"
@@ -430,7 +463,31 @@ _ghl_listener_state() {
     if [ -n "$o" ]; then printf 'listening'; else printf 'none'; fi
     return 0
   fi
-  printf 'unknown'
+  # /proc/net/tcp(+tcp6) is the ONLY source left on a slim container with none
+  # of lsof/ss/netstat (same reasoning as scripts/ghl-mcp-assert-runtime.sh
+  # check 13). Without it this printed "unknown", which maps to a residual
+  # unknown and makes RETIRED_VERIFIED_OFF unreachable on those boxes.
+  local _pns
+  _ghl_proc_net_state; _pns=$?
+  case "$_pns" in 0) printf 'listening' ;; 1) printf 'none' ;; *) printf 'unknown' ;; esac
+}
+
+# rc 0 = a LISTEN row on $RETIRE_PORT, 1 = every readable family says no,
+# 2 = a /proc/net file exists but cannot be read (undetermined, never "off").
+_ghl_proc_net_state() {
+  local f seen=0 undet=0
+  for f in "${GHL_MCP_PROC_NET_TCP:-/proc/net/tcp}" "${GHL_MCP_PROC_NET_TCP6:-/proc/net/tcp6}"; do
+    [ -e "$f" ] || continue
+    if [ ! -r "$f" ]; then undet=1; continue; fi
+    seen=1
+    awk -v want="$RETIRE_PORT" '
+      BEGIN { w = sprintf("%04X", want) }
+      NR > 1 && $4 == "0A" { split($2, a, ":"); if (toupper(a[2]) == w) { hit = 1; exit } }
+      END { exit(hit ? 0 : 1) }' "$f" && return 0
+  done
+  [ "$seen" = "1" ] || return 2
+  [ "$undet" = "1" ] && return 2
+  return 1
 }
 
 # 1 when gateway.tls.enabled is true in the config file named by $1, else 0 (also
@@ -941,6 +998,39 @@ _ghl_ret_disable_stop() {
         ;;
     esac
   fi
+
+  # 4.9 — THE LAUNCH SURFACES THEMSELVES, last so nothing is rewritten while a
+  # shell is still reading it. Stage 3 kept a COPY in the archive, but the live
+  # ones stay executable in the install dir, so any boot invoker re-runs
+  # .ghl-mcp-launch.sh and the retired service comes back — seen after a
+  # container restart on a box that had already reported RETIRED_VERIFIED_OFF.
+  # Inert the shell launchers (a refusing stub is observable AND non-zero) and
+  # remove the pm2/build configs, which no process is reading.
+  local _surf
+  for _surf in "$MCP_DIR/.ghl-mcp-launch.sh" "$MCP_DIR/.ghl-mcp-supervise.sh"; do
+    [ -e "$_surf" ] || continue
+    if printf '%s\n' \
+         '#!/bin/sh' \
+         '# GHL_MCP_RETIRED — the community MCP is retired on this box.' \
+         '# Restoring it is a re-installation, not a restart. This file is inert.' \
+         'echo "GHL_MCP_RETIRED: the community MCP was retired; refusing to start." >&2' \
+         'exit 1' > "$_surf" 2>/dev/null; then
+      chmod +x "$_surf" 2>/dev/null || true
+      _ret_dis "launch-surface-inert:$(basename "$_surf")"
+    else
+      _ret_dis "launch-surface-FAILED:$(basename "$_surf")"
+    fi
+  done
+  for _surf in "$MCP_DIR/ecosystem.config.js" "$MCP_DIR/.ghl-mcp-build.json"; do
+    [ -e "$_surf" ] || continue
+    rm -f "$_surf" 2>/dev/null || true
+    if [ -e "$_surf" ]; then
+      _ret_dis "launch-surface-FAILED:$(basename "$_surf")"
+    else
+      _ret_dis "launch-surface-removed:$(basename "$_surf")"
+    fi
+  done
+  unset _surf
 }
 
 # ── Stage 7: RECEIPT ────────────────────────────────────────────────────────
