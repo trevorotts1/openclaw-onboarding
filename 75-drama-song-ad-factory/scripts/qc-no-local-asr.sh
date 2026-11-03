@@ -23,6 +23,9 @@
 #
 # Env: DRAMA75_CORE=<scripts/core dir> (default: resolve from this file),
 # DRAMA75_RUN_DIRS=<colon-or-space-separated run folders> (default: none).
+# A listed entry that is itself a folder is ONE path even when it contains
+# spaces ("/mnt/Work Disk/runs/..."); a named folder that does not exist is
+# a usage error, never a silent skip (a skipped folder is an unscanned one).
 # Exit 0 = clean; 2 = offender found (paths printed); 1 = usage error.
 set -u
 
@@ -34,26 +37,50 @@ if [ ! -d "$core" ]; then
   exit 1
 fi
 
-hits="$(mktemp "${TMPDIR:-/tmp}/qcnla-hits.XXXXXX")"
+hits="$(mktemp "${TMPDIR:-/tmp}/qcnla-hits.XXXXXX")" || {
+  echo "qc-no-local-asr: cannot create a hits file under ${TMPDIR:-/tmp}" >&2
+  exit 1
+}
 trap 'rm -f "$hits"' EXIT
 
 # Run folders: banned surfaces in any .py file (tests exempt). The one
 # transcription step lives in scripts/core, never inside a run folder.
+scan_run_dir() {
+  local d="$1"
+  if [ ! -d "$d" ]; then
+    echo "qc-no-local-asr: run folder not found: $d" >&2
+    exit 1
+  fi
+  grep -rIlnE \
+    --include='*.py' \
+    --exclude-dir=__pycache__ --exclude-dir=.git --exclude-dir=node_modules \
+    --exclude='test_*.py' --exclude='*_test.py' --exclude='conftest.py' \
+    -e '(^|[^a-z_])import +whisper *($|#|$)' \
+    -e '(^|[^a-z_])import +openai_whisper' \
+    -e '(^|[^a-z_])from +whisper +import' \
+    -e '(^|[^a-z_])from +openai_whisper +import' \
+    -e 'whisper\.load' \
+    -e 'openai-whisper' \
+    "$d" 2>/dev/null >> "$hits" || true
+}
+# Split on ':' and newlines only -- an unquoted `for d in $run_dirs` split a
+# spaced path into fragments that were not folders and skipped them, so a
+# planted script under any spaced TMPDIR scanned clean. Legacy
+# space-separated lists still work: an entry that is not a folder is re-split
+# on whitespace (globbing off) and every piece must be a folder.
 if [ -n "$run_dirs" ]; then
-  for d in $run_dirs; do
-    [ -d "$d" ] || continue
-    grep -rIlnE \
-      --include='*.py' \
-      --exclude-dir=__pycache__ --exclude-dir=.git --exclude-dir=node_modules \
-      --exclude='test_*.py' --exclude='*_test.py' --exclude='conftest.py' \
-      -e '(^|[^a-z_])import +whisper *($|#|$)' \
-      -e '(^|[^a-z_])import +openai_whisper' \
-      -e '(^|[^a-z_])from +whisper +import' \
-      -e '(^|[^a-z_])from +openai_whisper +import' \
-      -e 'whisper\.load' \
-      -e 'openai-whisper' \
-      "$d" 2>/dev/null >> "$hits" || true
-  done
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    if [ -d "$entry" ]; then
+      scan_run_dir "$entry"
+      continue
+    fi
+    set -f
+    for d in $entry; do
+      scan_run_dir "$d"
+    done
+    set +f
+  done < <(printf '%s\n' "$run_dirs" | tr ':' '\n')
 fi
 
 # scripts/core non-test .py files: banned surfaces anywhere, plus a second

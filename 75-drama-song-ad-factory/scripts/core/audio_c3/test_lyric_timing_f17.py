@@ -396,6 +396,30 @@ def test_scan_detects_planted_whisper_script():
     check("planted offender named in output", "asr1.py" in r.stderr)
 
 
+def test_scan_run_dirs_spaced_path_and_colon_list():
+    """A run folder whose path holds a space is ONE folder, and the
+    documented colon list scans every entry. Both used to scan clean: the
+    script word-split the list, so any TMPDIR holding a space skipped the
+    planted script above. A named folder that does not exist is a usage
+    error, never a silent skip."""
+    tmp = make_tmp()
+    clean = os.path.join(tmp, "run-clean")
+    spaced = os.path.join(tmp, "run with space")
+    for d in (clean, spaced):
+        os.makedirs(d, exist_ok=True)
+    with open(os.path.join(spaced, "asr2.py"), "w", encoding="utf-8") as f:
+        f.write('import whisper\nmodel = whisper.load("medium.en")\n')
+    r = run_scan({"DRAMA75_CORE": CORE,
+                  "DRAMA75_RUN_DIRS": clean + ":" + spaced})
+    check("spaced run folder in colon list -> exit 2", r.returncode == 2,
+          "rc=%s err=%s" % (r.returncode, r.stderr[-300:]))
+    check("spaced-folder offender named", "asr2.py" in r.stderr)
+    r = run_scan({"DRAMA75_CORE": CORE,
+                  "DRAMA75_RUN_DIRS": os.path.join(tmp, "no-such-run")})
+    check("missing named run folder -> exit 1, never clean",
+          r.returncode == 1, "rc=%s err=%s" % (r.returncode, r.stderr[-300:]))
+
+
 def test_scan_permits_faster_whisper_only_in_module():
     r = run_scan({"DRAMA75_CORE": CORE})
     check("scan clean on this tree (module is the only faster_whisper)",
@@ -895,6 +919,7 @@ def main():
     test_guard_reads_live_lane_size()
     test_tier2_blocked_when_guard_refuses()
     test_scan_detects_planted_whisper_script()
+    test_scan_run_dirs_spaced_path_and_colon_list()
     test_scan_permits_faster_whisper_only_in_module()
     test_scan_banned_surface_in_core()
     test_no_loader_counterexample_production_api()

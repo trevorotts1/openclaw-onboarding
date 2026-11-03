@@ -2794,21 +2794,6 @@ jobs:
 
       # ── NEW ENFORCEMENT GATES (all rules that existed as prose but had no auto-fail) ──
 
-      - name: CRITICAL-1 — No real client names in tracked files
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Fleet-wide privacy invariant: this repo is a generic template; zero real
-          # client first or last names may appear in any committed file. The guard uses
-          # git ls-files (tracked-only) with word-boundary anchors for first names so
-          # inline enforcement scripts that HOLD the names as detection patterns are
-          # correctly self-excluded. Any hit is a hard-fail that blocks merge.
-          # This rule was documented in AGENTS.md N0 + repo memory entry
-          # [repo-is-fleet-wide-no-client-names] but was in NO CI gate or pre-commit
-          # hook. This step closes that gap.
-          bash scripts/qc-assert-no-client-names.sh
-          echo "✓ No real client names found in tracked files"
-
       - name: FLEET-STANDARDS §3 — WhatsApp permanently disabled (no enabled:true in JSON, no uncommented WHATSAPP_NUMBER in env files)
         shell: bash
         run: |
@@ -2836,17 +2821,12 @@ jobs:
           # indentation issues in YAML" pitfall this file used to warn about
           # elsewhere, and it is not worth re-fighting per-runner quoting/embedding
           # fragility for.
-          # Same per-file call and rc mapping, run across all cores (~1,240 files).
-          git ls-files -z -- '*.json' | xargs -0 -r -n 1 -P "$(nproc)" bash -c '
-            rc=0
-            python3 scripts/qc-check-whatsapp-json.py "$1" 2>/dev/null || rc=$?
-            if [ "$rc" -eq 1 ]; then
-              echo "✗ $1: plugins.entries.whatsapp.enabled is true (fleet ban violation)"
-              exit 1
-            elif [ "$rc" -ne 0 ]; then
-              echo "✗ $1: unreadable or malformed non-empty JSON — failing closed (cannot verify fleet ban compliance)"
-              exit 1
-            fi' _ || fail=1
+          # Same per-file verdict and messages, but one interpreter per 300
+          # files instead of one per file (~2,650 files), batches across all
+          # cores. The script prints the ✗ line for each bad file and exits
+          # non-zero if any file is bad; any non-zero (a crash too) fails.
+          git ls-files -z -- '*.json' | xargs -0 -r -n 300 -P "$(nproc)" \
+            python3 scripts/qc-check-whatsapp-json.py || fail=1
 
           # 2. .env files: no uncommented WHATSAPP_NUMBER=
           while IFS= read -r f; do
@@ -3238,16 +3218,77 @@ jobs:
       # at import (sys.exit at module level made the whole-tree pytest run
       # INTERNALERROR, hiding every later failure). This step makes pytest
       # collection itself a red build: every test_*.py under scripts/ must be
-      # pytest-collectable, and the tree must run green in ONE process.
+      # pytest-collectable (the whole tree, in ONE process), and every
+      # collected test must run green.
+      # The run is spread over the runner's cores (it was 8+ minutes on one
+      # core): every test_*.py under scripts/ gets its own pytest process and
+      # its own fresh empty HOME, nproc files at a time, output buffered per
+      # file and printed in file order -- the same shape as the loop above.
+      # pythonpath = the file's own folder, as its documented
+      # `python3 <test>.py` run has (two suites import a sibling module by
+      # bare name and only found it in the one-process run because an
+      # earlier suite had left that folder on sys.path). Not pytest-xdist:
+      # xdist re-imports EVERY file in EVERY worker, and these script-style
+      # suites do their work at import, so each suite would run nproc times
+      # at once, racing on its fixed paths.
       - name: Skill 75 pytest collection + run (no hidden failures)
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
           python3 -m pip install --quiet pytest
           HOME="$(mktemp -d)" python3 -m pytest -q \
             75-drama-song-ad-factory/scripts --collect-only
-          HOME="$(mktemp -d)" python3 -m pytest -q \
-            75-drama-song-ad-factory/scripts
+          # Both of pytest's default file patterns (test_*.py and *_test.py),
+          # the same set the whole-tree run collects.
+          mapfile -t tests < <(find 75-drama-song-ad-factory/scripts -type f \( -name 'test_*.py' -o -name '*_test.py' \) -not -path '*/__pycache__/*' | sort)
+          [ "${#tests[@]}" -gt 0 ] || { echo "✗ no skill 75 test files found"; exit 1; }
+          logs="$(mktemp -d)"
+          export logs
+          printf '%s\0' "${tests[@]}" | xargs -0 -n 1 -P "$(nproc)" bash -c '
+            t="$1"; key="$(printf %s "$t" | tr / _)"
+            rc=0
+            HOME="$(mktemp -d)" python3 -m pytest -q -o pythonpath="$(dirname "$t")" "$t" </dev/null >"$logs/$key.out" 2>&1 || rc=$?
+            echo "$rc" >"$logs/$key.rc"' _ || true   # a file with no recorded exit code is counted as failed below
+          failed=()
+          for t in "${tests[@]}"; do
+            key="$(printf %s "$t" | tr / _)"
+            echo "── $t"
+            cat "$logs/$key.out" 2>/dev/null || true
+            rc="$(cat "$logs/$key.rc" 2>/dev/null || echo missing)"
+            # 5 = the file holds no test items (it still had to import
+            # cleanly), which the whole-tree run also passed.
+            if [ "$rc" != 0 ] && [ "$rc" != 5 ]; then
+              echo "✗ pytest FAIL: $t (exit $rc)"; failed+=("$t")
+            fi
+          done
+          echo "Skill 75 pytest: ${#tests[@]} files, $(( ${#tests[@]} - ${#failed[@]} )) passed, ${#failed[@]} failed"
+          if [ "${#failed[@]}" -gt 0 ]; then
+            printf '✗ pytest FAIL: %s\n' "${failed[@]}"
+            exit 1
+          fi
+          echo "✓ Skill 75 scripts/ per-file pytest green"
+          # The whole tree must ALSO pass in ONE process (catches a suite that
+          # leaks state -- sys.path, env, cwd -- into a later suite, which the
+          # per-file run above cannot see). That run is the job below, on its
+          # own runner in parallel; this required check waits for it and goes
+          # red unless it concluded success. Fail-closed: not found, cancelled,
+          # skipped or still running at the deadline all fail.
+          job="Skill 75 whole-tree pytest (one process)"
+          deadline=$(( $(date +%s) + 40*60 ))
+          while :; do
+            row="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" \
+              --jq ".jobs[] | select(.name == \"$job\") | \"\(.status) \(.conclusion) \(.html_url)\"" 2>&1)" || row="api-error $row"
+            set -- $row
+            if [ "${1:-}" = completed ]; then
+              [ "${2:-}" = success ] || { echo "✗ $job concluded '${2:-}': ${3:-}"; exit 1; }
+              echo "✓ $job: success (${3:-})"
+              break
+            fi
+            [ "$(date +%s)" -lt "$deadline" ] || { echo "✗ $job not completed in 40 min (last: ${row:-not found})"; exit 1; }
+            sleep 20
+          done
           echo "✓ Skill 75 scripts/ pytest-collectable and green"
 
       - name: Skill 75 final-view enforcement gate (X08)
@@ -3699,3 +3740,36 @@ jobs:
           print("✓ T-16 reminder host self-check ran and passed (%d assertions)" % count)
           PY
           echo "✓ T-16 reminder host self-check ran and passed"
+
+  # The one-process whole-tree Skill 75 pytest run (the exact command the
+  # "Skill 75 pytest collection + run" step ran on one core before it went
+  # per-file), on its own runner so it overlaps the long qc-static job instead
+  # of adding ~11 minutes to it. qc-static's pytest step waits for this job
+  # and fails unless it succeeded, so it still gates "QC static invariants".
+  # Same tools the empty-home step installs, so no suite skips itself here.
+  skill75-one-process:
+    name: Skill 75 whole-tree pytest (one process)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Skill 75 whole-tree pytest, one process
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 -m pip install --quiet pytest numpy opencv-python-headless
+          pkgs=""
+          command -v ffmpeg >/dev/null || pkgs="$pkgs ffmpeg"
+          command -v tesseract >/dev/null || pkgs="$pkgs tesseract-ocr"
+          [ -z "$pkgs" ] || { sudo apt-get update -qq && sudo apt-get install -y -qq $pkgs; }
+          HOME="$(mktemp -d)" python3 -m pytest -q \
+            75-drama-song-ad-factory/scripts

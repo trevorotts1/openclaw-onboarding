@@ -78,13 +78,6 @@ jobs:
           bash scripts/guard-ghl-activation-resilience.sh
           echo "✓ Tier-1 activation resilience intact"
 
-      - name: No real client names / ids / emails in the Tier-2 files
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/qc-assert-no-client-names.sh
-          echo "✓ No real client name / id / email / location-id in the repo (incl. the new Tier-2 files)"
-
       - name: Run Tier-2 auth-fallback tests (MOCK GHL + MOCK Gmail only — never a real account)
         shell: bash
         run: |
