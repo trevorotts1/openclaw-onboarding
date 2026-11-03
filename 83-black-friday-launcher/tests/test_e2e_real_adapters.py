@@ -6,8 +6,10 @@ downsell, landing) cannot show up in them. This test builds the adapter commands
 launcher_core.launch_bridge from per-page inputs (the same path as `cli dispatch --adapter-inputs`), runs
 them on the free stub provider, then runs `cli assemble` and `cli check` over what they wrote.
 
-It must end in a package that `check` passes and that is labelled "images only, render pending": the stub
-provider draws section images only, so nothing here may claim review PDFs or boards that were never made.
+It ends at the design gate. A stub run draws unlabeled layout proofs only (Skill 71 labels and composes only
+paid renders), and final mockups need the client's recorded approval of a real (non-stub) Design Board, so
+`check` refuses with exactly the missing section kinds for every page and nothing else. Every earlier step
+must pass.
 No network, no paid call, no fake consumer.
 """
 
@@ -34,7 +36,7 @@ import substrate  # noqa: E402
 import lane83_fake_consumer  # noqa: E402  only for its marker constants: proves we did NOT use it
 import test_lane83_dispatch as dispatch_tests  # noqa: E402  run_dispatch carries the approval and plan choices
 from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402  (its path is added by test_lane83_dispatch)
-from launcher_core import cli  # noqa: E402
+from launcher_core import checks, cli, page_designs  # noqa: E402
 
 S71 = REPO_ROOT / "71-blackceo-signature-page"
 COPY_EXAMPLES = S71 / "tests" / "fixtures" / "copy_examples"
@@ -57,7 +59,6 @@ DELIVERABLES = {
 # the offer names the upsell copy fixtures were written for: the upsell page binds copy.offer_name to the offer
 OFFER_NAMES = {"upsell_1": "TEST ONLY Deep Work Library", "upsell_2": "TEST ONLY Implementation Studio"}
 D1_PRICE_MINOR = 100  # the trial price the pinned Skill 81 page fixture shows (its example amounts are refused unless the record prices them)
-LABEL = "images only, render pending"
 
 
 def _design_prose(chars: int = 14500) -> str:
@@ -258,10 +259,19 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         (package_dir / "client-confirmations.json").write_text(json.dumps({"confirmations": confirmations}),
                                                                encoding="utf-8")
 
-        # check: passes, and says what it is: section images only, the render still pending
+        # check: everything passes up to the design gate, which refuses exactly the designs a stub run
+        # cannot honestly have (IMG-02: only labeled, client-approved final mockups count; a stub run labels nothing)
         code, shown = self._cli("check", "--manifest", str(manifest_path), "--root", str(package_dir))
-        self.assertEqual((code, shown.strip().splitlines()[-1]), (0, "PASS package complete"), shown)
-        self.assertIn(f"delivery level: {LABEL}", shown, "a stub-provider package must say it holds images only, render pending")
+        self.assertEqual(code, 2, shown)
+        self.assertIn("delivery level: designs: failed", shown)
+        self.assertNotIn("PASS package complete", shown)
+        expected = {f"{page_designs.CODE}: {page_designs.page_key(p)} is missing {k.replace('_', ' ')}"
+                    for p in manifest["pieces"] for k in checks.SECTION_KINDS}
+        self.assertEqual(len(expected), len(ROLES) * len(checks.SECTION_KINDS))
+        got = {line.strip()[2:] for line in shown.splitlines() if line.strip().startswith("- ")}
+        self.assertEqual(got, expected, shown)
+        # the package says the client has approved nothing yet: no approval was recorded, none is claimed
+        self.assertEqual(manifest["design_approvals"], page_designs.default_approvals())
 
 
 if __name__ == "__main__":
