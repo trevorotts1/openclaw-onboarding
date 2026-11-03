@@ -43,6 +43,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -62,6 +63,21 @@ PAGE_FIXTURE = json.loads(
     (SKILL81 / "fixtures" / "valid-downsell-page.json").read_text())
 RESULT_FIXTURE = json.loads(
     (SKILL81 / "fixtures" / "valid-downsell-result.json").read_text())
+
+RENEWAL_PROMISE = 'After the trial, $27 per month continues the membership unless you cancel. The first renewal charge is on day 31, and renewals are monthly after that. You can cancel anytime before a renewal charge to stop future charges. If you cancel, your access continues until the end of the trial or the current paid month, then your membership access ends and you will not be charged again. '
+
+
+def _one_time_page(amount_minor):
+    """The Skill 81 fixture page re-priced to a one-time D1 at `amount_minor`: the fixture's own
+    copy is a $1 trial that renews at $27 a month, which no one-time D1 may promise."""
+    dollars = "$%d" % (amount_minor // 100)
+    text = json.dumps(PAGE_FIXTURE)
+    assert RENEWAL_PROMISE in text
+    text = re.sub(r"\$1(?!\d)", lambda _m: dollars, text.replace(RENEWAL_PROMISE, ""))
+    page = json.loads(text)
+    page["page"]["approved_amounts_minor"] = [amount_minor]
+    return page
+
 
 D1_PAGE_ID = "TEST-D1-PAGE"
 U2_PAGE_ID = "TEST-UPSELL_2"
@@ -177,7 +193,7 @@ def stage(request):
     put("request-downsell_1.json", request)
     put("launch.json", _launch(graph_hash))
     put("route-graph.json", graph_bytes)
-    put("copy-downsell_1.json", PAGE_FIXTURE)
+    put("copy-downsell_1.json", _one_time_page(3700))  # the staged D1 is one_time $37
     put("journey-downsell_1.json",
         {"main_purchased_verified": True,
          "u1_event": "explicit_decline", "u1_accepted": False})
@@ -481,6 +497,72 @@ def _offer(doc, slot):
 
 def _sha(path):
     return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+
+
+class DownsellCopyBoundToOwnPriceTests(unittest.TestCase):
+    """F6: the page's approved amounts are D1's own prices, not every offer's in the launch."""
+    ONE_DOLLAR = {"amount_minor": 100, "billing_type": "one_time", "approval_status": "approved",
+                  "native_price_id": "TEST-D1-PRICE"}
+
+    def run_one_dollar_d1(self, page):
+        """D1 is one_time $1.00 with no schedule; U1 (a trial with a $27 schedule) is in the same launch."""
+        paths = stage(_request(None, "1.0"))
+        _edit(paths, "launch.json",
+              lambda doc: _offer(doc, "downsell_1").update(prices=[self.ONE_DOLLAR]))
+        _edit(paths, "extension-downsell_1.json",  # the staged extension must agree with the $1 one-time D1
+              lambda doc: doc["downsell_result_extension"]["disclosure_audit"].update(due_now_minor=100))
+        paths["copy-downsell_1.json"].write_text(json.dumps(page) + "\n")
+        return paths, run_wrapper(paths)
+
+    def test_a_one_time_dollar_page_promising_27_a_month_is_refused(self):
+        paths, proc = self.run_one_dollar_d1(PAGE_FIXTURE)  # the fixture's "$1 trial, then $27 per month" copy
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("D1-COPY-EXAMPLE-PRICE-LEAK", proc.stderr)
+        self.assertFalse(paths["result"].exists())
+
+    def test_the_same_page_without_the_renewal_promise_is_accepted(self):
+        paths, proc = self.run_one_dollar_d1(_one_time_page(100))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    def test_a_one_time_page_with_a_recurring_price_phrase_is_refused(self):
+        page = _one_time_page(100)
+        page["page"]["sections"][6]["body"] += " Then $5 per month continues."
+        paths, proc = self.run_one_dollar_d1(page)
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("D1-COPY-BILLING-MISMATCH", proc.stderr)
+        self.assertFalse(paths["result"].exists())
+
+    def test_a_one_time_page_with_a_dollar_monthly_phrase_is_refused(self):
+        for phrase in (" Then $5 monthly continues.", " Then $5 per mo continues.", " Then $5 per-month continues.",
+                       " Then $5/monthly continues.", " Then $5/yearly continues."):
+            with self.subTest(phrase=phrase):
+                page = _one_time_page(100)
+                page["page"]["sections"][6]["body"] += phrase
+                paths, proc = self.run_one_dollar_d1(page)
+                self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+                self.assertIn("D1-COPY-BILLING-MISMATCH", proc.stderr)
+
+    def test_the_recurring_phrase_catches_every_billing_word_form_and_no_ordinary_words(self):
+        for phrase in ("$37/monthly", "$37 per monthly", "$37/yearly", "$37/weekly", "$37/mon",
+                       "$37 monthly", "$37 per-month", "$37 annually", "$37 per mo", "$37 a months"):
+            with self.subTest(caught=phrase):
+                self.assertTrue(dw._RECURRING_PHRASE.search(phrase), phrase)
+        for phrase in ("$37 a moment", "$37 per more", "$37 a monday"):
+            with self.subTest(clean=phrase):
+                self.assertIsNone(dw._RECURRING_PHRASE.search(phrase), phrase)
+
+    def test_a_renewal_amount_on_a_one_time_d1_extension_is_refused(self):
+        """The result extension may not claim a renewal for an offer the record prices as one-time."""
+        paths = stage(_request(None, "1.0"))
+        _edit(paths, "launch.json", lambda doc: _offer(doc, "downsell_1").update(prices=[self.ONE_DOLLAR]))
+        _edit(paths, "extension-downsell_1.json",
+              lambda doc: doc["downsell_result_extension"]["disclosure_audit"].update(due_now_minor=100,
+                                                                                      renewal_amount_minor=2700))
+        paths["copy-downsell_1.json"].write_text(json.dumps(_one_time_page(100)) + "\n")
+        proc = run_wrapper(paths)
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("D1-RESULT-DISCLOSURE-RENEWAL-ON-ONE-TIME", proc.stderr)
+        self.assertFalse(paths["result"].exists())
 
 
 class DownsellOfferIdNormalisationTests(unittest.TestCase):

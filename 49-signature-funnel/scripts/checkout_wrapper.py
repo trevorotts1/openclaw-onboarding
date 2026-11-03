@@ -220,6 +220,11 @@ def _record_amounts(offer: dict) -> set:
     return out
 
 
+def request_offers(launch: dict, request: dict) -> list:
+    refs = request.get("offer_refs")
+    return [o for o in launch.get("offers") or [] if isinstance(o, dict) and (refs is None or o.get("offer_id") in refs)]
+
+
 def check_copy(text: str, launch: dict, request: dict, terms: dict) -> None:
     """CHK-13: sections 2-4 carry exactly what the launch record and the approved checkout_terms say."""
     if not isinstance(terms, dict) or any(not isinstance(terms.get(k), str) or not terms[k].strip()
@@ -228,12 +233,15 @@ def check_copy(text: str, launch: dict, request: dict, terms: dict) -> None:
                            f"text, {', '.join(TERMS_KEYS)}) is required; pass --checkout-terms FILE or stage "
                            "checkout-terms.json beside the launch record")
     body = sections(text)
-    if sorted(body) != [1, 2, 3, 4, 5]:
-        raise WrapperError(f"the manuscript needs the 5 canonical sections 1-5, found {sorted(body)}")
-    refs = request.get("offer_refs")
-    offers = [o for o in launch.get("offers") or [] if isinstance(o, dict) and (refs is None or o.get("offer_id") in refs)]
+    offers = request_offers(launch, request)
     mains = [o for o in offers if o.get("slot") == "main"]
     bumps = [o for o in offers if o.get("slot") == "bump"]
+    # Section 3 is the order bump: required only when the launch has a bump offer. Without one, 1,2,4,5 is the
+    # correct manuscript (an unused section 3 may stay, but it may not price anything: see names_and_prices).
+    if not {1, 2, 4, 5} <= set(body) <= {1, 2, 3, 4, 5} or (bumps and 3 not in body):
+        raise WrapperError("the manuscript needs the 5 canonical sections 1-5 (section 3, the order bump, only when "
+                           f"the launch has a bump offer; this launch has {'one' if bumps else 'none'}), "
+                           f"found {sorted(body)}")
     for o in mains + bumps:
         if any(p.get("currency") != "USD" for p in o.get("prices") or []) or not _record_amounts(o):
             raise WrapperError(f"offer {o.get('offer_id')!r} has no USD price in the launch record to check "
@@ -252,7 +260,7 @@ def check_copy(text: str, launch: dict, request: dict, terms: dict) -> None:
                                f"{[(o.get('display_name'), sorted(_record_amounts(o))) for o in group]}")
 
     names_and_prices("section 2 (price)", body[2], mains)
-    names_and_prices("section 3 (order bump)", body[3], bumps)
+    names_and_prices("section 3 (order bump)", body.get(3, ""), bumps)
     left = _flat(body[4])
     for key in sorted(("guarantee_text", "terms_text", "consent_text"), key=lambda k: -len(terms[k])):
         want = _flat(terms[key])
@@ -290,6 +298,9 @@ def artifacts(run_dir: Path) -> list:
     return [found[k] for k in sorted(found)]
 
 
+NO_BUMP_FLAG = "--no-bump"  # S71 build_production_request.py: drops checkout section 3 (r71b contract)
+
+
 def produce(args, request) -> dict:
     if request.get("page_role") != ROLE or request.get("assigned_skill") != SKILL:
         raise WrapperError(f"the request is for page_role {request.get('page_role')!r}, skill "
@@ -303,7 +314,9 @@ def produce(args, request) -> dict:
     if hits:
         raise WrapperError("the manuscript holds a card, expiry or security-code field; the payment form is "
                            f"the native checkout form only ({hits[0]!r})")
-    check_copy(text, load(args.launch, "launch record"), request, terms_block(args))
+    launch = load(args.launch, "launch record")
+    check_copy(text, launch, request, terms_block(args))
+    has_order_bump = any(o.get("slot") == "bump" for o in request_offers(launch, request))
     s71 = Path(args.skill71_root) / "scripts"
     for name in ("shared_page_service.py", "build_production_request.py", "stage_executor.py"):
         if not (s71 / name).is_file():
@@ -325,6 +338,10 @@ def produce(args, request) -> dict:
                             ("--model", args.model)):
             if value:
                 build += [flag, value]
+        # S71 keeps all five checkout sections unless told the launch has no order bump (no source sniffing:
+        # a name mismatch must fail loudly in S71, not be skipped silently here).
+        if not has_order_bump:
+            build.append(NO_BUMP_FLAG)
         run(build, f"build_production_request.py ({stage})")
         execute = [sys.executable, s71 / "stage_executor.py", run_dir, "--stages", stage, "--request", name,
                    "--provider", args.provider] + (["--allow-paid"] if args.allow_paid else [])

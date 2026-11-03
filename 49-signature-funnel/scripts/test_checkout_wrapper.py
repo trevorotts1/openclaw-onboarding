@@ -29,6 +29,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -193,6 +194,120 @@ class TestCopyMatchesTheApprovedRecord(CheckoutWrapperCase):
         terms = self.td / "terms.json"
         terms.write_text(json.dumps(dict(TERMS, guarantee_text="Try it for 90 days.")), encoding="utf-8")
         self.refused(self.wrap(extra=("--checkout-terms", str(terms))), "guarantee")
+
+
+class TestOrderBumpSectionFollowsTheBump(CheckoutWrapperCase):
+    """F5: section 3 (order bump) is required only when the launch record has a bump offer."""
+
+    def setUp(self):
+        super().setUp()
+        self.text = MANUSCRIPT.read_text(encoding="utf-8")
+        self.launch = json.loads(self.launch_path.read_text(encoding="utf-8"))
+        self.no_bump_text = "".join(
+            part for part in __import__("re").split(r"(?m)^(?=##\s+Section\s+\d+)", self.text)
+            if not part.startswith("## Section 3"))
+        self.no_bump_launch = dict(self.launch, offers=[o for o in self.launch["offers"] if o.get("slot") != "bump"])
+        self.assertNotIn("## Section 3", self.no_bump_text)
+        self.assertEqual(sorted(cw.sections(self.no_bump_text)), [1, 2, 4, 5])
+        self.assertTrue(any(o.get("slot") == "bump" for o in self.launch["offers"]))
+
+    def test_a_funnel_without_a_bump_needs_no_section_3(self):
+        cw.check_copy(self.no_bump_text, self.no_bump_launch, self.request, TERMS)
+
+    def test_a_funnel_with_a_bump_still_needs_section_3(self):
+        with self.assertRaises(cw.WrapperError) as ctx:
+            cw.check_copy(self.no_bump_text, self.launch, self.request, TERMS)
+        self.assertIn("section 3", str(ctx.exception))
+
+    def test_a_missing_section_other_than_3_is_still_refused(self):
+        gone = self.no_bump_text.replace("## Section 4", "## Part 4")
+        with self.assertRaises(cw.WrapperError) as ctx:
+            cw.check_copy(gone, self.no_bump_launch, self.request, TERMS)
+        self.assertIn("canonical sections", str(ctx.exception))
+
+    def test_an_unpriced_bump_price_in_a_no_bump_funnel_is_refused(self):
+        with self.assertRaises(cw.WrapperError) as ctx:
+            cw.check_copy(self.text, self.no_bump_launch, self.request, TERMS)
+        self.assertIn("section 3", str(ctx.exception))
+
+
+class TestProduceTellsSkill71WhetherTheLaunchHasABump(CheckoutWrapperCase):
+    """F5 across the seam: the S71 build keeps checkout section 3 unless produce() hands it --no-bump, which it
+    must do exactly when the launch has no bump. The S71 scripts here are stand-ins that log argv; the real S71
+    build is exercised end to end by TestNoBumpLaunchBuildsThroughTheRealSkill71."""
+
+    class Stop(Exception):
+        pass
+
+    def produce_with(self, launch, build_text, text):
+        s71 = self.td / "s71"
+        (s71 / "scripts").mkdir(parents=True)
+        for name in ("shared_page_service.py", "stage_executor.py"):
+            (s71 / "scripts" / name).write_text("", encoding="utf-8")
+        (s71 / "scripts" / "build_production_request.py").write_text(build_text, encoding="utf-8")
+        self.launch_path.write_text(json.dumps(launch), encoding="utf-8")
+        manuscript = self.td / "manuscript.md"
+        manuscript.write_text(text, encoding="utf-8")
+        args = type("A", (), dict(
+            manuscript=str(manuscript), launch=str(self.launch_path), skill71_root=str(s71), run_dir=str(self.run_dir),
+            request=str(self.request_path), brand_owner="b", image_cap="2", brand_file="f", route_graph="g",
+            design_style=None, slots=None, design_prose=None, model=None, provider="stub", allow_paid=False,
+            inputs=None, checkout_terms=str(self.terms_path)))()
+        seen = []
+
+        def fake_run(cmd, label):
+            seen.append([str(c) for c in cmd])
+            if "build_production_request.py" in str(cmd[1]):
+                raise self.Stop()
+        with mock.patch.object(cw, "run", fake_run), mock.patch.object(cw.page_set, "stage_visual_bible"):
+            with self.assertRaises(self.Stop):
+                cw.produce(args, self.request)
+        return next(c for c in seen if "build_production_request.py" in c[1])
+
+    def setUp(self):
+        super().setUp()
+        self.launch = json.loads(self.launch_path.read_text(encoding="utf-8"))
+        self.text = MANUSCRIPT.read_text(encoding="utf-8")
+        self.no_bump_text = "".join(
+            part for part in __import__("re").split(r"(?m)^(?=##\s+Section\s+\d+)", self.text)
+            if not part.startswith("## Section 3"))
+        self.no_bump_launch = dict(self.launch, offers=[o for o in self.launch["offers"] if o.get("slot") != "bump"])
+
+    def test_a_no_bump_funnel_is_handed_no_bump(self):
+        cmd = self.produce_with(self.no_bump_launch, "", self.no_bump_text)
+        self.assertIn("--no-bump", cmd)
+
+    def test_a_funnel_with_a_bump_is_not_handed_no_bump(self):
+        cmd = self.produce_with(self.launch, "", self.text)
+        self.assertNotIn("--no-bump", cmd)
+
+
+class TestNoBumpLaunchBuildsThroughTheRealSkill71(CheckoutWrapperCase):
+    """F5 end to end, no stand-ins: the real wrapper subprocess against the real Skill 71 in this repo. A launch
+    without an order bump builds four checkout sections (1,2,4,5); the with-bump control keeps all five."""
+
+    def built_sections(self):
+        return [json.loads((self.run_dir / f"production-request-{stage}.json").read_text(encoding="utf-8"))
+                ["sections"] for stage in ("desktop-wireframe", "mobile-tablet", "visual-mockup")]
+
+    def test_a_no_bump_launch_builds_four_sections(self):
+        launch = json.loads(self.launch_path.read_text(encoding="utf-8"))
+        launch["offers"] = [o for o in launch["offers"] if o.get("slot") != "bump"]
+        self.launch_path.write_text(json.dumps(launch), encoding="utf-8")
+        manuscript = self.td / "no-bump.md"
+        manuscript.write_text("".join(
+            part for part in __import__("re").split(r"(?m)^(?=##\s+Section\s+\d+)", MANUSCRIPT.read_text(encoding="utf-8"))
+            if not part.startswith("## Section 3")), encoding="utf-8")
+        proc = self.wrap(manuscript=manuscript, extra=("--design-style", "C", "--checkout-terms", str(self.terms_path)))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        for sections in self.built_sections():
+            self.assertEqual([x["section_id"] for x in sections], list("1245"))
+
+    def test_the_with_bump_control_keeps_five_sections(self):
+        proc = self.wrap(extra=("--design-style", "C", "--checkout-terms", str(self.terms_path)))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        for sections in self.built_sections():
+            self.assertEqual([x["section_id"] for x in sections], list("12345"))
 
 
 class TestCardFieldGuard(unittest.TestCase):
