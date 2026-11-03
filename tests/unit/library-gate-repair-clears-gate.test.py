@@ -20,6 +20,21 @@ because the repair side never reached the files the gate judges:
   6. update-skills.sh returned early when the PRE-install verdict was clean, so a
      tree broken BY the install was never re-judged.
 
+Round 2 (the round-1 verify refutation). The branch left THREE gate-fatal classes the
+repair could not reach, so the gate still failed after a clean update:
+
+  7. an EMPTY or thin role how-to.md with no installer signature classified as None
+     ("real content"), so the 0-byte and 55-byte files the gate names were never
+     touched; a thin file may hold real owner words, so the repair APPENDS the shipped
+     library body and keeps every original byte as the prefix;
+  8. SOP files under <role>/sops/ were never walked at all (the gate walks every .md
+     under a sops/ container, whole-file, no size floor);
+  9. flat role files under <dept>/roles/ were never walked either (the gate judges
+     them, no size floor);
+ 10. a TRUE dept-level stub/routing notice (departments/<dept>/how-to.md) for a
+     department the library does not cover had no deterministic writer and stayed
+     gate-fatal as REVIEW.
+
 Run:
     python3 tests/unit/library-gate-repair-clears-gate.test.py
 No network, no model, no box. Writes only under a temporary directory.
@@ -310,6 +325,232 @@ def check_deterministic_fill(root):
         bad("deterministic_fill behaviour on an uncovered role changed: %s" % why2)
 
 
+# ---------------------------------------------------------------------------
+# Round 1's refutation tree: the exact five file classes the gate named
+# ---------------------------------------------------------------------------
+# A thin file that is NOT a stub may hold real owner words, so the repair must APPEND.
+# Both fixtures below are the refutation's exact shapes and sizes.
+THIN_REAL = b"# Thin Role - how-to.md\n\nOwner keeps the vendor calendar here.\n"[:55]
+PLAYBOOK_REAL = ("# Playbook Role - how-to.md\n\n## Weekly routine\n\n"
+                 + "".join("- Step %d: run the playbook check.\n" % i
+                           for i in range(1, 200))).encode()[:2757]
+DEPT_STUB = "# {t} — how-to.md (stub) [PENDING - FILL FROM LIBRARY]\n"
+
+
+def real_playbook(title):
+    return ("# %s — how-to.md\n\n## Weekly routine\n\n" % title
+            + "".join("- Step %d: review the queue and report.\n" % i
+                      for i in range(1, 120)))
+
+
+def add_general_task(dd):
+    gt = dd / "general-task" / "01-head-of-general-task"
+    gt.mkdir(parents=True)
+    (gt / "IDENTITY.md").write_text("# Head of General Task\n", encoding="utf-8")
+    (gt / "how-to.md").write_text(
+        "# Head of General Task — how-to.md\n\n## Routing procedure\n\n"
+        + "".join("- Step %d: intake, classify and route the task.\n" % i
+                  for i in range(1, 120)), encoding="utf-8")
+
+
+def run_frontdoor(ws, env):
+    """The ONE invocation the acceptance names: oct4_frontdoor.py with NO arguments."""
+    r = subprocess.run([sys.executable, str(FRONTDOOR)], cwd=str(ws), env=env,
+                       capture_output=True, text=True, timeout=1800)
+    out = (r.stdout or "") + "\n" + (r.stderr or "")
+    print("\n".join("    | " + ln for ln in out.strip().splitlines()))
+    return r, out
+
+
+def check_refutation_tree(root):
+    print("\n[refutation tree] 0-byte/thin roles, SOPs and flat roles: ONE no-arg run")
+    home = root / "home"
+    ws = home / ".openclaw" / "workspace"
+    ws.mkdir(parents=True)
+    os.symlink(str(REPO), str(ws / "skills"))
+    env = build_env(home, ws)
+    dd = ws / "departments"
+    acme = dd / "acme"
+
+    if len(THIN_REAL) != 55 or len(PLAYBOOK_REAL) != 2757:
+        bad("fixture drift: thin=%d playbook=%d, want 55 and 2757"
+            % (len(THIN_REAL), len(PLAYBOOK_REAL)))
+    # a clean director playbook (the control's clean file, and the director item)
+    d = acme / "01-director-acme"
+    d.mkdir(parents=True)
+    (d / "IDENTITY.md").write_text("# Director of Acme\n", encoding="utf-8")
+    (d / "how-to.md").write_text(real_playbook("Director of Acme"), encoding="utf-8")
+    # (1) a 0-byte role how-to.md
+    d = acme / "02-empty-role"
+    d.mkdir()
+    (d / "IDENTITY.md").write_text("# Empty Role\n", encoding="utf-8")
+    (d / "how-to.md").write_bytes(b"")
+    # (2) a 55-byte REAL role how-to.md: owner words that must survive byte-for-byte
+    d = acme / "03-thin-role"
+    d.mkdir()
+    (d / "IDENTITY.md").write_text("# Thin Role\n", encoding="utf-8")
+    (d / "how-to.md").write_bytes(THIN_REAL)
+    # (3) a real playbook of 2757 bytes: under the 3072 floor, so gate-fatal
+    d = acme / "04-playbook-role"
+    d.mkdir()
+    (d / "IDENTITY.md").write_text("# Playbook Role\n", encoding="utf-8")
+    (d / "how-to.md").write_bytes(PLAYBOOK_REAL)
+    # (4) a 0-byte SOP under <role>/sops/
+    d = acme / "05-sop-role"
+    d.mkdir()
+    (d / "IDENTITY.md").write_text("# Sop Role\n", encoding="utf-8")
+    (d / "how-to.md").write_text(real_playbook("Sop Role"), encoding="utf-8")
+    (d / "sops").mkdir()
+    (d / "sops" / "SOP-DIU-101.md").write_bytes(b"")
+    # (5) a 0-byte flat role file under <dept>/roles/
+    f = acme / "roles"
+    f.mkdir()
+    (f / "legacy-role.md").write_bytes(b"")
+    add_general_task(dd)
+
+    five = ("acme/02-empty-role/how-to.md", "acme/03-thin-role/how-to.md",
+            "acme/04-playbook-role/how-to.md", "acme/05-sop-role/sops/SOP-DIU-101.md",
+            "acme/roles/legacy-role.md")
+
+    # --- CONTROL: the round-1 verdict must reproduce before the repair ---
+    control = run_gate(dd, ws, env)
+    line = gate_verdict_line(control.stdout)
+    if control.returncode == 1 and "placeholder-files: FAIL" in line:
+        ok("control: gate fails the untouched five-file tree (%s)" % line.strip())
+    else:
+        bad("control: gate did not fail the five-file tree (rc=%s, %s)"
+            % (control.returncode, line.strip() or control.stderr[-300:]))
+    missing = [n for n in five if n not in control.stdout]
+    if not missing:
+        ok("control: the gate names all five classes")
+    else:
+        bad("control: the gate did not name %s" % ", ".join(missing))
+
+    before = {rel: (dd / rel).read_bytes() for rel in five}
+
+    r, out = run_frontdoor(ws, env)
+
+    bad_steps = [ln for ln in out.splitlines()
+                 if re.search(r"repair\s+\S+\s+(needs-attention|failed)\b", ln)]
+    if not bad_steps:
+        ok("run_repair_runner has no step whose meaning is needs-attention or failed")
+    else:
+        bad("repair step(s) reported needs-attention/failed: %s" % bad_steps)
+    if "gate                   pass" in out:
+        ok("the front-door health gate passed inside the same run")
+    else:
+        bad("the front-door health gate did not pass inside the run")
+    if r.returncode == 0:
+        ok("front door exit 0")
+    else:
+        bad("front door exited %d" % r.returncode)
+
+    after = run_gate(dd, ws, env)
+    line2 = gate_verdict_line(after.stdout)
+    if after.returncode == 0 and "placeholder-files: PASS - 0 of" in line2:
+        ok("gate PASS after the run (%s)" % line2.strip())
+    else:
+        bad("gate did not pass after the run (rc=%s, %s)"
+            % (after.returncode, line2.strip() or after.stderr[-300:]))
+        for ln in after.stdout.splitlines():
+            if "    - " in ln:
+                print("      " + ln.strip())
+
+    # --- a thin file's own bytes are NEVER replaced or truncated ---
+    for rel in five:
+        p = dd / rel
+        if not p.is_file():
+            bad("%s is no longer a file (a thin client file was deleted)" % rel)
+            continue
+        data = p.read_bytes()
+        if data.startswith(before[rel]):
+            ok("%s keeps every original byte as its prefix (%d -> %d bytes)"
+               % (rel, len(before[rel]), len(data)))
+        else:
+            bad("%s does not start with its original bytes (rewritten)" % rel)
+    for rel in ("acme/03-thin-role/how-to.md", "acme/04-playbook-role/how-to.md"):
+        txt = (dd / rel).read_text(encoding="utf-8", errors="replace")
+        if len(txt.encode()) >= MIN_BYTES and not SIG.search(txt[:600]):
+            ok("%s now clears the 3072-byte floor (%d bytes)"
+               % (rel, len(txt.encode())))
+        else:
+            bad("%s is still thin/placeholder (%d bytes)" % (rel, len(txt.encode())))
+    for rel in ("acme/05-sop-role/sops/SOP-DIU-101.md", "acme/roles/legacy-role.md"):
+        txt = (dd / rel).read_text(encoding="utf-8", errors="replace")
+        if txt.strip() and not SIG.search(txt[:600]):
+            ok("%s filled from shipped library content (%d bytes)"
+               % (rel, len(txt.encode())))
+        else:
+            bad("%s is still empty/placeholder" % rel)
+    flat = (dd / "acme" / "roles" / "legacy-role.md").read_text(
+        encoding="utf-8", errors="replace")
+    if "generator=repair-placeholder-sops.py" in flat:
+        ok("the flat role file carries shipped-library provenance")
+
+
+def check_dept_level_stub(root):
+    print("\n[dept-level stub] departments/<dept>/how-to.md itself, NOT a role folder")
+    home = root / "home"
+    ws = home / ".openclaw" / "workspace"
+    ws.mkdir(parents=True)
+    os.symlink(str(REPO), str(ws / "skills"))
+    env = build_env(home, ws)
+    dd = ws / "departments"
+    # a department the role library DOES cover: filled from its shipped dept guide
+    covered = dd / "sales"
+    covered.mkdir(parents=True)
+    (covered / "how-to.md").write_text(DEPT_STUB.format(t="Sales"), encoding="utf-8")
+    # a department the library does NOT cover: the true round-1 hole
+    uncovered = dd / "zzq-vertical"
+    uncovered.mkdir()
+    (uncovered / "how-to.md").write_text(DEPT_STUB.format(t="Zzq Vertical"),
+                                         encoding="utf-8")
+    add_general_task(dd)
+
+    control = run_gate(dd, ws, env)
+    line = gate_verdict_line(control.stdout)
+    if (control.returncode == 1 and "sales/how-to.md" in control.stdout
+            and "zzq-vertical/how-to.md" in control.stdout):
+        ok("control: gate fails BOTH dept-level stubs at the department root (%s)"
+           % line.strip())
+    else:
+        bad("control: gate did not fail both dept-level stubs (rc=%s, %s)"
+            % (control.returncode, line.strip() or control.stderr[-300:]))
+
+    r, out = run_frontdoor(ws, env)
+    if r.returncode == 0 and "gate                   pass" in out:
+        ok("one no-arg front-door run clears both dept-level stubs")
+    else:
+        bad("the front-door run did not clear the dept-level stubs")
+
+    after = run_gate(dd, ws, env)
+    line2 = gate_verdict_line(after.stdout)
+    if after.returncode == 0 and "placeholder-files: PASS - 0 of" in line2:
+        ok("gate PASS after the run (%s)" % line2.strip())
+    else:
+        bad("gate did not pass after the run (rc=%s, %s)"
+            % (after.returncode, line2.strip() or after.stderr[-300:]))
+
+    p = covered / "how-to.md"
+    txt = p.read_text(encoding="utf-8", errors="replace") if p.is_file() else ""
+    if (txt.strip() and not SIG.search(txt[:600])
+            and "how to use the sales department" in txt.lower()):
+        ok("sales/how-to.md is the shipped department guide (%d bytes)"
+           % len(txt.encode()))
+    else:
+        bad("sales/how-to.md was not filled from the shipped department guide")
+    q = uncovered / "how-to.md"
+    if not q.exists():
+        ok("zzq-vertical/how-to.md: pure installer stub removed, gate no longer sees it")
+    else:
+        txt = q.read_text(encoding="utf-8", errors="replace")
+        if txt.strip() and not SIG.search(txt[:600]):
+            ok("zzq-vertical/how-to.md filled from shipped content (%d bytes)"
+               % len(txt.encode()))
+        else:
+            bad("zzq-vertical/how-to.md is still a gate-fatal placeholder")
+
+
 def main():
     if shutil.which("python3") is None or shutil.which("bash") is None:
         print("cannot run: python3/bash missing", file=sys.stderr)
@@ -322,7 +563,11 @@ def main():
         for label, fn, arg in (("layout A", check_layout, ("A", root / "layoutA")),
                                ("layout B", check_layout, ("B", root / "layoutB")),
                                ("deterministic_fill", check_deterministic_fill,
-                                (root / "unit",))):
+                                (root / "unit",)),
+                               ("refutation tree", check_refutation_tree,
+                                (root / "refute",)),
+                               ("dept-level stub", check_dept_level_stub,
+                                (root / "deptstub",))):
             try:
                 fn(*arg)
             except SystemExit as e:

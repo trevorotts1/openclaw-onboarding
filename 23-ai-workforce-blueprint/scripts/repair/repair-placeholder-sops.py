@@ -18,12 +18,26 @@ boilerplate:
      department folder or in a non-role container folder (sops/, scripts/, ...). Those
      belong to no role and nothing reads them.
 
-Safety: a how-to.md is touched only when it is content-verified as boilerplate (stub
-signature in its title line, under the 3072-byte substance floor, no real body text).
-A file that merely mentions a signature, or has real content under a stub header, is
-reported as "needs manual review" and left alone. Symlinked how-to.md files are never
-touched. Nothing but how-to.md files and <company>/SOP-NEEDED.json is ever written;
-openclaw.json is never read or written. Idempotent: a second run changes nothing.
+  4. FILL the other file classes the health gate judges to the SAME standard, so one
+     repair pass clears the gate instead of it failing after every clean update:
+       - an EMPTY or thin (< 3072 B) role how-to.md, from the same library ladder;
+       - an EMPTY or placeholder SOP .md anywhere under a sops/ container, from the
+         shipped SOP libraries (role-library/<dept>/sops/, then universal-sops/);
+       - an EMPTY or placeholder flat role file under <dept>/roles/, from the library.
+  5. A dept-level ROUTED notice for a department the library does not cover is filled
+     from the single shipped department-guide renderer (how_to_use_department.py), so it
+     is never left gate-fatal with no deterministic writer.
+
+Safety: a file is touched only when the HEALTH GATE would fail it (same signatures,
+same 600-byte head, same 3072-byte role floor) or when it is empty. A file that merely
+mentions a signature, or has real content under a stub header, is reported as "needs
+manual review" and left alone. A THIN file that is not empty may hold real owner words:
+every original byte is kept as a prefix and the shipped library body is appended after
+it -- never replaced, never truncated. No client content is ever authored: a file with
+no shipped source is reported as a named CLIENT ACTION, not silently rewritten.
+Symlinked files are never touched. Nothing but the judged .md files and
+<company>/SOP-NEEDED.json is ever written; openclaw.json is never read or written.
+Idempotent: a second run changes nothing.
 
 Usage:
   repair-placeholder-sops.py [--departments-dir DIR] [--dept SLUG ...]
@@ -35,6 +49,7 @@ EXIT CODES: 0 = no placeholder left; 3 = roles still need authoring (run
 author-missing-sops.py --apply) or need manual review; 2 = departments dir not found.
 """
 import argparse
+import difflib
 import importlib.util
 import json
 import os
@@ -66,6 +81,17 @@ BOILER_LINE = re.compile(r"^(#|>|\(|\*\*(Department|Company|Industry|Status|Gene
                          r"Owner request):\*\*|\d+\.\s+(Read|Check|Consult)\b)")
 DEFAULT_DESC = re.compile(r"^\(.*\)$|^Owner-requested specialist in the .*Materialized as a build decision",
                           re.S)
+# The gate's routing signature accepts any dash form; fpm.ROUTED_MARKER is em-dash only.
+GATE_ROUTED = re.compile(r"\[ROUTED\W{1,6}WORK HANDLED BY GENERAL-TASK\]", re.IGNORECASE)
+# Gate parity (scripts/health/library-gate-check.sh): SOP dirs, inherited core files,
+# the flat-role folder, and the whole-file SOP check.
+SOP_DIRS = {"sops", "_sops", "sop"}
+CORE_FILES = {"AGENTS.md", "TOOLS.md", "USER.md", "IDENTITY.md", "SOUL.md", "MEMORY.md",
+              "HEARTBEAT.md", "DREAMS.md", "ROSTER.md"}
+SOP_CUTOFF = 0.6  # filename similarity floor for a nearest shipped SOP
+# Shipped generic operating SOP: the last deterministic rung for an EMPTY SOP file the
+# libraries do not name. Real repo doctrine, never client-authored.
+GENERIC_SOP = Path("universal-sops") / "interdepartmental-communication-guidelines.md"
 
 
 def log(msg):
@@ -80,6 +106,21 @@ def write_atomic(path, text):
     tmp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
     tmp.write_text(text, encoding="utf-8")
     os.replace(tmp, path)
+
+
+def write_bytes_atomic(path, data):
+    tmp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
+
+
+def apply_fill(how_to, raw, fill_text, append):
+    """Write the library body. A thin non-empty original keeps EVERY original byte as
+    the prefix (`append`): no client word is ever replaced or truncated."""
+    if append and raw.strip():
+        write_bytes_atomic(how_to, raw + b"\n\n" + fill_text.encode("utf-8"))
+    else:
+        write_bytes_atomic(how_to, fill_text.encode("utf-8"))
 
 
 # --- classification ----------------------------------------------------------
@@ -99,15 +140,20 @@ def residual_lines(text):
 
 
 def classify(text):
-    """'stub' | 'routed' | 'review' | None (real content, not ours to touch).
+    """'stub' | 'routed' | 'empty' | 'review' | None (real content, not ours to touch).
 
     Signatures are read from the first 600 bytes with the GATE's own pattern set
     (fill-pending-howtos.SIG), not from the title line alone: the gate reads the
     head, so a stub whose marker sits in the body is fatal to the gate and used to
     be invisible here -- the repair could never clear a file it could not see.
+
+    An EMPTY file is a gate failure in every class ("empty") and used to classify as
+    None, so no repair path could ever clear the 0-byte files the gate reports.
     """
+    if not text.strip():
+        return "empty"
     head = text[:600]
-    if fpm.ROUTED_MARKER in head:
+    if fpm.ROUTED_MARKER in head or GATE_ROUTED.search(head):
         return "routed"
     if fpm.is_placeholder_text(head):
         # ponytail: content verify = signature in the head + under the substance floor +
@@ -116,6 +162,24 @@ def classify(text):
         pure = len(text.encode("utf-8")) < fpm.MIN_BYTES and residual_lines(text) <= 3
         return "stub" if pure else "review"
     return None  # no installer signature: real content
+
+
+def gate_reason(text, floor):
+    """What scripts/health/library-gate-check.sh would say about this file, or None.
+
+    Mirrors bad_reason(): empty head -> "empty"; a signature (or a routing notice, in
+    any dash form) in the first 600 bytes -> "placeholder text"; a ROLE playbook under
+    the 3072-byte floor -> "thin (N bytes)". Repair and gate must never disagree about
+    which file is fatal -- that disagreement is the defect this repair exists to close.
+    """
+    if not text.strip():
+        return "empty"
+    head = text[:600]
+    if fpm.is_placeholder_text(head) or GATE_ROUTED.search(head):
+        return "placeholder text"
+    if floor and len(text.encode("utf-8")) < fpm.MIN_BYTES:
+        return "thin (%d bytes)" % len(text.encode("utf-8"))
+    return None
 
 
 def owner_description(text):
@@ -231,7 +295,23 @@ def iter_candidates(ddir, depts):
             yield dept, ("aggregate" if sub.name.lower() in CONTAINERS else "role"), sub / "how-to.md"
 
 
-def dept_guide_fill(dept_dir):
+_HUD = None
+
+
+def _dept_guide_renderer():
+    """The repo's ONE department-guide renderer (loaded by path: the module name has
+    underscores but lives beside hyphen-named siblings, so no plain import)."""
+    global _HUD
+    if _HUD is None:
+        spec = importlib.util.spec_from_file_location("how_to_use_department",
+                                                      S23 / "how_to_use_department.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _HUD = mod
+    return _HUD
+
+
+def dept_guide_fill(dept_dir, allow_generic=False):
     """(text, why) from the library's own guide for this department, or (None, reason).
 
     A DEPT-LEVEL how-to.md has no library owner: the library ships
@@ -239,17 +319,124 @@ def dept_guide_fill(dept_dir):
     dept-level routing notice was never replaceable -- the gate failed it and the
     repair filed it as REVIEW. The dept guide is real library content, so it is
     the honest replacement.
+
+    `allow_generic` adds the shipped generic department-guide renderer as the last
+    rung. It is used ONLY for a ROUTED notice: a dept the library does not cover has
+    no guide file, so without this rung the notice classified REVIEW and stayed
+    gate-fatal forever. A legacy dept STUB keeps its existing behavior (deleted as an
+    aggregate stub) so nothing about today's stub handling changes.
     """
     lib = crw._resolve_dept_library_dir(dept_dir.name)
     src = (lib / "how-to-use-this-department.md") if lib else None
-    if not src or not src.is_file():
+    if src and src.is_file():
+        dept_name = dept_dir.name.replace("-", " ").title()
+        text = crw.fill_tokens(src.read_text(encoding="utf-8"), dept_name, dept_name, False,
+                               role_entry=None)
+        if text.strip() and not fpm.is_placeholder_text(text[:600]):
+            return text, "dept guide from role-library/how-to-use-this-department.md"
+    if not allow_generic:
         return None, "library has no how-to-use-this-department.md for this department"
-    dept_name = dept_dir.name.replace("-", " ").title()
-    text = crw.fill_tokens(src.read_text(encoding="utf-8"), dept_name, dept_name, False,
-                           role_entry=None)
+    try:
+        cfg = crw._load_company_config()
+        tokens = {"COMPANY_NAME": cfg.get("companyName") or cfg.get("name") or "",
+                  "GENERATION_DATE": datetime.now(timezone.utc).strftime("%Y-%m-%d")}
+        text = _dept_guide_renderer().render_how_to_use(dept_dir.name, tokens=tokens)
+    except (OSError, ValueError, KeyError, ImportError) as e:
+        return None, "generic dept guide unavailable (%s)" % type(e).__name__
     if not text.strip() or fpm.is_placeholder_text(text[:600]):
-        return None, "library dept guide is itself a placeholder"
-    return text, "dept guide from role-library/how-to-use-this-department.md"
+        return None, "generic dept guide renders as a placeholder"
+    header = (f"<!-- workforce-provenance: source=dept-guide-renderer "
+              f"dept={dept_dir.name} generator=repair-placeholder-sops.py "
+              f"instantiated={datetime.now(timezone.utc).strftime('%Y-%m-%d')} -->\n")
+    return header + text, "generic dept guide from templates/how-to-use-this-department.template.md"
+
+
+# --- SOP files and flat role files (gate parity) -----------------------------
+
+def present_depts(ddir, depts):
+    for dept in sorted(p for p in ddir.iterdir() if p.is_dir() and not p.name.startswith(".")
+                       and ".bak" not in p.name):
+        if not depts or dept.name in depts:
+            yield dept
+
+
+def iter_sop_files(dept):
+    """Every *.md the gate judges as an SOP: a file under a sops/ container, minus the
+    inherited core files, symlinks and the container's own how-to.md (an aggregate
+    candidate handled by the how-to.md walk)."""
+    for root, dirs, files in os.walk(str(dept)):
+        dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d.lower() != "memory")
+        parts = Path(root).relative_to(dept).parts
+        if not any(p.lower() in SOP_DIRS for p in parts):
+            continue
+        for n in sorted(files):
+            p = Path(root) / n
+            if (n.endswith(".md") and n not in CORE_FILES and n != "how-to.md"
+                    and p.is_file() and not p.is_symlink()):
+                yield p
+
+
+def iter_flat_roles(dept):
+    """The gate judges <dept>/roles/*.md as role files (no size floor).
+
+    how-to.md is skipped: the how-to.md walk already owns that path.
+    """
+    roles = dept / "roles"
+    if not roles.is_dir():
+        return
+    for p in sorted(roles.glob("*.md")):
+        if p.name != "how-to.md" and p.is_file() and not p.is_symlink():
+            yield p
+
+
+_SOP_INDEX = None
+
+
+def _sop_index():
+    """{dept_slug: {name: path}}, {name: path} and the shipped generic SOP.
+
+    Sources, all shipped: role-library/<dept>/sops/*.md and universal-sops/**/*.md.
+    Exact names win; the first file seen for a name is kept, so the department's own
+    library file beats a same-named file from anywhere else.
+    """
+    global _SOP_INDEX
+    if _SOP_INDEX is None:
+        skill = crw._resolve_skill_dir()
+        by_dept, every = {}, {}
+        for p in sorted((skill / "templates" / "role-library").glob("*/sops/*.md")):
+            by_dept.setdefault(p.parent.parent.name, {}).setdefault(p.name.lower(), p)
+            every.setdefault(p.name.lower(), p)
+        for p in sorted((skill.parent / "universal-sops").rglob("*.md")):
+            every.setdefault(p.name.lower(), p)
+        generic = skill.parent / GENERIC_SOP
+        _SOP_INDEX = {"dept": by_dept, "all": every,
+                      "generic": generic if generic.is_file() else None}
+    return _SOP_INDEX
+
+
+def sop_fill(dept_dir, sop_path):
+    """(text, why) for an empty/placeholder SOP from the shipped SOP libraries."""
+    idx = _sop_index()
+    name = sop_path.name.lower()
+    src = idx["dept"].get(dept_dir.name, {}).get(name) or idx["all"].get(name)
+    how = "exact-name"
+    if src is None:
+        pool = dict(idx["all"])
+        pool.update(idx["dept"].get(dept_dir.name, {}))
+        hit = difflib.get_close_matches(name, list(pool), n=1, cutoff=SOP_CUTOFF)
+        src = pool[hit[0]] if hit else None
+        how = "nearest-name"
+    if src is None:
+        src, how = idx["generic"], "generic-sop"
+    if src is None:
+        return None, "no shipped SOP source"
+    body = src.read_text(encoding="utf-8", errors="replace")
+    if not body.strip() or fpm.is_placeholder_text(body[:600]):
+        return None, "shipped SOP %s is itself a placeholder" % src.name
+    header = (f"<!-- workforce-provenance: source=sop-library role-slug={sop_path.stem} "
+              f"template={src.name} generator=repair-placeholder-sops.py match={how} "
+              f"instantiated={datetime.now(timezone.utc).strftime('%Y-%m-%d')} -->\n")
+    return header + body, f"{how}: {src.name}"
 
 
 def replaceable(how_to, kinds):
@@ -262,7 +449,8 @@ def replaceable(how_to, kinds):
 def repair(ddir, manifest, depts, apply):
     c = dict(scanned=0, placeholders=0, filled_from_library=0, handed_to_authoring=0,
              already_awaiting_authoring=0, aggregate_stubs_deleted=0, needs_manual_review=0,
-             skipped_symlink=0, errors=0)
+             skipped_symlink=0, errors=0, thin_appended=0, sop_files_filled=0,
+             flat_roles_filled=0, client_action=0)
     for dept, kind, how_to in iter_candidates(ddir, depts):
         present = how_to.is_file() or how_to.is_symlink()
         # The gate counts a role folder holding IDENTITY.md but no how-to.md as
@@ -280,28 +468,38 @@ def repair(ddir, manifest, depts, apply):
                     c["skipped_symlink"] += 1
                     log(f"SKIP symlinked how-to.md {rel}")
                 continue
-            text = read(how_to) if present else ""
-            found = classify(text) if present else "stub"
-            if found is None:
+            raw = how_to.read_bytes() if present else b""
+            text = raw.decode("utf-8", "replace")
+            found = classify(text) if present else "empty"
+            # The gate's own verdict decides whether this file is ours to fix.
+            reason = gate_reason(text, floor=(kind == "role")) if present else "empty"
+            if reason is None:
                 continue
             c["placeholders"] += 1
             if found == "review":
                 c["needs_manual_review"] += 1
-                log(f"REVIEW {rel}: signature present but not pure boilerplate -- left untouched")
+                log(f"REVIEW {rel}: signature present but not pure boilerplate -- "
+                    f"CLIENT ACTION: an owner must resolve it; left untouched")
                 continue
+            # A thin file that is NOT a stub may hold real owner words: keep its every
+            # byte as the prefix and append the shipped body after it.
+            append = reason.startswith("thin")
             if kind == "aggregate":
-                if how_to.parent == dept:
-                    # Dept-level file: the library owns it via its department guide.
-                    new, why = dept_guide_fill(dept)
+                if how_to.parent == dept or found == "routed":
+                    # Dept-level file (or a container routing notice): the library owns
+                    # it through its department guide. `allow_generic` covers a dept the
+                    # library does not list, so a routed notice is never left gate-fatal.
+                    new, why = dept_guide_fill(dept, allow_generic=(found == "routed"))
                     if new is not None:
                         c["filled_from_library"] += 1
                         log(f"{'FILLED' if apply else 'WOULD FILL'} {rel} ({why})")
-                        if apply and replaceable(how_to, ("stub", "routed")):
-                            write_atomic(how_to, new)
+                        if apply and replaceable(how_to, ("stub", "routed", "empty")):
+                            apply_fill(how_to, raw, new, append=False)
                         continue
                 if found != "stub":
                     c["needs_manual_review"] += 1
-                    log(f"REVIEW {rel}: signature present but not pure boilerplate -- left untouched")
+                    log(f"REVIEW {rel}: signature present but not pure boilerplate -- "
+                        f"CLIENT ACTION: an owner must resolve it; left untouched")
                     continue
                 c["aggregate_stubs_deleted"] += 1
                 log(f"{'DELETE' if apply else 'WOULD DELETE'} aggregate stub {rel}/how-to.md")
@@ -314,10 +512,13 @@ def repair(ddir, manifest, depts, apply):
             new, why = library_fill(dept, title, desc)
             if new is not None:
                 c["filled_from_library"] += 1
+                if append:
+                    c["thin_appended"] += 1
                 log(f"{'FILLED' if apply else 'WOULD FILL'} {rel} ({why})")
-                if apply and replaceable(how_to, ("stub", "routed")):
-                    write_atomic(how_to, new)
-                    if not why.startswith(fpm.GENERIC_HOW):
+                kinds = (None,) if append else ("stub", "routed", "empty")
+                if apply and replaceable(how_to, kinds):
+                    apply_fill(how_to, raw, new, append=append)
+                    if not append and not why.startswith(fpm.GENERIC_HOW):
                         # The shared scaffold is not an authored playbook: leave the
                         # record open so the role-specific SOP is still owed.
                         manifest.mark_authored(role_dir, title, dept.name)
@@ -328,7 +529,7 @@ def repair(ddir, manifest, depts, apply):
                 continue
             c["handed_to_authoring"] += 1
             log(f"{'HAND OFF' if apply else 'WOULD HAND OFF'} {rel} to authoring ({why})")
-            if apply and replaceable(how_to, ("stub", "routed")):
+            if apply and replaceable(how_to, ("stub", "routed", "empty")):
                 rec = manifest.open_record(role_dir, how_to, title, dept.name, desc)
                 cfg = crw._load_company_config()
                 write_atomic(how_to, crw.routing_how_to(
@@ -337,6 +538,65 @@ def repair(ddir, manifest, depts, apply):
         except (OSError, ValueError, KeyError) as e:
             c["errors"] += 1
             log(f"ERROR {rel}: {e}")
+
+    # The gate's other two file classes, walked exactly as it walks them. Neither
+    # carries a size floor, so only EMPTY and placeholder-text files are fatal there.
+    for dept in present_depts(ddir, depts):
+        for sop in iter_sop_files(dept):
+            rel = str(sop.relative_to(ddir))
+            try:
+                raw = sop.read_bytes()
+                text = raw.decode("utf-8", "replace")
+                reason = gate_reason(text, floor=False)
+                if reason is None:
+                    continue
+                c["scanned"] += 1
+                c["placeholders"] += 1
+                if classify(text) == "review":
+                    c["needs_manual_review"] += 1
+                    log(f"REVIEW {rel}: placeholder signature beside real SOP text -- "
+                        f"CLIENT ACTION: an owner must resolve it; left untouched")
+                    continue
+                new, why = sop_fill(dept, sop)
+                if new is None:
+                    c["client_action"] += 1
+                    log(f"CLIENT ACTION {rel}: {why} -- left untouched")
+                    continue
+                c["sop_files_filled"] += 1
+                log(f"{'FILLED' if apply else 'WOULD FILL'} {rel} ({why})")
+                if apply and gate_reason(read(sop), floor=False):
+                    apply_fill(sop, raw, new, append=False)
+            except (OSError, ValueError, KeyError) as e:
+                c["errors"] += 1
+                log(f"ERROR {rel}: {e}")
+        for flat in iter_flat_roles(dept):
+            rel = str(flat.relative_to(ddir))
+            try:
+                raw = flat.read_bytes()
+                text = raw.decode("utf-8", "replace")
+                reason = gate_reason(text, floor=False)
+                if reason is None:
+                    continue
+                c["scanned"] += 1
+                c["placeholders"] += 1
+                if classify(text) == "review":
+                    c["needs_manual_review"] += 1
+                    log(f"REVIEW {rel}: placeholder signature beside real role text -- "
+                        f"CLIENT ACTION: an owner must resolve it; left untouched")
+                    continue
+                title = re.sub(r"^\d+[-_]", "", flat.stem).replace("-", " ").title()
+                new, why = library_fill(dept, title, "")
+                if new is None:
+                    c["client_action"] += 1
+                    log(f"CLIENT ACTION {rel}: {why} -- left untouched")
+                    continue
+                c["flat_roles_filled"] += 1
+                log(f"{'FILLED' if apply else 'WOULD FILL'} {rel} ({why})")
+                if apply and gate_reason(read(flat), floor=False):
+                    apply_fill(flat, raw, new, append=False)
+            except (OSError, ValueError, KeyError) as e:
+                c["errors"] += 1
+                log(f"ERROR {rel}: {e}")
     return c
 
 
@@ -360,7 +620,8 @@ def main(argv=None):
     counts = repair(ddir, manifest, set(a.dept or []), apply)
     if apply:
         manifest.save()
-    left = counts["handed_to_authoring"] + counts["already_awaiting_authoring"] + counts["needs_manual_review"]
+    left = (counts["handed_to_authoring"] + counts["already_awaiting_authoring"]
+            + counts["needs_manual_review"] + counts["client_action"])
     log(" ".join(f"{k}={v}" for k, v in counts.items()) + ("" if apply else " -- DRY RUN, nothing written"))
     if counts["handed_to_authoring"] + counts["already_awaiting_authoring"]:
         log("next: author-missing-sops.py --apply  (authors the rest with the box's own default model)")
