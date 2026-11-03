@@ -78,6 +78,7 @@ sys.path.insert(0, str(HERE))
 import copy_forms  # noqa: E402
 import stage_executor as exe  # noqa: E402
 import page_role  # noqa: E402  the one allowed-sequence resolver
+from page_role import BUMP_SECTION  # noqa: E402  (build() has a `page_role` parameter of its own)
 import role_spec  # noqa: E402
 import wireframe_spec  # noqa: E402
 import page_kinds  # noqa: E402
@@ -476,10 +477,10 @@ def spec_slots(entry: dict, style_id) -> list:
     return out
 
 
-def sections_from_manuscript(text: str, spec: dict, slots: dict, style_id=None) -> list:
+def sections_from_manuscript(text: str, spec: dict, slots: dict, style_id=None, order_bump=None) -> list:
     names = spec.get("role_names") or {}
     units, order, _notes = parse_manuscript(text)
-    allowed = page_role.allowed_sequences(spec)  # the same resolver the executor's check reads
+    allowed = page_role.allowed_sequences(spec, {"order_bump": order_bump})  # the same resolver the executor's check reads
     if order not in allowed:
         want = allowed[0]
         raise BuildError(
@@ -732,7 +733,8 @@ def folded_levels(run_dir):
 
 
 def build(stage, version, manuscript_text, slots, prose, references, model, style, run_dir=Path("."),
-          page_role="landing", sections=None, structure=None, page_doc=None, page_kind=None):
+          page_role="landing", sections=None, structure=None, page_doc=None, page_kind=None,
+          order_bump=None):
     notes = {"dropped_role_label_headings": [], "terminal_periods_added": []}
     if structure:  # a role with its own entry in references/page-structures.json (downsell_1)
         version, spec = structure["copy_version"], structure
@@ -762,7 +764,7 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
                 raise BuildError(f"--copy-version {version!r} is not one of {', '.join(copy_forms.FORMS)}")
             spec = copy_forms.load_spec(version)
         if sections is None:
-            sections = sections_from_manuscript(manuscript_text, spec, slots, exe.style_id_for(Path(run_dir), {}))
+            sections = sections_from_manuscript(manuscript_text, spec, slots, exe.style_id_for(Path(run_dir), {}), order_bump)
         elif stage not in wireframe_spec.WIREFRAME_STAGES:
             # A wireframe prompt carries the page type's lines itself (wireframe_spec.prompt_block);
             # the mockup stages take them through the section layout.
@@ -804,6 +806,10 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
         request["page_role"] = built_role
     if spec.get("form"):
         request["_role_spec"] = spec  # the wireframe block reads it; never written out
+    if order_bump is not None:  # the funnel's bump decision; the executor reads the same key
+        if spec.get("page_role") not in BUMP_SECTION:
+            raise BuildError(f"the order bump decision applies to a checkout page, not the {spec_label(spec)}")
+        request["order_bump"] = bool(order_bump)
     if structure:
         page = page_doc.get("page") if isinstance(page_doc.get("page"), dict) else page_doc
         request["page_role"] = structure["role"]
@@ -891,6 +897,9 @@ def main(argv=None) -> int:
     p.add_argument("--page-kind", choices=page_kinds.kind_ids(), default=None,
                    help="sales or opt_in (default: the run's intake.json page_kind); "
                         "references/page-kinds.json")
+    p.add_argument("--no-bump", action="store_true",
+                   help="checkout only: the funnel has no order bump, so the page has no section 3 "
+                        "(without the flag the checkout keeps all five sections)")
     p.add_argument("--slots", type=Path)
     p.add_argument("--design-prose", type=Path)
     p.add_argument("--references", default="")
@@ -926,7 +935,7 @@ def main(argv=None) -> int:
                         load(a.slots), load(a.design_prose),
                         [r for r in a.references.split(",") if r], a.model, a.style, run_dir,
                         a.page_role, sections=sections, structure=structure, page_doc=page_doc,
-                        page_kind=a.page_kind)
+                        page_kind=a.page_kind, order_bump=False if a.no_bump else None)
     except (BuildError, exe.ExecutorError, OSError, ValueError) as exc:
         print(f"REFUSED: {exc}")
         return 1
