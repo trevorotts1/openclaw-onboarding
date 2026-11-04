@@ -38,6 +38,7 @@ text below; keep the list one word or phrase per line):
 - route graph
 - entitlement
 - gate
+- gated
 - intake
 - validate
 - contract
@@ -57,6 +58,7 @@ text below; keep the list one word or phrase per line):
 - folded levels
 - checkout contract
 - hash
+- hashed
 - receipt
 - adapter
 - install
@@ -97,7 +99,8 @@ the price. Do not run commands in front of the client or describe them; the harn
 other check run silently.
 
 Keep the promise honest. The order form, the add-on and the special offers are designed and written
-now and installed in the client's account by a later step (Skill 06 cannot install them yet, see
+now and installed in the client's account by a later step (Skill 06 has that step, S06-02, but it writes
+nothing until the one live capture on an approved test location, CHK-19, is done; see
 "Tracked items"), so the opening promises drafts to review and a setup afterwards, never "I'll set it
 all up" and never "it's live". The launch emails and texts are drafts too. If the run is page-only (no
 launch plan, so no emails or texts are part of this package), leave that line out of the opening and
@@ -206,8 +209,10 @@ a numbered directory, so the same code runs in both layouts.
 3. **Checkout mapping** (`launcher_core/checkout.py`). Binds the real Skill 79
    order-form contract to the launch's verified facts and calls the S79
    validator as a live probe. Checkout is the native Convert and Flow form and is never a dispatch adapter.
-   Skill 06 cannot install that form, an order bump or a one-click step today (S06-02), so a checkout
-   design is not an installed checkout; see the tracked items below.
+   Skill 06's funnel-step installer for that form, an order bump and a one-click step exists (S06-02,
+   `06-ghl-install-pages/tools/ghl_funnel_steps.py`) but refuses to write until the live commerce capture on an
+   approved test location (CHK-19) is done, so a checkout design is not an installed checkout; see the tracked
+   items below.
 4. **Council planning** (`launcher_core/council.py`). Invokes Skill 77 through
    its documented offline entry point, records the result in the launch record
    and the receipt, and continues whatever it says: advice never blocks and is
@@ -376,7 +381,7 @@ tracked are named.
 | Build pages (it composes the page-results Skills 71, 78, 79, 80, 81 and 82 return) | permanent boundary |
 | Charge, create an entitlement or call a billing API | permanent boundary; membership and purchase truth is PRD-12 |
 | Start a live Council session; Council advice is a readiness record until then | CON-16 |
-| Install the native order form, bump and one-click steps (Skill 06 has no such step) | S06-02, CHK-19 |
+| Install the native order form, bump and one-click steps (Skill 06 has the step, S06-02, but it refuses to write until the live commerce capture CHK-19 is done) | S06-02, CHK-19 |
 | Name a checkout mode for `folded_levels` (delivery stays blocked) | Skill 79 contract gap, `AF-LAUNCH-CHECKOUT-MODE` |
 | Choose a distribution target | open seam `distribution_run_target` in `DECISIONS-PENDING.md` |
 | Cross-sale teaching content (the surface is present, the teaching is marked pending) | open seam `cross_sales_teaching_source` |

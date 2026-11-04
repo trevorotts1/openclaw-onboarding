@@ -328,9 +328,19 @@ def ensure_runtime_packages(root: Optional[Path] = None,
         install(_requirement(entry["ref"]))
     importlib.invalidate_caches()
     pydeps.activate()  # the folder may have just been created
-    print("[launcher] setup: a missing runtime package was installed automatically "
-          "(operator note, not for the client)", file=sys.stderr)
-    return check(root)
+    report = check(root)
+    # The operator note is judged on the re-check (the same real import), never on install()'s return alone:
+    # a pip that ran but left the package unimportable, or no pip at all, must not read as success.
+    still = [e["ref"] for e in report["entries"]
+             if e["kind"] == "runtime_package" and e["required"] and e["status"] != "present"]
+    if still:
+        print("[launcher] setup: a missing runtime package could NOT be installed automatically (%s); "
+              "operator note, not for the client: python3 -m launcher_core.cli dependencies --install "
+              "(never --break-system-packages, never a venv)" % ", ".join(still), file=sys.stderr)
+    else:
+        print("[launcher] setup: a missing runtime package was installed automatically "
+              "(operator note, not for the client)", file=sys.stderr)
+    return report
 
 
 def require(root: Optional[Path] = None) -> Dict[str, Any]:

@@ -134,6 +134,37 @@ class RuntimePackagePreflight(unittest.TestCase):
         self.assertIn("for the operator, not the client", message)
         self.assertIn(sys.executable, message)
 
+    def setup_note(self, **kwargs) -> str:
+        """What ensure_runtime_packages tells the operator on stderr."""
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            dependencies.ensure_runtime_packages(**kwargs)
+        return err.getvalue()
+
+    def test_a_successful_install_says_it_was_installed(self):
+        note = self.setup_note(install=self.installer(True))
+        self.assertIn("was installed automatically", note)
+        self.assertNotIn("could NOT", note)
+
+    def test_a_failed_install_never_claims_success(self):  # S3: it used to print "installed" whatever pip did
+        note = self.setup_note(install=self.installer(False))
+        self.assertIn("could NOT be installed automatically", note)
+        self.assertIn(FAKE, note)  # names the package, for the operator
+        self.assertIn("python3 -m launcher_core.cli dependencies --install", note)
+        self.assertNotIn("was installed automatically", note)
+
+    def test_an_install_that_reports_success_but_leaves_the_package_unimportable_is_not_success(self):
+        note = self.setup_note(install=lambda spec: True)  # pip "succeeded" and nothing importable appeared
+        self.assertIn("could NOT be installed automatically", note)
+        self.assertNotIn("was installed automatically", note)
+
+    def test_a_python_with_no_pip_reports_the_failure_not_success(self):
+        self.use_pydeps_folder()
+        with self.externally_managed_pip(pip_present=False):
+            note = self.setup_note()  # the REAL installer, with no pip behind it
+        self.assertIn("could NOT be installed automatically", note)
+        self.assertNotIn("was installed automatically", note)
+
     def test_commands_that_import_the_package_run_the_repair_and_read_only_ones_do_not(self):
         manifest = self.dir / "package-manifest.json"
         manifest.write_text("{}", encoding="utf-8")

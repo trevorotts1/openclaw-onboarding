@@ -60,10 +60,11 @@ python3 -m launcher_core.cli check --manifest PACKAGE/package-manifest.json --ro
 8. The upsell, downsell and thank-you pages in this package are design deliverables. Purchase handling,
    native product and price ids and the live page are created later, by Skill 06 and Skill 44. Until Skill 06
    records read-backs, client summaries say "designs only" for those pages, never "live" or "delivered".
-9. The checkout page is the native Convert and Flow order form, but Skill 06 has no capability today to install
-   a native order form, order bump or one-click upsell and downsell step (S06-02). The decided build target is
-   the funnel order-form step, with one live capture on an approved test location still owed (CHK-19). Until
-   that lands, a checkout design is not an installed checkout.
+9. The checkout page is the native Convert and Flow order form. Skill 06's funnel-step installer for the native
+   order form, order bump and one-click upsell and downsell steps exists (S06-02,
+   `06-ghl-install-pages/tools/ghl_funnel_steps.py`; it is proved on fixtures only), but it refuses to write
+   until the live commerce capture on an approved test location is done (CHK-19, still owed). The decided build
+   target is the funnel order-form step. Until that capture lands, a checkout design is not an installed checkout.
 
 ## Build order and parallel lanes
 

@@ -30,9 +30,6 @@ TAG = "py%d.%d" % sys.version_info[:2]
 CANONICAL_FILE = REPO_ROOT / "79-signature-order-form" / "scripts" / "validate_checkout.py"
 BLOCK = re.compile(r"# PYDEPS-ACTIVATION:BEGIN.*?# PYDEPS-ACTIVATION:END\n", re.S)
 IMPORT = re.compile(r"^\s*(?:import jsonschema\b|from jsonschema\b)", re.M)
-# 72-motion-video-plus imports jsonschema too but is outside the launch family and has install fixtures
-# that byte-copy its scripts: it is not wired yet (tracked as a follow-up, not forgotten).
-NOT_WIRED_YET = ("72-motion-video-plus",)
 # The shell library prepends the same folders in its probe (oc_pydeps_lookup), so it needs no inline block.
 SHELL_LIBRARY = "lib-onboarding-state.sh"
 SKIP_DIRS = {".git", "__pycache__", "node_modules", "tests", "fixtures", "QUALITY-CONTROL", "evidence", "ledgers"}
@@ -143,6 +140,22 @@ class ActivationSnippet(unittest.TestCase):
         self.assertNotIn("stub", run.stdout)
 
 
+class LauncherPreflightSeesTheFolder(unittest.TestCase):
+    """dependencies.py (the preflight) imports the package only after launcher_core/__init__ activated the folder."""
+
+    def test_the_preflight_module_finds_a_target_install_without_any_path_help(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        folder = Path(tmp.name).resolve() / "exact"  # OC_PYDEPS_DIR is the folder itself: no py<X.Y> is appended
+        stub_package(folder)
+        code = "from launcher_core import dependencies\nimport jsonschema; print(jsonschema.MARKER, jsonschema.__file__)"
+        run = subprocess.run([sys.executable, "-c", code], cwd=str(SKILL_ROOT), capture_output=True, text=True,
+                             env=clean_env(tmp.name, OC_PYDEPS_DIR=str(folder)))
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertTrue(run.stdout.startswith("stub "), run.stdout)
+        self.assertIn(str(folder), run.stdout)
+
+
 class EveryImporterIsActivated(unittest.TestCase):
     def test_every_non_test_file_that_imports_jsonschema_carries_the_identical_block_first(self):
         if not CANONICAL_FILE.is_file():
@@ -150,8 +163,7 @@ class EveryImporterIsActivated(unittest.TestCase):
         canonical = BLOCK.search(CANONICAL_FILE.read_text(encoding="utf-8")).group(0)
         importers = []
         for dirpath, dirnames, filenames in os.walk(REPO_ROOT):
-            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS
-                           and not (Path(dirpath) == REPO_ROOT and d in NOT_WIRED_YET)]
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             for name in filenames:
                 if name.endswith((".py", ".sh")) and not (name.startswith("test_") or name.endswith("_test.py")):
                     path = Path(dirpath) / name
@@ -161,8 +173,12 @@ class EveryImporterIsActivated(unittest.TestCase):
                     if IMPORT.search(text):
                         importers.append((path, text))
         names = {p.name for p, _ in importers}
+        # Skill 72 (motion-video-plus) is covered like every other importer: no carve-out.
         self.assertTrue({"validate_checkout.py", "events.py", "normalizer.py", "processor.py", "stage_gate.py",
-                         "verify.py", "verify.sh"} <= names, names)
+                         "verify.py", "verify.sh", "motion_contracts.py", "powerpoint_package.py",
+                         "review_rubric.py", "vsl_mobile.py", "vsl_handoff.py"} <= names, names)
+        self.assertTrue(any("72-motion-video-plus" in str(p.relative_to(REPO_ROOT)) and p.name == "verify.sh"
+                            for p, _ in importers), "Skill 72's verify.sh is not among the guarded importers")
         for path, text in importers:
             rel = path.relative_to(REPO_ROOT)
             found = BLOCK.search(text)

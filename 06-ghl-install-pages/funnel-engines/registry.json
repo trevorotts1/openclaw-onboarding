@@ -195,12 +195,12 @@
       "id": "black-friday-launcher",
       "skill": "83-black-friday-launcher",
       "name": "Black Friday Launcher",
-      "summary": "Composes a whole Black Friday (or any offer) LAUNCH from the separate signature page skills: fail-closed intake behind an entitlement attestation, the route graph (landing, optional product selection, native checkout order form + bump, upsell/downsell, thank-you), Council planning advice, page requests dispatched through Skill 49, and an assembled package with a manifest and receipt. A launch request goes here, not to the direct-response Skill 56 stack.",
+      "summary": "Helps you get your Black Friday sale ready, step by step: your sales page, order form, special offers, thank-you page, and launch emails and texts, all as drafts for you to look over first. The order form and the special offers are drafted as designs for now; putting them live in your account waits for one practice run that has not happened yet, so nothing is called live until it is. A Black Friday or launch request belongs here, not with the direct-response sales page set.",
       "entry": "83-black-friday-launcher/launcher_core/cli.py",
-      "entry_contract": "Run from the skill directory as `python3 -m launcher_core.cli dispatch` (intake -> route -> Skill 49 page dispatch -> package). Intake is fail-closed (no defaulted price, level or entitlement); every page is delivered through Skill 6, which stays the ONE GHL delivery rail.",
+      "entry_contract": "Run from the skill directory as `python3 -m launcher_core.cli dispatch` (intake -> route -> Skill 49 page dispatch -> package). Intake is fail-closed (no defaulted price, level or entitlement); every PAGE is delivered through Skill 6, which stays the ONE GHL delivery rail. The native order form, bump and upsell/downsell steps are NOT delivered yet: Skill 6's funnel-step installer (S06-02, tools/ghl_funnel_steps.py) refuses to write until the live commerce capture CHK-19 is done.",
       "launch_mode": {"name": "black_friday_launch", "entrypoint_arg": "dispatch"},
       "delivery_rail": "06-ghl-install-pages",
-      "delivery_delegation": "The launcher authors nothing itself: it dispatches page requests through Skill 49 (and 71/78/79/80/81/82), and every page install, checkout order form and upsell/downsell step is delivered by Skill 6 (ghl_builder.py / ghl_rest_canvas.py). The launcher composes and checks; Skill 6 delivers.",
+      "delivery_delegation": "The launcher authors nothing itself: it dispatches page requests through Skill 49 (and 71/78/79/80/81/82), and every page install is delivered by Skill 6 (ghl_builder.py / ghl_rest_canvas.py). The native checkout order form, order bump and upsell/downsell steps are delivered by Skill 6's S06-02 funnel-step installer (tools/ghl_funnel_steps.py) only after the live commerce capture CHK-19 on an approved test location; until then they are design deliverables and nothing reports them live. The launcher composes and checks; Skill 6 delivers.",
       "priority": 12,
       "confidence_threshold": 0.55,
       "match": {
@@ -237,7 +237,7 @@
           "webinar registration only"
         ]
       },
-      "notes": "Registered with higher priority than Skill 56 so a launch request is composed by the launcher (route graph, product selection, signature pages) instead of the direct-response asset stack. A bare 'launch' alone does not clear the threshold; it needs corroborating launch/page signals, so a plain 'signature funnel' or 'sales page' request still routes to 49 / 56. Client runtime uses the CLIENT's own configured providers (never Anthropic, never operator keys)."
+      "notes": "Registered with higher priority than Skill 56 so a launch request is composed by the launcher (the page plan, product selection, signature pages) instead of the direct-response asset stack. A bare 'launch' alone does not clear the threshold; it needs corroborating launch/page signals, so a plain 'signature funnel' or 'sales page' request still routes to 49 / 56. Client runtime uses the CLIENT's own configured providers (never Anthropic, never operator keys)."
     }
   ]
 }

@@ -11,6 +11,7 @@ Stdlib only: python3 -m unittest.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import sys
@@ -18,14 +19,15 @@ import unittest
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = SKILL_ROOT.parent
 sys.path.insert(0, str(SKILL_ROOT))
 
 SKILL_MD = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
 
 # The least the list in SKILL.md must always ban (the owner's own list). SKILL.md may ban more.
-MUST_BAN = ("route graph", "entitlement", "gate", "intake", "validate", "contract", "manifest", "dispatch",
+MUST_BAN = ("route graph", "entitlement", "gate", "gated", "intake", "validate", "contract", "manifest", "dispatch",
             "schema", "jsonschema", "python", "prereq", "exit code", "completeness check",
-            "Council planning step", "7FigurePreneur shape")
+            "Council planning step", "7FigurePreneur shape", "hashed", "receipt")
 VERSION_NUMBER = re.compile(r"\bv\d+(\.\d+)+\b|\b\d+\.\d+\.\d+\b", re.IGNORECASE)
 REQUIRED_MOMENTS = ("opening", "missing-offer", "missing-price", "missing-product", "advisors",
                     "plan-review", "finished", "ready", "technical-problem")
@@ -57,6 +59,39 @@ def violations(text: str, terms: list) -> list:
     if VERSION_NUMBER.search(text):
         found.append("a version number")
     return found
+
+
+# Where else an agent reads about this skill and repeats it to the client: the funnel-engine registry summary
+# (06-ghl-install-pages) and the department map description, whose first sentence
+# 23-ai-workforce-blueprint/scripts/stamp-dept-skill-guides.py stamps into the owner-facing
+# how-to-use-this-department.md guides.
+REGISTRY = REPO_ROOT / "06-ghl-install-pages" / "funnel-engines" / "registry.json"
+DEPT_MAP = REPO_ROOT / "23-ai-workforce-blueprint" / "skill-department-map.json"
+DEPT_MAP_ENTRY = SKILL_ROOT / "repo-integration" / "skill-department-map-entry.json"
+STAMPER = REPO_ROOT / "23-ai-workforce-blueprint" / "scripts" / "stamp-dept-skill-guides.py"
+GUIDES = tuple(REPO_ROOT / "23-ai-workforce-blueprint" / "templates" / "role-library" / dept / "how-to-use-this-department.md"
+               for dept in ("marketing", "web-development", "funnels"))
+TRIGGER = '"build my black friday launch"'
+
+
+def registry_summary(registry_path: Path = REGISTRY) -> str:
+    engines = json.loads(registry_path.read_text(encoding="utf-8"))["engines"]
+    return next(e for e in engines if e["id"] == "black-friday-launcher")["summary"]
+
+
+def first_sentence(description: str) -> str:
+    """The text the guide stamper keeps from a map description (its own function, so the guard cannot drift)."""
+    spec = importlib.util.spec_from_file_location("stamp_dept_skill_guides", STAMPER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module._first_sentence(description)
+
+
+def map_description(map_path: Path) -> str:
+    data = json.loads(map_path.read_text(encoding="utf-8"))
+    if isinstance(data, dict) and data.get("slug") == "black-friday-launcher":
+        return data["description"]
+    return next(e for e in data["skills"] if e.get("slug") == "black-friday-launcher")["description"]
 
 
 def frontmatter(text: str) -> dict:
@@ -108,11 +143,57 @@ class ClientFacingLanguage(unittest.TestCase):
         self.assertIn("route graph", tail)
         self.assertNotIn("Technical description (operator only)", head)
 
+    def test_the_banned_list_names_the_forms_a_word_stem_misses(self):
+        listed = {t.lower() for t in banned_words(SKILL_MD)}
+        self.assertLessEqual({"gated", "hashed"}, listed)
+        terms = banned_words(SKILL_MD)
+        for bad in ("The order form is gated behind a test.", "Every file is hashed first."):
+            self.assertTrue(violations(bad, terms), bad)
+
+    def test_the_funnel_registry_summary_is_plain_and_does_not_promise_a_live_order_form(self):
+        if not REGISTRY.is_file():
+            self.skipTest("Skill 06 is not beside this skill (vendored copy)")
+        terms = banned_words(SKILL_MD)
+        summary = registry_summary()
+        self.assertEqual(violations(summary, terms), [], "funnel-engines/registry.json summary")
+        # Skill 06 cannot put the order form and one-click offers live before the live capture (CHK-19):
+        # the summary must say drafts, never promise them delivered.
+        self.assertIn("drafts", summary)
+        self.assertIn("not happened yet", summary)
+        engine = next(e for e in json.loads(REGISTRY.read_text(encoding="utf-8"))["engines"]
+                      if e["id"] == "black-friday-launcher")
+        self.assertIn("CHK-19", engine["delivery_delegation"])
+        self.assertIn("CHK-19", engine["entry_contract"])
+        readme = (REGISTRY.parent / "README.md").read_text(encoding="utf-8")
+        row = next(line for line in readme.splitlines() if line.startswith("| `black-friday-launcher` |"))
+        self.assertEqual(violations(row.split("|")[3], terms), [], "funnel-engines/README.md row")
+        self.assertIn("CHK-19", row)
+
+    def test_the_department_map_sentence_the_owner_guides_repeat_is_plain(self):
+        if not STAMPER.is_file():
+            self.skipTest("the department guide stamper is not beside this skill (vendored copy)")
+        terms = banned_words(SKILL_MD)
+        for where, path in (("skill-department-map.json", DEPT_MAP), ("skill-department-map-entry.json", DEPT_MAP_ENTRY)):
+            sentence = first_sentence(map_description(path))
+            self.assertEqual(violations(sentence, terms), [], where)
+            self.assertIn("Black Friday", sentence)
+            self.assertGreater(len(sentence.split()), 12, f"{where}: the stamper cut the sentence short: {sentence!r}")
+        self.assertEqual(map_description(DEPT_MAP), map_description(DEPT_MAP_ENTRY), "the entry mirrors the map")
+        stamped = 0
+        for guide in GUIDES:
+            for line in guide.read_text(encoding="utf-8").splitlines():
+                if TRIGGER in line:
+                    stamped += 1
+                    self.assertEqual(violations(line.split("|")[2], terms), [], str(guide.relative_to(REPO_ROOT)))
+        self.assertEqual(stamped, len(GUIDES), "each department guide carries the Skill 83 row")
+
     def test_the_detector_catches_what_it_is_for(self):  # control: the guard is not always green
         terms = banned_words(SKILL_MD)
         for bad in ("I will validate your intake first.", "We build the route graph.",
                     "Your python needs a package.", "Version v0.2.14 is ready.", "It passed with exit code 0.",
-                    "Running the completeness checks now.", "The 7FigurePreneur shape is ready."):
+                    "Running the completeness checks now.", "The 7FigurePreneur shape is ready.",
+                    "Composes the separate page skills into one runtime walk behind an entitlement gate.",
+                    "An assembled package with a manifest and receipt.", "The route graph and Council planning step."):
             self.assertTrue(violations(bad, terms), bad)
         self.assertEqual(violations("Hi! What would you like to sell this Black Friday?", terms), [])
 
