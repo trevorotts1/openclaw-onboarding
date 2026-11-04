@@ -1,0 +1,37 @@
+{
+ "skill": "84",
+ "slug": "purple-billboard-blueprint",
+ "name": "purple-billboard-blueprint",
+ "client_facing": true,
+ "description": "Gets your monthly Purple Billboard posts ready for you to approve, then helps with the replies to comments and messages, sends people your free gift and helps them book a call with you. Wires the Purple Billboard client-acquisition system end to end: monthly 30-pack approval, keyword giveaway posts published through Skills 35 and 57, comment and DM routing, original gift and bonus delivery, mobile and email capture with reminders, and booking and human handoff. Routes each step to the module that already implements it in Skills 38, 44 and 35 and in shared-utils, and states the safety boundaries. Adds no new engine, scheduler or endpoint.",
+ "departments": [
+  "social-media",
+  "sales"
+ ],
+ "roles": [
+  {
+   "dept": "social-media",
+   "primary": true,
+   "slug": "director-of-social-media"
+  },
+  {
+   "dept": "social-media",
+   "primary": false,
+   "slug": "facebook-specialist"
+  },
+  {
+   "dept": "sales",
+   "primary": false,
+   "slug": "appointment-setter"
+  }
+ ],
+ "intent_triggers": [
+  "run my purple billboard",
+  "a giveaway post with a keyword",
+  "prepare my 30 days of billboard posts",
+  "turn my post comments into conversations"
+ ],
+ "execution_sops": [
+  "social-media-craft"
+ ]
+}
