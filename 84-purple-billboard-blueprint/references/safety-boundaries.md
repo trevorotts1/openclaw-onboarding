@@ -5,7 +5,7 @@ These come from `spec/SPEC.md`, `spec/DATA-CONTRACTS.md`, `spec/DECISIONS.md` an
 ## Nothing goes out except through the common gate
 
 1. Every outbound action passes the common dispatch gate's correct variant: public publication, original gifts, ordinary replies, pass and email asks, reminders, retries. No exceptions, including the original gift and the final reminder. Module: `38-conversational-ai-system/tools/outbound_gate.py`. The gate is fresh on every dispatch and every retry (verdicts `ALLOW`, `WAIT_UNTIL`, `SUPPRESSED`, `QUARANTINED`, `RECONCILE_UNKNOWN`). A queued `ALLOW` is not an `ALLOW` at send time.
-2. In a live conversation the only send door is `38-conversational-ai-system/tools/pb_send.py` (`admit`, then `reply`). Do not post to the Conversations API yourself. Drafted is not sent; a message id is the proof.
+2. In a live conversation the only send door is `38-conversational-ai-system/tools/pb_send.py` (`admit`, then `reply`). Do not post to the Conversations API yourself. Its default transport only writes a local file; a live send needs `--transport ghl` plus the owner's written authorization (rule 5). Drafted is not sent; a message id is the proof.
 3. A `SUPPRESSED`, `QUARANTINED` or `WAIT_UNTIL` result means do not send, and never work around it.
 4. Public placements use the public-placement envelope with no contact. A reply to a particular reader is person-directed even when its transport is public. Never put a dummy contact on a public placement, and never put a canonical contact on one.
 
@@ -50,7 +50,7 @@ These come from `spec/SPEC.md`, `spec/DATA-CONTRACTS.md`, `spec/DECISIONS.md` an
 
 27. Link attribution is NOT PROVEN. Never report a Bonus link click as attributed to a post. Report keyword attribution, multi-touch, or unknown; never invent exact post causality.
 28. A booking is claimed only with a persisted receipt after rechecking live availability at commit. A booking is not a sale. Attendance and sales need authoritative or labeled owner evidence.
-29. No dashboard, no poller and no ongoing comment monitor exists in this repository for Purple Billboard. Do not describe one.
+29. No poller and no ongoing comment monitor exists in this repository for Purple Billboard, and no dashboard code lives here: the Command Center is a separate repository (`trevorotts1/blackceo-command-center`, pinned in `cc-compat.json`). Its views exist only as listed in the pointer table in `SKILL.md` ("Command Center views"), with the gaps stated there: fulfillment pause, retry and handoff are a library with no screen yet, and bookings and outcomes show UNKNOWN until their producers exist. The account binding, call to action and keyword of a placement that the Command Center view cannot prove stay UNKNOWN, never approved. Do not describe a view, a poller or a monitor that is not in that table.
 30. Do not create fictional collections, fictional token endpoints or fictional customer outcomes. Every statistic and research claim you repeat must come from the playbook's cited sources or be dropped.
 
 ## Where the playbook and the spec differ (the spec wins)

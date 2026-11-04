@@ -532,7 +532,7 @@ Workstream 2 research for the Purple Billboard system. Purpose: spell out how a 
 
 Facts below come from three places, and each claim is labeled by source:
 
-> **● \[REPO\]** Read directly from the skill source files in the Mini's local checkout of trevorotts1/openclaw-onboarding on 2026-10-23 (located through the onboarding Graphify graph first, then verified against the files themselves).
+> **● \[REPO\]** Read directly from the skill source files of the OpenClaw onboarding repository on 2026-10-23.
 >
 > **● \[GHL\]** Verified against HighLevel's own help documentation and the live HighLevel connector operation catalog on 2026-10-23.
 >
@@ -772,7 +772,7 @@ Step 8: The loop closes in the records and follow-through. Every message, inboun
 
 **Verification notes**
 
-> **●** Graphify was consulted first (onboarding graph, query "conversational AI system GHL"), which located Skill 38 and its SKILL.md; every repo claim above was then read from the actual files in the Mini's local checkout, not from the graph alone. Graph relationships were treated as leads, not proof.
+> **●** Every repo claim above was read from the actual skill source files.
 >
 > **●** GHL facts were checked against HighLevel's official help articles found 2026-10-23 (Facebook Comment(s) On A Post trigger; Guided Form Based Setup for Conversation AI; Conversation AI bot channels and routing; Auto Follow-Up in Conversation AI) and against the live connector operation catalog (Social Planner comment list and create operations).
 >

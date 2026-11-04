@@ -1,12 +1,14 @@
 # Wiring map: Purple Billboard step to exact module
 
-Every path below is relative to the skills root (the folder that holds the numbered skill folders and `shared-utils/`; on a box that is `~/.openclaw/skills/`, the same layout Skill 35's own approval gate uses when it calls `$SKILL_DIR/../shared-utils/manifest/monthly_manifest.py`). `tests/test_blueprint_wiring.py` fails if any path named here stops existing, so this map cannot silently rot.
+Every path below is relative to the skills root (the folder that holds the numbered skill folders and `shared-utils/`; on a box that is `~/.openclaw/skills/`, the same layout Skill 35's own approval gate uses when it calls `$SKILL_DIR/../shared-utils/manifest/monthly_manifest.py`). `tests/test_blueprint_wiring.py` fails if any path named here stops existing, or if a function, class or command-line subcommand named beside a module is no longer defined in that module, so this map cannot silently rot. CI runs that test as an explicit step in `.github/workflows/qc-static.yml`.
 
 How to reach the code: every module is Python 3 standard library only. Either run its command line with `python3 -I <path> ...`, or import it after `sys.path.insert(0, "<its folder>")`. Nothing in this skill adds a runtime, a scheduler, a router, or a second copy of any rule. Where a rule lives in one module, call that module.
 
 Status words used below:
 
-- BUILT: the module is on main and has its own tests in the repository.
+- BUILT: the module is on main and the repository tests it (a test file for it, a self-check that CI runs, or contract tests that exercise it).
+- BUILT (no dedicated test): the module is on main, but no test in the repository exercises it by name. It may work; nothing here proves it. Say so before relying on it.
+- BUILT IN COMMAND CENTER: built and merged in the separate Command Center repository (pinned in `cc-compat.json`), not in this one.
 - LIBRARY ONLY: built and tested, but no skill, hook, cron or script calls it. An agent reaches it only because this skill tells it to.
 - BLOCKED: the capability is not available; the module reports so and the system must say so.
 - NOT PRESENT: SPEC.md assumes it, the repository does not contain it.
@@ -26,7 +28,7 @@ Status words used below:
 | What | Where | Status |
 |---|---|---|
 | Persistent acquisition brief: business, offers, audience, proof, constraints, channels, geography, seasonality; every fact carries provenance; a recorded fact is never asked again; an assumed fact blocks readiness until a person confirms it | `38-conversational-ai-system/tools/acquisition_brief.py` (`AcquisitionBrief`) | BUILT |
-| Command-line driver: `next`, `answer`, `bind owner\|approval\|capacity\|claims`, `status`, `ready` | `38-conversational-ai-system/tools/guided_discovery.py <brief.json> ...` | BUILT, LIBRARY ONLY (nothing else calls it) |
+| Command-line driver: `next`, `answer`, `bind owner\|approval\|capacity\|claims`, `status`, `ready` | `38-conversational-ai-system/tools/guided_discovery.py <brief.json> ...` | BUILT (no dedicated test), LIBRARY ONLY (nothing else calls it) |
 
 Ask only what the brief reports as unanswered. Reuse known business facts before asking.
 
@@ -85,7 +87,7 @@ Personal-profile unattended publishing and ongoing replies are UNPROVEN. Prepare
 | Turning a public comment into a conversation (per run, not a poller) | `35-social-media-planner/scripts/comment_reader.py` (own-author ids REQUIRED; stamps `- duty: public_answer`) | BUILT. Ongoing comment monitoring is NOT built. |
 | Which channel may answer which duty (`public_answer` allows the public thread and refuses DM and SMS; `private_answer` the reverse; unreadable duty allows nothing) | `38-conversational-ai-system/tools/answer_duty.py` | BUILT and enforced at the send gate |
 | Who answers an interactive step (one responder per input) | `38-conversational-ai-system/tools/interactive_owner.py`, `38-conversational-ai-system/launch/interactive-owner-contract.md` | BUILT |
-| Inbound identity and dedupe before any reply: persist the provider event first; duplicate exits 3, end the turn | `38-conversational-ai-system/tools/pb_send.py admit --tenant <id> --message-id <id> --contact <id>` | BUILT, enforced by Skill 38's runtime rules |
+| Inbound identity and dedupe before any reply: persist the provider event first; duplicate exits 3, end the turn | `38-conversational-ai-system/tools/pb_send.py admit --outbox <outbox-file> --tenant <id> --message-id <id>`, plus optional `--contact <id>`, `--direction <direction>` (default `inbound`) and `--own-actor <id>` (repeatable). `--outbox`, `--tenant` and `--message-id` are required. Exit 0 admitted, 2 usage error, 3 duplicate (end the turn, do not reply). It writes only to the local outbox file. | BUILT, enforced by Skill 38's runtime rules |
 | One canonical contact per person inside a tenant; never merge by name or across tenants | `38-conversational-ai-system/tools/tenant_identity.py` | BUILT |
 | Serialize at (tenant, canonical contact, collection sequence) so FB, IG and SMS share one lock and one budget | `38-conversational-ai-system/tools/collection_lock.py` | BUILT |
 | Conversation workflow playbooks (parse, validate, structure hash) when a comment or DM playbook is authored or changed | `38-conversational-ai-system/tools/playbook_engine.py {parse,validate}` | BUILT |
@@ -100,7 +102,7 @@ A comment alone does not open a normal DM window. A private opener uses its own 
 |---|---|---|
 | Deliver the actual original item directly in the eligible originating chat; accepted or sent is not delivered without a receipt; later failure pauses capture continuation and repairs the promise | `38-conversational-ai-system/tools/direct_fulfillment.py` (`fulfill`, `resume`, `can_continue`, `record_delivery_proof`, `post_gift_help`); command line `38-conversational-ai-system/tools/pb_contracts.py fulfill`, `fulfill-basis`, `fulfill-access`, `fulfill-resume`, `fulfill-proof`, `fulfill-continue` | BUILT |
 | Every send goes through the one gate: fresh verdict `ALLOW`, `WAIT_UNTIL`, `SUPPRESSED`, `QUARANTINED` or `RECONCILE_UNKNOWN` on every dispatch and every retry | `38-conversational-ai-system/tools/outbound_gate.py` (`dispatch`), `38-conversational-ai-system/tools/consent_gate.py`, `38-conversational-ai-system/tools/suppression_ledger.py` | BUILT |
-| Sending a reply in a live conversation | `38-conversational-ai-system/tools/pb_send.py reply --tenant <id> --contact <id> --inbound-message-id <id> --channel <channel> --text <text>`. Never post to the Conversations API directly. A reply counts as sent only when a message id comes back. | BUILT |
+| Sending a reply in a live conversation. A live send needs the owner's written authorization (safety rules 5 and 7); installing or merging this skill is not that authorization | `38-conversational-ai-system/tools/pb_send.py reply --outbox <outbox-file> --tenant <id> --contact <id> --channel <channel> --text <text> --inbound-message-id <id> --identity-db <identity-db-file>`. All seven of those are required. Optional: `--conversation-id`, `--handoff-db`, `--sent-index`, `--approval-ref`, `--answer-duty-log`, `--worker-id` (default `pb-send`). The transport is chosen by `--transport {journal,ghl}` and the default is `journal`: it needs `--journal <file>`, writes the reply to that local file and sends nothing to anyone. A live send needs `--transport ghl` and the Convert and Flow location token in the environment variable named by `--pit-env` (default `GHL_LOCATION_PIT`); `--tenant` is then the location id. If that variable is missing the command stops before sending and never prints the token. Exit 0 sent, 2 usage or contract error, 4 gate blocked, 5 not claimed (already dispatched, unknown or leased); on 4 or 5 do not send. Never post to the Conversations API directly. A reply counts as sent only when a message id comes back. | BUILT |
 | Unknown outcome after a crash: reconcile the same action, never resend | `38-conversational-ai-system/tools/reconciliation.py` (`needs_reconciliation`, `sweep_inflight`, `resolve_unknown`) | BUILT |
 | Durable inbox and outbox, leases, truthful stages | `38-conversational-ai-system/tools/durable_store.py` | BUILT |
 
@@ -108,8 +110,8 @@ A comment alone does not open a normal DM window. A private opener uses its own 
 
 | What | Where | Status |
 |---|---|---|
-| Honest capability decision: identity, grant, credential, SMS pass, return and recovery as separate steps with evidence | `shared-utils/bonus/access_capability.py`; operator command line `44-convert-and-flow-operator/tools/bonus_access_decision.py {decision,route,evidence,inventory-routes,request,plan}`; write-up `shared-utils/bonus/BONUS-ACCESS-CAPABILITY-DECISION.md` | BUILT |
-| Five separate authorizations, return access, email-later on the same member, failed-step resume | `shared-utils/bonus/access_adapter.py`; `44-convert-and-flow-operator/tools/bonus_access_decision.py {member-state,access-authorize,access-bind,access-fail,access-defer,access-resume}` | BUILT |
+| Honest capability decision: identity, grant, credential, SMS pass, return and recovery as separate steps with evidence | `shared-utils/bonus/access_capability.py`; operator command line `44-convert-and-flow-operator/tools/bonus_access_decision.py {decision,route,evidence,inventory-routes,request,plan}`; write-up `shared-utils/bonus/BONUS-ACCESS-CAPABILITY-DECISION.md` | BUILT. The capability module has its own tests; the operator command line `bonus_access_decision.py` has none of its own (BUILT, no dedicated test) |
+| Five separate authorizations, return access, email-later on the same member, failed-step resume | `shared-utils/bonus/access_adapter.py`; `44-convert-and-flow-operator/tools/bonus_access_decision.py {member-state,access-authorize,access-bind,access-fail,access-defer,access-resume}` | BUILT. The adapter has its own tests; its command line has none of its own (BUILT, no dedicated test) |
 
 When this skill was written, `bonus_access_decision.py route` reported `advertised_bonus_ready: false`, `reason_code: BONUS_ACCESS_CAPABILITY_BLOCKED`, route `assisted_operator`, with identity, grant, credential, return and recovery all blocked and `no_invented_api: true`. Re-run it; do not trust this line. While it says blocked: the original gift still goes out (Step 7), the advertised bonus product stays "not ready", and the pass is never described as sent. An expired login credential is not expired guides.
 
@@ -136,7 +138,7 @@ The 2h / 8h / 20h timing and the 30-minute quiet interval are PROPOSED, not acti
 
 | What | Where | Status |
 |---|---|---|
-| Approved calendar capacity, recheck at commit, booked only with a persisted receipt, timezone, location and change path, reschedule and cancel | `38-conversational-ai-system/tools/booking_service.py` (`load_policy`, `open_runtime`) over `shared-utils/booking/followthrough.py` (`BookingFollowThrough`: `resolve_calendar`, `offer_slots`, `book`, `reschedule`, `cancel`, `confirmation_text`); playbook `38-conversational-ai-system/launch/booking-playbook.md` | BUILT, LIBRARY ONLY. The operator policy and the live calendar and provider adapters are supplied by the caller; nothing is defaulted. |
+| Approved calendar capacity, recheck at commit, booked only with a persisted receipt, timezone, location and change path, reschedule and cancel | `38-conversational-ai-system/tools/booking_service.py` (`load_policy`, `open_runtime`) over `shared-utils/booking/followthrough.py` (`BookingFollowThrough`: `resolve_calendar`, `offer_slots`, `book`, `reschedule`, `cancel`, `confirmation_text`); playbook `38-conversational-ai-system/launch/booking-playbook.md` | BUILT, LIBRARY ONLY. `followthrough.py` has its own tests; `booking_service.py` has only a self-check that CI runs (BUILT, no dedicated test). The operator policy and the live calendar and provider adapters are supplied by the caller; nothing is defaulted. |
 | Owned handoff: context, accepted owner, due action, backup owner, bot fenced until explicit release | `shared-utils/handoff/handoff.py` (`HandoffStore`: `create`, `accept`, `escalate`, `backup_accept`, `release`, `gate_decision`) | BUILT |
 
 ## Step 12. Outcomes and attribution
@@ -144,7 +146,13 @@ The 2h / 8h / 20h timing and the 30-minute quiet interval are PROPOSED, not acti
 | What | Where | Status |
 |---|---|---|
 | Attendance, sales and service outcomes only from authoritative or labeled owner evidence; keyword and multi-touch attribution kept; unknown stays unknown; a booking is not a sale | `shared-utils/booking/followthrough.py` (`record_outcome`, `outcome_state`, `attribute`), `38-conversational-ai-system/tools/post_delivery_discovery.py` (`record_outcome`, `attribution`) | BUILT |
-| Command Center views: setup readiness, campaign approval and calendar, conversations, fulfillment, contacts and follow-ups, bookings, failures, verified outcomes | The Command Center is a separate repository pinned in `cc-compat.json`. No Purple Billboard view exists in this repository. | NOT PRESENT here. Do not claim a dashboard. |
+| Command Center views (a separate repository, `trevorotts1/blackceo-command-center`, pinned in `cc-compat.json`; paths below are inside it and exist at the pinned tag `v7.6.126` and on its `main`). "Not in this repository" is a location statement, not a claim that the views are missing | Pointer table: `SKILL.md`, section "Command Center views" | BUILT IN COMMAND CENTER |
+| T-31 setup readiness: READY, BLOCKED or UNKNOWN per item, with evidence | `src/components/setup/SetupReadinessPanel.tsx`, `src/app/api/setup/readiness/route.ts` (PR 598). Open `/setup`, or `GET /api/setup/readiness` with operator identity | BUILT IN COMMAND CENTER |
+| T-32 campaign approval: calendar, approval state per placement, publication receipts, targeted approve or hold | `src/app/campaigns/[id]/approval/page.tsx`, `src/lib/campaigns/approval-contract.ts` (PR 603). Open `/campaigns/<campaign id>/approval`. The view cannot prove a placement's account binding, call to action or keyword: those stay UNKNOWN, never approved, and the campaign summary is never fully approved (PARTIAL at best) | BUILT IN COMMAND CENTER |
+| T-33 fulfillment pause, retry and handoff (owner-only, tenant-scoped, expected-version checked, receipt per step) | `src/lib/fulfillment/operations.ts` (PR 604, 614). Library only: no screen, route or button calls it on `main` or at the pinned tag. Thread state: `GET /api/tasks/<task id>/messages` returns `fulfillment` on `main` (PR 614), not yet at the pinned tag | BUILT IN COMMAND CENTER, LIBRARY ONLY |
+| T-34 failures, bookings and outcomes for one client | `src/app/workspace/[slug]/exceptions/page.tsx` (PR 602). Open `/workspace/<slug>/exceptions`. Bookings and outcomes show UNKNOWN with a reason until their producers (T-28, T-30) are on `main` | BUILT IN COMMAND CENTER |
+| T-35 Kanban cards from real lifecycle events, with stale and unknown states | `src/lib/board/lifecycle-projection.ts` (PR 596). Open `/tasks/all`; each task from `GET /api/tasks` carries a `lifecycle` object | BUILT IN COMMAND CENTER |
+| Other views the spec asks for (conversations and ownership, contact consent and follow-ups) | Not verified by this skill. Check the Command Center repository before saying they exist | Undetermined |
 
 ## Pieces that exist but are not part of this flow
 
