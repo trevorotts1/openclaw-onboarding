@@ -21,18 +21,57 @@ from pathlib import Path
 from unittest import mock
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
-REPO_ROOT = SKILL_ROOT.parent
 sys.path.insert(0, str(SKILL_ROOT))
 
 from launcher_core import pydeps  # noqa: E402
 
+
+def _layout() -> tuple:
+    """(repo root, folder holding the skills, in the 999 repo?). The same file runs in both repos, byte for byte.
+
+    onboarding: <repo>/83-black-friday-launcher; the skills are the repo's top-level NN-name folders.
+    999:        <repo>/.claude/skills/black-friday-launcher; the skills are real folders there (the NN-name entries
+                are symlinks the walk does not follow), while shared-utils and the installers sit at the repo root.
+    Anywhere else (an installed copy) the walk stays on the skills folder and the canonical-file skip applies.
+    """
+    skills = SKILL_ROOT.parent
+    repo = skills.parent.parent
+    if skills.name == "skills" and skills.parent.name == ".claude" and (repo / "shared-utils").is_dir():
+        return repo, skills, True
+    return skills, skills, False
+
+
+REPO_ROOT, SKILLS_DIR, IN_999 = _layout()
+# onboarding is recognized by its shell library at the repo root; an installed copy has neither shape
+RECOGNIZED_LAYOUT = IN_999 or (SKILLS_DIR / "lib-onboarding-state.sh").is_file()
 TAG = "py%d.%d" % sys.version_info[:2]
-CANONICAL_FILE = REPO_ROOT / "79-signature-order-form" / "scripts" / "validate_checkout.py"
+CANONICAL_FILE = next(
+    (f for f in (SKILLS_DIR / d / "scripts" / "validate_checkout.py" for d in ("signature-order-form", "79-signature-order-form"))
+     if f.is_file()),
+    SKILLS_DIR / "79-signature-order-form" / "scripts" / "validate_checkout.py")
 BLOCK = re.compile(r"# PYDEPS-ACTIVATION:BEGIN.*?# PYDEPS-ACTIVATION:END\n", re.S)
 IMPORT = re.compile(r"^\s*(?:import jsonschema\b|from jsonschema\b)", re.M)
-# The shell library prepends the same folders in its probe (oc_pydeps_lookup), so it needs no inline block.
-SHELL_LIBRARY = "lib-onboarding-state.sh"
+# Shell scripts whose own Python probe puts the pydeps folder first carry no inline block: the onboarding shell library
+# (its probe's `sys.path[:0] = ...` line) and the 999 installer (its probe inserts the folder it installs into). Each must
+# still show that exact line before its first jsonschema import, so the exemption cannot outlive the thing it relies on.
+SELF_ACTIVATING = {"lib-onboarding-state.sh": "sys.path[:0] = [d for d in sys.argv[2:] if d not in sys.path]",
+                   "setup-macos.sh": "sys.path.insert(0, sys.argv[2])"}
+# The 999 repo ships only the nine-router variant of Skill 72, which has no jsonschema importer.
+SKILL_72_IMPORTERS = {"motion_contracts.py", "powerpoint_package.py", "review_rubric.py", "vsl_mobile.py", "vsl_handoff.py"}
 SKIP_DIRS = {".git", "__pycache__", "node_modules", "tests", "fixtures", "QUALITY-CONTROL", "evidence", "ledgers"}
+
+
+def canonical_block() -> str:
+    """Skill 79's activation block. Without Skill 79, the guard FAILS in the onboarding and 999 layouts (a renamed folder
+    must not turn the guard into a silent skip); only an installed copy, where Skill 79 is not beside this skill, skips."""
+    if not CANONICAL_FILE.is_file():
+        if RECOGNIZED_LAYOUT:
+            raise AssertionError(f"Skill 79's validate_checkout.py is missing at {CANONICAL_FILE}; the guard cannot run")
+        raise unittest.SkipTest("Skill 79 is not beside this skill (vendored copy)")
+    found = BLOCK.search(CANONICAL_FILE.read_text(encoding="utf-8"))
+    if found is None:
+        raise AssertionError(f"{CANONICAL_FILE} has no PYDEPS-ACTIVATION block")
+    return found.group(0)
 
 
 def clean_env(tmp: str, **extra: str) -> dict:
@@ -103,9 +142,7 @@ class ActivationSnippet(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        if not CANONICAL_FILE.is_file():
-            raise unittest.SkipTest("Skill 79 is not beside this skill (vendored copy)")
-        cls.block = BLOCK.search(CANONICAL_FILE.read_text(encoding="utf-8")).group(0)
+        cls.block = canonical_block()
 
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
@@ -158,29 +195,31 @@ class LauncherPreflightSeesTheFolder(unittest.TestCase):
 
 class EveryImporterIsActivated(unittest.TestCase):
     def test_every_non_test_file_that_imports_jsonschema_carries_the_identical_block_first(self):
-        if not CANONICAL_FILE.is_file():
-            self.skipTest("Skill 79 is not beside this skill (vendored copy)")
-        canonical = BLOCK.search(CANONICAL_FILE.read_text(encoding="utf-8")).group(0)
+        canonical = canonical_block()
         importers = []
         for dirpath, dirnames, filenames in os.walk(REPO_ROOT):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             for name in filenames:
                 if name.endswith((".py", ".sh")) and not (name.startswith("test_") or name.endswith("_test.py")):
                     path = Path(dirpath) / name
-                    if name == SHELL_LIBRARY:
-                        continue
                     text = path.read_text(encoding="utf-8", errors="replace")
                     if IMPORT.search(text):
                         importers.append((path, text))
         names = {p.name for p, _ in importers}
-        # Skill 72 (motion-video-plus) is covered like every other importer: no carve-out.
-        self.assertTrue({"validate_checkout.py", "events.py", "normalizer.py", "processor.py", "stage_gate.py",
-                         "verify.py", "verify.sh", "motion_contracts.py", "powerpoint_package.py",
-                         "review_rubric.py", "vsl_mobile.py", "vsl_handoff.py"} <= names, names)
-        self.assertTrue(any("72-motion-video-plus" in str(p.relative_to(REPO_ROOT)) and p.name == "verify.sh"
-                            for p, _ in importers), "Skill 72's verify.sh is not among the guarded importers")
+        # Skill 72 (motion-video-plus) is covered like every other importer in onboarding: no carve-out.
+        expected = {"validate_checkout.py", "events.py", "normalizer.py", "processor.py", "stage_gate.py",
+                    "verify.py", "verify.sh"} | (set() if IN_999 else SKILL_72_IMPORTERS)
+        self.assertTrue(expected <= names, sorted(expected - names))
+        if not IN_999:
+            self.assertTrue(any("72-motion-video-plus" in str(p.relative_to(REPO_ROOT)) and p.name == "verify.sh"
+                                for p, _ in importers), "Skill 72's verify.sh is not among the guarded importers")
         for path, text in importers:
             rel = path.relative_to(REPO_ROOT)
+            marker = SELF_ACTIVATING.get(path.name)
+            if marker:
+                self.assertIn(marker, text[:IMPORT.search(text).start()],
+                              f"{rel}: its own probe must put the pydeps folder first ({marker})")
+                continue
             found = BLOCK.search(text)
             self.assertIsNotNone(found, f"{rel} imports jsonschema without the PYDEPS-ACTIVATION block")
             self.assertEqual(found.group(0), canonical, f"{rel}: the block differs from the canonical one")
