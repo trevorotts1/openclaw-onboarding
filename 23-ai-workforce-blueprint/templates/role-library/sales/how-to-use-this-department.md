@@ -172,6 +172,7 @@ You never have to know these by name or type a command. Just say what you want i
 | "set up a booking bot" · "a conversational qualifier" · "an AI that books calls" · "a chat flow that qualifies leads" | Communication-driven funnel system |
 | "look up a property" · "qualify a real estate lead" · "schedule a showing" | Real estate automation playbook |
 | "write my product bio" · "a master brain for my product" · "a product sales knowledge base" | Product Bio Engine |
+| "run my purple billboard" · "a giveaway post with a keyword" · "prepare my 30 days of billboard posts" · "turn my post comments into conversations" | Gets your monthly Purple Billboard posts ready for you to approve, then helps with the replies to comments and messages, sends people your free gift and helps them book a call with you |
 
 You do not have to get the routing right or name the skill. The plain-language ask is enough. See `universal-sops/native-skill-invocation.md` for how your specialists reach for these from your intent.
 <!-- END DEPT_SKILLS_V1 -->

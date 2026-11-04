@@ -646,8 +646,8 @@
         "sdr-sales-development-rep-phase2",
         "sop-writer"
       ],
-      "content_sha": "sha256:fae246b4df26240febad66b0ecfbe08293057aec6bbe18ca9cd3fad4131e2a17",
-      "content_hashed_at": "2026-10-29T14:03:11.998921+00:00"
+      "content_sha": "sha256:373a5ff68c1c34c38bc3c1373ad473c77f8d1bc94e138cec7856c20f95f3419a",
+      "content_hashed_at": "2026-11-04T12:31:30.229690+00:00"
     },
     "scheduling-dispatch": {
       "count": 4,
@@ -683,8 +683,8 @@
         "twitter-x-specialist",
         "youtube-channel-specialist-organic-only"
       ],
-      "content_sha": "sha256:092d9fe130057c1f16228e0582cf3434378283c6017bcf22382f098c086714ee",
-      "content_hashed_at": "2026-10-29T14:03:11.998921+00:00"
+      "content_sha": "sha256:70a278e4b8f6c2b1a4e5976fc6122ad72979e3315f1332cc267bedd3e477381e",
+      "content_hashed_at": "2026-11-04T12:31:30.229690+00:00"
     },
     "video": {
       "count": 26,
@@ -6391,10 +6391,10 @@
       "path": "templates/role-library/sales/appointment-setter.md",
       "capability_class": "CONVERSATIONAL",
       "vision_flag": false,
-      "content_sha": "sha256:d981867825b310416a670054ceb752d49790201da2caba551e08f027cf7a2b33",
-      "render_sha": "sha256:a08c8c2b0c5927e4d8a7e3e0204e1d682e025d9077c05b4b67ddc75d6090cbc6",
-      "content_version": "1.0.4",
-      "content_hashed_at": "2026-10-29T14:03:11.998921+00:00"
+      "content_sha": "sha256:a6dfb0efe4e3fb48f8a6b487983044aa9aebbc65a4f4a7fa04b7d5904ded3091",
+      "render_sha": "sha256:50522fb686922a3d7d28800be4abaaf37b23a197fbb35e7e431ac071260391cd",
+      "content_version": "1.0.5",
+      "content_hashed_at": "2026-11-04T12:31:30.229690+00:00"
     },
     {
       "slug": "chief-sales-officer",
@@ -6743,10 +6743,10 @@
       "path": "templates/role-library/social-media/director-of-social-media.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:f9e6d5cb29db2a8762c8d5c189bd59b1573b8c7f1062f0b83208fd0007e59fce",
-      "render_sha": "sha256:1052a8800707000abda0895fc8efd0168d54c2dd070900087db9e453a8384d2a",
-      "content_version": "1.0.6",
-      "content_hashed_at": "2026-10-29T14:03:11.998921+00:00"
+      "content_sha": "sha256:33a80a966bf4159c0677a4af62fc312046bbd4bc4705182e282f0979f93167bd",
+      "render_sha": "sha256:b48d033e95d1543326c4bb291a5dca5f29749ef593c1e6308f08f2fc1a9e905b",
+      "content_version": "1.0.7",
+      "content_hashed_at": "2026-11-04T12:31:30.229690+00:00"
     },
     {
       "slug": "discord-community-specialist",
@@ -6775,10 +6775,10 @@
       "path": "templates/role-library/social-media/facebook-specialist.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:186c4b0e5fe8381165c8de1ed6f5c6cfabb240d13c098d4a363ef4b0c3740ce3",
-      "render_sha": "sha256:7281425ca0a91862ea5d71742ef25cdc0c46058646f504b3d7785947c408975b",
-      "content_version": "1.0.3",
-      "content_hashed_at": "2026-10-29T14:03:11.998921+00:00"
+      "content_sha": "sha256:288f643437a6d1c4b640b4037f90c5c76acda8fe56a58a9e25b5b234b39c629f",
+      "render_sha": "sha256:561822b134e75f9eaab3800081f728a187076ae22068cef6a1d51a897c647ce1",
+      "content_version": "1.0.4",
+      "content_hashed_at": "2026-11-04T12:31:30.229690+00:00"
     },
     {
       "slug": "healer-social-media",
@@ -10826,7 +10826,7 @@
     "neutral_config_sha": "sha256:e084d023d101ad89a8a1bda5f673fb3e997be2d56e09405afabd93ede944afe9",
     "neutral_date": "2000-01-01",
     "generator": "hash-content-manifest.py",
-    "generated_at": "2026-10-29T14:03:11.998921+00:00",
+    "generated_at": "2026-11-04T12:31:30.229690+00:00",
     "manifest_schema": "1.0"
   },
   "personas": [
