@@ -4,6 +4,23 @@ What `python3 -m launcher_core.cli dispatch` does, what it asks the client, what
 the package must hold before it counts as delivered. SKILL.md and DECISIONS-PENDING.md point here, and SKILL.md
 carries the entry commands, the pictures and approvals summary and the tracked-items table.
 
+## Talking to the client (read SKILL.md "Your role with the client" and "Opening the conversation" first)
+
+Everything in this file is for the agent. Its words (dispatch, lane, manifest, hash, receipt, read-back,
+the AF-LAUNCH codes, the S06 and UPS numbers) are internal and are never said to the client. The client is
+welcomed warmly, told in plain words what we will build (sales page, order form, special offers, thank-you
+page, launch emails) and what happens next, and asked ONE simple question at a time. A technical problem is
+fixed quietly or reported to the operator; the client is never told about it and never asked to fix or
+install anything. `dispatch` prints a status block for you (`launch_bridge.summary_lines`); translate it
+before you pass anything on:
+
+| The block says | Tell the client |
+| --- | --- |
+| "Built N pages ... Run mode ..." | "Your N pages are put together and ready for you to look at." |
+| "Pictures: practice placeholders only. Nothing was spent." | "These pictures are practice ones for now, so nothing has been spent yet." |
+| "N choice(s) are waiting for your confirmation" | "There are a few choices I'd like you to look over. I'll take them one at a time." |
+| "design only; not installed" (upsell, downsell, thank-you) | "These pages are designed and ready for you to review. I'll set them up for real once you've approved them." |
+
 ## One command, every page
 
 ```

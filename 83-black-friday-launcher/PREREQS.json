@@ -13,15 +13,16 @@
     },
     {
       "id": "jsonschema",
-      "type": "manual",
-      "label": "Python package jsonschema>=4.0 importable by python3 (the Skill 79 checkout validator imports it at module load; Skills 49, 71, 78-82, 44 and 38 import it too)",
+      "type": "python_module",
+      "label": "Python package jsonschema>=4.0 importable by python3 with the shared pydeps folder first on sys.path (the Skill 79 checkout validator imports it at module load; Skills 49, 71, 78-82, 44 and 38 reach it too)",
       "check": {
-        "note": "Not verifiable by check-skill-prereqs.sh, which has no python-module check type and forces type=manual to severity=optional. The REAL check is oc_ensure_jsonschema in lib-onboarding-state.sh: install.sh (Step 6.5c) and update-skills.sh (post-stamp convergence) pip-install this requirement and verify it with a real `python3 -c 'import jsonschema'`. Inspect only: bash update-skills.sh --prereqs-check. This entry's pythonModule and requirement keys are what that step reads."
+        "module": "jsonschema",
+        "minVersion": "4.0"
       },
       "pythonModule": "jsonschema",
       "requirement": "jsonschema>=4.0",
-      "severity": "optional",
-      "satisfy": "Run: python3 -m pip install \"jsonschema>=4.0\" (add --user on an externally-managed Python), then confirm with: python3 -c 'import jsonschema'. The installer and every update-skills.sh roll do this for you; run bash update-skills.sh --prereqs-check to see whether this box has it."
+      "severity": "required",
+      "satisfy": "Run from the 83-black-friday-launcher folder: python3 -m launcher_core.cli dependencies --install. It installs into <root>/pydeps/py<X.Y>/ with pip --target (the one install an externally-managed Python accepts); never --break-system-packages, never a venv. The installer, every update-skills.sh roll and the launcher itself (before it builds anything) do this for you; run bash update-skills.sh --prereqs-check to see whether this box has it. This entry's pythonModule and requirement keys are what oc_ensure_jsonschema (lib-onboarding-state.sh) reads."
     }
   ]
 }

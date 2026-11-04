@@ -41,7 +41,7 @@ VERBOSE = os.environ.get("OC_VERBOSE", "0") == "1"
 REQUIRED_FIELDS = {"id", "type", "label", "check", "severity"}
 # Must stay in lockstep with CHECKERS in shared-utils/check-skill-prereqs.sh.
 # A type the checker cannot execute is a declaration that enforces nothing.
-VALID_TYPES = {"credential", "skill", "binary", "config", "mcp", "state", "manual"}
+VALID_TYPES = {"credential", "skill", "binary", "config", "mcp", "state", "python_module", "manual"}
 VALID_SEVERITIES = {"required", "optional"}
 # The check-key each type must populate for the runtime checker to do any work.
 # type="skill" accepts either form; both are implemented.
@@ -52,6 +52,7 @@ REQUIRED_CHECK_KEYS = {
     "config": ("jsonPath",),
     "mcp": ("server",),
     "state": ("stateFile",),
+    "python_module": ("module",),
 }
 
 errors = []

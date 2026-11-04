@@ -2,7 +2,7 @@
 name: signature-upsell
 assigned_skill: 80
 description: Builds BOTH Signature upsell page instances of a Signature Launch from one reusable skill — Upsell 1 (U1, offered after a verified original purchase) and Upsell 2 (U2, one canonical page offered after a verified accepted U1 or Downsell 1 purchase) — as two distinct, separately built and separately tested deliverables. Owns the derived eight-section upsell copy profile (owner 12-section format minus sections 8–11, section 12 replaced by the "7 Reasons To Commit To Your ____ Future" section renumbered as section 8, a CTA in EVERY section), the deterministic copy validator and substantive review rubric, the U1/U2 production adapters and route state machine, and a TEST ONLY local page renderer (U1 and U2 are design deliverables: there is no production HTML builder). Eligibility is proven purchase only: a bump alone never qualifies for U2 and a client-side claim such as acceptedU1=true is never purchase proof. Every CTA invokes the same guarded native product-bound one-click action with the exact amount and terms disclosed adjacent; S80's side of that binding is built and independently reviewed at interface level (S80-06), while the native install itself is provisioned through Skill 6 and still pending (see Status).
-version: 0.2.5
+version: 0.2.6
 ---
 
 # Signature Upsell 1 + Upsell 2 (Skill 80, slug signature-upsell)
@@ -301,3 +301,14 @@ fixtures, not a production page. A mocked or local
 result never closes a higher-level unit: A10/A12 native and installed
 outcomes remain `not_run` until the S06 native install (S80-06 at L3) and
 S80-09 produce real evidence.
+
+## Python dependency: jsonschema (operator note, never for the client)
+
+`verify.py` (its example schema validation step) imports `jsonschema`. On a Homebrew or Debian Python (externally managed, PEP 668) pip refuses a plain or
+`--user` install, so the package lives in the shared pydeps folder `<root>/pydeps/py<major>.<minor>/`
+(`$OC_PYDEPS_DIR` as-is, else `$OPENCLAW_ROOT`, else `/data/.openclaw` when it exists, else `$HOME/.openclaw`;
+`$HOME/.claude/pydeps/py<X.Y>/` is also looked up), installed with `pip install --target`. The file puts that folder on
+`sys.path` itself before it imports, so plain `python3` works: no venv, no activation step. Never use
+`--break-system-packages`, never create a venv, never tell the client. If the import fails, check with
+`bash update-skills.sh --check` and run the one sanctioned fix from `83-black-friday-launcher`:
+`python3 -m launcher_core.cli dependencies --install`.
