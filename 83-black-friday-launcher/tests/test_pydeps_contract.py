@@ -42,6 +42,8 @@ def _layout() -> tuple:
 
 
 REPO_ROOT, SKILLS_DIR, IN_999 = _layout()
+# onboarding is recognized by its shell library at the repo root; an installed copy has neither shape
+RECOGNIZED_LAYOUT = IN_999 or (SKILLS_DIR / "lib-onboarding-state.sh").is_file()
 TAG = "py%d.%d" % sys.version_info[:2]
 CANONICAL_FILE = next(
     (f for f in (SKILLS_DIR / d / "scripts" / "validate_checkout.py" for d in ("signature-order-form", "79-signature-order-form"))
@@ -50,12 +52,26 @@ CANONICAL_FILE = next(
 BLOCK = re.compile(r"# PYDEPS-ACTIVATION:BEGIN.*?# PYDEPS-ACTIVATION:END\n", re.S)
 IMPORT = re.compile(r"^\s*(?:import jsonschema\b|from jsonschema\b)", re.M)
 # Shell scripts whose own Python probe puts the pydeps folder first carry no inline block: the onboarding shell library
-# (oc_pydeps_lookup feeds its probe) and the 999 installer (its probe inserts the folder it installs into). Each must
-# still show that marker before its first jsonschema import, so the exemption cannot outlive the thing it relies on.
-SELF_ACTIVATING = {"lib-onboarding-state.sh": "oc_pydeps_lookup", "setup-macos.sh": "sys.path.insert(0, sys.argv[2])"}
+# (its probe's `sys.path[:0] = ...` line) and the 999 installer (its probe inserts the folder it installs into). Each must
+# still show that exact line before its first jsonschema import, so the exemption cannot outlive the thing it relies on.
+SELF_ACTIVATING = {"lib-onboarding-state.sh": "sys.path[:0] = [d for d in sys.argv[2:] if d not in sys.path]",
+                   "setup-macos.sh": "sys.path.insert(0, sys.argv[2])"}
 # The 999 repo ships only the nine-router variant of Skill 72, which has no jsonschema importer.
 SKILL_72_IMPORTERS = {"motion_contracts.py", "powerpoint_package.py", "review_rubric.py", "vsl_mobile.py", "vsl_handoff.py"}
 SKIP_DIRS = {".git", "__pycache__", "node_modules", "tests", "fixtures", "QUALITY-CONTROL", "evidence", "ledgers"}
+
+
+def canonical_block() -> str:
+    """Skill 79's activation block. Without Skill 79, the guard FAILS in the onboarding and 999 layouts (a renamed folder
+    must not turn the guard into a silent skip); only an installed copy, where Skill 79 is not beside this skill, skips."""
+    if not CANONICAL_FILE.is_file():
+        if RECOGNIZED_LAYOUT:
+            raise AssertionError(f"Skill 79's validate_checkout.py is missing at {CANONICAL_FILE}; the guard cannot run")
+        raise unittest.SkipTest("Skill 79 is not beside this skill (vendored copy)")
+    found = BLOCK.search(CANONICAL_FILE.read_text(encoding="utf-8"))
+    if found is None:
+        raise AssertionError(f"{CANONICAL_FILE} has no PYDEPS-ACTIVATION block")
+    return found.group(0)
 
 
 def clean_env(tmp: str, **extra: str) -> dict:
@@ -126,9 +142,7 @@ class ActivationSnippet(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        if not CANONICAL_FILE.is_file():
-            raise unittest.SkipTest("Skill 79 is not beside this skill (vendored copy)")
-        cls.block = BLOCK.search(CANONICAL_FILE.read_text(encoding="utf-8")).group(0)
+        cls.block = canonical_block()
 
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
@@ -181,9 +195,7 @@ class LauncherPreflightSeesTheFolder(unittest.TestCase):
 
 class EveryImporterIsActivated(unittest.TestCase):
     def test_every_non_test_file_that_imports_jsonschema_carries_the_identical_block_first(self):
-        if not CANONICAL_FILE.is_file():
-            self.skipTest("Skill 79 is not beside this skill (vendored copy)")
-        canonical = BLOCK.search(CANONICAL_FILE.read_text(encoding="utf-8")).group(0)
+        canonical = canonical_block()
         importers = []
         for dirpath, dirnames, filenames in os.walk(REPO_ROOT):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
