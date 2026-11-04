@@ -4,6 +4,23 @@ What `python3 -m launcher_core.cli dispatch` does, what it asks the client, what
 the package must hold before it counts as delivered. SKILL.md and DECISIONS-PENDING.md point here, and SKILL.md
 carries the entry commands, the pictures and approvals summary and the tracked-items table.
 
+## Talking to the client (read SKILL.md "Your role with the client" and "Opening the conversation" first)
+
+Everything in this file is for the agent. Its words (dispatch, lane, manifest, hash, receipt, read-back,
+the AF-LAUNCH codes, the S06 and UPS numbers) are internal and are never said to the client. The client is
+welcomed warmly, told in plain words what we will build (sales page, order form, special offers, thank-you
+page, launch emails) and what happens next, and asked ONE simple question at a time. A technical problem is
+fixed quietly or reported to the operator; the client is never told about it and never asked to fix or
+install anything. `dispatch` prints a status block for you (`launch_bridge.summary_lines`); translate it
+before you pass anything on:
+
+| The block says | Tell the client |
+| --- | --- |
+| "Built N pages ... Run mode ..." | "Your N pages are put together and ready for you to look at." |
+| "Pictures: practice placeholders only. Nothing was spent." | "These pictures are practice ones for now, so nothing has been spent yet." |
+| "N choice(s) are waiting for your confirmation" | "There are a few choices I'd like you to look over. I'll take them one at a time." |
+| "design only; not installed" (upsell, downsell, thank-you) | "These pages are designed and ready for you to review. I'll set them up for real once you've approved them." |
+
 ## One command, every page
 
 ```
@@ -43,10 +60,11 @@ python3 -m launcher_core.cli check --manifest PACKAGE/package-manifest.json --ro
 8. The upsell, downsell and thank-you pages in this package are design deliverables. Purchase handling,
    native product and price ids and the live page are created later, by Skill 06 and Skill 44. Until Skill 06
    records read-backs, client summaries say "designs only" for those pages, never "live" or "delivered".
-9. The checkout page is the native Convert and Flow order form, but Skill 06 has no capability today to install
-   a native order form, order bump or one-click upsell and downsell step (S06-02). The decided build target is
-   the funnel order-form step, with one live capture on an approved test location still owed (CHK-19). Until
-   that lands, a checkout design is not an installed checkout.
+9. The checkout page is the native Convert and Flow order form. Skill 06's funnel-step installer for the native
+   order form, order bump and one-click upsell and downsell steps exists (S06-02,
+   `06-ghl-install-pages/tools/ghl_funnel_steps.py`; it is proved on fixtures only), but it refuses to write
+   until the live commerce capture on an approved test location is done (CHK-19, still owed). The decided build
+   target is the funnel order-form step. Until that capture lands, a checkout design is not an installed checkout.
 
 ## Build order and parallel lanes
 

@@ -36,6 +36,23 @@ LABELS = substrate.source("71-blackceo-signature-page/scripts/deliverable_labels
 CONSUMER = HERE / "lane83_fake_consumer.py"
 
 
+_SPOOL = {}
+
+
+def setUpModule():
+    # Building a package appends launch events to ~/.openclaw/data/signature-launch/events-spool when no ingest
+    # URL is set. Send them to a temp folder, so nothing in this module (or in a child launcher it starts,
+    # which inherits the variable) writes into the real home folder.
+    _SPOOL["dir"] = tempfile.TemporaryDirectory()
+    _SPOOL["env"] = mock.patch.dict(os.environ, {"LAUNCH_EVENTS_SPOOL": _SPOOL["dir"].name})
+    _SPOOL["env"].start()
+
+
+def tearDownModule():
+    _SPOOL["env"].stop()
+    _SPOOL["dir"].cleanup()
+
+
 def payload(name: str, **plan) -> dict:
     doc = json.loads((FIXTURES / name / "intake.json").read_text(encoding="utf-8"))
     doc["image_plan"] = {"brand_file": "/tmp/test-brand.json", "brand_owner": "TEST-ONLY Client", **plan}

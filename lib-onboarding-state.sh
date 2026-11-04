@@ -998,23 +998,78 @@ oc_onboarding_complete() {
 }
 
 # ------------------------------------------------------------
+# The shared pydeps contract (the 999 setup agent, the Command Center and
+# 83-black-friday-launcher launcher_core/pydeps.py use the SAME names).
+#   A Homebrew or Debian Python is "externally managed" (PEP 668): plain pip and
+#   `pip --user` are refused and --break-system-packages is forbidden, but
+#   `pip install --target <folder>` works. Packages the launch skills import live
+#   in ONE versioned folder and every importer puts it on sys.path itself:
+#     folder  <root>/pydeps/py<major>.<minor>/   (versioned: a Python upgrade
+#             re-converges instead of loading wheels built for another ABI)
+#     root    $OC_PYDEPS_DIR (the folder itself, as-is) -> $OPENCLAW_ROOT ->
+#             /data/.openclaw when it exists (survives a Docker recreate) ->
+#             $HOME/.openclaw
+#     lookup  the folder, plus $HOME/.claude/pydeps/py<major>.<minor>/
+#             (999 and claude-nine)
+# ------------------------------------------------------------
+oc_pydeps_dir() {   # oc_pydeps_dir <python>  -> the folder installs go to
+  local _v _root
+  _v="$("$1" -c 'import sys; print("py%d.%d" % sys.version_info[:2])' 2>/dev/null)" || return 1
+  [ -n "$_v" ] || return 1
+  if [ -n "${OC_PYDEPS_DIR:-}" ]; then printf '%s\n' "$OC_PYDEPS_DIR"; return 0; fi
+  if [ -n "${OPENCLAW_ROOT:-}" ]; then _root="$OPENCLAW_ROOT"
+  elif [ -d /data/.openclaw ]; then _root=/data/.openclaw
+  else _root="${HOME:-}/.openclaw"; fi
+  printf '%s/pydeps/%s\n' "$_root" "$_v"
+}
+
+oc_pydeps_lookup() {   # oc_pydeps_lookup <python>  -> every EXISTING pydeps folder, one per line
+  local _d _v
+  if [ -n "${OC_PYDEPS_DIR:-}" ]; then
+    [ -d "$OC_PYDEPS_DIR" ] && printf '%s\n' "$OC_PYDEPS_DIR"
+    return 0
+  fi
+  _d="$(oc_pydeps_dir "$1")" || return 0
+  [ -d "$_d" ] && printf '%s\n' "$_d"
+  _v="${_d##*/}"
+  [ -d "${HOME:-}/.claude/pydeps/$_v" ] && printf '%s\n' "${HOME:-}/.claude/pydeps/$_v"
+  return 0
+}
+
+# ------------------------------------------------------------
 # oc_ensure_jsonschema [--check|--apply]       (CON-13)
 #   Skills 49, 71, 78-83, 44 and 38 import `jsonschema` (Skill 79's checkout
 #   validator does it at module load, so every wrapper that loads it dies
-#   without it). No installer provisioned it, and check-skill-prereqs.sh has no
-#   python-module check type, so a box without it learned so at `check`, after
-#   Skill 83 had already spent images. This is the ONE implementation both
-#   install.sh and update-skills.sh call.
+#   without it). No installer provisioned it, so a box without it learned so at
+#   `check`, after Skill 83 had already spent images. This is the ONE
+#   implementation both install.sh and update-skills.sh call; the matching
+#   check type for a PREREQS.json is `python_module` (check-skill-prereqs.sh).
 #   The requirement string is read from 83-black-friday-launcher/PREREQS.json
 #   (the entry carrying "pythonModule": "jsonschema"); the default below is only
 #   for a bundle that lacks that file.
 #   --check  report, never mutate (OPENCLAW_PREREQS_CHECK=1 is the same)
-#   --apply  pip-install when missing/too old, then VERIFY with a real import
+#   --apply  pip-install into the pydeps folder (above) when missing/too old,
+#            then VERIFY with a real import, and write the readiness receipt
+#            <root>/logs/launch-skills-readiness.json (READY or NOT_READY) so a
+#            failed convergence is visible, not just a warning line. Content is
+#            never rolled back over it.
+#            The install is `pip install --target <folder> --upgrade`; there is
+#            no --user and no --break-system-packages tier. If the interpreter
+#            has no pip module the result is NOT_READY with one plain operator
+#            line (Debian: apt-get install python3-pip); nothing is bootstrapped.
 #   Returns 0 satisfied, 2 still missing/too old, 1 no python3 / bad argument.
-#   Interpreter: python3 from PATH, because that is what the skills run.
+#   The probe puts the existing pydeps folder(s) first on sys.path before it
+#   imports, which is exactly what every importer does at run time, so OK here
+#   means the skills will see it.
+#   Interpreter: python3 from PATH, because that is what the skills run. On a
+#   Docker VPS platform/vps/bootstrap.sh re-execs the installer and the updater
+#   INSIDE the client container, so that is the container's python3, the one the
+#   agent runtime uses. The Black Friday Launcher re-checks (and repairs) the
+#   import itself under sys.executable before it builds anything
+#   (83-black-friday-launcher launcher_core/dependencies.py).
 # ------------------------------------------------------------
 oc_ensure_jsonschema() {
-  local _mode=apply _py _spec="jsonschema>=4.0" _f _s _why _out _tier _self_dir
+  local _mode=apply _py _spec="jsonschema>=4.0" _f _s _why _out _self_dir _dir
   case "${1:-}" in
     --check|check)    _mode=check ;;
     --apply|apply|"") ;;
@@ -1026,6 +1081,7 @@ oc_ensure_jsonschema() {
     echo "  jsonschema-prereq: FAILED: no python3 on PATH; cannot check or install jsonschema" >&2
     return 1
   fi
+  _dir="$(oc_pydeps_dir "$_py")" || { echo "  jsonschema-prereq: FAILED: $_py cannot report its version" >&2; return 1; }
   _self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
   for _f in "${OC_SKILLS_DIR:-$OC_CONFIG/skills}/83-black-friday-launcher/PREREQS.json" \
             "${_self_dir:-.}/83-black-friday-launcher/PREREQS.json"; do
@@ -1039,9 +1095,13 @@ for p in json.load(open(sys.argv[1])).get("prerequisites", []):
 
   # A REAL import, never find_spec: jsonschema with its own dependency missing
   # passes find_spec and then fails at first use (L25-BF-40). Also enforces the
-  # ">=X.Y" floor, since an old jsonschema imports fine.
+  # ">=X.Y" floor, since an old jsonschema imports fine. The existing pydeps
+  # folder(s) go first on sys.path, as they do in every importer.
   _oc_jsonschema_probe() {
+    local _dirs=() _l
+    while IFS= read -r _l; do [ -n "$_l" ] && _dirs+=("$_l"); done < <(oc_pydeps_lookup "$_py")
     "$_py" -c 'import re, sys
+sys.path[:0] = [d for d in sys.argv[2:] if d not in sys.path]
 need = re.match(r"^[A-Za-z0-9_.-]+\s*>=\s*(\d+)(?:\.(\d+))?", sys.argv[1])
 need = (int(need.group(1)), int(need.group(2) or 0)) if need else (0, 0)
 try:
@@ -1051,30 +1111,64 @@ try:
 except Exception as e:
     print("%s: %s" % (type(e).__name__, e)); sys.exit(1)
 if got < need:
-    print("installed %d.%d is older than the required %d.%d" % (got + need)); sys.exit(1)' "$_spec" 2>&1
+    print("installed %d.%d is older than the required %d.%d" % (got + need)); sys.exit(1)' "$_spec" "${_dirs[@]+"${_dirs[@]}"}" 2>&1
+  }
+
+  # The readiness receipt (apply mode only; --check never mutates). Same place and
+  # shape as the presentation readiness receipt: <root>/logs/<name>.json.
+  _oc_jsonschema_receipt() {   # _oc_jsonschema_receipt <READY|NOT_READY> <detail>
+    local _rdir="${OC_CONFIG:-}/logs"
+    [ "$_mode" = "apply" ] && [ -n "${OC_CONFIG:-}" ] || return 0
+    mkdir -p "$_rdir" 2>/dev/null || return 0
+    REC_STATUS="$1" REC_DETAIL="$2" REC_SPEC="$_spec" REC_PY="$_py" REC_DIR="$_dir" REC_OUT="$_rdir/launch-skills-readiness.json" \
+    "$_py" - <<'RECEOF' 2>/dev/null || true
+import datetime, json, os
+status = os.environ["REC_STATUS"]
+rec = {
+    "schema": "launch-skills-readiness/1",
+    "status": status,
+    "ready": status == "READY",
+    "ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "interpreter": os.environ["REC_PY"],
+    "requirement": os.environ["REC_SPEC"],
+    "pydeps_dir": os.environ["REC_DIR"],
+    "detail": os.environ["REC_DETAIL"],
+    "affects": "Skills 49, 71, 78-83, 44 and 38 (the Black Friday Launcher and the page skills)",
+    "note": "written by oc_ensure_jsonschema (lib-onboarding-state.sh). NOT_READY = the Python package is not importable; those skills fail until it is. Content was not rolled back; the next roll retries.",
+}
+out = os.environ["REC_OUT"]
+with open(out + ".tmp", "w") as fh:
+    json.dump(rec, fh, indent=2)
+os.replace(out + ".tmp", out)
+RECEOF
   }
 
   if _why="$(_oc_jsonschema_probe)"; then
     echo "  jsonschema-prereq: OK: $_spec importable in $_py"
+    _oc_jsonschema_receipt READY "already importable"
     return 0
   fi
   if [ "$_mode" = "check" ]; then
-    echo "  [prereq][83-black-friday-launcher][required] jsonschema :: $_spec NOT importable in $_py ($_why) :: $_py -m pip install \"$_spec\""
+    echo "  [prereq][83-black-friday-launcher][required] jsonschema :: $_spec NOT importable in $_py ($_why) :: $_py -m pip install --target \"$_dir\" \"$_spec\""
     return 2
   fi
-  echo "  jsonschema-prereq: $_spec missing in $_py ($_why) -> installing"
-  # Plain, then --user (PEP 668 box), then --break-system-packages (last resort).
-  for _tier in "" "--user" "--break-system-packages"; do
-    # shellcheck disable=SC2086
-    if _out="$("$_py" -m pip install --quiet --disable-pip-version-check --no-input $_tier "$_spec" 2>&1)"; then
-      break
-    fi
-  done
+  echo "  jsonschema-prereq: $_spec missing in $_py ($_why) -> installing into $_dir"
+  if ! "$_py" -m pip --version >/dev/null 2>&1; then
+    _why="pip is not installed for $_py (Debian: apt-get install python3-pip), so $_spec cannot be installed"
+    _oc_jsonschema_receipt NOT_READY "$_why"
+    echo "  jsonschema-prereq: FAILED: $_why. Skills 49, 71, 78-83, 44 and 38 will fail until it is." >&2
+    return 2
+  fi
+  # --target is the one install an externally-managed Python (PEP 668) accepts without a flag.
+  mkdir -p "$_dir" 2>/dev/null || true
+  _out="$("$_py" -m pip install --quiet --disable-pip-version-check --no-input --upgrade --target "$_dir" "$_spec" 2>&1)" || true
   if _why="$(_oc_jsonschema_probe)"; then
-    echo "  jsonschema-prereq: OK: installed $_spec into $_py and verified the import"
+    echo "  jsonschema-prereq: OK: installed $_spec into $_dir and verified the import"
+    _oc_jsonschema_receipt READY "installed into $_dir by oc_ensure_jsonschema"
     return 0
   fi
-  echo "  jsonschema-prereq: FAILED: $_spec still not importable in $_py after install ($_why). Skills 49, 71, 78-83, 44 and 38 will fail until: $_py -m pip install \"$_spec\"" >&2
+  _oc_jsonschema_receipt NOT_READY "$_spec still not importable in $_py after install into $_dir: $_why"
+  echo "  jsonschema-prereq: FAILED: $_spec still not importable in $_py after install into $_dir ($_why). Skills 49, 71, 78-83, 44 and 38 will fail until: $_py -m pip install --target \"$_dir\" --upgrade \"$_spec\"" >&2
   printf '%s\n' "${_out:-}" | tail -n 5 | sed 's/^/    /' >&2
   return 2
 }

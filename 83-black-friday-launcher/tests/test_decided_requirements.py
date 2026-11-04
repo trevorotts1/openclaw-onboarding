@@ -24,6 +24,7 @@ sys.path.insert(0, str(SKILL_ROOT))
 
 sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
 from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402
+from hermetic_child_env import hermetic_env  # noqa: E402
 from launcher_core import (  # noqa: E402
     checks, checkout, council, dependencies, entitlement, intake, package, route,
 )
@@ -52,6 +53,23 @@ def _base_intake_raw(mode: str = "single_simple", basis: str = "purchase") -> di
         "entitlement_attestation": attestation,
         "offers": offers,
     }
+
+
+_SPOOL = {}
+
+
+def setUpModule():
+    # Building a package appends launch events to ~/.openclaw/data/signature-launch/events-spool when no ingest
+    # URL is set. Send them to a temp folder, so nothing in this module (or in a child launcher it starts,
+    # which inherits the variable) writes into the real home folder.
+    _SPOOL["dir"] = tempfile.TemporaryDirectory()
+    _SPOOL["env"] = mock.patch.dict(os.environ, {"LAUNCH_EVENTS_SPOOL": _SPOOL["dir"].name})
+    _SPOOL["env"].start()
+
+
+def tearDownModule():
+    _SPOOL["env"].stop()
+    _SPOOL["dir"].cleanup()
 
 
 def stub_council(_launch):
@@ -591,17 +609,17 @@ class PackageRecordTests(unittest.TestCase):
         command = [sys.executable, "-m", "launcher_core.cli", "check",
                    "--manifest", str(manifest_path), "--root", str(run_dir)]
 
+        sandbox = tempfile.TemporaryDirectory()
+        self.addCleanup(sandbox.cleanup)
+
         def run(extra_path):
-            env = dict(os.environ)
-            parts = [extra_path] if extra_path else []
-            if env.get("PYTHONPATH"):
-                parts.append(env["PYTHONPATH"])
-            if parts:
-                env["PYTHONPATH"] = os.pathsep.join(parts)
-            else:
-                env.pop("PYTHONPATH", None)
-            return subprocess.run(command, cwd=str(SKILL_ROOT), env=env,
+            # Hermetic: an empty pydeps folder (so the box's real one cannot out-rank the stub) and no package
+            # index (so the CLI's own repair cannot install into the real $HOME/.openclaw/pydeps).
+            env, pydeps = hermetic_env(Path(sandbox.name), *([extra_path] if extra_path else []))
+            done = subprocess.run(command, cwd=str(SKILL_ROOT), env=env,
                                   capture_output=True, text=True)
+            self.assertEqual(list(pydeps.iterdir()), [], "the run installed something")
+            return done
 
         control = run(None)
         self.assertEqual(control.returncode, 0, control.stdout + control.stderr)
@@ -748,18 +766,15 @@ class DependencyPackageTests(unittest.TestCase):
                 "print(json.dumps(next(e for e in dependencies.check()['entries'] "
                 "if e['id'] == 'runtime-jsonschema')))")
 
+        sandbox = tempfile.TemporaryDirectory()
+        self.addCleanup(sandbox.cleanup)
+
         def entry(extra_path):
-            env = dict(os.environ)
-            parts = [extra_path] if extra_path else []
-            if env.get("PYTHONPATH"):
-                parts.append(env["PYTHONPATH"])
-            if parts:
-                env["PYTHONPATH"] = os.pathsep.join(parts)
-            else:
-                env.pop("PYTHONPATH", None)
+            env, pydeps = hermetic_env(Path(sandbox.name), *([extra_path] if extra_path else []))
             run = subprocess.run([sys.executable, "-c", code], cwd=str(SKILL_ROOT),
                                  env=env, capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            self.assertEqual(list(pydeps.iterdir()), [], "the run installed something")
             return json.loads(run.stdout)
 
         control = entry(None)

@@ -1,7 +1,7 @@
 ---
 name: signature-product-selection
 description: Build the specificity-led Product Selection page (the order page: the page where a buyer chooses between packages, with its desktop and mobile wireframes and mockups) for a Signature Launch with multiple meaningful packages or tiers. Normalizes approved offers into an accurate comparison matrix (included, not included, limited, conditional), an optional evidence-backed recommendation, accessible selection UI model, and a validated selection.json intent that preserves the native product/price mapping into Skill 79 checkout. Invoke only when the approved launch has multiple meaningful choices; one simple offer skips this skill entirely and uses Skill 79 combined explanation/checkout mode. Never collects payment, never trusts a URL price, never invents tiers, prices, popularity, or savings claims.
-version: 0.2.6
+version: 0.2.7
 ---
 
 # Signature Product Selection (Skill 78) - the order page (package selection)
@@ -145,3 +145,14 @@ Every script carries `--self-test` with VALID + VIOLATION fixtures.
   component: this skill (doc 16).
 - Images: only through the selected shared provider adapter (S63 / Skills
   66/74 policy and transport). No hand-rolled provider, GHL, or payment code.
+
+## Python dependency: jsonschema (operator note, never for the client)
+
+`verify.sh` (its schema validation step) imports `jsonschema`. On a Homebrew or Debian Python (externally managed, PEP 668) pip refuses a plain or
+`--user` install, so the package lives in the shared pydeps folder `<root>/pydeps/py<major>.<minor>/`
+(`$OC_PYDEPS_DIR` as-is, else `$OPENCLAW_ROOT`, else `/data/.openclaw` when it exists, else `$HOME/.openclaw`;
+`$HOME/.claude/pydeps/py<X.Y>/` is also looked up), installed with `pip install --target`. The file puts that folder on
+`sys.path` itself before it imports, so plain `python3` works: no venv, no activation step. Never use
+`--break-system-packages`, never create a venv, never tell the client. If the import fails, check with
+`bash update-skills.sh --check` and run the one sanctioned fix from `83-black-friday-launcher`:
+`python3 -m launcher_core.cli dependencies --install`.

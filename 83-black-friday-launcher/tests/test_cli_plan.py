@@ -8,6 +8,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -22,6 +23,7 @@ sys.path.insert(0, str(SKILL_ROOT / "routes"))
 
 sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
 from test_only_readback import paid_image_plan, patch_paid_budget  # noqa: E402
+from hermetic_child_env import hermetic_env  # noqa: E402
 from launcher_core import cli, dependencies, intake  # noqa: E402
 sys.path.insert(0, str(SKILL_ROOT / "tests"))
 from test_assemble_binding import COUNCIL, DispatchedRun, plan_hash  # noqa: E402
@@ -30,6 +32,23 @@ from launcher_core.constants import resolve_ref, resolve_skill_dir  # noqa: E402
 
 FIXTURE = SKILL_ROOT / "fixtures" / "elevation" / "intake.json"
 CLIENT, WORKER = "client-test-1", "worker-test-9"
+
+
+_SPOOL = {}
+
+
+def setUpModule():
+    # Building a package appends launch events to ~/.openclaw/data/signature-launch/events-spool when no ingest
+    # URL is set. Send them to a temp folder, so nothing in this module (or in a child launcher it starts,
+    # which inherits the variable) writes into the real home folder.
+    _SPOOL["dir"] = tempfile.TemporaryDirectory()
+    _SPOOL["env"] = mock.patch.dict(os.environ, {"LAUNCH_EVENTS_SPOOL": _SPOOL["dir"].name})
+    _SPOOL["env"].start()
+
+
+def tearDownModule():
+    _SPOOL["env"].stop()
+    _SPOOL["dir"].cleanup()
 
 
 def run_cli(*argv):
@@ -83,9 +102,12 @@ class PlanTests(_Tmp):
         runner = ("import sys; sys.path[:0] = [%r]; import test_only_readback; test_only_readback.install(); "
                   "from launcher_core import cli; sys.exit(cli.main(sys.argv[1:]))"
                   % str(SKILL_ROOT / "fixtures"))
+        # hermetic: the CLI repairs a missing package itself, so the child gets an empty pydeps folder and no index
+        env, pydeps = hermetic_env(self.dir)
         done = subprocess.run([sys.executable, "-c", runner, "plan", "--intake", str(self.write("i.json", doc))],
-                              cwd=SKILL_ROOT, capture_output=True, text=True)
+                              cwd=SKILL_ROOT, capture_output=True, text=True, env=env)
         self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(list(pydeps.iterdir()), [], "the run installed something")
         for offer in doc["offers"]:
             self.assertIn(offer["name"], done.stdout)
             self.assertIn(f"{offer['price']['amount_minor'] / 100:,.2f}", done.stdout, offer["name"])

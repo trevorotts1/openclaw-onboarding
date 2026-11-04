@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -39,6 +40,23 @@ CONSUMER = HERE / "lane83_fake_consumer.py"
 COUNCIL = {"step": "council_launch_planning", "skill": "x", "entry_point": "x", "status": "not_ready",
            "advice_state": "pending_live_session", "blocks_build": False, "is_permission": False}
 BLOCKERS = ["native order form is not installed", "checkout images are placeholders"]
+
+
+_SPOOL = {}
+
+
+def setUpModule():
+    # Building a package appends launch events to ~/.openclaw/data/signature-launch/events-spool when no ingest
+    # URL is set. Send them to a temp folder, so nothing in this module (or in a child launcher it starts,
+    # which inherits the variable) writes into the real home folder.
+    _SPOOL["dir"] = tempfile.TemporaryDirectory()
+    _SPOOL["env"] = mock.patch.dict(os.environ, {"LAUNCH_EVENTS_SPOOL": _SPOOL["dir"].name})
+    _SPOOL["env"].start()
+
+
+def tearDownModule():
+    _SPOOL["env"].stop()
+    _SPOOL["dir"].cleanup()
 
 
 def recorded_binding(run: Path, approved: str) -> dict:

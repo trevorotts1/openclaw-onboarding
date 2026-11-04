@@ -13,6 +13,7 @@ builder, the page-result emitter and the new attach step are the real ones, wire
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -292,6 +293,23 @@ for n in range(1, __SECTIONS__ + 1):
 (run / "visual-mockup" / "stage-executor-record.json").write_text(json.dumps({"provider": "stub"}))
 (run.parent / "image-stage-argv.json").write_text(json.dumps(argv))
 """
+
+
+_SPOOL = {}
+
+
+def setUpModule():
+    # Building a package appends launch events to ~/.openclaw/data/signature-launch/events-spool when no ingest
+    # URL is set. Send them to a temp folder, so nothing in this module (or in a child launcher it starts,
+    # which inherits the variable) writes into the real home folder.
+    _SPOOL["dir"] = tempfile.TemporaryDirectory()
+    _SPOOL["env"] = mock.patch.dict(os.environ, {"LAUNCH_EVENTS_SPOOL": _SPOOL["dir"].name})
+    _SPOOL["env"].start()
+
+
+def tearDownModule():
+    _SPOOL["env"].stop()
+    _SPOOL["dir"].cleanup()
 
 
 class SelectionAssemblyTests(unittest.TestCase):

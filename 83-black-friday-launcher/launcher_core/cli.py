@@ -379,8 +379,10 @@ def cmd_seams(_args: argparse.Namespace) -> int:
 
 
 def cmd_dependencies(args: argparse.Namespace) -> int:
+    root = Path(args.root) if args.root else None
     try:
-        report = dependencies.check(Path(args.root) if args.root else None)
+        # --install is the sanctioned fix: a missing runtime package goes into the shared pydeps folder
+        report = dependencies.ensure_runtime_packages(root) if args.install else dependencies.check(root)
     except dependencies.DependencyError as exc:
         print(f"FAIL {exc}", file=sys.stderr)
         return 2
@@ -391,7 +393,7 @@ def cmd_dependencies(args: argparse.Namespace) -> int:
           f"would_enable={report['would_enable']}")
     for entry in report["entries"]:
         print(f"  {entry['status'].upper():12s} {entry['id']}  ({entry['evidence']})")
-    return 0
+    return 2 if args.install and report["blockers"] else 0
 
 
 _LANDING_HELP = ("the landing pages the client wants: landing, sales or landing,sales (default: the set "
@@ -494,13 +496,23 @@ def build_parser() -> argparse.ArgumentParser:
                        help="report the 999 enablement dependencies present and missing")
     d.add_argument("--root", default=None,
                    help="repository root to inspect (default: the repo containing this skill)")
+    d.add_argument("--install", action="store_true",
+                   help="first install any missing runtime package (jsonschema) into the shared pydeps "
+                        "folder <root>/pydeps/py<X.Y>/ with pip --target, never --break-system-packages "
+                        "and never a venv; exit 2 if one is still missing")
     d.set_defaults(fn=cmd_dependencies)
     return p
+
+
+# These commands read data only and never import the runtime packages, so they must not start an install.
+_NO_RUNTIME_PACKAGES = ("seams", "dependencies", "questions")
 
 
 def main(argv: List[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if args.command not in _NO_RUNTIME_PACKAGES:
+            dependencies.ensure_runtime_packages()  # a missing package is fixed here, never asked of the client
         return args.fn(args)
     except (intake.IntakeError, route.RouteError, package.PackageError,
             launch_bridge.BridgeError, image_plan.ImagePlanError,
