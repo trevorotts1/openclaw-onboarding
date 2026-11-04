@@ -8,6 +8,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -31,6 +32,23 @@ from launcher_core.constants import resolve_ref, resolve_skill_dir  # noqa: E402
 
 FIXTURE = SKILL_ROOT / "fixtures" / "elevation" / "intake.json"
 CLIENT, WORKER = "client-test-1", "worker-test-9"
+
+
+_SPOOL = {}
+
+
+def setUpModule():
+    # Building a package appends launch events to ~/.openclaw/data/signature-launch/events-spool when no ingest
+    # URL is set. Send them to a temp folder, so nothing in this module (or in a child launcher it starts,
+    # which inherits the variable) writes into the real home folder.
+    _SPOOL["dir"] = tempfile.TemporaryDirectory()
+    _SPOOL["env"] = mock.patch.dict(os.environ, {"LAUNCH_EVENTS_SPOOL": _SPOOL["dir"].name})
+    _SPOOL["env"].start()
+
+
+def tearDownModule():
+    _SPOOL["env"].stop()
+    _SPOOL["dir"].cleanup()
 
 
 def run_cli(*argv):

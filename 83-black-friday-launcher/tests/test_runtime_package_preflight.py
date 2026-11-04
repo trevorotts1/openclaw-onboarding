@@ -176,6 +176,17 @@ class RuntimePackagePreflight(unittest.TestCase):
             self.assertEqual(cli.main(["seams"]), 0)
             self.assertEqual(ensure.call_count, 1)  # seams reads data only
 
+    def test_the_dependencies_report_and_the_questions_command_never_start_the_repair(self):
+        # `dependencies` only reports (its own --install is the one sanctioned fix) and `questions` reads the
+        # shared question bank; neither imports a runtime package, so neither may start an install first.
+        with mock.patch.object(dependencies, "ensure_runtime_packages") as ensure, \
+                mock.patch.object(cli, "cmd_questions", return_value=0) as questions, \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main(["dependencies", "--root", str(self.dir)]), 0)
+            self.assertEqual(cli.main(["questions"]), 0)
+            self.assertEqual(questions.call_count, 1)  # the command really ran
+            self.assertEqual(ensure.call_count, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

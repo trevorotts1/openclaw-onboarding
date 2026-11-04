@@ -92,6 +92,8 @@ else
   export PIP_NO_INDEX=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_INPUT=1
   export OPENCLAW_ROOT="$T/oc"; mkdir -p "$T/oc/skills"
   unset OPENCLAW_PREREQS_CHECK OC_CONFIG OC_SKILLS_DIR
+  # an exported pydeps folder or PYTHONPATH could put a real jsonschema in front of the clean venv
+  unset OC_PYDEPS_DIR PYTHONPATH
 
   mkwheel() {   # mkwheel <outdir> <version>
     mkdir -p "$1"

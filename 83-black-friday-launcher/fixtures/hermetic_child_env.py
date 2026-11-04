@@ -10,6 +10,8 @@ missing package must therefore:
   * point OC_PYDEPS_DIR (the folder itself, used as-is) at an EMPTY temp folder, so nothing real is activated
     and any install lands in a temp dir;
   * set PIP_NO_INDEX so pip cannot reach a package index (an attempted repair fails fast and offline);
+  * set HOME to the temp folder, so the child can never read or write the real home folder (its user
+    site-packages included: the real jsonschema reaches it through PYTHONPATH, below);
   * hand the child the real jsonschema through PYTHONPATH AFTER its stub, so the control run (no stub) still
     finds the package wherever this process got it (site-packages, user site, or a pydeps folder), and a stub
     placed before it still wins.
@@ -38,7 +40,8 @@ def hermetic_env(tmp_root: Path, *front_paths: str) -> Tuple[Dict[str, str], Pat
     env = {k: v for k, v in os.environ.items() if not k.startswith("PIP_") and k != "OPENCLAW_ROOT"}
     env.update(OC_PYDEPS_DIR=str(pydeps), PIP_NO_INDEX="1", PIP_NO_CACHE_DIR="1",
                PIP_DISABLE_PIP_VERSION_CHECK="1", PIP_CONFIG_FILE=os.devnull,
-               LAUNCH_EVENTS_SPOOL=str(Path(tmp_root) / "events-spool"))  # launch events never spool into $HOME
+               LAUNCH_EVENTS_SPOOL=str(Path(tmp_root) / "events-spool"),  # launch events never spool into $HOME
+               HOME=str(tmp_root))  # and nothing else the child does with $HOME can reach the real one
     parts = [*front_paths, real_jsonschema_home()]
     if env.get("PYTHONPATH"):
         parts.append(env["PYTHONPATH"])

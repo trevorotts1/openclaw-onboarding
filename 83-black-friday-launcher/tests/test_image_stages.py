@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -31,6 +32,23 @@ SKILL71 = SKILL_ROOT.parent / "71-blackceo-signature-page"
 PNG = (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f"
        b"\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xf8\xff\xff?\x00\x05\xfe\x02\xfe\xa7\x9a\xa0\xa0\x00\x00"
        b"\x00\x00IEND\xaeB`\x82")
+
+
+_SPOOL = {}
+
+
+def setUpModule():
+    # Building a package appends launch events to ~/.openclaw/data/signature-launch/events-spool when no ingest
+    # URL is set. Send them to a temp folder, so nothing in this module (or in a child launcher it starts,
+    # which inherits the variable) writes into the real home folder.
+    _SPOOL["dir"] = tempfile.TemporaryDirectory()
+    _SPOOL["env"] = mock.patch.dict(os.environ, {"LAUNCH_EVENTS_SPOOL": _SPOOL["dir"].name})
+    _SPOOL["env"].start()
+
+
+def tearDownModule():
+    _SPOOL["env"].stop()
+    _SPOOL["dir"].cleanup()
 
 
 def write(path: Path, data="x"):

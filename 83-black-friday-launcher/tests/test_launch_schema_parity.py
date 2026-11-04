@@ -13,6 +13,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 REPO = SKILL_ROOT.parent
@@ -35,6 +37,23 @@ SCHEMA_49 = S49 / "schema" / "launch.schema.json"
 SCHEMA_71 = S71 / "references" / "launch.schema.json"
 SCHEMA_SHARED = REPO / "shared-utils" / "signature_launch" / "domain" / "launch.schema.json"
 PY = sys.executable
+
+
+_SPOOL = {}
+
+
+def setUpModule():
+    # Building a package appends launch events to ~/.openclaw/data/signature-launch/events-spool when no ingest
+    # URL is set. Send them to a temp folder, so nothing in this module (or in a child launcher it starts,
+    # which inherits the variable) writes into the real home folder.
+    _SPOOL["dir"] = tempfile.TemporaryDirectory()
+    _SPOOL["env"] = mock.patch.dict(os.environ, {"LAUNCH_EVENTS_SPOOL": _SPOOL["dir"].name})
+    _SPOOL["env"].start()
+
+
+def tearDownModule():
+    _SPOOL["env"].stop()
+    _SPOOL["dir"].cleanup()
 
 
 def _load(path: Path, name: str):
