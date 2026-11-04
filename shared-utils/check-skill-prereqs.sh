@@ -13,6 +13,12 @@
 #   3 -- malformed PREREQS.json (schema error; treated as no-op so a bad manifest
 #        can never block an install; CI lint catches it upstream)
 #
+# Types: credential, skill, binary, config, mcp, state, python_module, manual.
+#   python_module = a Python package the skills import, checked by a REAL import
+#   under the python3 on PATH (plus an optional minVersion floor) with the shared
+#   pydeps folder <root>/pydeps/py<X.Y>/ first on sys.path, so it can be
+#   severity=required. manual is advisory only and may never be required.
+#
 # This script is READ-ONLY: it never calls openclaw gateway restart,
 # never writes credentials, never prints secret values (env-var NAMES only).
 #
@@ -91,8 +97,10 @@ fi
 export OC_SECRET_NAMES_JSON="${_canon_candidates}"
 
 python3 <<'PYEOF'
+import importlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -370,6 +378,45 @@ def check_state(check_def):
     return bool(node)
 
 
+def check_python_module(check_def):
+    """A Python package the skills import, checked the way the skills use it.
+
+    check: {"module": "jsonschema", "minVersion": "4.0"}   ("package" = the
+    distribution name when it differs from the module name)
+
+    A REAL import, never find_spec: a package whose own dependency is missing
+    passes find_spec and then dies at first use. minVersion is a floor on the
+    first two numbers, because an old package imports fine. Same logic as
+    _oc_jsonschema_probe in lib-onboarding-state.sh. Fails CLOSED: anything
+    that goes wrong is UNMET.
+    """
+    module = check_def.get("module", "")
+    if not module:
+        return False
+    # The shared pydeps folder (pip --target, for an externally-managed Python; see
+    # lib-onboarding-state.sh oc_pydeps_dir) goes first on sys.path, as it does in every importer.
+    tag = "py%d.%d" % sys.version_info[:2]
+    root = os.environ.get("OPENCLAW_ROOT") or (
+        "/data/.openclaw" if os.path.isdir("/data/.openclaw") else os.path.expanduser("~/.openclaw"))
+    sys.path[:0] = [d for d in (
+        [os.environ["OC_PYDEPS_DIR"]] if os.environ.get("OC_PYDEPS_DIR") else
+        [os.path.join(root, "pydeps", tag), os.path.expanduser("~/.claude/pydeps/" + tag)])
+        if os.path.isdir(d) and d not in sys.path]
+    try:
+        importlib.import_module(module)
+        floor = check_def.get("minVersion", "")
+        if not floor:
+            return True
+        from importlib.metadata import version
+
+        def first_two(text):
+            return (tuple(int(x) for x in re.findall(r"\d+", text)[:2]) + (0, 0))[:2]
+
+        return first_two(version(check_def.get("package", module))) >= first_two(floor)
+    except Exception:
+        return False
+
+
 def check_manual(check_def):
     """Operator-verified fact that no offline check can prove (an external
     account exists, a paid balance is non-zero).
@@ -459,6 +506,7 @@ CHECKERS = {
     "config": check_config,
     "mcp": check_mcp,
     "state": check_state,
+    "python_module": check_python_module,
     "manual": check_manual,
 }
 

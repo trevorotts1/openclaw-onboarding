@@ -30,15 +30,15 @@ import sys
 # "No module named attrs". The Skill 79 validator is loaded too, because it is
 # the thing that actually needs jsonschema.
 try:
+    from launcher_core import checkout  # first: importing the package puts the shared pydeps folder on sys.path
     importlib.import_module("jsonschema")
-    from launcher_core import checkout
     if checkout._load_validator() is None:
         raise ImportError("the Skill 79 validator (scripts/validate_checkout.py) was not found")
 except Exception as exc:
     raise SystemExit(
         "verify: the Skill 79 checkout validator cannot load under %s (%s: %s). "
-        "Install the runtime requirement into THIS interpreter first: "
-        "%s -m pip install -r requirements.txt"
+        "Install the runtime requirement first (never --break-system-packages, never a venv): "
+        "%s -m launcher_core.cli dependencies --install"
         % (sys.executable, type(exc).__name__, exc, sys.executable))
 print("dependency-complete interpreter:", sys.executable)
 print("runtime requirement importable: jsonschema (and the Skill 79 validator loads)")

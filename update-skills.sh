@@ -13247,7 +13247,19 @@ PY
   # function install.sh Step 6.5c calls) installs the requirement declared in
   # 83-black-friday-launcher/PREREQS.json and verifies it with a real import.
   # Inspect only: bash update-skills.sh --check. LATCHED, never aborting: a
-  # failure is reported loudly and the next roll retries.
+  # failure is reported loudly, oc_ensure_jsonschema writes the NOT_READY receipt
+  # (<root>/logs/launch-skills-readiness.json), the final exit code becomes 2
+  # (same "content current, infrastructure needs attention" family as the GHL MCP
+  # and presentation latches below) and the next roll retries. Content already
+  # delivered is never rolled back.
+  # INTERPRETER: on a Docker VPS platform/vps/bootstrap.sh re-execs this updater
+  # INSIDE the client container, so `python3` here is the container's python3,
+  # the one the agent runtime uses. jsonschema is installed with pip --target into
+  # <root>/pydeps/py<X.Y>/ (the one install an externally-managed Python accepts;
+  # no --user, no --break-system-packages). On a Docker box that is under
+  # /data/.openclaw, the bind-mount, so it survives a container recreate; every
+  # importer puts the folder on sys.path itself, and the Black Friday Launcher
+  # re-checks and repairs the import before it builds anything.
   echo ""
   echo "  Converging jsonschema (Skills 49, 71, 78-83, 44, 38)..."
   _JSONSCHEMA_RC=0
@@ -13258,11 +13270,15 @@ PY
   if command -v oc_ensure_jsonschema >/dev/null 2>&1; then
     oc_ensure_jsonschema --apply || _JSONSCHEMA_RC=$?
   else
-    echo "  ⚠ lib-onboarding-state.sh with oc_ensure_jsonschema missing from the extracted tree — jsonschema was NOT verified. Manual: python3 -m pip install \"jsonschema>=4.0\" && python3 -c 'import jsonschema'" >&2
+    echo "  ⚠ lib-onboarding-state.sh with oc_ensure_jsonschema missing from the extracted tree — jsonschema was NOT verified. Manual: cd to the 83-black-friday-launcher folder and run python3 -m launcher_core.cli dependencies --install (it installs into the pydeps folder with pip --target; never --break-system-packages, never a venv)" >&2
     _JSONSCHEMA_RC=2
   fi
   if [ "$_JSONSCHEMA_RC" -ne 0 ]; then
-    echo "  ⚠ jsonschema NOT importable (rc=$_JSONSCHEMA_RC) -- the Skill 79 checkout validator and every wrapper that loads it will fail on this box until repaired. Content updates already delivered are NOT rolled back; the next roll retries this step." >&2
+    echo "  ⚠ jsonschema NOT importable (rc=$_JSONSCHEMA_RC) -- the Skill 79 checkout validator and every wrapper that loads it will fail on this box until repaired. This box is NOT READY for the launch skills (49, 71, 78-83, 44, 38). Content updates already delivered are NOT rolled back; the final exit code carries this latch and the next roll retries this step." >&2
+  elif [ -x "$SKILLS_DIR/shared-utils/check-skill-prereqs.sh" ] && [ -d "$SKILLS_DIR/83-black-friday-launcher" ]; then
+    # The wiring pass checked 83's prerequisites BEFORE this install; re-record so
+    # the state file does not keep a now-stale missingPrereqs entry. Read-only.
+    bash "$SKILLS_DIR/shared-utils/check-skill-prereqs.sh" "$SKILLS_DIR/83-black-friday-launcher" >/dev/null 2>&1 || true
   fi
   export _JSONSCHEMA_RC
   # FIX 71 (persistence): record the venv interpreter in the box secrets env (values
@@ -13457,6 +13473,12 @@ ${ONBOARDING_GATE_SUMMARY:-verification gate did not produce a summary}.
 The onboarding-resume cron will keep re-firing wiring + QC until every skill passes (it does NOT stop on a self-declared 'done')."
   fi
 
+  if [ "${_JSONSCHEMA_RC:-0}" -ne 0 ]; then
+    _TG_HEADLINE="${_TG_HEADLINE}
+
+⚠️ NOT READY: the Black Friday Launcher and the page skills (49, 71, 78-83, 44, 38) cannot run on this box yet -- the Python package jsonschema is not importable (convergence exit ${_JSONSCHEMA_RC}). Content is current and was NOT rolled back. Fix: cd to the 83-black-friday-launcher folder and run python3 -m launcher_core.cli dependencies --install (never --break-system-packages, never a venv); the next roll retries it."
+  fi
+
   send_telegram_progress "${_TG_HEADLINE}
 
 New skills (need activation): ${NEW_SKILLS_CSV:-none -- updates only}.
@@ -13610,6 +13632,26 @@ BACKUP_BLOCK
     } >&2
   fi
 
+  if [ "${_JSONSCHEMA_RC:-0}" -ne 0 ]; then
+    {
+      echo ""
+      echo "  ============================================================"
+      echo "  UPDATE COMPLETED, BUT THIS BOX IS NOT READY FOR THE LAUNCH SKILLS."
+      echo "  Skills content IS current and the version stamp WAS written."
+      echo "  The Python package jsonschema is not importable (exit ${_JSONSCHEMA_RC}), so the"
+      echo "  Black Friday Launcher and the page skills (49, 71, 78-83, 44, 38) fail"
+      echo "  until it is. Receipt: <root>/logs/launch-skills-readiness.json"
+      echo "  Fix, then re-run (or let the next roll retry):"
+      echo "    cd to the 83-black-friday-launcher folder, then: python3 -m launcher_core.cli dependencies --install"
+      echo "    (it installs into <root>/pydeps/py<X.Y>/ with pip --target; never --break-system-packages, never a venv)"
+      echo "  Inspect only: bash update-skills.sh --check"
+      echo ""
+      echo "  Exiting 2 = content current, infrastructure needs attention."
+      echo "  ============================================================"
+      echo ""
+    } >&2
+  fi
+
   if [ "${GHL_MCP_RUNTIME_FATAL:-no}" = "yes" ] || [ "${_U6D_CC_RUNTIME_FATAL:-no}" = "yes" ]; then
     return 2
   fi
@@ -13617,6 +13659,10 @@ BACKUP_BLOCK
   # current, the presentation department's readiness is degraded, and fleet
   # drivers must not report this roll as fully successful.
   if [ "${_PRES_DEPS_CONVERGE_RC:-0}" -ne 0 ]; then
+    return 2
+  fi
+  # NOT READY latch for the launch skills (jsonschema): same exit-2 family.
+  if [ "${_JSONSCHEMA_RC:-0}" -ne 0 ]; then
     return 2
   fi
   return "${_FD_FINAL_RC:-0}"

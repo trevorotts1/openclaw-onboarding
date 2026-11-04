@@ -1,7 +1,7 @@
 ---
 name: convert-and-flow-operator
 description: Tier 0 GHL operator — the Convert and Flow CLI (caf/convertandflow/ghl) gives the agent direct CRM access for contacts, opportunities, calendars, conversations, documents, payments, forms, social, locations, and workflow builds via internal API (no MCP overhead). Standard ops run on the PIT alone. Workflow writes additionally require the Firebase refresh token; when absent, falls through to Tier 4 agent-browser as the backstop. Write-safe by default (dry-run, draft-only, location whitelist, approval gate).
-version: v2.1.41
+version: v2.1.42
 ---
 
 > **GHL PIT aliases:** `GOHIGHLEVEL_API_KEY` is the preferred name; 10 additional aliases resolve the same LOCATION PIT. See **`TERMINOLOGY.md`** (repo root) for the canonical alias set and backend-equivalence notes (Convert & Flow / leadconnectorhq.com = one platform).
@@ -550,3 +550,14 @@ discoverability.
 > **Relationship lattice (GK-27):** see `docs/CONTENT-CONVERSATION-LATTICE.md` for how this skill's build path relates to Skill 38 and its backstop rail relates to Skill 3.
 
 > **Build-only, never a responder (T-19):** this skill builds and QC's the GHL workflow that renders interactive controls; it **never answers a conversation or an interactive step**. The single-owner rule — OpenClaw inbound by default, with rendered controls, provider callbacks, free text and stale taps all resolving to that one owner — lives in `38-conversational-ai-system/launch/interactive-owner-contract.md`. A native GHL workflow node is a build artifact, not a second responder.
+
+## Python dependency: jsonschema (operator note, never for the client)
+
+The `siglaunch` normalizer and processor import `jsonschema`. On a Homebrew or Debian Python (externally managed,
+PEP 668) pip refuses a plain or `--user` install, so the package lives in the shared pydeps folder
+`<root>/pydeps/py<major>.<minor>/` (`$OC_PYDEPS_DIR` as-is, else `$OPENCLAW_ROOT`, else `/data/.openclaw` when it
+exists, else `$HOME/.openclaw`; `$HOME/.claude/pydeps/py<X.Y>/` is also looked up), installed with
+`pip install --target`. Both modules put that folder on `sys.path` themselves before they import, so plain `python3`
+works: no venv, no activation step. Never use `--break-system-packages`, never create a venv, never tell the client.
+If the import fails, check with `bash update-skills.sh --check` and run the one sanctioned fix from
+`83-black-friday-launcher`: `python3 -m launcher_core.cli dependencies --install`.

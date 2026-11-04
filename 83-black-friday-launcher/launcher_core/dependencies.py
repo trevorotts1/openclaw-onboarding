@@ -15,11 +15,14 @@ from __future__ import annotations
 import importlib
 import json
 import re
+import subprocess
 import sys
+from importlib import metadata
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
-from .constants import (REPO_ROOT, SKILL_NAME, SkillResolutionError,
+from . import pydeps
+from .constants import (REPO_ROOT, SKILL_NAME, SKILL_ROOT, SkillResolutionError,
                         resolve_ref, resolve_skill_dir, skill_slug)
 
 MANIFEST = Path(__file__).resolve().parent / "dependencies.json"
@@ -139,6 +142,37 @@ def _version_floor(entry: Dict[str, Any], tree: Path) -> Optional[str]:
     return None
 
 
+def _requirement(ref: str) -> str:
+    """The requirement line for a runtime package from requirements.txt ('jsonschema>=4.0'), else the bare name."""
+    try:
+        for line in (SKILL_ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines():
+            line = line.split("#", 1)[0].strip()
+            if re.match(re.escape(ref) + r"(?![\w.-])", line):
+                return line
+    except OSError:
+        pass
+    return ref
+
+
+def _floor_unmet(ref: str) -> Optional[str]:
+    """None when the installed package meets its '>=X.Y' floor, else why not.
+
+    An old package imports fine, so an import alone does not prove the floor (the same
+    rule as _oc_jsonschema_probe in lib-onboarding-state.sh). A version that cannot be
+    read counts as unmet.
+    """
+    need = re.match(r"^[\w.-]+\s*>=\s*([\d.]+)", _requirement(ref))
+    if need is None:
+        return None
+    try:
+        have = metadata.version(ref)
+    except Exception as exc:
+        return f"its version could not be read ({type(exc).__name__})"
+    if _version(have) is None or _version(have) < _version(need.group(1)):
+        return f"installed {have} is older than the required {need.group(1)}"
+    return None
+
+
 def _present(entry: Dict[str, Any], root: Path) -> Dict[str, Any]:
     kind = entry["kind"]
     ref = entry["ref"]
@@ -201,7 +235,8 @@ def _present(entry: Dict[str, Any], root: Path) -> Dict[str, Any]:
         # read as present and then failed inside the Skill 79 validator.
         try:
             importlib.import_module(ref)
-            found, failure = True, ""
+            unmet = _floor_unmet(ref)
+            found, failure = unmet is None, (f"; {unmet}" if unmet else "")
         except Exception as exc:  # a dependency of the package failing counts
             found, failure = False, f"; import failed: {type(exc).__name__}: {exc}"
         isolated = bool(getattr(sys.flags, "isolated", 0))
@@ -255,19 +290,80 @@ def check(root: Optional[Path] = None) -> Dict[str, Any]:
     }
 
 
+def _pip_install(spec: str) -> bool:
+    """pip-install spec into the shared pydeps folder, under THIS interpreter (sys.executable).
+
+    `--target` is the one install an externally-managed Python (Homebrew, Debian; PEP 668) accepts without
+    a flag, and the folder is versioned per interpreter and, on a Docker box, lives under /data/.openclaw,
+    so it survives a container recreate. There is no `--user` and no `--break-system-packages` tier: they are
+    refused or forbidden on exactly the boxes this exists for. If pip itself is missing it returns False.
+    """
+    target = pydeps.install_dir()
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        run = subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check",
+                              "--no-input", "--upgrade", "--target", str(target), spec],
+                             capture_output=True, timeout=300)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return run.returncode == 0
+
+
+def ensure_runtime_packages(root: Optional[Path] = None,
+                            install: Callable[[str], bool] = _pip_install) -> Dict[str, Any]:
+    """Install any missing required runtime package itself, then return the re-checked report.
+
+    The client is never asked to install software: a package that is not importable (or is
+    below its floor) is installed here into the shared pydeps folder, put on sys.path, and verified by the
+    same real import `check` uses. This is also what survives a container recreate or a Python upgrade
+    (a new versioned folder): the next launch repairs itself before anything is built. A package that
+    still fails stays a blocker for `require`, which tells the operator, not the client.
+    """
+    report = check(root)
+    todo = [e for e in report["entries"]
+            if e["kind"] == "runtime_package" and e["required"] and e["status"] != "present"]
+    if not todo:
+        return report
+    for entry in todo:
+        install(_requirement(entry["ref"]))
+    importlib.invalidate_caches()
+    pydeps.activate()  # the folder may have just been created
+    report = check(root)
+    # The operator note is judged on the re-check (the same real import), never on install()'s return alone:
+    # a pip that ran but left the package unimportable, or no pip at all, must not read as success.
+    still = [e["ref"] for e in report["entries"]
+             if e["kind"] == "runtime_package" and e["required"] and e["status"] != "present"]
+    if still:
+        print("[launcher] setup: a missing runtime package could NOT be installed automatically (%s); "
+              "operator note, not for the client: python3 -m launcher_core.cli dependencies --install "
+              "(never --break-system-packages, never a venv)" % ", ".join(still), file=sys.stderr)
+    else:
+        print("[launcher] setup: a missing runtime package was installed automatically "
+              "(operator note, not for the client)", file=sys.stderr)
+    return report
+
+
 def require(root: Optional[Path] = None) -> Dict[str, Any]:
     """The preflight a build runs first: return the report, or refuse naming every blocker.
 
     A green preflight must mean the launch can run, so dispatch and assemble call this
-    before they touch a page. A required entry that is missing, below its minimum
-    version, or unverifiable blocks; nothing has been built or spent when it raises.
+    before they touch a page. A missing runtime package is installed first
+    (ensure_runtime_packages); any other required entry that is missing, below its minimum
+    version, or unverifiable blocks. Nothing has been built or spent when it raises.
     """
-    report = check(root)
+    report = ensure_runtime_packages(root)
     if report["blockers"]:
         detail = {e["id"]: e for e in report["entries"]}
-        raise DependencyError(
-            "AF-LAUNCH-DEPENDENCY: required dependency not satisfied: "
-            + "; ".join(f"{i} [{detail[i]['ref']}] {detail[i]['status']} ({detail[i]['evidence']})"
-                        for i in report["blockers"])
-            + ". Nothing was built and nothing was spent.")
+        message = ("AF-LAUNCH-DEPENDENCY: required dependency not satisfied: "
+                   + "; ".join(f"{i} [{detail[i]['ref']}] {detail[i]['status']} ({detail[i]['evidence']})"
+                               for i in report["blockers"])
+                   + ". Nothing was built and nothing was spent.")
+        if any(detail[i]["kind"] == "runtime_package" for i in report["blockers"]):
+            message += (f" The launcher already tried to install the package itself and could not. "
+                        f"This is for the operator, not the client; the client is only told that setup "
+                        f"needs a few more minutes. Operator fix (never --break-system-packages, never a "
+                        f"venv): python3 -m launcher_core.cli dependencies --install, which installs into "
+                        f"{pydeps.install_dir()}. If pip is missing for {sys.executable}, install it first "
+                        f"(Debian: apt-get install python3-pip).")
+        raise DependencyError(message)
     return report

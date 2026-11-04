@@ -1,7 +1,7 @@
 ---
 name: blackceo-signature-page
 description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, signature sales page, opt-in, registration, challenge, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system. The signature sales page and the signature landing (opt-in) page are the two page kinds of this skill's landing role (`--page-kind sales|opt_in`). Direct-response sales pages (VSL, 8-section main, high-ticket, order-bump asset stacks) belong to Skill 56 `sales-page-assets`.
-version: 1.3.13
+version: 1.3.14
 ---
 
 # BlackCEO Signature Page — Skill 71
@@ -241,3 +241,14 @@ Report to the owner by pasting `REPORT.md`'s overall line, stage table, and cost
 `verify.sh` is an **install/update maintenance check**, not a normal page-build step. Do not run the complete skill verification every time this skill is invoked.
 
 For onboarding-repo integration, read `REPO-INTEGRATION.md`. The repo's native-skill binding lives in `23-ai-workforce-blueprint/skill-department-map.json`; generated role blocks must be refreshed with the repo's stamper rather than hand-edited.
+
+## Python dependency: jsonschema (operator note, never for the client)
+
+`scripts/stage_gate.py` (the style-selection schema check) imports `jsonschema`. On a Homebrew or Debian Python (externally managed, PEP 668) pip refuses a plain or
+`--user` install, so the package lives in the shared pydeps folder `<root>/pydeps/py<major>.<minor>/`
+(`$OC_PYDEPS_DIR` as-is, else `$OPENCLAW_ROOT`, else `/data/.openclaw` when it exists, else `$HOME/.openclaw`;
+`$HOME/.claude/pydeps/py<X.Y>/` is also looked up), installed with `pip install --target`. The file puts that folder on
+`sys.path` itself before it imports, so plain `python3` works: no venv, no activation step. Never use
+`--break-system-packages`, never create a venv, never tell the client. If the import fails, check with
+`bash update-skills.sh --check` and run the one sanctioned fix from `83-black-friday-launcher`:
+`python3 -m launcher_core.cli dependencies --install`.

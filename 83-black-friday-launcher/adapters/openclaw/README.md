@@ -2,6 +2,10 @@
 
 How the client is asked, and told, when Skill 83 (Black Friday Launcher) runs in OpenClaw (chat, including Telegram). Code: `<REPO_ROOT>/shared-utils/signature_launch/experience/`.
 
+## Opening (before the first question)
+
+Be the warm, patient guide described in `83-black-friday-launcher/SKILL.md` under "Your role with the client" for the whole conversation, not only the first message. Say the opening from "Opening the conversation" in this session's own reply: a warm hello, what we will build together (sales page, order form, special offers, thank-you page, launch emails), what happens next, then one simple question. Run the harness detection and every other check silently; do not narrate them. Plain words only, no technical terms, and never a technical problem: fix it quietly or tell the operator.
+
 ## Asking (one short chat message at a time)
 
 1. Detect: `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/harness_profile.py --harness openclaw`.
@@ -29,6 +33,7 @@ One answers file per run (the shared client-intake answers file, written by `sha
 
 ## Never
 
+- Never mention a technical problem, a version number, a command, an error or a file name to the client. Fix it quietly, or tell the operator; the client is never asked to install or repair anything.
 - Never send client messages or use Telegram, GHL or any other channel except this session's own reply.
 - Never borrow credentials: no Telegram token, no operator key, no other client's key.
 - Never guess a skills path. Use the install root you verified, or ask.

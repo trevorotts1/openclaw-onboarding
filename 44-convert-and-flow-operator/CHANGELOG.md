@@ -1,3 +1,11 @@
+## [v2.1.42] - 2026-11-04 - jsonschema activation for the siglaunch normalizer and processor
+
+`tools/siglaunch/normalizer/normalizer.py` and `tools/siglaunch/processor/processor.py` now put the shared pydeps folder
+(`<root>/pydeps/py<X.Y>/`, the `pip install --target` folder for an externally-managed Python) on `sys.path` before they
+`import jsonschema`, using the same byte-identical stdlib-only snippet as Skill 79's `validate_checkout.py`. No behaviour
+changes on a box where jsonschema is already importable. `SKILL.md` gains an operator note (never `--break-system-packages`,
+never a venv, never tell the client). `skill-version.txt` and the `SKILL.md` frontmatter move v2.1.41 -> v2.1.42.
+
 ## [v2.1.40] - 2026-10-28 - chore(train11): version stamp for the twelve-unit train
 
 ## [v2.1.39] - 2026-10-28 - rebase lane: version stamp above main for the changelog merge

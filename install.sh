@@ -5063,18 +5063,28 @@ unset _LIPSYNC_DEPS_RC
 # with update-skills.sh) pip-installs the requirement declared in
 # 83-black-friday-launcher/PREREQS.json and VERIFIES it with a real import.
 # NOT FATAL: a transient network failure must not abort the bootstrap; it is
-# stated loudly and update-skills.sh retries it on every roll.
+# stated loudly (a warn() line, so print_install_summary never calls the install
+# clean), oc_ensure_jsonschema writes the NOT_READY receipt
+# (<root>/logs/launch-skills-readiness.json), and update-skills.sh retries it on
+# every roll. On a Docker VPS this installer already runs INSIDE the client
+# container (platform/vps/bootstrap.sh re-exec), so python3 here is the agent's.
+# The package goes into <root>/pydeps/py<X.Y>/ with pip --target (PEP 668 safe,
+# survives a container recreate under /data/.openclaw); see lib-onboarding-state.sh.
 # Inspect only: bash install.sh --check
 # ----------------------------------------------------------
 _JSONSCHEMA_RC=0
 if command -v oc_ensure_jsonschema >/dev/null 2>&1; then
     oc_ensure_jsonschema --apply || _JSONSCHEMA_RC=$?
 else
-    warn "Step 6.5c: lib-onboarding-state.sh was not available — jsonschema (needed by Skills 49, 71, 78-83, 44, 38) was NOT verified. Manual: python3 -m pip install \"jsonschema>=4.0\" && python3 -c 'import jsonschema'"
+    warn "Step 6.5c: lib-onboarding-state.sh was not available — jsonschema (needed by Skills 49, 71, 78-83, 44, 38) was NOT verified. Manual: cd to the 83-black-friday-launcher folder and run python3 -m launcher_core.cli dependencies --install (it installs into the pydeps folder with pip --target; never --break-system-packages, never a venv)"
     _JSONSCHEMA_RC=2
 fi
 if [ "$_JSONSCHEMA_RC" -ne 0 ]; then
-    warn "Step 6.5c: jsonschema is NOT importable (rc=$_JSONSCHEMA_RC) — the Skill 79 checkout validator and every wrapper that loads it will fail until it is. Install continues; update-skills.sh retries this step on every roll."
+    warn "Step 6.5c: LAUNCH SKILLS NOT READY — jsonschema is NOT importable (rc=$_JSONSCHEMA_RC); the Skill 79 checkout validator and every wrapper that loads it (Skills 49, 71, 78-83, 44, 38) will fail until it is. Receipt: ${OC_CONFIG:-<root>}/logs/launch-skills-readiness.json. Install continues; update-skills.sh retries this step on every roll."
+elif [ -x "$SKILLS_DIR/shared-utils/check-skill-prereqs.sh" ] && [ -d "$SKILLS_DIR/83-black-friday-launcher" ]; then
+    # Step 5b checked 83's prerequisites BEFORE this install; re-record so the state
+    # file does not keep a now-stale missingPrereqs entry. Read-only.
+    bash "$SKILLS_DIR/shared-utils/check-skill-prereqs.sh" "$SKILLS_DIR/83-black-friday-launcher" >/dev/null 2>&1 || true
 fi
 unset _JSONSCHEMA_RC
 

@@ -68,6 +68,23 @@ _RENEWAL_PROMISE = ('After the trial, $27 per month continues the membership unl
                     'paid month, then your membership access ends and you will not be charged again. ')
 
 
+_SPOOL = {}
+
+
+def setUpModule():
+    # Building a package appends launch events to ~/.openclaw/data/signature-launch/events-spool when no ingest
+    # URL is set. Send them to a temp folder, so nothing in this module (or in a child launcher it starts,
+    # which inherits the variable) writes into the real home folder.
+    _SPOOL["dir"] = tempfile.TemporaryDirectory()
+    _SPOOL["env"] = mock.patch.dict(os.environ, {"LAUNCH_EVENTS_SPOOL": _SPOOL["dir"].name})
+    _SPOOL["env"].start()
+
+
+def tearDownModule():
+    _SPOOL["env"].stop()
+    _SPOOL["dir"].cleanup()
+
+
 def _one_time_d1_page() -> str:
     text = S81_PAGE.read_text(encoding="utf-8")
     text = json.dumps(json.loads(text))

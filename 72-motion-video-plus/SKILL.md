@@ -1,7 +1,7 @@
 ---
 name: motion-video-plus
 description: Produces motion graphics in four delivery modes (PowerPoint graphic, desktop VSL insert, mobile VSL insert, standalone video) through one canonical V2 pipeline: mode-first intake, a schema-validated job package, typed component scenes rendered through the production adapters, and gated review and QC. Use for animated charts, explainers, and product or brand motion graphics sized for a slide, a VSL slot, or a standalone video. Do not use for AI video-model generation (Skill 67 kie-video) or documentary montage and whole-VSL production (Skill 47 movie-producer).
-version: 2.1.0
+version: 2.1.1
 ---
 
 # Motion Video Plus: Skill 72
@@ -361,3 +361,15 @@ present it as one. See `references/untested-alternatives.md`.
 - Never prescribes an authoring model or bans a model vendor; the resolved
   choice and its model, provider, and harness identifiers are recorded per
   job.
+
+## Python dependency: jsonschema (operator note, never for the client)
+
+`scripts/motion_contracts.py`, `powerpoint_package.py`, `review_rubric.py`, `vsl_mobile.py`, `vsl_handoff.py` and
+`verify.sh` (its QC schema check) import `jsonschema`. On a Homebrew or Debian Python (externally managed, PEP 668)
+pip refuses a plain or `--user` install, so the package lives in the shared pydeps folder
+`<root>/pydeps/py<major>.<minor>/` (`$OC_PYDEPS_DIR` as-is, else `$OPENCLAW_ROOT`, else `/data/.openclaw` when it
+exists, else `$HOME/.openclaw`; `$HOME/.claude/pydeps/py<X.Y>/` is also looked up), installed with
+`pip install --target`. Each file puts that folder on `sys.path` itself before it imports, so plain `python3` works:
+no venv, no activation step. Never use `--break-system-packages`, never create a venv, never tell the client. If the
+import fails, check with `bash update-skills.sh --check` and run the one sanctioned fix from
+`83-black-friday-launcher`: `python3 -m launcher_core.cli dependencies --install`.

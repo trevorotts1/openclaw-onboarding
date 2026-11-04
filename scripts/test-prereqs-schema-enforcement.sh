@@ -156,6 +156,49 @@ else
   bad "repo-wide qc-prereqs-json.sh FAILED: $(bash "$LINT" 2>&1 | tail -20)"
 fi
 
+echo "== G. type=python_module is a REAL import with a version floor, in both directions =="
+# A throwaway package on PYTHONPATH (version 1.2.0) is the "installed" case, the same
+# PYTHONPATH left empty is the "absent" case, and a package whose own dependency is
+# missing is the half-installed trap (find_spec says present, the import dies).
+PKG="$SANDBOX/pypkg"
+mkdir -p "$PKG/bf_pm_stub" "$PKG/bf_pm_stub-1.2.0.dist-info" "$PKG/bf_pm_broken"
+printf 'VALUE = 1\n' > "$PKG/bf_pm_stub/__init__.py"
+printf 'Metadata-Version: 2.1\nName: bf_pm_stub\nVersion: 1.2.0\n' > "$PKG/bf_pm_stub-1.2.0.dist-info/METADATA"
+printf 'import bf_pm_no_such_dependency\n' > "$PKG/bf_pm_broken/__init__.py"
+run_pm() { # run_pm <check-json> <pythonpath> ; sets RC and OUT
+  local dir
+  dir="$(make_case "g$RANDOM" "{\"skill\":\"99-under-test\",\"prerequisites\":[{\"id\":\"pm-dep\",\"type\":\"python_module\",\"label\":\"pm\",\"check\":$1,\"severity\":\"required\",\"satisfy\":\"pip install it\"}]}")"
+  OUT="$(PYTHONPATH="$2" bash "$CHECKER" "$dir/skills/99-under-test" 2>&1)"
+  RC=$?
+}
+run_pm '{"module":"bf_pm_stub"}' "$PKG"
+[[ $RC -eq 0 ]] && ok "module importable -> satisfied (rc 0)" \
+                || bad "module importable -> expected rc 0, got $RC :: $OUT"
+run_pm '{"module":"bf_pm_stub"}' ""
+if [[ $RC -eq 2 && "$OUT" == *"pm-dep"* ]]; then
+  ok "module absent -> named unmet (rc 2)"
+else
+  bad "module absent -> expected rc 2 naming pm-dep, got $RC :: $OUT"
+fi
+run_pm '{"module":"bf_pm_stub","minVersion":"1.0"}' "$PKG"
+[[ $RC -eq 0 ]] && ok "installed 1.2.0 meets minVersion 1.0 (rc 0)" \
+                || bad "installed 1.2.0 vs minVersion 1.0 -> expected rc 0, got $RC :: $OUT"
+run_pm '{"module":"bf_pm_stub","minVersion":"9.9"}' "$PKG"
+[[ $RC -eq 2 ]] && ok "installed 1.2.0 is below minVersion 9.9 -> unmet (rc 2)" \
+                || bad "installed 1.2.0 vs minVersion 9.9 -> expected rc 2, got $RC :: $OUT"
+run_pm '{"module":"bf_pm_broken"}' "$PKG"
+[[ $RC -eq 2 ]] && ok "half-installed package (its own dependency missing) -> unmet (rc 2)" \
+                || bad "half-installed package -> expected rc 2, got $RC :: $OUT"
+lint_fixture pmnokey '{"skill":"99-fixture","prerequisites":[{"id":"dep","type":"python_module","label":"dep","check":{"minVersion":"1.0"},"severity":"required","satisfy":"pip install it"}]}'
+if [[ $LRC -eq 1 && "$LOUT" == *"enforce nothing"* ]]; then
+  ok "lint rejects type=python_module whose check has no 'module'"
+else
+  bad "lint should reject python_module without 'module', got rc $LRC :: $LOUT"
+fi
+lint_fixture pmok '{"skill":"99-fixture","prerequisites":[{"id":"dep","type":"python_module","label":"dep","check":{"module":"json"},"severity":"required","satisfy":"pip install it"}]}'
+[[ $LRC -eq 0 ]] && ok "lint accepts type=python_module with severity=required" \
+                 || bad "lint should accept a required python_module, got rc $LRC :: $LOUT"
+
 echo
 echo "prereqs schema enforcement: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] || exit 1

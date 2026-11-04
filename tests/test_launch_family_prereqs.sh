@@ -8,6 +8,10 @@
 #         jsonschema), --check flags it without mutating, --apply makes
 #         `python3 -c 'import jsonschema'` exit 0, and the version floor and the
 #         requirement read from PREREQS.json are enforced (negative controls).
+#         The install is `pip install --target <root>/pydeps/py<X.Y>/` (the one
+#         install an externally-managed PEP 668 Python accepts): never --user, never
+#         --break-system-packages, and the proof is the ACTIVATION import (the pydeps
+#         folder first on sys.path), not a bare `python3 -c 'import jsonschema'`.
 # CON-14  The launch family 78-83 is either in a wave whose members all ship
 #         verify.sh, or the exclusion is recorded in lib-onboarding-state.sh.
 #
@@ -41,8 +45,10 @@ if python3 -c 'import json,sys
 d = json.load(open(sys.argv[1]))
 assert d["skill"] == "83-black-friday-launcher"
 m = [p for p in d["prerequisites"] if p.get("pythonModule") == "jsonschema"]
-assert len(m) == 1 and m[0]["requirement"] == "jsonschema>=4.0", m' "$PJ" 2>/dev/null; then
-  ok "T1 83 PREREQS.json declares jsonschema>=4.0 (pythonModule entry)"
+assert len(m) == 1 and m[0]["requirement"] == "jsonschema>=4.0", m
+assert m[0]["type"] == "python_module" and m[0]["severity"] == "required", m
+assert m[0]["check"] == {"module": "jsonschema", "minVersion": "4.0"}, m' "$PJ" 2>/dev/null; then
+  ok "T1 83 PREREQS.json declares jsonschema>=4.0 as a REQUIRED python_module (pythonModule entry)"
 else
   bad "T1 83-black-friday-launcher/PREREQS.json missing or lacks the jsonschema>=4.0 entry"
 fi
@@ -65,6 +71,19 @@ if has "$UPDATE" '*" --check "*|*" --prereqs-check "*)' && has "$INSTALL" '*" --
   ok "T2 --check flag is parsed by both installers"
 else bad "T2 --check flag is not parsed by both installers"; fi
 
+# a failed convergence is not a quiet warning: the roll's final return carries a NOT READY latch (exit 2)
+LATCH=$'if [ "${_JSONSCHEMA_RC:-0}" -ne 0 ]; then\n    return 2'
+if has "$UPDATE" "$LATCH"; then ok "T2 update-skills.sh latches a failed jsonschema convergence into the final exit code (2)"
+else bad "T2 update-skills.sh does not return 2 on a failed jsonschema convergence"; fi
+if has "${UPDATE//"$LATCH"/removed}" "$LATCH"; then bad "T2 NON-DISCRIMINATING: latch still found with it removed from a copy"
+else ok "T2 detector discriminates (latch removed from a copy is rejected)"; fi
+
+# the install command has no --user and no --break-system-packages tier (forbidden on PEP 668 boxes)
+FN="$(python3 -c 'import re,sys; t=open(sys.argv[1]).read(); a=t.index("oc_ensure_jsonschema() {"); print("\n".join(l for l in t[a:].split("\n# ====")[0].splitlines() if "pip install" in l and not l.lstrip().startswith("#") and "echo" not in l))' "$LIB")"
+if has "$FN" '--target' && ! has "$FN" '--break-system-packages' && ! has "$FN" '--user'; then
+  ok "T2 the pip install line is --target only (no --user, no --break-system-packages)"
+else bad "T2 the pip install line is not --target only: [$FN]"; fi
+
 # ---- 3. CON-13 proof in a CLEAN python --------------------------------------
 if ! python3 -m venv "$T/venv" >"$T/venv.out" 2>&1; then
   bad "T3 could not create a clean venv: $(tail -n 2 "$T/venv.out")"
@@ -73,6 +92,8 @@ else
   export PIP_NO_INDEX=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_INPUT=1
   export OPENCLAW_ROOT="$T/oc"; mkdir -p "$T/oc/skills"
   unset OPENCLAW_PREREQS_CHECK OC_CONFIG OC_SKILLS_DIR
+  # an exported pydeps folder or PYTHONPATH could put a real jsonschema in front of the clean venv
+  unset OC_PYDEPS_DIR PYTHONPATH
 
   mkwheel() {   # mkwheel <outdir> <version>
     mkdir -p "$1"
@@ -134,6 +155,11 @@ PYEOF
     rc=0; out="$(PIP_FIND_LINKS="$W_OLD" oc_ensure_jsonschema --apply 2>&1)" || rc=$?
     if [ "$rc" -eq 2 ] && has "$out" 'FAILED' && has "$out" '3.2.0'; then ok "T3 apply fails loudly when only jsonschema<4.0 exists (rc=2, FAILED)"
     else bad "T3 old-version control rc=$rc out=[$out]"; fi
+    # a failed convergence is VISIBLE: the NOT_READY receipt is written (content is never rolled back)
+    REC="$T/oc/logs/launch-skills-readiness.json"
+    if [ "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["status"], d["ready"])' "$REC" 2>/dev/null)" = "NOT_READY False" ]; then
+      ok "T3 failed apply writes the NOT_READY receipt"
+    else bad "T3 failed apply left no NOT_READY receipt at $REC"; fi
 
     # the requirement is READ from PREREQS.json, not hard-wired: a stricter
     # file in OC_SKILLS_DIR must make 4.2.0 insufficient.
@@ -142,13 +168,54 @@ PYEOF
     rc=0; out="$(OC_SKILLS_DIR="$T/strict" PIP_FIND_LINKS="$W_OK" oc_ensure_jsonschema --apply 2>&1)" || rc=$?
     if [ "$rc" -eq 2 ] && has "$out" 'jsonschema>=9.9' && has "$out" '4.2.0'; then ok "T3 requirement string is read from 83 PREREQS.json (>=9.9 not met by 4.2.0)"
     else bad "T3 spec-from-file control rc=$rc out=[$out]"; fi
-    python3 -m pip uninstall -y jsonschema >/dev/null 2>&1 || true
+    rm -rf "$T/oc/pydeps"
 
-    # the proof: apply -> `python3 -c 'import jsonschema'` exits 0
+    # the proof: apply installs into <root>/pydeps/py<X.Y>/ with --target, and the ACTIVATION import
+    # (the snippet every importer carries) finds it; a bare python3 import does NOT, by design.
     rc=0; out="$(PIP_FIND_LINKS="$W_OK" oc_ensure_jsonschema --apply 2>&1)" || rc=$?
-    if [ "$rc" -eq 0 ] && python3 -c 'import jsonschema'; then
-      ok "T3 after --apply: rc=0 and python3 -c 'import jsonschema' exits 0"
+    PYV="$(python3 -c 'import sys; print("py%d.%d" % sys.version_info[:2])')"
+    ACT='import re; exec(re.search(r"# PYDEPS-ACTIVATION:BEGIN.*?# PYDEPS-ACTIVATION:END\n", open("'"$REPO"'/79-signature-order-form/scripts/validate_checkout.py").read(), re.S).group(0)); import jsonschema; print(jsonschema.__file__)'
+    if [ "$rc" -eq 0 ] && [ -f "$T/oc/pydeps/$PYV/jsonschema/__init__.py" ] \
+       && [ "$(python3 -c "$ACT" 2>/dev/null)" = "$T/oc/pydeps/$PYV/jsonschema/__init__.py" ] \
+       && ! python3 -c 'import jsonschema' 2>/dev/null; then
+      ok "T3 after --apply: rc=0, installed under pydeps/$PYV, the activation import finds it and a bare import does not"
     else bad "T3 apply rc=$rc out=[$out]"; fi
+    # the matching python_module prereq check type sees it too
+    mkdir -p "$T/skills83" && cp -R "$REPO/83-black-friday-launcher" "$T/skills83/" 2>/dev/null
+    rcp=0; outp="$(bash "$REPO/shared-utils/check-skill-prereqs.sh" "$T/skills83/83-black-friday-launcher" 2>&1)" || rcp=$?
+    if [ "$rcp" -eq 0 ]; then ok "T3 check-skill-prereqs.sh (python_module, required) reports satisfied once installed in pydeps"
+    else bad "T3 check-skill-prereqs.sh rc=$rcp out=[$outp]"; fi
+    rm -rf "$T/oc/pydeps"
+    rcp=0; outp="$(bash "$REPO/shared-utils/check-skill-prereqs.sh" "$T/skills83/83-black-friday-launcher" 2>&1)" || rcp=$?
+    if [ "$rcp" -eq 2 ] && has "$outp" '[prereq][83-black-friday-launcher][required] jsonschema'; then
+      ok "T3 check-skill-prereqs.sh names the missing required jsonschema (rc=2)"
+    else bad "T3 check-skill-prereqs.sh missing-case rc=$rcp out=[$outp]"; fi
+    rc=0; out="$(PIP_FIND_LINKS="$W_OK" oc_ensure_jsonschema --apply 2>&1)" || rc=$?   # restore for the checks below
+    [ "$rc" -eq 0 ] || bad "T3 re-apply rc=$rc out=[$out]"
+
+    # contract names: the override is used as-is, the root comes from OPENCLAW_ROOT, 999 is a lookup candidate
+    if [ "$(OC_PYDEPS_DIR="$T/exact" oc_pydeps_dir python3)" = "$T/exact" ] \
+       && [ "$(oc_pydeps_dir python3)" = "$T/oc/pydeps/$PYV" ]; then
+      ok "T3 oc_pydeps_dir: OC_PYDEPS_DIR as-is, else \$OPENCLAW_ROOT/pydeps/py<X.Y>"
+    else bad "T3 oc_pydeps_dir precedence"; fi
+    mkdir -p "$T/home/.claude/pydeps/$PYV"
+    if [ "$(HOME="$T/home" oc_pydeps_lookup python3 | tail -n 1)" = "$T/home/.claude/pydeps/$PYV" ]; then
+      ok "T3 oc_pydeps_lookup includes \$HOME/.claude/pydeps/py<X.Y> (999 / claude-nine)"
+    else bad "T3 oc_pydeps_lookup does not list the 999 folder"; fi
+
+    # an interpreter with no pip module: NOT_READY with one plain operator line, nothing bootstrapped
+    if python3 -m venv --without-pip "$T/nopip" >/dev/null 2>&1; then
+      rm -rf "$T/oc/pydeps" "$T/oc/logs"
+      rc=0; out="$(PATH="$T/nopip/bin:$PATH" oc_ensure_jsonschema --apply 2>&1)" || rc=$?
+      if [ "$rc" -eq 2 ] && has "$out" 'pip is not installed' && [ ! -d "$T/oc/pydeps" ] \
+         && has "$(<"$T/oc/logs/launch-skills-readiness.json")" 'NOT_READY'; then
+        ok "T3 no pip module: rc=2, one plain operator line, NOT_READY receipt, nothing bootstrapped"
+      else bad "T3 no-pip case rc=$rc out=[$out]"; fi
+      rc=0; out="$(PIP_FIND_LINKS="$W_OK" oc_ensure_jsonschema --apply 2>&1)" || rc=$?   # restore
+    fi
+    if [ "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["status"], d["ready"])' "$REC" 2>/dev/null)" = "READY True" ]; then
+      ok "T3 successful apply flips the receipt to READY"
+    else bad "T3 successful apply did not flip the receipt to READY"; fi
     # T5 control: the same real command flips from rc 2 to rc 0 on the real prerequisite state.
     rc=0; out="$(cd "$T" && env -u ONBOARDING_DIR -u FLEET_PREFLIGHT_BYPASS -u FLEET_STANDING_GATE_BYPASS \
         -u OPENCLAW_UPDATE_SKIP_SELF_SYNC -u OPENCLAW_RELEASE_PIN_MODE HOME="$T/home" OPENCLAW_UPDATE_LEASE="$T/upd.lock" \
