@@ -3741,6 +3741,73 @@ jobs:
           PY
           echo "✓ T-16 reminder host self-check ran and passed"
 
+      # Skill 84 (Purple Billboard Blueprint) wiring. 84-purple-billboard-blueprint/tests/
+      # test_blueprint_wiring.py fails when SKILL.md, wiring-map.md or
+      # safety-boundaries.md name a path, function, class or command-line
+      # subcommand that no longer exists. No workflow ran it, so a map that
+      # pointed at renamed or deleted code looked current. Wired BY EXPLICIT PATH,
+      # the same pattern as the Skill 38 and shared-utils suites above: the one
+      # test_*.py discovery loop in this workflow is scoped to
+      # 75-drama-song-ad-factory and cannot reach it. A MISSING suite is a red,
+      # not a skip. stdlib only: no install, no network.
+      # The step ends with a red proof: it renames one function and one
+      # subcommand in a THROWAWAY COPY and requires the test to fail on exactly
+      # that, so a scanner that stops scanning cannot pass this step.
+      - name: Skill 84 blueprint wiring (explicit path, with a red proof)
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="84-purple-billboard-blueprint/tests/test_blueprint_wiring.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ Skill 84 wiring test is absent from this checkout: $t. A MISSING suite is a red, not a skip."
+            exit 1
+          fi
+          echo "resolved $root/$t"
+          python3 -I "$t" || { echo "✗ Skill 84 wiring test failed"; exit 1; }
+
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+          for d in [0-9][0-9]-* shared-utils; do
+            case "$d" in
+              38-conversational-ai-system|84-purple-billboard-blueprint) ;;
+              *) ln -s "$root/$d" "$TMP/$d" ;;
+            esac
+          done
+          cp -R 38-conversational-ai-system 84-purple-billboard-blueprint "$TMP/"
+          copy="$TMP/84-purple-billboard-blueprint/tests/test_blueprint_wiring.py"
+          mutate() {
+            python3 - "$1" "$2" "$3" <<'PY'
+          import sys
+          path, old, new = sys.argv[1:4]
+          src = open(path, encoding="utf-8").read()
+          if src.count(old) != 1:
+              sys.exit("red-proof fixture stale: %r is not in %s exactly once; update this step" % (old, path))
+          open(path, "w", encoding="utf-8").write(src.replace(old, new))
+          PY
+          }
+          expect_red() {
+            if python3 -I "$copy" >"$TMP/out.txt" 2>&1; then
+              echo "✗ VACUOUS SUITE: $1 passed." >&2
+              exit 1
+            fi
+            grep -q "$2" "$TMP/out.txt" || {
+              echo "✗ the suite failed, but not on the injected defect ($1):" >&2
+              tail -30 "$TMP/out.txt" >&2
+              exit 1
+            }
+            echo "  ✓ red on: $1"
+          }
+          gate="$TMP/38-conversational-ai-system/tools/outbound_gate.py"
+          send="$TMP/38-conversational-ai-system/tools/pb_send.py"
+          mutate "$gate" "def dispatch(" "def dispatch_renamed("
+          expect_red "a renamed function (outbound_gate.dispatch)" "outbound_gate.py: dispatch"
+          cp "$root/38-conversational-ai-system/tools/outbound_gate.py" "$gate"
+          mutate "$send" 'add_parser("reply"' 'add_parser("reply_renamed"'
+          expect_red "a renamed subcommand (pb_send reply)" "pb_send.py: reply"
+          echo "✓ Skill 84 wiring test ran and passed, and goes red on a renamed function and a renamed subcommand"
+
   # The one-process whole-tree Skill 75 pytest run (the exact command the
   # "Skill 75 pytest collection + run" step ran on one core before it went
   # per-file), on its own runner so it overlaps the long qc-static job instead
