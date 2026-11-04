@@ -78,8 +78,7 @@ jobs:
 
   clean-install:
     name: Skill 72 clean install (T03)
-    # Pinned to the same image as the fast gate so both jobs gate the skill
-    # against the environment its render-font evidence was recorded on.
+    # Pinned to the same image as the fast gate.
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repo
