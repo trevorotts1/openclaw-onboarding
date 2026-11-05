@@ -140,7 +140,23 @@ def build_pointer(heading: str, summary: str, triggers: list[str], ref_path: str
         lines.append(s)
     trig = [t.strip() for t in triggers if t and t.strip()]
     if trig:
-        lines.append("**Triggers:** " + " · ".join(trig))
+        # Short single-line declarations stay on one compact "Triggers:" line.
+        # Anything that is a numbered rule, a bulleted prohibition, or a
+        # multi-line unit is emitted VERBATIM on its own lines: joining those
+        # with " · " is what produced the 2026-11-04 gibberish.
+        simple = [
+            t for t in trig
+            if _RULE_LINE_RE.match(t) is None
+            and _BULLET_GATE_RE.match(t) is None
+            and _TRIGGER_DECL_RE.match(t) is not None
+            and len(t) <= 200
+        ]
+        structured = [t for t in trig if t not in simple]
+        if simple:
+            lines.append("**Triggers:** " + " · ".join(simple))
+        if structured:
+            lines.append("**Binding rules (kept verbatim — these are in force):**")
+            lines.extend(structured)
     target = ref_path if not anchor else f"{ref_path} §{anchor}"
     lines.append(f"{POINTER_SENTINEL} {target} — read it BEFORE acting on this "
                  f"surface; never work from memory.")
@@ -281,6 +297,114 @@ _GATE_LINE_RE = re.compile(
 )
 HARD_GATE_MAX_LINES = 6
 
+# A managed block whose NAME or HEADING declares binding rules is never reduced
+# to a pointer. Pointerizing one is how SKILL38_RUNTIME_INVARIANTS lost its six
+# safety rules on 2026-11-04 while still claiming they were in force.
+PROTECTED_BLOCK_RE = re.compile(
+    r"(INVARIANTS|SAFETY|HARD[\s_-]*RULE|NEVER[\s_-]*DO|PROHIBIT|GATE\b)",
+    re.IGNORECASE,
+)
+
+# A numbered rule: "1. ", "2) " ... kept WHOLE (item + continuation lines).
+_RULE_LINE_RE = re.compile(r"^\s*\d+[.)]\s+\S")
+# A bulleted prohibition.
+_BULLET_GATE_RE = re.compile(
+    r"^\s*[-*]\s+\*{0,2}(?:NEVER|ALWAYS|MUST\s+NOT|DO\s+NOT|REFUSE|HARD\s+GATE)\b",
+    re.IGNORECASE,
+)
+
+
+# A line that DECLARES a trigger at the top of a block. This is stricter than
+# _GATE_LINE_RE on purpose: _GATE_LINE_RE exists to catch a prohibition that
+# starts a paragraph, while this one only accepts an actual declaration.
+_TRIGGER_DECL_RE = re.compile(
+    r"""^\s*(?:
+          [⛔🚫❌]
+        | \*{0,2}(?:TRIGGERS?|TRIGGER\ PHRASES?)\*{0,2}\s*:
+    )""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+_BOLD_GATE_RE = re.compile(
+    r"\*\*\s*(?:NEVER|ALWAYS|MUST\s+NOT|DO\s+NOT|REFUSE|HARD\s+GATE)\b",
+    re.IGNORECASE,
+)
+
+
+def _binding_units(body: str) -> list[list[str]]:
+    """Every binding unit in a block, as the list of its raw lines.
+
+    A binding unit is:
+      * a numbered rule, kept WHOLE with its continuation lines;
+      * a bulleted prohibition;
+      * a trigger declaration;
+      * a prohibition that OPENS a paragraph (previous line blank).
+
+    The paragraph-start requirement is what stops hard-wrapped prose from being
+    chopped into fragments. A line reading "never to a parallel sequence.**" is
+    the middle of a sentence, not a rule, and treating it as one is exactly how
+    the 2026-11-04 pointer garbled six safety rules.
+    """
+    units, cur = [], []
+    prev_blank = True
+    for line in body.splitlines():
+        if not line.strip():
+            if cur:
+                units.append(cur)
+                cur = []
+            prev_blank = True
+            continue
+        starts_new = (
+            _RULE_LINE_RE.match(line)
+            or _BULLET_GATE_RE.match(line)
+            or _TRIGGER_DECL_RE.match(line)
+            or (prev_blank and _GATE_LINE_RE.match(line))
+            # A BOLDED prohibition is a declaration wherever it sits. The whole
+            # line (and its continuation) is kept -- never a slice of it.
+            or _BOLD_GATE_RE.search(line)
+        )
+        if starts_new:
+            if cur:
+                units.append(cur)
+            cur = [line]
+        elif cur:
+            cur.append(line)
+        prev_blank = False
+    if cur:
+        units.append(cur)
+    return units
+
+
+def _pointer_gate(body: str, ptr: str) -> str:
+    """Empty string when the pointer is safe; otherwise the reason it is not.
+
+    A pointer may only be stamped if every binding unit that was in the block
+    is still legible in the pointer. This is the check that did not exist when
+    the sweep mangled SKILL38_RUNTIME_INVARIANTS: the block was replaced by
+    harvested fragments and nothing validated that the rules survived.
+    """
+    units = _binding_units(body)
+    if not units:
+        return ""
+    if ptr.count("**") % 2:
+        return "pointer would carry an unbalanced bold marker"
+    missing = []
+    for unit in units:
+        first = unit[0].strip()
+        key = first[:80]
+        if key and key not in ptr:
+            missing.append(key)
+    if missing:
+        return ("would drop %d binding rule(s) — left verbatim (first: %s)"
+                % (len(missing), missing[0][:60]))
+    # A pointer that keeps nearly everything saves nothing and only adds a
+    # second place for the rules to drift. Leave such a block alone.
+    if len(ptr) >= len(body) * 0.9:
+        return ("pointer would not save space (%d -> %d chars) — left verbatim"
+                % (len(body), len(ptr)))
+    return ""
+
 # Two shapes of managed block exist in this repo, and both must survive a sweep
 # with their idempotency guard still matching:
 #   PAIR     <!-- BEGIN name --> ... <!-- END name -->   (skill:*, SKILL38:*)
@@ -293,22 +417,56 @@ _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$", re.MULTILINE)
 
 
 def _derive(body: str) -> tuple[str, str, list[str]]:
-    """Heading, one-line summary, and the hard-gate lines that must stay inline."""
+    """Heading, one-line summary, and the binding text that must stay inline.
+
+    Binding text is kept VERBATIM AND WHOLE. The previous version sliced
+    individual lines that happened to begin with "NEVER"/"Never" out of
+    hard-wrapped prose and joined them with " · ", which turned a block of six
+    numbered safety rules into `**Triggers:** NEVER open a gate. · never to a
+    parallel sequence.** Never enter the ...` -- a pointer that garbled the
+    rules it replaced while still promising they bound.
+    """
     heading, summary, keep = "", "", []
-    for line in body.splitlines():
+    lines = body.splitlines()
+    seen: set[str] = set()
+
+    def _add(unit_lines: list[str]) -> None:
+        for raw in unit_lines:
+            s = raw.rstrip()
+            if s.strip() and s not in seen:
+                seen.add(s)
+                keep.append(s)
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
         s = line.strip()
         if not s:
+            i += 1
             continue
         m = _HEADING_RE.match(line)
-        if m and not heading:
+        if m and not heading and not keep:
             heading = m.group(2).strip()
+            i += 1
             continue
-        if _GATE_LINE_RE.match(line):
-            if len(keep) < HARD_GATE_MAX_LINES and len(s) <= 300:
-                keep.append(s)
+        if _RULE_LINE_RE.match(line) or _BULLET_GATE_RE.match(line) or _GATE_LINE_RE.match(line):
+            unit = [line]
+            j = i + 1
+            while j < len(lines):
+                nxt = lines[j]
+                if not nxt.strip():
+                    break
+                if (_HEADING_RE.match(nxt) or _RULE_LINE_RE.match(nxt)
+                        or _BULLET_GATE_RE.match(nxt) or _GATE_LINE_RE.match(nxt)):
+                    break
+                unit.append(nxt)
+                j += 1
+            _add(unit)
+            i = j
             continue
         if not summary and not s.startswith(("<!--", ">", "```", "|", "-", "*", "#")):
             summary = s
+        i += 1
     if not summary:
         summary = "Managed block — full text moved out of the bootstrap file."
     if len(summary) > 240:
@@ -363,6 +521,8 @@ def sweep(bootstrap: Path, ref_file: Path, mode: str, min_chars: int,
     skip_res = [re.compile(s) for s in skip]
 
     def _skipped(name: str) -> bool:
+        if PROTECTED_BLOCK_RE.search(name):
+            return True
         return any(r.search(name) for r in skip_res)
 
     # ── PAIR blocks ──────────────────────────────────────────────────────────
@@ -381,6 +541,10 @@ def sweep(bootstrap: Path, ref_file: Path, mode: str, min_chars: int,
         heading, summary, keep = _derive(body)
         if mode == "full":
             continue
+        ptr = build_pointer(heading, summary, keep, str(ref_file), name)
+        gate = _pointer_gate(body, ptr)
+        if gate:
+            skipped.append({"marker": name, "why": gate}); continue
         if not dry_run:
             try:
                 write_reference(ref_file, name, body)
@@ -388,7 +552,6 @@ def sweep(bootstrap: Path, ref_file: Path, mode: str, min_chars: int,
                 skipped.append({"marker": name,
                                 "why": f"reference unwritable: {exc.__class__.__name__}"})
                 continue
-        ptr = build_pointer(heading, summary, keep, str(ref_file), name)
         text = replace_block(text, name, ptr)
         acted.append({"marker": name, "kind": "pair",
                       "from_chars": len(body), "to_chars": len(ptr)})
@@ -407,6 +570,10 @@ def sweep(bootstrap: Path, ref_file: Path, mode: str, min_chars: int,
                 continue
             heading, summary, keep = _derive(body)
             if mode == "full":
+                continue
+            gate = _pointer_gate(body, build_pointer("", summary, keep, str(ref_file), name))
+            if gate:
+                skipped.append({"marker": name, "why": gate})
                 continue
             if not dry_run:
                 try:
