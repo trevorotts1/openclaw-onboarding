@@ -1,5 +1,15 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.79: the two-roots release (one release at two roots is agreement, not a contradiction)
+
+In plain English: `install-runtime.mjs` records the directory `wire.sh` ran from, while the OpenClaw agent resolver serves `~/.agents/skills/council-of-wise-elders`, so the selected-tree gate compared two paths that can never be equal and withheld the roll sentinel (boxes ended 78/79 wired). The gate now accepts the same release at two roots: the record and the agent evidence agree when both present the same skill version and the same canonical aggregate, never merely because each names a plausible directory, and the selected copy is still verified in full. Source only: no box was written, no provider or Telegram call made, and no paid Council session run.
+
+- Selected-tree gate: agent evidence no longer contradicts the install-record when both roots present the same release identity (skill version + canonical aggregate). A different release, a different version, or an unreadable manifest is still refused.
+- Tree identity: the root `.wired-<version>` roll sentinels are excluded, matching `treeAudit()`, so the tree that carries the sentinel is not declared a different release from the byte-identical copy beside it.
+- Distribution record: a 999 distribution that vendors the release's own `.skill` archive verbatim is no longer refused for declaring `generated_archive_not_vendored`; a carried archive whose bytes differ from the release is still refused.
+- Tests: a regression test covers the duplicates-present same-release case, plus the same-version-different-content refusal and the vendored-archive distribution.
+- Version carriers: `version`, `skill-version.txt`, `SKILL.md` frontmatter and the regenerated manifest all read 1.0.79.
+
 ## v1.0.78: the directory-regression release (source and test surface reconciled)
 
 In plain English: the batch that shipped 1.0.75-1.0.77 left six directory-test failures behind. This release fixes the causes, not the expectations: the PDF contract check now runs before the renderer, the critical-front-door contract is checked on the code that can actually write config, the readiness fixture ships a real plugin package and gains a genuine missing-plugin negative, and the changelog no longer lags the version carriers. It also makes the critical contract run in the vendored distribution instead of assuming the onboarding repository layout. Source only: no box was written, no provider or Telegram call made, and no paid Council session run.
