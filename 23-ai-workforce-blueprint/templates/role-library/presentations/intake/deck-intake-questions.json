@@ -1,8 +1,8 @@
 {
   "$schema": "https://openclaw.ai/schemas/interview-section/v1",
   "section": "deck-intake",
-  "version": "1.14.0",
-  "description": "Deck intake v1.14.0 (motion graphics election, FIX-PLAN Item 34): identical 23 merged turns, 20 required, 52 physical rows (two alias rows added: want_motion_graphics at 20.04, motion_graphics_declined_reason at 22.08). The motion election rides the EXISTING turns (no new turn, per the 23-turn ceiling): growth_assets gains the want_motion_graphics subfield (default no, boolish, same shape as its sales/VSL siblings) and its prompt names the option; decline_context gains the conditional motion_graphics_declined_reason subfield and its prompt names the item. storeTarget and waiver_field_mapping gain the motion_graphics pair; the waiver discipline is identical to the other elections (explicit no plus the client's verbatim reason, or --complete cannot pass). The election promises only that elected pieces are embedded in the deck file with the designed slide as their still; playback inside PowerPoint is UNVERIFIED and is never promised. Otherwise identical prompts, enums, required flags, storeTarget and waiver contract as v1.13.0. Deck intake v1.13.0 (Skill 50 email election, FIX-PLAN Item 33c): identical 23 merged turns, 20 required, 50 physical rows (two alias rows added: want_email_sequences at 20.03, email_sequences_declined_reason at 22.07). The email election rides the EXISTING turns (no new turn, per the 23-turn ceiling): growth_assets gains the want_email_sequences subfield (default no, boolish, same shape as its sales/VSL siblings) and its prompt names the option; decline_context gains the conditional email_sequences_declined_reason subfield and its prompt names the item. storeTarget and waiver_field_mapping gain the email_sequences pair; the waiver discipline is identical to the other elections (explicit no plus the client's verbatim reason, or --complete cannot pass). Otherwise identical prompts, enums, required flags, storeTarget and waiver contract as v1.12.0. Deck intake v1.12.0 (Flash route correction): identical 23 merged turns, 20 required, 48 physical rows, same prompts (order-9 workhorse example now deepseek-flash@deepseek-direct, legacy deepseek-v4-flash still accepted), enums, required flags, storeTarget and waiver contract as v1.11.0. New stage metadata groups stage-1 into five beats (purpose/audience, existing materials, desired outputs, deadline/CTA, provider/resource preference) with a review-and-edit summary, conditions later turns on selected deliverables plus missing stage inputs, reuses locked client preferences without re-interview, and sets UX targets (new-client valid brief at most 11 interactions, repeat-client at most 6, preference reuse 100%). 23 turns is the CEILING, never the norm.",
+  "version": "2.0.0",
+  "description": "One actual question per client turn or app screen. Each subfield.question is the active prompt for that field; the merged parent rows remain compatibility records for saved sessions and legacy answer imports only. Never present a merged parent prompt to the client. Existing storeTarget, conditional branches, deterministic derivations and verbatim waiver provenance are preserved.",
   "legacy_field_mapping": {
     "_comment": "Canonical mapping table (SOURCE OF TRUTH mirrored in deck-intake-driver.py:derive_legacy_fields). presentation_type -> {deck_type, creation_mode, presentation_mode, audience_mode}. Applied automatically the moment the driver records a validated presentation_type answer, and again at --complete when it writes/merges working/copy/intake.json.",
     "from_scratch": {
@@ -104,7 +104,6 @@
     "STYLE_PICK_AUTO": "pre_presentation_capture.STYLE_PICK_AUTO"
   },
   "session_budget": {
-    "max_turns": 23,
     "max_minutes": 25,
     "ux_targets": {
       "new_client_valid_brief_max_interactions": 11,
@@ -112,7 +111,9 @@
       "preference_reuse_rate": 1.0,
       "baseline_turns": 23,
       "note": "PRES-056: targets set at fixture design. A required SOP/QC obligation is never dropped to hit a target; targets measure interaction count only."
-    }
+    },
+    "note": "Ask one actual question per turn. Reuse validated answers and applicable locked preferences. Duration and interaction targets are measurements, never reasons to merge questions or omit required decisions.",
+    "max_turns": 68
   },
   "questions": [
     {
@@ -132,12 +133,22 @@
             "content_general",
             "signature"
           ],
-          "note": "branch keyword decides; legacy deck_type/creation_mode/presentation_mode/audience_mode derive from it via the standard mapping"
+          "note": "branch keyword decides; legacy deck_type/creation_mode/presentation_mode/audience_mode derive from it via the standard mapping",
+          "question": {
+            "prompt": "What kind of presentation do you need?"
+          }
         },
         "pitch_included": {
           "storeOn": "PITCH_INCLUDED",
           "note": "explicit owner decision; true keeps commercial turns and false suppresses only commercial turns; never inferred or defaulted",
-          "kind": "boolean"
+          "kind": "boolean",
+          "question": {
+            "prompt": "Will this presentation include an offer or pitch?",
+            "allowed_values": [
+              "yes",
+              "no"
+            ]
+          }
         },
         "signature_source": {
           "storeOn": "SIGNATURE_SOURCE",
@@ -149,6 +160,9 @@
           "conditional_on": {
             "id": "presentation_type",
             "equals": "signature"
+          },
+          "question": {
+            "prompt": "Should this Signature Presentation use existing content or start from scratch?"
           }
         },
         "extracted_substance": {
@@ -160,7 +174,10 @@
               "content_general"
             ]
           },
-          "none_value": ""
+          "none_value": "",
+          "question": {
+            "prompt": "What is the one core idea your existing material must convey?"
+          }
         }
       },
       "stage": 1,
@@ -180,16 +197,28 @@
           "conditional_on": {
             "id": "presentation_type",
             "equals": "content_personal"
+          },
+          "question": {
+            "prompt": "What is the name of the person receiving this presentation?"
           }
         },
         "audience": {
-          "storeOn": "AUDIENCE"
+          "storeOn": "AUDIENCE",
+          "question": {
+            "prompt": "Who is the audience for this presentation?"
+          }
         },
         "audience_composition_note": {
-          "storeOn": "AUDIENCE_COMPOSITION_NOTE"
+          "storeOn": "AUDIENCE_COMPOSITION_NOTE",
+          "question": {
+            "prompt": "What should we know about the audience’s demographic composition?"
+          }
         },
         "representation_mix": {
-          "storeOn": "REPRESENTATION_MIX"
+          "storeOn": "REPRESENTATION_MIX",
+          "question": {
+            "prompt": "What demographic mix should the people in the slide images represent?"
+          }
         }
       },
       "stage": 1,
@@ -205,13 +234,19 @@
       "block_gate": true,
       "subfields": {
         "grounded_content": {
-          "storeOn": "GROUNDED_CONTENT"
+          "storeOn": "GROUNDED_CONTENT",
+          "question": {
+            "prompt": "What source material should ground this presentation?"
+          }
         },
         "named_methodology": {
           "storeOn": "NAMED_METHODOLOGY",
           "conditional_on": {
             "id": "pitch_included",
             "equals": true
+          },
+          "question": {
+            "prompt": "What is the name of your methodology, framework, or system?"
           }
         }
       },
@@ -228,13 +263,22 @@
       "block_gate": true,
       "subfields": {
         "goal": {
-          "storeOn": "GOAL"
+          "storeOn": "GOAL",
+          "question": {
+            "prompt": "What is the purpose of this presentation?"
+          }
         },
         "cta_action": {
-          "storeOn": "CTA_ACTION"
+          "storeOn": "CTA_ACTION",
+          "question": {
+            "prompt": "What exact action should the audience take at the end?"
+          }
         },
         "target_feeling": {
-          "storeOn": "TARGET_FEELING"
+          "storeOn": "TARGET_FEELING",
+          "question": {
+            "prompt": "How should the audience feel when the presentation ends?"
+          }
         }
       },
       "stage": 1,
@@ -250,16 +294,25 @@
       "block_gate": true,
       "subfields": {
         "transformation_promise": {
-          "storeOn": "TRANSFORMATION_PROMISE"
+          "storeOn": "TRANSFORMATION_PROMISE",
+          "question": {
+            "prompt": "What transformation does your offer promise?"
+          }
         },
         "primary_objection": {
-          "storeOn": "PRIMARY_OBJECTION"
+          "storeOn": "PRIMARY_OBJECTION",
+          "question": {
+            "prompt": "What is the main reason someone might decline your offer?"
+          }
         },
         "time_to_result": {
           "storeOn": "TIME_TO_RESULT",
           "conditional_on": {
             "id": "pitch_included",
             "equals": true
+          },
+          "question": {
+            "prompt": "How long does it typically take a client to see this result?"
           }
         }
       },
@@ -277,10 +330,16 @@
       "subfields": {
         "hook_seed": {
           "storeOn": "HOOK_SEED",
-          "none_value": "propose (never canonized as a client line)"
+          "none_value": "propose (never canonized as a client line)",
+          "question": {
+            "prompt": "What memorable line should the audience leave with?"
+          }
         },
         "tone": {
-          "storeOn": "TONE"
+          "storeOn": "TONE",
+          "question": {
+            "prompt": "What tone should carry this presentation?"
+          }
         }
       },
       "stage": 1,
@@ -297,7 +356,10 @@
       "subfields": {
         "duration_min": {
           "storeOn": "DURATION_MIN",
-          "kind": "integer"
+          "kind": "integer",
+          "question": {
+            "prompt": "How many minutes should the talk run?"
+          }
         },
         "slide_count": {
           "storeOn": "SLIDE_COUNT",
@@ -318,10 +380,16 @@
       "block_gate": true,
       "subfields": {
         "deadline": {
-          "storeOn": "DEADLINE"
+          "storeOn": "DEADLINE",
+          "question": {
+            "prompt": "When must this presentation be ready?"
+          }
         },
         "client_notes": {
-          "storeOn": "CLIENT_NOTES"
+          "storeOn": "CLIENT_NOTES",
+          "question": {
+            "prompt": "Anything else I should know before writing?"
+          }
         }
       },
       "stage": 1,
@@ -343,7 +411,11 @@
             "IN-DEPTH"
           ],
           "default": "QUICK",
-          "note": "answer selects later optional detail; never changes the 23-turn ceiling"
+          "note": "Selects optional detail without combining questions or changing build run mode.",
+          "question": {
+            "prompt": "Would you like a quick or in-depth interview?",
+            "help": "Quick uses essential defaults. In-depth offers more control. Both ask one actual question per turn."
+          }
         }
       },
       "stage": 1,
@@ -361,7 +433,12 @@
         "resource_plan": {
           "storeOn": "RESOURCE_PLAN",
           "conservative_value": "use conservative default",
-          "note": "FIX 8: asked once when probe data is incomplete, then locked via resource_profile.is_plan_locked; never re-asked"
+          "note": "FIX 8: asked once when probe data is incomplete, then locked via resource_profile.is_plan_locked; never re-asked",
+          "question": {
+            "prompt": "Which provider plan tier should this build use?",
+            "id": "provider_plan",
+            "help": "Use a provider name and tier label, or say “use conservative default.” Never provide API keys, endpoints, or account IDs. Model choices follow in separate questions."
+          }
         },
         "workhorse_model": {
           "storeOn": "WORKHORSE_MODEL",
@@ -373,7 +450,11 @@
             "authoring model",
             "workhorse_model"
           ],
-          "note": "CLIENT MODEL PLAN: the client's primary authoring/copy model, written as model@provider. Blank keeps the department default (model_router.CAPABILITY_CANDIDATES). Governs the authoring, prompt_authoring, cheap_text, creative_cheap and speech_text classes, and the reasoning classes too when it meets their long-context floor. Slot is called 'workhorse', never 'authoring_model': resource_profile.redact_record drops every key matching 'auth', so an 'authoring_model' key would vanish from the store on save."
+          "note": "CLIENT MODEL PLAN: the client's primary authoring/copy model, written as model@provider. Blank keeps the department default (model_router.CAPABILITY_CANDIDATES). Governs the authoring, prompt_authoring, cheap_text, creative_cheap and speech_text classes, and the reasoning classes too when it meets their long-context floor. Slot is called 'workhorse', never 'authoring_model': resource_profile.redact_record drops every key matching 'auth', so an 'authoring_model' key would vanish from the store on save.",
+          "question": {
+            "prompt": "Which model should do the main writing?",
+            "help": "Use model@provider, or leave blank to keep the department default. Never provide credentials."
+          }
         },
         "reasoning_model": {
           "storeOn": "REASONING_MODEL",
@@ -384,7 +465,11 @@
             "long context model",
             "reasoning_model"
           ],
-          "note": "CLIENT MODEL PLAN: long-context reasoning/synthesis model, as model@provider. Blank = department default. Naming a model that does not meet the long-context floor is HONOURED and recorded as an explicit floor waiver -- the client is never forced -- and the waiver is printed at launch."
+          "note": "CLIENT MODEL PLAN: long-context reasoning/synthesis model, as model@provider. Blank = department default. Naming a model that does not meet the long-context floor is HONOURED and recorded as an explicit floor waiver -- the client is never forced -- and the waiver is printed at launch.",
+          "question": {
+            "prompt": "Which model should handle long-context reasoning?",
+            "help": "Use model@provider, or leave blank to keep the department default. Never provide credentials."
+          }
         },
         "qc_model": {
           "storeOn": "QC_MODEL",
@@ -396,7 +481,11 @@
             "judge model",
             "qc_model"
           ],
-          "note": "CLIENT MODEL PLAN: the independent QC judge model, as model@provider. Blank = department default. Must be named explicitly: the workhorse never spills into the judge class, so a judge can never silently ride the same model identity that authored the artifact."
+          "note": "CLIENT MODEL PLAN: the independent QC judge model, as model@provider. Blank = department default. Must be named explicitly: the workhorse never spills into the judge class, so a judge can never silently ride the same model identity that authored the artifact.",
+          "question": {
+            "prompt": "Which model should independently judge the work?",
+            "help": "Use model@provider, or leave blank to keep the department default. Never provide credentials."
+          }
         },
         "thinking_mode": {
           "storeOn": "THINKING_MODE",
@@ -413,7 +502,10 @@
             "thinking mode",
             "thinking_mode"
           ],
-          "note": "CLIENT MODEL PLAN: recorded on the profile now; wiring it into per-call reasoning_effort is a separate change and is NOT done in this one."
+          "note": "CLIENT MODEL PLAN: recorded on the profile now; wiring it into per-call reasoning_effort is a separate change and is NOT done in this one.",
+          "question": {
+            "prompt": "What thinking level should the build use?"
+          }
         },
         "run_mode": {
           "storeOn": "RUN_MODE",
@@ -437,7 +529,10 @@
             "indepth"
           ],
           "refuse_message": "run mode got interview-depth vocabulary {value}. The RUN-MODE axis (FIX 11) is ultra|standard|economy and decides how the deck is BUILT (concurrency, ceiling, model mix); the INTERVIEW-DEPTH axis (FIX 30/36 standard_mode, --intake-depth) is quick|in-depth and decides how much of this interview you are asked. The two axes are never interchangeable and never share a slot.",
-          "note": "CLIENT RUN MODE (FIX 11): the client's own ultra|standard|economy declaration, riding THIS turn as a labelled subfield -- it never adds a 24th turn (Trevor ruling, session_budget.max_turns=23). Case-insensitive in, normalised lowercase out. An omitted or unrecognised answer records NOTHING and the launcher's own default (standard) applies: never ultra by default, because nothing silently launches at the operator ceiling. Deliberately NOT in storeTarget -- a run mode is an execution axis, not deck content, so it stays out of working/copy/intake.json's deck_brief. presentation-intake-poll.sh reads the RUN_MODE ledger key and hands it to the run-mode door (launcher --mode on the resume path, PRESENTATION_MODE on the new-intake path, which does not go through the launcher). Re-answering this turn WITHOUT a mode leaves an earlier declaration standing -- a client who already said ultra is not 'saying nothing', and a later answer about models must not silently downgrade their run; only an explicit new mode changes it, and only an explicit 'ultra' ever escalates to ultra. Distinct from interview_depth.standard_mode in every respect; see refuse_message."
+          "note": "Per-deck execution choice. Only an explicit ultra escalates to Ultra. Interview depth is a separate question. Stored on RUN_MODE for presentation-intake-poll.sh.",
+          "question": {
+            "prompt": "How hard should we run the build: Ultra, Standard, or Economy?"
+          }
         },
         "deepseek_variant": {
           "storeOn": "DEEPSEEK_VARIANT",
@@ -449,7 +544,10 @@
             "deepseek",
             "deepseek variant"
           ],
-          "note": "FIX 61: client picks their DeepSeek variant (flash=fast/cheap, pro=strongest). Sets the workhorse slot."
+          "note": "FIX 61: client picks their DeepSeek variant (flash=fast/cheap, pro=strongest). Sets the workhorse slot.",
+          "question": {
+            "prompt": "Which DeepSeek variant should the build use: Flash or Pro?"
+          }
         },
         "openrouter_model": {
           "storeOn": "OPENROUTER_MODEL",
@@ -457,7 +555,10 @@
             "openrouter",
             "openrouter model"
           ],
-          "note": "FIX 61: client picks their OpenRouter model (free text, e.g. z-ai/glm-5.3-flash). In ultra it replaces any Ollama-routed step."
+          "note": "FIX 61: client picks their OpenRouter model (free text, e.g. z-ai/glm-5.3-flash). In ultra it replaces any Ollama-routed step.",
+          "question": {
+            "prompt": "Which OpenRouter model should Ultra use?"
+          }
         },
         "ollama_plan": {
           "storeOn": "OLLAMA_PLAN",
@@ -470,7 +571,10 @@
             "ollama_plan",
             "ollama cloud plan"
           ],
-          "note": "FIX 62: client picks their Ollama Cloud plan tier ($20/month = 3 concurrent, $100/month = 8 concurrent). Recorded via resource_profile.record_plan_answer into the provider's cap-table entry; governs concurrency on Ollama-routed steps. Tier names match capacity.PLANS_BY_PROVIDER exactly."
+          "note": "FIX 62: client picks their Ollama Cloud plan tier ($20/month = 3 concurrent, $100/month = 8 concurrent). Recorded via resource_profile.record_plan_answer into the provider's cap-table entry; governs concurrency on Ollama-routed steps. Tier names match capacity.PLANS_BY_PROVIDER exactly.",
+          "question": {
+            "prompt": "Which Ollama Cloud plan are you on: $20/month or $100/month?"
+          }
         }
       },
       "help": "Ask-once contract (FIX 8): this is the ONLY question this interview ever asks about plans/limits. It is asked only when the automatic probe could not determine a provider's concurrency (capacity.probe()['resource_profile']['pending_questions'] is non-empty); a fully detected client is never asked it. The machine lock lives in resource_profile.py -- the resource profile is THE store for this answer, and after it is recorded there the provider entry is marked locked and NO later run or probe refresh ever re-asks. A decline ('use conservative default') is recorded the same way and keeps the conservative default (3). Never paste credentials, API keys, endpoints, or any account identifier anywhere in this answer -- plan tier name only. MODEL CHOICE (operator requirement 2026-09-04): the client is never forced onto a department default. The workhorse/reasoning/qc/thinking subfields of this SAME turn record a client model plan through resource_profile.record_model_plan() into profile['model_plan']; model_router.resolve_route consults it AHEAD of CAPABILITY_CANDIDATES, which becomes the default for a client who declares nothing. A declared provider the profile does not carry, or a model that provider's wired inventory does not list, is REFUSED right here at intake (the answer returns an error naming the wired inventory it was checked against) -- never at dispatch time. Answering this turn again with different models UPDATES the plan and appends to the audit log; a client changing their workhorse never needs an operator. ROUTE HONESTY (FIX 18): when the client's route involves Ollama, this turn ALSO presents the numeric honesty block, rendered live by presentation_job.route_honesty from capacity.py's own tables -- never from numbers typed into this bank. It is shown ONCE per account-level answer set and carries, in plain terms: the concurrency their Ollama tier actually buys (CAP_TABLE today: $20/month -> 3 at a time; $100/month -> 8 at a time of the account's 10, with 2 kept in reserve), what that means in rounds of work for a deck of their size, the standing warning that Ollama routes, local or cloud, are materially slower for this workload than direct API routes (no multiplier is quoted, ever), and the standing recommendation: for best results, use OpenRouter or DeepSeek Direct, because neither route holds a deck back with a provider concurrency cap and on those routes the machine is the only limit. The engine has no measured per-slide time for the client's setup, so no minutes estimate is quoted -- say so plainly rather than inventing one. The client's decision is recorded in the resource profile either way (accepted or declined); declining is just keeping their Ollama selection in this same answer, it changes nothing about how the deck is handled, and the block is not shown again unless the client changes their selection.",
@@ -488,10 +592,16 @@
       "block_gate": true,
       "subfields": {
         "offer_name": {
-          "storeOn": "OFFER_NAME"
+          "storeOn": "OFFER_NAME",
+          "question": {
+            "prompt": "What is the exact name of the offer sold at the end?"
+          }
         },
         "offer_stack": {
-          "storeOn": "OFFER_STACK"
+          "storeOn": "OFFER_STACK",
+          "question": {
+            "prompt": "What does the buyer receive with this offer?"
+          }
         }
       },
       "pitchless_skip": true,
@@ -507,7 +617,11 @@
       "block_gate": true,
       "subfields": {
         "event_price": {
-          "storeOn": "EVENT_PRICE"
+          "storeOn": "EVENT_PRICE",
+          "question": {
+            "prompt": "What does access to the event cost?",
+            "help": "Say “free” if access is free. This is separate from the price of the offer sold at the end."
+          }
         },
         "access_free": {
           "storeOn": "ACCESS_FREE",
@@ -534,10 +648,16 @@
           "enum": [
             "drop",
             "straight"
-          ]
+          ],
+          "question": {
+            "prompt": "Should the offer use a straight price or an anchor-and-reveal price drop?"
+          }
         },
         "final_price": {
-          "storeOn": "FINAL_PRICE"
+          "storeOn": "FINAL_PRICE",
+          "question": {
+            "prompt": "What is the final price of the offer?"
+          }
         },
         "price_anchor": {
           "storeOn": "PRICE_ANCHOR",
@@ -545,7 +665,10 @@
             "id": "price_mode",
             "equals": "drop"
           },
-          "none_value": ""
+          "none_value": "",
+          "question": {
+            "prompt": "What price anchor should precede the final price?"
+          }
         }
       },
       "pitchless_skip": true,
@@ -561,12 +684,22 @@
       "block_gate": true,
       "subfields": {
         "payment_plan": {
-          "storeOn": "PAYMENT_PLAN"
+          "storeOn": "PAYMENT_PLAN",
+          "question": {
+            "prompt": "What payment plan is available?"
+          }
         },
         "vip_tier": {
           "storeOn": "VIP_TIER",
           "kind": "boolean",
-          "default": false
+          "default": false,
+          "question": {
+            "prompt": "Will there be a VIP tier?",
+            "allowed_values": [
+              "yes",
+              "no"
+            ]
+          }
         },
         "vip_price": {
           "storeOn": "VIP_PRICE",
@@ -574,7 +707,10 @@
             "id": "vip_tier",
             "truthy": true
           },
-          "none_value": ""
+          "none_value": "",
+          "question": {
+            "prompt": "What is the VIP price?"
+          }
         },
         "vip_spots": {
           "storeOn": "VIP_SPOTS",
@@ -583,7 +719,10 @@
             "id": "vip_tier",
             "truthy": true
           },
-          "none_value": ""
+          "none_value": "",
+          "question": {
+            "prompt": "How many VIP spots are available?"
+          }
         }
       },
       "pitchless_skip": true,
@@ -599,7 +738,10 @@
       "block_gate": true,
       "subfields": {
         "proof_assets": {
-          "storeOn": "PROOF_ASSETS"
+          "storeOn": "PROOF_ASSETS",
+          "question": {
+            "prompt": "Which proof assets should this presentation use?"
+          }
         }
       },
       "pitchless_skip": true,
@@ -616,19 +758,36 @@
       "subfields": {
         "style_source": {
           "storeOn": "STYLE_SOURCE",
-          "default": "create-new"
+          "default": "create-new",
+          "question": {
+            "prompt": "Should the slides use a new visual style or match your brand?"
+          }
         },
         "style_prefs": {
           "storeOn": "STYLE_PREFS",
-          "default": "fresh clean-white"
+          "default": "fresh clean-white",
+          "question": {
+            "prompt": "What visual style do you prefer?"
+          }
         },
         "brand_primary": {
-          "storeOn": "BRAND_PRIMARY"
+          "storeOn": "BRAND_PRIMARY",
+          "question": {
+            "prompt": "Which brand reference should guide the slides?",
+            "help": "A logo link or a primary brand color can serve as the reference."
+          }
         },
         "dark_ok": {
           "storeOn": "DARK_OK",
           "kind": "boolean",
-          "default": false
+          "default": false,
+          "question": {
+            "prompt": "Are dark slides acceptable?",
+            "allowed_values": [
+              "yes",
+              "no"
+            ]
+          }
         },
         "style_pick_auto": {
           "storeOn": "STYLE_PICK_AUTO",
@@ -644,7 +803,11 @@
             "pick for me",
             "auto-pick"
           ],
-          "note": "STYLE-PICK AUTO OPT-IN (F5): rides THIS turn as a labelled subfield -- it never adds a 24th turn (Trevor ruling, session_budget.max_turns=23), the same ruling run_mode rides on the resource_plan turn. Deliberately NOT on resource_plan: that turn is asked ONLY when the capacity probe leaves a pending question (help: 'a fully detected client is never asked it'), so an opt-in parked there would be unreachable for most clients, while style_and_brand is required + block_gate and is therefore asked on every deck. NO default key on purpose: an omitted answer records NOTHING and the engine's phases.Engine._style_pick_intake_auto() reads a missing/falsy field as NO opt-in -- auto-picking for a silent client is the forgery FIX 29 exists to prevent. 'yes' is recorded by deck-intake-driver._record_style_pick_auto() as the BOOLEAN True (never the string 'yes': the engine tests `auto is True`) on the STYLE_PICK_AUTO ledger key and on the intake root key style_pick_auto that cmd_complete merges into working/copy/intake.json."
+          "note": "Per-deck permission, captured separately and stored as a real boolean. Silence never authorizes a timeout choice.",
+          "question": {
+            "prompt": "May I choose the first style variant if you have not replied after 45 minutes?",
+            "help": "Only an explicit yes authorizes a timeout choice. Otherwise the build waits for your selection."
+          }
         }
       },
       "help": "STYLE-PICK AUTO (F5): the style_pick_auto subfield is the client's own standing consent for the P-STYLE-PICK owner gateway (order 4.86, executor kind \"human\", budget 45 min). Recorded 'yes' -> intake.style_pick_auto = true (boolean) -> on a timeout the engine writes working/copy/style_preview_choice.json itself with auto_pick:true provenance and NO owner_msg_id, and the deck keeps rendering. Absent or 'no' -> the phase parks BLOCKED and waits for a real owner pick, which is recorded with `deck-intake-driver.py --run-dir <DIR> --style-pick A|B|C --owner-msg-id <id>`. The opt-in NEVER forges an owner_msg_id and never substitutes for a real pick that arrives in time -- a pick always wins over the timeout.",
@@ -661,7 +824,10 @@
       "subfields": {
         "visual_mix": {
           "storeOn": "VISUAL_MIX",
-          "default": "mix"
+          "default": "mix",
+          "question": {
+            "prompt": "What balance of people, product imagery, and text should the slides use?"
+          }
         }
       },
       "stage": 2
@@ -679,7 +845,14 @@
           "storeOn": "LOGO_ON_SLIDES",
           "kind": "boolean",
           "default": false,
-          "none_value": "cover/close only"
+          "none_value": "cover/close only",
+          "question": {
+            "prompt": "Should the logo appear beyond the cover and closing slides?",
+            "allowed_values": [
+              "yes",
+              "no"
+            ]
+          }
         }
       },
       "stage": 2
@@ -701,17 +874,26 @@
         "want_teleprompter": {
           "storeOn": "WANT_TELEPROMPTER",
           "boolish": true,
-          "default": "yes"
+          "default": "yes",
+          "question": {
+            "prompt": "Would you like a teleprompter version?"
+          }
         },
         "want_speech_script": {
           "storeOn": "WANT_SPEECH_SCRIPT",
           "boolish": true,
-          "default": "yes"
+          "default": "yes",
+          "question": {
+            "prompt": "Would you like a speech script?"
+          }
         },
         "want_audio_deliverable": {
           "storeOn": "WANT_AUDIO_DELIVERABLE",
           "boolish": true,
-          "default": "yes"
+          "default": "yes",
+          "question": {
+            "prompt": "Would you like an audio narration deliverable?"
+          }
         }
       },
       "stage": 2
@@ -726,12 +908,18 @@
       "block_gate": true,
       "subfields": {
         "delivery_destinations": {
-          "storeOn": "DELIVERY_DESTINATIONS"
+          "storeOn": "DELIVERY_DESTINATIONS",
+          "question": {
+            "prompt": "Where should I deliver the finished deck?"
+          }
         },
         "want_ghl_upload": {
           "storeOn": "WANT_GHL_UPLOAD",
           "boolish": true,
-          "default": "yes"
+          "default": "yes",
+          "question": {
+            "prompt": "Would you like the deck uploaded into GoHighLevel?"
+          }
         }
       },
       "stage": 2
@@ -748,22 +936,34 @@
         "want_sales_checkout": {
           "storeOn": "WANT_SALES_CHECKOUT",
           "boolish": true,
-          "default": "yes"
+          "default": "yes",
+          "question": {
+            "prompt": "Would you like the sales-and-checkout package alongside the presentation?"
+          }
         },
         "want_vsl_page": {
           "storeOn": "WANT_VSL_PAGE",
           "boolish": true,
-          "default": "no"
+          "default": "no",
+          "question": {
+            "prompt": "Would you like a video sales letter page?"
+          }
         },
         "want_email_sequences": {
           "storeOn": "WANT_EMAIL_SEQUENCES",
           "boolish": true,
-          "default": "no"
+          "default": "no",
+          "question": {
+            "prompt": "Would you like email follow-up sequences prepared as drafts?"
+          }
         },
         "want_motion_graphics": {
           "storeOn": "WANT_MOTION_GRAPHICS",
           "boolish": true,
-          "default": "no"
+          "default": "no",
+          "question": {
+            "prompt": "Would you like motion graphics embedded in this deck?"
+          }
         }
       },
       "stage": 2
@@ -781,7 +981,14 @@
           "storeOn": "WANT_AUDIO_DEMO",
           "kind": "boolean",
           "default": false,
-          "conditional_inline": true
+          "conditional_inline": true,
+          "question": {
+            "prompt": "Would you like an audio demo of the talk?",
+            "allowed_values": [
+              "yes",
+              "no"
+            ]
+          }
         },
         "speech_speed_preference": {
           "storeOn": "intake.json",
@@ -791,7 +998,10 @@
             "medium",
             "fast"
           ],
-          "default": "default"
+          "default": "default",
+          "question": {
+            "prompt": "At what pace should the audio narration be recorded?"
+          }
         },
         "target_wpm": {
           "storeOn": "TARGET_WPM",
@@ -827,7 +1037,11 @@
             "id": "want_teleprompter",
             "equals": "no"
           },
-          "no_note": true
+          "no_note": true,
+          "question": {
+            "prompt": "In your own words, why are you declining the teleprompter?",
+            "help": "Your answer is recorded verbatim as your waiver. There is no assistant-written fallback."
+          }
         },
         "speech_script_declined_reason": {
           "storeOn": "SPEECH_SCRIPT_DECLINED_REASON",
@@ -835,7 +1049,11 @@
             "id": "want_speech_script",
             "equals": "no"
           },
-          "no_note": true
+          "no_note": true,
+          "question": {
+            "prompt": "In your own words, why are you declining the speech script?",
+            "help": "Your answer is recorded verbatim as your waiver. There is no assistant-written fallback."
+          }
         },
         "ghl_upload_declined_reason": {
           "storeOn": "GHL_UPLOAD_DECLINED_REASON",
@@ -843,7 +1061,11 @@
             "id": "want_ghl_upload",
             "equals": "no"
           },
-          "no_note": true
+          "no_note": true,
+          "question": {
+            "prompt": "In your own words, why are you declining the GoHighLevel upload?",
+            "help": "Your answer is recorded verbatim as your waiver. There is no assistant-written fallback."
+          }
         },
         "audio_declined_reason": {
           "storeOn": "AUDIO_DECLINED_REASON",
@@ -851,7 +1073,11 @@
             "id": "want_audio_deliverable",
             "equals": "no"
           },
-          "no_note": true
+          "no_note": true,
+          "question": {
+            "prompt": "In your own words, why are you declining the audio deliverable?",
+            "help": "Your answer is recorded verbatim as your waiver. There is no assistant-written fallback."
+          }
         },
         "sales_checkout_declined_reason": {
           "storeOn": "SALES_CHECKOUT_DECLINED_REASON",
@@ -859,7 +1085,11 @@
             "id": "want_sales_checkout",
             "equals": "no"
           },
-          "no_note": true
+          "no_note": true,
+          "question": {
+            "prompt": "In your own words, why are you declining the sales-and-checkout package?",
+            "help": "Your answer is recorded verbatim as your waiver. There is no assistant-written fallback."
+          }
         },
         "vsl_page_declined_reason": {
           "storeOn": "VSL_PAGE_DECLINED_REASON",
@@ -867,7 +1097,11 @@
             "id": "want_vsl_page",
             "equals": "no"
           },
-          "no_note": true
+          "no_note": true,
+          "question": {
+            "prompt": "In your own words, why are you declining the video sales letter page?",
+            "help": "Your answer is recorded verbatim as your waiver. There is no assistant-written fallback."
+          }
         },
         "email_sequences_declined_reason": {
           "storeOn": "EMAIL_SEQUENCES_DECLINED_REASON",
@@ -875,7 +1109,11 @@
             "id": "want_email_sequences",
             "equals": "no"
           },
-          "no_note": true
+          "no_note": true,
+          "question": {
+            "prompt": "In your own words, why are you declining email follow-up sequences?",
+            "help": "Your answer is recorded verbatim as your waiver. There is no assistant-written fallback."
+          }
         },
         "motion_graphics_declined_reason": {
           "storeOn": "MOTION_GRAPHICS_DECLINED_REASON",
@@ -883,7 +1121,11 @@
             "id": "want_motion_graphics",
             "equals": "no"
           },
-          "no_note": true
+          "no_note": true,
+          "question": {
+            "prompt": "In your own words, why are you declining motion graphics?",
+            "help": "Your answer is recorded verbatim as your waiver. There is no assistant-written fallback."
+          }
         }
       },
       "stage": 2
@@ -892,8 +1134,8 @@
       "id": "presentation_type",
       "section": "deck-intake",
       "order": 0.0,
-      "prompt": "What kind of presentation is this? (1) From scratch -- we brainstorm and build it new. (2) From your content -- personal: turn something you already have (deck/video/transcript) into a presentation for ONE specific person. (3) From your content -- general: turn existing content into a presentation for a room/mass audience. (4) Signature Presentation -- the 4-phase, 100+-slide signature talk (The Rulebook / The Vault / The Quest / The Original).",
-      "help": "This single answer decides everything downstream -- deck type, creation mode, presentation mode, and audience mode are all derived automatically from it (see legacy_field_mapping at the top of this file). You never have to answer those separately. There is no default: this question must be answered by the client -- an unanswered or unrecognized answer must never be treated as 'from_scratch' or any other type. [FIX 30 alias row: captured inside merged turn 1; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "prompt": "What kind of presentation do you need?",
+      "help": "This single answer decides everything downstream -- deck type, creation mode, presentation mode, and audience mode are all derived automatically from it (see legacy_field_mapping at the top of this file). You never have to answer those separately. There is no default: this question must be answered by the client -- an unanswered or unrecognized answer must never be treated as 'from_scratch' or any other type.",
       "kind": "enum",
       "storeOn": "PRESENTATION_TYPE",
       "allowed_values": [
@@ -917,8 +1159,8 @@
       "id": "extracted_substance",
       "section": "deck-intake",
       "order": 0.51,
-      "prompt": "You said this deck comes from material you already have. In your own words, what is the ONE core idea in that material that the audience must walk away with?",
-      "help": "Asked only for the two CONTENT modes (content_personal / content_general). This is the SUBSTANCE the deck is extracted FROM -- build_deck.py's AF-MODE-UNSET gate refuses a content-mode deck that has none (SOP-MODE-00, P22-P29). It is the client's own words, never the assistant's summary. [FIX 30 alias row: captured inside merged turn 1; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "prompt": "What is the one core idea your existing material must convey?",
+      "help": "Asked only for the two CONTENT modes (content_personal / content_general). This is the SUBSTANCE the deck is extracted FROM -- build_deck.py's AF-MODE-UNSET gate refuses a content-mode deck that has none (SOP-MODE-00, P22-P29). It is the client's own words, never the assistant's summary.",
       "kind": "text",
       "storeOn": "EXTRACTED_SUBSTANCE",
       "required": true,
@@ -937,8 +1179,8 @@
       "id": "signature_source",
       "section": "deck-intake",
       "order": 0.52,
-      "prompt": "Is this Signature Presentation built from existing content you already have (a deck, video, or transcript), or are we building it from scratch with you?",
-      "help": "Only asked when presentation_type is 'signature'. Determines whether the signature run's creation_mode defaults to from_scratch or is overridden to a content_* mode (never left unset -- AF-MODE-UNSET). Skipped entirely for the other three presentation types. [FIX 30 alias row: captured inside merged turn 1; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "prompt": "Should this Signature Presentation use existing content or start from scratch?",
+      "help": "Only asked when presentation_type is 'signature'. Determines whether the signature run's creation_mode defaults to from_scratch or is overridden to a content_* mode (never left unset -- AF-MODE-UNSET). Skipped entirely for the other three presentation types.",
       "kind": "enum",
       "storeOn": "SIGNATURE_SOURCE",
       "allowed_values": [
@@ -963,8 +1205,8 @@
       "id": "recipient_name",
       "section": "deck-intake",
       "order": 1.01,
-      "prompt": "Who is this presentation for -- what is their name?",
-      "help": "Only asked when presentation_type is 'content_personal' (audience_mode:PERSONAL is the one NAMED mode and build_deck.py's _chk_intake requires a non-empty recipient_name for it). Skipped entirely for the other three presentation types. [FIX 30 alias row: captured inside merged turn 2; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "prompt": "What is the name of the person receiving this presentation?",
+      "help": "Only asked when presentation_type is 'content_personal' (audience_mode:PERSONAL is the one NAMED mode and build_deck.py's _chk_intake requires a non-empty recipient_name for it). Skipped entirely for the other three presentation types.",
       "kind": "text",
       "storeOn": "RECIPIENT_NAME",
       "required": true,
@@ -980,8 +1222,8 @@
       "id": "audience",
       "section": "deck-intake",
       "order": 1.02,
-      "prompt": "Beyond who's in the room (already captured), any additional specifics about this audience -- industry, income level, the pain point that brought them here?",
-      "help": "REPRESENTATION_MIX already captured the composition; do not re-ask the percentage question here. [FIX 30 alias row: captured inside merged turn 2; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "prompt": "Who is the audience for this presentation?",
+      "help": "REPRESENTATION_MIX already captured the composition; do not re-ask the percentage question here.",
       "kind": "text",
       "storeOn": "AUDIENCE",
       "required": true,
@@ -993,8 +1235,8 @@
       "id": "named_methodology",
       "section": "deck-intake",
       "order": 2.01,
-      "prompt": "Do you have a named methodology, framework, or system you deliver this through -- what is it called, in your own words?",
-      "help": "The BRANDED METHOD name that may appear on a NAMED_METHOD beat -- client-supplied ONLY, never invented by the copywriter. If you do not have a named method, say so plainly (e.g. 'no formal name, we just do X') rather than inventing one on the spot -- an honest 'no' is still a real answer and routes method-naming back to the owner for approval instead of a fabricated one shipping unapproved. [FIX 30 alias row: captured inside merged turn 3; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "prompt": "What is the name of your methodology, framework, or system?",
+      "help": "The BRANDED METHOD name that may appear on a NAMED_METHOD beat -- client-supplied ONLY, never invented by the copywriter. If you do not have a named method, say so plainly (e.g. 'no formal name, we just do X') rather than inventing one on the spot -- an honest 'no' is still a real answer and routes method-naming back to the owner for approval instead of a fabricated one shipping unapproved.",
       "kind": "text",
       "storeOn": "NAMED_METHODOLOGY",
       "required": true,
@@ -1010,8 +1252,8 @@
       "id": "goal",
       "section": "deck-intake",
       "order": 3.01,
-      "prompt": "In one line, what is this presentation FOR -- what do you want people to do at the end?",
-      "help": "This is the core objective the whole deck is built to serve (buy / book / join / enroll / something else). [FIX 30 alias row: captured inside merged turn 4; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "prompt": "What is the purpose of this presentation?",
+      "help": "This is the core objective the whole deck is built to serve (buy / book / join / enroll / something else).",
       "kind": "text",
       "storeOn": "GOAL",
       "required": true,
@@ -1023,8 +1265,8 @@
       "id": "cta_action",
       "section": "deck-intake",
       "order": 3.02,
-      "prompt": "What is the exact call-to-action -- the specific verb and next step you want them to take?",
-      "help": "Example: 'book a call', 'buy the program', 'join the waitlist'. This drives the closing slide's action language. [FIX 30 alias row: captured inside merged turn 4; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "prompt": "What exact action should the audience take at the end?",
+      "help": "Example: 'book a call', 'buy the program', 'join the waitlist'. This drives the closing slide's action language.",
       "kind": "text",
       "storeOn": "CTA_ACTION",
       "required": true,
@@ -1036,8 +1278,8 @@
       "id": "target_feeling",
       "section": "deck-intake",
       "order": 3.03,
-      "prompt": "How should they feel walking away from this presentation?",
-      "help": "The emotional target the whole arc is tuned toward (e.g. empowered, urgent, hopeful, challenged). [FIX 30 alias row: captured inside merged turn 4; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "prompt": "How should the audience feel when the presentation ends?",
+      "help": "The emotional target the whole arc is tuned toward (e.g. empowered, urgent, hopeful, challenged).",
       "kind": "text",
       "storeOn": "TARGET_FEELING",
       "required": true,
@@ -1049,21 +1291,21 @@
       "id": "transformation_promise",
       "section": "deck-intake",
       "order": 4.01,
-      "prompt": "What's the before-and-after this offer delivers -- who are they before, and who are they after?",
+      "prompt": "What transformation does your offer promise?",
       "kind": "text",
       "storeOn": "TRANSFORMATION_PROMISE",
       "required": true,
       "block_gate": true,
       "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1). May be pre-seeded from a content-to-presentation source brief (owner-confirmed, not re-interviewed).",
       "alias": true,
-      "help": " [FIX 30 alias row: captured inside merged turn 5; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]"
+      "help": ""
     },
     {
       "id": "time_to_result",
       "section": "deck-intake",
       "order": 4.02,
-      "prompt": "How long does it typically take a client to see this result once they start -- the real, honest timeframe?",
-      "help": "Sources the deck's EXPECTATION beat (e.g. '8 weeks to final, a shift in 2') -- client-supplied ONLY, never fabricated by the copywriter. State the true delivery timeframe in your own words, including 'it varies, typically N weeks' if that is the honest answer -- never invent a faster number to sound more impressive. [FIX 30 alias row: captured inside merged turn 5; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "prompt": "How long does it typically take a client to see this result?",
+      "help": "Sources the deck's EXPECTATION beat (e.g. '8 weeks to final, a shift in 2') -- client-supplied ONLY, never fabricated by the copywriter. State the true delivery timeframe in your own words, including 'it varies, typically N weeks' if that is the honest answer -- never invent a faster number to sound more impressive.",
       "kind": "text",
       "storeOn": "TIME_TO_RESULT",
       "required": true,
@@ -1079,8 +1321,8 @@
       "id": "tone",
       "section": "deck-intake",
       "order": 5.01,
-      "prompt": "Pick a tone -- Inspirational, Tough Love, Challenger, Teacher, Storyteller, High-Energy Hype, or Calm Premium. You can also blend two.",
-      "help": "One of the seven named styles, or a blend of two. [FIX 30 alias row: captured inside merged turn 6; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "prompt": "What tone should carry this presentation?",
+      "help": "One of the seven named styles, or a blend of two.",
       "kind": "text",
       "storeOn": "TONE",
       "required": true,
@@ -1092,20 +1334,20 @@
       "id": "client_notes",
       "section": "deck-intake",
       "order": 7.01,
-      "prompt": "Anything else important I should know before I start writing?",
+      "prompt": "Anything else I should know before writing?",
       "kind": "text",
       "storeOn": "CLIENT_NOTES",
       "required": false,
       "block_gate": false,
       "alias": true,
-      "help": " [FIX 30 alias row: captured inside merged turn 8; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]"
+      "help": ""
     },
     {
       "id": "offer_name",
       "section": "deck-intake",
       "order": 10.01,
-      "prompt": "What are you SELLING at the end -- the exact name of the product or offer?",
-      "help": "The OFFER sold at the end -- SEPARATE from the event/access price already captured. Never invented. [FIX 30 alias row: captured inside merged turn 11; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "prompt": "What is the exact name of the offer sold at the end?",
+      "help": "The OFFER sold at the end -- SEPARATE from the event/access price already captured. Never invented.",
       "kind": "text",
       "storeOn": "OFFER_NAME",
       "required": true,
@@ -1118,7 +1360,7 @@
       "section": "deck-intake",
       "order": 12.01,
       "prompt": "What is the final price of the offer?",
-      "help": "The OFFER price ONLY -- NEVER copied or inferred from event_price/access_free. Set 0 only on the owner's EXPLICIT confirmation there is no paid offer (free_only_close). [FIX 30 alias row: captured inside merged turn 13; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "help": "The OFFER price ONLY -- NEVER copied or inferred from event_price/access_free. Set 0 only on the owner's EXPLICIT confirmation there is no paid offer (free_only_close).",
       "kind": "text",
       "storeOn": "FINAL_PRICE",
       "required": true,
@@ -1130,8 +1372,8 @@
       "id": "brand_primary",
       "section": "deck-intake",
       "order": 15.01,
-      "prompt": "Any brand colors or a logo you want on the slides?",
-      "help": "Skip if already on file for this client. [FIX 30 alias row: captured inside merged turn 16; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "prompt": "Which brand reference should guide the slides?",
+      "help": "Skip if already on file for this client.",
       "kind": "text",
       "storeOn": "BRAND_PRIMARY",
       "required": false,
@@ -1142,8 +1384,8 @@
       "id": "want_sales_checkout",
       "section": "deck-intake",
       "order": 20.01,
-      "prompt": "Do you need me to create a sales page and a checkout page to go along with your presentation? (yes / no) A 'yes' builds the sales page, the checkout page, and wires the checkout order form (lead-capture; card payments only in the provider sandbox until a merchant is connected -- live charges are never invented).",
-      "help": "Default YES. The sales page + checkout page + checkout order form is a standard upsell deliverable and one of the engine's fail-closed gates. The form ships as lead-capture (order form + follow-up workflow); live card charges need a connected merchant, otherwise the checkout phase reports an explicit actionable blocker while deck work continues. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the sales+checkout branch entirely. [FIX 30 alias row: captured inside merged turn 21; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "prompt": "Would you like the sales-and-checkout package alongside the presentation?",
+      "help": "Default YES. The sales page + checkout page + checkout order form is a standard upsell deliverable and one of the engine's fail-closed gates. The form ships as lead-capture (order form + follow-up workflow); live card charges need a connected merchant, otherwise the checkout phase reports an explicit actionable blocker while deck work continues. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the sales+checkout branch entirely.",
       "kind": "text",
       "allowed_values": [
         "yes",
@@ -1164,8 +1406,8 @@
       "id": "want_vsl_page",
       "section": "deck-intake",
       "order": 20.02,
-      "prompt": "Would you like a VSL page, a video sales letter page, to go along with this? (yes / no)",
-      "help": "Default NO -- a VSL page requires the video to exist (see the VSL video dependency: the VSL page references the hosted webinar/video, so a video must be produced before the page build). Default stays 'no' unless the owner explicitly opts in. A 'yes' is a fail-closed gate; a 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the VSL branch entirely. [FIX 30 alias row: captured inside merged turn 21; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "prompt": "Would you like a video sales letter page?",
+      "help": "Default NO -- a VSL page requires the video to exist (see the VSL video dependency: the VSL page references the hosted webinar/video, so a video must be produced before the page build). Default stays 'no' unless the owner explicitly opts in. A 'yes' is a fail-closed gate; a 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the VSL branch entirely.",
       "kind": "text",
       "allowed_values": [
         "yes",
@@ -1186,8 +1428,8 @@
       "id": "want_email_sequences",
       "section": "deck-intake",
       "order": 20.03,
-      "prompt": "Would you like email follow-up sequences prepared for this launch? (yes / no) A 'yes' elects the Skill 50 (Email Engine) delivery option: its 10-email promo sequence for the page launch and its 12-email appointment follow-up sequence, prepared as DRAFTS at delivery time and deployed draft-only through Skill 44 after a human approves them. Nothing is ever sent or armed automatically.",
-      "help": "Default NO -- the email sequences are an opt-in delivery option, not a standard deliverable, and only an explicit 'yes' opens the branch. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the email branch entirely: nothing is prepared at delivery. [FIX 30 alias row: captured inside merged turn 21; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "prompt": "Would you like email follow-up sequences prepared as drafts?",
+      "help": "Default NO -- the email sequences are an opt-in delivery option, not a standard deliverable, and only an explicit 'yes' opens the branch. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the email branch entirely: nothing is prepared at delivery.",
       "kind": "text",
       "allowed_values": [
         "yes",
@@ -1208,8 +1450,8 @@
       "id": "want_motion_graphics",
       "section": "deck-intake",
       "order": 20.04,
-      "prompt": "Would you like motion graphics in this deck: short video pieces embedded in the deck file for up to two slides? (yes / no) A 'yes' elects the motion option: each piece is produced for a slide chosen for motion and embedded in the deck file itself, with the designed slide as that piece's still image. The webinar video uses the same pieces.",
-      "help": "Default NO -- motion graphics are an opt-in election, asked on every run, and only an explicit 'yes' elects them. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the motion branch entirely: the deck is built still-only. What a 'yes' promises is that the pieces are embedded in the deck file with the designed slide as their still; playback inside Microsoft PowerPoint is UNVERIFIED and is never promised. [FIX 30 alias row: captured inside merged turn 21; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "prompt": "Would you like motion graphics embedded in this deck?",
+      "help": "Default NO -- motion graphics are an opt-in election, asked on every run, and only an explicit 'yes' elects them. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the motion branch entirely: the deck is built still-only. What a 'yes' promises is that the pieces are embedded in the deck file with the designed slide as their still; playback inside Microsoft PowerPoint is UNVERIFIED and is never promised.",
       "kind": "text",
       "allowed_values": [
         "yes",
@@ -1230,8 +1472,8 @@
       "id": "speech_speed_preference",
       "section": "deck-intake",
       "order": 21.01,
-      "prompt": "At what pace should we record the audio narration? Choose: default (our recommended setting), medium, or fast.",
-      "help": "Maps to Fish prosody.speed: default = 1.25 (recommended), medium = 1.3, fast = 1.33. Default if no preference: 1.25. [FIX 30 alias row: captured inside merged turn 22; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "prompt": "At what pace should the audio narration be recorded?",
+      "help": "Maps to Fish prosody.speed: default = 1.25 (recommended), medium = 1.3, fast = 1.33. Default if no preference: 1.25.",
       "kind": "text",
       "allowed_values": [
         "default",
@@ -1253,7 +1495,7 @@
       "section": "deck-intake",
       "order": 22.01,
       "prompt": "Understood -- no teleprompter. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
-      "help": "Asked ONLY when want_teleprompter is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked. [FIX 30 alias row: captured inside merged turn 23 (decline_context); kept physical for the waiver auto-skip consumer.]",
+      "help": "Asked ONLY when want_teleprompter is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
       "kind": "text",
       "storeOn": "TELEPROMPTER_DECLINED_REASON",
       "required": true,
@@ -1270,7 +1512,7 @@
       "section": "deck-intake",
       "order": 22.02,
       "prompt": "Understood -- no speech script. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
-      "help": "Asked ONLY when want_speech_script is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked. [FIX 30 alias row: captured inside merged turn 23 (decline_context); kept physical for the waiver auto-skip consumer.]",
+      "help": "Asked ONLY when want_speech_script is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
       "kind": "text",
       "storeOn": "SPEECH_SCRIPT_DECLINED_REASON",
       "required": true,
@@ -1287,7 +1529,7 @@
       "section": "deck-intake",
       "order": 22.03,
       "prompt": "Understood -- no GHL upload. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
-      "help": "Asked ONLY when want_ghl_upload is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked. [FIX 30 alias row: captured inside merged turn 23 (decline_context); kept physical for the waiver auto-skip consumer.]",
+      "help": "Asked ONLY when want_ghl_upload is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
       "kind": "text",
       "storeOn": "GHL_UPLOAD_DECLINED_REASON",
       "required": true,
@@ -1304,7 +1546,7 @@
       "section": "deck-intake",
       "order": 22.04,
       "prompt": "Understood -- no audio deliverable. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
-      "help": "Asked ONLY when want_audio_deliverable is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked. [FIX 30 alias row: captured inside merged turn 23 (decline_context); kept physical for the waiver auto-skip consumer.]",
+      "help": "Asked ONLY when want_audio_deliverable is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
       "kind": "text",
       "storeOn": "AUDIO_DECLINED_REASON",
       "required": true,
@@ -1321,7 +1563,7 @@
       "section": "deck-intake",
       "order": 22.05,
       "prompt": "Understood -- no sales page or checkout page. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
-      "help": "Asked ONLY when want_sales_checkout is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked. [FIX 30 alias row: captured inside merged turn 23 (decline_context); kept physical for the waiver auto-skip consumer.]",
+      "help": "Asked ONLY when want_sales_checkout is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
       "kind": "text",
       "storeOn": "SALES_CHECKOUT_DECLINED_REASON",
       "required": true,
@@ -1338,7 +1580,7 @@
       "section": "deck-intake",
       "order": 22.06,
       "prompt": "Understood -- no VSL page. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
-      "help": "Asked ONLY when want_vsl_page is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked. [FIX 30 alias row: captured inside merged turn 23 (decline_context); kept physical for the waiver auto-skip consumer.]",
+      "help": "Asked ONLY when want_vsl_page is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
       "kind": "text",
       "storeOn": "VSL_PAGE_DECLINED_REASON",
       "required": true,
@@ -1355,7 +1597,7 @@
       "section": "deck-intake",
       "order": 22.07,
       "prompt": "Understood -- no email sequences. In your own words, why don't you want them? (I record this verbatim so nobody later has to guess.)",
-      "help": "Asked ONLY when want_email_sequences is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked. [FIX 30 alias row: captured inside merged turn 23 (decline_context); kept physical for the waiver auto-skip consumer.]",
+      "help": "Asked ONLY when want_email_sequences is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
       "kind": "text",
       "storeOn": "EMAIL_SEQUENCES_DECLINED_REASON",
       "required": true,
@@ -1372,7 +1614,7 @@
       "section": "deck-intake",
       "order": 22.08,
       "prompt": "Understood -- no motion graphics. In your own words, why don't you want them? (I record this verbatim so nobody later has to guess.)",
-      "help": "Asked ONLY when want_motion_graphics is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked. [FIX 30 alias row: captured inside merged turn 23 (decline_context); kept physical for the waiver auto-skip consumer.]",
+      "help": "Asked ONLY when want_motion_graphics is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
       "kind": "text",
       "storeOn": "MOTION_GRAPHICS_DECLINED_REASON",
       "required": true,
@@ -1386,7 +1628,7 @@
     }
   ],
   "waiver_field_mapping": {
-    "_comment": "U026 \u2014 the CONSENT record. Each entry maps a gate key (see the engine's Gates class) to the intake question that captures the client's own decision, plus the conditional follow-up that captures their VERBATIM words when they decline. A gate may be waived ONLY by a record carrying a non-empty client_request_quote. Silence is NOT consent: every toggle here is required+block_gate, so --complete cannot pass while one is unanswered. prompt_floor and qc are deliberately ABSENT \u2014 a client cannot consent to a thinner prompt or a lower quality bar; those are craft floors, not options.",
+    "_comment": "U026 — the CONSENT record. Each entry maps a gate key (see the engine's Gates class) to the intake question that captures the client's own decision, plus the conditional follow-up that captures their VERBATIM words when they decline. A gate may be waived ONLY by a record carrying a non-empty client_request_quote. Silence is NOT consent: every toggle here is required+block_gate, so --complete cannot pass while one is unanswered. prompt_floor and qc are deliberately ABSENT — a client cannot consent to a thinner prompt or a lower quality bar; those are craft floors, not options.",
     "teleprompter": {
       "toggle": "want_teleprompter",
       "reason": "teleprompter_declined_reason"
@@ -1422,8 +1664,8 @@
   },
   "intake_v2": {
     "flag_env": "PRESENTATION_INTAKE_V2",
-    "default": "on",
-    "rollback": "set PRESENTATION_INTAKE_V2=0 in the driver environment: get_questions then returns every physical row (23 merged turns + 25 legacy aliases), reproducing the pre-FIX-30 one-question-per-turn interview. Bank backups live at presentation-fix-tests/backups/phase-b/deck-intake-questions.json.pre-fix30.",
+    "default": "one-question-per-field",
+    "rollback": "PRESENTATION_INTAKE_V2 only controls the legacy-bank fallback. The one-question conversation contract always wins for this bank; old merged answer IDs remain readable and importable.",
     "mapping": {
       "presentation_type": "captured:turn 1 (presentation_type)",
       "recipient_name": "conditional:turn 2 (asked when branch=content_personal)",
@@ -1488,5 +1730,12 @@
       "deadline": "captured:turn 8 (deadline)",
       "client_notes": "captured:turn 8 (client_notes)"
     }
+  },
+  "conversation_contract": {
+    "one_question_per_message": true,
+    "one_answer_field_per_question": true,
+    "legacy_parent_prompts": "compatibility-only; never ask",
+    "wait_for_answer": true,
+    "af_on_violation": "AF-INTAKE-BATCH"
   }
 }

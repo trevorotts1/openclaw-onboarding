@@ -7,6 +7,9 @@
 // the contract without drift).
 
 import { test } from "node:test";
+import { singleQuestionPayload } from "../schema/intake_fields.js";
+import { validateQuestionsPayload as validateD1Questions } from "../worker/src/lib.js";
+import { validateQuestionsPayload as validateR2Questions } from "../deployed-r2/src/lib.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -171,5 +174,33 @@ test("the PRES-006 UI page asks the conditional declined-reason only after a no"
     assert.match(html, /conditional_on: \{ id: "want_sales_checkout", equals: "no" \}/, page);
     assert.match(html, /conditional_on: \{ id: "want_vsl_page", equals: "no" \}/, page);
     assert.match(html, /function conditionMet/, page);
+  }
+});
+
+test("old session copy becomes scalar without changing its answer contract", () => {
+  const payload = { question_set: "standard", questions: [
+    { id: "brand_primary", prompt: "Do you have a logo or brand colors for the slides?", kind: "logo", storeOn: "deck_brief.BRAND_PRIMARY", required: false },
+    { id: "named_methodology", prompt: "Do you have a named methodology — what is it called?", kind: "text", storeOn: "deck_brief.NAMED_METHODOLOGY", required: true },
+    { id: "custom", prompt: "Which example fits your team?", kind: "text", conditional_on: { id: "presentation_type", equals: "from_scratch" } },
+  ] };
+  const before = JSON.stringify(payload);
+  const updated = singleQuestionPayload(payload);
+  assert.equal(JSON.stringify(payload), before, "stored payload is untouched");
+  assert.deepEqual(updated.questions.map(({ prompt, ...q }) => q), payload.questions.map(({ prompt, ...q }) => q));
+  assert.equal(updated.questions[0].prompt.includes("brand colors"), false);
+  assert.equal(updated.questions[1].prompt, "What is the name of your methodology, framework, or system?");
+  assert.deepEqual(updated.questions[2], payload.questions[2], "custom session copy is preserved");
+});
+
+test("neither worker can mint a new question with multiple answer fields", () => {
+  for (const validate of [validateD1Questions, validateR2Questions]) {
+    for (const q of [
+      { id: "group", kind: "merged", prompt: "Give your goal and CTA." },
+      { id: "group", kind: "text", prompt: "Give your goal and CTA.", subfields: { goal: {}, cta_action: {} } },
+      { id: "group", kind: "text", prompt: "Give your goal and CTA.", subfields: { goal: null, cta_action: {} } },
+    ]) assert.equal(validate({ question_set: "standard", questions: [q] }).ok, false);
+    assert.equal(validate({ question_set: "standard", questions: [
+      { id: "goal", kind: "text", prompt: "What is the purpose?" },
+    ] }).ok, true);
   }
 });

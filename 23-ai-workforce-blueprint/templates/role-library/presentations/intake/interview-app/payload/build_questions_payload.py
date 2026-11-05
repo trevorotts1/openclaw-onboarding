@@ -380,6 +380,20 @@ def build_signature_payload(run_id: str, signature_spec: dict | None) -> dict:
 def build_curated_payload(run_id: str, specs: dict, curated_ids: list[str],
                           store_target: dict | None = None) -> dict:
     by_id = {q.get("id"): q for q in specs.get("questions", [])}
+    # The same per-field projection drives the agent and hosted sessions.
+    # Standalone checkouts already carry the generated scalar snapshot.
+    intake_dir = pathlib.Path(__file__).resolve().parents[2]
+    if (intake_dir / "question_sequence.py").is_file():
+        if str(intake_dir) not in sys.path:
+            sys.path.insert(0, str(intake_dir))
+        from question_sequence import atomic_questions
+        if any(any(a.get("question") for a in (q.get("subfields") or {}).values())
+               for q in specs.get("questions", [])):
+            # Execution-only fields retain their established app storage
+            # paths through the projections below.
+            projected = {"run_mode", "deepseek_variant", "openrouter_model", "ollama_plan"}
+            by_id.update({q["id"]: q for q in atomic_questions(specs)
+                          if q["id"] not in projected})
     # FIX 11: run_mode is a PROJECTION of the bank's resource_plan.run_mode
     # subfield (see _project_run_mode_question), not a question row any JSON
     # carries -- so it is built HERE, where every caller passes through, rather
@@ -405,6 +419,8 @@ def build_curated_payload(run_id: str, specs: dict, curated_ids: list[str],
     # price → speech → sales/checkout → VSL → extras.
     questions = []
     for i in curated_ids:
+        if by_id[i].get("kind") == "merged":
+            raise ValueError(f"{i} is a compatibility row; select one answer field per question")
         q = _project_question(by_id[i])
         # Qualify storeOn via the canonical storeTarget table
         # (e.g. "OFFER_NAME" -> "deck_brief.OFFER_NAME") so the frontend can

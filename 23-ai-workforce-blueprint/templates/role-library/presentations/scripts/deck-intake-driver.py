@@ -10,24 +10,13 @@ Reads its question schema from intake/deck-intake-questions.json (the canonical
 source of truth). Supports two interview modes:
 
   STANDARD  (--next / --answer / --complete)
-    FIX 30 / schema v1.10.0: TWENTY-THREE numbered conversational turns
-    (Trevor ruling, binding), down from 58 one-per-turn rows. Each turn row
-    (kind "merged") may return several legacy subfields; every answer folds
-    into one ledger entry per legacy question id -- captured, derived, or
-    explicitly skipped with its documented default (never null) -- so every
-    downstream consumer (build_deck mandatory-field gates, the waiver
-    provenance contract, the interview-app payload aliases) sees exactly the
-    legacy fields it has always seen. The presentation_type branch is turn 1;
-    its answer derives all four legacy axis fields (deck_type, creation_mode,
-    presentation_mode, audience_mode) automatically via derive_legacy_fields().
-    Conditional subfields (recipient_name, signature_source,
-    extracted_substance) auto-skip when unmet. ROLLBACK:
-    PRESENTATION_INTAKE_V2=0 restores the legacy ask-all-physical-rows
-    interview (alias rows re-enter the sequence); the bank itself keeps the
-    exact pre-FIX-30 legacy rows verbatim as "alias" rows for that path.
-    The drift driver copy (23-ai-workforce-blueprint/scripts/deck-intake-
-    driver.py) is deliberately UNAFFECTED: it is a separate signature-mode
-    instrument with its own bank consumption path.
+    Each response asks for one independent answer field. The canonical bank's
+    subfield.question copy is projected by intake/question_sequence.py for the
+    agent and hosted payload. Legacy merged rows remain readable for saved
+    sessions and answer imports; they are never active client prompts. Each
+    field keeps its existing ledger/storeTarget mapping, conditional branch,
+    deterministic derivation and waiver provenance. Neither the old rollback
+    flag nor an interaction target may combine client questions.
 
   SIGNATURE (--signature --sig-next / --signature --sig-answer ID TEXT)
     Choice-first (QUICK vs IN-DEPTH), then the SACRED 8 Questions +
@@ -75,15 +64,8 @@ INTAKE_DIR = DEPT_ROOT / "intake"
 QUESTIONS_PATH = INTAKE_DIR / "deck-intake-questions.json"
 
 # ---------------------------------------------------------------------------
-# FIX 30: PRESENTATION_INTAKE_V2 -- merged-turn ask-sequence flag.
-# DEFAULT ON. ON  -> get_questions() filters out the bank's "alias" rows, so
-#                    the ask sequence is the 23 numbered merged turns.
-# OFF (0/off/false/no in the env) -> every physical row is returned and asked
-#                    one per turn: the pre-FIX-30 legacy interview, byte-for-
-#                    byte the same rows the old v1.7.0 bank carried.
-# Paired contract: intake/deck-intake-questions.json v1.8.0 (subfields on turn
-# rows + verbatim legacy alias rows). With an older alias-less bank the filter
-# is a no-op and behavior is the old one regardless of the flag.
+# PRESENTATION_INTAKE_V2 controls legacy-bank compatibility only. A bank's
+# one-question conversation contract always takes precedence over the flag.
 # ---------------------------------------------------------------------------
 def intake_v2_enabled() -> bool:
     raw = (os.environ.get("PRESENTATION_INTAKE_V2") or "on").strip().lower()
@@ -185,10 +167,14 @@ def load_question_schema() -> Dict[str, Any]:
 def get_questions(schema: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Extract the ordered question list from the schema.
 
-    FIX 30: while PRESENTATION_INTAKE_V2 is on (the default) the bank's
-    alias rows are filtered out of the ask sequence -- the 23 merged turn
-    rows carry the interview. Flag off: every row returns (legacy behavior).
+    Current banks project one field per question. Older banks retain their
+    alias filtering for compatibility; current-bank questions never batch.
     """
+    if (schema.get("conversation_contract") or {}).get("one_question_per_message"):
+        if str(INTAKE_DIR) not in sys.path:
+            sys.path.insert(0, str(INTAKE_DIR))
+        from question_sequence import atomic_questions
+        return atomic_questions(schema)
     questions = list(schema.get("questions", []))
     if intake_v2_enabled():
         questions = [q for q in questions if not q.get("alias")]
@@ -216,6 +202,8 @@ def should_ask(question: Dict[str, Any],
         if "in" in cond:
             if cond_val not in cond.get("in", []):
                 return False, f"conditional_on {cond_id} not in {cond['in']}"
+        if "truthy" in cond and not _truthy_value(cond_val):
+            return False, f"conditional_on {cond_id} is not truthy"
 
     # ask_if: {question_id, equals}, {question_id, contains}, etc.
     ask_if = question.get("ask_if")
@@ -533,7 +521,7 @@ def _first_unanswered(questions: List[Dict[str, Any]],
     for q in questions:
         qid = q["id"]
         store_on = q.get("storeOn", qid)
-        if store_on in answers or qid in answers:
+        if store_on in answers or qid in answers or q.get("answer_field", qid) in answers:
             continue
         should, _reason = should_ask(q, answers)
         if not should:
@@ -553,7 +541,7 @@ def _first_unanswered_progressive(questions: List[Dict[str, Any]],
     for q in questions:
         qid = q["id"]
         store_on = q.get("storeOn", qid)
-        if store_on in answers or qid in answers:
+        if store_on in answers or qid in answers or q.get("answer_field", qid) in answers:
             continue
         ask, _reason = should_ask_progressive(q, answers, selected,
                                               preferences)
@@ -622,6 +610,8 @@ def cmd_next(args) -> int:
     except Exception:
         pass
     _can_skip = _mode_fields_answered and not _ollama_needs_plan
+    if (schema.get("conversation_contract") or {}).get("one_question_per_message"):
+        _can_skip = not _ollama_needs_plan  # mode/model choices now have their own questions
     if _locked_next and "resource_plan" not in entries and _can_skip:
         now_iso = datetime.now(timezone.utc).isoformat()
         entries["resource_plan"] = {
@@ -687,9 +677,8 @@ def cmd_next(args) -> int:
 # derive_structured_answer() splits a free-text turn answer into
 # {legacy_key: value} covering every subfield of the turn row (captured,
 # derived, or the documented default/skip value -- never null), per the
-# bank's "subfields" annotations. The 23-turn ceiling (Trevor ruling) is a
-# property of the merged ask sequence (get_questions + intake_v2_enabled),
-# never of parsing.
+# bank's "subfields" annotations. This parser remains for legacy imports;
+# active questions pass one captured field plus deterministic derivations.
 #
 # Parsing contract (mirrored in the bank prompts): unlabelled prose routes
 # to the row's FIRST subfield in full (never dropped); lines of the form
@@ -1710,6 +1699,8 @@ def _record_client_model_plan(derived: Dict[str, Any],
     # deliberately not routed through storeTarget/intake.json).
     now_iso = datetime.now(timezone.utc).isoformat()
     for sub, slot, key in _MODEL_PLAN_SUBFIELDS:
+        if sub not in derived and not picks[slot]:
+            continue
         value = picks[slot]
         entries[key] = {"value": value, "validated": True,
                         "source": "deck-intake-driver", "answered_at": now_iso,
@@ -1723,9 +1714,10 @@ def _record_client_model_plan(derived: Dict[str, Any],
         entries["OPENROUTER_MODEL"] = {"value": openrouter_model, "validated": True,
                         "source": "deck-intake-driver", "answered_at": now_iso,
                         "normalized": openrouter_model, "answer": openrouter_model}
-    entries[_THINKING_SUBFIELD[1]] = {
-        "value": thinking, "validated": True, "source": "deck-intake-driver",
-        "answered_at": now_iso, "normalized": thinking, "answer": thinking}
+    if thinking or _THINKING_SUBFIELD[0] in derived:
+        entries[_THINKING_SUBFIELD[1]] = {
+            "value": thinking, "validated": True, "source": "deck-intake-driver",
+            "answered_at": now_iso, "normalized": thinking, "answer": thinking}
 
     rp = _import_resource_profile()
     if rp is None:
@@ -1892,9 +1884,8 @@ def _record_system_gauge_and_fleet_question(run_dir: Path,
 
 
 #: The client's RUN-MODE declaration (FIX 11: ultra|standard|economy). It
-#: rides the SAME resource_plan turn as the model plan above and is therefore
-#: NOT a 24th turn -- session_budget.max_turns stays 23 (Trevor ruling, pinned
-#: by tests/test_model_plan.py::test_the_bank_still_carries_exactly_twenty_three_turns).
+#: is asked separately in current interviews; the same writer also accepts
+#: the resource_plan subfield from legacy answer imports.
 _RUN_MODE_SUBFIELD = ("run_mode", "RUN_MODE")
 
 
@@ -1938,8 +1929,7 @@ def _record_run_mode(qdef: Dict[str, Any], derived: Dict[str, Any],
 
 
 #: The client's STYLE-PICK AUTO opt-in (F5). Like the run mode above it rides
-#: an EXISTING turn as a labelled subfield and therefore never adds a 24th turn
-#: (Trevor ruling, session_budget.max_turns=23). Its host turn is
+#: its own question in current interviews. Legacy imports still use
 #: `style_and_brand` (order 15), NOT `resource_plan`: resource_plan's own help
 #: text says it is asked ONLY when the capacity probe left a pending question
 #: ("a fully detected client is never asked it"), so an opt-in parked there
@@ -2036,7 +2026,7 @@ def cmd_answer(args) -> int:
     # while the flag filters it out of the ask sequence (the anti-fab test
     # drives --answer presentation_type / named_methodology / time_to_result
     # with V2 on; those rows are aliases).
-    all_rows = list(schema.get("questions", []))
+    all_rows = questions + list(schema.get("questions", []))
     qdef = None
     for q in all_rows:
         if q["id"] == qid:
@@ -2053,6 +2043,15 @@ def cmd_answer(args) -> int:
         print(json.dumps({"error": f"Unknown question id: {qid}"}))
         return 1
 
+    if qdef.get("answer_field") and qdef.get("required") and not text.strip():
+        print(json.dumps({"error": f"{qid} requires the client's answer"}))
+        return 1
+
+    # Only deterministic derivations accompany an atomic answer. Unasked
+    # sibling decisions must never receive defaults or overwrite prior words.
+    if qdef.get("derived_fields"):
+        qdef = dict(qdef, subfields={**qdef["subfields"], **qdef["derived_fields"]})
+
     # The pitch branch is a typed owner decision, never a text inference.
     # Validate before creating a ledger row so malformed or contradictory
     # answers leave no partial intake state behind.
@@ -2065,7 +2064,7 @@ def cmd_answer(args) -> int:
 
     # Validate enum values (plain rows keep the legacy exact-match gate)
     allowed = qdef.get("allowed_values")
-    if allowed and text.strip() not in allowed:
+    if qid != "pitch_included" and allowed and text.strip() not in allowed and (text.strip() or qdef.get("required")):
         print(json.dumps({"error": f"Invalid value {text!r} for {qid}. "
                                    f"Allowed: {allowed}"}))
         return 1
@@ -2087,6 +2086,10 @@ def cmd_answer(args) -> int:
             print(json.dumps({"error": "signature presentations require pitch_included:true"}))
             return 1
     store_on = qdef.get("storeOn", qid)
+    preserved = {}
+    if qdef.get("answer_field") and not text.strip():
+        preserved = {key: entries[key] for key in (qid, store_on)
+                     if key in entries and prior_answers.get(key) not in (None, "")}
     entries[store_on] = {"value": text.strip(), "validated": True,
                          "source": "deck-intake-driver",
                          "answered_at": datetime.now(timezone.utc).isoformat()}
@@ -2181,7 +2184,7 @@ def cmd_answer(args) -> int:
         # secrets-adjacent resource profile (never intake.json, never the run
         # directory): the P4-PROMPT fan-out children re-resolve routes in a
         # separate process that inherits the profile path but has no run_dir.
-        if qid == "resource_plan":
+        if qid == "resource_plan" or qdef.get("legacy_parent") == "resource_plan":
             # FIX 18 ROUTE HONESTY -- capture the pre-answer offer state
             # FIRST, before any recorder below mutates the profile: whether
             # the numeric honesty block is owed for this account, and the
@@ -2198,8 +2201,11 @@ def cmd_answer(args) -> int:
             # AF-CAPACITY-UNMEASURED until an operator hand-ran the capacity
             # CLI. Recorded ahead of the model plan so a refused tier never
             # half-lands a model plan either.
-            rc = _record_plan_tier(qdef, text, entries, run_dir=run_dir,
-                                   session_hint=str(run_dir.name))
+            rc = 0
+            if qid == "resource_plan" or qdef.get("answer_field") in ("resource_plan", "ollama_plan"):
+                tier_text = text if qid == "resource_plan" or qdef.get("answer_field") == "resource_plan" else "ollama plan: " + text
+                rc = _record_plan_tier(qdef, tier_text, entries, run_dir=run_dir,
+                                       session_hint=str(run_dir.name))
             if rc != 0:
                 return rc
             # FIX 16: CLIENT RUN MODE (FIX 11) is recorded FIRST, so the
@@ -2241,8 +2247,17 @@ def cmd_answer(args) -> int:
         # explicitly, as a real boolean, because the engine's opt-in reader
         # tests `auto is True` and the generic loop above records the answered
         # string. See _record_style_pick_auto for the full contract.
-        if qid == "style_and_brand":
+        if qid in ("style_and_brand", "style_pick_auto"):
             _record_style_pick_auto(qdef, derived, entries)
+
+    if qdef.get("answer_field") in ("want_teleprompter", "want_speech_script", "want_audio_deliverable"):
+        current = _answer_view(entries)
+        toggles = ("want_teleprompter", "want_speech_script", "want_audio_deliverable")
+        if all(current.get(k) in ("yes", "no") for k in toggles):
+            parts = ["deck"] + [label for key, label in zip(toggles, ("teleprompter", "speech script", "audio deliverable")) if current[key] == "yes"]
+            value = ", ".join(parts) if len(parts) > 1 else "deck-only"
+            rec = {"value": value, "validated": True, "source": "derived", "normalized": value, "answer": value}
+            entries["deliverable_set"] = entries["DELIVERABLE_SET"] = rec
 
     # Handle presentation_type -- derive legacy fields immediately
     if qid == "presentation_type":
@@ -2279,6 +2294,7 @@ def cmd_answer(args) -> int:
                 return 1
 
     # Save ledger
+    entries.update(preserved)
     ledger["entries"] = entries
     ledger["status"] = "in_progress"
     ledger["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -2308,7 +2324,7 @@ def cmd_answer(args) -> int:
     # include this turn instead of going stale (or, under the old bug, being
     # silently destroyed). Never silent: stderr NOTICE + a JSON field below.
     extra: Dict[str, Any] = {}
-    if _freshness_offer is not None:
+    if _freshness_offer is not None and not qdef.get("answer_field"):
         # FIX 31: the freshness offer (or the decision's own message,
         # including a refused switch's plain reason) rides THIS turn's
         # response, under the same turn's numbers.
@@ -3447,8 +3463,7 @@ def _run_prove_sp_intake(run_dir: Path) -> List[Tuple[str, str]]:
 # PRES-056 -- progressive intake: stage plan, preference reuse, review/edit,
 # deliverable-conditioned refinement, autosave, UX metrics.
 #
-# The 23-turn bank is the CEILING (Trevor ruling, session_budget.max_turns=23),
-# never the norm. Every canonical required field, storeTarget mapping and
+# The legacy 23-turn count is an informational baseline, never an ask limit. Every canonical required field, storeTarget mapping and
 # waiver (decline-reason) contract is unchanged: this block only decides WHAT
 # to ask next, from WHERE a value may come, and HOW progress is measured.
 # Nothing here writes deck content, offer/pricing/research facts, credentials
@@ -3743,7 +3758,7 @@ def _first_unanswered_residual(questions, answers):
     for q in questions:
         qid = q["id"]
         store_on = q.get("storeOn", qid)
-        if store_on in answers or qid in answers:
+        if store_on in answers or qid in answers or q.get("answer_field", qid) in answers:
             continue
         should, _reason = should_ask(q, answers)
         if not should:

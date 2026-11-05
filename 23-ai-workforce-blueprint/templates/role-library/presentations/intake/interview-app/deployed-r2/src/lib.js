@@ -94,6 +94,9 @@ export function validateQuestionsPayload(payload) {
   const seen = new Set();
   for (const q of qs) {
     if (!q || typeof q !== "object") return { ok: false, error: "each question must be an object" };
+    if (q.kind === "merged" || Object.values(q.subfields || {}).filter((a) => !a?.derived).length > 1) {
+      return { ok: false, error: "each question must request one answer field" };
+    }
     if (typeof q.id !== "string" || !q.id) return { ok: false, error: "each question needs a string id" };
     if (seen.has(q.id)) return { ok: false, error: `duplicate question id '${q.id}'` };
     seen.add(q.id);

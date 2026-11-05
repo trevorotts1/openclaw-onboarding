@@ -218,7 +218,7 @@ class TestMotionQuestionDefinitions:
         # FIX 30 pattern (the email precedent): no new turn; the pair
         # rides growth_assets (order 20) and decline_context (order 22).
         growth = self.dq["growth_assets"]
-        assert growth["subfields"]["want_motion_graphics"] == {
+        assert {k: v for k, v in growth["subfields"]["want_motion_graphics"].items() if k != "question"} == {
             "storeOn": "WANT_MOTION_GRAPHICS", "boolish": True,
             "default": "no"}
         decline = self.dq["decline_context"]

@@ -12,6 +12,11 @@ on:
     paths:
       - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app/**
       - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/question_sequence.py
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/deck-intake-driver.py
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_one_question_intake.py
+      - 51-signature-presentation/intake/sp-8-questions.json
+      - 51-signature-presentation/scripts/intake_trace_check.py
       - tests/unit/u054-interview-a11y.test.sh
       - .github/workflows/presentation-intake-guard.yml
   pull_request:
@@ -19,6 +24,11 @@ on:
     paths:
       - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app/**
       - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/question_sequence.py
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/deck-intake-driver.py
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_one_question_intake.py
+      - 51-signature-presentation/intake/sp-8-questions.json
+      - 51-signature-presentation/scripts/intake_trace_check.py
       - tests/unit/u054-interview-a11y.test.sh
       - .github/workflows/presentation-intake-guard.yml
 concurrency:
@@ -35,6 +45,10 @@ jobs:
         with: { node-version: "22" }
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
+      - name: One actual question per turn (agent, app, signature, legacy-session resume)
+        run: |
+          python3 -m pip install pytest
+          python3 -m pytest -q 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_one_question_intake.py
       - name: Interview-app node suites (worker, PRES-006 contract, PRES-023 authority, PRES-024, branded page session flow)
         working-directory: 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app
         # test/test_dept_start_handoff.mjs is deliberately NOT run here: by
