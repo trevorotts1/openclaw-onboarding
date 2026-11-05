@@ -54,6 +54,15 @@ DEFAULT_BUDGET = {
 
 POLICY_MARKER = "<!-- CORE_REFERENCE_POLICY_V1 -->"
 
+# Blocks that CARRY binding rules. They may never be replaced by a pointer or
+# left with an emptied body. This is the 2026-11-04 failure: the block survived
+# with balanced tags and a resolving pointer, so every other check here passed
+# while the six safety rules inside it were gone.
+PROTECTED_BLOCKS = ("SKILL38: SKILL38_RUNTIME_INVARIANTS",)
+PROTECTED_LABEL_RE = re.compile(
+    r"(INVARIANTS|SAFETY|HARD[\s_-]*RULE|NEVER[\s_-]*DO|PROHIBIT)", re.IGNORECASE
+)
+
 # A backticked absolute path on any platform this fleet runs on: macOS boxes
 # live under /Users, VPS boxes under /data (and /root for a container home).
 _ABS_PATH_RE = re.compile(r"`((?:/Users/|/data/|/root/|/opt/|/home/)[^`]+)`")
@@ -68,6 +77,11 @@ _ABS_PATH_RE = re.compile(r"`((?:/Users/|/data/|/root/|/opt/|/home/)[^`]+)`")
 # construction, and a prefix list would only create silent blind spots on any
 # box whose master-files root sits somewhere the list did not anticipate.
 _POINTER_RE = re.compile(r"\*\*Full text:\*\*\s+(/\S+)")
+# Same pointer, but keeping the "§SECTION" tail. The path-only pattern above
+# cannot see the section, so a pointer to a file that exists but no longer
+# carries that section used to pass as valid.
+_POINTER_LINE_RE = re.compile(
+    r"\*\*Full text:\*\*\s+(/\S+)(?:\s*§\s*([^—\n]+?))?\s*(?:—|$)")
 _MARKER_RE = re.compile(r"<!--\s*(?:(BEGIN|END)\s+)?([A-Za-z][A-Za-z0-9_:\-. ]*?)\s*-->")
 
 # A path that is a TEMPLATE or a prose example, not a literal target to check.
@@ -181,12 +195,48 @@ def validate(workspace: Path, budget: dict[str, int], require_policy: bool) -> d
         # Every pointer must resolve, with no suffix filter and no placeholder
         # escape hatch: a pointer is a literal promise that this exact file is
         # readable right now.
-        for raw in _POINTER_RE.findall(text):
+        # A protected block must still carry its rules. Tags balancing is not
+        # enough: a body emptied between two balanced tags passes every other
+        # check in this file.
+        for pname in PROTECTED_BLOCKS:
+            begin = "<!-- BEGIN " + pname
+            if begin not in text:
+                continue
+            seg = text.split(begin, 1)[1]
+            if "<!-- END " + pname in seg:
+                seg = seg.split("<!-- END " + pname, 1)[0]
+            body = re.sub(r"<!--.*?-->", "", seg, flags=re.DOTALL)
+            body = "\n".join(l for l in body.splitlines() if l.strip())
+            if "**Full text:**" in body:
+                errors.append(f"{name}: {pname}: binding-rules block was replaced by a pointer")
+                continue
+            if len(body.splitlines()) < 2:
+                errors.append(f"{name}: {pname}: binding-rules block has an empty or gutted body")
+                continue
+            if not re.search(r"^\s*\d+[.)]\s+\S", body, re.MULTILINE):
+                errors.append(f"{name}: {pname}: binding-rules block no longer contains its numbered rules")
+
+        for pm in _POINTER_LINE_RE.finditer(text):
+            raw = pm.group(1)
             ref = Path(raw.split("#", 1)[0].rstrip("/"))
             checked.add(str(ref))
             if not ref.exists():
                 errors.append(f"{name}: DANGLING POINTER — full text not at {ref}")
                 missing_refs.append(str(ref))
+                continue
+            # The file existing is not enough: a pointer names a SECTION. If the
+            # section is not in the reference, the reader following the pointer
+            # finds nothing and the rule is gone even though the path resolves.
+            label = (pm.group(2) or "").strip()
+            if label:
+                try:
+                    ref_text = ref.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    ref_text = ""
+                if label not in ref_text:
+                    errors.append(
+                        f"{name}: POINTER SECTION MISSING — {ref} has no §{label}")
+                    missing_refs.append(str(ref) + " §" + label)
 
     return {
         "ok": not errors,
