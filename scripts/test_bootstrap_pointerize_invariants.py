@@ -109,7 +109,7 @@ def test_validator_rejects_a_pointerized_binding_block():
 
 def test_gate_notices_a_dropped_continuation_line():
     bp = _load(HERE / "bootstrap-pointerize.py", "bp_test")
-    body = ("1. **Rule one.** The opening clause,\nthe continuation that actually constrains.\n"
+    body = ("1. **Rule one.** The opening clause,\nthe continuation that actually constrains.\n\n"
             + "Filler prose that is not a rule and exists only so the pointer saves space.\n" * 12)
     full = bp.build_pointer("H", "s", bp._derive(body)[2], "/r.md", "X")
     assert bp._pointer_gate(body, full) == "", "intact pointer wrongly rejected"
@@ -138,6 +138,38 @@ def test_protection_honors_a_binding_heading():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+
+def test_shared_continuation_line_survives_in_both_rules():
+    bp = _load(HERE / "bootstrap-pointerize.py", "bp_test")
+    shared = "the same continuation line shared by two rules."
+    body = ("1. **Rule one.** Opens here,\n" + shared + "\n"
+            "2. **Rule two.** Opens differently,\n" + shared + "\n\n"
+            + "Filler prose so the pointer actually saves space.\n" * 12)
+    keep = bp._derive(body)[2]
+    assert keep.count(shared) == 2, "shared line was deduped out of one rule"
+    ptr = bp.build_pointer("H", "s", keep, "/r.md", "X")
+    assert bp._pointer_gate(body, ptr) == "", "intact pointer wrongly rejected"
+
+
+def test_validator_rejects_a_pointer_to_a_missing_section():
+    vd = _load(HERE / "validate-core-references.py", "vd_test")
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        ref = tmp / "ref.md"
+        ref.write_text("## only-other-section\n", encoding="utf-8")
+        (tmp / "AGENTS.md").write_text(
+            "<!-- BEGIN some-block -->\n"
+            "**Full text:** " + str(ref) + " \u00a7MISSING_SECTION \u2014 read it first.\n"
+            "<!-- END some-block -->\n", encoding="utf-8")
+        for other in ("MEMORY.md", "TOOLS.md", "USER.md", "SOUL.md", "IDENTITY.md"):
+            (tmp / other).write_text("", encoding="utf-8")
+        res = vd.validate(tmp, {"AGENTS.md": 200000}, False)
+        assert "POINTER SECTION MISSING" in " ".join(res["errors"]), (
+            "validator accepted a pointer to a section absent from the reference")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     tests = [
         test_derive_keeps_every_numbered_rule,
@@ -145,6 +177,8 @@ def main():
         test_validator_rejects_a_pointerized_binding_block,
         test_gate_notices_a_dropped_continuation_line,
         test_protection_honors_a_binding_heading,
+        test_shared_continuation_line_survives_in_both_rules,
+        test_validator_rejects_a_pointer_to_a_missing_section,
     ]
     failed = 0
     for t in tests:

@@ -395,10 +395,12 @@ def _pointer_gate(body: str, ptr: str) -> str:
     flat = re.sub(r"\s+", " ", ptr)
     missing = []
     for unit in units:
-        for raw in unit:
-            line = re.sub(r"\s+", " ", raw).strip()
-            if line and line not in flat:
-                missing.append(line[:80])
+        # The unit must survive as an ORDERED BLOCK. Checking lines one by one
+        # lets a shared line satisfy two different rules while one of them has
+        # actually lost it.
+        block = re.sub(r"\s+", " ", " ".join(l.strip() for l in unit)).strip()
+        if block and block not in flat:
+            missing.append(block[:80])
     if missing:
         return ("would drop %d binding rule(s) — left verbatim (first: %s)"
                 % (len(missing), missing[0][:60]))
@@ -435,10 +437,12 @@ def _derive(body: str) -> tuple[str, str, list[str]]:
     seen: set[str] = set()
 
     def _add(unit_lines: list[str]) -> None:
+        # No cross-unit dedupe. Two rules may legitimately share an identical
+        # continuation line; dropping the second copy silently weakens rule two
+        # while the gate still passes because the line exists once.
         for raw in unit_lines:
             s = raw.rstrip()
-            if s.strip() and s not in seen:
-                seen.add(s)
+            if s.strip():
                 keep.append(s)
 
     i = 0
@@ -528,9 +532,11 @@ def sweep(bootstrap: Path, ref_file: Path, mode: str, min_chars: int,
         if PROTECTED_BLOCK_RE.search(name):
             return True
         if body:
-            m = _HEADING_RE.search(body)
-            if m and PROTECTED_BLOCK_RE.search(m.group(2)):
-                return True
+            # EVERY heading, not just the first: a block can open with an
+            # innocuous heading and declare "## Safety" further down.
+            for m in _HEADING_RE.finditer(body):
+                if PROTECTED_BLOCK_RE.search(m.group(2)):
+                    return True
         return any(r.search(name) for r in skip_res)
 
     # ── PAIR blocks ──────────────────────────────────────────────────────────
