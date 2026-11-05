@@ -74,10 +74,12 @@ def test_sweep_never_pointerizes_a_binding_block():
         # block, or this test passes for the wrong reason.
         bp.sweep(boot, ref, "pointer", 0, [], False)
         after = boot.read_text(encoding="utf-8")
+        # Assert the COMPLETE rule text, not a prefix: a prefix check passes
+        # even when continuation lines (which carry the actual constraint) are
+        # dropped.
         for rule in RULES:
-            if re.match(r"^\s*\d+[.)]\s", rule):
-                assert rule.strip()[:40] in after, (
-                    "binding rule lost from the live file: " + rule[:60])
+            assert rule.strip() in after, (
+                "binding rule lost from the live file: " + rule[:60])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -105,11 +107,44 @@ def test_validator_rejects_a_pointerized_binding_block():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_gate_notices_a_dropped_continuation_line():
+    bp = _load(HERE / "bootstrap-pointerize.py", "bp_test")
+    body = ("1. **Rule one.** The opening clause,\nthe continuation that actually constrains.\n"
+            + "Filler prose that is not a rule and exists only so the pointer saves space.\n" * 12)
+    full = bp.build_pointer("H", "s", bp._derive(body)[2], "/r.md", "X")
+    assert bp._pointer_gate(body, full) == "", "intact pointer wrongly rejected"
+    gutted = full.replace("the continuation that actually constrains.", "")
+    assert bp._pointer_gate(body, gutted) != "", (
+        "gate accepted a pointer with a continuation line removed")
+
+
+def test_protection_honors_a_binding_heading():
+    bp = _load(HERE / "bootstrap-pointerize.py", "bp_test")
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        boot = tmp / "AGENTS.md"
+        ref = tmp / "ref" / "AGENTS.md"
+        text = ("<!-- BEGIN innocuous-name -->\n"
+                "## HARD SAFETY RULES\n"
+                + "\n".join(RULES) + "\n"
+                "<!-- END innocuous-name -->\n")
+        boot.write_text(text, encoding="utf-8")
+        bp.sweep(boot, ref, "pointer", 0, [], False)
+        after = boot.read_text(encoding="utf-8")
+        for rule in RULES:
+            assert rule.strip() in after, (
+                "block protected only by its heading was pointerized: " + rule[:50])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     tests = [
         test_derive_keeps_every_numbered_rule,
         test_sweep_never_pointerizes_a_binding_block,
         test_validator_rejects_a_pointerized_binding_block,
+        test_gate_notices_a_dropped_continuation_line,
+        test_protection_honors_a_binding_heading,
     ]
     failed = 0
     for t in tests:
@@ -119,6 +154,9 @@ def main():
         except AssertionError as exc:
             failed += 1
             print("FAIL", t.__name__, "->", exc)
+        except Exception as exc:  # e.g. the function under test does not exist
+            failed += 1
+            print("FAIL", t.__name__, "->", type(exc).__name__ + ": " + str(exc))
     print("\n%d/%d passed" % (len(tests) - failed, len(tests)))
     return 1 if failed else 0
 

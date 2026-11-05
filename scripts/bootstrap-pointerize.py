@@ -389,12 +389,16 @@ def _pointer_gate(body: str, ptr: str) -> str:
         return ""
     if ptr.count("**") % 2:
         return "pointer would carry an unbalanced bold marker"
+    # Every LINE of every unit must survive, not just the opening 80 characters:
+    # a gate that only checks a prefix cannot notice continuation lines being
+    # dropped, which is how the original damage stayed invisible.
+    flat = re.sub(r"\s+", " ", ptr)
     missing = []
     for unit in units:
-        first = unit[0].strip()
-        key = first[:80]
-        if key and key not in ptr:
-            missing.append(key)
+        for raw in unit:
+            line = re.sub(r"\s+", " ", raw).strip()
+            if line and line not in flat:
+                missing.append(line[:80])
     if missing:
         return ("would drop %d binding rule(s) — left verbatim (first: %s)"
                 % (len(missing), missing[0][:60]))
@@ -520,9 +524,13 @@ def sweep(bootstrap: Path, ref_file: Path, mode: str, min_chars: int,
     acted, skipped = [], []
     skip_res = [re.compile(s) for s in skip]
 
-    def _skipped(name: str) -> bool:
+    def _skipped(name: str, body: str = "") -> bool:
         if PROTECTED_BLOCK_RE.search(name):
             return True
+        if body:
+            m = _HEADING_RE.search(body)
+            if m and PROTECTED_BLOCK_RE.search(m.group(2)):
+                return True
         return any(r.search(name) for r in skip_res)
 
     # ── PAIR blocks ──────────────────────────────────────────────────────────
@@ -534,7 +542,7 @@ def sweep(bootstrap: Path, ref_file: Path, mode: str, min_chars: int,
             continue
         if POINTER_SENTINEL in body:
             skipped.append({"marker": name, "why": "already a pointer"}); continue
-        if _skipped(name):
+        if _skipped(name, body):
             skipped.append({"marker": name, "why": "excluded by --skip"}); continue
         if len(body) < min_chars:
             skipped.append({"marker": name, "why": f"under {min_chars} chars"}); continue
@@ -564,7 +572,7 @@ def sweep(bootstrap: Path, ref_file: Path, mode: str, min_chars: int,
             body = text[bstart:bend].strip("\n")
             if not body or POINTER_SENTINEL in body:
                 continue
-            if _skipped(name):
+            if _skipped(name, body):
                 continue
             if len(body) < min_chars:
                 continue
