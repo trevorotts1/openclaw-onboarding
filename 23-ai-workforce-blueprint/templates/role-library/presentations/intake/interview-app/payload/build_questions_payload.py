@@ -419,6 +419,8 @@ def build_curated_payload(run_id: str, specs: dict, curated_ids: list[str],
     # price → speech → sales/checkout → VSL → extras.
     questions = []
     for i in curated_ids:
+        if by_id[i].get("kind") == "merged":
+            raise ValueError(f"{i} is a compatibility row; select one answer field per question")
         q = _project_question(by_id[i])
         # Qualify storeOn via the canonical storeTarget table
         # (e.g. "OFFER_NAME" -> "deck_brief.OFFER_NAME") so the frontend can

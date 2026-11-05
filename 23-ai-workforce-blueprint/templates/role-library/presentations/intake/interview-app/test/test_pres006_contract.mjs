@@ -8,6 +8,8 @@
 
 import { test } from "node:test";
 import { singleQuestionPayload } from "../schema/intake_fields.js";
+import { validateQuestionsPayload as validateD1Questions } from "../worker/src/lib.js";
+import { validateQuestionsPayload as validateR2Questions } from "../deployed-r2/src/lib.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -188,4 +190,17 @@ test("old session copy becomes scalar without changing its answer contract", () 
   assert.equal(updated.questions[0].prompt.includes("brand colors"), false);
   assert.equal(updated.questions[1].prompt, "What is the name of your methodology, framework, or system?");
   assert.deepEqual(updated.questions[2], payload.questions[2], "custom session copy is preserved");
+});
+
+test("neither worker can mint a new question with multiple answer fields", () => {
+  for (const validate of [validateD1Questions, validateR2Questions]) {
+    for (const q of [
+      { id: "group", kind: "merged", prompt: "Give your goal and CTA." },
+      { id: "group", kind: "text", prompt: "Give your goal and CTA.", subfields: { goal: {}, cta_action: {} } },
+      { id: "group", kind: "text", prompt: "Give your goal and CTA.", subfields: { goal: null, cta_action: {} } },
+    ]) assert.equal(validate({ question_set: "standard", questions: [q] }).ok, false);
+    assert.equal(validate({ question_set: "standard", questions: [
+      { id: "goal", kind: "text", prompt: "What is the purpose?" },
+    ] }).ok, true);
+  }
 });

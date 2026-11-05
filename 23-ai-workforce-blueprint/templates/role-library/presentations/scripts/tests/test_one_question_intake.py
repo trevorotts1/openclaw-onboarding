@@ -153,6 +153,12 @@ def test_hosted_embedded_and_signature_prompts_are_single_questions():
     assert (APP / "pages/index.html").read_bytes() == (APP / "deployed-r2/public/index.html").read_bytes()
 
 
+def test_custom_hosted_question_list_cannot_request_a_merged_parent():
+    specs, _, targets = BUILDER.load_specs(ROOT)
+    with pytest.raises(ValueError, match="one answer field"):
+        BUILDER.build_curated_payload("atomic", specs, ["goal_cta_feeling"], targets)
+
+
 def test_scanner_rejects_compound_bank_prompts_and_accepts_atomic_questions():
     schema = DRIVER.load_question_schema()
     bank = SCANNER.load_bank_questions()
