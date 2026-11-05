@@ -394,16 +394,32 @@ def _pointer_gate(body: str, ptr: str) -> str:
     # dropped, which is how the original damage stayed invisible.
     flat = re.sub(r"\s+", " ", ptr)
     missing = []
+
+    def _norm(lines):
+        return re.sub(r"\s+", " ", "\n".join(l.rstrip() for l in lines if l.strip())).strip()
+
     for unit in units:
-        # The unit must survive as an ORDERED BLOCK. Checking lines one by one
-        # lets a shared line satisfy two different rules while one of them has
-        # actually lost it.
-        block = re.sub(r"\s+", " ", " ".join(l.strip() for l in unit)).strip()
-        if block and block not in flat:
-            missing.append(block[:80])
+        block = "\n".join(l.rstrip() for l in unit if l.strip())
+        if not block:
+            continue
+        # Structure first: the pointer emits kept lines with their newlines, so a
+        # multi-line rule that arrives as one line is a real loss.
+        if len(unit) > 1 and block not in ptr:
+            missing.append(block.splitlines()[0][:80])
+            continue
+        # Then occurrence COUNT: two identical units must not both be satisfied
+        # by a single surviving copy.
+        key = _norm(unit)
+        if flat.count(key) < sum(1 for u in units if _norm(u) == key):
+            missing.append("repeated rule under-represented: " + key[:60])
+            continue
+        if key not in flat:
+            missing.append(key[:80])
+
     if missing:
         return ("would drop %d binding rule(s) — left verbatim (first: %s)"
                 % (len(missing), missing[0][:60]))
+
     # A pointer that keeps nearly everything saves nothing and only adds a
     # second place for the rules to drift. Leave such a block alone.
     if len(ptr) >= len(body) * 0.9:
