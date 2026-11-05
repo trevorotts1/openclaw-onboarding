@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-06-28T00:00:00Z",
-  "version": "27.1.70",
+  "version": "27.1.71",
   "total_roles": 538,
   "total_departments": 68,
   "departments": {
@@ -6447,7 +6447,7 @@
     {
       "slug": "deep-research-specialist-sales",
       "dept": "sales",
-      "title": "Deep Research Specialist \u2014 Sales",
+      "title": "Deep Research Specialist — Sales",
       "role_type": "specialist",
       "word_count": 8639,
       "sop_count": 8,
@@ -6543,7 +6543,7 @@
     {
       "slug": "qc-specialist-sales",
       "dept": "sales",
-      "title": "QC Specialist \u2014 Sales",
+      "title": "QC Specialist — Sales",
       "role_type": "specialist",
       "word_count": 8703,
       "sop_count": 8,
@@ -8783,7 +8783,7 @@
     {
       "slug": "errands-purchases-specialist",
       "dept": "personal-assistant",
-      "title": "Errands & Purchases Specialist \u2014 role-library template",
+      "title": "Errands & Purchases Specialist — role-library template",
       "role_type": "specialist",
       "word_count": 5505,
       "sop_count": 6,
@@ -8799,7 +8799,7 @@
     {
       "slug": "family-life-stage-concierge",
       "dept": "personal-assistant",
-      "title": "Family Life-Stage Concierge \u2014 role-library template",
+      "title": "Family Life-Stage Concierge — role-library template",
       "role_type": "specialist",
       "word_count": 6783,
       "sop_count": 8,
@@ -8863,7 +8863,7 @@
     {
       "slug": "life-admin-archivist",
       "dept": "personal-assistant",
-      "title": "Life Admin Archivist \u2014 role-library template",
+      "title": "Life Admin Archivist — role-library template",
       "role_type": "specialist",
       "word_count": 6356,
       "sop_count": 8,
@@ -9023,7 +9023,7 @@
     {
       "slug": "the-challenger",
       "dept": "personal-assistant",
-      "title": "The Challenger \u2014 role-library template",
+      "title": "The Challenger — role-library template",
       "role_type": "specialist",
       "word_count": 7144,
       "sop_count": 8,
@@ -10482,9 +10482,9 @@
       "slug": "director-of-presentations-sops",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/director-of-presentations-sops.md",
-      "content_sha": "sha256:f75c7a9f36f0aeaf834eba143acaad6f473bb96db7bf7fc26e394cadf5708fab",
-      "content_version": "1.0.14",
-      "content_hashed_at": "2026-10-29T14:03:11.998921+00:00"
+      "content_sha": "sha256:a84932a8aeb909198def578903528bf8bd2a55b6c0e98677b5c1ee08f7e52e8a",
+      "content_version": "1.0.15",
+      "content_hashed_at": "2026-11-05T14:52:53.100758+00:00"
     },
     {
       "slug": "first-time-onboarding-presentations-sops",
@@ -10826,7 +10826,7 @@
     "neutral_config_sha": "sha256:e084d023d101ad89a8a1bda5f673fb3e997be2d56e09405afabd93ede944afe9",
     "neutral_date": "2000-01-01",
     "generator": "hash-content-manifest.py",
-    "generated_at": "2026-11-04T12:31:30.229690+00:00",
+    "generated_at": "2026-11-05T14:52:53.100758+00:00",
     "manifest_schema": "1.0"
   },
   "personas": [

@@ -147,7 +147,10 @@ test("branded page drives a minted session end to end into the canonical record"
   const env = { STORE: new R2Shim(), INTAKE_ADMIN_TOKEN: "admin-tok" };
   const h = new WorkerHarness(worker, env);
 
-  const questionsPayload = { question_set: "standard", questions: QUESTIONS_JSON.questions };
+  // An already-minted payload may retain the old compound wording. Resume
+  // projects that copy without replacing IDs, field paths or saved answers.
+  const questionsPayload = { question_set: "standard", questions: QUESTIONS_JSON.questions.map((q) =>
+    q.id === "named_methodology" ? { ...q, prompt: "Do you have a named methodology — what is it called, in your own words?" } : q) };
   const mint = await h.handle("POST", "/api/sessions", {
     token: "admin-tok",
     body: {
@@ -256,6 +259,8 @@ test("branded page drives a minted session end to end into the canonical record"
     }
     const qid = currentQid();
     assert.ok(qid, "unrecognized screen prompt: " + (p ? p.innerHTML : "(none)"));
+    assert.equal(queryAll(stage, "h1.prompt").length, 1, "one question on the current screen");
+    assert.ok((p.innerHTML.match(/\?/g) || []).length <= 1, "one actual question in the prompt");
     const plan = PLAN[qid];
     assert.ok(plan, "no plan for question " + qid);
     answeredOrder.push(qid);
@@ -412,6 +417,8 @@ test("standalone mode (no token): honest NOT SUBMITTED outcome + page-stamped pr
     if (p.innerHTML.includes("ready to")) { primaryBtn().click(); continue; }
     const qid = currentQid();
     assert.ok(qid, "unrecognized screen prompt: " + p.innerHTML);
+    assert.equal(queryAll(stage, "h1.prompt").length, 1, "one standalone question on screen");
+    assert.ok((p.innerHTML.match(/\?/g) || []).length <= 1, "one actual standalone question");
     const plan = PLAN[qid];
     assert.ok(plan, "no plan for " + qid);
     if (plan.skip) {

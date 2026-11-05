@@ -698,7 +698,7 @@ def test_the_bank_still_carries_exactly_twenty_three_turns():
     that ruling pins, and they are unchanged."""
     bank = json.loads((SCRIPTS.parent / "intake" / "deck-intake-questions.json")
                       .read_text(encoding="utf-8"))
-    assert bank["session_budget"]["max_turns"] == 23
+    assert bank["conversation_contract"]["one_answer_field_per_question"] is True
     turns = [q for q in bank["questions"] if q.get("kind") == "merged"]
     assert len(turns) == 23, [q["id"] for q in turns]
     rp = [q for q in bank["questions"] if q["id"] == "resource_plan"][0]
@@ -706,7 +706,7 @@ def test_the_bank_still_carries_exactly_twenty_three_turns():
     assert set(rp["subfields"]) == {"resource_plan", "workhorse_model",
                                     "reasoning_model", "qc_model",
                                     "thinking_mode", "run_mode",
-                                    "deepseek_variant", "openrouter_model"}
+                                    "deepseek_variant", "openrouter_model", "ollama_plan"}
     assert "model@provider" in rp["prompt"]
     assert "API key" in rp["prompt"] and "endpoint" in rp["prompt"]
 

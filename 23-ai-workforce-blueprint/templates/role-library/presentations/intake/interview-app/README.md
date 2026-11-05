@@ -1,7 +1,7 @@
 # Presentation Interview app — deployable source + question wiring
 
 The **Presentation Interview app**: a Cloudflare-hosted intake frontend that asks
-the generated intake questions one at a time (21 in the current contract set;
+the generated intake questions one at a time (25 in the current contract set;
 the count derives from the set itself, there is no hardcoded cap), shows a
 segmented **"Question N of TOTAL"** progress bar, captures a **logo** ("no logo
 on file: provide one or build without?") and **image links**, and on **Submit**
@@ -16,42 +16,39 @@ The working copy lives at `Downloads/GAUNTLET-LOOP-WORK/LOOP2B-INTERVIEW-APP/app
 
 ## Question wiring (the single source of truth)
 
-Edit the canonical JSONs, not the app, to change what a client is asked:
+One actual question means one independent answer field per screen or agent
+message. Wait for that answer before asking the next. A single screen containing
+several questions violates this rule. Quick mode, interaction targets and the
+legacy `PRESENTATION_INTAKE_V2` flag never override it.
 
-- `../deck-intake-questions.json` (v1.8.0) — the deck-intake question bank. 48
-  physical rows: 23 numbered conversational turns (kind `merged`) + 25 legacy
-  alias rows (`"alias": true`, filtered out of the ask sequence while
-  `PRESENTATION_INTAKE_V2` is on). Includes the **upsell yes-no questions**:
-  `want_sales_checkout` (order 20.01, "Do you need me to create a sales page and
-  a checkout page...?") and `want_vsl_page` (order 20.02, "Would you like a VSL
-  page...?") plus their declined-reason follow-ups and `waiver_field_mapping`
-  entries. Also carries the speech-speed question `speech_speed_preference`
-  (order 21.01) and the six turn-23 declined-reason aliases.
-- `../upsell-questions.json` — the standalone upsell question set (signature-mode
-  loading). Same definitions as the four upsell alias rows in
-  deck-intake-questions.json (`want_sales_checkout` order 20.01,
-  `sales_checkout_declined_reason` order 22.05, `want_vsl_page` order 20.02,
-  `vsl_page_declined_reason` order 22.06); the standalone file keeps its own
-  legacy orders 7.6/7.61/7.7/7.71.
+- `../deck-intake-questions.json` is the standard bank. Each
+  `subfields.<field>.question` contains that field's active prompt.
+  `../question_sequence.py` projects these into scalar questions for the agent
+  and hosted payload builder. Parent `kind: merged` rows are compatibility
+  records for saved ledgers and old answer imports; never show those prompts.
+- `schema/intake_fields.js` defines the embedded page's field contract and copy.
+  `node tools/gen_ui_questions.mjs` generates `pages/questions.json` and the
+  embedded array. Copy the generated page to `deployed-r2/public/index.html`;
+  CI requires byte identity. Logo capture asks only for a logo.
+- `payload/build_questions_payload.py` selects the hosted standard set by id,
+  preserving canonical field paths, conditional waiver follow-ups and existing
+  session IDs. A resumed session keeps its identity, field contract and stored answers;
+  known compound wording is projected into the current scalar copy on read.
+  New sessions use the updated scalar prompts.
+- `--set signature` reads Skill 51's `sp-8-questions.json`: its eight questions
+  and frame selection remain separate, with the assembled answers committed as
+  one atomic record after the conversation. An atomic record is never permission
+  to ask several questions together.
 
-`payload/build_questions_payload.py` selects the curated question set by id
-(`DEFAULT_CURATED`, 19 entries at this contract version) and projects the UI
-fields from these canonical files. The app's `questions.json` is a snapshot
-of that projection.
-
-> **Signature set (B10 S8, deferral discharged):** the `--set signature`
-> payload (Skill 51's `sp-8-questions.json`) is ported into this builder
-> by PR #2069 (branch `martin/pres-fix-signature-port`), which
-> discharges the deferral this note previously recorded. Until PR #2069
-> merges, the deprecated miniapp's `payload/build_questions_payload.py`
-> remains the signature path on main. The gated D5 deletion of the
-> miniapp tree remains gated on Trevor's explicit go under D5.
+The conversation scanner rejects compound compatibility prompts even when
+copied verbatim from the bank. The intake guard also exercises fresh and resumed
+agent interviews, hosted/embedded copy and conditional fields.
 
 ## Files
 
 | Path | What it is |
 |---|---|
-| `pages/index.html` | The one-question-per-screen UI (single static file, brand-locked) |
+| `pages/index.html` | The one-answer-field-per-screen UI (single static file, brand-locked) |
 | `pages/questions.json` | The curated question set snapshot |
 | `worker/src/index.js` | Cloudflare Worker — session API + `/api/intake` (+ `/api/intake/list`) + `/api/dept-start` |
 | `worker/src/lib.js` | Pure, unit-tested logic (ordering, validation, progress) |

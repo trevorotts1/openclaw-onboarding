@@ -175,9 +175,9 @@ def test_the_plan_tier_half_is_still_on_this_turn():
 
 def test_this_turn_added_no_interview_turn():
     """The plan-tier wire rides the EXISTING order-9 turn. Trevor's ruling pins
-    the interview at 23 turns; adding a 24th to record a plan tier is refused."""
+    the interview at 23 turns; compatibility parent stays importable; active fields ask separately."""
     bank = json.loads(_QUESTIONS.read_text(encoding="utf-8"))
-    assert bank["session_budget"]["max_turns"] == 23
+    assert bank["conversation_contract"]["one_answer_field_per_question"] is True
     turn = next(q for q in bank["questions"] if q.get("id") == _TURN)
     assert turn.get("order") == 9 and turn.get("kind") == "merged"
 

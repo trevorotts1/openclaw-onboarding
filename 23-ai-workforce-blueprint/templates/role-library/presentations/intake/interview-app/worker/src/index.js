@@ -42,6 +42,7 @@
 // server-only HMAC over the ingest handoff body — no INTAKE_ADMIN_TOKEN
 // fallback), CC_DEPT_START_TOKEN (optional bearer; no admin-token fallback).
 
+import { singleQuestionPayload } from "../../schema/intake_fields.js";
 import {
   randomToken, randomSessionId, nowSeconds, expiryFrom, isValidTokenShape,
   isValidSessionIdShape,
@@ -975,7 +976,7 @@ async function loadOpenSession(env, token, allowComplete = false) {
   if (Number(session.expires_at) <= nowSeconds() && session.status !== "complete") return { error: errorResponse("session expired", 410) };
   if (session.status === "expired") return { error: errorResponse("session expired", 410) };
   if (session.status === "complete" && !allowComplete) return { error: errorResponse("session already complete", 409) };
-  let payload; try { payload = JSON.parse(session.questions_json); } catch { return { error: errorResponse("corrupt session payload", 500) }; }
+  let payload; try { payload = singleQuestionPayload(JSON.parse(session.questions_json)); } catch { return { error: errorResponse("corrupt session payload", 500) }; }
   return { session, payload };
 }
 

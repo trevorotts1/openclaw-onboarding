@@ -36,25 +36,12 @@ WHAT THIS DETECTS (AF-INTAKE-BATCH):
                           banks: sp-8-questions.json's 8 Questions + frame
                           question, and deck-intake-questions.json's full
                           question set) before the owner answers any of them.
-                          VERBATIM-PROMPT EXEMPTION: when one or more bank
-                          prompts appear VERBATIM (normalized, whitespace-
-                          insensitive substring) in the turn, the turn
-                          resolves to exactly THOSE bank id(s) -- a single
-                          verbatim bank prompt's own internal '?' sentences
-                          (e.g. frame_selection has 2) are never re-matched
-                          against OTHER bank questions by incidental keyword
-                          overlap (e.g. "transformational teaching" also
-                          appearing in sp:q5/sp:q6) and double-counted as a
-                          multi-question batch. Two or more DIFFERENT bank
-                          prompts appearing verbatim in the same turn still
-                          correctly fires BATCH-IN-TURN.
-  2. BATCH-BY-QMARKS   — a lighter heuristic fallback: an assistant turn with
-                          2+ sentences ending in '?' that resolves ZERO known
-                          bank-question matches (elif fires ONLY when
-                          len(bank_ids_in_turn) == 0 -- a turn that is
-                          legitimately one bank question, verbatim or via
-                          keyword match, plus one incidental clarifying '?'
-                          is not double-counted against the same bank id).
+                          Compatibility rows with several independent answer
+                          fields fail even when copied verbatim from the bank.
+  2. BATCH-BY-QMARKS   — two or more question sentences in one assistant turn,
+                          including a known prompt followed by another ask.
+     QUESTION-BEFORE-ANSWER — another assistant question arrives before an
+                          owner/user reply to the preceding question.
   3. NO-CHOICE-OPENER  — a signature-presentation transcript (detected by the
                           presence of >=2 of the 8-Question ids/keywords
                           anywhere in the transcript) whose FIRST assistant
@@ -257,8 +244,17 @@ def load_bank_questions(sp_spec_path=None, deck_questions_path=None) -> dict:
                 for q in dq.get("questions") or []:
                     qid, prompt = q.get("id"), q.get("prompt") or ""
                     if qid and prompt:
-                        bank[f"deck:{qid}"] = {"prompt": prompt, "keywords": _keywords(prompt)}
+                        captures = [k for k, a in (q.get("subfields") or {}).items()
+                                    if not a.get("derived")]
+                        bank.setdefault(f"legacy-deck:{qid}" if q.get("subfields") else f"deck:{qid}",
+                                        {"prompt": prompt, "keywords": _keywords(prompt),
+                                         "compound": len(captures) > 1 or qid == "duration_and_slide_count"})
                         loaded += 1
+                    for field, annotation in (q.get("subfields") or {}).items():
+                        atomic = annotation.get("question") or {}
+                        text = atomic.get("prompt")
+                        if text:
+                            bank[f"deck:{field}"] = {"prompt": text, "keywords": _keywords(text)}
                 if loaded == 0:
                     problems.append(
                         f"deck question bank parsed to ZERO questions ({c}) — "
@@ -406,9 +402,12 @@ def _verbatim_bank_ids(text: str, bank: dict) -> set:
 
 def scan_transcript(turns: list, bank: dict) -> dict:
     violations = []
+    unanswered_question = None
 
     for idx, turn in enumerate(turns):
         if turn["role"] != "assistant":
+            if turn["role"] in ("owner", "user", "client", "human"):
+                unanswered_question = None
             continue
         text = turn["text"]
         lowered = text.lower()
@@ -433,6 +432,18 @@ def scan_transcript(turns: list, bank: dict) -> dict:
         # multi-question batch. Two or more DIFFERENT prompts verbatim in
         # the same turn is a real batch and still fires below.
         verbatim_ids = _verbatim_bank_ids(text, bank)
+        if verbatim_ids or qsentences:
+            if unanswered_question is not None:
+                violations.append({"code": AF_CODE, "reason": "QUESTION-BEFORE-ANSWER",
+                                   "turn_index": idx,
+                                   "detail": f"turn {idx} asks another question before the owner answered turn {unanswered_question}."})
+            unanswered_question = idx
+
+        compound_ids = {qid for qid in verbatim_ids if bank[qid].get("compound")}
+        if compound_ids:
+            violations.append({"code": AF_CODE, "reason": "COMPOUND-BANK-PROMPT",
+                               "turn_index": idx, "matched_question_ids": sorted(compound_ids),
+                               "detail": "A compatibility bank row asks for multiple independent answers."})
 
         if verbatim_ids:
             bank_ids_in_turn = verbatim_ids
@@ -454,7 +465,7 @@ def scan_transcript(turns: list, bank: dict) -> dict:
                     f"({sorted(bank_ids_in_turn)}) in a single assistant message."
                 ),
             })
-        elif len(bank_ids_in_turn) == 0 and len(qsentences) >= 2:
+        elif len(qsentences) >= 2:
             violations.append({
                 "code": AF_CODE,
                 "reason": "BATCH-BY-QMARKS",
@@ -829,6 +840,8 @@ def _self_test() -> bool:
         t7_failures.append("bank loaded 0 questions -- sp-8-questions.json / "
                             "deck-intake-questions.json not found from this environment")
     for qid, info in sorted(bank.items()):
+        if info.get("compound"):
+            continue  # compatibility prompts must fail, not receive an exemption
         prompt = info.get("prompt") or ""
         if not prompt:
             continue

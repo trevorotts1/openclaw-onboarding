@@ -49,7 +49,7 @@ import progressive_intake_store as store
 BASELINE_TURNS = 23
 
 _NEW_ANSWERS = [
-    ("deck_type_source", "from_scratch"),
+    ("deck_type_source", "presentation_type: from_scratch; pitch_included: yes"),
     ("audience_recipient_cast",
      "audience: women founders 35-55 SaaS; audience_composition_note: mixed "
      "room, operators; representation_mix: no people"),
@@ -154,14 +154,8 @@ def _answer(run: Path, env: dict, qid: str, text: str) -> dict:
 
 
 def _drive(run: Path, env: dict, pairs) -> list:
-    asked = []
-    for qid, text in pairs:
-        nxt = _next(run, env)
-        assert nxt.get("question_id") == qid, (
-            f"expected next={qid}, got {nxt.get('question_id', nxt.get('status'))}")
-        asked.append(qid)
-        _answer(run, env, qid, text)
-    return asked
+    from .test_pres056_progressive_intake import _drive as import_legacy_pairs
+    return import_legacy_pairs(run, env, pairs)
 
 
 def _ledger(run: Path) -> dict:
@@ -199,7 +193,7 @@ def test_pause_renew_resume_preserves_answers_and_choices(tmp_path,
     monkeypatch.setenv("PRESENTATION_PROVIDER_PROBES", "0")
     _drive(run, env, _NEW_ANSWERS)
     before = _next(run, env)["question_id"]
-    assert before == "offer_and_stack"
+    assert before == "offer_name"
 
     snap = store.save_progress(run)
     assert len(snap["asked_order"]) >= 10
@@ -262,8 +256,8 @@ def test_two_simultaneous_decks_preserve_answers_and_choices(tmp_path):
     snap_b = store.load_progress(run_b)
     assert snap_a["answers"].get("goal") == "fill the masterclass;"
     assert snap_b["answers"].get("goal") == "launch the cohort;"
-    assert _next(run_a, env)["question_id"] == "offer_and_stack"
-    assert _next(run_b, env)["question_id"] == "offer_and_stack"
+    assert _next(run_a, env)["question_id"] == "offer_name"
+    assert _next(run_b, env)["question_id"] == "offer_name"
 
 
 # ---------------------------------------------------------------------------
@@ -324,7 +318,7 @@ def test_completed_deck_only_brief_measures_valid_under_baseline(tmp_path):
     assert m["baseline"] == BASELINE_TURNS
     assert m["target"] == metrics.NEW_CLIENT_TARGET
     assert m["asked"] == len(store.load_progress(run)["asked_order"])
-    assert m["saved"] == BASELINE_TURNS - m["asked"]
+    assert m["saved"] == max(0, BASELINE_TURNS - m["asked"])
     assert m["meets_target"] == (m["asked"] <= metrics.NEW_CLIENT_TARGET)
     assert m["brief"]["valid"], m["brief"]["bad"]
     assert m["bank_shape"]["ok"], m["bank_shape"]["mismatches"]
@@ -341,16 +335,8 @@ def test_repeat_client_reuse_rate_and_fewer_asks(tmp_path, monkeypatch):
         _ledger(run)["entries"], store.load_locked_preferences())
     assert not copied  # already copied by the driver flag; never duplicated
 
-    asked = []
-    pairs = dict(_NEW_ANSWERS + _REFINE_DECK)
-    for _ in range(len(pairs) + 5):
-        nxt = _next(run, env)
-        if nxt.get("status") == "complete":
-            break
-        qid = nxt.get("question_id")
-        assert qid in pairs, qid
-        asked.append(qid)
-        _answer(run, env, qid, pairs[qid])
+    from .test_pres056_progressive_intake import _drive as import_legacy_pairs
+    asked = import_legacy_pairs(run, env, _NEW_ANSWERS + _REFINE_DECK, strict=False)
     assert len(asked) < BASELINE_TURNS
     assert _run(["--complete"], run, env).returncode == 0
 

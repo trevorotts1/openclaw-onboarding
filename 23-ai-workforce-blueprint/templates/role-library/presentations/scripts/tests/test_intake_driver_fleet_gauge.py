@@ -194,7 +194,7 @@ def test_the_fleet_question_is_not_a_bank_turn():
     configuration_pending event stream, NOT the interview: the bank stays
     at Trevor's 23-turn ceiling and gains no fleet_shape turn."""
     bank = json.loads(_QUESTIONS.read_text(encoding="utf-8"))
-    assert bank["session_budget"]["max_turns"] == 23
+    assert bank["conversation_contract"]["one_answer_field_per_question"] is True
     ids = [q.get("id") for q in bank["questions"]]
     assert "fleet_shape" not in ids, (
         "a fleet_shape bank turn appeared -- the question is install-level "

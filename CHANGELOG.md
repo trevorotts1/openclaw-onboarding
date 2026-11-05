@@ -1,3 +1,11 @@
+## [v27.1.71]  -  2026-11-05  -  Presentation intake asks one actual question at a time
+
+- The mini app and conversational agent now request one independent answer per question. Canonical per-field prompts replace the merged ask sequence; the historical 23-turn target never authorizes batching. Quick and in-depth retain separate pacing and build-mode decisions.
+- Preserve existing answer IDs, storeTarget paths, conditional branches, derived values, signed transcript handling and verbatim waiver reasons. Legacy merged answers remain importable. Resumed hosted sessions project known compound wording without replacing their session identity, field contract or stored answers.
+- Reject compound compatibility prompts and a second question before the client answers in the conversation scanner. The intake workflow exercises the agent, embedded and hosted app, signature intake and saved-session behavior.
+- Migration: repository changes only; this draft has not been merged, deployed or rolled onto any client box. New agent interviews use individual fields; historical compound conversation traces remain subject to the conversation gate rather than being rewritten as compliant evidence.
+- Risk: MEDIUM. Interview pacing changes and the number of turns can increase; required answers and consent are preserved. Skill 51 receives the standard patch bump in this release.
+
 ## [v27.1.70]  -  2026-11-05  -  Skill 77 council: selected-tree gate accepts one release at two roots; boxes stop ending 78/79 wired
 
 - Defect: `install-runtime.mjs` records the tree `wire.sh` ran from, while the OpenClaw agent resolver serves `~/.agents/skills/council-of-wise-elders`, so the selected-tree gate compared two paths that can never be equal and withheld the `.wired` roll sentinel (boxes ended 78/79 wired). Independently, `treeIdentity()` counted the maintained tree's own `.wired-<version>` sentinel as a content difference, and a 999 distribution that vendors the release's own `.skill` archive was refused for declaring `generated_archive_not_vendored`.
