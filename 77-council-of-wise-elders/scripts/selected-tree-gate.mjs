@@ -636,6 +636,11 @@ function treeIdentity(dir) {
     }
     for (const e of entries.sort((x, y) => x.name.localeCompare(y.name))) {
       if (e.name === "node_modules" || e.name === ".git" || e.name === "__pycache__") continue;
+      // Roll bookkeeping, never skill content: treeAudit() already skips the
+      // root .wired-<version> sentinels, and an identity that counted them would
+      // declare the tree that CARRIES the sentinel a different release from the
+      // byte-identical copy beside it.
+      if (!rel && /^\.wired-/.test(e.name)) continue;
       const r = rel ? `${rel}/${e.name}` : e.name;
       if (e.isSymbolicLink()) {
         let target = "broken";
@@ -653,6 +658,37 @@ function treeIdentity(dir) {
 }
 
 const HEX64 = /^[0-9a-f]{64}$/;
+
+/**
+ * Release identity of a copy: the skill version it carries plus the canonical
+ * aggregate it names. A plain canonical copy records aggregate_sha256; a 999
+ * distribution records the canonical aggregate it was packaged from.
+ */
+function releaseIdentity(dir) {
+  const manifest = readJson(join(dir, "manifest.json"));
+  if (!manifest) return null;
+  const version = readVersion(dir);
+  const aggregate = typeof manifest.canonical_aggregate_sha256 === "string"
+    ? manifest.canonical_aggregate_sha256
+    : manifest.aggregate_sha256;
+  if (!version || typeof aggregate !== "string" || !HEX64.test(aggregate)) return null;
+  return `${version}:${aggregate}`;
+}
+
+/**
+ * Are two roots the same selection? Path equality is the easy answer, but one
+ * box legitimately carries one release at two roots: install-runtime.mjs records
+ * the tree wire.sh ran from while the agent resolver answers the 999 packaging.
+ * A different path is still agreement when both roots present the same release
+ * identity (skill version + canonical aggregate); anything else stays a
+ * disagreement, and this never stands in for verifying the selected copy.
+ */
+function sameSelectedRelease(a, b) {
+  if (samePath(a, b)) return true;
+  if (!existsSync(a) || !existsSync(b)) return false;
+  const identity = releaseIdentity(a);
+  return Boolean(identity) && identity === releaseIdentity(b);
+}
 
 /** True when the tree presents itself as a distribution of a canonical tree. */
 export function isDistributionCandidate(dir) {
@@ -724,8 +760,12 @@ function reconcileRecord(dir, { maintainedManifest, maintainedAggregate, maintai
       if (d.archive_sha256 !== undefined && d.archive_sha256 !== recorded) {
         problems.push(`it records the canonical archive as ${d.archive_sha256} but the maintained manifest records ${recorded ?? "(none)"}`);
       }
-      if (typeof d.file === "string" && existsSync(join(dir, d.file))) {
-        problems.push(`it records ${d.file} as not vendored, but the selected copy carries it`);
+      // A distribution may vendor the canonical archive verbatim instead of
+      // omitting it: the 999 packaging does exactly that. Carrying it is not a
+      // lie about the difference as long as the bytes are the archive the
+      // release generated (an unverifiable archive is refused before this).
+      if (typeof d.file === "string" && existsSync(join(dir, d.file)) && sha256File(join(dir, d.file)) !== recorded) {
+        problems.push(`it records ${d.file} as not vendored, but the selected copy carries a different file`);
       }
     }
     if (d.kind === "file_added" && typeof d.file === "string" && !addedPaths.includes(d.file)) {
@@ -1116,7 +1156,7 @@ export function checkSelectedTree(opts = {}) {
   // live CLI consults, and it must name a copy this box can actually see.
   if (agentSelected) {
     if (records.length) {
-      const agrees = records.some((r) => samePath(r.skillDir, agentSelected));
+      const agrees = records.some((r) => sameSelectedRelease(r.skillDir, agentSelected));
       if (!agrees) {
         problems.push(
           `agent evidence names ${agentSelected} but the live install-record(s) name ` +

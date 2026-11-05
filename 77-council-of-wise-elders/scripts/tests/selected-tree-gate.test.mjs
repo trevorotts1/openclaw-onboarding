@@ -343,6 +343,37 @@ test("(b) agent evidence that contradicts the install-record is refused", (t) =>
   assert.match(gate.problems.join("\n"), /agent evidence names .* but the live install-record/);
 });
 
+test("(b) the recorded installer tree and the resolver's copy of the SAME release are agreement, not a contradiction", (t) => {
+  const home = fixtureHome(t);
+  // update-skills.sh runs from the skills root while the agent resolver answers
+  // the ~/.agents copy: different paths, one release. The maintained tree also
+  // carries a roll sentinel the resolver copy does not, which is bookkeeping.
+  const installed = makeCopy(join(home, ".openclaw", "skills", "council-of-wise-elders"));
+  manifestTree(installed);
+  writeFileSync(join(installed, ".wired-1.0.51"), "1.0.51\n");
+  const resolved = makeCopy(join(home, ".agents", "skills", "council-of-wise-elders"));
+  manifestTree(resolved);
+  const prefix = makePrefix(home, installed);
+  const gate = checkSelectedTree({ home, skillDir: installed, prefix, load: false, agentSelected: resolved });
+  assert.equal(gate.ok, true, gate.problems.join(" | "));
+  assert.doesNotMatch(gate.problems.join("\n"), /the two disagree/);
+});
+
+test("(b) a same-version copy with different content is still a contradiction", (t) => {
+  const home = fixtureHome(t);
+  const installed = makeCopy(join(home, ".openclaw", "skills", "council-of-wise-elders"));
+  manifestTree(installed);
+  // Same carriers, one canonical byte changed: a different release, not the
+  // same release at another root.
+  const other = makeCopy(join(home, ".agents", "skills", "council-of-wise-elders"));
+  writeFileSync(join(other, "advisors", "extra.json"), "{}\n");
+  manifestTree(other);
+  const prefix = makePrefix(home, installed);
+  const gate = checkSelectedTree({ home, skillDir: installed, prefix, load: false, agentSelected: other });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /agent evidence names .* but the live install-record/);
+});
+
 test("(b) agent evidence outside every known root with no record is refused", (t) => {
   const home = fixtureHome(t);
   const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
@@ -581,6 +612,33 @@ test("(same release) the 999 distribution of the maintained tree passes and says
   assert.ok(warnings.includes(canonicalManifest.aggregate_sha256), "the proof must name the canonical aggregate");
   assert.match(warnings, /proven by manifest recomputation/);
   assert.match(warnings, /recorded files and \d+ built files matched/);
+});
+
+test("(same release) a distribution that vendors the canonical archive is not refused for declaring it", (t) => {
+  const { home, canonical, dist } = distributionFixture(t);
+  // The 999 packaging copies the release's own .skill archive into the
+  // distribution while its record still declares generated_archive_not_vendored.
+  // Carrying the release's archive verbatim contradicts nothing.
+  const archive = Buffer.from("PK\u0003\u0004 canonical archive bytes\n");
+  writeFileSync(join(canonical, "council-of-wise-elders.skill"), archive);
+  const sha = createHash("sha256").update(archive).digest("hex");
+  manifestTree(canonical, { archive: { file: "council-of-wise-elders.skill", sha256: sha } });
+  cpSync(join(canonical, "council-of-wise-elders.skill"), join(dist, "council-of-wise-elders.skill"));
+  const canonicalManifest = JSON.parse(readFileSync(join(canonical, "manifest.json"), "utf8"));
+  const record = reconciliation(canonicalManifest, { scrubbed: ["advisors/pack.json"] });
+  record.intentional_distribution_differences.push({
+    kind: "generated_archive_not_vendored",
+    file: "council-of-wise-elders.skill",
+    archive_sha256: sha,
+    rule: "It is not vendored",
+  });
+  writeReconciliation(dist, record);
+  restampDistribution(dist, {
+    canonical_aggregate_sha256: canonicalManifest.aggregate_sha256,
+    canonical_file_count: canonicalManifest.file_count,
+  });
+  const gate = runPair(home, canonical, dist);
+  assert.equal(gate.ok, true, gate.problems.join(" | "));
 });
 
 test("(same release) a distribution with an extra unmanifested non-dist file is refused", (t) => {
