@@ -100,7 +100,7 @@
   "order": 9,
   "asked_in_same_block": true,
   "additive_to_the_8": true,
-  "prompt": "Which Signature frame should carry your Transformational Teaching? (A) The Rulebook — you teach through numbered, non-negotiable Rules, each with an affirmation and a 3-step action plan, capped with a recap and a teased bonus Rule. (B) The Vault — you unlock numbered Secrets, each paired with a famous quote and its own affirmation, tied together by one running metaphor. (C) The Quest — you hand them a named Blueprint organized as Quests with steps and affirmations, closing on a poetic manifesto they finish in their own words. (D) The Original — we design a from-scratch frame around your own methodology. For examples, say 'show me' and I'll sketch your teaching topic in all three frames (one line each) before you pick.",
+  "prompt": "Which Signature frame should carry your Transformational Teaching?",
   "kind": "enum",
   "required": true,
   "storeOn": "signature_frame",
@@ -116,7 +116,8 @@
    "quest": "The Quest",
    "original": "The Original"
   },
-  "orthogonal_to": "STYLE_SOURCE (the visual match/analyze/create branch) — the frame governs the NARRATIVE, not the visual style; a signature deck still answers the visual branch and still gets the 3-variant style preview."
+  "orthogonal_to": "STYLE_SOURCE (the visual match/analyze/create branch) — the frame governs the NARRATIVE, not the visual style; a signature deck still answers the visual branch and still gets the 3-variant style preview.",
+  "help": "(A) The Rulebook — you teach through numbered, non-negotiable Rules, each with an affirmation and a 3-step action plan, capped with a recap and a teased bonus Rule. (B) The Vault — you unlock numbered Secrets, each paired with a famous quote and its own affirmation, tied together by one running metaphor. (C) The Quest — you hand them a named Blueprint organized as Quests with steps and affirmations, closing on a poetic manifesto they finish in their own words. (D) The Original — we design a from-scratch frame around your own methodology. For examples, say 'show me' and I'll sketch your teaching topic in all three frames (one line each) before you pick."
  },
  "runtime_intake_contract": {
   "note": "Shape of working/copy/sp_intake.json that prove_sp_intake.py validates. Any violation is exit 2, fail-closed.",

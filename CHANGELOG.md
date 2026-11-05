@@ -2,6 +2,7 @@
 
 - The mini app and conversational agent now request one independent answer per question. Canonical per-field prompts replace the merged ask sequence; the historical 23-turn target never authorizes batching. Quick and in-depth retain separate pacing and build-mode decisions.
 - Preserve existing answer IDs, storeTarget paths, conditional branches, derived values, signed transcript handling and verbatim waiver reasons. Legacy merged answers remain importable. Resumed hosted sessions project known compound wording without replacing their session identity, field contract or stored answers.
+- Keep the Signature frame choice as one question with frame descriptions in help text; refresh its sacred-structure fingerprint alongside that copy change.
 - Reject compound compatibility prompts and a second question before the client answers in the conversation scanner. The intake workflow exercises the agent, embedded and hosted app, signature intake and saved-session behavior.
 - Migration: repository changes only; this draft has not been merged, deployed or rolled onto any client box. New agent interviews use individual fields; historical compound conversation traces remain subject to the conversation gate rather than being rewritten as compliant evidence.
 - Risk: MEDIUM. Interview pacing changes and the number of turns can increase; required answers and consent are preserved. Skill 51 receives the standard patch bump in this release.
