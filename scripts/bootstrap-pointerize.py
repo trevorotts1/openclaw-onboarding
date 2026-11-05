@@ -441,60 +441,38 @@ _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$", re.MULTILINE)
 def _derive(body: str) -> tuple[str, str, list[str]]:
     """Heading, one-line summary, and the binding text that must stay inline.
 
-    Binding text is kept VERBATIM AND WHOLE. The previous version sliced
-    individual lines that happened to begin with "NEVER"/"Never" out of
-    hard-wrapped prose and joined them with " · ", which turned a block of six
-    numbered safety rules into `**Triggers:** NEVER open a gate. · never to a
-    parallel sequence.** Never enter the ...` -- a pointer that garbled the
-    rules it replaced while still promising they bound.
+    Single source of truth: the kept lines come from _binding_units(), the same
+    function the stamping gate uses. Keeping two different notions of "a rule"
+    in this file is what let _derive harvest wrapped prose while the gate looked
+    for something else -- the 2026-11-04 damage.
     """
-    heading, summary, keep = "", "", []
-    lines = body.splitlines()
-    seen: set[str] = set()
-
-    def _add(unit_lines: list[str]) -> None:
-        # No cross-unit dedupe. Two rules may legitimately share an identical
-        # continuation line; dropping the second copy silently weakens rule two
-        # while the gate still passes because the line exists once.
-        for raw in unit_lines:
-            s = raw.rstrip()
-            if s.strip():
-                keep.append(s)
-
-    i = 0
-    while i < len(lines):
-        line = lines[i]
+    heading, summary = "", ""
+    for line in body.splitlines():
         s = line.strip()
         if not s:
-            i += 1
             continue
         m = _HEADING_RE.match(line)
-        if m and not heading and not keep:
+        if m and not heading:
             heading = m.group(2).strip()
-            i += 1
-            continue
-        if _RULE_LINE_RE.match(line) or _BULLET_GATE_RE.match(line) or _GATE_LINE_RE.match(line):
-            unit = [line]
-            j = i + 1
-            while j < len(lines):
-                nxt = lines[j]
-                if not nxt.strip():
-                    break
-                if (_HEADING_RE.match(nxt) or _RULE_LINE_RE.match(nxt)
-                        or _BULLET_GATE_RE.match(nxt) or _GATE_LINE_RE.match(nxt)):
-                    break
-                unit.append(nxt)
-                j += 1
-            _add(unit)
-            i = j
             continue
         if not summary and not s.startswith(("<!--", ">", "```", "|", "-", "*", "#")):
             summary = s
-        i += 1
+        if heading and summary:
+            break
     if not summary:
         summary = "Managed block — full text moved out of the bootstrap file."
     if len(summary) > 240:
         summary = summary[:237].rstrip() + "..."
+
+    keep: list[str] = []
+    for unit in _binding_units(body):
+        for raw in unit:
+            line = raw.rstrip()
+            # No cross-unit dedupe: two rules may share an identical line, and
+            # dropping the second copy weakens that rule while the gate still
+            # passes because the line exists once.
+            if line.strip():
+                keep.append(line)
     return heading, summary, keep
 
 
