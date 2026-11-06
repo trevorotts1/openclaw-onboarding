@@ -102,8 +102,45 @@ exec 1> >(tee -a "$LOG_FILE") 2>&1
 #   Full rationale + the LaunchDaemon-vs-checked-LaunchAgent decision:
 #     platform/mac/power-resilience/lib-power-resilience.sh
 #     platform/mac/power-resilience/README.md
-_PR_LIB="${_SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}/platform/mac/power-resilience/lib-power-resilience.sh"
-if [ -f "$_PR_LIB" ]; then
+#
+# WHERE THE LIBRARY IS FOUND (measured defect, fixed 2026-11-06):
+#   _PR_LIB used to be built from ONE relative path rooted at ${_SCRIPT_DIR:-...}.
+#   But _SCRIPT_DIR is the directory of the ENTRY script (install.sh /
+#   update-skills.sh) — NOT the checkout — and its `|| pwd` fallback silently
+#   substitutes the CALLER'S CURRENT DIRECTORY whenever the entry script is piped,
+#   temp-file bootstrapped, or invoked by a bare name. Measured on a live client
+#   box: the updater was entered from the login cwd ($HOME), so _PR_LIB became
+#   "$HOME/platform/mac/power-resilience/lib-power-resilience.sh" — the `.openclaw`
+#   segment was dropped — while the library actually sat at
+#   "$HOME/.openclaw/platform/mac/power-resilience/lib-power-resilience.sh".
+#   The whole outage-survival gate (pr_preflight_gate, pr_apply_pmset,
+#   pr_check_ethernet) silently skipped, so nobody ever set autorestart and the
+#   box would stay OFF when mains returned.
+#
+#   Search the known REAL layouts instead, first existing wins:
+#     1. <_SCRIPT_DIR>/platform/...            unchanged behaviour when correct
+#     2. <_SCRIPT_DIR>/.openclaw/platform/...  entry run from $HOME (the defect)
+#     3. <bootstrap.sh checkout root>/...      in-tree; correct for a real file
+#     4. $OPENCLAW_ROOT/platform/...           explicit override
+#   Empty candidates are SKIPPED, so a failed `cd` can never degrade to
+#   "/platform/...". A genuine miss still warns and is never a silent pass.
+_PR_LIB=""
+_PR_TRIED=""
+for _pr_root in \
+    "${_SCRIPT_DIR:-}" \
+    "${_SCRIPT_DIR:+$_SCRIPT_DIR/.openclaw}" \
+    "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)" \
+    "${OPENCLAW_ROOT:-}"; do
+    [ -n "$_pr_root" ] || continue
+    _pr_cand="$_pr_root/platform/mac/power-resilience/lib-power-resilience.sh"
+    _PR_TRIED="${_PR_TRIED}${_PR_TRIED:+ | }$_pr_cand"
+    if [ -f "$_pr_cand" ]; then
+        _PR_LIB="$_pr_cand"
+        break
+    fi
+done
+
+if [ -n "$_PR_LIB" ]; then
     # shellcheck source=/dev/null
     . "$_PR_LIB"
     _PR_MODE="${OPENCLAW_BOOTSTRAP_MODE:-provision}"
@@ -133,7 +170,8 @@ if [ -f "$_PR_LIB" ]; then
     fi
     pr_check_ethernet
 else
-    echo "[install] WARNING: power-resilience library not found at $_PR_LIB" >&2
+    echo "[install] WARNING: power-resilience library not found. Searched:" >&2
+    echo "[install]          $_PR_TRIED" >&2
     echo "[install]          Skipping the outage-survival gate. This box may be" >&2
     echo "[install]          provisioned into the undead state (looks fine, never" >&2
     echo "[install]          comes back after a power cut)." >&2
