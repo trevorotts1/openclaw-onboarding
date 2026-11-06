@@ -369,11 +369,23 @@ export async function runAsk(opts) {
   const conveneEnv = { ...env, COUNCIL_CHAMBER_OPEN: "0" };
   const out = run(cli, cliArgs, { encoding: "utf8", timeout: 180_000, env: conveneEnv });
   const raw = (out.stdout || "").trim();
+  // The CLI writes its typed refusal JSON to stderr and exits non-zero. Reading
+  // stdout alone collapsed every real reason into a bare CONVENE_REFUSED, which
+  // left the agent no way to resolve it and no way to tell the client what was
+  // wrong. Parse both streams; prefer the candidate that carries a code.
+  const rawErr = (out.stderr || "").trim();
   if (out.status !== 0 || !raw) {
     let parsed = null;
-    try { parsed = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)); } catch { /* text refusal */ }
+    for (const cand of [raw, rawErr]) {
+      if (!cand.includes("{")) continue;
+      try {
+        const p = JSON.parse(cand.slice(cand.indexOf("{"), cand.lastIndexOf("}") + 1));
+        if (p?.error?.code || p?.code) { parsed = p; break; }
+      } catch { /* text refusal */ }
+    }
     const code = parsed?.error?.code || parsed?.code || "CONVENE_REFUSED";
-    const msg = parsed?.error?.message || parsed?.detail?.summary || raw.split("\n")[0] || "convene refused";
+    const msg = parsed?.error?.message || parsed?.detail?.summary
+      || rawErr.split("\n").find((l) => l.trim()) || "convene refused";
     throw new Refusal(code, String(msg), parsed?.error?.action || "Read the refusal and retry once resolved.");
   }
   let res;

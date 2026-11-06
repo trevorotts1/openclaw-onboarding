@@ -339,7 +339,7 @@ export async function resolveSessionRoute(
     throw new RouteChoiceError(
       'ROUTE_CHOICE_REQUIRED',
       'No route_id was given and the convening harness is not known, so no default route can be chosen.',
-      'Ask the client which model route to use (see the routes listing) and pass route_id, or pass the harness (claude-nine, claude-code or deepseek).',
+      'Ask the client which model route to use. Ask in this order and recommend OpenRouter: (1) which Ollama plan they pay for, $20 or $100; (2) if they have no Ollama plan, recommend OpenRouter, where advisors run in parallel with no plan cap. Then pass route_id (and the model when the route offers several), or pass the harness (claude-nine, claude-code or deepseek).',
     );
   }
   const source: 'explicit' | 'client_default' =
