@@ -1,5 +1,12 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.80: the manifest-carrier release (version moved so the corrected package can land)
+
+In plain English: the manifest regeneration that fixed the recorded runtime digest shipped without moving the skill's own version, so the repository's content-change guard refused it. This release moves the version carriers to 1.0.80 and rebuilds the manifest and archive over the same corrected runtime build. No runtime behavior changed. Source only: no box was written, no provider or Telegram call made, and no paid Council session run.
+
+- Version carriers: `version`, `skill-version.txt` and the `SKILL.md` frontmatter all read 1.0.80, and the regenerated manifest records the same.
+- Regenerated package: `manifest.json` and `council-of-wise-elders.skill` are rebuilt from the corrected runtime entry, with the recorded archive SHA-256 matching the archive on disk.
+
 ## v1.0.79: the two-roots release (one release at two roots is agreement, not a contradiction)
 
 In plain English: `install-runtime.mjs` records the directory `wire.sh` ran from, while the OpenClaw agent resolver serves `~/.agents/skills/council-of-wise-elders`, so the selected-tree gate compared two paths that can never be equal and withheld the roll sentinel (boxes ended 78/79 wired). The gate now accepts the same release at two roots: the record and the agent evidence agree when both present the same skill version and the same canonical aggregate, never merely because each names a plausible directory, and the selected copy is still verified in full. Source only: no box was written, no provider or Telegram call made, and no paid Council session run.
