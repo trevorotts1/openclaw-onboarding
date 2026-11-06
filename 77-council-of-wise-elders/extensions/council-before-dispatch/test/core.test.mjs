@@ -26,6 +26,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  extractQuestion,
   FRONTDOOR_WORST_CASE_MS,
   handleInbound,
   moduleSpecifiers,
@@ -771,4 +772,15 @@ test("a binding file can never widen the account allowlist", () => {
     authorizedSenderSelection({ allowFrom: ["111111"] }, undefined, "111111"),
     { ok: true, senderIds: ["111111"], source: "allowFrom" },
   );
+});
+
+// A sentence period after the phrase must not survive into the brief question.
+test("the question is trimmed of a leading sentence period", () => {
+  const config = configFor(tempDir());
+  const r = extractQuestion(
+    "ask the council. What should be my Black Monday offer? For Cyber Monday",
+    config,
+  );
+  assert.equal(r.matched, true);
+  assert.equal(r.question, "What should be my Black Monday offer? For Cyber Monday");
 });
