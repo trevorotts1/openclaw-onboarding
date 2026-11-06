@@ -1,5 +1,15 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.81: the resolver-copy refresh release (the install step that was missing)
+
+In plain English: the roll maintains `~/.openclaw/skills`, but the OpenClaw agent on some boxes reads a different copy (`~/.agents/skills/council-of-wise-elders`). Nothing in the roll ever wrote that copy, so it kept the PREVIOUS release's `.skill` archive while every version carrier said the new one — measured on rescue-eddie-otts, where four copies all reported 1.0.80 and the agent-resolved copy still carried archive `33e4063d…` against the release's `4d921542…`. The selected-tree gate correctly refused it, which is why boxes stopped at 77/79 or 78/79 and the operator box only reached 79/79 after a hand rsync. `wire.sh` now converges the copy the resolver selects from the shipped tree and re-runs the SAME gate, so a box reaches readiness without a human step. The gate is unchanged. Source only: no box was written, no provider or Telegram call made, and no paid Council session run.
+
+- New install step: `scripts/selected-tree-refresh.mjs` converges the resolver-selected copy from the tree this update ships. A plain copy is mirrored file-for-file (manifest included); a 999 distribution copy, which differs from the canonical tree by design, has only the release archive replaced — the one artifact it may never keep from a previous release — while its own `manifest.json` and `DISTRIBUTION-RECONCILIATION.json` are preserved.
+- Never destructive: nothing is deleted, no symlink is followed or written through, no copy is created where none exists, and a git checkout is never rewritten. Files the copy alone carries are reported, not removed.
+- `wire.sh` converges before it verifies, for `COUNCIL_AGENT_SKILL_DIR`, for the `openclaw skills info` resolver answer, and for the copy the gate's own summary names; the gate itself is not relaxed and still refuses a genuinely stale or modified payload.
+- Tests: `scripts/tests/selected-tree-refresh.test.mjs` reproduces the measured defect (same version, same canonical aggregate, the previous release's archive), proves the same gate refuses it and then passes after the refresh, and adds the negative control that a modified archive is still refused after a refresh, plus the symlink and owner-data cases.
+- Version carriers: `version`, `skill-version.txt`, `SKILL.md` frontmatter and the regenerated manifest all read 1.0.81.
+
 ## v1.0.80: the manifest-carrier release (version moved so the corrected package can land)
 
 In plain English: the manifest regeneration that fixed the recorded runtime digest shipped without moving the skill's own version, so the repository's content-change guard refused it. This release moves the version carriers to 1.0.80 and rebuilds the manifest and archive over the same corrected runtime build. No runtime behavior changed. Source only: no box was written, no provider or Telegram call made, and no paid Council session run.
