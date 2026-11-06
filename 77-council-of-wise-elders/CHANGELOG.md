@@ -1,5 +1,17 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.81: the "say why, and ask before you answer" release
+
+In plain English: on one client box an explicit "ask the council" never opened a chamber. The front door ran the runtime, the runtime refused, and the refusal arrived on stderr while the door only read stdout, so every real reason became the same empty `CONVENE_REFUSED`. The agent could not tell what was wrong, so it did what a helpful model does: it started answering the question in chat. Two more faults sat underneath — the brief carried the client's question with a stray leading sentence period, and an OpenRouter route could never be named because provider model ids contain a slash the opaque-ID rule forbids.
+
+- Front door: the convene child's refusal is parsed from stderr as well as stdout, so `OLLAMA_PLAN_REQUIRED`, `ROUTE_CHOICE_REQUIRED`, `COUNCIL_PREPARATION_REQUIRED` and the rest reach the agent intact. A regression test pins the stderr case.
+- Brief: `trimQuestion()` strips leading sentence punctuation, so `ask the council. What should…` produces the question, not a fragment of it. A regression test pins it.
+- Model ids: `requested_model_id` accepts a provider's own namespaced id (`vendor/model`). Every other ID field keeps the strict opaque pattern. Previously an OpenRouter route could not be convened by name at all.
+- Asking, not answering: when the route or plan is unknown the instruction is now to ask the client — Ollama $20 or $100 first, then, if there is no Ollama plan, recommend OpenRouter because its advisors run in parallel with no plan cap. `OLLAMA_PLAN_QUESTION`, `OLLAMA_PLAN_ACTION` and the `ROUTE_CHOICE_REQUIRED` recovery all say the same thing.
+- Chamber: a sitting that did not open must never be answered in chat. The old "tell the client the Council is running" fallback is gone; the public chamber URL is the deliverable and a failure reports its typed code in one line.
+- Version carriers: `version`, `skill-version.txt` and the `SKILL.md` frontmatter read 1.0.81.
+- Known pre-existing failure, unchanged by this release: `extensions/council-before-dispatch/test/core.test.mjs` "…" asserts `brief.options` holds the explore option while the code emits none (26 pass / 1 fail before and after these changes).
+
 ## v1.0.80: the manifest-carrier release (version moved so the corrected package can land)
 
 In plain English: the manifest regeneration that fixed the recorded runtime digest shipped without moving the skill's own version, so the repository's content-change guard refused it. This release moves the version carriers to 1.0.80 and rebuilds the manifest and archive over the same corrected runtime build. No runtime behavior changed. Source only: no box was written, no provider or Telegram call made, and no paid Council session run.
