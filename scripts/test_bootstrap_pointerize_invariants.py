@@ -196,9 +196,11 @@ def test_validator_fails_when_nothing_protected_exists():
     vd = _load(HERE / "validate-core-references.py", "vd_test")
     tmp = Path(tempfile.mkdtemp())
     try:
+        # A box that RUNS the skill-38 family but whose protected block is gone:
+        # that is the drift. A box with no such family is not this test's subject.
         (tmp / "AGENTS.md").write_text(
-            "<!-- BEGIN plain-block -->\nJust ordinary notes here.\n"
-            "<!-- END plain-block -->\n", encoding="utf-8")
+            "<!-- BEGIN SKILL38: SOME_OTHER_STANZA -->\nJust ordinary notes here.\n"
+            "<!-- END SKILL38: SOME_OTHER_STANZA -->\n", encoding="utf-8")
         for other in ("MEMORY.md", "TOOLS.md", "USER.md", "SOUL.md", "IDENTITY.md"):
             (tmp / other).write_text("", encoding="utf-8")
         res = vd.validate(tmp, {"AGENTS.md": 200000}, False)
