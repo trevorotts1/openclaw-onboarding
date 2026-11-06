@@ -82,14 +82,22 @@ function copyTree(dir, version) {
 
 // The gate block of wire.sh (from `GT_RC=0` to the verdict `if`), run against a
 // fixture home that holds two copies: the wired one and a shadowing ~/.agents one.
-function runWireGate(t, { agentVersion, answer }) {
+function runWireGate(t, { agentVersion, answer, symlinkSelected = false, vendorGit = false }) {
   const home = tmp(t);
   const wired = join(home, ".openclaw", "skills", `77-${NAME}`);
   const shadow = join(home, ".agents", "skills", NAME);
   copyTree(wired, "1.0.69");
   // SKILL_DIR is the wired fixture; it carries the real gate scripts it runs.
   cpSync(join(SKILL, "scripts"), join(wired, "scripts"), { recursive: true });
-  if (agentVersion === "1.0.69") cpSync(wired, shadow, { recursive: true });
+  if (symlinkSelected) {
+    // A selected copy that is a link to someone else's tree: the link itself is
+    // never written through; the tree the agent reads is what gets converged.
+    const vendor = join(home, "vendor", NAME);
+    copyTree(vendor, agentVersion);
+    if (vendorGit) mkdirSync(join(home, "vendor", ".git"), { recursive: true });
+    mkdirSync(dirname(shadow), { recursive: true });
+    symlinkSync(vendor, shadow);
+  } else if (agentVersion === "1.0.69") cpSync(wired, shadow, { recursive: true });
   else copyTree(shadow, agentVersion);
   const bin = join(home, "bin");
   fakeCli(bin, answer(shadow));
@@ -112,11 +120,30 @@ test("wire.sh: several copies, no env, the resolver names the current copy: the 
   assert.doesNotMatch(out, /agent selection unproven/);
 });
 
-test("wire.sh: the resolver names a STALE shadow copy: still refused, with the real reason", (t) => {
+test("wire.sh: the resolver names a STALE shadow copy: it is converged, and the SAME gate then passes", (t) => {
   const { out } = runWireGate(t, { agentVersion: "1.0.59", answer: (shadow) => info(shadow) });
-  assert.match(out, /updating only an unused directory/);
+  // The roll maintains ~/.openclaw/skills; the copy the agent reads is the one
+  // that has to be brought to this release, or readiness needs a human rsync.
+  assert.match(out, /SELECTED-TREE-REFRESH: REFRESHED/);
+  assert.match(out, /SELECTED-TREE: OK/);
+  assert.match(out, /GT_RC=0/);
+});
+
+test("wire.sh: a symlinked selected copy converges the tree the agent reads, never the link", (t) => {
+  const { out } = runWireGate(t, { agentVersion: "1.0.59", answer: (shadow) => info(shadow), symlinkSelected: true });
+  assert.match(out, /SELECTED-TREE-REFRESH: SKIPPED .*symlink/, "the link itself is never written through");
+  assert.match(out, /SELECTED-TREE-REFRESH: REFRESHED/, "the tree it points at is the copy the agent reads");
+  assert.match(out, /SELECTED-TREE: OK/);
+  assert.match(out, /GT_RC=0/);
+});
+
+test("wire.sh: a selected copy inside a git checkout is never rewritten: still refused", (t) => {
+  const { out } = runWireGate(t, { agentVersion: "1.0.59", answer: (shadow) => info(shadow), symlinkSelected: true, vendorGit: true });
+  assert.match(out, /SELECTED-TREE-REFRESH: SKIPPED .*git work tree/);
+  assert.doesNotMatch(out, /SELECTED-TREE-REFRESH: REFRESHED/);
   assert.match(out, /GT_RC=1/);
 });
+
 
 test("wire.sh: the resolver gives no answer: the selection stays unproven and refused", (t) => {
   const { out } = runWireGate(t, { agentVersion: "1.0.69", answer: () => ({ ok: false, error: { message: "Pass --agent <id>." } }) });
