@@ -223,6 +223,17 @@ export function refreshSelectedTree({ sourceDir, selectedDir } = {}) {
     if (!expectedArchive || !existsSync(srcArchive)) {
       return skip(`the shipped tree records no ${ARCHIVE} (manifest.archive.sha256), so the selected copy's archive cannot be converged`);
     }
+    // Only the packaging OF THIS RELEASE may be converged: a distribution of an
+    // older release would be given an archive that belongs to another tree,
+    // which is a worse lie than the stale one it already carries.
+    const expectedAggregate = typeof sourceManifest.aggregate_sha256 === "string" ? sourceManifest.aggregate_sha256 : null;
+    if (!expectedAggregate) return skip(`the shipped tree's manifest records no canonical aggregate to compare the distribution against`);
+    if (selectedManifest.canonical_aggregate_sha256 !== expectedAggregate) {
+      return skip(
+        `the selected distribution packages canonical aggregate ${selectedManifest.canonical_aggregate_sha256} but this release ships ` +
+        `${expectedAggregate}: a distribution of ANOTHER release cannot be converged by replacing one file - it has to be re-vendored`,
+      );
+    }
     if (existsSync(dstArchive) && sha256File(dstArchive) === expectedArchive) {
       result.archive = expectedArchive;
       result.status = "already-current";

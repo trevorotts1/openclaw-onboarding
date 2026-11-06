@@ -159,6 +159,22 @@ test("(resolver copy) a stale release archive is converged, and the SAME gate th
   assert.match(after.warnings.join("\n"), /SAME RELEASE: distribution .* is the 999 packaging of canonical aggregate/);
 });
 
+test("(resolver copy) a distribution of ANOTHER release is left alone, never given a foreign archive", (t) => {
+  const { canonical, dist } = staleDistributionFixture(t);
+  // A copy vendored from an older release: it packages a different canonical
+  // aggregate, so its stale archive is that release's own. Swapping in the new
+  // archive would be a worse lie than the one it already carries.
+  const manifest = JSON.parse(readFileSync(join(dist, "manifest.json"), "utf8"));
+  manifest.canonical_aggregate_sha256 = "b".repeat(64);
+  writeFileSync(join(dist, "manifest.json"), JSON.stringify(manifest, null, 2));
+  const before = sha(readFileSync(join(dist, "council-of-wise-elders.skill")));
+  const refresh = refreshSelectedTree({ sourceDir: canonical, selectedDir: dist });
+  assert.equal(refresh.status, "skipped");
+  assert.match(refresh.reason, /ANOTHER release/);
+  assert.deepEqual(refresh.written, []);
+  assert.equal(sha(readFileSync(join(dist, "council-of-wise-elders.skill"))), before);
+});
+
 test("(resolver copy) the gate still refuses a genuinely stale archive after a refresh", (t) => {
   const { home, canonical, dist } = staleDistributionFixture(t);
   assert.equal(refreshSelectedTree({ sourceDir: canonical, selectedDir: dist }).status, "refreshed");
