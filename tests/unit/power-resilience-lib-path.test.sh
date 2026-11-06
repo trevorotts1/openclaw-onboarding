@@ -85,9 +85,16 @@ BOX_LIB="$BOX/.openclaw/$LIB_REL"
 [ ! -e "$BOX/platform" ] || { echo "  FAIL: fixture broken — $BOX/platform must not exist"; exit 1; }
 
 # run the stanza: $1=_SCRIPT_DIR  $2=OPENCLAW_ROOT (may be empty)  $3=cwd
+#                 $4=HOME (default: a sandbox with no library, so the run is
+#                    hermetic — the stanza now also searches $HOME and the
+#                    test machine's own $HOME/.openclaw must never leak in)
+HOME_NONE="$WORK/home-none"
+mkdir -p "$HOME_NONE"
 resolve_lib() {
     (
         cd "$3" || exit 1
+        HOME="${4:-$HOME_NONE}"
+        export HOME
         unset OPENCLAW_ROOT
         unset _SCRIPT_DIR
         [ -z "$1" ] || _SCRIPT_DIR="$1"
@@ -166,6 +173,122 @@ if grep -q 'pr_preflight_gate' "$BOOTSTRAP" && grep -q 'pr_apply_pmset' "$BOOTST
 else
     fail "F: the gate or pmset call site is missing from bootstrap.sh"
 fi
+
+# =============================================================================
+# G/H/I: THE CANONICAL PATH — `curl ... | bash`
+# =============================================================================
+# Under `curl ... | bash` the entry script has no path: BASH_SOURCE[0] is empty,
+# `dirname ''` is '.', so _SCRIPT_DIR becomes the CALLER'S CWD, and
+# platform/mac/bootstrap.sh is curl-fetched into a mktemp file. Both of the
+# stanza's location-derived candidates (1-3) therefore miss on any box whose
+# library is not in the cwd — which is every box. Candidates anchored to $HOME
+# are what close this.
+#
+# Faithful setup: the REAL bootstrap.sh is copied ALONE into a temp dir (no
+# checkout around it, exactly like the mktemp fetch), the stanza is extracted
+# from that copy, and the copy's own location root resolves to the temp dir.
+# HOME is a fake box, the cwd is a foreign dir that is not HOME, and
+# OPENCLAW_ROOT is unset (nothing called oc_set_platform_paths).
+TMPFETCH="$WORK/tmpfetch"
+mkdir -p "$TMPFETCH"
+cp "$BOOTSTRAP" "$TMPFETCH/bootstrap.sh"
+SNIP_COPY="$(awk '/^_PR_LIB=/ { c=1 } c && /^if / { exit } c { print }' "$TMPFETCH/bootstrap.sh")"
+[ -n "$SNIP_COPY" ] || { echo "  FAIL: could not extract the stanza from the temp copy"; exit 1; }
+{
+    printf '%s\n' "$SNIP_COPY"
+    printf 'printf "%%s\\n" "${_PR_LIB:-}"\n'
+} > "$TMPFETCH/resolve.sh"
+
+FOREIGN="$WORK/foreign-cwd"
+mkdir -p "$FOREIGN"
+[ "$FOREIGN" != "$HOME" ] || { echo "  FAIL: fixture broken — foreign cwd is HOME"; exit 1; }
+
+# piped_resolve <fake HOME> -> the path the fetched bootstrap would pick
+piped_resolve() {
+    (
+        cd "$FOREIGN" || exit 1
+        HOME="$1"
+        export HOME
+        unset OPENCLAW_ROOT _SCRIPT_DIR
+        _SCRIPT_DIR="$FOREIGN"
+        export _SCRIPT_DIR
+        bash "$TMPFETCH/resolve.sh"
+    ) 2>/dev/null
+}
+
+# ---- G: piped fetch, library ONLY at $HOME/.openclaw (layout 1) -----------
+# This is the case that separates old from new: before the $HOME anchors it
+# resolves to nothing and the gate is skipped with rc 0.
+PIPED_BOX="$WORK/piped-box"
+mkdir -p "$PIPED_BOX/.openclaw/platform/mac/power-resilience"
+echo '# placeholder — resolution only' > "$PIPED_BOX/.openclaw/$LIB_REL"
+PIPED_LIB="$PIPED_BOX/.openclaw/$LIB_REL"
+[ ! -e "$PIPED_BOX/platform" ] || { echo "  FAIL: fixture broken — \$HOME/platform must not exist"; exit 1; }
+G_OUT="$(piped_resolve "$PIPED_BOX")"
+if [ "$G_OUT" = "$PIPED_LIB" ]; then
+    pass "G: piped fetch from a foreign cwd finds the library at \$HOME/.openclaw (install root)"
+else
+    fail "G: piped fetch from a foreign cwd resolved '${G_OUT:-<empty>}' — expected $PIPED_LIB"
+fi
+
+# ---- H: piped fetch, library ONLY at $HOME/.openclaw/onboarding -----------
+# The second real layout measured on a live Mac. None of candidates 1-4 reach
+# it, so it must be anchored explicitly.
+PIPED_BOX2="$WORK/piped-box2"
+mkdir -p "$PIPED_BOX2/.openclaw/onboarding/platform/mac/power-resilience"
+echo '# placeholder — resolution only' > "$PIPED_BOX2/.openclaw/onboarding/$LIB_REL"
+PIPED_LIB2="$PIPED_BOX2/.openclaw/onboarding/$LIB_REL"
+H_OUT="$(piped_resolve "$PIPED_BOX2")"
+if [ "$H_OUT" = "$PIPED_LIB2" ]; then
+    pass "H: piped fetch finds the library in the \$HOME/.openclaw/onboarding mirror"
+else
+    fail "H: piped fetch resolved '${H_OUT:-<empty>}' — expected $PIPED_LIB2"
+fi
+
+# ---- I: piped fetch, NO library anywhere -> warns, never silently passes ---
+# Run the REAL gate block (stanza + the if/else that consumes it) from the temp
+# copy, on a box with no library in any candidate root. The gate may not run,
+# so the ONLY acceptable outcome is the explicit WARNING on stderr that names
+# what it searched. A silent rc 0 is the defect.
+GATE_TAIL="$(awk '/^_PR_LIB=/ { c=1 } c { print }' "$TMPFETCH/bootstrap.sh")"
+{
+    printf '%s\n' "$GATE_TAIL"
+} > "$TMPFETCH/gate.sh"
+NOLIB_HOME="$WORK/nolib-home"
+mkdir -p "$NOLIB_HOME"
+I_ERR="$(
+    cd "$FOREIGN" || exit 1
+    HOME="$NOLIB_HOME"
+    export HOME
+    unset OPENCLAW_ROOT _SCRIPT_DIR
+    _SCRIPT_DIR="$FOREIGN"
+    export _SCRIPT_DIR
+    bash "$TMPFETCH/gate.sh" 2>&1 >/dev/null
+)"
+if printf '%s' "$I_ERR" | grep -q 'WARNING: power-resilience library not found'; then
+    pass "I: a piped fetch with no library anywhere warns loudly (never a silent pass)"
+else
+    fail "I: no library anywhere produced no WARNING — the gate skipped silently"
+fi
+if printf '%s' "$I_ERR" | grep -q '/platform/mac/power-resilience/lib-power-resilience.sh'; then
+    pass "I: the warning names the paths it searched"
+else
+    fail "I: the warning did not name any searched path"
+fi
+if printf '%s' "$I_ERR" | grep -q "$NOLIB_HOME/.openclaw/platform/mac/power-resilience"; then
+    pass "I: the searched list includes the \$HOME install-root anchor"
+else
+    fail "I: the searched list does not include the \$HOME install-root anchor"
+fi
+
+# ---- J: the \$HOME anchors are present in the shipped stanza --------------
+for _anchor in '${HOME:+$HOME/.openclaw}' '${HOME:+$HOME/.openclaw/onboarding}'; do
+    if printf '%s' "$SNIP_BODY" | grep -qF "$_anchor"; then
+        pass "J: stanza carries the install-root anchor $_anchor"
+    else
+        fail "J: stanza is missing the install-root anchor $_anchor"
+    fi
+done
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
