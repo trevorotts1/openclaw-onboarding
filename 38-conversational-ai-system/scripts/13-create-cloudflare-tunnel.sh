@@ -179,6 +179,18 @@ else
   echo "CNAME created: $PUBLIC_HOSTNAME → ${TUNNEL_ID}.cfargotunnel.com (proxied)" >&2
 fi
 
+# ---- G. Second-connector guard ----------------------------------------------
+# One connector per box. If another cloudflared service here (or another tunnel
+# with live connectors) already serves this box's public hostnames, installing
+# this token silently takes the live connector away from it and the other
+# client links go dark after a successful Access login (CF 1033 / 502).
+_TTG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../shared-utils" 2>/dev/null && pwd)/tunnel-takeover-guard.sh"
+if [ -f "$_TTG" ]; then
+  # shellcheck source=/dev/null
+  . "$_TTG"
+  guard_tunnel_takeover "$TUNNEL_ID" "$PARENT_DOMAIN" || exit 11
+fi
+
 # ---- Persist secrets ---------------------------------------------------------
 append_secret "CLOUDFLARE_TUNNEL_ID" "$TUNNEL_ID"
 append_secret "CLOUDFLARE_TUNNEL_TOKEN" "$TUNNEL_TOKEN"
