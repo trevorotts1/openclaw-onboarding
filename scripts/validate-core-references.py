@@ -36,6 +36,11 @@ Exit: 0 when every file passes, 1 otherwise. Output is JSON on stdout.
 from __future__ import annotations
 
 import argparse
+import sys as _sys
+from pathlib import Path as _Path
+
+_sys.path.insert(0, str(_Path(__file__).resolve().parent))
+import bootstrap_protection as _bp
 import json
 import os
 import re
@@ -54,14 +59,11 @@ DEFAULT_BUDGET = {
 
 POLICY_MARKER = "<!-- CORE_REFERENCE_POLICY_V1 -->"
 
-# Blocks that CARRY binding rules. They may never be replaced by a pointer or
-# left with an emptied body. This is the 2026-11-04 failure: the block survived
-# with balanced tags and a resolving pointer, so every other check here passed
-# while the six safety rules inside it were gone.
-PROTECTED_BLOCKS = ("SKILL38: SKILL38_RUNTIME_INVARIANTS",)
-PROTECTED_LABEL_RE = re.compile(
-    r"(INVARIANTS|SAFETY|HARD[\s_-]*RULE|NEVER[\s_-]*DO|PROHIBIT)", re.IGNORECASE
-)
+# Which blocks carry binding rules is decided in ONE place, by name, heading or
+# body content (bootstrap_protection.py). The previous version hardcoded a single
+# block NAME, so it protected exactly one box's naming scheme and passed any box
+# that called the same rules something else.
+
 
 # A backticked absolute path on any platform this fleet runs on: macOS boxes
 # live under /Users, VPS boxes under /data (and /root for a container home).
@@ -198,13 +200,14 @@ def validate(workspace: Path, budget: dict[str, int], require_policy: bool) -> d
         # A protected block must still carry its rules. Tags balancing is not
         # enough: a body emptied between two balanced tags passes every other
         # check in this file.
-        for pname in PROTECTED_BLOCKS:
-            begin = "<!-- BEGIN " + pname
-            if begin not in text:
-                continue
-            seg = text.split(begin, 1)[1]
-            if "<!-- END " + pname in seg:
-                seg = seg.split("<!-- END " + pname, 1)[0]
+        protected = _bp.protected_blocks(text)
+        if not protected and name == "AGENTS.md" and not _bp.carries_binding_rules(text):
+            # Absence is not a pass -- but only for the core instructions file.
+            # MEMORY.md/TOOLS.md carry no safety rules by design, so demanding
+            # one there would fail every healthy box.
+            errors.append(f"{name}: NO protected block and NO binding rules found "
+                          f"-- unvalidated, not clean")
+        for pname, seg in protected:
             body = re.sub(r"<!--.*?-->", "", seg, flags=re.DOTALL)
             body = "\n".join(l for l in body.splitlines() if l.strip())
             if "**Full text:**" in body:
@@ -213,7 +216,8 @@ def validate(workspace: Path, budget: dict[str, int], require_policy: bool) -> d
             if len(body.splitlines()) < 2:
                 errors.append(f"{name}: {pname}: binding-rules block has an empty or gutted body")
                 continue
-            if not re.search(r"^\s*\d+[.)]\s+\S", body, re.MULTILINE):
+            if _bp.carries_binding_rules(body) and not re.search(
+                    r"^\s*\d+[.)]\s+\S", body, re.MULTILINE):
                 errors.append(f"{name}: {pname}: binding-rules block no longer contains its numbered rules")
 
         for pm in _POINTER_LINE_RE.finditer(text):
