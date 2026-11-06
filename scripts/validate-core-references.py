@@ -201,10 +201,15 @@ def validate(workspace: Path, budget: dict[str, int], require_policy: bool) -> d
         # enough: a body emptied between two balanced tags passes every other
         # check in this file.
         protected = _bp.protected_blocks(text)
-        if not protected and name == "AGENTS.md" and not _bp.carries_binding_rules(text):
-            # Absence is not a pass -- but only for the core instructions file.
-            # MEMORY.md/TOOLS.md carry no safety rules by design, so demanding
-            # one there would fail every healthy box.
+        # The drift this catches: a box that RUNS the skill-38 family (so it
+        # should carry the six rules) but whose protected block is gone. A box
+        # that does not run that family has nothing to protect -- failing it
+        # flags every healthy minimal tree and makes the compactor refuse to
+        # move anything, which is exactly what broke compact-bootstrap's suite.
+        _runs_family = bool(re.search(r"<!--\s*BEGIN\s+(SKILL38:|skill:38)",
+                                      text, re.IGNORECASE))
+        if (not protected and name == "AGENTS.md" and _runs_family
+                and not _bp.carries_binding_rules(text)):
             errors.append(f"{name}: NO protected block and NO binding rules found "
                           f"-- unvalidated, not clean")
         for pname, seg in protected:
