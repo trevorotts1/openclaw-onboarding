@@ -8,6 +8,15 @@ if ! command -v resolve_platform_paths >/dev/null 2>&1; then
   resolve_platform_paths() { export SECRETS_ENV="$HOME/.openclaw/secrets/.env" WORKSPACE="$HOME/clawd" SKILLS_DIR_DEFAULT="$HOME/.openclaw/skills"; }
 fi
 resolve_platform_paths
+# repo-fix-alert 2026-11-05T02:48:03Z(b): the installer runs QC under a minimal PATH;
+# resolve node/npm/jq through an absolute-path fallback so a healthy box does not FAIL.
+for _b in node npm jq; do
+  if ! command -v "$_b" >/dev/null 2>&1; then
+    for _d in /opt/homebrew/bin /usr/local/bin /usr/bin /bin; do
+      if [ -x "$_d/$_b" ]; then export PATH="$_d:$PATH"; break; fi
+    done
+  fi
+done
 red(){ printf "\033[31m%s\033[0m\n" "$1"; }; green(){ printf "\033[32m%s\033[0m\n" "$1"; }; yellow(){ printf "\033[33m%s\033[0m\n" "$1"; }
 assert(){ if eval "$2" >/dev/null 2>&1; then green "  ✓ PASS — $1"; PASS=$((PASS+1)); else red "  ✗ FAIL — $1"; FAIL=$((FAIL+1)); fi; }
 warn_only(){ if eval "$2" >/dev/null 2>&1; then green "  ✓ PASS — $1"; PASS=$((PASS+1)); else yellow "  ⚠ WARN — $1"; WARN=$((WARN+1)); fi; }
