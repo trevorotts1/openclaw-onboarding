@@ -67,6 +67,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys as _sys
+from pathlib import Path as _Path
+
+_sys.path.insert(0, str(_Path(__file__).resolve().parent))
+import bootstrap_protection as _bp  # single definition of "carries binding rules"
 import re
 import sys
 from pathlib import Path
@@ -523,14 +528,11 @@ def sweep(bootstrap: Path, ref_file: Path, mode: str, min_chars: int,
     skip_res = [re.compile(s) for s in skip]
 
     def _skipped(name: str, body: str = "") -> bool:
-        if PROTECTED_BLOCK_RE.search(name):
+        # Shared with the validator: name, EVERY heading, or the rule text in the
+        # body. A block carrying the six rules is protected whatever it is called
+        # -- the same rules live under different block names on different boxes.
+        if _bp.is_protected(name, body):
             return True
-        if body:
-            # EVERY heading, not just the first: a block can open with an
-            # innocuous heading and declare "## Safety" further down.
-            for m in _HEADING_RE.finditer(body):
-                if PROTECTED_BLOCK_RE.search(m.group(2)):
-                    return True
         return any(r.search(name) for r in skip_res)
 
     # ── PAIR blocks ──────────────────────────────────────────────────────────

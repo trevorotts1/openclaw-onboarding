@@ -170,6 +170,63 @@ def test_validator_rejects_a_pointer_to_a_missing_section():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+
+def test_protection_holds_for_a_differently_named_block():
+    """The same six rules live under different block names on different boxes."""
+    bp = _load(HERE / "bootstrap-pointerize.py", "bp_test")
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        boot = tmp / "AGENTS.md"
+        ref = tmp / "ref" / "AGENTS.md"
+        boot.write_text(
+            "<!-- BEGIN totally-unrelated-name -->\n"
+            "## Housekeeping\n" + "\n".join(RULES) + "\n"
+            "<!-- END totally-unrelated-name -->\n", encoding="utf-8")
+        bp.sweep(boot, ref, "pointer", 0, [], False)
+        after = boot.read_text(encoding="utf-8")
+        for rule in RULES:
+            assert rule.strip() in after, (
+                "block carrying the rules under another name was pointerized: " + rule[:50])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_validator_fails_when_nothing_protected_exists():
+    """Absence is not a pass -- that silence is how the fleet drifted."""
+    vd = _load(HERE / "validate-core-references.py", "vd_test")
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        (tmp / "AGENTS.md").write_text(
+            "<!-- BEGIN plain-block -->\nJust ordinary notes here.\n"
+            "<!-- END plain-block -->\n", encoding="utf-8")
+        for other in ("MEMORY.md", "TOOLS.md", "USER.md", "SOUL.md", "IDENTITY.md"):
+            (tmp / other).write_text("", encoding="utf-8")
+        res = vd.validate(tmp, {"AGENTS.md": 200000}, False)
+        joined = " ".join(res["errors"])
+        assert "NO protected block" in joined, (
+            "validator passed a file with no protected block and no rules")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_validator_accepts_rules_under_another_block_name():
+    """Rules present under an odd name must not trip the absence check."""
+    vd = _load(HERE / "validate-core-references.py", "vd_test")
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        (tmp / "AGENTS.md").write_text(
+            "<!-- BEGIN unrelated-name -->\n## Notes\n"
+            + "\n".join(RULES) + "\n<!-- END unrelated-name -->\n", encoding="utf-8")
+        for other in ("MEMORY.md", "TOOLS.md", "USER.md", "SOUL.md", "IDENTITY.md"):
+            (tmp / other).write_text("", encoding="utf-8")
+        res = vd.validate(tmp, {"AGENTS.md": 200000}, False)
+        joined = " ".join(res["errors"])
+        assert "NO protected block" not in joined, (
+            "rules under another block name were treated as absent")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     tests = [
         test_derive_keeps_every_numbered_rule,
@@ -179,6 +236,9 @@ def main():
         test_protection_honors_a_binding_heading,
         test_shared_continuation_line_survives_in_both_rules,
         test_validator_rejects_a_pointer_to_a_missing_section,
+        test_protection_holds_for_a_differently_named_block,
+        test_validator_fails_when_nothing_protected_exists,
+        test_validator_accepts_rules_under_another_block_name,
     ]
     failed = 0
     for t in tests:
