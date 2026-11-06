@@ -45,7 +45,7 @@ export const OLLAMA_MONTHLY_TIERS = { basic: 20, premium: 100 } as const;
 
 /** The one question a client is asked, once, when their plan is unknown. */
 export const OLLAMA_PLAN_QUESTION =
-  'Which Ollama plan do you pay for: the $20/month plan (3 advisors run at a time) or the $100+/month plan (10 run at a time)?';
+  'Which Ollama plan do you pay for: the $20/month plan (3 advisors run at a time) or the $100+/month plan (10 run at a time)? If you have no Ollama plan, say so — in that case I recommend OpenRouter, where advisors run in parallel with no plan cap.';
 
 /** How a route slug is classified for parallel dispatch. */
 export type ProviderParallelKind =

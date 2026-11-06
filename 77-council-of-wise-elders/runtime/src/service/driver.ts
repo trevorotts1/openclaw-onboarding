@@ -384,7 +384,7 @@ function withProposals(
 /** <dataDir>/provider-plan.json — the client's Ollama plan, asked once. */
 const PROVIDER_PLAN_FILE = 'provider-plan.json';/** The one question asked when an Ollama route has no known plan (design verbatim). */
 const OLLAMA_PLAN_ACTION =
-  'Ask the client: are you on the Ollama $20 a month plan or the $100 a month plan? Then convene again with --ollama-plan 20 or --ollama-plan 100.';
+  'Ask the client: are you on the Ollama $20 a month plan or the $100 a month plan? If they have no Ollama plan, recommend OpenRouter instead (uncapped parallelism). Then convene again with --ollama-plan 20 or --ollama-plan 100, or on their OpenRouter route.';
 /** The OpenRouter route the fallback model is resolved on. */
 const FALLBACK_ROUTE_ID = 'openrouter-configured';
 

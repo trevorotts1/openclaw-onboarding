@@ -30,6 +30,24 @@ export function isValidId(value: unknown): value is string {
   );
 }
 
+/**
+ * A provider's own model id. OpenRouter and most routing providers namespace
+ * models as `vendor/model` (z-ai/glm-5.3-flash), so the slash the opaque-ID
+ * rule forbids is legitimate here. This is only for model ids; every other ID
+ * field keeps the strict pattern above.
+ */
+const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/;
+
+export function isValidModelId(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length >= 1 &&
+    value.length <= MAX_ID_LENGTH &&
+    MODEL_ID_PATTERN.test(value) &&
+    !value.includes(' ')
+  );
+}
+
 export function assertValidId(value: unknown, field: string): string {
   if (!isValidId(value)) {
     throw new ContractError(
