@@ -12,10 +12,16 @@ for f in \
   platform/mac/tunnel-hardening/install-rescue-tunnel-watchdog.sh \
   32-command-center-setup/scripts/setup-tunnel-daemon.sh \
   scripts/fix-power-resilience.sh \
-  tests/unit/power-resilience-gate.test.sh; do
+  tests/unit/power-resilience-gate.test.sh \
+  tests/unit/power-resilience-lib-path.test.sh; do
   echo "bash -n $f"
   bash -n "$f"
 done
+)
+( # step: The library must RESOLVE from a foreign cwd (silent-skip regression)
+set -e
+chmod +x tests/unit/power-resilience-lib-path.test.sh
+bash tests/unit/power-resilience-lib-path.test.sh
 )
 ( # step: FileVault gate must FAIL CLOSED + pmset must be present
 set -e
