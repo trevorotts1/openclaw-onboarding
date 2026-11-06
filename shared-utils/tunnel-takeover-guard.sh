@@ -111,9 +111,14 @@ for d in sys.argv[2:]:
 ' "$TTG_MAC_TOKEN_FILE" "$TTG_MAC_PLIST_DIR" "$TTG_MAC_AGENT_DIR" 2>/dev/null
 }
 
-# guard_tunnel_takeover <new-tunnel-id> [parent-domain]
+# guard_tunnel_takeover <new-tunnel-id> [hostname ...]
+# Hostnames are the ones this install is about to serve. The cloud half checks
+# ONLY those: whatever tunnel DNS currently points at for that hostname is the
+# tunnel that would go dark. Scoping to the hostnames matters — every client
+# shares one parent domain, so "any other tunnel in the domain" would flag the
+# whole fleet and block every install.
 guard_tunnel_takeover() {
-  local new_id="${1:-}" domain="${2:-}"
+  local new_id="${1:-}"; shift || true
   [[ -n "$new_id" ]] || { echo "TTG: missing tunnel id" >&2; return 2; }
 
   local conflicts="" label tokf tid
@@ -125,43 +130,42 @@ guard_tunnel_takeover() {
     conflicts="${conflicts}  local service '${label}' is connected to tunnel ${tid}"$'\n'
   done < <(ttg_installed_services)
 
-  # Cloud-side: tunnels carrying hostnames under this parent domain, with connectors.
+  # Cloud-side: for each hostname being served, which tunnel does DNS point at?
   local cloud=""
-  if [[ -n "${CLOUDFLARE_API_TOKEN:-}" && -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "$domain" ]]; then
-    cloud="$(CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN" \
-             CLOUDFLARE_ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID" \
-             TTG_NEW_ID="$new_id" TTG_DOMAIN="$domain" python3 - <<'PY' 2>/dev/null
-import json, os, urllib.request
+  if [[ $# -gt 0 && -n "${CLOUDFLARE_API_TOKEN:-}" && -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
+    cloud="$(CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN" TTG_NEW_ID="$new_id" \
+             python3 -c '
+import json, os, sys, urllib.request
 tok = os.environ["CLOUDFLARE_API_TOKEN"]
-acc = os.environ["CLOUDFLARE_ACCOUNT_ID"]
 new_id = os.environ["TTG_NEW_ID"]
-dom = os.environ["TTG_DOMAIN"]
 def api(u):
     r = urllib.request.Request(u, headers={"Authorization": "Bearer " + tok})
     with urllib.request.urlopen(r, timeout=20) as x:
         return json.loads(x.read())
-base = "https://api.cloudflare.com/client/v4/accounts/" + acc
-try:
-    tunnels = api(base + "/cfd_tunnel?is_deleted=false&per_page=200").get("result") or []
-except Exception:
-    raise SystemExit(0)
-for t in tunnels:
-    if t.get("id") == new_id:
+zones = {}
+for host in sys.argv[1:]:
+    parts = host.split(".", 1)
+    if len(parts) != 2:
         continue
-    conns = t.get("connections") or []
-    if not conns:
-        continue
+    parent = parts[1]
     try:
-        cfg = api(base + "/cfd_tunnel/" + t["id"] + "/configurations")
+        if parent not in zones:
+            z = api("https://api.cloudflare.com/client/v4/zones?name=" + parent).get("result") or []
+            zones[parent] = z[0]["id"] if z else ""
+        zid = zones[parent]
+        if not zid:
+            continue
+        recs = api("https://api.cloudflare.com/client/v4/zones/%s/dns_records?name=%s"
+                   % (zid, host)).get("result") or []
+        if not recs:
+            continue
+        content = recs[0].get("content") or ""
+        tid = content.split(".")[0]
+        if tid and tid != new_id:
+            print("  %s is routed to tunnel %s — that connector would go dark" % (host, tid))
     except Exception:
         continue
-    ing = ((cfg.get("result") or {}).get("config") or {}).get("ingress") or []
-    hosts = [i.get("hostname") for i in ing
-             if i.get("hostname") and i["hostname"].endswith("." + dom)]
-    if hosts:
-        print("  tunnel '%s' (%s) has %d live connector(s) and carries: %s"
-              % (t.get("name"), t["id"], len(conns), ", ".join(hosts)))
-PY
+' "$@" 2>/dev/null
 )"
   fi
 

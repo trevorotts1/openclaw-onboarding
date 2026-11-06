@@ -188,7 +188,7 @@ _TTG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../shared-utils" 2>/dev/null && pw
 if [ -f "$_TTG" ]; then
   # shellcheck source=/dev/null
   . "$_TTG"
-  guard_tunnel_takeover "$TUNNEL_ID" "$PARENT_DOMAIN" || exit 11
+  guard_tunnel_takeover "$TUNNEL_ID" "$PUBLIC_HOSTNAME" || exit 11
 fi
 
 # ---- Persist secrets ---------------------------------------------------------
