@@ -61,10 +61,12 @@ echo "== open and decided seams =="
 # The watchdog writes an explicit marker only when it actually delivered the
 # TERM, so exit 124 means exactly "the bound fired" and a stray SIGKILL (an OOM
 # kill, say) keeps its own status instead of being misreported as a timeout.
-# 900 s sits above the 633 s a healthy full stage-1 run measured on a Mac Mini;
-# a smaller default would convert a passing box into a false timeout.
-# UNIT_TIMEOUT=<seconds> raises the bound without editing this file.
-UNIT_TIMEOUT="${UNIT_TIMEOUT:-900}"
+# A healthy stage-1 discovery measured 633 s on a quiet Mac Mini and 807.881 s
+# on the same box under load (Ran 657 tests), so the bound has to clear the SLOW
+# end by a real margin: 1800 s is 2.2x the contended measurement. Anything near
+# the quiet number would convert a passing but busy box into a false timeout.
+# UNIT_TIMEOUT=<seconds> moves the bound without editing this file.
+UNIT_TIMEOUT="${UNIT_TIMEOUT:-1800}"
 case "$UNIT_TIMEOUT" in
     '' | *[!0-9]*) echo "verify: UNIT_TIMEOUT must be whole seconds, got '$UNIT_TIMEOUT'" >&2; exit 1 ;;
 esac
