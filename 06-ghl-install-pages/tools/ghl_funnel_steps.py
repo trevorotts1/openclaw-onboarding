@@ -245,13 +245,19 @@ def _carry_billing(out: Dict[str, Any], approved: Optional[Mapping[str, Any]] = 
         out["unresolved"] = dict(terms["unresolved"])
         return out
     billing = terms["billing"]
-    out["approved_billing"] = dict(billing)
+    # ``approved_billing`` is the APPROVED record's own term (one_time | recurring |
+    # trial | installment), which is the vocabulary the native binding call compares
+    # against. ``billing`` above is the NATIVE shape (an approved ``trial`` maps to
+    # ``trial_then_recurring``); mixing the two makes the binding call refuse a
+    # native price that is exactly right.
+    approved_term = str(approved.get("billing_type") or "").strip()
+    out["approved_billing"] = {"billing_type": approved_term}
     if native is not None:
         got = _oc.NATIVE_TO_APPROVED.get(str(native.get("billing_type") or ""))
-        if got != billing["billing_type"]:
+        if got != approved_term:
             raise FunnelPlanError(
                 f"{where}: the supplied native terms ({got!r}) disagree with the approved "
-                f"billing term ({billing['billing_type']!r}); refusing to bind a term the "
+                f"billing term ({approved_term!r}); refusing to bind a term the "
                 "offer does not carry")
     elif billing["billing_type"] != "one_time":
         out["billing"] = dict(billing)   # recurrence must be read back, never assumed
