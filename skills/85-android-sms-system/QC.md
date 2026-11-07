@@ -26,11 +26,14 @@ output is UNRUN, and UNRUN is FAIL.
       2026-11-06 in either form: the ISO date `2026-11-06` or the long form
       `November 6, 2026`. The shipped entry reads
       `## [v1.0.0] - November 6, 2026`, so the long form is what must pass.
-- [ ] **0.4** `PREREQS.json` parses as JSON and declares its six prerequisites by
-      `id` and `type`: `docs-folder` (path), `article-count` (content, minimum
-      156), `python3` (runtime), `bash` (runtime), `article-images` (content,
-      optional, minimum 660 images ~788 MB), `support-url` (service, optional).
-      It declares no prerequisite skill; it names no other skill.
+- [ ] **0.4** `PREREQS.json` parses as JSON and uses only the repo's executable
+      types (`binary`, `manual` here; valid set is `credential`, `skill`,
+      `binary`, `config`, `mcp`, `state`, `python_module`, `manual`). It declares
+      four prerequisites by `id` and `type`: `docs-folder` (manual, optional),
+      `python3` (binary, required), `bash` (binary, required), `support-url`
+      (manual, optional). Every `binary` entry carries `check.binary`; every
+      `manual` entry is optional and carries `check.note`. It declares no
+      prerequisite skill; it names no other skill.
 - [ ] **0.5** Every file named in `SKILL.md` exists. No listed file is missing;
       no shipped file is unlisted.
 - [ ] **0.6** The `.skill` bundle is a valid zip, contains `SKILL.md`, and its
@@ -51,16 +54,22 @@ ok=any('1.0.0' in l and re.search(r'2026-11-06|November\s+6,\s+2026', l)
 assert ok, 'no 1.0.0 entry carrying 2026-11-06 or November 6, 2026'
 print('changelog OK')
 d=json.load(open('PREREQS.json'))
+VALID={'credential','skill','binary','config','mcp','state','python_module','manual'}
 rows={p['id']: p['type'] for p in d['prerequisites']}
-want={'docs-folder':'path','article-count':'content','python3':'runtime',
-      'bash':'runtime','article-images':'content','support-url':'service'}
+want={'docs-folder':'manual','python3':'binary','bash':'binary','support-url':'manual'}
 assert rows==want, (sorted(rows), sorted(want))
+for p in d['prerequisites']:
+    assert p['type'] in VALID, (p['id'], p['type'])
+    if p['type']=='binary': assert p['check'].get('binary'), p['id']
+    if p['type']=='manual':
+        assert p['severity']=='optional', p['id']
+        assert p['check'].get('note'), p['id']
 assert not any(p.get('type')=='skill' for p in d['prerequisites']), 'skill prereq'
 print('prereqs OK', len(rows), 'entries')
 EOF
 ```
 
-PASS prints `changelog OK` and `prereqs OK 6 entries`.
+PASS prints `changelog OK` and `prereqs OK 4 entries`.
 
 ---
 

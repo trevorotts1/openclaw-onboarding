@@ -5,62 +5,39 @@
   "prerequisites": [
     {
       "id": "docs-folder",
-      "type": "path",
-      "label": "myCRMSIM offline documentation set",
+      "type": "manual",
+      "label": "myCRMSIM offline documentation set (required for answers)",
       "check": {
-        "path": "$HOME/Downloads/openclaw-master-files/mycrmsim",
-        "mustContain": ["00-INDEX.md", "_manifest.json", "articles/"]
+        "note": "Verify: test -f \"$HOME/Downloads/openclaw-master-files/mycrmsim/00-INDEX.md\" && find \"$HOME/Downloads/openclaw-master-files/mycrmsim/articles\" -name '*.md' -type f | wc -l  -- expect 156. Declared manual because the PREREQS schema has no path-exists type; install succeeds without it, answering degrades to the shipped deep reference."
       },
-      "severity": "required",
-      "satisfy": "Place the offline documentation set at $HOME/Downloads/openclaw-master-files/mycrmsim, or re-fetch it from https://support.mycrmsim.com and update skills.85-android-sms-system.docsPath in ADVANCED_CONFIG.md if the location differs."
-    },
-    {
-      "id": "article-count",
-      "type": "content",
-      "label": "Minimum 156 support articles present",
-      "check": {
-        "path": "$HOME/Downloads/openclaw-master-files/mycrmsim/articles",
-        "command": "find \"$DOCS_PATH/articles\" -type f -name '*.md' | wc -l",
-        "minimum": 156
-      },
-      "severity": "required",
-      "satisfy": "Confirm `find <docs>/articles -type f -name '*.md' | wc -l` returns at least 156. A short count means the download was incomplete: re-fetch from https://support.mycrmsim.com. The skill answers from the written articles only; a partial set produces partial answers."
+      "severity": "optional",
+      "satisfy": "Place the offline set at $HOME/Downloads/openclaw-master-files/mycrmsim, at docs/ beside SKILL.md, or point $ASMS_DOCS_DIR at it. Re-fetch from https://support.mycrmsim.com if it is missing or holds fewer than 156 articles."
     },
     {
       "id": "python3",
-      "type": "runtime",
+      "type": "binary",
       "label": "python3 (article index and manifest parsing)",
-      "check": { "command": "python3 --version" },
+      "check": { "binary": "python3" },
       "severity": "required",
       "satisfy": "Install Python 3.9 or newer. On macOS: `xcode-select --install` or `brew install python@3.12`. Verify with `python3 --version`."
     },
     {
       "id": "bash",
-      "type": "runtime",
+      "type": "binary",
       "label": "bash (qc and maintenance scripts)",
-      "check": { "command": "bash --version" },
+      "check": { "binary": "bash" },
       "severity": "required",
       "satisfy": "bash ships with macOS at /bin/bash. Verify with `bash --version`. The skill's qc script requires bash 3.2 or newer, which stock macOS provides."
     },
     {
-      "id": "article-images",
-      "type": "content",
-      "label": "Article images (optional, absent by default — 660 references, 0 files)",
+      "id": "support-url",
+      "type": "manual",
+      "label": "myCRMSIM support site (source of truth for re-fetching)",
       "check": {
-        "path": "$HOME/Downloads/openclaw-master-files/mycrmsim/_assets",
-        "command": "find \"$DOCS_PATH/_assets\" -type f 2>/dev/null | wc -l",
-        "minimum": 0
+        "note": "No credential needed; the support center is public. Browse https://support.mycrmsim.com only when the local set is missing, short of 156 articles, or older than the live site."
       },
       "severity": "optional",
-      "satisfy": "Nothing to install. The 660 images and GIFs were deleted from this set to avoid repo bloat, so _assets/ is absent and the articles keep 660 image reference lines pointing at nothing. That is correct and harmless: the skill answers from article text alone, and a file count of 0 passes. Do not re-download _assets/ to make the references resolve."
-    },
-    {
-      "id": "support-url",
-      "type": "service",
-      "label": "myCRMSIM support site (source of truth for re-fetching)",
-      "check": { "url": "https://support.mycrmsim.com" },
-      "severity": "optional",
-      "satisfy": "No credential needed; the support center is public. Use it only when the local documentation set is missing, short of 156 articles, or older than the live site. Browse to https://support.mycrmsim.com and re-download the article set."
+      "satisfy": "Use https://support.mycrmsim.com to re-download the article set when the local copy is absent or stale."
     }
   ]
 }
