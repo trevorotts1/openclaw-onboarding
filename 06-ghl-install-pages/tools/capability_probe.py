@@ -1000,6 +1000,147 @@ def _select_lane(lanes: Dict[str, Any], env: Dict[str, str]) -> Optional[str]:
     return None                          # 5 cua_last_resort NEVER auto-selected
 
 
+# ── per-operation capability (W3 connection 7) ───────────────────────────────
+# `selectedLane` is a BOX-level statement: which browser lane this host can
+# drive. It is NOT a claim that any particular operation is supported, and it is
+# never a claim that one was completed. A capability answer is per OPERATION and
+# per CONNECTED LOCATION, and a probe can only ever prove that a ROUTE exists.
+
+#: Every browser lane the probe can report, in plan 2.2 precedence order.
+BROWSER_LANE_ORDER: tuple = (
+    "openclaw_managed_browser",
+    "agent_browser",
+    "playwright_direct",
+    "existing_session",
+)
+
+
+def browser_routes(lanes: Dict[str, Any]) -> List[str]:
+    """The browser lanes usable on THIS box, in precedence order. Empty when
+    no CDP lane is usable (fail-closed; the caller must not invent one)."""
+    routes: List[str] = []
+    if _oc_lane_eligible(lanes["openclaw_managed_browser"]):
+        routes.append("openclaw_managed_browser")
+    if lanes["agent_browser"]["available"]:
+        routes.append("agent_browser")
+    if lanes["playwright_direct"]["available"]:
+        routes.append("playwright_direct")
+    if lanes["existing_session"].get("userProfileConfigured"):
+        routes.append("existing_session")
+    return routes
+
+
+def _build_operation_capabilities(
+        lanes: Dict[str, Any], selected: Optional[str], blockers: List[str],
+        location_ref: Optional[str], stamp: Callable[[], str]) -> Dict[str, Any]:
+    """The per-transport record that replaces any blanket capability claim.
+
+    Only the browser transport is measured here; ``api`` and ``mcp`` are owned
+    by Skill 44's capability gate and are reported as ``unknown`` with their
+    owner named — never as available, and never as proven.
+    """
+    routes = browser_routes(lanes)
+    return {
+        "schema": "skill6-operation-capabilities/1",
+        "scope": "per-operation+per-connected-location",
+        "generatedAt": stamp(),
+        "connectedLocation": {
+            "present": location_ref is not None,
+            "reference": location_ref,
+            # An env/disk probe cannot verify a location against the account.
+            "verified": "unknown",
+        },
+        "transports": {
+            "browser": {
+                "routes": routes,
+                "selectedLane": selected,
+                "operationComplete": False,
+                "provesOperation": False,
+                "evidenceAt": stamp(),
+            },
+            "api": {
+                "available": "unknown",
+                "owner": "skill-44 capability gate (per operation and tenant)",
+                "operationComplete": False,
+                "provesOperation": False,
+                "evidenceAt": stamp(),
+            },
+            "mcp": {
+                "available": "unknown",
+                "owner": "skill-44 capability gate (per operation and tenant)",
+                "operationComplete": False,
+                "provesOperation": False,
+                "evidenceAt": stamp(),
+            },
+        },
+        "blockers": list(blockers),
+        "select": (
+            "capability_probe.select_operation_capability(report, "
+            "operation=..., location_id=...)"
+        ),
+    }
+
+
+def select_operation_capability(
+    report: Dict[str, Any],
+    *,
+    operation: str,
+    location_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Answer for ONE operation at ONE connected location: is a real managed
+    browser route available, and does that prove the operation ran?
+
+    The second answer is always NO. A capability probe measures the box; it does
+    not drive the operation and cannot observe the tenant-side result, so it
+    reports ``operationComplete=False`` and ``provesOperation=False``
+    unconditionally. Callers that need completion must take it from the rung or
+    operation that actually ran, never from this record.
+
+    Status vocabulary:
+      ``route_available``  — a browser lane exists on this box AND a location
+                             was supplied; the operation may be dispatched.
+      ``location_unbound`` — no connected location was supplied; a per-location
+                             capability cannot be claimed.
+      ``no_browser_route`` — no browser lane is usable on this box.
+    """
+    if not isinstance(operation, str) or not operation.strip():
+        raise ValueError("operation must be a non-empty operation id")
+    caps = report.get("operationCapabilities") or {}
+    transports = caps.get("transports") or {}
+    browser = transports.get("browser") or {}
+    routes = list(browser.get("routes") or ())
+    selected = browser.get("selectedLane")
+    lane = selected if selected in routes else (routes[0] if routes else None)
+
+    if not isinstance(location_id, str) or not location_id.strip():
+        status = "location_unbound"
+    elif lane is None:
+        status = "no_browser_route"
+    else:
+        status = "route_available"
+
+    available = status == "route_available"
+    return {
+        "operation": operation,
+        "locationId": location_id,
+        "transport": "browser" if available else None,
+        "lane": lane if available else None,
+        "status": status,
+        # Load-bearing: a probe never completes and never proves an operation.
+        "operationComplete": False,
+        "provesOperation": False,
+        "prerequisiteReady": available,
+        "evidence": {
+            "probedAt": report.get("probedAt"),
+            "selectedLane": selected,
+            "routes": routes,
+            "blockers": list(caps.get("blockers") or report.get("blockers") or ()),
+            "scope": caps.get("scope"),
+        },
+    }
+
+
+
 # ── main probe ────────────────────────────────────────────────────────────────
 
 def run_probe(runner: Callable[..., Any] = subprocess.run,
@@ -1131,6 +1272,13 @@ def run_probe(runner: Callable[..., Any] = subprocess.run,
         pw_package_available=pw["available"],
         pw_launcher=pw_launcher, sys_root=sys_root)
 
+    # W3 connection 7: per-operation / per-connected-location capability. The
+    # box-level `selectedLane` above is NOT a capability claim; this record is
+    # what a dispatcher must read for one operation.
+    operation_capabilities = _build_operation_capabilities(
+        lanes, selected, blockers,
+        _first_env_reference(env, LOCATION_ID_ALIASES), _stamp)
+
     return {
         "probedAt": now,
         "platform": _platform_name(),  # mac | linux | win per plan Part 2.1
@@ -1144,6 +1292,7 @@ def run_probe(runner: Callable[..., Any] = subprocess.run,
         "blockers": blockers,
         "warnings": warnings,
         "environmentCapabilities": environment_capabilities,
+        "operationCapabilities": operation_capabilities,
     }
 
 
@@ -1294,6 +1443,39 @@ def _selftest() -> int:
         errors.append("iframeDrag must be false without Playwright")
     if res_ab["iframeDrag"]["requires"] != "playwright+cdp":
         errors.append("iframeDrag.requires must be 'playwright+cdp'")
+
+    # 7. per-operation capability (W3 connection 7): scoped, per location, and
+    #    structurally incapable of claiming an operation completed.
+    op_caps = res_ab.get("operationCapabilities") or {}
+    if op_caps.get("scope") != "per-operation+per-connected-location":
+        errors.append(f"operationCapabilities scope wrong: {op_caps.get('scope')}")
+    transports = op_caps.get("transports") or {}
+    for name in ("browser", "api", "mcp"):
+        entry = transports.get(name) or {}
+        if entry.get("operationComplete") is not False:
+            errors.append(f"operationCapabilities.{name} claims a completion")
+        if entry.get("provesOperation") is not False:
+            errors.append(f"operationCapabilities.{name} claims a proof")
+    for owned in ("api", "mcp"):
+        if (transports.get(owned) or {}).get("available") != "unknown":
+            errors.append(f"probe invented an {owned} availability claim")
+
+    bound = select_operation_capability(
+        res_ab, operation="funnels.pages.autosave", location_id="loc-test")
+    if bound["status"] != "route_available" or bound["transport"] != "browser":
+        errors.append(f"bound per-operation capability wrong: {bound['status']}")
+    if bound["operationComplete"] is not False or bound["provesOperation"] is not False:
+        errors.append("per-operation capability claimed completion from a probe")
+
+    unbound = select_operation_capability(
+        res_ab, operation="funnels.pages.autosave")
+    if unbound["status"] != "location_unbound" or unbound["transport"] is not None:
+        errors.append(f"unbound location must not claim a route: {unbound['status']}")
+
+    nowhere = select_operation_capability(
+        res, operation="funnels.pages.autosave", location_id="loc-test")
+    if nowhere["status"] != "no_browser_route" or nowhere["transport"] is not None:
+        errors.append(f"empty box must not claim a route: {nowhere['status']}")
 
     if errors:
         for e in errors:

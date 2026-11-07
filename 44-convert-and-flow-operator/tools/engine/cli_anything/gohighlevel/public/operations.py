@@ -956,6 +956,96 @@ for _row in _ROWS:
 
 OPERATIONS: OperationRegistry = OperationRegistry(_ROWS)
 
+# ---------------------------------------------------------------------------
+# Operation -> declared transport capability (W3 connection 7)
+#
+# This is a DERIVATION, not new evidence: every value below is read off the
+# frozen ``route_class`` of the row above. It answers exactly one question —
+# which transport the frozen contract declares for one operation — so a
+# dispatcher never has to guess, and never makes a blanket claim about a whole
+# tenant or a whole module.
+#
+#   public_direct      -> api     (public REST)
+#   official_mcp       -> mcp     (official MCP tool, no Version header)
+#   skill44_private    -> api     (internal rail, never the public adapter)
+#   skill06_authoring  -> browser (the authoring surface IS the browser; the
+#                                  docstrings of the S06 builder rows say so)
+#   retired            -> none    (deprecated; no route to declare)
+#   capability_gap     -> none    (NO route is established; ``unresolved`` is
+#                                  true and the browser fallback is unproven,
+#                                  never declared as a working route)
+#   excluded           -> none    (deliberately out of scope)
+#
+# Nothing here carries enablement — that stays the capability gate's, per
+# ``(operation_id, tenant)`` (freeze section 3.2 rule 5).
+# ---------------------------------------------------------------------------
+
+TRANSPORT_BY_ROUTE: dict[str, str | None] = {
+    PUB: "api",
+    MCP: "mcp",
+    S44P: "api",
+    S06: "browser",
+    RET: None,
+    GAP: None,
+    EXCLUDED: None,
+}
+
+#: Rows whose ONLY declared route is the Skill 6 managed browser.
+BROWSER_ONLY_ROUTES: frozenset[str] = frozenset({S06})
+
+#: Rows for which the freeze records NO usable route at all.
+UNRESOLVED_ROUTES: frozenset[str] = frozenset({GAP})
+
+
+def declared_transports(operation_id: str) -> tuple[str, ...]:
+    """The transports the frozen row declares for ``operation_id``.
+
+    Empty means the row declares no usable route (retired / excluded /
+    capability gap). An unknown operation raises ``ContractViolation`` exactly
+    like ``OperationRegistry.require`` — never a silent empty answer.
+    """
+
+    row = OPERATIONS.require(operation_id)
+    transport = TRANSPORT_BY_ROUTE.get(row.route_class)
+    return () if transport is None else (transport,)
+
+
+def browser_route_required(operation_id: str) -> bool:
+    """True when the managed browser is the row's ONLY declared route."""
+
+    return OPERATIONS.require(operation_id).route_class in BROWSER_ONLY_ROUTES
+
+
+def operation_routes_unresolved(operation_id: str) -> bool:
+    """True when the freeze records no usable route (an honest gap)."""
+
+    return OPERATIONS.require(operation_id).route_class in UNRESOLVED_ROUTES
+
+
+def capability_map() -> dict[str, dict[str, object]]:
+    """The operation -> capability mapping for every frozen row.
+
+    Per operation, never per tenant and never a module-wide claim. A caller
+    that needs a real capability answer for one tenant still consults the
+    capability gate; this map only says what the contract DECLARES.
+    """
+
+    mapping: dict[str, dict[str, object]] = {}
+    for row in _ROWS:
+        mapping[row.operation_id] = {
+            "operation": row.operation_id,
+            "routeClass": row.route_class,
+            "transports": list(declared_transports(row.operation_id)),
+            "browserRouteRequired": row.route_class in BROWSER_ONLY_ROUTES,
+            "unresolved": row.route_class in UNRESOLVED_ROUTES,
+            "write": row.write,
+            "approvalRequired": row.approval_required,
+            "tenantBinding": row.tenant_binding,
+            "version": row.version,
+        }
+    return mapping
+
+
 __all__ = [
     "OperationRow",
     "OperationRegistry",
@@ -964,4 +1054,11 @@ __all__ = [
     "SUPPORTED_VERSIONS",
     "MEDIA_FILE_TYPES",
     "UNKNOWN",
+    "TRANSPORT_BY_ROUTE",
+    "BROWSER_ONLY_ROUTES",
+    "UNRESOLVED_ROUTES",
+    "declared_transports",
+    "browser_route_required",
+    "operation_routes_unresolved",
+    "capability_map",
 ]
