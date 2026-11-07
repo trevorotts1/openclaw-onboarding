@@ -1,7 +1,11 @@
 """CLI: compile a route, dispatch every page, assemble a package, check one, or report dependencies.
 
 Exit 0 pass, 2 fail. The Council planning step runs on route/assemble and is
-always recorded; a not-ready Council never changes the exit code.
+always recorded; a not-ready Council never changes the exit code. At the
+coherent-plan stage it asks the Council front door for a light sitting
+(``council-ask ask --brief FILE --mode light --json``) with the compiled route
+as the purchase graph; the returned session result is recorded and a verdict
+that did not come back is recorded as no advice, never as advice.
 
 ``dispatch`` and ``assemble`` run the dependency preflight first and refuse on any
 required entry that is missing, so a green preflight means the launch can run.
@@ -104,11 +108,17 @@ def _json_object(path: Path) -> dict:
     return doc if isinstance(doc, dict) else {}
 
 
+def _council_session(args: argparse.Namespace) -> "str | None":
+    """The already-convened Council sitting to read, when the caller names one."""
+    return (getattr(args, "council_session", None) or "").strip() or None
+
+
 def cmd_route(args: argparse.Namespace) -> int:
     normalized = intake.validate(_read_json(args.intake))
-    advice = council.planning_step(normalized)
+    graph = route.compile_route(normalized)
+    advice = council.planning_step(normalized, graph=graph,
+                                   session_id=_council_session(args))
     record = route.launch_record(normalized, advice)
-    graph = route.compile_route(normalized, advice)
     _emit({"council": advice, "graph": graph, "launch_record": record})
     return 0
 
@@ -128,8 +138,9 @@ def cmd_assemble(args: argparse.Namespace) -> int:
         raise CliError("AF-LAUNCH-APPROVAL-UNBOUND",
                             f"no dispatch record (launch.json) in {source_root}, so the approval cannot be "
                             "tied to a plan. Pass --run-dir of the dispatch run.")
-    advice = council.planning_step(normalized)
-    graph = route.compile_route(normalized, advice)
+    graph = route.compile_route(normalized)
+    advice = council.planning_step(normalized, graph=graph, run_dir=str(source_root),
+                                   session_id=_council_session(args))
     pieces = {role: _read_json(pieces_dir / f"{role}.json")
               for role in (n["role"] for n in graph["nodes"])}
     for slot in package.EXTRA_SLOTS:  # a second page of a role (downsell_2) rides beside its parent
@@ -409,6 +420,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     r = sub.add_parser("route", help="validate intake and compile the route graph")
     r.add_argument("--intake", required=True)
+    r.add_argument("--council-session", dest="council_session", default=None,
+                   help="read this already-convened Council session's verdict instead of "
+                        "asking for a new light sitting")
     r.set_defaults(fn=cmd_route)
 
     a = sub.add_parser("assemble", help="assemble package-manifest.json and receipt.json")
@@ -439,6 +453,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="the Skill 06 install read-back record (JSON): the native capability evidence, "
                         "fulfillment mapping and failed/pending copy the order form needs. Without it the "
                         "order-form mapping lists those facts as unknown and check refuses it")
+    a.add_argument("--council-session", dest="council_session", default=None,
+                   help="read this already-convened Council session's verdict instead of asking "
+                        "for a new light sitting")
     a.add_argument("--page-only", action="store_true",
                    help="assemble pages alone and label the package page-only: no shared launch "
                         "plan, so no Black Friday calendar and no planned email, text or automation "
