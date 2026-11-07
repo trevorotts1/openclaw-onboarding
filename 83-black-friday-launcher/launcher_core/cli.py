@@ -172,12 +172,19 @@ def cmd_assemble(args: argparse.Namespace) -> int:
     # SOP-GIP-02/03 at the real handoff: the request, the report built from real Review Receipt v2
     # files, the authorised upload only when an approval was named, the hosted URLs in the pages and
     # the delivery record. A missing review, provider or hosting capability is recorded, never faked.
+    # The package is already sealed, so a failure here is reported, never raised over it; `check`
+    # still fails the package for the missing reviews.
     from . import graphics_hooks
-    graphics = graphics_hooks.handle_handoff(
-        out["manifest"], Path(args.out), job_dir=Path(args.out), dispatch_root=source_root,
-        review_roots_extra=[Path(p) for p in (args.review_root or [])],
-        host_approval_ref=args.host_media, folder_name=args.hosting_folder_name,
-        probe_env=os.environ if args.probe_hosting else None)
+    try:
+        graphics = graphics_hooks.handle_handoff(
+            out["manifest"], Path(args.out), job_dir=Path(args.out), dispatch_root=source_root,
+            review_roots_extra=[Path(p) for p in (args.review_root or [])],
+            host_approval_ref=args.host_media, folder_name=args.hosting_folder_name,
+            probe_env=os.environ if args.probe_hosting else None)
+    except Exception as exc:  # noqa: BLE001  (recorded for the operator; the sealed package stands)
+        graphics = {"state": "failed", "reason": f"{type(exc).__name__}: {str(exc)[:400]}"}
+        print(f"[graphics] handoff failed ({type(exc).__name__}); the package is sealed and `check` "
+              "will name the missing image reviews", file=sys.stderr)
     _launch_event(normalized["launch_id"], {"event_type": "stage_closed", "stage": "assemble"})
     _emit({"manifest": out["manifest_path"], "receipt": out["receipt_path"],
            "council": advice["status"], "designs_required": not args.allow_no_designs,

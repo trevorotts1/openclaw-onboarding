@@ -271,7 +271,7 @@ def _record_path(rec: Dict[str, Any], root: Path, image_path: str) -> bool:
         return False
 
 
-def review_binding(asset: Dict[str, Any], records: List[Dict[str, Any]], job_dir: Path) -> Dict[str, Any]:
+def review_binding(asset: Dict[str, Any], records: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Bind one image to its own Review Receipt v2, or say precisely why it is not reviewed.
 
     Identity is the receipt's artifact SHA-256 (computed by the producer from the file) and the
@@ -353,7 +353,7 @@ def qc_report(manifest: Dict[str, Any], package_root: Path, job_dir: Path,
     assets: List[Dict[str, Any]] = []
     unreviewed: List[Dict[str, Any]] = []
     for img in collect_images(manifest, package_root):
-        binding = review_binding(img, records, job_dir)
+        binding = review_binding(img, records)
         if binding["state"] == "missing":
             unreviewed.append({"asset_id": img["asset_id"], "page": img["page"], "sha256": img["sha256"],
                                "state": "missing", "reason": binding["reason"]})
@@ -398,7 +398,7 @@ def _same_file(recorded: Any, job_dir: Path, image_path: str) -> bool:
         return False
 
 
-def _strict_review_problems(rec: Dict[str, Any], image_path: str, digest: str, job_dir: Path) -> List[str]:
+def _strict_review_problems(rec: Dict[str, Any], digest: str, job_dir: Path) -> List[str]:
     """Why a report record is not backed by a live Review Receipt v2, or nothing when it is."""
     ref = _text(rec.get("review_ref"))
     if not ref:
@@ -475,10 +475,12 @@ def report_violations(manifest: Dict[str, Any], package_root: Path,
                 fails.append(f"{QC_CODE}: {img['page']} {name} has automatic failure(s) "
                              f"{', '.join(str(a) for a in autofails)}")
             if rec.get("pass") is not True:
-                fails.append(f"{QC_CODE}: {img['page']} {name} is not recorded as passed")
+                why = _text(rec.get("reason"))
+                fails.append(f"{QC_CODE}: {img['page']} {name} is not recorded as passed"
+                             + (f": {why}" if why else ""))
             if rec.get("sha256") not in (None, img["sha256"]):
                 fails.append(f"{QC_CODE}: {img['page']} {name} changed after it was reviewed")
-            for problem in _strict_review_problems(rec, img["local_path"], img["sha256"], job_dir):
+            for problem in _strict_review_problems(rec, img["sha256"], job_dir):
                 fails.append(f"{QC_CODE}: {img['page']} {name} {problem}")
     return fails
 
