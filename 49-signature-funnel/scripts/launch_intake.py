@@ -149,11 +149,13 @@ def new_session(*, tenant_id: str, location_id: str, launch_id: str,
                 brand_hash: str = "", known: Optional[Dict[str, Any]] = None,
                 materials: Optional[List[Dict[str, Any]]] = None,
                 available_providers: Optional[List[str]] = None,
-                test_only: bool = False) -> Dict[str, Any]:
+                test_only: bool = False,
+                run_dir: Optional[str] = None) -> Dict[str, Any]:
     """Create a session. `known` pre-fills fields from supplied/verified
     material (S6 task-key style) — those fields are NEVER asked again.
     `materials` is the client's existing verified catalog, the only source a
-    recommendation may draw products from."""
+    recommendation may draw products from. `run_dir` is the run folder the
+    deliverable producer writes into (a saved session file is its own run)."""
     s: Dict[str, Any] = {
         "schema": "signature-launch-intake/v1",
         "session_id": uuid.uuid4().hex[:12],
@@ -165,7 +167,7 @@ def new_session(*, tenant_id: str, location_id: str, launch_id: str,
         "available_providers": available_providers or [],
         "plan_revision": 1, "plan": None, "plan_hash": None,
         "approval": None, "history": [{"at": _now(), "event": "created"}],
-        "test_only": test_only,
+        "test_only": test_only, "run_dir": run_dir,
     }
     for field_key, entry in (known or {}).items():
         if isinstance(entry, dict) and "value" in entry:
@@ -263,6 +265,14 @@ def _persist(session: Dict[str, Any]) -> None:
         save_session(session, Path(session["_path"]))
 
 
+def _run_dir(session: Dict[str, Any]) -> Optional[str]:
+    """The run folder this session belongs to, from the ONE rule in launch_plan
+    (the launcher's run_dir, else the folder holding the saved session file).
+    None when neither is known: nothing is written then, and the deliverables
+    block names that gap instead of pretending an artifact exists."""
+    return lpl.session_run_dir(session)
+
+
 def _set(session: Dict[str, Any], field_key: str, value: Any, state: str,
          question_id: Optional[str], source_ref: str = "",
          provenance: Optional[Dict[str, Any]] = None) -> None:
@@ -293,6 +303,13 @@ LAUNCH_ANSWER_KEYS = (
     "launch.payment_plans", "launch.sender_name", "launch.reply_to_email",
     "launch.a2p_ready",
 )
+
+# The guided-answer records (shared-utils/client_intake/engine.py: to_launch_known)
+# that must land in the launch RECORD, not only in session["answers"]: a missing or
+# partial offer is a proposal (recommended_unapproved) and each deliverable keeps the
+# kind the intake classified. Both are carried beside the facts, never in place of
+# one, so the offer, price and journey mode the plan is built from are unchanged.
+GUIDED_RECORD_KEYS = ("proposed_offer", "deliverables_plan")
 
 
 def launch_answers_block(session: Dict[str, Any]) -> Dict[str, Any]:
@@ -952,12 +969,35 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
         "source_refs": [f"intake-session:{session['session_id']}"],
         "test_only": bool(session.get("test_only")),
     }
+    for carried in GUIDED_RECORD_KEYS:  # the proposal and the deliverable kinds
+        entry = _get(session, carried)
+        if entry is not None:
+            launch[carried] = {"value": entry["value"], "state": entry["state"],
+                               "source_ref": entry.get("source_ref", "")}
     if missing:
         session["state"] = "awaiting_missing_fact"
         session["missing_facts"] = missing
         session["plan"] = None
+        # A partial offer is still real work. The record that carries the proposal
+        # is kept apart from session["plan"] (it has no route graph and can never be
+        # approved), and the deliverable producer runs from it — so the free item is
+        # produced even while a price, a date or a package is still missing.
+        if "proposed_offer" in launch:
+            session["proposed_launch"] = launch
+            try:
+                built = lpl.build_launch_plan(launch, session.get("answers") or {},
+                                              run_dir=_run_dir(session))
+                session["deliverables"] = built.get("deliverables")
+            except (lpl.LaunchPlanError, ValueError) as exc:
+                session["deliverables"] = {
+                    "record_type": "signature-launch.deliverables.v1",
+                    "state": "not_produced", "items": [], "run_dir": _run_dir(session),
+                    "counts": {"produced": 0, "not_produced": 0}, "free_item": None,
+                    "files": [], "record": None,
+                    "missing_capability": [f"deliverable producer: {exc}"]}
         _persist(session)
-        return {"state": "awaiting_missing_fact", "missing": missing}
+        return {"state": "awaiting_missing_fact", "missing": missing,
+                "deliverables": session.get("deliverables")}
     graph = clr.compile_route(launch)
     launch["route_graph_ref"] = f"route-graph:{launch['launch_id']}:rev{launch['revision']}"
     launch["route_graph_hash"] = clr.graph_hash(graph)
@@ -981,9 +1021,12 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
     # missing calendar/AI fact never blocks the page plan; it is named, and the
     # page-level launch still proceeds to its own approval.
     try:
-        full = lpl.build_from_session(session)
+        full = lpl.build_from_session(session, run_dir=_run_dir(session))
         session["launch_plan"] = full.get("plan")
         session["launch_plan_missing"] = full.get("missing", [])
+        # The free item / every writable deliverable is produced by the same call,
+        # into this run's folder; what no producer here can write is recorded by name.
+        session["deliverables"] = full.get("deliverables")
         if session["launch_plan"] is not None:
             # The eight typed launch answers travel WITH the plan for the Skill 50
             # consumer (L06): sender, reply-to, access delivery and payment plans are
@@ -1010,7 +1053,8 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
     return {"state": session["state"], "plan": launch,
             "plan_hash": session["plan_hash"],
             "launch_plan": session.get("launch_plan"),
-            "launch_plan_missing": session.get("launch_plan_missing", [])}
+            "launch_plan_missing": session.get("launch_plan_missing", []),
+            "deliverables": session.get("deliverables")}
 
 
 def full_plan_digest(full_plan: Optional[Dict[str, Any]]) -> Optional[str]:

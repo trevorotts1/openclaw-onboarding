@@ -1415,7 +1415,11 @@ def to_launch_known(doc):
     if "offer_description" in v or "offer_name" in v:
         out["offers.main.description"] = ent({"display_name": v.get("offer_name") or v.get("offer_description"), "description": v.get("offer_description"),
                                               "deliverables": v.get("deliverables", [])}, "offer_name" if "offer_name" in v else "offer_description")
-    for field, qid in (("audience", "audience"), ("offers.main.transformation", "offer_transformation"), ("offers.main.pains", "pains"),
+    # The launch interview's two opening questions (a0_outcome / a0_difficulty) target
+    # these answer ids verbatim; without them the client's own answers file could not
+    # close those questions and the flow asked them a second time.
+    for field, qid in (("business_outcome", "business_outcome"), ("difficulty", "difficulty"),
+                       ("audience", "audience"), ("offers.main.transformation", "offer_transformation"), ("offers.main.pains", "pains"),
                        ("offers.main.deliverables", "deliverables"), ("journey_mode", "funnel_shape"), ("offers.main.price", "price"),
                        ("offers.main.packages", "packages"),
                        ("offers.main.billing_type", "billing"), ("copy_profile", "copy_profile"), ("image_provider", "image_provider")):
@@ -1518,9 +1522,16 @@ _FILE_RX = re.compile(r"\b(?:pdf|checklists?|templates?|swipe file|worksheets?|w
 
 
 def _sibling_skill_dirs(numbered):
-    """Where a sibling skill can live: repo tree, then each installed skills tree, numbered or flat."""
+    """Where a sibling skill can live: repo tree, then each installed skills tree, numbered or flat.
+
+    The distribution layout keeps every skill under <root>/.claude/skills (999-setup),
+    so that tree is searched before any home install: the copy that ships beside this
+    engine is the one it must find, never an older install of the same name."""
     names = (numbered, numbered.split("-", 1)[1])
-    bases = [p / n for p in Path(__file__).resolve().parents for n in names]
+    parents = list(Path(__file__).resolve().parents)
+    bases = [p / n for p in parents for n in names]
+    bases += [p / ".claude" / "skills" / n for p in parents for n in names]
+    bases += [p / "skills" / n for p in parents for n in names]
     home = Path.home()
     for root in (home / ".openclaw" / "skills", home / ".claude" / "skills",
                  home / ".claude-nine" / "skills", Path("/data/.openclaw/skills")):
