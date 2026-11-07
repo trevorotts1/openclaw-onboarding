@@ -55,7 +55,7 @@ What sits inside the set:
 | `articles/` | The 156 articles themselves, in the same category tree the site uses |
 | `categories/` | 36 category index pages |
 | `_assets/` | Not installed by design — the 660 images were deleted to keep the repo small |
-| `_source-html/` | Raw pages byte-for-byte as served, for provenance |
+| `_source-html/` | Raw pages for provenance — removed in cleanup; not needed to answer |
 | `_manifest.json` | Machine-readable index of every document |
 | `_labels.json` | Article labels and metadata |
 

@@ -36,7 +36,7 @@ Required structure at that path:
 | `_manifest.json` | Machine-readable index of every document | Yes |
 | `_labels.json` | Titles, summaries, tags per document | Yes |
 | `_assets/` | 660 images/GIFs referenced by the articles — **not installed by design** (deleted to avoid repo bloat) | No |
-| `_source-html/` | 185 raw saved pages, provenance only | Optional |
+| `_source-html/` | 185 raw saved pages — absent; removed in cleanup | No |
 | `_assets-manifest.json` | Asset checksums | Optional |
 | `_labels-parts/` | Label shards used to build `_labels.json` | Optional |
 
@@ -129,7 +129,7 @@ starting a crawl.
 | Part | Size | Needed to answer questions? |
 |---|---|---|
 | `articles/` + `categories/` + index + manifests + labels | **~2 MB of text** | Yes — this is the whole knowledge base |
-| `_source-html/` | **~37 MB of raw pages** | No — provenance only |
+| `_source-html/` | **absent — 37 MB of raw pages removed in cleanup** | No — provenance only |
 | `_assets/` | **not present** — 788 MB of images and GIFs deleted to avoid repo bloat | No — the set is image-free by design |
 
 The text is about 2 MB. The 788 MB of images that used to sit beside it are gone
@@ -138,7 +138,7 @@ already describes in words, so nothing in the answer quality depends on them.
 
 Consequences:
 
-- **Copy the text, skip `_source-html/` unless you need provenance.** The skill
+- **The set is text-only: there is no `_source-html/` to copy.** The skill
   never reads it.
 - **Expect 660 dangling image reference lines.** Article links look like
   `../../../_assets/MCS-042/01-CCx2A0eQju.gif` and resolve to nothing. That is
