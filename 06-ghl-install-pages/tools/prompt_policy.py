@@ -148,7 +148,8 @@ def _verdict(status, ok, n, unit="chars", **kw):
          "source": None, "model": None, "provider": None, "schema_version": None,
          "policy_version": POLICY_VERSION, "kind": None, "counted_text": None,
          "prompt_sha256": None, "anatomy": None, "review_ref": None,
-         "separate_limit": None, "warnings": [], "problems": [], "message": ""}
+         "separate_limit": None, "band_status": None, "warnings": [], "problems": [],
+         "message": ""}
     v.update(kw)
     return v
 
@@ -229,6 +230,7 @@ def evaluate(text, *, model=None, provider=None, max_chars=None, max_source=None
     counted = normalize_text(text)
     if unit not in UNITS:
         raise ValueError("unit must be one of %s, got %r" % (UNITS, unit))
+    verbatim = verbatim or kind == "verbatim"
     n = count_in_unit(counted, unit)
     sha = text_sha256(counted)
 
@@ -414,6 +416,7 @@ def _finish_anatomy(verdict, counted, anatomy):
     anatomy_problems = [str(x) for x in (got or [])]
     verdict["anatomy"] = {"ok": not anatomy_problems, "problems": anatomy_problems}
     if anatomy_problems:
+        verdict["band_status"] = verdict["status"]   # the length band's own verdict
         verdict["ok"] = False
         if verdict["status"] == "PASS":
             verdict["status"] = "ANATOMY_FAIL"
@@ -487,8 +490,8 @@ def freeze(text, *, model=None, provider=None, max_chars=None, max_source=None, 
         "anatomy": v["anatomy"],
         "review_ref": review_ref,
         "job_id": job_id,
-        "verdict": {k: v[k] for k in ("ok", "status", "message", "problems", "warnings",
-                                      "separate_limit")},
+        "verdict": {k: v[k] for k in ("ok", "status", "band_status", "message", "problems",
+                                      "warnings", "separate_limit")},
     }
     receipt["payload_fingerprint_inputs"] = {
         "model": model, "final_prompt_sha256": v["prompt_sha256"], "unit": unit}
