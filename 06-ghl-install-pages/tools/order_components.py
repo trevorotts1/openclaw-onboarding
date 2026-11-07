@@ -87,6 +87,9 @@ __all__ = [
     "OrderComponentExecutor",
     "validate_price_ref",
     "price_ref_from_terms",
+    "billing_terms_for_offer",
+    "APPROVED_BILLING_TYPES",
+    "NATIVE_TO_APPROVED",
     "assert_quote_breakdown",
     "validate_managed_adapter_capture",
     "load_managed_adapter_capture",
@@ -317,6 +320,81 @@ def price_ref_from_terms(terms: Mapping[str, Any], *, native_product_id: str,
     return PriceRef(native_product_id, native_price_id, amount_minor, currency,
                     billing, interval if billing != "one_time" else None,
                     trial if billing == "trial_then_recurring" else None)
+
+
+# ── The APPROVED offer record's billing term -> this native price shape ───────
+# The approved record speaks its own vocabulary: the Skill 49 launch schema's
+# price entry (49-signature-funnel/schema/launch.schema.json, a closed object)
+# says one_time | recurring | installment | trial. The native CreatePriceDto
+# shape is BILLING_TYPES above. They are NOT the same words: an approved
+# ``trial`` is a native ``trial_then_recurring``, and ``installment`` has no
+# native shape at all. Mapping one to the other by hand at each call site is how
+# a recurring or installment offer gets charged once, so the translation lives
+# here, once.
+APPROVED_BILLING_TYPES = ("one_time", "recurring", "installment", "trial")
+NATIVE_TO_APPROVED = {"one_time": "one_time", "recurring": "recurring",
+                      "trial_then_recurring": "trial"}
+# What each approved term needs natively, and the approved record cannot hold:
+# its price entry is a closed object with no recurrence interval and no trial
+# length. An approved term is only expressible natively when the record carries
+# what the native shape requires; otherwise the exact gap is named and the
+# request stays unresolved.
+APPROVED_TERM_GAPS = {
+    "recurring": ("recurring_interval",),
+    "trial": ("recurring_interval", "trial_days"),
+    "installment": ("installment_billing",),
+}
+
+
+def billing_terms_for_offer(approved: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """Translate ONE approved offer-record billing term into what may be bound.
+
+    Returns ``None`` when the record states no term (an absent term stays
+    absent — it is never assumed ``one_time``); ``{"billing": {...}}`` carrying
+    the native terms verbatim when the record holds everything the native shape
+    needs; and ``{"unresolved": {approved_billing_type, unsupported_terms}}``
+    naming the exact term(s) that cannot be expressed. A named gap is NEVER
+    flattened: the caller leaves that request unresolved instead of binding a
+    single charge for a recurring, trial or installment offer. A term outside
+    both vocabularies is malformed input and raises.
+    """
+    if not isinstance(approved, Mapping):
+        return None
+    raw = str(approved.get("billing_type") or "").strip()
+    if not raw:
+        return None
+    if raw not in APPROVED_BILLING_TYPES:
+        raise SpecError(
+            f"billing_type {raw!r} is not an approved term {APPROVED_BILLING_TYPES}; "
+            "supply the approved term, never a shorthand that has to be guessed")
+    interval = approved.get("recurring_interval")
+    interval = str(interval).strip() if interval is not None else None
+    trial = approved.get("trial_days")
+    trial_ok = isinstance(trial, int) and not isinstance(trial, bool) and trial >= 1
+    if raw == "one_time":
+        if interval or trial is not None:
+            raise SpecError("one_time price must not carry recurrence or trial terms")
+        return {"billing": {"billing_type": "one_time"}}
+    if raw == "recurring":
+        if interval in RECURRING_INTERVALS and trial is None:
+            return {"billing": {"billing_type": "recurring",
+                                "recurring_interval": interval}}
+        missing = ([] if interval in RECURRING_INTERVALS else ["recurring_interval"]) \
+            + ([] if trial is None else ["trial_days on a recurring price"])
+        return {"unresolved": {"approved_billing_type": raw,
+                               "unsupported_terms": missing}}
+    if raw == "trial":
+        if interval in RECURRING_INTERVALS and trial_ok:
+            return {"billing": {"billing_type": "trial_then_recurring",
+                                "recurring_interval": interval,
+                                "trial_days": trial}}
+        missing = ([] if interval in RECURRING_INTERVALS else ["recurring_interval"]) \
+            + ([] if trial_ok else ["trial_days"])
+        return {"unresolved": {"approved_billing_type": raw,
+                               "unsupported_terms": missing}}
+    # installment: no native CreatePriceDto shape exists on this surface.
+    return {"unresolved": {"approved_billing_type": raw,
+                           "unsupported_terms": list(APPROVED_TERM_GAPS["installment"])}}
 
 
 @dataclass(frozen=True)

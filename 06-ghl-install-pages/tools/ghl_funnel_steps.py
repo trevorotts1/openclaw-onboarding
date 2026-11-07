@@ -20,7 +20,11 @@ SPLIT (same two-layer rule as ghl_order_elements.py)
              managed GHL editor adapter in ``order_components``. Driver contract:
                payment_provider_status(location_id) -> {"connected": bool, "provider": str}
                create_step(funnel_id, name, step_type[, step_id]) -> step_id
-               attach_price(step_id, product_id, price_id[, billing])  -> None
+               attach_price(step_id, product_id, price_id[, billing][, approved]) -> None
+                     ``billing`` is the native term the price must be read back with;
+                     ``approved`` is the approved offer record's own identity
+                     ({offer_id, billing_type, amount_minor, currency}) and a driver that
+                     accepts it must refuse a native price that differs from it.
                place_element(step_id, kind, price_id, default_checked) -> None
                set_action(step_id, action, target_step_id)       -> None
                read_back(funnel_id) -> {"steps": [{"step_id", "type", "price_ids": [...],
@@ -52,8 +56,18 @@ CHECKOUT INSTANCES
 
 FAIL CLOSED
   * product_id / price_id come ONLY from the caller's ``catalog`` (offer_id ->
-    {product_id, price_id[, amount_minor]}); never invented. A missing entry, or an
-    amount that disagrees with the offer, refuses the plan.
+    {product_id, price_id[, amount_minor][, currency][, billing]}), or from an
+    existing checkout instance's own resolved request; never invented. A missing
+    entry, or an amount/currency that disagrees with the approved offer, refuses
+    the plan.
+  * The APPROVED OFFER RECORD's billing term travels with every price it
+    produced (``approved_billing``): its own vocabulary is the Skill 49 launch
+    schema's price entry (one_time | recurring | installment | trial), which is
+    not the native one. ``order_components.billing_terms_for_offer`` translates
+    it once. Where the native surface / the approved record cannot express the
+    term, the price carries ``unresolved`` naming the exact unsupported term and
+    that slot is NEVER bound — a recurring, trial or installment offer is never
+    flattened into one_time, and the request stays unresolved.
   * A missing payment-provider connection is the named operator manual gate
     ``MANUAL-GATE:payment_provider_connection`` and blocks ``ready``.
   * Any write without a verified ``publish`` / ``automation_write`` approval record
@@ -87,6 +101,7 @@ import uuid
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
 import ghl_rest_canvas as _rc
+import order_components as _oc
 
 # route role -> native funnel step type
 STEP_TYPES = {
@@ -185,21 +200,88 @@ def _billing_terms(raw: Any, where: str) -> Optional[Dict[str, Any]]:
     return out
 
 
+def _approved_terms(offer: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
+    """The approved billing term an offer record carries, in its own vocabulary.
+
+    Two record shapes reach this plan: the plan's documented ``billing`` block and
+    the Launcher's approved ``checkout`` block (an intake offer, which the intake
+    only ever fills with ``one_time``). No third source, and an absent term stays
+    absent — it is never defaulted to ``one_time``.
+    """
+    for key in ("billing", "checkout"):
+        block = offer.get(key)
+        if isinstance(block, Mapping) and block.get("billing_type") is not None:
+            return block
+    return None
+
+
+def _carry_billing(out: Dict[str, Any], approved: Optional[Mapping[str, Any]] = None,
+                   native: Optional[Mapping[str, Any]] = None,
+                   where: str = "") -> Dict[str, Any]:
+    """Put the approved term and its native shape on one plan price.
+
+    ``native`` is a caller-supplied native term (a catalog entry). It may never
+    contradict the approved record: a catalog that says one_time for a recurring
+    offer would charge the buyer once for a subscription. ``billing`` carries the
+    native shape only when it needs specifics beyond one_time (that is what the
+    installer demands be read back); ``approved_billing`` always carries the
+    approved record's own term, so the binding call can refuse a native price that
+    is not the approved one. A term the native surface cannot express becomes
+    ``unresolved`` — the slot is never bound and never flattened.
+    """
+    if native is not None and approved is None:
+        out["billing"] = dict(native)
+        return out
+    if approved is None:
+        return out
+    terms = _oc.billing_terms_for_offer(approved)
+    if not terms:
+        if native is not None:
+            out["billing"] = dict(native)
+        return out
+    if terms.get("unresolved"):
+        # Not expressible natively: record the exact term and carry NO native
+        # term, so the slot cannot look bindable.
+        out["unresolved"] = dict(terms["unresolved"])
+        return out
+    billing = terms["billing"]
+    # ``approved_billing`` is the APPROVED record's own term (one_time | recurring |
+    # trial | installment), which is the vocabulary the native binding call compares
+    # against. ``billing`` above is the NATIVE shape (an approved ``trial`` maps to
+    # ``trial_then_recurring``); mixing the two makes the binding call refuse a
+    # native price that is exactly right.
+    approved_term = str(approved.get("billing_type") or "").strip()
+    out["approved_billing"] = {"billing_type": approved_term}
+    if native is not None:
+        got = _oc.NATIVE_TO_APPROVED.get(str(native.get("billing_type") or ""))
+        if got != approved_term:
+            raise FunnelPlanError(
+                f"{where}: the supplied native terms ({got!r}) disagree with the approved "
+                f"billing term ({approved_term!r}); refusing to bind a term the "
+                "offer does not carry")
+    elif billing["billing_type"] != "one_time":
+        out["billing"] = dict(billing)   # recurrence must be read back, never assumed
+    return out
+
+
 def _price(offer: Dict[str, Any], catalog: Dict[str, Any]) -> Dict[str, Any]:
     entry = catalog.get(offer["offer_id"])
     if not isinstance(entry, dict) or not entry.get("product_id") or not entry.get("price_id"):
         raise FunnelPlanError(f"no product_id/price_id for offer {offer['offer_id']!r}")
-    want = (offer.get("price") or {}).get("amount_minor")
+    approved_price = offer.get("price") or {}
+    want = approved_price.get("amount_minor")
     if "amount_minor" in entry and want is not None and entry["amount_minor"] != want:
         raise FunnelPlanError(f"catalog amount for {offer['offer_id']!r} disagrees with the offer")
+    currency = approved_price.get("currency")
+    if entry.get("currency") is not None and currency is not None and entry["currency"] != currency:
+        raise FunnelPlanError(
+            f"catalog currency for {offer['offer_id']!r} disagrees with the offer")
     out = {"offer_id": offer["offer_id"], "product_id": entry["product_id"],
-           "price_id": entry["price_id"]}
-    billing = _billing_terms(
-        entry.get("billing") if isinstance(entry.get("billing"), Mapping) else
-        offer.get("billing"), where=f"offer {offer['offer_id']!r}")
-    if billing:
-        out["billing"] = billing
-    return out
+           "price_id": entry["price_id"], "amount_minor": want, "currency": currency}
+    native = (_billing_terms(entry["billing"], where=f"offer {offer['offer_id']!r}")
+              if isinstance(entry.get("billing"), Mapping) else None)
+    return _carry_billing(out, _approved_terms(offer), native,
+                          where=f"offer {offer['offer_id']!r}")
 
 
 def _instance_price(instance: Mapping[str, Any]) -> Dict[str, Any]:
@@ -218,11 +300,11 @@ def _instance_price(instance: Mapping[str, Any]) -> Dict[str, Any]:
             f"checkout instance {slot!r} carries no resolved native product/price")
     out = {"offer_id": str(instance.get("main_offer_id") or ""),
            "price_choice_id": str(instance.get("price_choice_id") or ""),
-           "product_id": product_id, "price_id": price_id}
-    billing = _billing_terms(main, where=f"checkout instance {slot!r}")
-    if billing:
-        out["billing"] = billing
-    return out
+           "product_id": product_id, "price_id": price_id,
+           "amount_minor": main.get("amount_minor"), "currency": main.get("currency")}
+    # ``main`` is the approved offer record's own price block (price/currency/
+    # approved billing term), so its term is the approved term — never a guess.
+    return _carry_billing(out, main, where=f"checkout instance {slot!r}")
 
 
 def _instance_bump(instance: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
@@ -238,11 +320,9 @@ def _instance_bump(instance: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
             f"checkout instance {instance.get('slot')!r} declares a bump with no "
             "resolved native product/price")
     out = {"offer_id": str(bump.get("offer_id") or ""),
-           "product_id": product_id, "price_id": price_id}
-    billing = _billing_terms(price, where=f"checkout bump {out['offer_id']!r}")
-    if billing:
-        out["billing"] = billing
-    return out
+           "product_id": product_id, "price_id": price_id,
+           "amount_minor": price.get("amount_minor"), "currency": price.get("currency")}
+    return _carry_billing(out, price, where=f"checkout bump {out['offer_id']!r}")
 
 
 def _checkout_instance_steps(node: Dict[str, Any], graph: Dict[str, Any],
@@ -547,15 +627,55 @@ def _ensure_step(plan_step: Dict[str, Any], driver: Any, funnel_id: str,
 
 
 def _attach_price(driver: Any, step_id: str, price: Mapping[str, Any]) -> None:
+    """Hand ONE approved price to the driver's native product/price binding call.
+
+    ``billing`` (the native recurrence specifics) may never be dropped by a driver
+    that cannot carry it: refusing here is what stops a subscription binding as a
+    single charge. ``approved`` carries the approved record's own identity
+    (offer_id, its billing term, amount, currency); a driver that accepts it must
+    check the native price it resolved against it.
+    """
+    kwargs: Dict[str, Any] = {}
     if _accepts_kwarg(driver.attach_price, "billing"):
-        driver.attach_price(step_id, price["product_id"], price["price_id"],
-                            price.get("billing"))
-    else:
-        if price.get("billing"):
+        kwargs["billing"] = price.get("billing")
+    elif price.get("billing"):
+        raise FunnelPlanError(
+            f"driver cannot carry billing terms for price {price['price_id']!r}; "
+            "refusing to drop them")
+    approved = {"offer_id": price.get("offer_id"),
+                "billing_type": (price.get("approved_billing") or {}).get("billing_type"),
+                "amount_minor": price.get("amount_minor"),
+                "currency": price.get("currency")}
+    if _accepts_kwarg(driver.attach_price, "approved") \
+            and any(value is not None for value in approved.values()):
+        kwargs["approved"] = approved
+    driver.attach_price(step_id, price["product_id"], price["price_id"], **kwargs)
+
+
+def _place_element(driver: Any, step_id: str, kind: str, price: Mapping[str, Any],
+                   default_checked: Optional[bool]) -> None:
+    """Place one native element for a price this plan already validated.
+
+    A bump is its own approved price, so it gets the same approved-term and
+    native-recurrence checks the main price got at attach time; a driver that can
+    carry neither is not asked to invent one.
+    """
+    kwargs: Dict[str, Any] = {}
+    if kind != "order_form":
+        if _accepts_kwarg(driver.place_element, "billing"):
+            kwargs["billing"] = price.get("billing")
+        elif price.get("billing"):
             raise FunnelPlanError(
                 f"driver cannot carry billing terms for price {price['price_id']!r}; "
                 "refusing to drop them")
-        driver.attach_price(step_id, price["product_id"], price["price_id"])
+        approved = {"offer_id": price.get("offer_id"),
+                    "billing_type": (price.get("approved_billing") or {}).get("billing_type"),
+                    "amount_minor": price.get("amount_minor"),
+                    "currency": price.get("currency")}
+        if _accepts_kwarg(driver.place_element, "approved") \
+                and any(value is not None for value in approved.values()):
+            kwargs["approved"] = approved
+    driver.place_element(step_id, kind, price["price_id"], default_checked, **kwargs)
 
 
 def install_funnel(plan: Dict[str, Any], driver: Any, funnel_id: str, location_id: str,
@@ -569,6 +689,11 @@ def install_funnel(plan: Dict[str, Any], driver: Any, funnel_id: str, location_i
     ``carry_get`` / ``carry_set``). With it, each confirmed launch/location/
     funnel/logical-slot/native-id mapping is persisted before and after the
     create, and a resume resolves prior mappings instead of recreating steps.
+
+    Returns ``bound`` (the offer -> slot binding actually made, with the approved
+    amount, currency and billing term carried) and ``unresolved`` (each approved
+    term the native surface cannot express, named). An unresolved term keeps its
+    request unbound and keeps ``ready`` false; it is never flattened into one_time.
     """
     grant = require_approval(approval, plan, location_id, verifier)  # always, whatever the driver is
     if isinstance(driver, RestCanvasFunnelDriver):
@@ -588,14 +713,43 @@ def install_funnel(plan: Dict[str, Any], driver: Any, funnel_id: str, location_i
         if how != "created":
             resumed.append({"slot": s.get("slot") or s["page_id"],
                             "step_id": sid, "how": how})
+    bound: List[Dict[str, Any]] = []
+    unresolved: List[Dict[str, Any]] = []
     for s in plan["steps"]:
         sid = ids[s["page_id"]]
+        slot = str(s.get("slot") or s["page_id"])
         for p in s["prices"]:
+            if p.get("unresolved"):
+                # The approved term has no native shape here: the request stays
+                # unresolved and is NEVER bound as one_time.
+                unresolved.append({"slot": slot, "page_id": s["page_id"], "kind": "price",
+                                   **dict(p["unresolved"]),
+                                   "offer_id": p.get("offer_id"),
+                                   "price_id": p.get("price_id")})
+                continue
             _attach_price(driver, sid, p)
-        if s["type"] == "order_form":
-            driver.place_element(sid, "order_form", s["prices"][0]["price_id"], None)
+            bound.append({"slot": slot, "page_id": s["page_id"], "kind": "price",
+                          "offer_id": p.get("offer_id"), "price_id": p.get("price_id"),
+                          "amount_minor": p.get("amount_minor"),
+                          "currency": p.get("currency"),
+                          "approved_billing": dict(p.get("approved_billing") or {})})
+        main_unresolved = bool(not s["prices"] or any(p.get("unresolved") for p in s["prices"]))
+        if s["type"] == "order_form" and not main_unresolved:
+            _place_element(driver, sid, "order_form", s["prices"][0], None)
         if s["bump"]:
-            driver.place_element(sid, "order_bump", s["bump"]["price_id"], False)
+            if s["bump"].get("unresolved"):
+                unresolved.append({"slot": slot, "page_id": s["page_id"], "kind": "bump",
+                                   **dict(s["bump"]["unresolved"]),
+                                   "offer_id": s["bump"].get("offer_id"),
+                                   "price_id": s["bump"].get("price_id")})
+            else:
+                _place_element(driver, sid, "order_bump", s["bump"], False)
+                bound.append({"slot": slot, "page_id": s["page_id"], "kind": "bump",
+                              "offer_id": s["bump"].get("offer_id"),
+                              "price_id": s["bump"]["price_id"],
+                              "amount_minor": s["bump"].get("amount_minor"),
+                              "currency": s["bump"].get("currency"),
+                              "approved_billing": dict(s["bump"].get("approved_billing") or {})})
         if s["accept_to"]:
             driver.set_action(sid, "accept", ids[s["accept_to"]])
         if s["decline_to"]:
@@ -603,8 +757,9 @@ def install_funnel(plan: Dict[str, Any], driver: Any, funnel_id: str, location_i
     readback = driver.read_back(funnel_id)
     mismatches = verify_funnel_readback(plan, readback, ids)
     return {"step_ids": ids, "manual_gates": gates, "mismatches": mismatches,
-            "ready": not gates and not mismatches, "readback": readback,
-            "resumed": resumed, "resume_state": state is not None}
+            "ready": not gates and not mismatches and not unresolved,
+            "readback": readback, "resumed": resumed, "resume_state": state is not None,
+            "bound": bound, "unresolved": unresolved}
 
 
 # ---------------------------------------------------------------------------
@@ -878,7 +1033,6 @@ class ManagedUiFunnelDriver(RestCanvasFunnelDriver):
         if not callable(self._resolver):
             raise FunnelPlanError(
                 "no product/price resolver is bound; native ids are never invented")
-        import order_components as _oc
         ref = self._resolver(str(price_id))
         if not isinstance(ref, Mapping):
             raise FunnelPlanError(f"resolver returned no price reference for {price_id!r}")
@@ -902,7 +1056,16 @@ class ManagedUiFunnelDriver(RestCanvasFunnelDriver):
         self._step_types[str(step_id)] = str(step_type)
 
     def attach_price(self, step_id: str, product_id: str, price_id: str,
-                     billing: Optional[Mapping[str, Any]] = None) -> None:
+                     billing: Optional[Mapping[str, Any]] = None,
+                     approved: Optional[Mapping[str, Any]] = None) -> None:
+        """Bind the resolved native price to the step's checkout element.
+
+        ``approved`` is the APPROVED OFFER RECORD's own identity: its offer id, its
+        billing term, its amount and currency. The native price this step resolves
+        must be that same price and that same term — a native price for another
+        amount, another currency or another billing term is refused here rather
+        than bound, because that is a different charge from the one approved.
+        """
         self._require_approved("attach_price")
         self.preflight()
         executor = self._executor(step_id)
@@ -916,11 +1079,38 @@ class ManagedUiFunnelDriver(RestCanvasFunnelDriver):
                 f"resolved price terms {_billing_view(ref.as_fields())!r} disagree with "
                 f"the approved billing terms {_billing_view(billing)!r}; refusing to "
                 "bind either one on assumption")
+        if approved:
+            self._assert_approved_price(ref, price_id, approved)
         component = self._component(executor, step_id)
         executor.bind_main_price(component, ref)
 
+    @staticmethod
+    def _assert_approved_price(ref: Any, price_id: str,
+                               approved: Mapping[str, Any]) -> None:
+        """The native price must BE the approved one: same amount, currency, term."""
+        offer_id = approved.get("offer_id")
+        amount = approved.get("amount_minor")
+        if amount is not None and ref.amount_minor != amount:
+            raise FunnelPlanError(
+                f"native price {price_id!r} is {ref.amount_minor} minor units; the approved "
+                f"offer {offer_id!r} is {amount}; refusing to bind a different charge")
+        currency = approved.get("currency")
+        if currency is not None and ref.currency != currency:
+            raise FunnelPlanError(
+                f"native price {price_id!r} is in {ref.currency!r}; the approved offer "
+                f"{offer_id!r} is in {currency!r}; refusing to bind a different charge")
+        want = approved.get("billing_type")
+        got = _oc.NATIVE_TO_APPROVED.get(ref.billing_type)
+        if want is not None and got != want:
+            raise FunnelPlanError(
+                f"native price {price_id!r} bills {ref.billing_type!r} ({got!r}); the "
+                f"approved offer {offer_id!r} bills {want!r}; a billing term is never "
+                "flattened or upgraded on assumption")
+
     def place_element(self, step_id: str, kind: str, price_id: str,
-                      default_checked: Optional[bool]) -> None:
+                      default_checked: Optional[bool],
+                      billing: Optional[Mapping[str, Any]] = None,
+                      approved: Optional[Mapping[str, Any]] = None) -> None:
         self._require_approved(f"place_element:{kind}")
         self.preflight()
         executor = self._executor(step_id)
@@ -931,7 +1121,6 @@ class ManagedUiFunnelDriver(RestCanvasFunnelDriver):
             observed = executor.read_component(component) or {}
             main = observed.get("main_price") if isinstance(observed, Mapping) else None
             ref = self._price_ref(price_id)
-            import order_components as _oc
             if not isinstance(main, Mapping) or _oc.validate_price_ref(main) != ref:
                 raise RuntimeError(
                     f"order-form element on step {step_id!r} is not bound to "
@@ -944,12 +1133,21 @@ class ManagedUiFunnelDriver(RestCanvasFunnelDriver):
                 raise FunnelPlanError(
                     f"bump {price_id!r} has no approved headline/benefit copy; "
                     "bump copy is never invented")
-            import order_components as _oc
+            ref = self._price_ref(price_id)
+            # The bump is its own approved price: same amount/currency/term checks
+            # as the main price, or a subscription bump binds as a single charge.
+            if billing and _billing_view(ref.as_fields()) != _billing_view(billing):
+                raise FunnelPlanError(
+                    f"bump price terms {_billing_view(ref.as_fields())!r} disagree with the "
+                    f"approved billing terms {_billing_view(billing)!r}; refusing to bind "
+                    "either one on assumption")
+            if approved:
+                self._assert_approved_price(ref, price_id, approved)
             executor.attach_bump(component, _oc.BumpAttach(
                 offer_id=str(copy.get("offer_id") or price_id),
                 headline=str(copy["headline"]),
                 benefit_explanation=str(copy["benefit_explanation"]),
-                price=self._price_ref(price_id),
+                price=ref,
                 disclosure_text=copy.get("disclosure_text")))
             return
         raise FunnelPlanError(
