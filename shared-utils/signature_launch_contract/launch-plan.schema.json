@@ -353,8 +353,8 @@
         },
         "receipt_status": {
           "type": ["string", "null"],
-          "enum": ["pass", "fail", "pending", null],
-          "description": "Only closed + pass counts as a closed stage."
+          "enum": ["pass", "fail", "blocked", "not_authorized", null],
+          "description": "The receipt's own status, in the vocabulary the producer actually writes: 71-blackceo-signature-page/scripts/stage_gate.py RECEIPT_STATUS and references/report-json.schema.json are pass, fail, blocked, not_authorized. Only closed + pass counts as a closed stage."
         },
         "closed_at": {
           "type": ["string", "null"],
@@ -438,7 +438,7 @@
               "slot": {
                 "type": "string",
                 "minLength": 1,
-                "description": "The offer slot this binding serves (main, upsell_1, downsell_1, order_bump)."
+                "description": "The offer slot this binding serves, in the shared launch vocabulary: main, bump, upsell_1, downsell_1, upsell_2 (the offers slot enum in shared-utils/signature_launch/domain/launch.schema.json). order_bump is a commerce-unit kind, never a slot."
               },
               "native_product_id": {
                 "type": ["string", "null"]
