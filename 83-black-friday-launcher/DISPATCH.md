@@ -155,12 +155,27 @@ The design board and the final mockups are recorded as `awaiting_client_approval
 
 ## Graphics department hooks
 
-`launcher_core/graphics_hooks.py` can write the SOP-GIP-02 image QC request and the SOP-GIP-03 delivery record.
-`dispatch`, `assemble` and `check` do not call it today, so a launch run produces neither file unless a caller
-invokes the module directly (tracked as IMG-12). It never uploads or publishes; with no live hosted link it
-records the missing capability. Skill 71 carries
-the AF-G1..AF-G8 list as data, the independent reviewer model rule, the text read-back and logo accuracy
-checks, and the text-capable model and PNG rule (see `71-blackceo-signature-page/references/qc-contract.md`).
+`launcher_core/graphics_hooks.py` is wired into the real handoff. After `package.assemble` seals the
+package, `assemble` writes the SOP-GIP-02 request (`qc/image_qc_request.json`), then
+`qc/image_qc_report.json` from the Review Receipt v2 files Skill 71's `write_review.py` wrote (never a
+score typed into the report: each record resolves to a receipt whose own hash and `artifact_sha256` are
+checked), then the SOP-GIP-03 record (`delivery_record.json`). `check` re-runs the same review check.
+`--run-image-stages` runs Skill 71's real image-stage driver before assembly; it stops at the client's
+layout-proof approval and never spends without `--allow-paid`.
+
+Hosting is the one approved upload: `--host-media <approval_ref>` runs the existing
+`45-design-intelligence-library/scripts/graphics_ghl_push.py` on every QC-passed image, records its real
+result in `media_library.json`, and then puts those real URLs into the artifact records and page HTML
+(that page's hash, and the receipt, are re-sealed for that file only). With no approval nothing is
+uploaded, the record names the missing hosting capability, and local references stay as they are.
+Nothing here publishes. Skill 71 carries the AF-G1..AF-G8 list as data, the independent reviewer model
+rule, the text read-back and logo accuracy checks, and the text-capable model and PNG rule (see
+`71-blackceo-signature-page/references/qc-contract.md`).
+
+The F09 brand path is `python3 -m launcher_core.cli brand`: the client's logo answer becomes a recorded
+logo or wordmark in the one brand file every page reads, and "create a new logo" writes a brief and runs
+the existing image capability only with the paid approval and a model id from the existing registry. A
+missing file, model or approval is named; no mark is invented.
 
 ## Tracked items (not built here)
 
@@ -170,7 +185,7 @@ The package ends at approved local files. Each item below is tracked, not forgot
 | --- | --- |
 | Skill 44, 50 and 06 install and build steps for the launch automations | SKILL.md "Launch mode (Skill 49/83)" routes the agent; S44-25 |
 | Native order form, bump and one-click steps installed by Skill 06 | S06-02, CHK-19 |
-| Live link checks and a hosted link for every image | IMG-12 (SOP-GIP-03 hosting is its own approval) |
+| Live link checks and a hosted link for every image | IMG-12 (SOP-GIP-03 hosting is its own approval; `assemble --host-media <approval_ref>` runs it) |
 | SOP-DIU-602, 607 and 610 wiring | follow-up, no defect id yet |
 | SOP-07 and Skill 06 registry registration of Skill 83 | follow-up, no defect id yet |
 | Command Center launch view | CON-21, CON-22 |

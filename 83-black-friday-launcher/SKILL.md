@@ -291,11 +291,26 @@ python3 -m launcher_core.cli dispatch     --intake intake.json --out <run-dir> \
 python3 -m launcher_core.cli questions
 python3 -m launcher_core.cli assemble     --intake intake.json --pieces <run-dir>/pieces --out <package-dir> \
                  (--launch-plan <launch-plan.json> [--deliveries <deliveries.json>] | --page-only) \
-                 [--allow-no-designs] [--activation-readback <readback.json>]
+                 [--allow-no-designs] [--run-dir <run-dir>] [--activation-readback <readback.json>] \
+                 [--run-image-stages --image-provider stub|kie [--allow-paid]] \
+                 [--review-root <page-run>] [--host-media <approval-ref> [--hosting-folder-name NAME] [--probe-hosting]]
+python3 -m launcher_core.cli brand        --answers <answers.json> --out <job-dir> [--brand-file <brand.json>] \
+                 [--allow-paid --approval-ref <ref> --model-id <registry-id>]
+python3 -m launcher_core.cli revise-image --run <page-run> --item IMG-001 --defect "<named defect>" \
+                 [--provider kie --allow-paid]
 python3 -m launcher_core.cli check        --manifest <package-dir>/package-manifest.json --root <package-dir>
 python3 -m launcher_core.cli seams
 python3 -m launcher_core.cli dependencies [--root <repo>] [--install]
 ```
+
+`assemble` also produces the graphics handoff every time: the SOP-GIP-02 image QC request and report
+(built only from Skill 71 Review Receipt v2 files, never from typed scores) and the SOP-GIP-03
+delivery record. `--run-image-stages` runs Skill 71's real image-stage driver first (it stops at the
+client's layout-proof approval; `--allow-paid` is required with the paid provider). `--host-media` is
+the one approved upload: it runs the existing GHL media uploader, records its real result and puts the
+real URLs into the pages; without it nothing is uploaded and the record says so. `brand` carries the
+client's logo answer to the real asset producer (a created logo needs the approved spend and a
+registry model id). `revise-image` corrects one named defect on one image item and no other.
 
 `plan` validates a shared launch plan's calendar and completeness. `dispatch`
 turns an intake into a Skill 49 launch record and builds every page, recording
