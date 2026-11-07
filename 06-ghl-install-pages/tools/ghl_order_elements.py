@@ -111,7 +111,7 @@ import hashlib
 import json
 import sys
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 PLAN_SCHEMA = "skill6-order-plan/1"
 
@@ -130,6 +130,7 @@ KIND_ORDER_BUMP = "order_bump"
 KIND_UPSELL = "upsell"
 KIND_DOWNSELL = "downsell"
 KIND_THANK_YOU = "thank_you"
+KIND_LEAD_CAPTURE = "lead_capture"
 
 #: Where the order elements live (decision 2026-11-02): the funnel's
 #: order-form step, not the form builder's Payments tiles.
@@ -142,6 +143,23 @@ EVIDENCE_SOURCES = ("live", "fixture")
 #: reference is either delivered by S44 Phase A or explicitly supplied by
 #: the caller of this build. Anything else is refused.
 BINDING_SOURCES = ("caller_supplied", "s44_phase_a")
+
+#: Billing terms the native price/checkout surface can actually express
+#: (shared-utils/ghl/products_prices.py BILLING_TYPES — the CreatePriceDto
+#: shape). A term outside this set is CARRIED and refused at bind time with a
+#: named reason, never rewritten into ``one_time``: flattening a recurring or
+#: installment offer into a single charge changes what the buyer is charged.
+NATIVE_BILLING_TYPES = ("one_time", "recurring", "trial_then_recurring")
+RECURRING_INTERVALS = ("day", "week", "month", "year")
+#: Approved F08 terms with NO native price shape here. They are recognised so
+#: the refusal names the real reason instead of "unknown billing_type".
+UNSUPPORTED_BILLING_TERMS = ("installment", "installments")
+BILLING_TERM_FIELDS = ("billing_type", "recurring_interval", "trial_days",
+                       "installment_count", "installment_interval")
+BILLING_NOT_NATIVE = (
+    "installment billing has no native CreatePriceDto shape on this surface "
+    "(products_prices.BILLING_TYPES is one_time|recurring|trial_then_recurring); "
+    "refusing to flatten an installment offer into one_time")
 
 #: The order bump's default state. The packet section 9 acceptance shape
 #: verifies the bump present with its default state UNCHECKED; a plan may
@@ -164,10 +182,69 @@ def is_payments_tile(field_name: Any) -> bool:
     return str(field_name or "").strip() in PAYMENTS_TILES
 
 
+def _billing_terms(raw: Any, *, element: str) -> Optional[dict]:
+    """Validate and carry approved billing terms, verbatim.
+
+    Returns ``None`` when the caller supplied no billing key at all (an absent
+    term stays absent - it is never defaulted to ``one_time``). A term the
+    native price surface cannot express (installment) is refused with the real
+    reason; it is NEVER flattened into a single charge.
+    """
+    if not isinstance(raw, dict):
+        return None
+    if not any(k in raw for k in BILLING_TERM_FIELDS):
+        return None
+    billing_type = str(raw.get("billing_type") or "").strip()
+    if not billing_type:
+        raise OrderPlanError(
+            f"{element}: billing terms are present but carry no billing_type - "
+            "an unlabelled term would be flattened into an assumed charge")
+    if billing_type in UNSUPPORTED_BILLING_TERMS:
+        raise OrderPlanError(f"{element}: {BILLING_NOT_NATIVE}")
+    if billing_type not in NATIVE_BILLING_TYPES:
+        raise OrderPlanError(
+            f"{element}: billing_type {billing_type!r} is not one of "
+            f"{NATIVE_BILLING_TYPES} - supply the approved native term, never a "
+            "shorthand that would have to be guessed")
+    interval = raw.get("recurring_interval")
+    interval = str(interval).strip() if interval is not None else None
+    trial = raw.get("trial_days")
+    if trial is not None and (not isinstance(trial, int) or isinstance(trial, bool)):
+        raise OrderPlanError(f"{element}: trial_days must be an integer, never {trial!r}")
+    out: dict = {"billing_type": billing_type}
+    if billing_type == "one_time":
+        if interval or trial is not None:
+            raise OrderPlanError(
+                f"{element}: one_time price must not carry recurrence or trial terms")
+    elif billing_type == "recurring":
+        if interval not in RECURRING_INTERVALS:
+            raise OrderPlanError(
+                f"{element}: recurring price requires recurring_interval in "
+                f"{RECURRING_INTERVALS}")
+        if trial is not None:
+            raise OrderPlanError(
+                f"{element}: recurring price must not carry trial_days")
+        out["recurring_interval"] = interval
+    else:  # trial_then_recurring
+        if interval not in RECURRING_INTERVALS:
+            raise OrderPlanError(
+                f"{element}: trial_then_recurring requires recurring_interval in "
+                f"{RECURRING_INTERVALS}")
+        if not isinstance(trial, int) or isinstance(trial, bool) or trial < 1:
+            raise OrderPlanError(
+                f"{element}: trial_then_recurring requires trial_days >= 1")
+        out["recurring_interval"] = interval
+        out["trial_days"] = trial
+    for key in ("installment_count", "installment_interval"):
+        if raw.get(key) is not None:
+            raise OrderPlanError(f"{element}: {BILLING_NOT_NATIVE}")
+    return out
+
+
 def _binding(raw: Any, *, element: str) -> dict:
     """Validate one product binding. Accepts the canonical key
     ``product_ref`` (and the S44 design-notes key ``native_product_ref``,
-    carried verbatim). Returns ``{product_ref, binding_source}``."""
+    carried verbatim). Returns ``{product_ref, binding_source[, price_ref][, billing]}``."""
     if not isinstance(raw, dict):
         raise OrderPlanError(
             f"{element}: product binding must be a mapping with "
@@ -196,6 +273,10 @@ def _binding(raw: Any, *, element: str) -> dict:
             "read-back price id or omit it (never a placeholder)")
     if price:
         out["price_ref"] = price
+    billing = _billing_terms(raw.get("billing") if isinstance(raw.get("billing"), dict)
+                             else raw, element=element)
+    if billing is not None:
+        out["billing"] = billing
     return out
 
 
@@ -252,6 +333,7 @@ _STEP_ACTIONS = {
     KIND_UPSELL: "add_one_click_upsell_step",
     KIND_DOWNSELL: "add_downsell_step",
     KIND_THANK_YOU: "add_thank_you_step",
+    KIND_LEAD_CAPTURE: "add_lead_capture_form",
 }
 
 
@@ -274,10 +356,15 @@ def placement_steps(elements: List[dict]) -> List[dict]:
 
 
 def _patch_binding(binding: dict) -> dict:
+    """The binding as handed to the form builder / driver. Approved billing
+    terms travel with it: dropping them would let the native side bind a
+    recurring offer as a single charge."""
     out = {"product_ref": binding["product_ref"],
            "source": binding["binding_source"]}
     if binding.get("price_ref"):
         out["price_ref"] = binding["price_ref"]
+    if binding.get("billing"):
+        out["billing"] = dict(binding["billing"])
     return out
 
 
@@ -298,9 +385,13 @@ def build_order_plan(spec: dict) -> dict:
           "upsell":  {"product": {binding}},           # optional one-click
           "downsell": {"product": {binding}},          # optional
           "thank_you": true,                           # optional step
+          "lead_capture": {"fields": ["email"]},       # optional native form
         }
 
-    A binding is ``{"product_ref", "source", "price_ref"?}``.
+    A binding is ``{"product_ref", "source", "price_ref"?, "billing"?}``.
+    ``billing`` carries the approved F08 terms verbatim
+    (``billing_type`` / ``recurring_interval`` / ``trial_days``); it is never
+    flattened into ``one_time`` and an installment term is refused.
 
     Every element carries its product binding or the plan is refused.
     Returns the plan dict (schema ``skill6-order-plan/1``)."""
@@ -338,6 +429,48 @@ def build_order_plan(spec: dict) -> dict:
                 f"{type(cp_spec).__name__}")
         elements.append(_tile_element(KIND_COLLECT_PAYMENT,
                                       TILE_COLLECT_PAYMENT, cp_binding))
+
+    lc_spec = spec.get("lead_capture")
+    if lc_spec is not None:
+        if lc_spec is True:
+            lc_spec = {}
+        if not isinstance(lc_spec, dict):
+            raise OrderPlanError(
+                f"lead_capture spec must be a mapping or true, got "
+                f"{type(lc_spec).__name__}")
+        raw_fields = lc_spec.get("fields")
+        if not isinstance(raw_fields, list) or not raw_fields:
+            raise OrderPlanError(
+                "lead_capture: an explicit non-empty fields list is required - "
+                "this module never invents contact fields")
+        fields: List[str] = []
+        for raw_field in raw_fields:
+            name = str(raw_field or "").strip()
+            if not name:
+                raise OrderPlanError(
+                    "lead_capture: every field name must be a non-empty string")
+            if name in fields:
+                raise OrderPlanError(f"lead_capture: duplicate field {name!r}")
+            fields.append(name)
+        # The lead-capture form sells nothing, so it carries no product
+        # binding; it is placed through the NATIVE builder route because the
+        # API/MCP catalog has no form-designer operation.
+        elements.append({
+            "kind": KIND_LEAD_CAPTURE,
+            "tile": None,
+            "surface": "native lead-capture form on the funnel order-form step",
+            "placement": {
+                "target": SURFACE_FUNNEL_ORDER_STEP,
+                "step": _STEP_ACTIONS[KIND_LEAD_CAPTURE],
+                "via": "native builder route (page-builder Insert Element); the "
+                       "API/MCP catalog has no form-designer operation",
+                "requires_order_binding": False,
+            },
+            "fields": fields,
+            "binding": None,
+            "verify": {"lead_capture_present": True, "fields_match": True,
+                       "evidence": "rendered page (never stored bytes)"},
+        })
 
     bump_spec = spec.get("bump")
     if bump_spec is not None:
@@ -700,6 +833,18 @@ def verify_order_render(plan: dict, rendered: dict, *,
         check("thank_you_step_present",
               bool(rendered.get("thank_you_step_present")),
               "the thank-you step must be present in the funnel")
+    if KIND_LEAD_CAPTURE in by_kind:
+        planned = by_kind[KIND_LEAD_CAPTURE].get("fields") or []
+        check("lead_capture_present",
+              bool(rendered.get("lead_capture_present")),
+              "the native lead-capture form must be present on the rendered "
+              "order-form step (placed through the native builder route)")
+        observed_fields = rendered.get("lead_capture_fields")
+        ok_fields = (isinstance(observed_fields, list)
+                     and sorted(str(f) for f in observed_fields) == sorted(planned))
+        check("lead_capture_fields_match", ok_fields,
+              f"lead-capture fields read back as {observed_fields!r}; the plan "
+              f"requires exactly {planned!r}")
     if not elements:
         check("plan_has_elements", False, "the plan carries no elements")
     return {"ok": not reasons, "checks": checks, "reasons": reasons,
@@ -880,6 +1025,55 @@ def _selftest() -> int:
     if pe["Sell Products"].get("price_ref") != "price_main" \
             or "Collect Payment" not in pe:
         errors.append(f"per-element bindings not carried: {pe}")
+
+    # Billing terms carry through the plan, the driver step and the patch.
+    billed = build_order_plan(dict(_EXAMPLE_SPEC, order_form={"product": {
+        "product_ref": "prod_main_offer", "price_ref": "price_main",
+        "billing": {"billing_type": "recurring", "recurring_interval": "month"},
+        "source": "caller_supplied"}}))
+    bb = next(e for e in billed["elements"]
+              if e["kind"] == KIND_ORDER_FORM)["binding"]["billing"]
+    patch_b = form_task_patch(billed, per_element=True)
+    step_b = next(s for s in billed["steps"]
+                  if s["action"] == "set_order_form_product")
+    if bb.get("billing_type") != "recurring" \
+            or patch_b["order_binding"].get("billing", {}).get("recurring_interval") != "month" \
+            or step_b.get("binding", {}).get("billing", {}).get("recurring_interval") != "month":
+        errors.append("approved billing terms must reach the patch and the driver step")
+    for bad_billing in ({"billing_type": "installment", "installment_count": 3},
+                        {"recurring_interval": "month"},
+                        {"billing_type": "one_time", "recurring_interval": "month"}):
+        try:
+            build_order_plan(dict(_EXAMPLE_SPEC, order_form={"product": {
+                "product_ref": "p", "source": "caller_supplied",
+                "billing": bad_billing}}))
+            errors.append(f"billing term {bad_billing!r} was not refused")
+        except OrderPlanError:
+            pass
+
+    # Lead capture: native builder route, explicit fields, verified in render.
+    lc = build_order_plan(dict(_EXAMPLE_SPEC,
+                               lead_capture={"fields": ["email", "phone"]}))
+    lc_el = next(e for e in lc["elements"] if e["kind"] == KIND_LEAD_CAPTURE)
+    if lc_el["placement"]["step"] != "add_lead_capture_form" \
+            or lc_el["placement"]["requires_order_binding"] is not False \
+            or lc_el["binding"] is not None \
+            or lc_el["fields"] != ["email", "phone"]:
+        errors.append(f"lead_capture element wrong: {lc_el}")
+    lc_rendered = dict(_GOOD_RENDER, lead_capture_present=True,
+                       lead_capture_fields=["phone", "email"])
+    if not verify_order_render(lc, lc_rendered)["ok"]:
+        errors.append("a present lead-capture form with the planned fields must pass")
+    if verify_order_render(lc, dict(lc_rendered,
+                                   lead_capture_fields=["email"]))["ok"]:
+        errors.append("a lead-capture form missing a planned field must fail")
+    if verify_order_render(lc, _GOOD_RENDER)["ok"]:
+        errors.append("an unobserved lead-capture form must fail")
+    try:
+        build_order_plan(dict(_EXAMPLE_SPEC, lead_capture={}))
+        errors.append("lead_capture without explicit fields was not refused")
+    except OrderPlanError:
+        pass
 
     if errors:
         for e in errors:
