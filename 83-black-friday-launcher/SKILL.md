@@ -327,11 +327,19 @@ steps, all DRAFT-ONLY (nothing is sent and nothing goes live):
    --launch-plan <plan.json> --build-plan <skill-50-build-plan.json> --out automation-builds.json` reads the
    launch plan and the Skill 50 build plans into one automation-build document. A missing page URL, text set,
    build plan or an email-count mismatch blocks the build.
-2. **Build command.** The `44-convert-and-flow-operator/tools/siglaunch/` receiver validates the request and
-   drives the governed build through Skill 44's engine, then reads the saved graph back.
+2. **Build command.** One command compiles and builds:
+   `caf --json --experimental workflows build --from-automation-build automation-builds.json
+   --journal <path>`. `--from-automation-build` runs `compile_launch_builds()` and then the campaign
+   build under the write lock; `--journal` is REQUIRED on that path and is the receipt file. The
+   `44-convert-and-flow-operator/tools/siglaunch/` receiver is **not** a production entry
+   (`PRODUCTION_ENTRY_ENABLED = False`): the declared Black Friday purchase path is the native GHL
+   post-sale workflows, and repairing a launch goes through this command, never by enabling that
+   runner.
 3. **QC.** `44-convert-and-flow-operator/qc-built-workflow.sh <workflow-id> --json` checks the built workflow;
    a build that fails QC is not delivered.
-4. **Receipt.** The `siglaunch` receiver issues the receipt for the build. Skill 83 reads delivery results
+4. **Receipt.** The build journal is that build's receipt (unit key, remote id, phase, expected and
+   read-back hash), so a re-run is safe; for a Skill 71 hand-off the `siglaunch` receiver issues its
+   own receipt. Skill 83 reads delivery results
    through `assemble --launch-plan <plan> --deliveries <deliveries.json>` and requires every planned email,
    text and automation to be delivered before the package counts as a full launch.
 

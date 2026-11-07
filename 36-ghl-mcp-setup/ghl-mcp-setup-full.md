@@ -356,7 +356,12 @@ Confirm:
   `describe_operation`, `execute_operation`
 - The `Version` header is selected **per operation** (documented values include `v3`,
   `2023-02-21`, `2021-07-28`, `2021-04-15`, `legacy`). There is no global default and no
-  sweep. `v4` workflow contracts are staging-only evidence.
+  sweep. The five workflow definition/publish/delete routes (`GET|PUT /workflows/{workflowId}/definition`,
+  `POST /workflows`, `PUT /workflows/{workflowId}/status`, `DELETE /workflows/{workflowId}`) now have
+  production operation pages and each documents `Version: v3`; the Skill 44 registry rows are still
+  frozen at the earlier staging-only `v4` transcription and stay default-deny behind the capability
+  gate (blocker `B-V4-S` is the named re-freeze). Do not send `v4` on a production call on the strength
+  of the frozen rows.
 - No tool count is an interface. The old 588 / 858 / 500 figures describe other profiles or
   history and prove nothing about parity.
 

@@ -57,6 +57,16 @@ run owns its implementation.
 | 19 | **SEO / AI-search "Content" panel** | After saving, the left side shows **SEO and AI search optimization**. Expand the **Content** box and fill it out (see §2). (~09:05–10:16) | transcript | false |
 | 20 | **Back → next step** | Hit **Back**; step 1 is added. For a multi-step funnel, **Add new step** again and number it **`ZHC part 2`** … `ZHC part N`. Repeat the whole recipe per step. (~10:16–10:45) | transcript | false |
 
+> **IMPLEMENTED NOTE (F01, 2026-11-07) — the toggle is not the whole step.** A live probe (2026-06)
+> showed `allowRowMaxWidth` ALONE produces no observable width change, because the hosting section's
+> CSS cap (`#section-…>.inner{max-width:1170px}`, carried in the section styles) is the real width
+> driver. The implemented policy moves both together: `ghl_rest_canvas.apply_section_full_width`
+> sets the native flag and lifts the `.inner` px width lock — on the create path
+> (`new_page_blob`) and on the edit path (`edit_element_customcode`, repair on by default) — and
+> leaves card widths, text measures and responsive padding untouched.
+> `ghl_rest_canvas.assert_section_is_full_width(section)` proves one section. So "full width" means
+> the step-13 end state AND no `.inner` px cap; the toggle on its own is not that end state.
+
 ---
 
 ## 2. SEO / AI-search "Content" panel — REQUIRED (transcript, ~09:05–10:16)

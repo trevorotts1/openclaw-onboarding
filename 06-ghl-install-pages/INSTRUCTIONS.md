@@ -138,8 +138,20 @@ This step makes your design span the entire page width. If you skip this, your d
 2. Move your mouse slowly between the top edge of the blue code element and the edge of the section. When you see a green line or green highlight appear, click on it.
 3. A settings panel will appear on the right side of the screen
 4. Find the toggle labeled "Allow rows to take entire width" (it might also say "Full Width")
-5. Turn this toggle ON (click it so it is enabled)
-6. The section will now span the full page width
+5. Turn this toggle ON if it is OFF — READ it first: clicking an ON toggle turns full width OFF
+6. The toggle alone does not widen the page. Two things drive the rendered width and BOTH must move:
+   the native "Allow rows to take entire width" flag AND the hosting section's own CSS cap on its
+   outer content wrapper (`#section-…>.inner{max-width:1170px}` in the section styles). A live probe
+   (2026-06) showed the flag ALONE produces no observable width change — the CSS cap is the real
+   driver. Lift that px lock on the `.inner` wrapper rule (or set it to `100%`) and change nothing
+   else: card widths, text measures and responsive padding are deliberate measures, not locks.
+7. The same full width applies on the EDIT path: replacing a page's code without repairing its
+   hosting section ships a half-width page. In code,
+   `ghl_rest_canvas.edit_element_customcode(...)` repairs the hosting section by default
+   (`full_width=True`) and `ghl_rest_canvas.assert_section_is_full_width(section)` proves one
+   section; the create path does the same through `new_page_blob`. Full width is the normal policy
+   for a section that hosts managed content, on every page kind (funnel step, website, affiliate) —
+   never an optional polish step.
 
 
 ### Phase 8: Paste Your Code

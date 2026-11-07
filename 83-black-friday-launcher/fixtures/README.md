@@ -6,7 +6,7 @@ Two owner-specified shapes, kept separate and never merged
 | Fixture | Shape | Status |
 |---|---|---|
 | `elevation/intake.json` | 12-section no-price signature page → **separate** three-level product selection → native order form | routes, assembles and passes the completeness checks offline |
-| `seven-figure-preneur/intake.json` | three levels **folded into** the signature page → native order form, **no** product selection page | routes and assembles (`folded_levels`) but **delivery-blocked** until Skill 79 names a checkout mode |
+| `seven-figure-preneur/intake.json` | three levels **folded into** the signature page → native order form, **no** product selection page | routes and assembles (`folded_levels`) with three accepted per-offer checkout instances; the completeness checks pass offline |
 
 `run_fixtures.py` builds both packages from the real S49 compiler, the real
 adapter map, the launcher's package completeness checks and the Skill 79
@@ -22,12 +22,17 @@ launcher's route layer and the real S49 `compile_launch_route.py`. The example
 is not relabelled `single_simple`, does not gain a selection page, and keeps its
 three separate prices.
 
-**Delivery-blocked, not green.** The Skill 79 contract's two checkout modes
-(`combined_single_offer`, `post_selection`) express neither three folded main offers nor a missing selection
-page, so this shape records `checkout_mode_state: contract_gap` and the package check fails with
-`AF-LAUNCH-CHECKOUT-MODE` until Skill 79 names a mode for `folded_levels`. The manifest records
-`checkout.delivery_blocked: true`. The fixture runner asserts exactly that block; it does not treat the
-package as deliverable.
+**One order form per level, not blocked.** The Skill 79 contract's
+`combined_single_offer` mode is realised once per main price choice by
+`launcher_core/checkout_instances.py`, so this shape records
+`checkout_mode_state: resolved` with `realisation: per_offer_instances` and
+`checkout.delivery_blocked: false`. Each of the three levels carries its own page
+id, its own bump applicability and its own S79 validator verdict, and the real
+S78 `emit_binding_plan` maps one native target to each instance. The fixture
+runner asserts the three accepted instances, not a block. Facts the launch does
+not supply are still never defaulted: a missing native id, terms, consent,
+capability/fulfillment reference or bump component fact is recorded as a rejected
+instance (`AF-LAUNCH-CHECKOUT-REJECTED`).
 
 The fixture also carries one offer relationship (`BUMP.included_in =
 ["MAIN-B","MAIN-C"]`) so the cross-sale surface on the thank-you page is
@@ -76,9 +81,9 @@ For each shape:
    is bound to the real S79 contract;
 6. the Council planning step is recorded and cannot block;
 7. the cross-sale surface rides on the thank-you page with teaching pending;
-8. a package assembled from those build units is self-contained and, for Elevation, passes every
-   completeness check. The 7FigurePreneur package fails exactly one gate by design,
-   `AF-LAUNCH-CHECKOUT-MODE`, and its manifest records the withheld delivery.
+8. a package assembled from those build units is self-contained and passes every completeness
+   check for BOTH shapes. 7FigurePreneur carries three accepted `combined_single_offer` checkout
+   instances, one per folded level, and its manifest records `delivery_blocked: false`.
 
 Plus, for 7FigurePreneur: no `product_selection` page exists in the route, and a
 not-ready Council result neither fails the build nor changes the compiled graph.
