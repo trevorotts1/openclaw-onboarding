@@ -64,7 +64,7 @@ PROMISE_NOT_PRODUCED = "not_produced"
 ANSWER_SEND_ACCESS = "Yes, send access after purchase"
 ANSWER_NOTHING = "No, nothing to deliver"
 
-RECORD_REL = "delivery-record.json"
+RECORD_REL = "product-delivery.json"
 SHEETS_DIR = "deliverables"
 RECORD_TYPE = "launcher.delivery.v1"
 
@@ -384,7 +384,12 @@ def _free_entry(planned: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 def write_record(record_doc: Mapping[str, Any], out_dir: Path) -> Path:
-    """Write ``delivery-record.json`` into the run and return its path."""
+    """Write ``product-delivery.json`` into the run and return its path.
+
+    Named apart from ``graphics_hooks''s ``delivery_record.json`` (SOP-GIP-03, the
+    image hosting record): one is what the buyer receives, the other is which
+    pictures passed QC and where they are hosted.
+    """
     path = Path(out_dir) / RECORD_REL
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(record_doc, indent=2, sort_keys=True) + "\n", encoding="utf-8")
