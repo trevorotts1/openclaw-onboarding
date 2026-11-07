@@ -34,6 +34,7 @@ def _load(name, path):
 
 progress = _load("signature_launch_progress", LAUNCH_DIR / "progress.py")
 model = _load("signature_launch_scheduler_model", HERE / "model.py")
+admission = _load("signature_launch_admission", LAUNCH_DIR / "admission.py")
 
 
 def clock():
@@ -61,7 +62,14 @@ def _claim(record, uid, owner, ttl_seconds=900):
 
 
 def _complete(record, uid, owner, status, **kwargs):
-    result = model.envelope(status, **kwargs)
+    evidence = kwargs.pop("evidence", None)
+    if status == model.VERIFIED_SUCCESS and evidence is None:
+        ph = record["plan_hash"]
+        evidence = admission.evidence(
+            uid, ph,
+            [admission.artifact("artifacts/%s.html" % uid, sha256="f" * 64)],
+            inputs={"plan": ph})
+    result = model.envelope(status, evidence=evidence, **kwargs)
     if not progress.complete(record, uid, result, owner=owner, clock=clock):
         raise SystemExit("fixture completion refused for %s" % uid)
 

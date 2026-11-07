@@ -2,6 +2,7 @@
   "counts": {
     "awaiting_facts": 1,
     "blocked": 1,
+    "delivered": 0,
     "done": 0,
     "dropped": 0,
     "empty": 0,
@@ -10,8 +11,12 @@
     "ready": 1,
     "retryable": 1,
     "running": 0,
+    "skipped": 0,
+    "stale": 0,
+    "superseded": 0,
     "terminal": 0,
-    "total": 4
+    "total": 4,
+    "unverified_done": 0
   },
   "created_at": "2030-01-01T00:00:00Z",
   "empty": false,
@@ -64,6 +69,8 @@
       "artifact": null,
       "attempts": 0,
       "charged": false,
+      "content_checked": false,
+      "evidence_digest": null,
       "kind": "automation",
       "lease_expires_at": null,
       "missing_facts": [],
@@ -71,8 +78,15 @@
       "owner": null,
       "reason": null,
       "result": null,
+      "review": null,
+      "review_required": false,
+      "revision": 1,
+      "skipped": false,
+      "stale": false,
       "state": "pending",
+      "superseded": false,
       "updated_at": "2030-01-01T00:00:00Z",
+      "verified": false,
       "waits_for": [
         "text_doors"
       ]
@@ -81,6 +95,8 @@
       "artifact": null,
       "attempts": 1,
       "charged": false,
+      "content_checked": false,
+      "evidence_digest": null,
       "kind": "page",
       "lease_expires_at": null,
       "missing_facts": [],
@@ -102,14 +118,23 @@
         "status": "failed",
         "verified": false
       },
+      "review": null,
+      "review_required": false,
+      "revision": 1,
+      "skipped": false,
+      "stale": false,
       "state": "failed",
+      "superseded": false,
       "updated_at": "2030-01-01T00:00:00Z",
+      "verified": false,
       "waits_for": []
     },
     "page_sales": {
       "artifact": null,
       "attempts": 0,
       "charged": false,
+      "content_checked": false,
+      "evidence_digest": null,
       "kind": "page",
       "lease_expires_at": null,
       "missing_facts": [],
@@ -117,8 +142,15 @@
       "owner": null,
       "reason": null,
       "result": null,
+      "review": null,
+      "review_required": false,
+      "revision": 1,
+      "skipped": false,
+      "stale": false,
       "state": "pending",
+      "superseded": false,
       "updated_at": "2030-01-01T00:00:00Z",
+      "verified": false,
       "waits_for": [
         "page_landing"
       ]
@@ -127,6 +159,8 @@
       "artifact": null,
       "attempts": 1,
       "charged": false,
+      "content_checked": false,
+      "evidence_digest": null,
       "kind": "text_set",
       "lease_expires_at": null,
       "missing_facts": [
@@ -154,8 +188,15 @@
         "status": "awaiting_facts",
         "verified": false
       },
+      "review": null,
+      "review_required": false,
+      "revision": 1,
+      "skipped": false,
+      "stale": false,
       "state": "blocked",
+      "superseded": false,
       "updated_at": "2030-01-01T00:00:00Z",
+      "verified": false,
       "waits_for": []
     }
   },
