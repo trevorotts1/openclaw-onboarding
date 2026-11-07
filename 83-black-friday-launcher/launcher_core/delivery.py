@@ -345,6 +345,10 @@ def record(planned: Mapping[str, Any], produced: Mapping[str, Any],
             "promises": [{"item": item, "state": PROMISE_NOT_PRODUCED,
                           "missing_capability": MISSING_AUTHORING_PRODUCER}
                          for item in entry["promises"]],
+            # ponytail: every promise is not_produced because no producer in this tree writes
+            # the promised item's own content. When one lands (a course/video/template
+            # producer), flip the entries it writes to PROMISE_PRODUCED with that artifact's
+            # path+sha256 here — the record, not the sheet, is where "produced" is claimed.
             "missing_capability": missing,
             "native_product_id_state": "unknown",
         })
