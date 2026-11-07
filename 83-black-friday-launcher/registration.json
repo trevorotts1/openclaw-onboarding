@@ -9,7 +9,7 @@
     "directory": "83-black-friday-launcher",
     "directory_source": "launcher_core/constants.py:SKILL_DIR_NAME",
     "entry": "SKILL.md",
-    "version": "0.2.16",
+    "version": "0.2.17",
     "status": "enabled-in-999"
   },
   "number_assignment": {
@@ -108,7 +108,11 @@
   },
   "journey_modes": {
     "status": "decided",
-    "modes": ["single_simple", "multiple_options", "folded_levels"],
+    "modes": [
+      "single_simple",
+      "multiple_options",
+      "folded_levels"
+    ],
     "folded_levels": "N >= 2 distinct main offers folded into the signature page, no product_selection node, never relabelled a single offer"
   },
   "open_decisions": [

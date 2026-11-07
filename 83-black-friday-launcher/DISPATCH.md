@@ -66,6 +66,30 @@ python3 -m launcher_core.cli check --manifest PACKAGE/package-manifest.json --ro
    until the live commerce capture on an approved test location is done (CHK-19, still owed). The decided build
    target is the funnel order-form step. Until that capture lands, a checkout design is not an installed checkout.
 
+## Activation stages (local preparation, drafts, install, publication)
+
+The intake carries an optional `activation` block: `desired_state` is one of
+`local_prepared`, `draft_constructed`, `installed` or `published`. Absent means
+`local_prepared`, which is the unchanged local/test default — nothing is installed and
+nothing is published.
+
+- `installed` and `published` each need a recorded `authority` (`ref`, `scope`
+  `installation`/`publication`, and this launch's own `location_id`), and they are
+  refused on a `test_only` run. The same recorded approval is carried forward, never
+  asked for twice, and it can never authorize another location.
+- `dispatch` and `assemble` only CONSTRUCT. The package's achieved stage is decided by
+  evidence: no dispatch run is `local_prepared`; a bound dispatch is
+  `draft_constructed`. A higher stage is recorded only from an observed read-back
+  passed as `assemble --activation-readback`: the read route as `source`, the page id,
+  the https page URL, `observed_at`, and — for `published` — the live `page_type` and
+  `page_version`; for `installed` — the observed native install facts. A save click, a
+  draft response or a local "published" field is refused.
+- Activation is recorded separately from construction: `activation.json` carries the
+  desired and achieved stage, the authority, the read-back and the construction
+  receipts it belongs to. `package-manifest.json` and `receipt.json` carry that record
+  and its digest. A desired install/publication with no read-back stays pending and
+  says so; a local/draft package is never relabelled installed or live.
+
 ## Build order and parallel lanes
 
 Every page is independent: the look they share travels in the image inputs file, so no page waits for another.

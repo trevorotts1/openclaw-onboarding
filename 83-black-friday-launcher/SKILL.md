@@ -2,7 +2,7 @@
 name: black-friday-launcher
 description: "Helps a business owner get their whole Black Friday sale ready, step by step: the sales page, the order form, the special offers, the thank-you page, and the launch emails and text messages. Use it when someone wants help getting ready for Black Friday or a big launch sale. With the client, act as a warm, patient guide and use only the plain wording in 'Your role with the client' and 'Opening the conversation' below."
 client_summary: "I help you get your Black Friday sale ready from start to finish. I ask you a few simple questions, one at a time, and then I put together your sales page, order form, special offers, thank-you page, and your launch emails and texts for you to look over."
-version: 0.2.16
+version: 0.2.17
 priority: HIGH
 ---
 
@@ -235,6 +235,15 @@ a numbered directory, so the same code runs in both layouts.
    `requirements.txt` (jsonschema) on macOS and Windows, and the preflight
    reports `enabled_in_999=True` only while every required dependency is present.
 
+8. **Activation stages** (`launcher_core/intake.py`, `launcher_core/package.py`). The intake's
+   optional `activation` block names the desired end state: `local_prepared` (the default),
+   `draft_constructed`, `installed` or `published`. `installed`/`published` need a recorded
+   `authority` for this location and are refused on a `test_only` run. Construction and
+   activation are recorded apart: `activation.json` carries desired/achieved stage, authority,
+   read-back and the construction receipts; the manifest and receipt carry that record and its
+   digest. The achieved stage comes from evidence only, so a local/draft package is never
+   labelled installed or live, and a read-back past the authorized stage is refused.
+
 ## Read order
 
 Read in this order. Each step names the file, so nothing here depends on guessing a path.
@@ -247,8 +256,10 @@ Read in this order. Each step names the file, so nothing here depends on guessin
    build plans, then `44-convert-and-flow-operator/automation-templates/launch-c/plan_reader.py` reads them,
    and `44-convert-and-flow-operator/tools/siglaunch/` is the pipeline that builds and receipts them. See
    "Launch mode" below. Skill 83 depends on Skill 44 and Skill 50 for this reason.
-   The machine-readable record of that dependency is `skill.json` and `registration.json` `depends_on`
-   plus the `launcher_core/dependencies.json` preflight.
+   The executable requirement set is `launcher_core/dependencies.json` alone (read by
+   `launcher_core/dependencies.py`). `skill.json` and `registration.json` carry only a
+   NON-AUTHORITATIVE pointer to it (target, digest, counts); `dependencies.py:metadata_spine`
+   reports any disagreement as a finding in the `dependencies` report, never as a crash.
 
 ## Entry
 
@@ -280,7 +291,7 @@ python3 -m launcher_core.cli dispatch     --intake intake.json --out <run-dir> \
 python3 -m launcher_core.cli questions
 python3 -m launcher_core.cli assemble     --intake intake.json --pieces <run-dir>/pieces --out <package-dir> \
                  (--launch-plan <launch-plan.json> [--deliveries <deliveries.json>] | --page-only) \
-                 [--allow-no-designs]
+                 [--allow-no-designs] [--activation-readback <readback.json>]
 python3 -m launcher_core.cli check        --manifest <package-dir>/package-manifest.json --root <package-dir>
 python3 -m launcher_core.cli seams
 python3 -m launcher_core.cli dependencies [--root <repo>] [--install]
@@ -311,10 +322,13 @@ python3 -m launcher_core.cli assemble --intake fixtures/elevation/intake.json \
 - **Elevation** (no-price 12-section page -> separate three-level selection -> native order form) routes,
   assembles and passes the fixture runner's completeness checks offline.
 - **7FigurePreneur** (three levels folded into the signature page -> native order form, no selection page)
-  routes and assembles through the settled `folded_levels` mode with its three distinct offers intact, but it
-  is **delivery-blocked**: the Skill 79 contract names no checkout mode for `folded_levels`
-  (`checkout_mode_state: contract_gap`, `AF-LAUNCH-CHECKOUT-MODE`), so `check` fails the package until
-  Skill 79 names a mode. The fixture runner asserts that block; it is not a green build.
+  routes and assembles through the settled `folded_levels` mode with its three distinct offers intact.
+  `folded_levels` has a real checkout realisation: `launcher_core/checkout_instances.py` builds ONE native
+  `combined_single_offer` order form per main price choice, with its own page id, its own bump
+  applicability and its own Skill 79 validator verdict, and `checkout_mode_state` is `resolved`
+  (`realisation: per_offer_instances`). Delivery still depends on the facts the launch must supply:
+  missing native ids, terms, consent, capability/fulfillment references or bump component facts are
+  recorded as a rejected instance (`AF-LAUNCH-CHECKOUT-REJECTED`), never defaulted.
 
 `python3 fixtures/run_fixtures.py` proves both. These packages hold build plans, not page bytes.
 
@@ -382,7 +396,7 @@ tracked are named.
 | Charge, create an entitlement or call a billing API | permanent boundary; membership and purchase truth is PRD-12 |
 | Start a live Council session; Council advice is a readiness record until then | CON-16 |
 | Install the native order form, bump and one-click steps (Skill 06 has the step, S06-02, but it refuses to write until the live commerce capture CHK-19 is done) | S06-02, CHK-19 |
-| Name a checkout mode for `folded_levels` (delivery stays blocked) | Skill 79 contract gap, `AF-LAUNCH-CHECKOUT-MODE` |
+| Supply the native checkout facts a per-offer instance still needs (native ids, terms, consent, capability/fulfillment refs, bump component facts) | recorded per instance: `AF-LAUNCH-CHECKOUT-REJECTED` |
 | Choose a distribution target | open seam `distribution_run_target` in `DECISIONS-PENDING.md` |
 | Cross-sale teaching content (the surface is present, the teaching is marked pending) | open seam `cross_sales_teaching_source` |
 | Build automations or workflows | Skill 44 and Skill 50 (see "Launch mode"); S44-25 |

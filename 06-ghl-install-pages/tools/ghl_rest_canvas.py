@@ -2383,11 +2383,108 @@ def assert_seo_populated(page_data: dict, *, founder_name: str | None = None,
                      canonical_hosts=canonical_hosts, media_hosts=media_hosts)
 
 
+# ── Publication read-back (F06) ──────────────────────────────────────────────
+# A save click, a draft response, or a local "published" field is NOT published
+# state. Publication is proved only by an OBSERVED re-read of the canonical page
+# record (and the pageDataDownloadUrl it returns), carrying the live page URL.
+PUBLICATION_STATES = ("local_prepared", "draft_constructed", "installed",
+                      "published")
+PUBLISH_READBACK_ROUTES = ("GET /funnels/page/", "GET /funnels/funnel/fetch/")
+PUBLISH_READBACK_REQUIRED = ("page_id", "page_version", "page_type", "url",
+                             "observed_at")
+
+
+def published_readback_refusals(readback: Any, *, page_id: str,
+                                location_id: str | None = None) -> list[str]:
+    """Why *readback* is not proof that ``page_id`` is published live.
+
+    ``readback`` is the observed record from ``publish_readback_step``: the
+    canonical page record re-read with ``source`` naming the route it came from.
+    A bare ``{"published": true}``, a save response, or a value copied from the
+    local run is refused by name. Empty list means published state is proved.
+    """
+    if not isinstance(readback, dict):
+        return ["no publication read-back record: re-read GET /funnels/page/<id> "
+                "after publication; a save click or a local 'published' field is "
+                "not published state"]
+    why: list[str] = []
+    source = str(readback.get("source") or "").strip()
+    if not any(source.startswith(route) for route in PUBLISH_READBACK_ROUTES):
+        why.append(f"read-back source {source!r} is not an observed canonical read "
+                   f"(one of {list(PUBLISH_READBACK_ROUTES)}); a save response or "
+                   "a local field is never proof")
+    for key in PUBLISH_READBACK_REQUIRED:
+        value = readback.get(key)
+        if key == "page_version":
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                why.append("read-back page_version must be the observed live integer")
+        elif not isinstance(value, str) or not value.strip():
+            why.append(f"read-back {key} must be the observed value")
+    if str(readback.get("page_id") or "").strip() != str(page_id).strip():
+        why.append(f"read-back is for page {readback.get('page_id')!r}, not {page_id!r}")
+    if location_id and readback.get("location_id") is not None \
+            and str(readback.get("location_id")).strip() != str(location_id).strip():
+        why.append(f"read-back names location {readback.get('location_id')!r}, "
+                   f"not {location_id!r}")
+    if str(readback.get("page_type") or "").strip().lower() not in ("published", "live"):
+        why.append(f"read-back page_type is {readback.get('page_type')!r}; only "
+                   "'published' (or 'live') is a live page, a draft stays a draft")
+    parsed = urlsplit(str(readback.get("url") or "").strip())
+    host = (parsed.netloc or "").split("@")[-1].split(":")[0].lower()
+    if parsed.scheme != "https" or not host:
+        why.append("read-back url must be the actual https page URL")
+    elif host in _SEO_FORBIDDEN_CANONICAL_HOSTS or host.endswith(".googleapis.com"):
+        why.append(f"read-back url points at a storage host ({host}), not the page")
+    workflow_id = readback.get("workflow_id")
+    if workflow_id is not None and not str(workflow_id).strip():
+        why.append("read-back workflow_id is empty when supplied")
+    return why
+
+
+def assert_published_readback(readback: Any, *, page_id: str,
+                             location_id: str | None = None) -> dict:
+    """Raise ``ValueError`` unless *readback* proves ``page_id`` is live."""
+    why = published_readback_refusals(readback, page_id=page_id,
+                                      location_id=location_id)
+    if why:
+        raise ValueError("REFUSE published claim: " + "; ".join(why))
+    return readback  # type: ignore[return-value]
+
+
+def publish_readback_step(page_id: str, location_id: str | None = None, *,
+                          session: str | None = None,
+                          token_global: str = TOKEN_JS_GLOBAL) -> dict:
+    """The ONE post-publication read-back step: re-read the canonical page record.
+
+    Emits ``GET /funnels/page/<id>`` (the record carries the live
+    ``pageVersion`` and the signed ``pageDataDownloadUrl``). The agent fetches
+    that URL too, then fills ``published_readback_refusals``'s required fields
+    from what it OBSERVED: the page URL and, when the run created one, the
+    workflow id. Nothing here is read from the local run.
+    """
+    step = page_read(page_id, location_id, session=session,
+                     token_global=token_global)
+    step["purpose"] = "publication read-back"
+    step["expect"] = {
+        "required_readback_fields": list(PUBLISH_READBACK_REQUIRED),
+        "page_type": "published",
+        "url": "the public https page URL read back from the record",
+        "workflow_id": "the observed workflow id when this run installed one",
+        "refuses": "a save click, a draft response or a local 'published' field",
+        "verify": "assert_published_readback(readback, page_id=..., "
+                  "location_id=...)",
+    }
+    return step
+
+
 def page_seo_autosave(page_id: str, page_data: dict, seo_meta: dict, *,
                      funnel_id: str, page_version: int, founder_name: str | None = None,
                      canonical_hosts: tuple[str, ...] | None = None,
                      media_hosts: tuple[str, ...] = (),
                      integrations: dict | None = None, publish: bool = False,
+                     approval=None, location_id: str | None = None,
+                     evidence_root: str | None = None,
+                     store_dir: str | None = None,
                      session: str | None = None,
                      token_global: str = TOKEN_JS_GLOBAL) -> dict:
     """§2 save step: splice the validated ``seoMeta`` onto the blob and emit the
@@ -2398,26 +2495,48 @@ def page_seo_autosave(page_id: str, page_data: dict, seo_meta: dict, *,
     confirmation to the step's ``expect`` contract so the verifier scores the §2
     end-state. The ``seoMeta`` rides inside ``pageData`` — no separate endpoint.
 
-    Returns the ``page_autosave`` step descriptor with ``expect.seo_populated`` and
-    the splice result under ``seo_meta``.
+    ONE publication path (F06): a draft save is the default. ``publish=True``
+    forwards the SAME recorded approval, target location and gate evidence the
+    canonical publisher uses into the one autosave, so this save and the final
+    publication cannot diverge; without that authority it refuses rather than
+    opening a second, ungated publication path. Nothing here asks for the same
+    approval twice: the record's own page/location scope is what is forwarded.
+
+    Returns the ``page_autosave`` step descriptor with ``expect.seo_populated``,
+    the splice result under ``seo_meta``, and — when publishing — the
+    ``verify_read`` publication read-back contract.
     """
+    if publish and not approval:
+        raise ValueError(
+            "page_seo_autosave: a published SEO save needs the recorded approval "
+            "the canonical publisher uses (approval + location_id + "
+            "evidence_root). Save the SEO panel as a draft and publish once "
+            "through the canonical publisher instead of a second publication path."
+        )
     seo_blob = set_page_seo(page_data, seo_meta, founder_name=founder_name,
                            canonical_hosts=canonical_hosts, media_hosts=media_hosts)
     step = page_autosave(
         page_id, seo_blob, funnel_id=funnel_id, page_version=page_version,
         integrations=integrations, publish=publish, session=session,
-        token_global=token_global,
+        token_global=token_global, approval=approval, location_id=location_id,
+        evidence_root=evidence_root, store_dir=store_dir,
     )
     step["seo_meta"] = copy.deepcopy(seo_meta)
     step.setdefault("expect", {})
     step["expect"]["seo_populated"] = True
     step["expect"]["seo_author_is_founder"] = bool(founder_name)
+    step["expect"]["single_publication_path"] = True
+    step["expect"]["publication_state"] = (
+        "draft_constructed" if not publish else "published")
     step["expect"]["verify_seo"] = (
         "re-read GET /funnels/page/<id>; fetch its pageDataDownloadUrl; confirm "
         "pageData.seoMeta is present + populated (title<=60, description<=155 "
         "(save cap), >=3 researched keywords, author==founder, https canonical, "
         "language='en')"
     )
+    if publish:
+        step["verify_read"] = publish_readback_step(
+            page_id, location_id, session=session, token_global=token_global)
     return step
 
 
@@ -2726,6 +2845,18 @@ def page_autosave(page_id: str, page_data: dict, *, funnel_id: str, page_version
                       "(when draft) the record pageVersion is unchanged",
         },
     }
+    if publish:
+        # F06: a published autosave must prove itself by an OBSERVED re-read.
+        step["expect"]["published_readback"] = {
+            "route": PUBLISH_READBACK_ROUTES[0] + "<id>",
+            "required": list(PUBLISH_READBACK_REQUIRED),
+            "page_type": "published",
+            "refuses": "a save click, a draft response or a local 'published' field",
+            "verify": "assert_published_readback(readback, page_id=..., "
+                      "location_id=...)",
+        }
+        step["verify_read"] = publish_readback_step(
+            page_id, location_id, session=session, token_global=token_global)
     if session:
         step["argv"] = agent_browser_eval_cmd(session, js)
     return step
@@ -3101,6 +3232,12 @@ __all__ = [
     "validate_seo_meta",
     "set_page_seo",
     "assert_seo_populated",
+    "PUBLICATION_STATES",
+    "PUBLISH_READBACK_ROUTES",
+    "PUBLISH_READBACK_REQUIRED",
+    "published_readback_refusals",
+    "assert_published_readback",
+    "publish_readback_step",
     "page_seo_autosave",
     "trigger_rewire_body",
     "blob_md5",
