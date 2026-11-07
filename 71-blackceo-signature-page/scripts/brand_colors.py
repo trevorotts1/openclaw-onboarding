@@ -29,7 +29,10 @@ assets/brand/client-brand.template.json when the run has none) and points intake
   python3 scripts/brand_colors.py record-answers <run_dir> --answers-file FILE [--founder-photo PATH ...]
 `record-answers` builds the same client brand file from the one intake answers file
 (shared-utils/client_intake, schema client-intake-answers/v1): colors as roles with a palette_status,
-plus fonts, logo and photos. A palette the client did not know (status default_to_confirm) is a neutral
+plus fonts, logo and photos. The logo answer is produced, not described: a real logo file is kept as
+handed over, and a "use my business name as text" (or not-sure) answer is set in type at
+brand/wordmark.png with its font file, colors and sha256 recorded, so the Design Board and the pages
+place an existing file instead of a sentinel. A palette the client did not know (status default_to_confirm) is a neutral
 palette that belongs to no client; it passes `check` and prints TO CONFIRM so the build is never blocked
 silently and the default is reported at delivery. Nothing provided and no default applied still fails.
 A proposal palette still never reaches a paid render on a production run: failure() refuses
@@ -39,6 +42,7 @@ Exit codes: 0 resolved/recorded, 1 unresolved/refused, 2 usage.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -49,6 +53,18 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 BUNDLED = SKILL_ROOT / "assets" / "brand" / "blackceo-brand.json"
 TEMPLATE = SKILL_ROOT / "assets" / "brand" / "client-brand.template.json"
 CLIENT_BRAND = "brand/client-brand.json"
+# The wordmark the client's "use my business name as text" answer produces. It is a real
+# file the pages and the Design Board place, never the CLIENT_MUST_SUPPLY sentinel: the
+# answer is the client's own name, and setting it in type is the whole of that answer.
+WORDMARK_REL = "brand/wordmark.png"
+WORDMARK_HEIGHT_PX = 96
+WORDMARK_PADDING_PX = 24
+WORDMARK_MAX_WIDTH_PX = 2000
+# Where a font file may be found. A wordmark is never set in a font this list cannot name.
+FONT_DIRS = (Path("/System/Library/Fonts/Supplemental"), Path("/Library/Fonts"),
+             Path("/System/Library/Fonts"), Path("/usr/share/fonts"))
+# Serif fallbacks, in order, when the brand names a font this machine does not carry.
+FALLBACK_FONTS = ("Georgia.ttf", "Times New Roman.ttf", "Palatino.ttc", "Charter.ttc")
 # A path under private/ that never exists: callers that must hand a Path to a reader get
 # an honest "unreadable" instead of another client's palette.
 UNRESOLVED = "brand.UNRESOLVED"
@@ -195,6 +211,10 @@ def failure(run_dir, stage=None):
 
 
 def _hex(value, role):
+    if isinstance(value, (list, tuple)):  # the answers file may carry one color as a one-item list
+        if len(value) != 1:
+            raise ValueError(f"{role}: {list(value)!r} is a list of colors; this role takes exactly one")
+        value = value[0]
     text = str(value).strip().lstrip("#")
     if len(text) == 3:
         text = "".join(c * 2 for c in text)
@@ -262,9 +282,81 @@ def _answer(doc, key):
     return e if isinstance(e, dict) and e.get("status") in ("provided", "suggested", "default_to_confirm") else None
 
 
-def brand_extras_from_answers(doc, founder_photos=()):
+def font_file_for(display_font=None):
+    """A real font file for the wordmark, or None when this machine carries none.
+
+    Order: the brand's own display font by name, then the recorded wordmark font, then a
+    serif fallback. A name that resolves to nothing is never silently swapped for another
+    family without being recorded, so the caller stores which file was used."""
+    candidates = [str(display_font or "").strip()]
+    candidates += list(FALLBACK_FONTS)
+    for name in candidates:
+        if not name:
+            continue
+        base = Path(name).name
+        names = [base] if base.lower().endswith((".ttf", ".ttc", ".otf")) else \
+            [base + ext for ext in (".ttf", ".ttc", ".otf")]
+        for directory in FONT_DIRS:
+            for candidate in names:
+                path = directory / candidate
+                if path.is_file():
+                    return path
+    return None
+
+
+def render_wordmark(run_dir, text, roles, display_font=None):
+    """Set the client's business name in type as the run's logo file (WORDMARK_REL).
+
+    This is the wordmark answer made real: the client's own words, in the client's own text
+    color, on a transparent plate, with the size, the font file and every hash recorded so
+    the Design Board's logo check, SOP-GIP-02's review and the page's image slot all bind to
+    the same bytes. Nothing is drawn that the client did not say, and nothing is returned when
+    it cannot be produced: the caller records that instead of a made-up logo.
+
+    Returns {files, masthead_files, origin, wordmark_text, sha256, size, font, font_sha256,
+    color}. Raises ValueError naming exactly what is missing (a name, Pillow, a font file).
+    """
+    name = " ".join(str(text or "").split())
+    if not name:
+        raise ValueError("the wordmark needs the client's business name and none is recorded")
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        raise ValueError("Pillow is not installed here, so the business name cannot be set in type")
+    font_path = font_file_for(display_font)
+    if font_path is None:
+        raise ValueError("no font file is installed on this machine (looked in "
+                         + ", ".join(str(d) for d in FONT_DIRS) + ")")
+    size = WORDMARK_HEIGHT_PX
+    font = ImageFont.truetype(str(font_path), size)
+    box = font.getbbox(name) or (0, 0, 1, 1)
+    while (box[2] - box[0]) + 2 * WORDMARK_PADDING_PX > WORDMARK_MAX_WIDTH_PX and size > 24:
+        size -= 8
+        font = ImageFont.truetype(str(font_path), size)
+        box = font.getbbox(name) or (0, 0, 1, 1)
+    width = max(1, box[2] - box[0])
+    height = max(1, box[3] - box[1])
+    color = _hex(roles.get("text") or "#1A1A1A", "text")
+    image = Image.new("RGBA", (width + 2 * WORDMARK_PADDING_PX, height + 2 * WORDMARK_PADDING_PX),
+                      (0, 0, 0, 0))
+    ImageDraw.Draw(image).text(
+        (WORDMARK_PADDING_PX - box[0], WORDMARK_PADDING_PX - box[1]), name, font=font, fill=color)
+    target = Path(run_dir) / WORDMARK_REL
+    target.parent.mkdir(parents=True, exist_ok=True)
+    image.save(target, format="PNG", optimize=True)
+    return {"files": WORDMARK_REL, "masthead_files": WORDMARK_REL, "origin": "wordmark",
+            "wordmark_text": name, "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+            "size": [image.width, image.height], "font": font_path.name,
+            "font_sha256": hashlib.sha256(font_path.read_bytes()).hexdigest(), "color": color}
+
+
+def brand_extras_from_answers(doc, founder_photos=(), run_dir=None, roles=None):
     """fonts, logo, photos and the palette status the answers file decides. Nothing here is invented:
-    what the client did not give stays CLIENT_MUST_SUPPLY with an explicit status."""
+    what the client did not give stays CLIENT_MUST_SUPPLY with an explicit status.
+
+    With ``run_dir`` and ``roles`` the logo answer is made real: a wordmark answer (or a client
+    who sent nothing yet) is set in type at WORDMARK_REL, so the Design Board and the pages get
+    an existing logo file instead of a sentinel, and the produced file carries its hash."""
     statuses = [(_answer(doc, k) or {}).get("status") for k in
                 ("brand_colors", "brand_primary", "brand_secondary", "brand_accent", "brand_background")]
     pstatus = ("default_to_confirm" if "default_to_confirm" in statuses
@@ -283,12 +375,30 @@ def brand_extras_from_answers(doc, founder_photos=()):
             extra["fonts_suggested"] = {k: pair[k] for k in ("display", "body", "accent") if k in pair}
     logo = _answer(doc, "logo")
     lv = logo["value"] if logo and isinstance(logo["value"], dict) else {}
+    logo_status = (logo or {}).get("status") or "default_to_confirm"
     if lv.get("mode") == "file" and lv.get("path"):
-        extra["logo"] = {"files": lv["path"], "masthead_files": lv["path"], "status": logo["status"]}
+        extra["logo"] = {"files": lv["path"], "masthead_files": lv["path"], "status": logo_status,
+                         "origin": "client_file"}
+        given = _find(str(lv["path"]), Path(run_dir)) if run_dir is not None else None
+        if given is not None and given.is_file():  # the client's file, hashed as handed over
+            extra["logo"]["sha256"] = hashlib.sha256(given.read_bytes()).hexdigest()
     else:
         name = lv.get("text") or (_answer(doc, "business_name") or {}).get("value")
-        extra["logo"] = {"files": SENTINEL, "masthead_files": SENTINEL, "wordmark_text": name or SENTINEL,
-                         "status": (logo or {}).get("status") or "default_to_confirm"}
+        word = None
+        if run_dir is not None and roles:
+            display = None
+            fonts_value = (_answer(doc, "fonts") or {}).get("value")
+            if isinstance(fonts_value, dict):
+                display = fonts_value.get("display")
+            try:
+                word = render_wordmark(run_dir, name, roles, display)
+            except ValueError as exc:
+                extra["logo_unproduced"] = str(exc)  # recorded, never covered by a made-up file
+        if word:
+            extra["logo"] = {**word, "status": logo_status}
+        else:
+            extra["logo"] = {"files": SENTINEL, "masthead_files": SENTINEL, "wordmark_text": name or SENTINEL,
+                             "status": logo_status}
     pf = _answer(doc, "photos_founder")
     perm = _answer(doc, "photos_permission")
     wants = bool(pf and pf["value"] == "yes" and (perm or {}).get("value") == "yes")
@@ -319,7 +429,9 @@ def record_from_answers(run_dir, answers_path, founder_photos=()):
     acc = role("accent") or []
     roles = _roles(role("primary"), role("text") or "#1A1A1A", bg if isinstance(bg, list) else [bg], role("secondary"),
                    acc if isinstance(acc, list) else [acc])
-    extra = brand_extras_from_answers(doc, founder_photos)
+    # The logo answer is produced here, not described: a wordmark answer becomes a real file
+    # the Design Board and the pages place, and its hash travels with the brand file.
+    extra = brand_extras_from_answers(doc, founder_photos, run_dir=Path(run_dir), roles=roles)
     return _write_brand(run_dir, roles, f"client answers file {date.today().isoformat()} (brand_colors.py record-answers)", extra)
 
 
