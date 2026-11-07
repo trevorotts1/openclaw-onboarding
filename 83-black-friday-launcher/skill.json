@@ -22,19 +22,13 @@
     "fixtures": "fixtures/run_fixtures.py"
   },
   "python_requirements": "requirements.txt",
-  "depends_on": [
-    "44-convert-and-flow-operator",
-    "49-signature-funnel",
-    "50-email-engine",
-    "71-blackceo-signature-page",
-    "77-council-of-wise-elders",
-    "78-signature-product-selection",
-    "79-signature-order-form",
-    "80-signature-upsell",
-    "81-signature-downsell",
-    "82-signature-thank-you",
-    "shared-utils/signature_launch"
-  ],
+  "depends_on": {
+    "authoritative_manifest": "launcher_core/dependencies.json",
+    "requirements_digest": "ebea953916de58ea5acfa4d165fe4c5aa9c3c93da5946d6cee906b9acd0c82c6",
+    "manifest_entry_count": 19,
+    "required_entry_count": 19,
+    "note": "NON-AUTHORITATIVE POINTER. The requirement set is launcher_core/dependencies.json, read by launcher_core/dependencies.py; this metadata record never lists it. launcher_core/dependencies.py:metadata_spine checks the pointer's target, digest and counts against the manifest and reports a mismatch as a finding in `python3 -m launcher_core.cli dependencies`, never as a crash. The list this replaced named shared-utils/signature_launch (replaced in the manifest by shared-utils/signature_launch_contract) and omitted shared-utils/client_intake."
+  },
   "contracts": [
     "49-signature-funnel/schema/route-graph.schema.json",
     "49-signature-funnel/scripts/vendor/page-request.schema.json",

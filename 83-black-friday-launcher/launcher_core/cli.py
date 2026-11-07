@@ -393,6 +393,17 @@ def cmd_dependencies(args: argparse.Namespace) -> int:
           f"would_enable={report['would_enable']}")
     for entry in report["entries"]:
         print(f"  {entry['status'].upper():12s} {entry['id']}  ({entry['evidence']})")
+    # The metadata spines (registration.json, skill.json) are pointers, not a second
+    # requirement list. A disagreement is printed as a finding and never changes the
+    # exit code: those two files record nothing that runs.
+    meta = report.get("metadata") or {}
+    findings = meta.get("findings") or []
+    print(f"\nmetadata spine: {meta.get('authoritative_manifest')} "
+          f"digest={str(meta.get('requirements_digest'))[:12]} "
+          f"entries={meta.get('entry_count')} required={meta.get('required_entry_count')}; "
+          f"{len(findings)} finding(s)")
+    for finding in findings:
+        print(f"  METADATA   {finding}")
     return 2 if args.install and report["blockers"] else 0
 
 
