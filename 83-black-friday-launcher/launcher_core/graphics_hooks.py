@@ -43,7 +43,6 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -58,7 +57,11 @@ QC_REQUEST_REL = "qc/image_qc_request.json"
 DELIVERY_REL = "delivery_record.json"
 LEDGER_REL = "media_library.json"
 PIPELINE_REL = "qc/graphics_pipeline.json"
-GHL_MEDIA_REF = "06-ghl-install-pages/tools/ghl_media.py"
+# The module the uploader itself loads (45-design-intelligence-library/scripts/graphics_ghl_push.py
+# resolves 48's canonical GHL media module and Skill 6's publish-approval check). The capability
+# probe names these, not a module the push never imports.
+PUSH_MEDIA_REF = "48-facebook-ad-generator/tools/ghl_media.py"
+PUSH_APPROVAL_REF = "06-ghl-install-pages/tools/ghl_publish_approval.py"
 PUSH_REF = "45-design-intelligence-library/scripts/graphics_ghl_push.py"
 REVIEW_PRODUCER_REF = "71-blackceo-signature-page/scripts/write_review.py"
 STAGE_CONTRACT_REF = "71-blackceo-signature-page/references/stage-contract.json"
@@ -488,7 +491,10 @@ def report_violations(manifest: Dict[str, Any], package_root: Path,
 # --------------------------------------------------------------------------- SOP-GIP-03 hosting
 
 def ghl_media_present(repo_root: Optional[Path] = None) -> bool:
-    return _ref(GHL_MEDIA_REF, repo_root) is not None
+    """True only when every file the uploader loads is installed: the push script, the canonical
+    GHL media module it resolves, and the Skill 6 publish-approval check it refuses without."""
+    return all(_ref(rel, repo_root) is not None
+               for rel in (PUSH_REF, PUSH_MEDIA_REF, PUSH_APPROVAL_REF))
 
 
 def _load_module(name: str, path: Path):
@@ -577,7 +583,8 @@ def _replace_page_references(path: Path, hosted: Dict[str, Dict[str, Any]],
         local = Path(_text(entry.get("local_path")))
         names = {local.name}
         if sha in artifacts:
-            names.add(Path(artifacts[sha]).name)
+            rel = Path(artifacts[sha])
+            names.update({rel.name, rel.as_posix()})  # a page may cite "assets/images/x.png", not just "x.png"
         for name in sorted(n for n in names if n):
             for pattern, replacement in ((f'"{name}"', f'"{url}"'), (f"'{name}'", f"'{url}'"),
                                          (f"url({name})", f"url({url})"),
@@ -685,11 +692,14 @@ def delivery_record(manifest: Dict[str, Any], package_root: Path, job_dir: Path,
     missing: List[str] = []
     module_ok = ghl_media_present(repo_root)
     if not module_ok:
-        missing.append(f"the shared hosting module ({GHL_MEDIA_REF}) is not installed")
+        absent = [rel for rel in (PUSH_REF, PUSH_MEDIA_REF, PUSH_APPROVAL_REF) if _ref(rel, repo_root) is None]
+        missing.append("the approved hosting path is not installed (missing " + ", ".join(absent) + ")")
     elif probe_env is not None:
         try:
-            module = _load_module("_launch_ghl_media", _ref(GHL_MEDIA_REF, repo_root))
-            module.resolve_location_pit(probe_env, search_stores=False)
+            # The same module and resolver the uploader calls, so "credentials available" means
+            # the push would find them, never that some other module could.
+            module = _load_module("_launch_ghl_media", _ref(PUSH_MEDIA_REF, repo_root))
+            module.resolve_location_pit(probe_env)
         except Exception:  # noqa: BLE001  (a missing credential is a recorded capability gap, never printed)
             missing.append("the client's hosting credentials are not available to this run")
     if not assets or not all(a["hosted"] for a in assets):
@@ -871,23 +881,24 @@ def _brand_file(path: Optional[Path], job_dir: Path) -> Optional[Path]:
     return None
 
 
-def _record_logo(brand_path: Optional[Path], mode: str, value: str, extra: Optional[Dict[str, Any]] = None) -> bool:
+def _record_logo(brand_path: Optional[Path], mode: str, value: str) -> bool:
     """Put the finished logo into the brand file every page prompt reads. A client's brand file is
-    only ever updated in place; one that does not exist is not created by guesswork."""
+    only ever updated in place; one that does not exist is not created by guesswork. Only the
+    ``logo`` keys ``assets/brand/brand.schema.json`` allows are written (files, masthead_files,
+    wordmark_text, status) — the asset's own hash stays in ``brand/logo-asset.json``."""
     if brand_path is None:
         return False
     brand = _read(brand_path)
     if not isinstance(brand, dict):
         return False
     logo = brand.get("logo") if isinstance(brand.get("logo"), dict) else {}
-    if mode == "existing_logo":
+    if mode == "existing_logo":  # the client's own file: provided
         logo.update({"files": value, "masthead_files": value, "status": "provided"})
-    elif mode == "wordmark":
+    elif mode == "wordmark":  # the business name from the client's own answer
         logo.update({"files": "CLIENT_MUST_SUPPLY", "masthead_files": "CLIENT_MUST_SUPPLY",
                      "wordmark_text": value, "status": "provided" if value else "default_to_confirm"})
-    else:
-        logo.update({"files": value, "masthead_files": value, "status": "provided"})
-    logo.update(extra or {})
+    else:  # a logo this run drew: a proposal until the client says yes, never "provided"
+        logo.update({"files": value, "masthead_files": value, "status": "suggested"})
     brand["logo"] = logo
     _write(brand_path, brand)
     return True
@@ -963,9 +974,8 @@ def brand_asset(answers_path: Path, job_dir: Path, brand_file: Optional[Path] = 
     if adapter is None:
         result["missing_capability"].append(f"the image adapter ({ADAPTER_REF}) is not installed")
         return result
-    if not os.environ.get("KIE_API_KEY"):
-        result["missing_capability"].append("KIE_API_KEY is not set in this environment")
-        return result
+    # The key is Skill 74's to resolve (live env, then the shared resolver's stores); reading it
+    # here would false-fail a box whose key lives in a store. The adapter's own answer is recorded.
     request = {"model": model_id, "input": {"prompt": brief["prompt"], "input_urls": [],
                                             "aspect_ratio": "1:1"}}
     request_path = job_dir / "brand" / "logo-request.json"
@@ -1004,7 +1014,7 @@ def brand_asset(answers_path: Path, job_dir: Path, brand_file: Optional[Path] = 
              "created_at": payload.get("created_at")}
     _write(job_dir / "brand" / "logo-asset.json", asset)
     result.update(state="created", file=asset["file"], sha256=asset["sha256"],
-                  brand_file_updated=_record_logo(brand_path, "create", asset["file"], {"sha256": asset["sha256"]}),
+                  brand_file_updated=_record_logo(brand_path, "create", asset["file"]),
                   asset=str(job_dir / "brand" / "logo-asset.json"))
     return result
 

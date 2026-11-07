@@ -410,10 +410,11 @@ def cmd_check(args: argparse.Namespace) -> int:
 def cmd_brand(args: argparse.Namespace) -> int:
     """F09: carry the client's brand answer to the real asset producer.
 
-    Existing logo and wordmark are recorded in the brand file every page prompt reads; creating a
-    logo writes its brief first and runs the image capability only with the paid approval and a
-    model id resolved from the existing registry. Nothing is invented and nothing is spent here
-    without those. `--json` (always) prints the producer's own record.
+    Existing logo and wordmark are recorded in the brand file every page prompt reads (a logo this
+    run draws is recorded as a proposal, never as the client's own); creating a logo writes its
+    brief first and runs the image capability only with the paid approval and a model id supplied
+    from the existing registry. Nothing is invented and nothing is spent here without those.
+    `--json` (always) prints the producer's own record.
     """
     from . import graphics_hooks
     result = graphics_hooks.brand_asset(
