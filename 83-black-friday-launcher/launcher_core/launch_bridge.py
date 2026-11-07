@@ -529,7 +529,10 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
 
     # F08 delivery: produce each offer's delivery sheet, bind it, and record what the
     # run did and did not make. A failed dispatch above leaves no product record.
-    delivered = delivery.run(normalized, out_dir, launch=launch)
+    try:
+        delivered = delivery.run(normalized, out_dir, launch=launch)
+    except delivery.DeliveryError as exc:
+        raise BridgeError(exc.code, f"{exc.detail}. The pages were built; no product record was written.") from exc
 
     report = {
         "launch_id": normalized["launch_id"],
