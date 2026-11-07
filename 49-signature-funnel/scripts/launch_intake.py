@@ -217,6 +217,53 @@ def _client_intake():
     raise IntakeError("shared-utils/client_intake not found; install or update the onboarding skills")
 
 
+def _intake_revision():
+    """shared-utils/client_intake/revision.py: the ONE proposal-acceptance transition and
+    the ONE revision reconciliation. Skill 83 (launcher_core/intake.py) loads the same file
+    by path, so the two skills cannot drift into two different rules."""
+    if "client_intake_revision" in sys.modules:
+        return sys.modules["client_intake_revision"]
+    import importlib.util
+    for root in _skill_roots():
+        for d in (root / "shared-utils" / "client_intake", root / "client_intake"):
+            f = d / "revision.py"
+            if f.is_file():
+                spec = importlib.util.spec_from_file_location("client_intake_revision", f)
+                mod = importlib.util.module_from_spec(spec)
+                sys.modules["client_intake_revision"] = mod
+                spec.loader.exec_module(mod)
+                return mod
+    raise IntakeError("shared-utils/client_intake/revision.py not found; install or update "
+                      "the onboarding skills")
+
+
+def _reconcile(session: Dict[str, Any], because: str) -> Dict[str, Any]:
+    """Reconsider the answers a disabled offer depended on (U1 -> D1, U2).
+
+    Runs the shared reconciliation over the session ledger. A revision that disables U1
+    turns the saved D1/U2 answers into `not_applicable` with their prior state, provenance
+    kind and value kept under `reconciled`, and clears the matching extras flags, so the
+    offers, pages, follow-up emails and route nodes derived from them are gone rather than
+    stale. Every other answer - brand, calendar, copy, price of the main offer - is only
+    read, and is named in the report as kept.
+    """
+    extras_entry = _get(session, "extras")
+    extras = extras_entry.get("value") if isinstance(extras_entry, dict) else None
+    report = _intake_revision().reconcile_launch(
+        session["answers"], revision=session["plan_revision"],
+        extras=extras if isinstance(extras, dict) else None,
+        answer_prefix="offers.", extras_key="extras")
+    session["reconciled"] = report["reconciled_answers"]
+    session["reconciled_kept"] = report["kept_answers"]
+    if report["reconciled_answers"]:
+        session["history"].append({
+            "at": _now(), "event": "answers_reconciled",
+            "revision": session["plan_revision"], "because": because,
+            "disabled": report["disabled"],
+            "reconciled": [row["key"] for row in report["reconciled_answers"]]})
+    return report
+
+
 def ingest_answers(session: Dict[str, Any], answers: Dict[str, Any],
                    brand_file: Optional[Path] = None) -> Dict[str, Any]:
     """Fill the session from the one client answers file (client-intake-answers/v1), so the same answers
@@ -516,6 +563,10 @@ def answer(session: Dict[str, Any], question_id: str, raw: str,
     # the client does not repeat the request at every step).
     if any(p in _norm(raw) for p in _THINK_FOR_ME) and session.get("mode") == "know":
         session["mode"] = "help"
+    # This answer may have disabled an offer another saved answer depended on (U1 -> D1/U2).
+    # Reconcile before anything is persisted or planned: a stale dependent offer must never
+    # survive into a record, a page set or a route graph.
+    _reconcile(session, f"answer changed ({question_id})")
     session["phase"] = q["phase"]
     session["history"].append({"at": _now(), "event": "answer",
                                "question_id": question_id})
@@ -911,6 +962,9 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
     if not journey:
         missing.append("journey_mode (one offer or a few packages)")
         journey = "single_simple"
+    # Reconcile before the record is built: a hand-edited or older ledger whose extras say
+    # U1 is off must not carry D1/U2 into the offers, the page set or the route graph.
+    _reconcile(session, "plan assembly")
     extras = dict((_get(session, "extras") or {}).get("value") or
                   {"upsell_1": False, "downsell_1": False, "upsell_2": False})
 
@@ -1238,9 +1292,17 @@ def approve(session: Dict[str, Any], approval: Dict[str, Any],
     session["plan"]["plan_approval_ref"] = approval["approval_id"]
     session["approval"] = approval
     session["state"] = "approved"
-    for entry in session["answers"].values():
-        if entry["state"] == "recommended_unapproved":
-            entry["state"] = "approved_recommendation"
+    # The ONE shared proposal-acceptance transition (shared-utils/client_intake/revision.py),
+    # also consumed by Skill 83's intake. The client approving this exact plan hash is what
+    # accepts the recommendations inside it: each one records the approval ref plus the state
+    # and provenance kind it came from. Nothing else is touched.
+    accepted = _intake_revision().accept_proposals(session["answers"], approval)
+    session["proposal_acceptance"] = {
+        "approval_ref": accepted["approval_ref"],
+        "accepted": accepted["accepted"]}
+    session["history"].append({"at": _now(), "event": "proposals_accepted",
+                               "approval_ref": accepted["approval_ref"],
+                               "accepted": [row["key"] for row in accepted["accepted"]]})
     session["history"].append({"at": _now(), "event": "approved",
                                "approval_id": approval["approval_id"],
                                "verification_class": assertion["verification_class"]})
@@ -1276,6 +1338,10 @@ def request_revision(session: Dict[str, Any], note: str = "") -> Dict[str, Any]:
     session["state"] = "revision_requested"
     session["history"].append({"at": _now(), "event": "revision_requested",
                                "note": note, "revision": session["plan_revision"]})
+    # A revision reconsiders every saved answer a disabled offer depended on. Run it on the
+    # revision itself, not only when an answer happens to be recorded: a plan can be revised
+    # with U1 already off and D1/U2 still saved from revision 1.
+    _reconcile(session, f"revision {session['plan_revision']}")
     _persist(session)
     return session
 
