@@ -2,10 +2,12 @@
 
 Exit 0 pass, 2 fail. The Council planning step runs on route/assemble and is
 always recorded; a not-ready Council never changes the exit code. At the
-coherent-plan stage it asks the Council front door for a light sitting
-(``council-ask ask --brief FILE --mode light --json``) with the compiled route
-as the purchase graph; the returned session result is recorded and a verdict
-that did not come back is recorded as no advice, never as advice.
+coherent-plan stage it runs ONLY the offline readiness probe
+(``scripts/doctor.mjs``: no network, no writes, no model call) and records it as
+a package check. It never calls a Council front door and never convenes a
+session. A Council session result that was already returned to the client can be
+supplied as a JSON file with ``--council-session`` and is recorded as data; with
+none, the record says no Council advice was obtained and the build continues.
 
 ``dispatch`` and ``assemble`` run the dependency preflight first and refuse on any
 required entry that is missing, so a green preflight means the launch can run.
@@ -108,16 +110,31 @@ def _json_object(path: Path) -> dict:
     return doc if isinstance(doc, dict) else {}
 
 
-def _council_session(args: argparse.Namespace) -> "str | None":
-    """The already-convened Council sitting to read, when the caller names one."""
-    return (getattr(args, "council_session", None) or "").strip() or None
+def _council_session(args: argparse.Namespace) -> "dict | None":
+    """A Council session result that was already returned, supplied as JSON data.
+
+    A path is read as data only: no Council front door is called and no session is
+    opened. A named file that cannot be read as a JSON object is refused by name,
+    so a mistyped path never reads as "no advice"."""
+    path = (getattr(args, "council_session", None) or "").strip()
+    if not path:
+        return None
+    try:
+        doc = _read_json(Path(path))
+    except (OSError, ValueError):
+        raise CliError("AF-LAUNCH-COUNCIL-SESSION",
+                       f"{path!r} is not a readable JSON Council session result")
+    if not isinstance(doc, dict):
+        raise CliError("AF-LAUNCH-COUNCIL-SESSION",
+                       f"{path!r} must hold one JSON object (the returned session result)")
+    return doc
 
 
 def cmd_route(args: argparse.Namespace) -> int:
     normalized = intake.validate(_read_json(args.intake))
     graph = route.compile_route(normalized)
     advice = council.planning_step(normalized, graph=graph,
-                                   session_id=_council_session(args))
+                                   session=_council_session(args))
     record = route.launch_record(normalized, advice)
     _emit({"council": advice, "graph": graph, "launch_record": record})
     return 0
@@ -140,7 +157,7 @@ def cmd_assemble(args: argparse.Namespace) -> int:
                             "tied to a plan. Pass --run-dir of the dispatch run.")
     graph = route.compile_route(normalized)
     advice = council.planning_step(normalized, graph=graph, run_dir=str(source_root),
-                                   session_id=_council_session(args))
+                                   session=_council_session(args))
     pieces = {role: _read_json(pieces_dir / f"{role}.json")
               for role in (n["role"] for n in graph["nodes"])}
     for slot in package.EXTRA_SLOTS:  # a second page of a role (downsell_2) rides beside its parent
@@ -421,8 +438,8 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("route", help="validate intake and compile the route graph")
     r.add_argument("--intake", required=True)
     r.add_argument("--council-session", dest="council_session", default=None,
-                   help="read this already-convened Council session's verdict instead of "
-                        "asking for a new light sitting")
+                   help="a JSON file holding a Council session result that was already "
+                        "returned to the client; it is recorded as data, never asked for")
     r.set_defaults(fn=cmd_route)
 
     a = sub.add_parser("assemble", help="assemble package-manifest.json and receipt.json")
@@ -454,8 +471,8 @@ def build_parser() -> argparse.ArgumentParser:
                         "fulfillment mapping and failed/pending copy the order form needs. Without it the "
                         "order-form mapping lists those facts as unknown and check refuses it")
     a.add_argument("--council-session", dest="council_session", default=None,
-                   help="read this already-convened Council session's verdict instead of asking "
-                        "for a new light sitting")
+                   help="a JSON file holding a Council session result that was already returned "
+                        "to the client; it is recorded as data, never asked for")
     a.add_argument("--page-only", action="store_true",
                    help="assemble pages alone and label the package page-only: no shared launch "
                         "plan, so no Black Friday calendar and no planned email, text or automation "
