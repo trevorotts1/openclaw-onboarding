@@ -211,9 +211,8 @@
       "kind": "shared_utils",
       "ref": "shared-utils/signature_launch/design/tokens/tokens.py",
       "required": false,
-      "class": "selected_conditional",
-      "modes": ["dispatch", "dispatch-kie", "assemble"],
-      "why": "emits the design-tokens component for the run's brand; a token-driven page is refused without it"
+      "class": "unselected_optional",
+      "why": "emits the design-tokens component for the run's brand; Skill 71's own preflight reports its absence as DEGRADED and never fails a run for it, so this entry is reported and never blocks (selected-conditional would make it stricter than the consumer)"
     },
     {
       "id": "shared-image-slots",
@@ -229,9 +228,8 @@
       "kind": "shared_utils",
       "ref": "shared-utils/signature_launch/design/design.css",
       "required": false,
-      "class": "selected_conditional",
-      "modes": ["dispatch", "dispatch-kie"],
-      "why": "the design-tokens component a produced page records; a token-driven import is refused without it"
+      "class": "unselected_optional",
+      "why": "the design-tokens component a produced page records; it is a recorded component reference in Skill 71 (no read path in the page tree), so its absence is reported and never blocks a build"
     },
     {
       "id": "provider-kie-transport-74",
