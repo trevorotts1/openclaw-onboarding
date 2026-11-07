@@ -42,7 +42,7 @@ export interface ReportFormatDescriptor {
 }
 
 export const PDF_MISSING_PIECE =
-  'no headless Chrome/Chromium or CUPS PDF filter (cupsfilter) is installed or discoverable on this host; install one, or set CHROME_PATH to a Chrome/Chromium binary, then retry the export';
+  'no headless renderer is installed or discoverable on this host: install Playwright/Chromium, a Chrome/Chromium binary, or the CUPS PDF filter (cupsfilter), or set CHROME_PATH to a Chrome/Chromium binary, then retry the export';
 
 export const REPORT_FORMAT_REGISTRY: Readonly<
   Record<ReportFormat, ReportFormatDescriptor>

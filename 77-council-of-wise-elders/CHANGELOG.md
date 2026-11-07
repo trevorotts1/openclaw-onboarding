@@ -1,5 +1,18 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.83: the green-suite release (all 16 failing runtime tests fixed)
+
+In plain English: the runtime carried **16 failing tests** and nobody had looked. Some were real product defects — a decision cell showing `3/9` where the shipped design says a plain count, a verdict line that put an HTML tag between `Verdict:` and the label so the printed string was broken, a capability matcher that could never match a slug to its plan step, and a PDF refusal message that named the wrong missing piece. Others were stale expectations or a test fixture that was an incomplete copy of a real DOM.
+
+- **Product fixes (5 files):**
+  - `public/chamber/chamber-decision.js` — the decision cell now shows the plain count (`3`, `0`), with the share carried by the bar width and the full wording by the screen-reader text, matching the v1.0.28 design line "a bar and count per option".
+  - `src/reports/render.ts` — the summary verdict is plain text, so `Verdict: GO` is contiguous in the print HTML (it was `Verdict:<span…> GO`); the now-unused `.verdict-label` rule is gone.
+  - `src/reports/capability-snapshot.ts` — exact-name matching treats a slug separator as equivalent to a space (`weekly-episode` matches "weekly episode"), so installed capabilities can match a plan step; it is still whole-word and adjacency-only, with no stemming or token overlap.
+  - `src/reports/pdf-renderer.ts`, `src/reports/registry.ts` — the PDF refusal names the renderer that is actually probed (Playwright/Chromium, a Chrome binary, or cupsfilter) instead of only Chrome/CUPS.
+- **Test-side corrections (7 files), none weakening an assertion:** cross-realm arrays imported from `node:vm` are compared after `Array.from`/JSON copy (6 assertions rewritten in place, 0 deleted, 0 skipped); a fake DOM node gains the standard `hasAttribute`; two fixture ids now carry realistic ids; `ctr158`'s fixture plan step actually names the capabilities it claims to match; `landing`'s front-door layer allow-list gains `../reports/`, which the door legitimately imports; `modes-service` pins the current `OLLAMA_PLAN_REQUIRED` recovery text (the old string was superseded when the refusal began recommending OpenRouter).
+- **Proof:** `npm test` 1271 tests, **1266 pass, 0 fail** (5 skipped), exit 0. `tsc --noEmit` clean. No test deleted, no `skip`/`todo` added.
+- Version carriers read 1.0.83.
+
 ## v1.0.82: the OpenRouter standing-default release
 
 In plain English: an OpenRouter route still refused to convene unless the caller named one of the client's own models, because a provider that allows many models and names no default was treated as "ambiguous, never guessed". In practice that was a wall between a client and the provider they wanted. OpenRouter now carries a standing default: **DeepSeek Flash, preferring the pinned `1017` variant, otherwise the newest DeepSeek Flash the provider offers.** It is deterministic from the candidate list, it shows in the route's model label, and an explicit `--model` still wins. Nobody is blocked from OpenRouter, and nobody is silently handed a model they did not ask for.
