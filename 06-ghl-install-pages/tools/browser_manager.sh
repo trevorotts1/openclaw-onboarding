@@ -365,22 +365,27 @@ _bm_active_session_count() {
 }
 
 # _bm_lease_is_dead LEASE_FILE — 0 only when its owner is PROVABLY gone.
-# A lease with an unreadable pid is not provably live, so it is reclaimable;
-# a lease whose recorded PID start-time no longer matches was PID-reused, so it
-# is reclaimable too. Anything else is a live owner and is left alone.
+# Proof is one of: the recorded manager PID no longer exists, the recorded PID
+# start-time no longer matches (PID reuse), or the lease's own TTL has passed.
+# An unreadable/missing PID is NOT proof: this manager never closes or
+# state-clears a session it cannot prove is orphaned, because that session may
+# belong to the user or to another task. Field parsing tolerates pretty-printed
+# leases (optional whitespace around ':'); the writer emits the compact form.
+# An unparseable lease therefore blocks the pool (REFUSE, exit 75) until a human
+# clears it: refusing is the safe direction, closing a stranger's session is not.
 _bm_lease_is_dead() {
   local f pid start now_start started ttl
   f="$1"
-  pid="$(sed -n 's/.*"manager_pid":\([0-9][0-9]*\).*/\1/p' "$f" 2>/dev/null | head -n 1)"
-  [ -n "$pid" ] || return 0
+  pid="$(sed -n 's/.*"manager_pid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$f" 2>/dev/null | head -n 1)"
+  [ -n "$pid" ] || return 1
   kill -0 "$pid" 2>/dev/null || return 0
-  start="$(sed -n 's/.*"pid_start":"\([^"]*\)".*/\1/p' "$f" 2>/dev/null | head -n 1)"
+  start="$(sed -n 's/.*"pid_start"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$f" 2>/dev/null | head -n 1)"
   now_start="$(_bm_pid_start "$pid")"
   if [ -n "$start" ] && [ -n "$now_start" ] && [ "$start" != "$now_start" ]; then
     return 0
   fi
-  started="$(sed -n 's/.*"started_epoch":\([0-9][0-9]*\).*/\1/p' "$f" 2>/dev/null | head -n 1)"
-  ttl="$(sed -n 's/.*"ttl_sec":\([0-9][0-9]*\).*/\1/p' "$f" 2>/dev/null | head -n 1)"
+  started="$(sed -n 's/.*"started_epoch"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$f" 2>/dev/null | head -n 1)"
+  ttl="$(sed -n 's/.*"ttl_sec"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$f" 2>/dev/null | head -n 1)"
   if [ -n "$started" ] && [ -n "$ttl" ]; then
     [ "$(( $(_bm_now) - started ))" -ge "$ttl" ] && return 0
   fi
@@ -1110,18 +1115,24 @@ if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
       echo "DETACHED: pid=$_bm_child_pid session=$(bm_session_name) — the child owns lock+lease+TTL+teardown."
       ;;
     teardown)
-      # Close the canonical session ONLY when this manager owns a lease for it,
-      # or the operator explicitly forces it. A bare teardown must never close a
+      # Close the canonical session ONLY when this manager can prove it owns
+      # the lease (the recorded owner is gone / PID-reused / TTL elapsed), or
+      # the operator explicitly forces it. A lease with a LIVE owner belongs to
+      # that owner's work: a bare teardown must never close or state-clear a
       # session another task or the user is still using.
       _bm_td_session="$(bm_session_name)"
-      if [ -f "$LOCKDIR/leases/${_bm_td_session}.lease" ]; then
+      _bm_td_lease="$LOCKDIR/leases/${_bm_td_session}.lease"
+      if [ -f "$_bm_td_lease" ] && _bm_lease_is_dead "$_bm_td_lease"; then
         _BM_SESSION="$_bm_td_session"
         _bm_teardown
-        echo "TORN-DOWN: session=${_bm_td_session}"
+        echo "TORN-DOWN (orphaned lease): session=${_bm_td_session}"
       elif [ "${BM_TEARDOWN_FORCE:-0}" = "1" ]; then
         _BM_SESSION="$_bm_td_session"
         _bm_teardown
-        echo "TORN-DOWN (forced, no owned lease): session=${_bm_td_session}"
+        echo "TORN-DOWN (forced): session=${_bm_td_session}"
+      elif [ -f "$_bm_td_lease" ]; then
+        echo "REFUSE: the lease for '${_bm_td_session}' belongs to a live owner (pid recorded in $_bm_td_lease); refusing to close another task's session. Set BM_TEARDOWN_FORCE=1 to force." >&2
+        exit 75
       else
         echo "REFUSE: no owned lease for '${_bm_td_session}'; refusing to close a session this manager does not own. Set BM_TEARDOWN_FORCE=1 to force." >&2
         exit 75

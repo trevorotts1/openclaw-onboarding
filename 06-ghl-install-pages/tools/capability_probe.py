@@ -881,8 +881,13 @@ _OPERATION_ROUTES: Tuple[Tuple[str, Dict[str, Any]], ...] = (
                             "rails": ("mcp",), "auth": "firebase",
                             "why": "workflow builds use Skill 44's internal Build API"}),
     ("workflows.definition.", {"skill": "44", "surface": "workflow",
-                               "rails": ("mcp",), "auth": "firebase",
-                               "why": "workflow definition CRUD is documented on staging only"}),
+                               "rails": ("api",), "auth": "pit",
+                               "why": "public workflow-definition CRUD rows; the "
+                                      "registry still freezes them at staging-only "
+                                      "v4 (B-V4-S) and the capability gate is "
+                                      "default-deny, so they cannot complete a "
+                                      "build until the ledger re-freezes and "
+                                      "enables them"}),
     ("workflows.", {"skill": "44", "surface": "workflow",
                     "rails": ("api", "mcp"), "auth": "pit",
                     "why": "workflow list/enroll/remove are CRM operations, not builder work"}),
@@ -1280,9 +1285,14 @@ def _build_environment_capabilities(
 
 def _oc_lane_eligible(oc: Dict[str, Any]) -> bool:
     """The OpenClaw browser lane (PRIMARY since 2026-10-13) requires the
-    plugin + a working CLI + the Chrome extension installed and current."""
+    OpenClaw version floor + the plugin + a working CLI + the Chrome
+    extension installed and current. The floor belongs HERE, not only in a
+    post-selection demotion: a below-floor box must fall through to the NEXT
+    eligible lane in order (agent-browser before playwright_direct), and the
+    fallbackChain must not offer a lane this host cannot use."""
     ext = oc.get("extension") or {}
-    return bool(oc.get("pluginEnabled") and oc.get("cliWorks")
+    return bool(oc.get("openclawFloorMet") is True
+                and oc.get("pluginEnabled") and oc.get("cliWorks")
                 and ext.get("installed") and ext.get("current"))
 
 
@@ -1356,6 +1366,10 @@ def run_probe(runner: Callable[..., Any] = subprocess.run,
             "playwrightAvailable": managed["playwrightAvailable"],
             "profile": managed["profile"],
             "doctorOk": managed["doctorOk"],
+            # The version floor is part of lane eligibility (see
+            # _oc_lane_eligible): selection AND fallbackChain read this flag,
+            # so a below-floor host can never be offered the lane.
+            "openclawFloorMet": _is_2x_or_newer(oc.get("semver")),
             "extension": extension,
         },
         "existing_session": existing,
@@ -1387,19 +1401,15 @@ def run_probe(runner: Callable[..., Any] = subprocess.run,
 
     selected = _select_lane(lanes, env)
 
-    # OpenClaw-lane gate: the OpenClaw browser lane only when OC >= 2026.8.1
-    # AND plugin enabled AND cli works AND the Chrome extension is installed
-    # and current (plan 2.2, engine order revised 2026-10-13). Demote with a
-    # warning when below the floor.
+    # OpenClaw-floor warning. The floor is enforced inside _oc_lane_eligible
+    # (so selection and fallbackChain agree); this block only RECORDS why the
+    # managed lane was not offered. It must never re-select a lane: the old
+    # post-selection demotion skipped agent-browser and could hand a capable
+    # box to playwright_direct (or to nothing) instead of the next lane in
+    # order.
     oc_semver = oc.get("semver")
-    if selected == "openclaw_managed_browser" and not _is_2x_or_newer(oc_semver):
-        selected = "playwright_direct" if pw["available"] else None
-        warnings.append("openclaw older than 2026.8.1 — managed-browser lane "
-                        "not eligible (plan 2.2)")
-    elif (oc.get("cliPresent") and managed["pluginEnabled"]
+    if (oc.get("cliPresent") and managed["pluginEnabled"]
             and managed["cliWorks"] and not _is_2x_or_newer(oc_semver)):
-        # Below-floor OpenClaw: the lane was never selected (the extension
-        # gate or the floor), but the operator still gets the floor warning.
         warnings.append("openclaw older than 2026.8.1 — managed-browser lane "
                         "not eligible (plan 2.2)")
 

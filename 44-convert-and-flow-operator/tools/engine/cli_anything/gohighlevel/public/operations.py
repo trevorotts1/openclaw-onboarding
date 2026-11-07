@@ -480,6 +480,11 @@ _PAYMENTS_ALT: tuple[str, ...] = ("2021-07-28",)
 # (ISO-4217 exponent aware) plus the read-first / read-back / approval discipline,
 # and the Skill 44 CLI product/price commands route through it.
 _PAYMENTS: tuple[OperationRow, ...] = (
+    # F11 correction: products.list carried blocker ``B-COMMUNITY-RAIL``, a
+    # retired-community-transport code that serves no product route and that no
+    # other row in this family carries. The row is a public REST read with no
+    # recorded verification, so ``A-UNVERIFIED`` states what is actually known.
+    # No other field on the row changed.
     _R("products.list", "GET", "/products/", "v3", "D", PUB, PIT_OR_OAUTH,
        "query.locationId", False, False, "A-UNVERIFIED",
        DOCS + "/2021-07-28/ghl/products/list-invoices",
@@ -759,9 +764,10 @@ _WORKFLOWS_MCP: tuple[OperationRow, ...] = (
     # F11 version reconciliation (2026-11-07). Production contract re-read at
     # https://marketplace.gohighlevel.com/docs/ghl/workflows/get-workflow/:
     # GET /workflows/ documents Version v3, which is the literal this row
-    # already carries. The recorded live 200 for the same route used
-    # 2021-07-28 (GHL_UPDATES_live-ledger.md line 759), and GHL accepts more
-    # than one supported Version on several routes, so that literal is a
+    # already carries (the page is titled "Get Workflow (deprecated)" yet still
+    # publishes the operation at v3). The recorded live 200 for the same route
+    # used 2021-07-28 (GHL_UPDATES_live-ledger.md line 759), and GHL accepts
+    # more than one supported Version on several routes, so that literal is a
     # permitted rollback for this row and is recorded as such rather than
     # replacing the documented value. F6 / B-WORKFLOWS-LIST-VERSION stays open
     # until one authorized v3 call is recorded (see
@@ -783,7 +789,8 @@ _WORKFLOWS_MCP: tuple[OperationRow, ...] = (
        PIT_OR_OAUTH, "query.locationId", True, True, "A-UNVERIFIED",
        DOCS + "/ghl/contacts/delete-contact-from-workflow/"),
     # F11 reconciliation (2026-11-07), recorded WITHOUT re-freezing the rows.
-    # Re-read against the production contract:
+    # Re-read against the production contract (all five pages fetched
+    # 2026-11-07; each documents Version v3):
     #   get-workflow-definition    GET  /workflows/{workflowId}/definition  v3
     #   create-workflow            POST /workflows                          v3
     #   update-workflow-definition PUT  /workflows/{workflowId}/definition  v3

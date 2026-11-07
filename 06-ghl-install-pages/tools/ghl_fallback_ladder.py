@@ -40,7 +40,9 @@ A rung may only make the ladder succeed when ALL of these hold:
   finished the operation, not merely that it started or prepared something.
 * ``operation`` names the SAME operation the caller requested. A rung that
   completed a different operation (for example a prerequisite that created
-  the custom fields a form needs) did not complete the request.
+  the custom fields a form needs) did not complete the request. When the
+  surface declares operation ids, a rung that omits ``operation`` has not
+  described a completion at all and is recorded as ``partial``.
 * The rung is not declared ``kind: "prerequisite"`` in the config. A
   prerequisite rung can never report the whole page/form operation complete,
   even if it wrongly claims ``operation_complete``; that contradiction is
@@ -75,11 +77,14 @@ HANDOFF ACROSS RUNGS (DOM + SESSION)
 A fallback rung must not assume it shares a browser session with the rung
 that failed. For every surface that drives a browser, the config declares
 ``dom_refresh: true`` and the caller MUST supply an enter hook for the
-browser transport (``enter_hooks={"browser": fn}``). The hook re-establishes
-the page/context, refreshes DOM references, and returns at least a
-``dom_epoch``; the ladder records that epoch on the attempt. A browser rung
-with no enter hook refuses (:class:`LadderConfigError`) rather than reusing a
-stale reference.
+browser transport (``enter_hooks={"browser": fn}``) when that browser rung
+is reached as a FALLBACK — after a prior rung has already run. The hook
+re-establishes the page/context, refreshes DOM references, and returns at
+least a ``dom_epoch``; the ladder records that epoch on the attempt. A
+fallback browser rung with no enter hook refuses
+(:class:`LadderConfigError`) rather than reusing a stale reference. The
+PRIMARY browser rung needs no hook: it is the rung that establishes the
+session, so there is no failed rung to share with.
 
 CLEANUP
 -------
@@ -570,6 +575,7 @@ def _run_rung(
     entry: Mapping[str, Any],
     observed_location_id: Optional[str],
     warnings: List[str],
+    require_operation_named: bool,
 ) -> RungAttempt:
     """Call one rung and classify its outcome. Never fabricates a pass."""
     try:
@@ -635,11 +641,35 @@ def _run_rung(
                 f"operation_complete for {context.operation!r}; recorded as "
                 "prerequisite_ready, never as completion"
             )
-        attempt.status = CLASS_PREREQUISITE
+        # ``ok: True`` from a declared prerequisite means the prerequisite
+        # work succeeded; record that as its own state. A rung that reports
+        # neither prerequisite_ready nor operation_complete has not said what
+        # it finished, so it is only ``partial`` — never completion.
+        if attempt.prerequisite_ready or attempt.operation_complete:
+            attempt.prerequisite_ready = True
+            attempt.status = CLASS_PREREQUISITE
+        else:
+            attempt.status = CLASS_PARTIAL
+            warnings.append(
+                f"rung {transport!r} is declared prerequisite but reported "
+                "neither prerequisite_ready nor operation_complete; recorded "
+                "as partial, not as preparation"
+            )
         attempt.code = None
         return attempt
 
-    # The rung must name the SAME operation the caller requested.
+    # The rung must name the SAME operation the caller requested. When the
+    # surface declares operation ids, a completion claim that does not name
+    # one has not shown WHICH operation it finished.
+    if require_operation_named and attempt.operation is None:
+        attempt.status = CLASS_PARTIAL
+        attempt.code = None
+        attempt.context_ok = False
+        warnings.append(
+            f"rung {transport!r} reported completion without naming "
+            f"{context.operation!r}; recorded as partial, not completion"
+        )
+        return attempt
     if attempt.operation is not None and attempt.operation != context.operation:
         attempt.status = CLASS_PARTIAL
         attempt.code = None
@@ -723,6 +753,8 @@ def run_ladder(
 
     - Enablement: unset -> full ladder (failover on); explicit ``0``/false/off
       -> only the first operation rung (the deliberate single-rung revert).
+    - A surface that declares several operations requires ``operation``; the
+      ladder refuses to guess a surface-wide route.
     - Every failed rung MUST return a code in :data:`TAXONOMY_TAGS`; anything
       else (a raise, a missing code, an unrecognized code, a non-boolean
       ``ok``) raises :class:`LadderRungError` rather than being fabricated
@@ -735,9 +767,11 @@ def run_ladder(
     - ``run_id`` / ``native_object_ids`` / the still-incomplete operation are
       preserved on the result and every rung attempt, so a fallback continues
       the SAME logical run rather than starting another one.
-    - A browser rung on a surface with ``dom_refresh: true`` requires an
-      ``enter_hooks["browser"]`` that re-establishes the page/context and
-      returns a ``dom_epoch``; a stale DOM reference is never assumed.
+    - A browser rung reached as a FALLBACK on a surface with
+      ``dom_refresh: true`` requires an ``enter_hooks["browser"]`` that
+      re-establishes the page/context and returns a ``dom_epoch``; a stale
+      DOM reference is never assumed. The primary browser rung, which
+      establishes the session itself, needs no hook.
     - Returns a fail-closed ``decision="PARKED"`` result when no attempted
       rung completed the operation.
     """
@@ -751,6 +785,13 @@ def run_ladder(
     if operation is None:
         if len(declared_ops) == 1:
             operation = declared_ops[0]
+        elif declared_ops:
+            raise LadderConfigError(
+                f"surface {surface!r} declares {len(declared_ops)} operations "
+                f"({list(declared_ops)}); name the operation, because a "
+                "surface-wide route would be the blanket claim this ladder "
+                "exists to prevent"
+            )
         else:
             operation = surface
     scope = "operation" if operation in declared_ops else "surface"
@@ -801,11 +842,13 @@ def run_ladder(
 
         # ── handoff: never assume a shared session or a live DOM reference ──
         hook = hooks.get(transport)
-        if transport == "browser" and entry.get("dom_refresh", False) and hook is None:
+        is_fallback = bool(attempted_transports)
+        if (transport == "browser" and is_fallback
+                and entry.get("dom_refresh", False) and hook is None):
             raise LadderConfigError(
-                f"surface {surface!r} requires a DOM refresh before the browser rung; "
-                "supply enter_hooks={'browser': fn} that re-establishes the "
-                "page/context and returns {'dom_epoch': ...}"
+                f"surface {surface!r} reaches the browser rung as a FALLBACK and "
+                "requires a DOM refresh; supply enter_hooks={'browser': fn} that "
+                "re-establishes the page/context and returns {'dom_epoch': ...}"
             )
         if hook is not None:
             try:
@@ -853,6 +896,7 @@ def run_ladder(
             entry=entry,
             observed_location_id=observed,
             warnings=warnings,
+            require_operation_named=(scope == "operation"),
         )
         if attempt.dom_epoch is None and transport == "browser":
             attempt.dom_epoch = dom_epoch
