@@ -23,6 +23,12 @@ Contract (references/native-order-summary-integration.md):
 - Redelivery: an identical repeated event (same event_id, identical
   content) is deduplicated; the same event_id with different content
   raises. Line merging inherits the resolver's duplicate semantics.
+- Transaction identity: the snapshot's native_transaction_ref is the one
+  transaction the order's events agree on, else null (a successive
+  purchase under the same order reports null, not the first event's
+  transaction). It is a report, never a dedupe key: events dedupe by
+  event_id and purchased lines by native_line_ref, so no consumer may
+  dedupe a delivery on the order ref alone.
 - Per-line payment truth: a line's own payment_status (fixture
   extension; "status" accepted as its alias) wins over the event-level
   payment_status.
@@ -562,6 +568,11 @@ def build_snapshots(events, journey_ids=None, offer_catalog=None,
             )
 
         providers = {event["provider"] for event in order_events}
+        transaction_refs = []
+        for event in order_events:
+            ref = event.get("native_transaction_ref")
+            if ref and ref not in transaction_refs:
+                transaction_refs.append(ref)
         evidence_refs = []
         for event in order_events:
             ref = str(event["evidence_ref"]).strip()
@@ -587,13 +598,14 @@ def build_snapshots(events, journey_ids=None, offer_catalog=None,
             "provider": next(iter(providers)) if len(providers) == 1
             else ", ".join(sorted(providers)),
             "native_order_ref": order_ref,
-            "native_transaction_ref": next(
-                (event.get("native_transaction_ref")
-                 for event in sorted(order_events,
-                                     key=lambda e: e["native_order_ref"] != order_ref)
-                 if event.get("native_transaction_ref")),
-                None,
-            ),
+            # The order's single transaction when every contributing event
+            # agrees on one; a multi-transaction order (successive purchases)
+            # reports null rather than naming one transaction as if it
+            # covered the whole order. Dedupe never uses this value: events
+            # are deduped by event_id and lines by native_line_ref.
+            "native_transaction_ref": (transaction_refs[0]
+                                       if len(transaction_refs) == 1
+                                       else None),
             "journey_id": journey_id,
             "event_ids": [line["event_id"] for line in lines],
             "line_items": lines,
