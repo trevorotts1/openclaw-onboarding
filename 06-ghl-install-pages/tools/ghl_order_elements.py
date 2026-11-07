@@ -38,7 +38,10 @@ in a plan MUST carry one, and the plan builder FAILS CLOSED when one is
 missing or malformed. A binding is a reference ONLY:
 
     {"product_ref": "<reference, carried verbatim>",
-     "source": "caller_supplied" | "s44_phase_a"}
+     "source": "caller_supplied" | "s44_phase_a",
+     "offer_id": "<optional: the approved offer record's own id>",
+     "price_ref": "<optional: the read-back price id>",
+     "billing": {"billing_type": "...", ...}}       # optional, carried verbatim
 
 ``product_ref`` is whatever identifier the caller supplies - an S44 Phase A
 product reference when Phase A delivers one (prep Q2; NOT delivered at the
@@ -150,6 +153,13 @@ BINDING_SOURCES = ("caller_supplied", "s44_phase_a")
 #: named reason, never rewritten into ``one_time``: flattening a recurring or
 #: installment offer into a single charge changes what the buyer is charged.
 NATIVE_BILLING_TYPES = ("one_time", "recurring", "trial_then_recurring")
+#: The APPROVED offer record's own vocabulary (Skill 49 launch schema price
+#: entry). It is not the native one: an approved ``trial`` is a native
+#: ``trial_then_recurring``. Translating here, once, is what keeps an approved
+#: recurring/trial term from being refused as unknown -- or bound as one_time.
+APPROVED_BILLING_TYPES = ("one_time", "recurring", "trial", "installment")
+APPROVED_TO_NATIVE = {"one_time": "one_time", "recurring": "recurring",
+                      "trial": "trial_then_recurring"}
 RECURRING_INTERVALS = ("day", "week", "month", "year")
 #: Approved F08 terms with NO native price shape here. They are recognised so
 #: the refusal names the real reason instead of "unknown billing_type".
@@ -201,6 +211,8 @@ def _billing_terms(raw: Any, *, element: str) -> Optional[dict]:
             "an unlabelled term would be flattened into an assumed charge")
     if billing_type in UNSUPPORTED_BILLING_TERMS:
         raise OrderPlanError(f"{element}: {BILLING_NOT_NATIVE}")
+    # An APPROVED record says ``trial``; the native shape is trial_then_recurring.
+    billing_type = APPROVED_TO_NATIVE.get(billing_type, billing_type)
     if billing_type not in NATIVE_BILLING_TYPES:
         raise OrderPlanError(
             f"{element}: billing_type {billing_type!r} is not one of "
@@ -266,6 +278,15 @@ def _binding(raw: Any, *, element: str) -> dict:
             "provenance (delivered by S44 Phase A, or explicitly supplied "
             "by the caller)")
     out = {"product_ref": ref, "binding_source": source}
+    offer_id = str(raw.get("offer_id") or "").strip()
+    if raw.get("offer_id") is not None and not offer_id:
+        raise OrderPlanError(
+            f"{element}: offer_id is present but blank - supply the approved "
+            "offer's own id or omit it (never a placeholder)")
+    if offer_id:
+        # The approved offer identity travels with the binding, so the element
+        # names the offer it sells instead of an unattributed product reference.
+        out["offer_id"] = offer_id
     price = str(raw.get("price_ref") or "").strip()
     if raw.get("price_ref") is not None and not price:
         raise OrderPlanError(
@@ -361,6 +382,8 @@ def _patch_binding(binding: dict) -> dict:
     recurring offer as a single charge."""
     out = {"product_ref": binding["product_ref"],
            "source": binding["binding_source"]}
+    if binding.get("offer_id"):
+        out["offer_id"] = binding["offer_id"]
     if binding.get("price_ref"):
         out["price_ref"] = binding["price_ref"]
     if binding.get("billing"):
@@ -388,10 +411,11 @@ def build_order_plan(spec: dict) -> dict:
           "lead_capture": {"fields": ["email"]},       # optional native form
         }
 
-    A binding is ``{"product_ref", "source", "price_ref"?, "billing"?}``.
+    A binding is ``{"product_ref", "source", "offer_id"?, "price_ref"?, "billing"?}``.
     ``billing`` carries the approved F08 terms verbatim
     (``billing_type`` / ``recurring_interval`` / ``trial_days``); it is never
-    flattened into ``one_time`` and an installment term is refused.
+    flattened into ``one_time`` and an installment term is refused. An approved
+    record's ``trial`` is carried as the native ``trial_then_recurring``.
 
     Every element carries its product binding or the plan is refused.
     Returns the plan dict (schema ``skill6-order-plan/1``)."""
