@@ -328,8 +328,12 @@ bm_auth_is_stale() {
 }
 
 # ── POOL CEILING (Approach 1 graft) — never exceed AB_MAX_SESSIONS open ───────
-# Before any open, count active sessions; if at/over ceiling, close the oldest
-# idle one; if STILL at ceiling, REFUSE (exit 75). Ceiling=1 matches the lock.
+# Before any open, count active sessions. At/over the ceiling, reclaim ONLY
+# leases whose owner is provably gone (dead PID, reused PID, or passed TTL —
+# the PID + start-time identity bm_write_lease records). A LIVE lease belongs
+# to somebody else's work: this manager never closes or state-clears an
+# unrelated session. If the ceiling is still reached after reclaiming dead
+# leases, REFUSE (exit 75). Ceiling=1 matches the lock.
 _bm_active_session_count() {
   # `AB session list --json` shape varies by build; count session objects/lines
   # defensively. Fall back to counting live lease files if list is unavailable.
@@ -360,26 +364,51 @@ _bm_active_session_count() {
   fi
 }
 
+# _bm_lease_is_dead LEASE_FILE — 0 only when its owner is PROVABLY gone.
+# A lease with an unreadable pid is not provably live, so it is reclaimable;
+# a lease whose recorded PID start-time no longer matches was PID-reused, so it
+# is reclaimable too. Anything else is a live owner and is left alone.
+_bm_lease_is_dead() {
+  local f pid start now_start started ttl
+  f="$1"
+  pid="$(sed -n 's/.*"manager_pid":\([0-9][0-9]*\).*/\1/p' "$f" 2>/dev/null | head -n 1)"
+  [ -n "$pid" ] || return 0
+  kill -0 "$pid" 2>/dev/null || return 0
+  start="$(sed -n 's/.*"pid_start":"\([^"]*\)".*/\1/p' "$f" 2>/dev/null | head -n 1)"
+  now_start="$(_bm_pid_start "$pid")"
+  if [ -n "$start" ] && [ -n "$now_start" ] && [ "$start" != "$now_start" ]; then
+    return 0
+  fi
+  started="$(sed -n 's/.*"started_epoch":\([0-9][0-9]*\).*/\1/p' "$f" 2>/dev/null | head -n 1)"
+  ttl="$(sed -n 's/.*"ttl_sec":\([0-9][0-9]*\).*/\1/p' "$f" 2>/dev/null | head -n 1)"
+  if [ -n "$started" ] && [ -n "$ttl" ]; then
+    [ "$(( $(_bm_now) - started ))" -ge "$ttl" ] && return 0
+  fi
+  return 1
+}
+
 _bm_pool_ceiling_check() {
   local active
   active="$(_bm_active_session_count)"
   [ -z "$active" ] && active=0
   if [ "$active" -ge "$AB_MAX_SESSIONS" ]; then
-    # Try to close the oldest idle session (best-effort), then re-count.
-    local oldest
-    oldest="$(ls -1t "$LOCKDIR/leases/"*.lease 2>/dev/null | tail -1)"
-    if [ -n "$oldest" ]; then
-      local os
-      os="$(basename "$oldest" .lease)"
-      if [ "$os" != "$(bm_session_name)" ]; then
-        AB close --session "$os" 2>/dev/null || true
-        AB state clear "$os" 2>/dev/null || true
-        rm -f "$oldest" 2>/dev/null || true
-      fi
-    fi
+    # Reclaim ONLY provably dead leases (orphans this box already owns).
+    # A live lease is preserved — releasing a user's or another build's
+    # session is never this task's cleanup.
+    local f os reclaimed=0
+    for f in "$LOCKDIR/leases/"*.lease; do
+      [ -f "$f" ] || continue
+      os="$(basename "$f" .lease)"
+      [ "$os" = "$(bm_session_name)" ] && continue
+      _bm_lease_is_dead "$f" || continue
+      AB close --session "$os" 2>/dev/null || true
+      AB state clear "$os" 2>/dev/null || true
+      rm -f "$f" 2>/dev/null || true
+      reclaimed=$((reclaimed + 1))
+    done
     active="$(_bm_active_session_count)"; [ -z "$active" ] && active=0
     if [ "$active" -ge "$AB_MAX_SESSIONS" ]; then
-      echo "REFUSE: pool ceiling reached (active=$active >= AB_MAX_SESSIONS=$AB_MAX_SESSIONS)." >&2
+      echo "REFUSE: pool ceiling reached (active=$active >= AB_MAX_SESSIONS=$AB_MAX_SESSIONS; reclaimed $reclaimed dead lease(s), live sessions preserved)." >&2
       exit 75
     fi
   fi
@@ -1081,10 +1110,22 @@ if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
       echo "DETACHED: pid=$_bm_child_pid session=$(bm_session_name) — the child owns lock+lease+TTL+teardown."
       ;;
     teardown)
-      # Best-effort teardown of the canonical session even with no active lease.
-      _BM_SESSION="$(bm_session_name)"
-      _bm_teardown
-      echo "TORN-DOWN: session=$(bm_session_name)"
+      # Close the canonical session ONLY when this manager owns a lease for it,
+      # or the operator explicitly forces it. A bare teardown must never close a
+      # session another task or the user is still using.
+      _bm_td_session="$(bm_session_name)"
+      if [ -f "$LOCKDIR/leases/${_bm_td_session}.lease" ]; then
+        _BM_SESSION="$_bm_td_session"
+        _bm_teardown
+        echo "TORN-DOWN: session=${_bm_td_session}"
+      elif [ "${BM_TEARDOWN_FORCE:-0}" = "1" ]; then
+        _BM_SESSION="$_bm_td_session"
+        _bm_teardown
+        echo "TORN-DOWN (forced, no owned lease): session=${_bm_td_session}"
+      else
+        echo "REFUSE: no owned lease for '${_bm_td_session}'; refusing to close a session this manager does not own. Set BM_TEARDOWN_FORCE=1 to force." >&2
+        exit 75
+      fi
       ;;
     *)
       echo "usage: browser_manager.sh {ensure|eval|open|snapshot|wait|find|fill|run-detached|teardown|session-name|auth-age|auth-stale|watchdog|probe} [-- args...]" >&2

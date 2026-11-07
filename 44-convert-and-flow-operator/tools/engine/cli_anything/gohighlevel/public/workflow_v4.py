@@ -2,8 +2,17 @@
 
 Frozen by the GHL modernization contract ledger, 2026-10-18 (GU-004 sections
 1.1, 2.4, 3.2 rule 4 and 5.7, plus the workflows family record WF-04 .. WF-09).
-V4 scope and Version come from the official workflows operation page
+Version comes from the official workflows operation page
 https://marketplace.gohighlevel.com/docs/ghl/workflows/<operation-slug>/.
+
+F11 reconciliation (2026-11-07): the five operation pages are now published on
+the PRODUCTION marketplace and each documents Version ``v3``, while the frozen
+rows still carry staging-only ``v4`` (level ``S``, blocker ``B-V4-S``). The
+rows are deliberately NOT re-frozen here -- that is a ledger decision, and six
+pinned contract tests plus ``evidence/W18`` assert the frozen literals. What
+matters for a caller is unchanged: every V4 operation is default-deny through
+the capability gate, so the version gap can never silently reach transport.
+``B-V4-S`` is the named blocker for the re-freeze.
 
 Every V4 operation is capability-gated and default-deny.  No write can reach
 transport while its capability row is disabled, and a disabled call still
@@ -117,6 +126,19 @@ class WorkflowGap(ContractViolation):
     rule = "workflow_operation_gap"
 
 
+def _row_wire_version() -> str:
+    """The wire Version the five workflow-definition rows carry today.
+
+    Read from the READ row so there is still exactly ONE declaration of the
+    literal -- the registry. When the ledger re-freezes the family (F11; the
+    production pages now document ``v3`` while the frozen rows still say
+    ``v4``), the adapter follows the registry with no second constant to
+    forget. A row change that skips this adapter's contract still fails at
+    import.
+    """
+    return OPERATIONS[READ_OPERATION].version
+
+
 def _validate_operation_map() -> None:
     for key, operation_id in OPERATION_MAP.items():
         is_write = key in _WRITE_KEYS
@@ -139,11 +161,12 @@ def _validate_operation_map() -> None:
                 operation_id=operation_id,
                 detail={"mapping": key},
             )
-        if row.version != "v4":
+        if row.version != _row_wire_version():
             raise ContractViolation(
                 "v4_row_version_mismatch",
                 operation_id=operation_id,
-                detail={"version": row.version},
+                detail={"version": row.version,
+                        "expected": _row_wire_version()},
             )
 
 

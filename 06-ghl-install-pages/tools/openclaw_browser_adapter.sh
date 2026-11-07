@@ -106,11 +106,14 @@ OCB_SNAPSHOT_MODE="${GHL_SKILL6_SNAPSHOT_MODE:-efficient}"
 
 usage() {
   cat <<'USAGE'
-openclaw_browser_adapter.sh — Lane 2 adapter: Skill 6 builder verbs -> OpenClaw managed browser (`openclaw browser`).
+openclaw_browser_adapter.sh — OpenClaw managed-browser adapter: Skill 6 builder verbs -> `openclaw browser`.
 
-Lane 2 is an EXPERIMENTAL UPGRADE ONLY — never selected by default. The capability
-probe (tools/capability_probe.py) decides; this adapter refuses unless
-lanes.openclaw_managed_browser.cliWorks is true in the capability JSON.
+This is the `openclaw_managed_browser` lane, PRIMARY on an OpenClaw host since the
+operator decision of 2026-10-13 when the capability probe selects it (OpenClaw >=
+2026.8.1, browser plugin enabled, CLI working, Chrome extension installed + current).
+agent-browser via browser_manager.sh (pin 0.27.0) is the FALLBACK engine and carries
+every host this lane cannot. The probe (tools/capability_probe.py) is the sole decider;
+this adapter refuses unless lanes.openclaw_managed_browser.cliWorks is true.
 
 VERBS (each carries `--browser-profile "$OCB_PROFILE"`; shown as openclaw default):
   status                     openclaw browser --browser-profile openclaw status
@@ -148,8 +151,8 @@ _ocb_usage_refuse() {
 require_ocb_cli() {
   if ! command -v "$OCB_BIN_NAME" >/dev/null 2>&1; then
     echo "REFUSE: openclaw CLI not found on PATH (command -v $OCB_BIN_NAME failed)." >&2
-    echo "Lane 2 (openclaw_managed_browser) needs the openclaw CLI; Skill 6 PRIMARY" >&2
-    echo "(agent-browser via browser_manager.sh) does not. Aborting." >&2
+    echo "The managed-browser lane needs the openclaw CLI; the agent-browser FALLBACK" >&2
+    echo "(browser_manager.sh) does not. Aborting." >&2
     exit 64
   fi
 }
@@ -170,7 +173,8 @@ except Exception:
 require_capability() {
   if ! command -v python3 >/dev/null 2>&1; then
     echo "REFUSE: capability gate — python3 not found, cannot parse capability" >&2
-    echo "JSON at $CAPABILITY_JSON. Fail-closed: Lane 2 stays disabled. Aborting." >&2
+    echo "JSON at $CAPABILITY_JSON. Fail-closed: the managed-browser lane stays" >&2
+    echo "disabled. Aborting." >&2
     exit 75
   fi
   _ocb_cliworks="$(python3 -c "$_ocb_cliworks_py" "$CAPABILITY_JSON" 2>/dev/null)" || _ocb_cliworks=""
@@ -180,13 +184,14 @@ require_capability() {
     False)
       echo "REFUSE: capability gate — lanes.openclaw_managed_browser.cliWorks is" >&2
       echo "NOT true in $CAPABILITY_JSON. Re-run tools/capability_probe.py first." >&2
-      echo "Lane 2 is an experimental upgrade, never a default; refusing. Aborting." >&2
+      echo "The probe did not select the managed-browser lane for this host; it is" >&2
+      echo "primary only when the probe proves it. Aborting." >&2
       exit 75
       ;;
     *)
       echo "REFUSE: capability gate — capability JSON missing or unreadable at" >&2
       echo "$CAPABILITY_JSON (run tools/capability_probe.py to write it)." >&2
-      echo "Fail-closed: Lane 2 stays disabled. Aborting." >&2
+      echo "Fail-closed: the managed-browser lane stays disabled. Aborting." >&2
       exit 75
       ;;
   esac

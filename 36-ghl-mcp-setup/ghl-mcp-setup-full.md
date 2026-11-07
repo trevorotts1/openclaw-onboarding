@@ -679,7 +679,7 @@ These values are authoritative. If your session history disagrees, trust this bl
 - Skill set at `$MASTER_FILES_DIR/29-ghl-convert-and-flow/` (Mac default: `~/Downloads/openclaw-master-files/29-ghl-convert-and-flow/`; VPS default: `~/Downloads/openclaw-master-files/29-ghl-convert-and-flow/`)
 - Read `references/[module].md` for endpoint specifics
 - Base URL: `https://services.leadconnectorhq.com`
-- **Version header is per operation** (documented values include `v3`, `2023-02-21`, `2021-07-28`, `2021-04-15`, `legacy`). No global default; `v4` workflow contracts are staging-only evidence.
+- **Version header is per operation** (documented values include `v3`, `2023-02-21`, `2021-07-28`, `2021-04-15`, `legacy`). No global default. The workflow definition/publish/delete routes now have production pages documenting `Version: v3`; the Skill 44 registry rows are still frozen at staging-only `v4` and stay default-deny behind the capability gate (blocker `B-V4-S` covers the re-freeze).
 - This is the replacement route for the retired community tool surface
 
 **Tier 4 — Browser: agent-browser (Vercel, skill 03) FIRST, Playwright fallback**
