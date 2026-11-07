@@ -1045,6 +1045,32 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
         allow_reentry = build.get("allow_reentry")
         if not isinstance(allow_reentry, bool):
             allow_reentry = workflow.get("allow_multiple")
+        allow_enrollment = build.get("allow_enrollment")
+        if allow_enrollment not in ("single", "successive"):
+            allow_enrollment = None
+        # F05: an UNDECLARED setting is recorded insufficient, never defaulted.
+        # Applying a guessed reentry to a real workflow is the failure this
+        # record exists to prevent; a declared one is applied by
+        # CampaignBuilder and read back (stats["reentry"]).
+        reentry_record = {
+            "declared": allow_reentry if isinstance(allow_reentry, bool) else None,
+            "state": "declared" if isinstance(allow_reentry, bool) else "insufficient",
+            "reason": None if isinstance(allow_reentry, bool) else
+            "insufficient: the launch plan declares no automations[].settings.reentry",
+        }
+        enrollment_record = {
+            "declared": allow_enrollment,
+            "state": "declared" if allow_enrollment else "insufficient",
+            "applied": None,
+            "reason": None if allow_enrollment else
+            "insufficient: the launch plan declares no automations[].settings.enrollment",
+        }
+        if allow_enrollment:
+            # Recorded only: this rail has no verified native enrolment payload,
+            # so claiming it applied would be a guess.
+            enrollment_record["reason"] = (
+                "recorded from the launch plan; this rail has no verified native "
+                "enrolment payload, so it is not applied here")
         wf_key = "%s__%s" % (build.get("id"), workflow.get("key"))
         # The trigger is the automation's approved one.  A contact-tag trigger
         # carries the tag the builder creates; any other approved trigger has
@@ -1075,6 +1101,9 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
             # The requested reentry setting, applied above and read back after
             # the save.  None (not declared, not observed) stays unknown.
             "allow_reentry": allow_reentry if isinstance(allow_reentry, bool) else None,
+            "allow_enrollment": allow_enrollment,
+            "reentry": reentry_record,
+            "enrollment": enrollment_record,
             "trigger": trigger,
             "trigger_conditions": trigger.get("conditions") or [],
             "expected_source_hash": build.get("expected_graph_hash"),

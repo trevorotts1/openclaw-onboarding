@@ -597,6 +597,37 @@
         "waits_for": {
           "$ref": "#/definitions/waits_for"
         },
+        "variant_tag": {
+          "type": ["string", "null"],
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9:_./-]*$",
+          "description": "AUTOMATION VARIANT (BFL-000). The contact tag that marks WHICH purchased variant an automation serves (main / upsell-N / downsell-N). Declared once on the unit that installs the post-sale purchase handler and derived from the plan's own purchased slot (offer.packages[].slot), never a second variant identity. The launch-c reader carries it verbatim and the launch compiler binds it to the buildable template's variant placeholder; absent or null means the plan declares none and the helper must stay on its approved email sequence."
+        },
+        "purchase_identity": {
+          "type": ["object", "null"],
+          "description": "AUTOMATION PURCHASE IDENTITY (BFL-000). The purchase-event identity the post-sale handler deduplicates on, as the native field the selected flow supplies. Only an event / transaction / purchased-line identity is sufficient; an order id alone groups several paid changes and is never a dedupe key. Absent means the plan declares none and the compiler records the identity as insufficient rather than guessing.",
+          "properties": {
+            "transaction_id": {
+              "type": ["string", "null"],
+              "minLength": 1,
+              "description": "The native transaction field reference, e.g. ghl.transaction.id."
+            },
+            "event_id": {
+              "type": ["string", "null"],
+              "minLength": 1,
+              "description": "The native purchase-event field reference, e.g. ghl.event.id."
+            },
+            "purchased_line_id": {
+              "type": ["string", "null"],
+              "minLength": 1,
+              "description": "The native purchased-line field reference, e.g. ghl.purchased_line.id."
+            },
+            "order_id": {
+              "type": ["string", "null"],
+              "minLength": 1,
+              "description": "The native order field reference. Grouping only: an order id alone never deduplicates a purchase."
+            }
+          }
+        },
         "filters": {
           "type": "array",
           "description": "Shared-semantics boundary: AUTOMATION (BFL-000). The intended trigger's filters, in the selected rail's own vocabulary. Optional; empty means the trigger has no filter.",
