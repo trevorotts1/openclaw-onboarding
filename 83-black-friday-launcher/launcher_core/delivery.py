@@ -206,6 +206,26 @@ def plan(normalized: Mapping[str, Any], answers: Optional[Mapping[str, Any]] = N
             "kind_source": decision["source"], "offers": offers}
 
 
+def _money(price: Mapping[str, Any]) -> str:
+    """The approved price as a buyer reads it, using the repo's ONE exponent helper.
+
+    A currency this checkout cannot place is shown as its recorded amount and code,
+    never rounded or guessed into a different number.
+    """
+    amount, currency = price["amount_minor"], str(price["currency"])
+    try:
+        from .checkout import currency_exponent
+        exponent = currency_exponent(currency)
+    except Exception:  # noqa: BLE001 — an unplaceable currency is shown verbatim, not guessed
+        return f"{amount} {currency}"
+    if not isinstance(exponent, int) or exponent < 0 or exponent > 4:
+        return f"{amount} {currency}"
+    whole, frac = divmod(amount, 10 ** exponent)
+    if exponent == 0:
+        return f"{whole} {currency}"
+    return f"{whole}.{frac:0{exponent}d} {currency}"
+
+
 def _render(entry: Mapping[str, Any], launch: Mapping[str, Any]) -> str:
     """One offer's delivery sheet: only the approved facts, escaped, deterministic."""
     e = html.escape
@@ -234,7 +254,7 @@ def _render(entry: Mapping[str, Any], launch: Mapping[str, Any]) -> str:
         f"  <h2>What you get</h2>\n    <ul>\n{promises}\n    </ul>{excludes_block}\n"
         f"  <h2>{e(heading)}</h2>\n    <p>{where}</p>\n"
         f"  <h2>What it costs</h2>\n"
-        f"    <p>{price['amount_minor']} (minor units) {e(price['currency'])}, one payment.</p>\n"
+        f"    <p>{e(_money(price))}, one payment.</p>\n"
         "</body></html>\n"
     )
 
