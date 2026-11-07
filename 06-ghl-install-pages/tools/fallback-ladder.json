@@ -18,7 +18,9 @@
     "operation_complete IS the boolean true, and 'operation' names the SAME operation",
     "the caller requested — at the connected location. 'prerequisite_ready' and",
     "'partial' are recorded as their own states and are distinct from",
-    "'operation_complete'; they never end the ladder.",
+    "'operation_complete'; they never end the ladder. A browser completion must",
+    "report references_fresh=true, and cleanup must release only sessions the rung",
+    "owned (closed_all is forbidden).",
     "",
     "RUNG KINDS: 'rungs' marks a rung whose success is a PREREQUISITE only. A",
     "prerequisite rung can never report an entire page/form operation complete, even",
@@ -44,13 +46,26 @@
     "fabricated second rung) is listed under 'not_laddered' with the reason, never",
     "given an invented fallback (D8 'zero invented selectors' doctrine, generalized).",
     "",
+    "'operation_prefixes' is the operation -> surface join used to answer, per",
+    "operation, WHICH ladder applies. Only prefixes with real frozen operation rows",
+    "in Skill 44's public registry are declared here; community/course have no",
+    "operation rows at all, so they carry no prefix and no invented mapping.",
+    "",
     "RETIRED TRANSPORT: the self-hosted community GHL MCP is retired (GU-009/GU-010).",
     "It is not a rung anywhere in this file; the official GHL MCP (Tier 1) is the",
     "only MCP transport."
   ],
   "flag_env": "GHL_FALLBACK_LADDER",
+  "default": "on",
   "transports": ["browser", "api", "mcp"],
   "taxonomy_source": "06-ghl-install-pages/tools/cc_board.py:_CC_BLOCK_REASONS (cc_board.py:103)",
+  "operation_prefixes": {
+    "funnels": "page",
+    "forms": "form",
+    "surveys": "survey",
+    "workflows": "workflow",
+    "media": "media"
+  },
   "surfaces": {
     "page": {
       "operations": ["funnels.pages.autosave", "funnels.pages.authoring"],

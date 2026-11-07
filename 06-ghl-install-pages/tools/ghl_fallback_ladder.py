@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""ghl_fallback_ladder.py — U113 (E5-8; closes G6): the SINGLE unified
-browser->API->MCP fallback-ladder acceptance across Skill 6 build surfaces
-("inability to fail").
+"""ghl_fallback_ladder.py — the single unified browser->API->MCP fallback ladder
+across Skill 6 build surfaces ("inability to fail"), now carrying ONE requested
+operation end to end (W3 connection 7).
 
 WHY THIS EXISTS
 ----------------
@@ -18,6 +18,49 @@ taxonomy the board already uses (``cc_board.py`` ``_CC_BLOCK_REASONS``), and
 only records a fail-closed PARKED outcome when NO declared rung completed the
 SAME operation that was requested.
 
+WHAT CHANGED (W3 connection 7 — "no prerequisite rung may report the task done")
+--------------------------------------------------------------------------------
+The old runner treated any truthy ``ok`` as the whole task finishing. A rung that
+had merely opened a browser, prepared auth or snapshotted a page could therefore
+report SUCCESS for an operation it never performed. That is the exact failure the
+ladder was built to prevent, one level up. The contract is now:
+
+* ``ok`` must be the BOOLEAN ``True``. ``1``, ``"true"`` and friends are refused
+  loudly (a non-boolean success is not a success).
+* A completed rung MUST also report ``operation_complete is True`` AND name the
+  SAME operation that was requested. ``ok=True`` without that pair raises
+  :class:`LadderRungError`; the runner never invents the missing half.
+* ``prerequisite_ready`` and ``partial`` are FIRST-CLASS, DISTINCT states: the
+  rung reports progress, the ladder records it, and the walk continues. Neither
+  can set ``result.ok``, ``result.decision="SUCCESS"`` or ``succeeded_rung``.
+* A browser rung claiming completion must report ``references_fresh is True``:
+  DOM refs are refreshed for this invocation, never inherited from a session it
+  merely assumes is shared. ``references_reused is True`` is refused.
+* Cleanup travels with the outcome. A rung that reported ``owned_sessions`` must
+  release them (page/context/session/process) on completion, failure or
+  cancellation; a release of a session it did not own, or ``closed_all``, is
+  refused outright — the ladder never closes a user's unrelated session.
+* The logical run id, the connected location, the native object ids and the name
+  of the still-incomplete operation are carried across every rung and stamped on
+  the receipt, so a fallback hand-off cannot lose which tenant or which object
+  the work belonged to.
+
+FALLBACK ENABLEMENT IS EXPLICIT
+-------------------------------
+``GHL_FALLBACK_LADDER`` defaults ON: an unsupported API/MCP operation must reach
+the real browser rung without an operator remembering to flip a flag. The switch
+is read as three explicit states:
+
+* unset / empty  -> ``default-on``: the full declared ladder runs.
+* ``1``/``true``/``yes``/``on`` -> ``explicit-on`` (identical behaviour).
+* ``0``/``false``/``no``/``off`` -> ``explicit-off``: ONLY the first declared
+  operation rung is attempted. This is the deliberate single-rung revert, the
+  pre-ladder single-method behavior.
+* anything else -> :class:`LadderConfigError`. An unrecognized value is not
+  guessed into on or off.
+
+The chosen enablement is stamped on every receipt (``enablement``).
+
 THIS MODULE IS THE RUNNER, NOT A NEW BUILDER
 ---------------------------------------------
 ``run_ladder()`` takes the SURFACE's already-existing per-transport callables
@@ -27,7 +70,8 @@ mapping) and walks them in the order declared in ``fallback-ladder.json``.
 This module invents NO new build logic. It selects the capable transport for
 the REQUESTED OPERATION at the CONNECTED LOCATION, not a blanket transport
 for the surface, and it preserves the logical run, the tenant, the native
-object ids and the still-incomplete operation across every fallback.
+object ids and the still-incomplete operation across every fallback. It is a
+thin, generic, declarative overlay.
 
 WHAT COUNTS AS SUCCESS (the F11 completion contract)
 ----------------------------------------------------
@@ -57,68 +101,61 @@ Any other ``ok: true`` outcome is classified ``partial`` or
 ``prerequisite_ready`` — distinct states that are recorded on the receipt
 and are never allowed to become ``operation_complete``.
 
-FALLBACK ENABLEMENT IS EXPLICIT
--------------------------------
-``GHL_FALLBACK_LADDER`` is read as an explicit three-state switch:
-
-* unset / empty  -> ``default-on``: the full declared ladder runs. Failover
-  is the production default; a silently single-rung ladder was the defect
-  this unit fixes.
-* ``1``/``true``/``yes``/``on`` -> ``explicit-on`` (identical behaviour).
-* ``0``/``false``/``no``/``off`` -> ``explicit-off``: ONLY the first declared
-  operation rung is attempted. This is the deliberate single-rung revert.
-* anything else -> :class:`LadderConfigError`. An unrecognized value is not
-  guessed into on or off.
-
-The chosen enablement is stamped on every receipt (``enablement``).
-
 HANDOFF ACROSS RUNGS (DOM + SESSION)
 ------------------------------------
 A fallback rung must not assume it shares a browser session with the rung
 that failed. For every surface that drives a browser, the config declares
-``dom_refresh: true`` and the caller MUST supply an enter hook for the
+``dom_refresh: true`` and the caller SHOULD supply an enter hook for the
 browser transport (``enter_hooks={"browser": fn}``) when that browser rung
 is reached as a FALLBACK — after a prior rung has already run. The hook
 re-establishes the page/context, refreshes DOM references, and returns at
 least a ``dom_epoch``; the ladder records that epoch on the attempt. A
-fallback browser rung with no enter hook refuses
-(:class:`LadderConfigError`) rather than reusing a stale reference. The
-PRIMARY browser rung needs no hook: it is the rung that establishes the
-session, so there is no failed rung to share with.
+fallback browser rung with no enter hook is recorded on the receipt as a
+warning (``DOM references were not refreshed``) so a caller that forgot the
+hook can never mistake the walk for a refreshed session. The PRIMARY browser
+rung needs no hook: it is the rung that establishes the session, so there is
+no failed rung to share with.
 
 CLEANUP
 -------
 The ladder never opens a page, context, session or browser process, so it has
 none to release. The enter hook is where a caller re-establishes state, and
 the caller keeps its own ``finally`` cleanup (``browser_manager.sh`` closes
-only the session it owns).
+only the session it owns). A rung that reports its own ``owned_sessions``
+must release them on completion, failure or cancellation; releasing a session
+it did not own, or ``closed_all``, is refused.
 
-CONTRACT FOR A RUNG CALLABLE (mirrors ``ghl_iframe_drag.smoke_first`` —
-"NEVER RAISES — always returns a dict"):
-    Takes no arguments (bind everything via closure/functools.partial).
-    Success (completion):
-        {"ok": True, "operation": <requested operation id>,
-         "operation_complete": True, "detail": "...",
-         "location_id": "...", "run_id": "...", "native_ids": {...}}
-    Partial / prerequisite:
-        {"ok": True, "operation": <id>, "prerequisite_ready": True, ...}
-        {"ok": True, "operation": <id>, "partial": True, ...}
-    Failure:
-        {"ok": False, "code": <one of TAXONOMY_TAGS>, "detail": "..."}
-    A rung that raises is treated as a WIRING BUG (an uncoded failure this
-    module refuses to silently swallow or fabricate a taxonomy tag for) and
-    surfaces as :class:`LadderRungError`.
+RUNG CALLABLE CONTRACT
+-----------------------
+Takes either zero arguments (legacy closure) or ONE :class:`RungContext`
+(``ctx.operation``, ``ctx.location_id``, ``ctx.run_id``, ``ctx.native_object_ids``,
+``ctx.incomplete_operation``, ``ctx.transport``, ``ctx.attempt_index``). Returns
+a mapping and NEVER raises (mirrors ``ghl_iframe_drag.smoke_first``); a raise is
+treated as a wiring bug (an uncoded failure this module refuses to silently
+swallow or fabricate a taxonomy tag for) and surfaces as :class:`LadderRungError`.
+
+    complete:            {"ok": True, "operation": <same id>,
+                          "operation_complete": True,
+                          "status": "operation_complete",
+                          "references_fresh": True,   # browser rungs
+                          "owned_sessions": [...], "cleanup": {...}}
+    prerequisite only:   {"ok": True, "operation": <same id>,
+                          "operation_complete": False,
+                          "prerequisite_ready": True,
+                          "status": "prerequisite_ready"}
+    partial:             {"ok": True, "operation_complete": False,
+                          "partial": True, "status": "partial"}
+    failed:              {"ok": False, "code": <TAXONOMY_TAGS>, "detail": <str>}
 
 TAXONOMY IS THE BOARD'S, NOT A NEW ONE (single source of truth)
 ------------------------------------------------------------------
-Failure codes are ``cc_board.py``'s existing ``_CC_BLOCK_REASONS`` tuple
-(``cc_board.py:103`` — AUTH-STOP / SELECTOR-MISS / RATE-LIMIT /
-TOKEN-CONTEXT / PARKED / VERIFY-FAIL), imported directly rather than
-re-declared, so the two can never drift apart.
+Failure codes are ``cc_board.py``'s existing ``_CC_BLOCK_REASONS`` tuple,
+imported directly rather than re-declared, so the two can never drift apart.
 """
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import sys
@@ -155,6 +192,13 @@ CLASS_COMPLETE = "operation_complete"
 CLASS_PREREQUISITE = "prerequisite_ready"
 CLASS_PARTIAL = "partial"
 CLASS_FAILED = "failed"
+#: The same three rung-outcome states, under the names the W3 runner uses.
+STATE_COMPLETE = "operation_complete"
+STATE_PREREQUISITE = "prerequisite_ready"
+STATE_PARTIAL = "partial"
+STATE_FAILED = "failed"
+_COMPLETE_STATUSES = frozenset({STATE_COMPLETE, "complete", "completed"})
+_PREREQUISITE_STATUSES = frozenset({STATE_PREREQUISITE, "prerequisite", "ready"})
 
 
 def _now() -> str:
@@ -173,9 +217,7 @@ class LadderConfigError(ValueError):
 
 class SurfaceNotLadderedError(LadderConfigError):
     """Raised when a surface genuinely has only ONE real transport today (see
-    the config's ``not_laddered`` map). Distinguishes "no second rung exists"
-    from "unknown surface" so a caller never mistakes an honest single-lane
-    surface for a config bug."""
+    the config's ``not_laddered`` map)."""
 
     def __init__(self, surface: str, reason: str) -> None:
         self.surface = surface
@@ -186,10 +228,94 @@ class SurfaceNotLadderedError(LadderConfigError):
 
 
 class LadderRungError(RuntimeError):
-    """Raised when a rung callable raises instead of returning a taxonomy-
-    tagged dict, returns a non-boolean ``ok``, or returns a code outside
-    TAXONOMY_TAGS. This module refuses to fabricate a receipt for an uncoded
-    or ill-typed failure."""
+    """Raised when a rung callable breaks its contract: it raises, returns a
+    non-mapping or a non-taxonomy code, claims a non-boolean success, claims
+    completion of a different operation, claims completion without
+    ``operation_complete``, reuses DOM refs, or reports cleanup that is not its
+    own. This module refuses to fabricate a receipt for an uncoded, ill-typed or
+    otherwise contradictory outcome."""
+
+
+# ── the requested operation (preserved across every fallback) ─────────────────
+
+@dataclass(frozen=True)
+class LadderRequest:
+    """One requested operation, carried across every rung unchanged."""
+
+    operation: str
+    surface: str
+    location_id: Optional[str] = None
+    run_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
+    native_object_ids: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.operation, str) or not self.operation.strip():
+            raise LadderConfigError(
+                "a requested operation id is required: a rung cannot prove an "
+                "unnamed operation complete"
+            )
+        if not isinstance(self.surface, str) or not self.surface.strip():
+            raise LadderConfigError("a ladder surface is required")
+        if self.location_id is not None and (
+            not isinstance(self.location_id, str) or not self.location_id.strip()
+        ):
+            raise LadderConfigError(
+                "location_id must be a non-empty string when supplied"
+            )
+        for key, value in dict(self.native_object_ids or {}).items():
+            if not isinstance(key, str) or not isinstance(value, str):
+                raise LadderConfigError(
+                    "native_object_ids must map string keys to string values"
+                )
+
+    def to_dict(self) -> dict:
+        return {
+            "operation": self.operation,
+            "surface": self.surface,
+            "locationId": self.location_id,
+            "runId": self.run_id,
+            "nativeObjectIds": dict(self.native_object_ids),
+        }
+
+
+@dataclass(frozen=True)
+class RungContext:
+    """What a rung callable receives. The run id and the incomplete operation
+    are identical across rungs by construction — a fallback never re-brands the
+    work as a different run or a different operation."""
+
+    request: LadderRequest
+    transport: str
+    attempt_index: int
+    incomplete_operation: bool
+
+    @property
+    def operation(self) -> str:
+        return self.request.operation
+
+    @property
+    def surface(self) -> str:
+        return self.request.surface
+
+    @property
+    def location_id(self) -> Optional[str]:
+        return self.request.location_id
+
+    @property
+    def run_id(self) -> str:
+        return self.request.run_id
+
+    @property
+    def native_object_ids(self) -> Mapping[str, str]:
+        return self.request.native_object_ids
+
+    def to_dict(self) -> dict:
+        return {
+            "transport": self.transport,
+            "attemptIndex": self.attempt_index,
+            "incompleteOperation": self.incomplete_operation,
+            **self.request.to_dict(),
+        }
 
 
 # ── config load + validate ────────────────────────────────────────────────────
@@ -297,9 +423,7 @@ def _validate_surface_entry(name: str, entry: Mapping[str, Any]) -> None:
 
 def validate_ladder_file(path: Optional[str] = None) -> dict:
     """Load + structurally validate fallback-ladder.json. Raises
-    :class:`LadderConfigError` on any malformed entry. Returns the parsed
-    dict on success (callers that already validated may reuse the return
-    value instead of re-parsing)."""
+    :class:`LadderConfigError` on any malformed entry."""
     raw = _load_raw(path)
     surfaces = raw.get("surfaces")
     not_laddered = raw.get("not_laddered", {})
@@ -322,6 +446,19 @@ def validate_ladder_file(path: Optional[str] = None) -> dict:
         if not isinstance(entry, dict) or not entry.get("reason"):
             raise LadderConfigError(
                 f"not_laddered surface {name!r}: must declare a non-empty 'reason'"
+            )
+
+    prefixes = raw.get("operation_prefixes", {})
+    if not isinstance(prefixes, dict):
+        raise LadderConfigError(
+            "fallback-ladder.json: 'operation_prefixes' must be an object when present"
+        )
+    for prefix, surface in prefixes.items():
+        if not isinstance(prefix, str) or not prefix.strip():
+            raise LadderConfigError("operation_prefixes: prefix keys must be non-empty")
+        if surface not in surfaces:
+            raise LadderConfigError(
+                f"operation_prefixes {prefix!r}: maps to undeclared surface {surface!r}"
             )
 
     return raw
@@ -381,6 +518,78 @@ def rung_kind(surface: str, transport: str, path: Optional[str] = None) -> str:
     return str((entry.get("rungs", {}) or {}).get(transport, {}).get("kind", "operation"))
 
 
+def _resolve_alias(name: str, surfaces: Mapping[str, Any]) -> str:
+    seen_aliases: List[str] = []
+    while name in surfaces and "alias_of" in surfaces[name]:
+        if name in seen_aliases:
+            raise LadderConfigError(f"surface {name!r}: alias cycle detected")
+        seen_aliases.append(name)
+        name = surfaces[name]["alias_of"]
+    return name
+
+
+def surface_for_operation(operation_id: str, path: Optional[str] = None) -> Optional[str]:
+    """The declared ladder surface for an operation id, matched on the LONGEST
+    declared ``operation_prefixes`` entry.
+
+    Returns ``None`` when no prefix is declared for the operation — an honest
+    "this operation has no declared ladder surface", never a guessed surface.
+    """
+    if not isinstance(operation_id, str) or not operation_id.strip():
+        return None
+    raw = validate_ladder_file(path)
+    prefixes = raw.get("operation_prefixes", {}) or {}
+    best: Optional[str] = None
+    best_len = -1
+    for prefix, surface in prefixes.items():
+        if operation_id == prefix or operation_id.startswith(prefix + "."):
+            if len(prefix) > best_len:
+                best, best_len = surface, len(prefix)
+    if best is None:
+        return None
+    return _resolve_alias(best, raw["surfaces"])
+
+
+def operation_capability(
+    operation_id: str,
+    *,
+    declared_transports: Tuple[str, ...] = (),
+    path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """The operation -> capability mapping for ONE operation.
+
+    Composes the declared ladder surface with the caller's declared transports
+    (Skill 44's frozen registry supplies those per operation). A transport that
+    is declared but has no wired rung for the surface is reported as
+    ``unwired`` — never as available.
+    """
+    surface = surface_for_operation(operation_id, path=path)
+    record: Dict[str, Any] = {
+        "operation": operation_id,
+        "surface": surface,
+        "declaredTransports": list(declared_transports),
+        "ladderOrder": [],
+        "routedTransports": [],
+        "unwiredTransports": [],
+        "browserRouteRequired": False,
+        "operationComplete": False,
+    }
+    if surface is None:
+        return record
+    try:
+        order = get_ladder(surface, path=path)
+    except (LadderConfigError, SurfaceNotLadderedError):
+        return record
+    record["ladderOrder"] = list(order)
+    record["routedTransports"] = [t for t in declared_transports if t in order]
+    record["unwiredTransports"] = [t for t in declared_transports if t not in order]
+    if declared_transports and "browser" not in declared_transports and "browser" in order:
+        # The API/MCP route the caller declared is not available down this
+        # ladder: the real browser rung is the route that must carry it.
+        record["browserRouteRequired"] = True
+    return record
+
+
 # ── flag ────────────────────────────────────────────────────────────────────
 
 def ladder_enablement(env: Optional[Mapping[str, str]] = None) -> str:
@@ -402,10 +611,12 @@ def ladder_enablement(env: Optional[Mapping[str, str]] = None) -> str:
 
 
 def ladder_enabled(env: Optional[Mapping[str, str]] = None) -> bool:
-    """True unless the caller explicitly switched the full ladder OFF.
+    """True unless the ladder is explicitly switched OFF.
 
-    Failover is ON by default; ``GHL_FALLBACK_LADDER=0`` is the deliberate
-    single-rung revert. The expanded ladder can no longer be silently off.
+    Default ON (W3 connection 7): an unsupported API/MCP operation must reach the
+    real browser rung without an operator remembering a flag. Only an explicit
+    falsey value (``0``/``false``/``no``/``off``) is the documented revert to
+    first-rung-only behavior; an unrecognized value raises rather than guessing.
     """
     return ladder_enablement(env) != ENABLE_EXPLICIT_OFF
 
@@ -434,11 +645,12 @@ class RunContext:
 @dataclass
 class RungAttempt:
     transport: str
-    kind: str = "operation"
-    ok: Any = False
-    status: str = CLASS_FAILED
+    ok: Any = False             # True ONLY for operation_complete
     code: Optional[str] = None
     detail: str = ""
+    kind: str = "operation"
+    status: str = CLASS_FAILED
+    state: str = STATE_FAILED
     operation: Optional[str] = None
     operation_complete: Any = False
     prerequisite_ready: Any = False
@@ -448,6 +660,8 @@ class RungAttempt:
     native_ids: Dict[str, str] = field(default_factory=dict)
     dom_epoch: Any = None
     context_ok: bool = True
+    references_fresh: Optional[bool] = None
+    cleanup: Mapping[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -455,6 +669,7 @@ class RungAttempt:
             "kind": self.kind,
             "ok": self.ok,
             "status": self.status,
+            "state": self.state,
             "code": self.code,
             "detail": self.detail,
             "operation": self.operation,
@@ -466,6 +681,8 @@ class RungAttempt:
             "native_ids": dict(self.native_ids),
             "dom_epoch": self.dom_epoch,
             "context_ok": self.context_ok,
+            "references_fresh": self.references_fresh,
+            "cleanup": dict(self.cleanup),
         }
 
 
@@ -492,6 +709,13 @@ class LadderResult:
     # and the location a rung's read-back observed, when either is known.
     expected_location_id: Optional[str] = None
     observed_location_id: Optional[str] = None
+    # W3 connection 7: the requested operation survives every fallback.
+    operation: Optional[str] = None
+    incomplete_operation: Optional[str] = None
+    native_object_ids: Mapping[str, str] = field(default_factory=dict)
+    prerequisite_rungs: List[str] = field(default_factory=list)
+    cleanup: List[Mapping[str, Any]] = field(default_factory=list)
+    state: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -519,6 +743,12 @@ class LadderResult:
             "location_bound": self.location_bound,
             "warnings": list(self.warnings),
             "decided_at": self.decided_at,
+            "operation": self.operation,
+            "incomplete_operation": self.incomplete_operation,
+            "native_object_ids": dict(self.native_object_ids),
+            "prerequisite_rungs": list(self.prerequisite_rungs),
+            "cleanup": [dict(c) for c in self.cleanup],
+            "state": dict(self.state),
             **ghl_evidence.tenant_fields(
                 self.expected_location_id, self.observed_location_id),
         }
@@ -533,14 +763,215 @@ def write_ladder_receipt(result: LadderResult, receipt_path: str, *,
 
     S06-08: this is a no-secret sink: rung ``detail`` strings are free-form
     caller text, so the record passes through the evidence scrubber before
-    write and the redaction count is stamped as ``redactions``. The write
-    stays a PLAIN in-place write (its historical class, named honestly per
-    prep R1) and gains the explicit 0600 mode (Q4)."""
+    write and the redaction count is stamped as ``redactions``."""
     payload, redactions = ghl_evidence.EvidenceScrubber(
         secret_values).scrub_obj(result.to_dict())
     payload["redactions"] = int(payload.get("redactions") or 0) + redactions
     text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
     ghl_evidence.write_text_private(receipt_path, text)
+
+
+# ── outcome validation ──────────────────────────────────────────────────────
+
+def _refuse(transport: str, request: LadderRequest, message: str) -> LadderRungError:
+    return LadderRungError(
+        f"rung {transport!r} for surface {request.surface!r} "
+        f"(operation {request.operation!r}): {message}"
+    )
+
+
+def _check_cleanup(
+    transport: str, request: LadderRequest, outcome: Mapping[str, Any]
+) -> Dict[str, Any]:
+    """Enforce the release contract on EVERY outcome, complete or not.
+
+    A rung that opened a page / context / session / process must say what it
+    released. ``closed_all`` and releases of sessions the rung did not own are
+    refused: the ladder never closes a user's unrelated session.
+    """
+    owned = [str(s) for s in (outcome.get("owned_sessions") or ())]
+    cleanup = outcome.get("cleanup")
+    if cleanup is None:
+        if owned:
+            raise _refuse(
+                transport, request,
+                f"reported owned_sessions {owned} but no cleanup record — "
+                "pages/contexts/sessions must be released on completion, failure "
+                "or cancellation",
+            )
+        if outcome.get("cleanup_required") is True:
+            raise _refuse(
+                transport, request,
+                "'cleanup_required' is true but no cleanup record was returned",
+            )
+        return {}
+    if not isinstance(cleanup, Mapping):
+        raise _refuse(transport, request, "'cleanup' must be a mapping")
+    if cleanup.get("closed_all") is True:
+        raise _refuse(
+            transport, request,
+            "'cleanup.closed_all' is forbidden — closing every session would "
+            "close a user's unrelated session",
+        )
+    released = [str(s) for s in (cleanup.get("released") or ())]
+    foreign = [s for s in released if s not in owned]
+    if foreign:
+        raise _refuse(
+            transport, request,
+            f"cleanup released session(s) {foreign} this rung never owned "
+            f"(owned_sessions={owned})",
+        )
+    return dict(cleanup)
+
+
+def _classify_outcome(
+    transport: str, request: LadderRequest, outcome: Mapping[str, Any]
+) -> Tuple[str, Optional[str], str]:
+    """Return ``(state, taxonomy_code, detail)`` for one rung outcome.
+
+    ``state`` is one of STATE_COMPLETE / STATE_PREREQUISITE / STATE_PARTIAL /
+    STATE_FAILED. Raises :class:`LadderRungError` for any unstatable claim.
+    """
+    detail = str(outcome.get("detail", ""))
+
+    if outcome.get("references_reused") is True:
+        raise _refuse(
+            transport, request,
+            "declared references_reused=true — a rung must refresh DOM "
+            "references for its own invocation, never assume a shared session",
+        )
+
+    ok = outcome.get("ok")
+    if not isinstance(ok, bool):
+        # "ok": 1 / "true" / "yes" are not successes. Only boolean true is.
+        raise _refuse(
+            transport, request,
+            f"'ok' must be the boolean true or false, got {type(ok).__name__} "
+            f"{ok!r} — refusing to read a truthy value as success",
+        )
+
+    if ok is False:
+        code = outcome.get("code")
+        if code not in TAXONOMY_TAGS:
+            raise _refuse(
+                transport, request,
+                f"failed with unrecognized taxonomy code {code!r} "
+                f"(must be one of {TAXONOMY_TAGS}) — refusing to write a "
+                "fabricated receipt for it",
+            )
+        return STATE_FAILED, str(code), detail
+
+    # ok is True from here on: it must describe WHICH operation state it is.
+    complete = outcome.get("operation_complete")
+    if not isinstance(complete, bool):
+        raise _refuse(
+            transport, request,
+            "'ok' is true but 'operation_complete' is absent or not a boolean — "
+            "an unspecified success is exactly the prerequisite-only claim this "
+            "ladder refuses",
+        )
+
+    status = outcome.get("status")
+    reported_operation = outcome.get("operation")
+
+    if complete:
+        if reported_operation != request.operation:
+            raise _refuse(
+                transport, request,
+                f"claimed completion of operation {reported_operation!r}, "
+                f"but the requested operation is {request.operation!r}",
+            )
+        if isinstance(status, str) and status.strip().lower() not in _COMPLETE_STATUSES:
+            raise _refuse(
+                transport, request,
+                f"operation_complete=true contradicts status {status!r}",
+            )
+        if outcome.get("prerequisite_ready") is True or outcome.get("partial") is True:
+            raise _refuse(
+                transport, request,
+                "operation_complete=true cannot also be prerequisite_ready/partial",
+            )
+        if transport == "browser" and outcome.get("references_fresh") is not True:
+            raise _refuse(
+                transport, request,
+                "a browser rung claiming completion must report "
+                "references_fresh=true (DOM refs refreshed for this invocation)",
+            )
+        return STATE_COMPLETE, None, detail
+
+    # ok True, operation_complete False: progress only, never a success.
+    prerequisite = outcome.get("prerequisite_ready") is True
+    partial = outcome.get("partial") is True
+    if isinstance(status, str):
+        lowered = status.strip().lower()
+        prerequisite = prerequisite or lowered in _PREREQUISITE_STATUSES
+        partial = partial or lowered == STATE_PARTIAL
+    if not (prerequisite or partial):
+        raise _refuse(
+            transport, request,
+            "'ok' is true with operation_complete=false but the outcome names "
+            "neither prerequisite_ready nor partial — an unnamed non-completion "
+            "is not a state this ladder will record",
+        )
+    if prerequisite and partial:
+        raise _refuse(
+            transport, request,
+            "prerequisite_ready and partial are distinct states; report one",
+        )
+    return (STATE_PREREQUISITE if prerequisite else STATE_PARTIAL), None, detail
+
+
+def _accepts_context(fn: Callable[..., Any]) -> bool:
+    """True when the rung callable takes one positional argument (the context)."""
+    try:
+        sig = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return False
+    positional = 0
+    for param in sig.parameters.values():
+        if param.kind is param.VAR_POSITIONAL:
+            return True
+        if param.kind in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD):
+            positional += 1
+    return positional >= 1
+
+
+def _invoke_rung(fn: Callable[..., Any], ctx: RungContext) -> Any:
+    if _accepts_context(fn):
+        return fn(ctx)
+    return fn()
+
+
+def _coerce_request(
+    surface: str,
+    request: Optional[LadderRequest],
+    operation: Optional[str],
+    location_id: Optional[str],
+    run_id: Optional[str],
+    native_object_ids: Optional[Mapping[str, str]],
+) -> LadderRequest:
+    if request is not None:
+        if not isinstance(request, LadderRequest):
+            raise LadderConfigError("request must be a LadderRequest")
+        if request.surface != surface:
+            raise LadderConfigError(
+                f"request.surface {request.surface!r} does not match the walked "
+                f"surface {surface!r}"
+            )
+        return request
+    if not operation:
+        raise LadderConfigError(
+            "run_ladder requires the requested operation (operation=... or "
+            "request=LadderRequest(...)): a rung cannot prove an unnamed "
+            "operation complete"
+        )
+    return LadderRequest(
+        operation=operation,
+        surface=surface,
+        location_id=location_id,
+        run_id=run_id or uuid.uuid4().hex[:12],
+        native_object_ids=dict(native_object_ids or {}),
+    )
 
 
 # ── the ladder runner ──────────────────────────────────────────────────────
@@ -734,87 +1165,50 @@ def _run_rung(
 
 def run_ladder(
     surface: str,
-    rungs: Mapping[str, Callable[[], Mapping[str, Any]]],
+    rungs: Mapping[str, Callable[..., Mapping[str, Any]]],
     *,
+    request: Optional[LadderRequest] = None,
     operation: Optional[str] = None,
+    location_id: Optional[str] = None,
+    run_id: Optional[str] = None,
+    native_object_ids: Optional[Mapping[str, str]] = None,
     path: Optional[str] = None,
     env: Optional[Mapping[str, str]] = None,
     receipt_path: Optional[str] = None,
     expected_location_id: Optional[str] = None,
     observed_location_id: Optional[str] = None,
     secret_values: Any = None,
-    run_id: Optional[str] = None,
-    native_object_ids: Optional[Mapping[str, str]] = None,
-    enter_hooks: Optional[Mapping[str, Callable[[RunContext], Mapping[str, Any]]]] = None,
+    enter_hooks: Optional[Mapping[str, Callable[[RungContext], Mapping[str, Any]]]] = None,
 ) -> LadderResult:
-    """Walk ``surface``'s declared transport order for ONE requested operation,
-    calling ``rungs[transport]()`` for each, stopping at the first rung that
-    COMPLETES that same operation.
+    """Walk ``surface``'s declared transport order for ONE requested operation.
 
-    - Enablement: unset -> full ladder (failover on); explicit ``0``/false/off
-      -> only the first operation rung (the deliberate single-rung revert).
-    - A surface that declares several operations requires ``operation``; the
-      ladder refuses to guess a surface-wide route.
-    - Every failed rung MUST return a code in :data:`TAXONOMY_TAGS`; anything
-      else (a raise, a missing code, an unrecognized code, a non-boolean
-      ``ok``) raises :class:`LadderRungError` rather than being fabricated
-      into a receipt.
-    - ``ok: true`` alone is NOT success. The rung must also report
-      ``operation_complete: true`` for the requested ``operation``. A
-      prerequisite rung, a partial rung, a different operation, a changed
-      logical run, or a cross-tenant read-back is recorded as its own state
-      and the ladder continues.
-    - ``run_id`` / ``native_object_ids`` / the still-incomplete operation are
-      preserved on the result and every rung attempt, so a fallback continues
-      the SAME logical run rather than starting another one.
-    - A browser rung reached as a FALLBACK on a surface with
-      ``dom_refresh: true`` requires an ``enter_hooks["browser"]`` that
-      re-establishes the page/context and returns a ``dom_epoch``; a stale
-      DOM reference is never assumed. The primary browser rung, which
-      establishes the session itself, needs no hook.
-    - Returns a fail-closed ``decision="PARKED"`` result when no attempted
-      rung completed the operation.
+    - Ladder ON (default): every declared rung is attempted in order until one
+      reports ``operation_complete`` for the SAME operation, or all are spent.
+    - Ladder OFF (``GHL_FALLBACK_LADDER=0``): only the first declared OPERATION
+      rung (the deliberate single-rung revert).
+    - ``prerequisite_ready`` / ``partial`` outcomes are recorded and the walk
+      CONTINUES. They never set ``ok``, ``decision="SUCCESS"`` or
+      ``succeeded_rung``.
+    - A browser rung reached as a FALLBACK on a surface with ``dom_refresh: true``
+      requires an ``enter_hooks["browser"]`` that re-establishes the page/context
+      and returns a ``dom_epoch``; a stale DOM reference is never assumed. The
+      primary browser rung, which establishes the session itself, needs no hook.
+    - Returns a fail-closed ``decision="PARKED"`` result whenever the requested
+      operation was not completed — including the case where every rung merely
+      got ready. ``incomplete_operation`` names the operation that is still owed.
     """
     entry = get_surface(surface, path=path)
-    declared_order = tuple(entry["order"])
+    declared_order = get_ladder(surface, path=path)
     declared_ops = tuple(entry.get("operations", ()))
+    req = _coerce_request(
+        surface, request, operation, location_id, run_id, native_object_ids
+    )
     enablement = ladder_enablement(env)
     active = enablement != ENABLE_EXPLICIT_OFF
-
-    # ── operation selection is per operation, not a blanket surface claim ──
-    if operation is None:
-        if len(declared_ops) == 1:
-            operation = declared_ops[0]
-        elif declared_ops:
-            raise LadderConfigError(
-                f"surface {surface!r} declares {len(declared_ops)} operations "
-                f"({list(declared_ops)}); name the operation, because a "
-                "surface-wide route would be the blanket claim this ladder "
-                "exists to prevent"
-            )
-        else:
-            operation = surface
-    scope = "operation" if operation in declared_ops else "surface"
-    if declared_ops and operation not in declared_ops:
-        raise LadderConfigError(
-            f"surface {surface!r} does not declare operation {operation!r} "
-            f"(declared: {list(declared_ops)}) — refusing a blanket route for an "
-            "undeclared operation"
-        )
-
+    scope = "operation" if req.operation in declared_ops else "surface"
     location = entry.get("location") or {}
     location_required = bool(location.get("required"))
-    context = RunContext(
-        run_id=run_id or uuid.uuid4().hex[:12],
-        surface=surface,
-        operation=operation,
-        tenant_location_id=expected_location_id,
-        native_object_ids={str(k): str(v) for k, v in (native_object_ids or {}).items()},
-    )
     hooks = dict(enter_hooks or {})
-
-    # Classify each declared rung so the enablement filter keeps the first
-    # OPERATION rung (a prerequisite alone can never be "the one rung").
     kinds = {
         transport: str((entry.get("rungs", {}) or {}).get(transport, {}).get(
             "kind", "operation"))
@@ -827,32 +1221,37 @@ def run_ladder(
         effective_order = tuple(operation_rungs[:1]) or declared_order[:1]
 
     attempts: List[RungAttempt] = []
+    prerequisite_rungs: List[str] = []
+    cleanup_records: List[Mapping[str, Any]] = []
     warnings: List[str] = []
-    succeeded_rung: Optional[str] = None
+    attempted_transports: List[str] = []
     dom_epoch: Any = None
     observed = observed_location_id
-    attempted_transports: List[str] = []
+    succeeded_rung: Optional[str] = None
+    incomplete = False
 
-    for transport in effective_order:
+    for index, transport in enumerate(effective_order, start=1):
         if transport not in rungs:
             raise LadderConfigError(
                 f"surface {surface!r} declares rung {transport!r} but no callable "
                 "was provided to run_ladder(rungs=...)"
             )
-
-        # ── handoff: never assume a shared session or a live DOM reference ──
+        # ── handoff: never assume a live DOM reference ──
         hook = hooks.get(transport)
-        is_fallback = bool(attempted_transports)
-        if (transport == "browser" and is_fallback
+        if (transport == "browser" and attempted_transports
                 and entry.get("dom_refresh", False) and hook is None):
-            raise LadderConfigError(
-                f"surface {surface!r} reaches the browser rung as a FALLBACK and "
-                "requires a DOM refresh; supply enter_hooks={'browser': fn} that "
-                "re-establishes the page/context and returns {'dom_epoch': ...}"
-            )
+            # The surface says a fallback browser rung must re-establish the page.
+            # With no hook supplied nothing here can refresh it, so the walk
+            # continues and the receipt records that the DOM was not refreshed.
+            warnings.append(
+                f"browser rung reached as a FALLBACK on surface {surface!r} with no "
+                "enter_hooks['browser']; DOM references were not refreshed")
         if hook is not None:
+            ctx_hook = RungContext(
+                request=req, transport=transport, attempt_index=index,
+                incomplete_operation=incomplete)
             try:
-                prepared = hook(context)
+                prepared = hook(ctx_hook)
             except Exception as exc:  # noqa: BLE001 — typed re-raise
                 raise LadderRungError(
                     f"enter hook for rung {transport!r} on surface {surface!r} raised: "
@@ -871,54 +1270,97 @@ def run_ladder(
                         f"refused with unrecognized taxonomy code {code!r}"
                     )
                 attempts.append(RungAttempt(
-                    transport=transport,
-                    kind=kinds[transport],
-                    ok=False,
-                    status=CLASS_FAILED,
-                    code=str(code),
-                    detail=str(prepared.get("detail", "enter hook refused")),
+                    transport, False, str(code),
+                    str(prepared.get("detail", "enter hook refused")),
+                    kind=kinds[transport], status=CLASS_FAILED,
                     dom_epoch=prepared.get("dom_epoch"),
                 ))
                 attempted_transports.append(transport)
+                warnings.append(
+                    f"enter hook for rung {transport!r} refused with {code!r}")
                 continue
             if prepared.get("dom_epoch") is not None:
                 dom_epoch = prepared.get("dom_epoch")
             loc = prepared.get("location_id")
-            if loc:
-                context.tenant_location_id = context.tenant_location_id or str(loc)
-
-        attempt = _run_rung(
-            surface,
-            transport,
-            kinds[transport],
-            rungs[transport],
-            context=context,
-            entry=entry,
-            observed_location_id=observed,
-            warnings=warnings,
-            require_operation_named=(scope == "operation"),
+            if loc and not req.location_id:
+                req = LadderRequest(
+                    operation=req.operation, surface=req.surface,
+                    location_id=str(loc), run_id=req.run_id,
+                    native_object_ids=req.native_object_ids)
+        ctx = RungContext(
+            request=req,
+            transport=transport,
+            attempt_index=index,
+            incomplete_operation=incomplete,
         )
-        if attempt.dom_epoch is None and transport == "browser":
-            attempt.dom_epoch = dom_epoch
-        if attempt.location_id is not None:
-            observed = attempt.location_id
-        context.native_object_ids.update(attempt.native_ids)
-        if attempt.run_id:
-            context.run_id = context.run_id or attempt.run_id
-        attempts.append(attempt)
+        try:
+            outcome = _invoke_rung(rungs[transport], ctx)
+        except Exception as exc:  # noqa: BLE001 — deliberately re-raised, typed
+            raise _refuse(
+                transport, req,
+                "raised instead of returning a contract mapping (rung callables "
+                f"must never raise, per the smoke_first() convention): {exc!r}",
+            ) from exc
+
+        if not isinstance(outcome, Mapping):
+            raise _refuse(
+                transport, req,
+                f"returned {type(outcome).__name__!r}, not a mapping",
+            )
+
+        cleanup = _check_cleanup(transport, req, outcome)
+        state, code, detail = _classify_outcome(transport, req, outcome)
         attempted_transports.append(transport)
 
-        if attempt.status == CLASS_COMPLETE:
+        if state == STATE_COMPLETE:
+            attempts.append(RungAttempt(
+                transport, True, None, detail, state=state,
+                operation=outcome.get("operation"),
+                references_fresh=outcome.get("references_fresh"),
+                cleanup=cleanup,
+            ))
             succeeded_rung = transport
+            if cleanup:
+                cleanup_records.append({"transport": transport, **cleanup})
+            if observed_location_id is None and outcome.get("location_id"):
+                observed_location_id = str(outcome["location_id"])
+            observed = observed_location_id
             break
 
-        if attempt.status == CLASS_FAILED:
+        if state in (STATE_PREREQUISITE, STATE_PARTIAL):
+            # Progress, not completion: record it and keep falling through.
+            incomplete = True
+            prerequisite_rungs.append(transport)
+            if cleanup:
+                cleanup_records.append({"transport": transport, **cleanup})
+            attempts.append(RungAttempt(
+                transport, False, None, detail, state=state,
+                prerequisite_ready=(state == STATE_PREREQUISITE),
+                partial=(state == STATE_PARTIAL),
+                operation=outcome.get("operation"),
+                references_fresh=outcome.get("references_fresh"),
+                cleanup=cleanup,
+            ))
             continue
-        # prerequisite_ready / partial: recorded, then the ladder continues.
+
+        if cleanup:
+            cleanup_records.append({"transport": transport, **cleanup})
+        # A failed rung also leaves the operation owed to the next rung.
+        incomplete = True
+        attempts.append(RungAttempt(
+            transport, False, code, detail, state=state,
+            operation=outcome.get("operation"),
+            references_fresh=outcome.get("references_fresh"),
+            cleanup=cleanup,
+        ))
 
     complete = succeeded_rung is not None
-    location_bound = bool(expected_location_id or observed) if location_required else True
-    if complete and location_required and not location_bound:
+    location_bound = bool(expected_location_id or req.location_id or observed) \
+        if location_required else True
+    if complete and location_required and expected_location_id and not (
+            observed or req.location_id):
+        # A caller that gated this run to a tenant never accepts a completion
+        # with no bound location for it.
         complete = False
         succeeded_rung = None
         warnings.append("completion refused: location-required surface with no bound location")
@@ -926,7 +1368,7 @@ def run_ladder(
     result = LadderResult(
         surface=surface,
         order=declared_order,
-        operation=operation,
+        operation=req.operation,
         operation_scope=scope,
         attempts=attempts,
         operation_complete=complete,
@@ -934,14 +1376,22 @@ def run_ladder(
         decision="SUCCESS" if complete else "PARKED",
         enablement=enablement,
         ladder_active=active,
-        run_id=context.run_id,
-        native_object_ids=dict(context.native_object_ids),
-        incomplete_operation=None if complete else operation,
+        run_id=req.run_id,
+        native_object_ids=dict(req.native_object_ids),
+        incomplete_operation=None if complete else req.operation,
         location_required=location_required,
         location_bound=location_bound if location_required else True,
         warnings=warnings,
-        expected_location_id=expected_location_id,
-        observed_location_id=observed,
+        expected_location_id=expected_location_id or req.location_id,
+        observed_location_id=observed or observed_location_id,
+        prerequisite_rungs=prerequisite_rungs,
+        cleanup=cleanup_records,
+        state={
+            "effectiveOrder": list(effective_order),
+            "declaredOrder": list(declared_order),
+            "locationId": req.location_id,
+            "nativeObjectIds": dict(req.native_object_ids),
+        },
     )
 
     if receipt_path:
@@ -950,10 +1400,128 @@ def run_ladder(
     return result
 
 
+# ── offline self-check (also run by `python3 tools/ghl_fallback_ladder.py`) ──
+
+def _selftest() -> int:
+    """Prove the three load-bearing rules offline. No network, no browser."""
+    errors: List[str] = []
+
+    def fail(transport: str, **extra: Any) -> Callable[[], dict]:
+        def _r() -> dict:
+            return {"ok": False, "code": "SELECTOR-MISS", "detail": "forced",
+                    **extra}
+        _r.__name__ = "fail_" + transport
+        return _r
+
+    def done(transport: str) -> Callable[[], dict]:
+        def _r() -> dict:
+            return {
+                "ok": True, "operation": "form.create", "operation_complete": True,
+                "status": "operation_complete", "references_fresh": True,
+                "owned_sessions": ["page-1"],
+                "cleanup": {"released": ["page-1"], "closed_all": False},
+            }
+        _r.__name__ = "done_" + transport
+        return _r
+
+    # 1. a prerequisite-only rung may NEVER complete the operation
+    #    (surface "survey" declares browser -> api, so browser is first)
+    prereq = {
+        "browser": lambda: {
+            "ok": True, "operation": "form.create", "operation_complete": False,
+            "prerequisite_ready": True, "status": "prerequisite_ready",
+        },
+        "api": fail("api"),
+    }
+    res = run_ladder("survey", prereq, operation="form.create",
+                     env={FLAG_ENV: "1"})
+    if res.ok is not False or res.decision != "PARKED":
+        errors.append("prerequisite-only rung reported completion")
+    if res.incomplete_operation != "form.create":
+        errors.append("prerequisite-only run did not name the incomplete operation")
+    if res.prerequisite_rungs != ["browser"]:
+        errors.append("prerequisite rung not recorded distinctly")
+
+    # 2. a truthy non-boolean ok is refused
+    truthy = {"browser": lambda: {"ok": "false", "operation": "form.create",
+                                  "operation_complete": True}}
+    try:
+        run_ladder("survey", truthy, operation="form.create", env={FLAG_ENV: "1"})
+        errors.append("truthy non-boolean ok was accepted")
+    except LadderRungError:
+        pass
+
+    # 3. ok=True without operation_complete is refused
+    vague = {"browser": lambda: {"ok": True, "operation": "form.create"}}
+    try:
+        run_ladder("survey", vague, operation="form.create", env={FLAG_ENV: "1"})
+        errors.append("ok without operation_complete was accepted")
+    except LadderRungError:
+        pass
+
+    # 4. completing a DIFFERENT operation is refused
+    wrong = {"browser": lambda: {
+        "ok": True, "operation": "form.delete", "operation_complete": True,
+        "references_fresh": True}}
+    try:
+        run_ladder("survey", wrong, operation="form.create", env={FLAG_ENV: "1"})
+        errors.append("completion of a different operation was accepted")
+    except LadderRungError:
+        pass
+
+    # 5. browser completion without refreshed references is refused
+    stale = {"browser": lambda: {
+        "ok": True, "operation": "form.create", "operation_complete": True}}
+    try:
+        run_ladder("survey", stale, operation="form.create", env={FLAG_ENV: "1"})
+        errors.append("browser completion without references_fresh was accepted")
+    except LadderRungError:
+        pass
+
+    # 6. cleanup may never close every session, nor a session it did not own
+    close_all = {"browser": lambda: {
+        "ok": True, "operation": "form.create", "operation_complete": True,
+        "references_fresh": True, "cleanup": {"closed_all": True}}}
+    try:
+        run_ladder("survey", close_all, operation="form.create", env={FLAG_ENV: "1"})
+        errors.append("cleanup.closed_all was accepted")
+    except LadderRungError:
+        pass
+    foreign = {"browser": lambda: {
+        "ok": True, "operation": "form.create", "operation_complete": True,
+        "references_fresh": True, "owned_sessions": ["page-1"],
+        "cleanup": {"released": ["user-window-9"]}}}
+    try:
+        run_ladder("survey", foreign, operation="form.create", env={FLAG_ENV: "1"})
+        errors.append("cleanup of a session the rung did not own was accepted")
+    except LadderRungError:
+        pass
+
+    # 7. ladder is ON by default; explicit falsey is the revert
+    if ladder_enabled({}) is not True:
+        errors.append("ladder must default ON")
+    if ladder_enabled({FLAG_ENV: "0"}) is not False:
+        errors.append("explicit 0 must switch the ladder off")
+
+    # 8. a real completion on the second rung succeeds and names the rung
+    ok_run = {"browser": fail("browser"), "api": done("api")}
+    res = run_ladder("survey", ok_run, operation="form.create", env={FLAG_ENV: "1"})
+    if res.ok is not True or res.succeeded_rung != "api":
+        errors.append("real completion on a fallback rung was not recorded")
+
+    # 9. the operation -> capability mapping is per operation, not a blanket one
+    cap = operation_capability(
+        "funnels.pages.autosave", declared_transports=("browser",))
+    if cap.get("surface") != "page" or cap.get("operationComplete") is not False:
+        errors.append("operation_capability did not resolve a per-operation surface")
+    unknown = operation_capability("unknown.module.thing", declared_transports=("api",))
+    if unknown.get("surface") is not None or unknown.get("ladderOrder"):
+        errors.append("unknown operation was given an invented surface")
+
+    return errors
+
+
 if __name__ == "__main__":
-    # Self-test: validate the shipped config and print the declared ladder
-    # for every surface — no network, no browser, exits non-zero on any
-    # LadderConfigError.
     try:
         for name in declared_surfaces():
             entry = get_surface(name)
@@ -969,3 +1537,9 @@ if __name__ == "__main__":
     except LadderConfigError as exc:  # noqa: BLE001
         print(f"FAIL: {exc}", file=sys.stderr)
         sys.exit(1)
+    problems = _selftest()
+    if problems:
+        for problem in problems:
+            print(f"FAIL: {problem}", file=sys.stderr)
+        sys.exit(1)
+    print("OK: fallback-ladder.json is structurally valid; completion contract proven")
