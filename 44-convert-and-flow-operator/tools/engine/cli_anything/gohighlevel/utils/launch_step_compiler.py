@@ -374,9 +374,14 @@ def _compile_graph(out, graph, bid, emails, bindings, promo, close_at, ptag, fam
             step = {k: v for k, v in src.items() if k != "attributes"}
             step["attributes"] = attrs
         elif ntype == "sms":
-            body = str(a.get("message") or "")
-            step = sms_step(body or nid, body, id=sid)
-            step["attributes"].update({"body_ref": body, "copy_pending": True})
+            # The template's `message` is a DIRECTIVE ("confirm + calendar"),
+            # not approved copy.  It never enters the real body: a placeholder
+            # sitting in `body` is one downstream read away from shipping as
+            # if it were the SMS text.  Only `body_ref` carries it, and the
+            # action stays copy_pending until an approved body is supplied.
+            ref = str(a.get("message") or a.get("ref") or nid)
+            step = sms_step(ref, "", id=sid)
+            step["attributes"].update({"body_ref": ref, "copy_pending": True})
         elif ntype == "wait":
             if a.get("kind") == "until":
                 step = {"id": sid, "type": "wait", "name": "Wait until %s" % a.get("until"),
@@ -712,12 +717,29 @@ def compile_installable(workflow: Mapping[str, Any], build: Mapping[str, Any], *
             # Body text copied verbatim from the template is bound copy; the
             # marker is cleared so the action is not reported half-done.
             attrs["copy_pending"] = False
+    email_pending = []
+    for step in steps:
+        if step.get("type") != "email":
+            continue
+        attrs = step.setdefault("attributes", {})
+        subject = str(attrs.get("subject") or "")
+        body = str(attrs.get("body") or attrs.get("html") or "")
+        # An email action is only complete with the real subject AND body it
+        # will send.  An empty one is unfinished copy, never a finished send.
+        if subject.strip() and body.strip():
+            attrs["copy_pending"] = False
+        else:
+            attrs["copy_pending"] = True
+            email_pending.append(step.get("id"))
     email_actions = sum(1 for step in steps if step.get("type") == "email")
     sms_actions = sum(1 for step in steps if step.get("type") == "sms")
     out["steps"] = steps
     out["channel_actions"] = {
-        "email": {"actions": email_actions, "complete": email_actions > 0,
-                  "copy_pending": []},
+        "email": {"actions": email_actions,
+                  "complete": email_actions > 0 and not email_pending,
+                  "copy_pending": email_pending,
+                  "reason": ("approved email copy is missing a subject or a body; "
+                             "the action stays copy_pending") if email_pending else None},
         "sms": {"actions": sms_actions,
                 "complete": sms_actions > 0 and not pending,
                 "copy_pending": pending,
@@ -726,9 +748,12 @@ def compile_installable(workflow: Mapping[str, Any], build: Mapping[str, Any], *
                            "the action stays copy_pending") if pending else None},
     }
     out["incomplete_actions"] = handler_incomplete + [
+        "email:%s" % step_id for step_id in email_pending] + [
         "sms:%s" % step_id for step_id in pending]
     if pending:
         out["notes"].append("sms_copy_pending:%d" % len(pending))
+    if email_pending:
+        out["notes"].append("email_copy_pending:%d" % len(email_pending))
     return out
 
 

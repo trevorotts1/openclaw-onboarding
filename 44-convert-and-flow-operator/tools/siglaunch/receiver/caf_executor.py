@@ -114,6 +114,20 @@ _TRIGGER_STEP_TYPES = {"tagadded", "contact_tag", "tag_added",
 _REENTRY_KEYS = ("allowMultiple", "reEntry", "allow_multiple", "re_entry")
 
 
+def is_automation_build_document(value) -> bool:
+    """True when ``value`` is a launch-c automation-build document.
+
+    The launch document is the ONLY carrier of the expanded compiler's
+    evidence (guard conditions, schedule suppression, unit keys, browser
+    ledger).  It is recognised by its own shape — a ``builds`` list plus
+    ``draft_only: true`` — and it is never mistaken for a plan: a plan's
+    top-level keys are workflow definitions, never ``builds``.
+    """
+    return (isinstance(value, dict)
+            and value.get("draft_only") is True
+            and isinstance(value.get("builds"), list))
+
+
 def _export_steps(obj: dict, workflow_data: dict) -> list:
     for candidate in (obj.get("steps"), obj.get("actions"),
                       obj.get("nodes"), workflow_data.get("templates")):
@@ -279,7 +293,8 @@ class CafExecutor:
                  snapshot_dir: Optional[str] = None,
                  timeout: int = 300,
                  qc_script: Optional[str] = None,
-                 product_reader: Optional[ProductReader] = None):
+                 product_reader: Optional[ProductReader] = None,
+                 journal_path: Optional[str] = None):
         self.caf_path = caf_path
         # live GET of one native product: (location_id, native_product_id) ->
         # {"native_product_id","location_id","name","prices":[{"native_price_id",
@@ -291,6 +306,9 @@ class CafExecutor:
             prefix="s44-snapshots-")
         self.timeout = timeout
         self.qc_script = qc_script
+        # --from-automation-build REQUIRES --journal: the receipts that make a
+        # re-run safe.  Default is a per-run path beside the snapshots.
+        self.journal_path = journal_path
 
     # ── capability probe: fresh `caf doctor` process ─────────────────────
     def probe(self) -> dict:
@@ -466,7 +484,116 @@ class CafExecutor:
     #                               completion: the REQUIRES_HUMAN_REVIEW
     #                               items are graded by the Step-9 QC agent,
     #                               outside the executor contract. None.
+    def _readback_and_qc(self, workflow_id: str, result: dict) -> None:
+        """Export one workflow and run the QC gate onto ``result``.
+
+        Shared by the single-plan build and the launch-document build so both
+        read the SAVED graph back through the same surface — a saved workflow
+        is not "built" until the provider returns the graph and QC ran.
+        """
+        with tempfile.NamedTemporaryFile(
+                "w", suffix=".json", delete=False) as efh:
+            export_path = efh.name
+        ecode, _eout, _eerr = self.runner(
+            [self.caf_path, "workflows", "export",
+             "--workflow-id", workflow_id, "--out", export_path], 120)
+        raw_export = None
+        if ecode == 0:
+            try:
+                parsed = json.loads(Path(export_path).read_text())
+                if isinstance(parsed, dict):
+                    raw_export = parsed
+            except (OSError, ValueError):
+                raw_export = None
+        if ecode != 0 or raw_export is None:
+            result["errors"].append("post-build export read-back failed")
+            return
+        result["export_raw"] = raw_export
+        result["export"] = _normalize_export(raw_export, workflow_id)
+        # QC gate (read-only): skill-root script, exit code + rubric
+        self._run_qc(workflow_id, result)
+
+    def build_document(self, document: dict,
+                       journal: Optional[str] = None) -> dict:
+        """Build a whole launch-c automation-build document, ONCE.
+
+        This is the production entry the expanded compiler is reached from:
+        ``caf --json --experimental workflows build --from-automation-build
+        <doc> --journal <path>``.  ``--from-plan`` is deliberately NOT used —
+        it would drop the document's guard conditions, schedule suppression,
+        unit keys and browser ledger, and it refuses a launch-profile plan
+        outright.
+
+        One CLI invocation builds every compiled unit, so per-unit results are
+        read from the CLI's own ``workflow_ids`` map (key ``<build id>__<key>``)
+        and each workflow is exported and QC'd individually.  Units the
+        compiler refused are carried verbatim in ``refusals``; they are never
+        folded into a clean result.
+        """
+        result = {"exit_code": 1, "workflow_id": None, "errors": [],
+                  "notes": [], "export": None, "export_raw": None,
+                  "qc_exit_code": None, "rubric": None, "wf_items": None,
+                  "stats": None, "document": True, "workflow_ids": {},
+                  "refusals": [], "unit_results": {}}
+        journal_path = journal or self.journal_path
+        if not journal_path:
+            Path(self.snapshot_dir).mkdir(parents=True, exist_ok=True)
+            journal_path = str(Path(self.snapshot_dir) / "build-journal.jsonl")
+        with tempfile.NamedTemporaryFile(
+                "w", suffix=".json", delete=False) as fh:
+            json.dump(document, fh)
+            doc_path = fh.name
+        code, out, err = self.runner(
+            [self.caf_path, "--json", "--experimental", "workflows",
+             "build", "--from-automation-build", doc_path,
+             "--journal", journal_path], self.timeout)
+        stats = _extract_json(out) or _extract_json(err)
+        result["exit_code"] = code
+        result["stats"] = stats
+        result["journal_path"] = journal_path
+        if stats is None:
+            result["errors"].append(
+                "build output unparseable; raw tail: "
+                + (err or out).strip()[-300:])
+            return result
+        errors = list(stats.get("errors") or [])
+        result["errors"] = errors
+        result["notes"] = list(stats.get("notes") or [])
+        # Per-unit refusals, verbatim: the builder reports them as
+        # "build <id> refused at compile (<code>): <reason>".
+        result["refusals"] = [e for e in errors if "refused at compile" in e]
+        ids_map = stats.get("workflow_ids")
+        if isinstance(ids_map, dict):
+            result["workflow_ids"] = {
+                str(slug): str(wid) for slug, wid in ids_map.items()
+                if isinstance(wid, str) and wid}
+        if code != 0:
+            return result
+        for slug, workflow_id in result["workflow_ids"].items():
+            unit = {"workflow_id": workflow_id, "export": None, "export_raw": None,
+                    "qc_exit_code": None, "rubric": None, "wf_items": None,
+                    "notes": [], "errors": []}
+            self._readback_and_qc(workflow_id, unit)
+            result["unit_results"][slug] = unit
+            if unit["notes"]:
+                result["notes"].extend(unit["notes"])
+            if unit["export"] is not None:
+                # A single-workflow document keeps the flat contract the
+                # receiver's per-operation checks read.
+                result["export"] = unit["export"]
+                result["export_raw"] = unit["export_raw"]
+                result["qc_exit_code"] = unit["qc_exit_code"]
+                result["rubric"] = unit["rubric"]
+                result["wf_items"] = unit["wf_items"]
+        if len(result["workflow_ids"]) == 1:
+            result["workflow_id"] = next(iter(result["workflow_ids"].values()))
+        return result
+
     def build(self, builder_plan: dict) -> dict:
+        # A launch document IS a production build request: route it to the one
+        # canonical entry instead of the plain plan rail.
+        if is_automation_build_document(builder_plan):
+            return self.build_document(builder_plan)
         result = {"exit_code": 1, "workflow_id": None, "errors": [],
                   "notes": [], "export": None, "export_raw": None,
                   "qc_exit_code": None, "rubric": None, "wf_items": None,
@@ -530,26 +657,6 @@ class CafExecutor:
         result["workflow_id"] = workflow_id
         if code != 0 or not workflow_id:
             return result
-        # read-back: export writes the evidence JSON to the --out file
-        with tempfile.NamedTemporaryFile(
-                "w", suffix=".json", delete=False) as efh:
-            export_path = efh.name
-        ecode, _eout, _eerr = self.runner(
-            [self.caf_path, "workflows", "export",
-             "--workflow-id", workflow_id, "--out", export_path], 120)
-        raw_export = None
-        if ecode == 0:
-            try:
-                parsed = json.loads(Path(export_path).read_text())
-                if isinstance(parsed, dict):
-                    raw_export = parsed
-            except (OSError, ValueError):
-                raw_export = None
-        if ecode != 0 or raw_export is None:
-            result["errors"].append("post-build export read-back failed")
-            return result
-        result["export_raw"] = raw_export
-        result["export"] = _normalize_export(raw_export, workflow_id)
-        # QC gate (read-only): skill-root script, exit code + rubric
-        self._run_qc(workflow_id, result)
+        # read-back + QC: export writes the evidence JSON to the --out file
+        self._readback_and_qc(workflow_id, result)
         return result
