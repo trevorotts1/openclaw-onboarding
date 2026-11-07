@@ -950,8 +950,18 @@ def _is_repo_fixture(src: Path, run_roots: Sequence[Path]) -> bool:
     return "fixtures" in parts or "tests" in parts
 
 
-def _activation_readback_violations(readback: Any, stage: str) -> List[str]:
-    """Why *readback* does not prove *stage*. Observed facts only; never a local flag."""
+def _activation_readback_violations(readback: Any, stage: str, *,
+                                    page_ids: Sequence[str] = (),
+                                    location_id: str = "") -> List[str]:
+    """Why *readback* does not prove *stage*. Observed facts only; never a local flag.
+
+    *page_ids* and *location_id* bind the evidence to THIS launch: a read-back for
+    another page or another client's location proves nothing about this package.
+    That is the same binding the publisher gate applies before it will publish
+    (``ghl_publish_approval.record_refusals`` names the target location and the
+    page ids its record covers), so a stage can never be claimed here on evidence
+    the publisher would refuse.
+    """
     if not isinstance(readback, Mapping):
         return ["no activation read-back record"]
     why: List[str] = []
@@ -964,6 +974,16 @@ def _activation_readback_violations(readback: Any, stage: str) -> List[str]:
     url = str(readback.get("page_url") or "").strip().lower()
     if url and not url.startswith("https://"):
         why.append("read-back page_url must be the actual https page URL")
+    if location_id:
+        seen_location = str(readback.get("location_id") or "").strip()
+        if seen_location and seen_location != str(location_id).strip():
+            why.append(f"read-back names location {seen_location!r}, not this launch's "
+                       f"{str(location_id).strip()!r}")
+    if page_ids:
+        seen_page = str(readback.get("page_id") or "").strip()
+        if seen_page and seen_page not in {str(p) for p in page_ids}:
+            why.append(f"read-back is for page {seen_page!r}, which is not one of this "
+                       "package's pages")
     if stage == "published":
         if str(readback.get("page_type") or "").strip().lower() not in ("published", "live"):
             why.append("read-back page_type is not published/live; a draft stays a draft")
@@ -997,6 +1017,15 @@ def _activation(intake: Dict[str, Any], binding: Optional[Dict[str, Any]],
     if desired not in ACTIVATION_STATES:
         raise PackageError("AF-LAUNCH-ACTIVATION-STATE",
                            f"unknown desired activation state {desired!r}")
+    # Authorization is recorded BEFORE the stage is reachable, in this writer too —
+    # not only in intake.validate(), so a hand-built intake cannot reach install or
+    # publication by skipping the validator.
+    authority = (intake.get("activation") or {}).get("authority")
+    if desired in ("installed", "published") and not isinstance(authority, Mapping):
+        raise PackageError(
+            "AF-LAUNCH-ACTIVATION-AUTHORITY",
+            f"{desired!r} needs the recorded authority that covers this page and location; "
+            "a stage is never reached without one")
     base = "draft_constructed" if binding is not None else "local_prepared"
     achieved = base
     pending: Optional[str] = None
@@ -1013,7 +1042,8 @@ def _activation(intake: Dict[str, Any], binding: Optional[Dict[str, Any]],
             raise PackageError("AF-LAUNCH-ACTIVATION-SCOPE",
                                f"the read-back proves {stage!r} but the recorded authority "
                                f"covers only {desired!r}; never claim more than was authorized")
-        why = _activation_readback_violations(readback, stage)
+        why = _activation_readback_violations(readback, stage,
+                                              location_id=str(intake["location_id"]))
         if why:
             raise PackageError("AF-LAUNCH-ACTIVATION-READBACK", "; ".join(why))
         achieved = stage
@@ -1023,7 +1053,7 @@ def _activation(intake: Dict[str, Any], binding: Optional[Dict[str, Any]],
         "desired_state": desired,
         "achieved_state": achieved,
         "label": ACTIVATION_LABELS[achieved],
-        "authority": (intake.get("activation") or {}).get("authority"),
+        "authority": authority,
         "pending_stage": pending,
         "activation_pending": pending is not None,
         "readback": dict(readback) if isinstance(readback, Mapping) else None,
