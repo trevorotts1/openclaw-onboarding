@@ -51,13 +51,21 @@ fabricated CDN URLs, ever. Stdlib only.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
+import os
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+
+try:
+    import fcntl  # ponytail: POSIX lock; without it the ledger is still atomic, just not serialised
+except ImportError:  # pragma: no cover - Windows
+    fcntl = None
 
 # The closeout code this GHL-upload gate folds under (mirrors presentations AF-DELIVERY-COMPLETE).
 GHL_UPLOAD_GATE = "AF-DELIVERY-COMPLETE"
@@ -178,6 +186,94 @@ def _asset_key(entry: dict) -> str:
     return str(entry.get("local_path") or entry.get("path") or entry.get("file") or "")
 
 
+def _asset_path(job_dir: Path, asset: dict) -> Path:
+    rel = _asset_key(asset)
+    return Path(rel) if Path(rel).is_absolute() else Path(job_dir) / rel
+
+
+def sha256_file(path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def content_key(location_id: str, sha256: str) -> str:
+    """The scoped content identity an upload is deduplicated and reconciled by.
+
+    NEVER a path or a basename: the same bytes under two names are one upload, and
+    different bytes under the SAME pathname are two uploads.
+    """
+    return f"{str(location_id or '').strip()}|{str(sha256 or '').strip()}"
+
+
+def atomic_write_json(path: Path, data) -> None:
+    """One JSON file, written so a crash can never leave it half-written."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(data, indent=2, sort_keys=True) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+def _ledger_update(job_dir: Path, edit) -> dict:
+    """Read-modify-write the ledger under an exclusive lock and an atomic replace.
+
+    Every accepted upload is persisted through here BEFORE the loop advances, so a
+    crash leaves a receipt for each remote file that already exists.
+    """
+    job_dir = Path(job_dir)
+    path = _ledger_path(job_dir)
+    lock = path.with_suffix(path.suffix + ".lock")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock, "a+", encoding="utf-8") as fh:
+        if fcntl:
+            fcntl.flock(fh, fcntl.LOCK_EX)
+        data = _read_json(path) if path.exists() else {}
+        if not isinstance(data, dict):
+            data = {}
+        edit(data)
+        atomic_write_json(path, data)
+        return data
+
+
+def verified_passed_assets(job_dir) -> tuple[list, list]:
+    """(assets, problems): the QC-PASSED assets whose LOCAL BYTES are verified now.
+
+    A QC report's `pass:true` is a claim; the file must exist, be a regular readable file
+    and, when the record carries a sha256, still hash to it. The verified digest is bound
+    into the asset record so nothing downstream can host a different image.
+    """
+    job_dir = Path(job_dir)
+    assets, problems = [], []
+    for asset in collect_passed_assets(job_dir):
+        rel = _asset_key(asset)
+        path = _asset_path(job_dir, asset)
+        if not path.is_file():
+            problems.append(f"QC-passed asset {rel!r} is not on disk at {path}")
+            continue
+        try:
+            digest = sha256_file(path)
+        except OSError as exc:
+            problems.append(f"QC-passed asset {rel!r} is unreadable ({exc})")
+            continue
+        declared = str(asset.get("sha256") or asset.get("sha_256") or "").strip().lower()
+        if declared and declared != digest:
+            problems.append(f"QC-passed asset {rel!r} hashes to {digest[:12]} but the QC record "
+                            f"declares {declared[:12]}; the bytes changed after QC")
+            continue
+        assets.append(dict(asset, _path=str(path), _sha256=digest))
+    return assets, problems
+
+
 def _update_sidecar(job_dir: Path, asset: dict, ghl_media_id: str, ghl_public_url: str) -> None:
     """Best-effort: merge ghl_media_id + ghl_public_url into the asset's Vault provenance
     sidecar (asset-provenance-librarian SOP 9.5 schema, additive-only). The sidecar path may
@@ -226,12 +322,120 @@ def _url_live(url: str, opener=None, timeout: int = 30) -> dict:
 # ---------------------------------------------------------------------------
 # push_graphics_media — create the per-job folder + upload every QC-passed asset.
 # ---------------------------------------------------------------------------
+def _remote_entries(location_id, pit, *, media_type, parent_id, query, opener=None) -> list:
+    try:
+        return ghl_media.list_media(location_id, pit, media_type=media_type,
+                                    parent_id=parent_id, query=query, opener=opener).get("data") or []
+    except (RuntimeError, ValueError, OSError):
+        return []
+
+
+def _find_remote_folder(location_id, pit, name, opener=None):
+    """An interrupted folder create: adopt the SAME folder instead of making a second one."""
+    for entry in _remote_entries(location_id, pit, media_type="folder", parent_id=None,
+                                 query=name, opener=opener):
+        if isinstance(entry, dict) and str(entry.get("name") or "").strip() == name:
+            return str(entry.get("id") or entry.get("_id") or entry.get("folderId") or "") or None
+    return None
+
+
+def _find_remote_file(location_id, pit, name, parent_id, opener=None):
+    """An interrupted upload: adopt the remote file the API already holds, never re-post."""
+    for entry in _remote_entries(location_id, pit, media_type="file", parent_id=parent_id,
+                                 query=name, opener=opener):
+        if not isinstance(entry, dict) or str(entry.get("name") or "").strip() != name:
+            continue
+        file_id = str(entry.get("fileId") or entry.get("_id") or entry.get("id") or "")
+        url = str(entry.get("url") or entry.get("link") or "")
+        if file_id and url:
+            return {"fileId": file_id, "url": url}
+    return None
+
+
+def _upsert_row(ledger: dict, row: dict) -> None:
+    rows = [r for r in (ledger.get("uploaded") or [])
+            if isinstance(r, dict) and r.get("upload_key") != row.get("upload_key")]
+    rows.append(row)
+    rows.sort(key=lambda r: str(r.get("upload_key") or r.get("local_path") or ""))
+    ledger["uploaded"] = rows
+    ledger["upload_count"] = len([r for r in rows
+                                  if str(r.get("ghl_upload_status") or "").lower() == "complete"])
+
+
+def _row_for(job_dir: Path, key: str) -> dict:
+    for row in (_read_json(_ledger_path(job_dir)).get("uploaded") or []):
+        if isinstance(row, dict) and row.get("upload_key") == key:
+            return row
+    return {}
+
+
+def _resolve_folder(job_dir, fname, slug, location_id, pit, opener) -> dict:
+    """Create the per-job folder ONCE: a recorded id is reused, and an interrupted create is
+    reconciled against the media library BEFORE another folder is made."""
+    ledger = _read_json(_ledger_path(job_dir))
+    recorded = str(ledger.get("ghl_folder_id") or "").strip()
+    if recorded:
+        return {"folderId": None if recorded == "root" else recorded,
+                "name": ledger.get("ghl_folder_name") or fname, "reused": True}
+    intent = ledger.get("folder_intent") if isinstance(ledger.get("folder_intent"), dict) else {}
+    if intent.get("name") == fname and intent.get("location_id") == location_id:
+        found = _find_remote_folder(location_id, pit, fname, opener)
+        if found:
+            _ledger_update(job_dir, lambda d: d.update({
+                "ghl_folder_id": found, "ghl_folder_name": fname,
+                "ghl_folder_created_via_api": True, "folder_reconciled": True}))
+            return {"folderId": found, "name": fname, "reconciled": True}
+    _ledger_update(job_dir, lambda d: d.update({
+        "folder_intent": {"name": fname, "location_id": location_id, "at": _now_iso()}}))
+    folder = ghl_media.create_media_folder(fname, location_id, pit, opener=opener)
+    return folder
+
+
+def _reconcile_pending_uploads(job_dir, location_id, pit, parent_id, opener, liveness_opener) -> list:
+    """Before ANY new upload: resolve rows a crash left `pending`/`uncertain` against the remote
+    library and persist the outcome, so a re-run never double-posts the same bytes."""
+    rows = [r for r in (_read_json(_ledger_path(job_dir)).get("uploaded") or [])
+            if isinstance(r, dict)
+            and str(r.get("ghl_upload_status") or "").lower() in ("pending", "uncertain")]
+    outcomes = []
+    for row in rows:
+        found = _find_remote_file(location_id, pit, row.get("name"), parent_id, opener)
+        key = row.get("upload_key")
+
+        def settle(d, key=key, found=found, row=row):
+            rows_now = [r for r in (d.get("uploaded") or []) if isinstance(r, dict)]
+            for r in rows_now:
+                if r.get("upload_key") != key:
+                    continue
+                if found:
+                    live = _url_live(found["url"], opener=liveness_opener)
+                    r.update(ghl_media_id=found["fileId"], file_id=found["fileId"],
+                             remote_media_id=found["fileId"], public_url=found["url"],
+                             ghl_public_url=found["url"], final_url=found["url"],
+                             ghl_upload_status="complete", liveness=live,
+                             reconciled_at=_now_iso())
+                else:
+                    r.update(ghl_upload_status="not_accepted", reconciled_at=_now_iso())
+            d["uploaded"] = rows_now
+            d["upload_count"] = len([r for r in rows_now
+                                     if str(r.get("ghl_upload_status") or "").lower() == "complete"])
+        _ledger_update(job_dir, settle)
+        outcomes.append({"upload_key": key, "name": row.get("name"),
+                         "state": "complete" if found else "not_accepted"})
+    return outcomes
+
+
 def push_graphics_media(job_dir, *, folder_name: str | None = None, job_slug: str | None = None,
                         opener=None, liveness_opener=None, approval_ref=None,
                         approval_store: str | None = None) -> dict:
     """Create the per-job GHL folder and upload every QC-PASSED asset. Writes the gate-readable
-    ledger to <job>/media_library.json (MERGED with any prior seed) and returns the same dict.
-    Idempotent per file (a re-run never re-uploads an already-hosted asset).
+    ledger to <job>/media_library.json and returns the same dict.
+
+    Hash-aware and recoverable: every receipt binds the asset's SHA-256, the tenant location,
+    the page/slot, the verified folder, the remote media id and the final URL; receipts are
+    persisted one at a time, atomically, BEFORE the loop advances; uploads are deduplicated by
+    scoped content identity (never by path or basename); and a partial or uncertain remote
+    acceptance left by an interruption is reconciled before another upload or folder is made.
 
     REFUSES (PublishApprovalError, a RuntimeError) unless ``approval_ref`` resolves to a
     launcher approval record for the client's location (see _load_publish_approval)."""
@@ -242,7 +446,9 @@ def push_graphics_media(job_dir, *, folder_name: str | None = None, job_slug: st
     slug = (job_slug or job_dir.name).strip()
     fname = (folder_name or f"GRAPHICS {slug}").strip()
 
-    passed = collect_passed_assets(job_dir)
+    passed, problems = verified_passed_assets(job_dir)
+    if problems:
+        raise RuntimeError(f"{GHL_UPLOAD_GATE}: " + "; ".join(problems))
     if not passed:
         raise RuntimeError(
             f"{GHL_UPLOAD_GATE}: no QC-PASSED assets in {_qc_report_path(job_dir)} — nothing to "
@@ -251,61 +457,57 @@ def push_graphics_media(job_dir, *, folder_name: str | None = None, job_slug: st
     pit = ghl_media.resolve_location_pit()         # client's LOCATION PIT (never operator's)
     location_id = ghl_media.resolve_location_id()   # client's location id
 
-    # 1) PRIMARY: create the per-job media folder via the verified POST /medias/folder.
-    folder = ghl_media.create_media_folder(fname, location_id, pit, opener=opener)
+    folder = _resolve_folder(job_dir, fname, slug, location_id, pit, opener)
     parent_id = folder.get("folderId")
     name_prefix = "" if parent_id else f"{slug} — "
     ghl_folder_id = parent_id or "root"
 
-    ledger_path = _ledger_path(job_dir)
-    ledger = _read_json(ledger_path) if ledger_path.exists() else {}
-    if not isinstance(ledger, dict):
-        ledger = {}
-    done = {e.get("local_path"): e for e in ledger.get("uploaded", [])
-            if isinstance(e, dict) and e.get("local_path")}
-    uploaded = list(ledger.get("uploaded", []))
+    reconciled = _reconcile_pending_uploads(job_dir, location_id, pit, parent_id, opener,
+                                            liveness_opener)
 
     for asset in passed:
-        rel = _asset_key(asset)
-        abspath = rel if Path(rel).is_absolute() else str(job_dir / rel)
-        if abspath in done:
-            continue  # idempotent: already hosted this file
-        name = f"{name_prefix}{Path(abspath).name}"
+        key = content_key(location_id, asset["_sha256"])
+        row = _row_for(job_dir, key)
+        if str(row.get("ghl_upload_status") or "").lower() == "complete":
+            continue  # these exact bytes, in this tenant, are already hosted
+        name = f"{name_prefix}{Path(asset['_path']).name}"
+        intent = {
+            "upload_key": key, "local_path": asset["_path"], "sha256": asset["_sha256"],
+            "location_id": location_id, "ghl_folder_id": ghl_folder_id, "name": name,
+            "ghl_remote_name": name, "page": asset.get("page"),
+            "slot": asset.get("slot") or asset.get("asset_id"),
+            "asset_id": asset.get("asset_id") or Path(asset["_path"]).stem,
+            "ghl_upload_status": "pending", "attempted_at": _now_iso(),
+        }
+        # The INTENT is persisted before the POST: a crash mid-upload leaves a row to reconcile.
+        _ledger_update(job_dir, lambda d, row=intent: _upsert_row(d, row))
         res = ghl_media.upload_media(
-            abspath, location_id, name, pit,
-            parent_id=parent_id, opener=opener, require_png=_is_png(abspath))
+            asset["_path"], location_id, name, pit,
+            parent_id=parent_id, opener=opener, require_png=_is_png(asset["_path"]))
         live = _url_live(res["url"], opener=liveness_opener)
         _update_sidecar(job_dir, asset, res["fileId"], res["url"])
-        rec = {
-            "local_path": abspath,
-            "asset_id": asset.get("asset_id") or Path(abspath).stem,
-            "name": name,
-            "ghl_remote_name": name,
-            "public_url": res["url"],
-            "ghl_public_url": res["url"],
-            "file_id": res["fileId"],
-            "ghl_media_id": res["fileId"],
-            "http_status": res["http"],
-            "ghl_upload_status": "complete",
-            "ghl_folder_id": ghl_folder_id,
-            "liveness": live,
-            "uploaded_at": _now_iso(),
-        }
-        uploaded.append(rec)
-        done[abspath] = rec
+        receipt = dict(intent, ghl_upload_status="complete",
+                       file_id=res["fileId"], ghl_media_id=res["fileId"],
+                       remote_media_id=res["fileId"], public_url=res["url"],
+                       ghl_public_url=res["url"], final_url=res["url"],
+                       http_status=res["http"], liveness=live, uploaded_at=_now_iso())
+        # The RECEIPT is persisted, atomically, BEFORE the next upload is attempted.
+        _ledger_update(job_dir, lambda d, row=receipt: _upsert_row(d, row))
 
+    ledger = _read_json(_ledger_path(job_dir))
     out = {
         "job_slug": slug,
+        "location_id": location_id,
         "ghl_folder_id": ghl_folder_id,
         "ghl_folder_name": folder.get("name") or ledger.get("ghl_folder_name") or fname,
         "ghl_folder_created_via_api": bool(folder.get("folderId")),
-        "uploaded": uploaded,
-        "upload_count": len(uploaded),
+        "uploaded": list(ledger.get("uploaded") or []),
+        "upload_count": len([r for r in (ledger.get("uploaded") or [])
+                             if str(r.get("ghl_upload_status") or "").lower() == "complete"]),
         "passed_asset_count": len(passed),
+        "reconciled": reconciled,
     }
-    ledger.update(out)
-    ledger_path.parent.mkdir(parents=True, exist_ok=True)
-    ledger_path.write_text(json.dumps(ledger, indent=2))
+    _ledger_update(job_dir, lambda d: d.update(out))
     return out
 
 
@@ -347,10 +549,12 @@ def _job_has_ghl(job_dir: Path):
 
 
 def _upload_complete(entry: dict) -> bool:
-    mid = entry.get("ghl_media_id") or entry.get("file_id")
-    if str(entry.get("ghl_upload_status", "")).lower() in ("failed", "pending"):
+    """Complete means complete: an unknown or missing status is NOT a hosted file."""
+    if str(entry.get("ghl_upload_status") or "").strip().lower() != "complete":
         return False
-    return bool(str(mid or "").strip())
+    if not str(entry.get("ghl_media_id") or entry.get("file_id") or entry.get("remote_media_id") or "").strip():
+        return False
+    return bool(str(entry.get("ghl_public_url") or entry.get("public_url") or entry.get("final_url") or "").strip())
 
 
 def gate_graphics_media_complete(job_dir):
@@ -374,8 +578,11 @@ def gate_graphics_media_complete(job_dir):
             "may be skipped ONLY by an explicit owner/founder token (owner_approved:true + "
             "approved_by + reason + gate). An agent cannot opt out of the upload on its own."]
 
-    passed = collect_passed_assets(job_dir)
+    passed, problems = verified_passed_assets(job_dir)
     media = _read_json(_ledger_path(job_dir))
+
+    if problems:
+        return False, [f"{GHL_UPLOAD_GATE}: {p}" for p in problems]
 
     if not passed:
         return False, [
@@ -397,33 +604,50 @@ def gate_graphics_media_complete(job_dir):
             f"{GHL_UPLOAD_GATE}: ghl_folder_id is null/empty — the per-job GHL media folder was "
             "never resolved (create_media_folder, or the 'root' fallback).")
 
-    # (2) every QC-passed asset uploaded with a real ghl_media_id + status complete.
-    uploaded = {str(e.get("local_path") or ""): e for e in media.get("uploaded", [])
-                if isinstance(e, dict)}
-    # Also index by basename + asset_id so a job_dir-relative vs absolute path still matches.
-    by_base = {}
-    for e in media.get("uploaded", []):
-        if isinstance(e, dict):
-            lp = str(e.get("local_path") or "")
-            if lp:
-                by_base[Path(lp).name] = e
-            if e.get("asset_id"):
-                by_base[f"id:{e['asset_id']}"] = e
+    # (2) every QC-passed asset uploaded with a real ghl_media_id + status complete, matched by
+    #     scoped CONTENT identity (tenant + sha256). No basename fallback: a record for a
+    #     different image that happens to share a filename never satisfies this asset.
+    location_id = str(media.get("location_id") or "").strip()
+    rows = [e for e in media.get("uploaded", []) if isinstance(e, dict)]
+    by_key, by_sha, by_path = {}, {}, {}
+    for entry in rows:
+        sha = str(entry.get("sha256") or "").strip()
+        key = entry.get("upload_key") or (content_key(entry.get("location_id") or location_id, sha)
+                                          if sha else "")
+        if key:
+            by_key[key] = entry
+        if sha:
+            by_sha.setdefault(sha, []).append(entry)
+        lp = str(entry.get("local_path") or "")
+        if lp:
+            by_path[lp] = entry
+            by_path[str(Path(lp))] = entry
 
     for a in passed:
+        sha = a["_sha256"]
+        rec = by_key.get(content_key(location_id, sha)) if location_id else None
+        if rec is None:
+            for candidate in by_sha.get(sha, []):
+                row_loc = str(candidate.get("location_id") or "").strip()
+                if location_id and row_loc and row_loc != location_id:
+                    continue  # another tenant's copy of these bytes is not this location's upload
+                rec = candidate
+                break
+        if rec is None:
+            rec = by_path.get(a["_path"]) or by_path.get(_asset_key(a))
+            if rec is not None and str(rec.get("sha256") or "").strip() not in ("", sha):
+                rec = None  # same pathname, different bytes: NOT this asset
         rel = _asset_key(a)
-        abspath = rel if Path(rel).is_absolute() else str(Path(job_dir).resolve() / rel)
-        rec = (uploaded.get(abspath) or uploaded.get(rel)
-               or by_base.get(Path(rel).name)
-               or (by_base.get(f"id:{a.get('asset_id')}") if a.get("asset_id") else None))
         if rec is None:
             reasons.append(
-                f"{GHL_UPLOAD_GATE}: QC-passed asset {rel!r} has NO upload record in "
-                "media_library.json — every passed asset must be hosted with a real ghl_media_id.")
+                f"{GHL_UPLOAD_GATE}: QC-passed asset {rel!r} (sha256 {sha[:12]}) has NO upload "
+                "record in media_library.json for this tenant — every passed asset must be hosted "
+                "with a real ghl_media_id.")
         elif not _upload_complete(rec):
             reasons.append(
-                f"{GHL_UPLOAD_GATE}: upload for {rel!r} is not complete (no ghl_media_id or status "
-                "failed/pending).")
+                f"{GHL_UPLOAD_GATE}: upload for {rel!r} is not complete (status "
+                f"{rec.get('ghl_upload_status')!r}; a complete upload carries a media id and a "
+                "public URL).")
 
     return (len(reasons) == 0), reasons
 
@@ -472,9 +696,13 @@ def _selftest() -> int:
     import tempfile
     fails = []
 
-    def _setup(base, *, qc=None, media=None, pm=None, job=None):
+    def _setup(base, *, qc=None, media=None, pm=None, job=None, files=True):
         (base / "qc").mkdir(parents=True, exist_ok=True)
         (base / "checkpoints").mkdir(parents=True, exist_ok=True)
+        if files:
+            (base / "renders").mkdir(parents=True, exist_ok=True)
+            for name in ("ad-01.png", "ad-02.png", "ad-03.png"):
+                (base / "renders" / name).write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64 + name.encode())
         if qc is not None:
             (base / "qc" / "image_qc_report.json").write_text(json.dumps(qc))
         if media is not None:
@@ -484,14 +712,60 @@ def _selftest() -> int:
         if job is not None:
             (base / "job.json").write_text(json.dumps(job))
 
+    def _mock_http(listing=None, uploads=None):
+        """A request-level fake for the canonical GHL media module: one folder, one file per POST."""
+        state = {"uploads": 0, "folders": 0, "posted": []}
+
+        class _R:
+            def __init__(self, payload):
+                self._p = payload
+
+            def getcode(self):
+                return 200
+
+            def read(self):
+                return self._p
+
+        def opener(req, timeout):
+            url, method = req.full_url, req.get_method()
+            if method == "GET":
+                return _R(json.dumps({"data": list(listing or [])}).encode())
+            if "/medias/folder" in url:
+                state["folders"] += 1
+                return _R(json.dumps({"id": "fld_1"}).encode())
+            state["uploads"] += 1
+            state["posted"].append(url)
+            if uploads and state["uploads"] > uploads:
+                raise RuntimeError("simulated transport failure after the first upload")
+            return _R(json.dumps({"fileId": f"m{state['uploads']}",
+                                  "url": f"https://cdn.test/m{state['uploads']}"}).encode())
+
+        return opener, state
+
+    def _live(url, timeout):
+        class _R:
+            def getcode(self):
+                return 200
+
+            def read(self):
+                return b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+        return _R()
+
+    def _sha(base, rel):
+        return sha256_file(Path(base) / rel)
+
     GOOD_QC = {"gate": "AF-G-IMAGE-QC", "pass": True, "assets": [
         {"local_path": "renders/ad-01.png", "asset_id": "ad-01", "pass": True, "triggered_autofails": []},
         {"local_path": "renders/ad-02.png", "asset_id": "ad-02", "pass": True, "triggered_autofails": []},
         {"local_path": "renders/ad-03.png", "asset_id": "ad-03", "pass": False, "triggered_autofails": ["AF-G1"]},
     ]}
-    GOOD_MEDIA = {"ghl_folder_id": "fld_1", "uploaded": [
-        {"local_path": "renders/ad-01.png", "asset_id": "ad-01", "ghl_media_id": "m1", "ghl_upload_status": "complete"},
-        {"local_path": "renders/ad-02.png", "asset_id": "ad-02", "ghl_media_id": "m2", "ghl_upload_status": "complete"},
+    GOOD_MEDIA = {"ghl_folder_id": "fld_1", "location_id": "loc-fixture", "uploaded": [
+        {"local_path": "renders/ad-01.png", "asset_id": "ad-01", "ghl_media_id": "m1",
+         "ghl_public_url": "https://cdn.test/m1", "ghl_upload_status": "complete",
+         "location_id": "loc-fixture"},
+        {"local_path": "renders/ad-02.png", "asset_id": "ad-02", "ghl_media_id": "m2",
+         "ghl_public_url": "https://cdn.test/m2", "ghl_upload_status": "complete",
+         "location_id": "loc-fixture"},
     ]}
 
     # A — both passed assets uploaded (the failed one is NOT required) -> PASS.
@@ -651,14 +925,160 @@ def _selftest() -> int:
                 else:
                     os.environ[k] = v
 
+    # E2 — an UNKNOWN completion status is not complete either.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        m = {"ghl_folder_id": "root", "uploaded": [
+            {"local_path": "renders/ad-01.png", "ghl_media_id": "m1", "ghl_upload_status": "complete"},
+            {"local_path": "renders/ad-02.png", "ghl_media_id": "m2", "ghl_upload_status": "weird"}]}
+        _setup(base, qc=GOOD_QC, media=m, job={"has_ghl": True})
+        ok, r = gate_graphics_media_complete(base)
+        if ok or not any("not complete" in x for x in r):
+            fails.append(f"E2 unknown-status: expected FAIL, got ok={ok} {r}")
+
+    # ---- hash-aware / recoverable hosting (F21 step 8) ----
+    saved_env = {k: os.environ.get(k) for k in ("GHL_API_KEY", "GHL_LOCATION_ID")}
+    os.environ["GHL_API_KEY"] = "pit-0f3a9c1e-7b2d-4e65-9a18-c4d2b6e8f0a1"
+    os.environ["GHL_LOCATION_ID"] = "loc-fixture"
+
+    def _approve(base):
+        store = base / "approval-store"
+        store.mkdir(exist_ok=True)
+        (store / "APPR-LIVE.json").write_text(json.dumps({
+            "approval_ref": "APPR-LIVE", "allowed_write_target": "approved_live_publication",
+            "test_only": False, "location_id": "loc-fixture", "page_ids": []}))
+        return str(store)
+
+    try:
+        # K — the SAME pathname with DIFFERENT bytes is a different asset: hosted again.
+        with tempfile.TemporaryDirectory() as t:
+            base = Path(t)
+            _setup(base, qc=GOOD_QC, job={"has_ghl": True})
+            opener, state = _mock_http()
+            kw = dict(opener=opener, liveness_opener=_live, approval_ref="APPR-LIVE",
+                      approval_store=_approve(base))
+            push_graphics_media(base, **kw)
+            first = state["uploads"]
+            (base / "renders" / "ad-01.png").write_bytes(
+                b"\x89PNG\r\n\x1a\n" + b"\x01" * 64 + b"replaced-bytes")
+            push_graphics_media(base, **kw)
+            if state["uploads"] <= first:
+                fails.append("K pathname: different bytes at the same pathname were NOT hosted "
+                             "(deduplicated by path, not content)")
+
+        # L — the SAME bytes under a different pathname are one asset: never hosted twice.
+        with tempfile.TemporaryDirectory() as t:
+            base = Path(t)
+            (base / "renders").mkdir(parents=True)
+            (base / "renders" / "ad-01.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64 + b"one")
+            (base / "renders" / "ad-02.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64 + b"two")
+            (base / "renders" / "copy-of-two.png").write_bytes(
+                (base / "renders" / "ad-02.png").read_bytes())
+            qc = {"gate": "AF-G-IMAGE-QC", "pass": True, "assets": [
+                {"local_path": "renders/ad-01.png", "asset_id": "ad-01", "pass": True,
+                 "triggered_autofails": []},
+                {"local_path": "renders/ad-02.png", "asset_id": "ad-02", "pass": True,
+                 "triggered_autofails": []},
+                {"local_path": "renders/copy-of-two.png", "asset_id": "dup", "pass": True,
+                 "triggered_autofails": []}]}
+            _setup(base, qc=qc, job={"has_ghl": True}, files=False)
+            opener, state = _mock_http()
+            push_graphics_media(base, opener=opener, liveness_opener=_live,
+                                approval_ref="APPR-LIVE", approval_store=_approve(base))
+            if state["uploads"] != 2:
+                fails.append(f"L content-dedup: expected 2 uploads for 2 distinct byte streams, "
+                             f"got {state['uploads']}")
+
+        # M — each receipt is persisted BEFORE the loop advances (a crash keeps it).
+        with tempfile.TemporaryDirectory() as t:
+            base = Path(t)
+            _setup(base, qc=GOOD_QC, job={"has_ghl": True})
+            opener, state = _mock_http(uploads=1)
+            try:
+                push_graphics_media(base, opener=opener, liveness_opener=_live,
+                                    approval_ref="APPR-LIVE", approval_store=_approve(base))
+                fails.append("M receipt: the simulated transport failure was swallowed")
+            except RuntimeError:
+                pass
+            rows = _read_json(base / "media_library.json").get("uploaded") or []
+            complete = [r for r in rows if r.get("ghl_upload_status") == "complete"]
+            pending = [r for r in rows if r.get("ghl_upload_status") == "pending"]
+            if len(complete) != 1:
+                fails.append(f"M receipt: {len(complete)} receipts persisted before the crash, "
+                             "expected the first upload's receipt")
+            if len(pending) != 1:
+                fails.append("M intent: the interrupted upload left no pending row to reconcile")
+
+        # N — a pending row is reconciled against the library, never re-posted.
+        with tempfile.TemporaryDirectory() as t:
+            base = Path(t)
+            _setup(base, qc=GOOD_QC, job={"has_ghl": True})
+            key = content_key("loc-fixture", "a" * 64)
+            atomic_write_json(base / "media_library.json", {
+                "ghl_folder_id": "fld_1", "location_id": "loc-fixture",
+                "uploaded": [{"upload_key": key, "name": "ad-01.png", "sha256": "a" * 64,
+                              "local_path": "renders/ad-01.png", "ghl_upload_status": "pending"}]})
+            opener, state = _mock_http(listing=[{"name": "ad-01.png", "fileId": "m-existing",
+                                                 "url": "https://cdn.test/m-existing"}])
+            _reconcile_pending_uploads(base, "loc-fixture", "pit-x", "fld_1", opener, _live)
+            row = (_read_json(base / "media_library.json").get("uploaded") or [{}])[0]
+            if state["uploads"] != 0:
+                fails.append("N reconcile: a NEW upload was posted instead of adopting the remote file")
+            if row.get("ghl_media_id") != "m-existing" or row.get("ghl_upload_status") != "complete":
+                fails.append(f"N reconcile: the pending row resolved to {row!r}")
+
+        # O — a record for the same BASENAME elsewhere does not satisfy the asset.
+        with tempfile.TemporaryDirectory() as t:
+            base = Path(t)
+            _setup(base, qc=GOOD_QC, job={"has_ghl": True})
+            real = _sha(base, "renders/ad-02.png")
+            m = {"ghl_folder_id": "fld_1", "location_id": "loc-fixture", "uploaded": [
+                {"local_path": "other/ad-01.png", "name": "ad-01.png", "ghl_media_id": "mX",
+                 "ghl_public_url": "https://cdn.test/mX", "ghl_upload_status": "complete",
+                 "location_id": "loc-fixture", "sha256": "d" * 64},
+                {"local_path": "renders/ad-02.png", "name": "ad-02.png", "ghl_media_id": "m2",
+                 "ghl_public_url": "https://cdn.test/m2", "ghl_upload_status": "complete",
+                 "location_id": "loc-fixture", "sha256": real}]}
+            _setup(base, qc=GOOD_QC, media=m, job={"has_ghl": True})
+            ok, r = gate_graphics_media_complete(base)
+            if ok or not any("NO upload record" in x for x in r):
+                fails.append(f"O basename: a same-basename record in another folder satisfied the "
+                             f"gate, got ok={ok} {r}")
+
+        # P — a QC record whose declared sha does not match the bytes refuses the asset.
+        with tempfile.TemporaryDirectory() as t:
+            base = Path(t)
+            qc = {"gate": "AF-G-IMAGE-QC", "pass": True, "assets": [
+                {"local_path": "renders/ad-01.png", "asset_id": "ad-01", "pass": True,
+                 "triggered_autofails": [], "sha256": "0" * 64}]}
+            _setup(base, qc=qc, job={"has_ghl": True})
+            ok, r = gate_graphics_media_complete(base)
+            if ok or not any("hashes to" in x for x in r):
+                fails.append(f"P sha: a QC record with a stale sha256 passed, got ok={ok} {r}")
+            try:
+                push_graphics_media(base, opener=_mock_http()[0], liveness_opener=_live,
+                                    approval_ref="APPR-LIVE", approval_store=_approve(base))
+                fails.append("P sha: the push hosted an asset whose bytes changed after QC")
+            except RuntimeError:
+                pass
+    finally:
+        for k, v in saved_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
     if fails:
         print("graphics_ghl_push gate selftest -> FAIL")
         for f in fails:
             print("  -", f)
         return 1
-    print("graphics_ghl_push gate selftest -> PASS (10 cases: complete/empty/missing-upload/"
-          "null-folder/incomplete/agent-skip/owner-skip/false-token/no-passed + end-to-end "
-          "push-hosts-passed-only/idempotent/gate-passes + approval-record refusals)")
+    print("graphics_ghl_push gate selftest -> PASS (cases: complete/empty/missing-upload/"
+          "null-folder/incomplete/unknown-status/agent-skip/owner-skip/false-token/no-passed + "
+          "end-to-end push-hosts-passed-only/idempotent/gate-passes + approval-record refusals + "
+          "hash-aware hosting: different bytes at one pathname re-host, identical bytes under a "
+          "different name do not, each receipt persisted before the loop advances, a pending row "
+          "reconciled instead of re-posted, no basename fallback, stale QC sha refused)")
     return 0
 
 
