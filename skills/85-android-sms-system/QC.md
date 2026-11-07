@@ -121,8 +121,11 @@ PASS prints `frontmatter OK`; any assertion is FAIL.
       Forbidden: a concrete user name baked into a home path (the macOS user
       home root or the Linux home root followed by a real login), a bare
       relative path, a stale download date.
-- [ ] **2.2** `00-INDEX.md`, `_manifest.json`, `_labels.json`, `articles/`,
-      `categories/`, `_assets/`, `_source-html/` all exist at that root.
+- [ ] **2.2** the required set is at that root: `00-INDEX.md`, `_manifest.json`,
+      `_labels.json`, `articles/`, `categories/`. `_assets/` and `_source-html/`
+      are optional and absent in this distribution — images were purged to avoid
+      repo bloat, raw pages were purged in cleanup. Their absence is not a defect
+      and does not fail this check.
 - [ ] **2.3** The deep reference ships inside the skill folder, so an installed
       agent answers core questions without the docs set. Losing the docs set may
       degrade an answer; it must never make the skill unusable.

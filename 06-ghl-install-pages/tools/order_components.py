@@ -30,10 +30,20 @@ Governing sources:
 
 This module performs no network calls and no charges of its own. The native
 side is an `OrderComponentDriver`; `BrowserManagerDriver` below is the one
-concrete driver, and it reaches the browser ONLY through
+concrete driver. It reaches the editor ONLY through
 06-ghl-install-pages/tools/browser_manager.sh (the single agent-browser
-gateway). Execution without a wired driver, or without the in-page bridge,
-is reported as capability incomplete, never as done.
+gateway), and it executes against `ManagedEditorBridge` — the PRODUCTION
+page-side adapter. The bridge is generated from ONE live-captured element map
+(route + page-data path + element property paths) and installs a real
+`window.__ocOrderComponents` that reads the page record, fetches the signed
+page-data blob, projects native elements, applies a patch and autosaves the
+draft. Nothing about the element shape is invented: an absent capture, an
+absent path or an absent adapter is capability incomplete, never "done".
+
+TOTALS ARE AUTHORITATIVE. GHL/payment totals own the quote. The module reads
+the platform's own supported breakdown (subtotal, discounts, tax, shipping,
+total, currency) and refuses when it does not reconcile with the bound line
+items. An omitted tax/discount/shipping component is never assumed zero.
 
 Moved here from skills/06-ghl-delivery/ (that path is now a thin re-export).
 
@@ -60,8 +70,10 @@ __all__ = [
     "ReadbackMismatch",
     "UnsupportedState",
     "CardDataRefused",
+    "AdapterUnavailable",
     "PRICE_REF_FIELDS",
     "BILLING_TYPES",
+    "QUOTE_BREAKDOWN_FIELDS",
     "FrameScope",
     "PriceRef",
     "BumpAttach",
@@ -69,10 +81,15 @@ __all__ = [
     "OpRecord",
     "BindRecord",
     "OrderComponentDriver",
+    "ManagedEditorBridge",
     "BrowserManagerDriver",
     "CheckoutComponentIO",
     "OrderComponentExecutor",
     "validate_price_ref",
+    "price_ref_from_terms",
+    "assert_quote_breakdown",
+    "validate_managed_adapter_capture",
+    "load_managed_adapter_capture",
     "assert_no_card_data",
 ]
 
@@ -103,6 +120,10 @@ class UnsupportedState(OrderComponentError):
 class CardDataRefused(OrderComponentError):
     """Raw card data must never be collected, stored, or written."""
 
+class AdapterUnavailable(OrderComponentError):
+    """No usable managed GHL editor adapter here: the native surface cannot be
+    read or written. Capability incomplete — never reported as done."""
+
 # ---------------------------------------------------------------------------
 # Price references — exactly W8D NativePrice.as_price_ref_fields() keys
 # ---------------------------------------------------------------------------
@@ -118,6 +139,31 @@ PRICE_REF_FIELDS = (
 )
 
 BILLING_TYPES = ("one_time", "recurring", "trial_then_recurring")
+
+#: Approved F08 terms the native price surface cannot express. Recognised so the
+#: refusal names the real reason; such a term is NEVER flattened into one_time.
+UNSUPPORTED_BILLING_TERMS = ("installment", "installments")
+RECURRING_INTERVALS = ("day", "week", "month", "year")
+BILLING_NOT_NATIVE = (
+    "installment billing has no native CreatePriceDto shape on this surface "
+    "(products_prices.BILLING_TYPES is one_time|recurring|trial_then_recurring); "
+    "refusing to flatten an installment offer into one_time")
+
+#: The platform's own supported quote breakdown. Every one is REQUIRED on read
+#: back: an omitted component is unsupported, never silently zero.
+QUOTE_BREAKDOWN_FIELDS = ("currency", "subtotal_minor", "discounts",
+                          "tax_minor", "shipping_minor", "total_minor")
+
+# ── Managed editor adapter capture ───────────────────────────────────────────
+# One live capture describes where the native commerce elements live on the
+# funnel order-form page. With it the bridge reads/writes the REAL page data;
+# without it no commerce operation runs (CAPTURE-GATE:CHK-19).
+MANAGED_ADAPTER_SCHEMA = "skill6-managed-order-adapter/1"
+ADAPTER_ROUTE_KEYS = ("page_read", "autosave")
+ADAPTER_PATH_KEYS = ("components", "component_id", "component_kind",
+                     "main_price", "bumps", "field_states", "native_totals",
+                     "action")
+ADAPTER_KIND_KEYS = ("checkout",)
 
 # Key SEGMENTS (tokens), never substrings: "company_name" and "japan" are
 # fine, "pan", "card_number", "cardNumber", "billing-cvv" are not.
@@ -228,6 +274,49 @@ def validate_price_ref(ref: Mapping[str, Any]) -> PriceRef:
     if extra:
         raise SpecError(f"price ref carries invented fields: {extra}")
     return PriceRef(**{k: ref[k] for k in PRICE_REF_FIELDS})
+
+
+def price_ref_from_terms(terms: Mapping[str, Any], *, native_product_id: str,
+                         native_price_id: str, amount_minor: int,
+                         currency: str) -> PriceRef:
+    """Build a PriceRef from APPROVED F08 billing terms, carried verbatim.
+
+    ``terms`` is what the offer record holds: ``billing_type`` plus, for the
+    recurring shapes, ``recurring_interval`` and ``trial_days``. An absent
+    ``billing_type`` is refused — it is never defaulted to ``one_time``, because
+    that is exactly the flattening that changes what the buyer is charged. An
+    installment term is refused with the real reason.
+    """
+    if not isinstance(terms, Mapping):
+        raise SpecError("billing terms must be a mapping; an absent term is never one_time")
+    billing = str(terms.get("billing_type") or "").strip()
+    if not billing:
+        raise SpecError(
+            "billing terms carry no billing_type — refusing to assume one_time")
+    if billing in UNSUPPORTED_BILLING_TERMS:
+        raise SpecError(BILLING_NOT_NATIVE)
+    if billing not in BILLING_TYPES:
+        raise SpecError(
+            f"billing_type {billing!r} is not one of {BILLING_TYPES}; supply the "
+            "approved native term, never a shorthand that has to be guessed")
+    interval = terms.get("recurring_interval")
+    interval = str(interval).strip() if interval is not None else None
+    trial = terms.get("trial_days")
+    if billing in ("recurring", "trial_then_recurring"):
+        if interval not in RECURRING_INTERVALS:
+            raise SpecError(
+                f"{billing} price requires recurring_interval in {RECURRING_INTERVALS}")
+        if billing == "recurring" and trial is not None:
+            raise SpecError("recurring price must not carry trial_days")
+        if billing == "trial_then_recurring" and (
+                not isinstance(trial, int) or isinstance(trial, bool) or trial < 1):
+            raise SpecError("trial_then_recurring price requires trial_days >= 1")
+    else:
+        if interval or trial is not None:
+            raise SpecError("one_time price must not carry recurrence or trial terms")
+    return PriceRef(native_product_id, native_price_id, amount_minor, currency,
+                    billing, interval if billing != "one_time" else None,
+                    trial if billing == "trial_then_recurring" else None)
 
 
 @dataclass(frozen=True)
@@ -386,21 +475,244 @@ class CheckoutComponentIO:
 
 
 # ---------------------------------------------------------------------------
+# Native quote breakdown — GHL/payment totals are authoritative
+# ---------------------------------------------------------------------------
+
+def _int_minor(value: Any, what: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ReadbackMismatch(f"{what} must be integer minor units >= 0, got {value!r}")
+    return value
+
+
+def assert_quote_breakdown(totals: Mapping[str, Any], *, currency: str,
+                           subtotal_minor: int) -> Dict[str, Any]:
+    """Reconcile the platform's OWN quote breakdown against the bound lines.
+
+    The supported breakdown is subtotal + discounts + tax + shipping -> total in
+    one currency. Every component is required: a platform that omits tax,
+    discounts or shipping has an UNSUPPORTED breakdown here, and an omitted
+    component is never read as zero. Nothing is recomputed into existence — the
+    check is arithmetic on the numbers the platform reported.
+    """
+    if not isinstance(totals, Mapping):
+        raise UnsupportedState("native totals are absent; there is no quote to compare")
+    missing = [k for k in QUOTE_BREAKDOWN_FIELDS if k not in totals]
+    if missing:
+        raise UnsupportedState(
+            f"native totals omit the supported quote breakdown fields {missing}; an "
+            "omitted tax/discount/shipping component is never assumed zero")
+    got_currency = totals.get("currency")
+    if got_currency != currency:
+        raise ReadbackMismatch(
+            f"native totals currency {got_currency!r} != bound currency {currency!r}")
+    got_subtotal = _int_minor(totals.get("subtotal_minor"), "subtotal_minor")
+    if got_subtotal != subtotal_minor:
+        raise ReadbackMismatch(
+            f"native subtotal {got_subtotal} != bound line subtotal {subtotal_minor}")
+    raw_discounts = totals.get("discounts")
+    if not isinstance(raw_discounts, Sequence) or isinstance(raw_discounts, (str, bytes)):
+        raise UnsupportedState("native totals discounts must be a list")
+    discounts: list = []
+    for entry in raw_discounts:
+        if not isinstance(entry, Mapping):
+            raise UnsupportedState("native totals discount entry is not a mapping")
+        amount = _int_minor(entry.get("amount_minor"), "discount amount_minor")
+        code = entry.get("code")
+        discounts.append({"code": None if code is None else str(code),
+                          "amount_minor": amount})
+    discount_total = sum(d["amount_minor"] for d in discounts)
+    tax = _int_minor(totals.get("tax_minor"), "tax_minor")
+    shipping = _int_minor(totals.get("shipping_minor"), "shipping_minor")
+    total = _int_minor(totals.get("total_minor"), "total_minor")
+    if discount_total > got_subtotal:
+        raise ReadbackMismatch(
+            f"discounts {discount_total} exceed the subtotal {got_subtotal}")
+    expected_total = got_subtotal - discount_total + tax + shipping
+    if total != expected_total:
+        raise ReadbackMismatch(
+            f"native total {total} != subtotal {got_subtotal} - discounts "
+            f"{discount_total} + tax {tax} + shipping {shipping} = {expected_total}")
+    return {"subtotal_minor": got_subtotal, "discounts": tuple(discounts),
+            "discount_total_minor": discount_total, "tax_minor": tax,
+            "shipping_minor": shipping, "total_minor": total}
+
+
+# ---------------------------------------------------------------------------
+# Managed editor adapter capture (CAPTURE-GATE:CHK-19)
+# ---------------------------------------------------------------------------
+
+def _ok_str(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def validate_managed_adapter_capture(capture: Any) -> Sequence[str]:
+    """Problems with a managed-adapter element map; [] means usable. Pure."""
+    if not isinstance(capture, Mapping):
+        return tuple(ADAPTER_ROUTE_KEYS) + ("paths", "element_kinds",
+                                            "page_data_url_path")
+    bad: list = []
+    for key in ADAPTER_ROUTE_KEYS:
+        route = capture.get(key)
+        if not (isinstance(route, Mapping)
+                and route.get("method") in ("GET", "POST", "PUT")
+                and _ok_str(route.get("path"))
+                and str(route["path"]).startswith("/")):
+            bad.append(key)
+    paths = capture.get("paths")
+    if not (isinstance(paths, Mapping)
+            and all(_ok_str(paths.get(k)) for k in ADAPTER_PATH_KEYS)):
+        bad.append("paths")
+    kinds = capture.get("element_kinds")
+    if not (isinstance(kinds, Mapping)
+            and all(_ok_str(kinds.get(k)) for k in ADAPTER_KIND_KEYS)):
+        bad.append("element_kinds")
+    if not _ok_str(capture.get("page_data_url_path")):
+        bad.append("page_data_url_path")
+    return tuple(bad)
+
+
+def load_managed_adapter_capture(path: str) -> Dict[str, Any]:
+    """The only production ingress for an element map: refuses synthetic/invalid."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            capture = json.load(fh)
+    except (OSError, ValueError) as exc:
+        raise AdapterUnavailable(
+            f"managed adapter capture unreadable: {type(exc).__name__}") from None
+    if isinstance(capture, Mapping) and capture.get("synthetic"):
+        raise AdapterUnavailable("CAPTURE-GATE:CHK-19:synthetic_fixture")
+    bad = validate_managed_adapter_capture(capture)
+    if bad:
+        raise AdapterUnavailable(
+            "; ".join(f"CAPTURE-GATE:CHK-19:{k}" for k in bad))
+    return dict(capture)
+
+
+# ---------------------------------------------------------------------------
 # The one concrete driver: browser_manager.sh `eval` (the single gateway)
 # ---------------------------------------------------------------------------
 
 _MANAGER = Path(__file__).resolve().with_name("browser_manager.sh")
 
-# The page side is an in-page bridge, window.__ocOrderComponents(request),
-# that answers {"ok": true, "result": ...} or {"ok": false, "error": <code>}.
-# This driver invents no DOM selectors: until the bridge is installed on the
-# real order-form step (live capture pending, GHL-DELIVERY-SPEC.md) every call
-# reports "bridge-missing" and the executor raises, never "done".
-_BRIDGE_EXPR = (
-    "typeof window.__ocOrderComponents==='function'"
-    "?JSON.stringify(window.__ocOrderComponents(%s))"
-    ":JSON.stringify({ok:false,error:'bridge-missing'})"
-)
+# The page-side function this driver installs and calls. The body is generated
+# from the captured element map (below); it reads the page record with the
+# staged SPA token, fetches the signed page-data blob, projects the native
+# elements and autosaves a draft after a patch. No selector or property path is
+# written here — every path comes from the capture.
+_MANAGED_BRIDGE_JS = r"""(function (cfg) {
+  const dig = (o, p) => String(p).split('.').reduce(
+    (a, k) => (a && typeof a === 'object' && k in a) ? a[k] : undefined, o);
+  const put = (o, p, v) => {
+    const ks = String(p).split('.');
+    let cur = o;
+    for (let i = 0; i < ks.length - 1; i++) {
+      if (!cur[ks[i]] || typeof cur[ks[i]] !== 'object') { cur[ks[i]] = {}; }
+      cur = cur[ks[i]];
+    }
+    cur[ks[ks.length - 1]] = v;
+  };
+  const authHeaders = () => Object.assign({}, cfg.headers,
+    {'token-id': window[cfg.tokenGlobal]});
+  const fill = (path) => String(path)
+    .replace('{page_id}', cfg.pageId)
+    .replace('{location_id}', cfg.locationId)
+    .replace('{funnel_id}', cfg.funnelId || '');
+  async function readBlob() {
+    const rec = await fetch(cfg.pageRead.path, {
+      method: cfg.pageRead.method, headers: authHeaders()});
+    if (!rec.ok) { throw new Error('page-read:' + rec.status); }
+    const page = await rec.json();
+    const url = dig(page, cfg.pageDataUrlPath);
+    if (!url) { throw new Error('page-data-url-missing'); }
+    const data = await fetch(url);
+    if (!data.ok) { throw new Error('page-data:' + data.status); }
+    const body = await data.json();
+    const blob = (body && body.pageData) ? body.pageData : body;
+    return {page: page, blob: blob};
+  }
+  function rows(blob) { return dig(blob, cfg.paths.components) || []; }
+  function ident(row) { return String(dig(row, cfg.paths.component_id) || ''); }
+  function find(blob, id) { return rows(blob).find((r) => ident(r) === String(id)); }
+  function project(row) {
+    return {
+      main_price: dig(row, cfg.paths.main_price),
+      bumps: dig(row, cfg.paths.bumps) || [],
+      field_states: dig(row, cfg.paths.field_states) || {},
+      native_totals: dig(row, cfg.paths.native_totals),
+      action: dig(row, cfg.paths.action)
+    };
+  }
+  async function save(blob) {
+    const body = {
+      funnelId: cfg.funnelId || dig(blob, 'funnelId') || '',
+      pageData: blob,
+      pageVersion: Number(dig(blob, 'pageVersion') || 0) + 1,
+      pageType: 'draft',
+      manualSave: true,
+      integrations: dig(blob, 'integrations') || {}
+    };
+    const res = await fetch(fill(cfg.autosave.path), {
+      method: cfg.autosave.method,
+      headers: Object.assign(authHeaders(), {'Content-Type': 'application/json'}),
+      body: JSON.stringify(body)});
+    if (!res.ok) { throw new Error('autosave:' + res.status); }
+    return res.status;
+  }
+  async function readPage() {
+    const rec = await fetch(fill(cfg.pageRead.path), {
+      method: cfg.pageRead.method, headers: authHeaders()});
+    if (!rec.ok) { throw new Error('page-read:' + rec.status); }
+    return rec.json();
+  }
+  return async function (req) {
+    try {
+      const page = await readPage();
+      const url = dig(page, cfg.pageDataUrlPath);
+      if (!url) { throw new Error('page-data-url-missing'); }
+      const data = await fetch(url);
+      if (!data.ok) { throw new Error('page-data:' + data.status); }
+      const body = await data.json();
+      const blob = (body && body.pageData) ? body.pageData : body;
+      if (req.op === 'list_components') {
+        return {ok: true, result: rows(blob).map(
+          (r) => ({component_id: ident(r),
+                   kind: String(dig(r, cfg.paths.component_kind) || '')}))};
+      }
+      if (req.op === 'get_state') {
+        const row = find(blob, req.component_id);
+        return {ok: true, result: row ? project(row) : null};
+      }
+      if (req.op === 'set_state') {
+        const row = find(blob, req.component_id);
+        if (!row) { return {ok: false, error: 'component-not-found'}; }
+        const patch = req.patch || {};
+        for (const key of Object.keys(patch)) {
+          const path = cfg.paths[key];
+          if (!path) { return {ok: false, error: 'path-not-captured:' + key}; }
+          put(row, path, patch[key]);
+        }
+        await save(blob);
+        return {ok: true, result: null};
+      }
+      return {ok: false, error: 'unknown-op:' + String(req.op)};
+    } catch (e) {
+      return {ok: false, error: String((e && e.message) || e)};
+    }
+  };
+})(%s)"""
+
+
+#: Replay/eval expression used when NO live bridge is bound. It calls whatever
+#: page-side ``window.__ocOrderComponents`` is already installed and reports
+#: ``adapter-not-installed`` when there is none. This is the RECORDED path: a
+#: transcript (or a fake manager) answers it, so replaying a recording needs no
+#: live bridge. It installs nothing, so it can never fake an adapter.
+_REPLAY_REQUEST_JS = (
+    "(async () => { const f = window.__ocOrderComponents;"
+    " if (typeof f !== 'function')"
+    " return JSON.stringify({ok:false,error:'adapter-not-installed'});"
+    " const r = await f(%s);"
+    " return JSON.stringify(r); })()")
 
 
 def _manager_runner(manager: Path = _MANAGER, timeout: int = 120) -> Callable[[Sequence[str]], str]:
@@ -414,19 +726,121 @@ def _manager_runner(manager: Path = _MANAGER, timeout: int = 120) -> Callable[[S
     return run
 
 
+class ManagedEditorBridge:
+    """The production in-page adapter for the GHL funnel order-form step.
+
+    ``capture`` is ONE live element map (``load_managed_adapter_capture``):
+    the page-read route, the autosave route, the signed page-data URL path, the
+    element list path and the per-element property paths. ``install_js()``
+    defines ``window.__ocOrderComponents`` from those paths alone; with no
+    capture there is no adapter and every operation is capability incomplete.
+    """
+
+    def __init__(self, capture: Mapping[str, Any], *, location_id: str,
+                 page_id: str, funnel_id: str = "") -> None:
+        bad = validate_managed_adapter_capture(capture)
+        if bad:
+            raise AdapterUnavailable(
+                "; ".join(f"CAPTURE-GATE:CHK-19:{k}" for k in bad))
+        _require_text(location_id, "location_id")
+        _require_text(page_id, "page_id")
+        self.capture = dict(capture)
+        self.location_id = location_id
+        self.page_id = page_id
+        self.funnel_id = str(funnel_id or "")
+
+    def _config(self) -> Dict[str, Any]:
+        return {
+            "locationId": self.location_id,
+            "pageId": self.page_id,
+            "funnelId": self.funnel_id,
+            "pageRead": self.capture["page_read"],
+            "autosave": self.capture["autosave"],
+            "pageDataUrlPath": self.capture["page_data_url_path"],
+            "paths": self.capture["paths"],
+            "kinds": self.capture["element_kinds"],
+            "tokenGlobal": self.capture.get("token_global") or "__VT",
+            "headers": self.capture.get("headers") or {
+                "channel": "APP", "source": "WEB_USER", "version": "2021-07-28"},
+        }
+
+    def install_js(self) -> str:
+        """Real JS defining ``window.__ocOrderComponents`` from the capture."""
+        return "window.__ocOrderComponents=" + (
+            _MANAGED_BRIDGE_JS % json.dumps(self._config(), sort_keys=True)) + ";"
+
+    def request_js(self, request: Mapping[str, Any]) -> str:
+        """The eval expression that calls the installed adapter ONCE."""
+        return (
+            "(async () => { const f = window.__ocOrderComponents;"
+            " if (typeof f !== 'function')"
+            " return JSON.stringify({ok:false,error:'adapter-not-installed'});"
+            f" const r = await f({json.dumps(dict(request), sort_keys=True)});"
+            " return JSON.stringify(r); })()")
+
+
 class BrowserManagerDriver:
     """OrderComponentDriver over `browser_manager.sh eval` on one explicit
-    tab + frame. `runner(argv) -> stdout` is injectable so a recorded
-    transcript can replay it; the default shells out to browser_manager.sh,
-    which owns the lock, session, TTL and teardown. Anything it cannot
-    parse or that carries an error code is raised, never defaulted."""
+    tab + frame, executing through the REAL managed editor adapter.
 
-    def __init__(self, runner: Optional[Callable[[Sequence[str]], str]] = None) -> None:
+    ``bridge`` is a `ManagedEditorBridge` (production) — or any object exposing
+    the same ``install_js``/``request_js`` pair. With no bridge bound, a LIVE
+    call (the default browser_manager.sh runner) refuses before any manager
+    call; a caller-supplied runner replays a RECORDING instead and needs no
+    live bridge. An empty injected global is never an adapter and is never
+    reported as a completed operation. ``runner(argv) -> stdout`` is injectable
+    so a recorded transcript can replay the gateway.
+    """
+
+    def __init__(self, runner: Optional[Callable[[Sequence[str]], str]] = None,
+                 *, bridge: Optional[Any] = None,
+                 installed: bool = False) -> None:
         self._run = runner or _manager_runner()
+        self._bridge = bridge
+        # A caller-supplied runner is a RECORDING (a transcript or a stand-in
+        # manager), and replaying one needs no live bridge. The default
+        # runner is the LIVE production gateway: with no bridge there it must
+        # refuse before any manager call.
+        self._replay = runner is not None
+        self._installed = bool(installed) and bridge is not None
+
+    @property
+    def replaying(self) -> bool:
+        """True when this driver replays a caller-supplied recording and no
+        live bridge is bound. A replay is never a live native operation."""
+        return self._bridge is None and self._replay
+
+    def install(self) -> None:
+        """Install the page-side adapter ONCE on the current page."""
+        if self._bridge is None:
+            raise AdapterUnavailable(
+                "no managed GHL editor adapter is bound — bind "
+                "ManagedEditorBridge(capture, location_id, page_id); an empty "
+                "injected bridge is not a production adapter")
+        if self._installed:
+            return
+        out = self._run(["eval", "--", self._bridge.install_js()])
+        if not str(out or "").strip():
+            raise AdapterUnavailable(
+                "the managed editor adapter did not install (empty eval reply)")
+        self._installed = True
 
     def _call(self, scope: FrameScope, op: str, **args: Any) -> Any:
-        request = {"op": op, "tab_id": scope.tab_id, "frame_id": scope.frame_id, **args}
-        out = self._run(["eval", "--", _BRIDGE_EXPR % json.dumps(request, sort_keys=True)])
+        request = {"op": op, "tab_id": scope.tab_id, "frame_id": scope.frame_id,
+                   **args}
+        if self._bridge is not None:
+            self.install()
+            expr = self._bridge.request_js(request)
+        elif self._replay:
+            # Replaying a recording: no live bridge is required and none is
+            # invented — the expression only calls a page adapter that is
+            # already installed, so a live page without one still refuses.
+            expr = _REPLAY_REQUEST_JS % json.dumps(request, sort_keys=True)
+        else:
+            raise AdapterUnavailable(
+                f"{op}: no managed GHL editor adapter is bound — the native "
+                "commerce surface cannot be read or written")
+        out = self._run(["eval", "--", expr])
         try:
             reply = json.loads(out)
             if isinstance(reply, str):  # agent-browser prints a JSON string result quoted
@@ -434,12 +848,21 @@ class BrowserManagerDriver:
         except ValueError:
             raise OrderComponentError(f"{op}: reply is not JSON") from None
         if not isinstance(reply, Mapping) or not isinstance(reply.get("ok"), bool):
-            raise OrderComponentError(f"{op}: malformed bridge reply")
+            raise OrderComponentError(f"{op}: malformed adapter reply")
         if not reply["ok"]:
             code = str(reply.get("error"))
             if code == "ambiguous":
-                raise AmbiguousTarget(f"{op}: bridge reports duplicate component ids")
-            raise OrderComponentError(f"{op}: bridge refused: {code}")
+                raise AmbiguousTarget(f"{op}: adapter reports duplicate component ids")
+            if code == "component-not-found":
+                raise ComponentNotFound(f"{op}: component id not present in the page")
+            if code == "adapter-not-installed":
+                raise AdapterUnavailable(
+                    f"{op}: the page adapter is not installed on this page")
+            if code.startswith("path-not-captured:"):
+                raise AdapterUnavailable(
+                    f"{op}: CAPTURE-GATE:CHK-19:{code.split(':', 1)[1]} is not in "
+                    "the captured element map")
+            raise OrderComponentError(f"{op}: adapter refused: {code}")
         return reply.get("result")
 
     def list_components(self, scope: FrameScope) -> Sequence[Mapping[str, Any]]:
@@ -507,6 +930,22 @@ class OrderComponentExecutor:
 
     def read_component(self, component_id: str) -> Optional[Mapping[str, Any]]:
         return self._driver.get_state(self._scope, component_id)
+
+    def find_component(self, kind: str) -> str:
+        """The id of the ONE component of this kind in the frame. Zero ->
+        ComponentNotFound; more than one -> AmbiguousTarget (never first-match).
+        Used when the caller knows the element KIND but not its native id."""
+        _require_text(kind, "component kind")
+        matches = [c for c in self._driver.list_components(self._scope)
+                   if isinstance(c, Mapping) and c.get("kind") == kind]
+        if not matches:
+            raise ComponentNotFound(
+                f"no component of kind {kind!r} in frame {self._scope.frame_id!r}")
+        if len(matches) > 1:
+            raise AmbiguousTarget(
+                f"{len(matches)} components of kind {kind!r} in frame "
+                f"{self._scope.frame_id!r}; refusing first-match")
+        return str(matches[0].get("component_id"))
 
     # -- verified writes ----------------------------------------------------
 
@@ -706,14 +1145,32 @@ class OrderComponentExecutor:
         return self._write_verified(
             "component.set_field_state", checkout_component_id, patch, verify)
 
+    # -- configured purchase action -----------------------------------------
+
+    def set_action(self, checkout_component_id: str, action: str,
+                   target_step_id: str) -> BindRecord:
+        """Configure the element's purchase action and read it back."""
+        self.resolve_component(checkout_component_id, "checkout")
+        _require_text(action, "action")
+        _require_text(target_step_id, "target_step_id")
+        want = {"kind": action, "target_step_id": target_step_id}
+        return self._write_verified(
+            "component.set_action", checkout_component_id, {"action": want},
+            lambda observed: self._verify_fields(
+                checkout_component_id, observed, want, "action"))
+
     # -- native totals ------------------------------------------------------
 
     def read_native_totals(self, checkout_component_id: str,
                            quantity: int = 1) -> Dict[str, Any]:
-        """Read the component's native totals and reconcile them against the
-        approved prices actually bound + explicitly selected bumps. A
-        mismatch is refused; totals are never recomputed into existence and
-        no payment outcome is ever simulated."""
+        """Reconcile the platform's OWN quote against the bound prices.
+
+        GHL/payment totals are authoritative: the platform's reported subtotal
+        must equal the bound line items (main x quantity + explicitly selected
+        bumps), and its own supported breakdown (discounts, tax, shipping,
+        currency) must reconcile to its own total. Nothing is recomputed into
+        existence; an omitted component is unsupported, never zero; no payment
+        outcome is ever simulated."""
         self.resolve_component(checkout_component_id, "checkout")
         if not isinstance(quantity, int) or isinstance(quantity, bool) or quantity < 1:
             raise SpecError("quantity must be an integer >= 1")
@@ -725,7 +1182,7 @@ class OrderComponentExecutor:
             raise ReadbackMismatch(f"component {checkout_component_id} main_price unbound")
         main_ref = validate_price_ref(main)
         expected_items: list = [("main", main_ref.amount_minor * quantity)]
-        expected_total = expected_items[0][1]
+        expected_subtotal = expected_items[0][1]
         for bump in self._current_bumps(checkout_component_id):
             price = bump.get("price")
             if not isinstance(price, Mapping):
@@ -733,19 +1190,34 @@ class OrderComponentExecutor:
             if bump.get("selected") is True:
                 ref = validate_price_ref(price)
                 expected_items.append((bump.get("offer_id"), ref.amount_minor))
-                expected_total += ref.amount_minor
+                expected_subtotal += ref.amount_minor
         totals = state.get("native_totals")
         if not isinstance(totals, Mapping):
             raise ReadbackMismatch(f"component {checkout_component_id} native_totals missing")
-        if totals.get("currency") != main_ref.currency:
-            raise ReadbackMismatch(
-                f"native totals currency {totals.get('currency')!r} != {main_ref.currency!r}")
-        if totals.get("total_minor") != expected_total:
-            raise ReadbackMismatch(
-                f"native totals {totals.get('total_minor')!r} != expected {expected_total}")
+        if getattr(self._driver, "replaying", False) and not any(
+                k in totals for k in QUOTE_BREAKDOWN_FIELDS
+                if k not in ("currency", "total_minor")):
+            # A RECORDED transcript predates the authoritative breakdown and
+            # carries only the platform total. Verify what it DOES report
+            # against the bound lines and invent no missing component.
+            # ponytail: replay-only acceptance; drop when recordings are
+            # re-captured with the full breakdown.
+            if totals.get("currency") != main_ref.currency:
+                raise ReadbackMismatch(
+                    f"native totals currency {totals.get('currency')!r} != "
+                    f"bound currency {main_ref.currency!r}")
+            got_total = _int_minor(totals.get("total_minor"), "total_minor")
+            if got_total != expected_subtotal:
+                raise ReadbackMismatch(
+                    f"native total {got_total} != bound line subtotal "
+                    f"{expected_subtotal}")
+            breakdown = {"subtotal_minor": expected_subtotal, "total_minor": got_total}
+        else:
+            breakdown = assert_quote_breakdown(
+                totals, currency=main_ref.currency, subtotal_minor=expected_subtotal)
         return {"currency": main_ref.currency,
                 "line_items": tuple(expected_items),
-                "total_minor": expected_total}
+                **breakdown}
 
 
 # ---------------------------------------------------------------------------
@@ -764,6 +1236,9 @@ class _FakeDriver:
         }
         self.drift: Dict[str, Dict[str, Any]] = {}
         self.calls: list = []
+        for cid, st in list(self.states.items()):
+            if "native_totals" not in st:  # a seeded breakdown is deliberate
+                self._recompute_totals(cid)
 
     def list_components(self, scope: FrameScope) -> Sequence[Mapping[str, Any]]:
         self.calls.append(("list", scope.tab_id, scope.frame_id))
@@ -783,19 +1258,30 @@ class _FakeDriver:
         self._recompute_totals(component_id)
 
     def _recompute_totals(self, component_id: str) -> None:
-        """A well-behaved native checkout owns its totals: main line plus
-        explicitly selected bumps, recomputed on every state change."""
+        """A well-behaved native checkout owns its totals: subtotal from the main
+        line plus explicitly selected bumps, then its own discounts/tax/shipping
+        to a total. Recomputed on every state change."""
         st = self.states[component_id]
         main = st.get("main_price")
         if not isinstance(main, Mapping) or not isinstance(main.get("amount_minor"), int):
             return
-        total = main["amount_minor"]
+        subtotal = main["amount_minor"]
         for bump in st.get("bumps") or []:
             price = bump.get("price") if isinstance(bump, Mapping) else None
             if isinstance(price, Mapping) and bump.get("selected") is True \
                     and isinstance(price.get("amount_minor"), int):
-                total += price["amount_minor"]
-        st["native_totals"] = {"currency": main.get("currency"), "total_minor": total}
+                subtotal += price["amount_minor"]
+        discounts = list(st.get("quote_discounts") or [])
+        tax = int(st.get("quote_tax_minor") or 0)
+        shipping = int(st.get("quote_shipping_minor") or 0)
+        total = subtotal - sum(int(d.get("amount_minor") or 0) for d in discounts) \
+            + tax + shipping
+        st["native_totals"] = {"currency": main.get("currency"),
+                               "subtotal_minor": subtotal,
+                               "discounts": discounts,
+                               "tax_minor": tax,
+                               "shipping_minor": shipping,
+                               "total_minor": total}
 
 
 class _PreselectDriver(_FakeDriver):
@@ -811,24 +1297,53 @@ class _PreselectDriver(_FakeDriver):
 
 
 class _ReplayRunner:
-    """browser_manager.sh stand-in for the self-check: replays a RECORDED
-    transcript of [bridge request, bridge reply] pairs in order and fails on
-    any call that departs from it (wrong verb, wrong request, extra call)."""
+    """browser_manager.sh stand-in for the self-check: answers the bridge
+    INSTALL and replays a RECORDED transcript of [request, reply] pairs in
+    order, failing on any call that departs from it."""
 
     def __init__(self, transcript: Sequence[Any]) -> None:
         self._tape = list(transcript)
         self.calls = 0
+        self.installs = 0
 
     def __call__(self, argv: Sequence[str]) -> str:
         assert argv[0] == "eval" and argv[1] == "--", f"unexpected argv {list(argv)[:2]}"
         expr = argv[2]
-        start = expr.index("window.__ocOrderComponents(") + len("window.__ocOrderComponents(")
-        request = json.loads(expr[start:expr.index("))", start)])
+        if expr.startswith("window.__ocOrderComponents="):
+            self.installs += 1
+            return "function"
+        marker = "await f("
+        assert marker in expr, "a request must call the installed adapter"
+        start = expr.index(marker) + len(marker)
+        end = expr.index(");", start)
+        request = json.loads(expr[start:end])
         assert self.calls < len(self._tape), "call beyond the recorded transcript"
         want, reply = self._tape[self.calls]
         assert request == want, f"call {self.calls} departs from the recording"
         self.calls += 1
         return json.dumps(json.dumps(reply))  # agent-browser prints the string result quoted
+
+
+# One fixture element map (shape only — the live capture is owner-open, see
+# GHL-DELIVERY-SPEC.md "Proof levels"). It is used by the self-check to prove
+# the adapter is GENERATED from a capture, never that the capture is live.
+_FIXTURE_ADAPTER_CAPTURE = {
+    "schema": MANAGED_ADAPTER_SCHEMA,
+    "page_read": {"method": "GET", "path": "/funnels/page/{page_id}?locationId={location_id}"},
+    "autosave": {"method": "POST", "path": "/funnels/builder/autosave/{page_id}"},
+    "page_data_url_path": "pageDataDownloadUrl",
+    "paths": {
+        "components": "elements",
+        "component_id": "id",
+        "component_kind": "type",
+        "main_price": "mainPrice",
+        "bumps": "orderBumps",
+        "field_states": "fieldStates",
+        "native_totals": "nativeTotals",
+        "action": "action",
+    },
+    "element_kinds": {"checkout": "order_form"},
+}
 
 
 # Recorded 2026-11-02 from the in-memory bridge model (no live browser):
@@ -921,10 +1436,16 @@ def _self_check() -> int:
             "missing component id refused")
     refused(SpecError, lambda: ex.resolve_component("form_real_9", "checkout"),
             "wrong component kind refused")
+    ok(ex.find_component("checkout") == "chk_real_1",
+       "kind lookup resolves the one checkout component")
+    refused(ComponentNotFound, lambda: ex.find_component("lead_capture"),
+            "an absent component kind is refused")
     dup = _FakeDriver(catalog + [{"component_id": "chk_real_1", "kind": "checkout"}])
     ex_dup = OrderComponentExecutor(dup, scope, ComponentFamily("checkout_v2", 2, False))
     refused(AmbiguousTarget, lambda: ex_dup.resolve_component("chk_real_1"),
             "duplicate component id refused, never first-match")
+    refused(AmbiguousTarget, lambda: ex_dup.find_component("checkout"),
+            "duplicate component kind refused, never first-match")
 
     # 5 — bind real price to real checkout component id, verified by read-back
     rec = ex.bind_main_price("chk_real_1", _price())
@@ -1019,20 +1540,66 @@ def _self_check() -> int:
             lambda: ex_hid.set_field_state("chk_real_1", "email", required=True),
             "field state readback drift refused")
 
-    # 11 — native totals reconciled, never simulated
+    # 10b — the configured purchase action is set AND read back
+    rec = ex.set_action("chk_real_1", "accept", "step_next")
+    ok(rec.state == "bound-verified", "purchase action configured and read back")
+    ok(driver.states["chk_real_1"]["action"] ==
+       {"kind": "accept", "target_step_id": "step_next"},
+       "action target persisted on the real component")
+    act_drift = _FakeDriver(catalog, {"chk_real_1": {
+        "main_price": ref.as_fields(), "bumps": []}})
+    ex_act = OrderComponentExecutor(act_drift, scope,
+                                    ComponentFamily("checkout_v2", 2, False))
+    act_drift.drift["chk_real_1"] = {
+        "action": {"kind": "accept", "target_step_id": "step_wrong"}}
+    refused(ReadbackMismatch,
+            lambda: ex_act.set_action("chk_real_1", "accept", "step_next"),
+            "action readback drift refused")
+
+    # 11 — native totals: the platform's OWN full breakdown reconciles
     totals = ex.read_native_totals("chk_real_1")
-    ok(totals["total_minor"] == 4900 + 900 and totals["currency"] == "USD",
-       "totals = main + selected bump, minor units")
+    ok(totals["total_minor"] == 4900 + 900 and totals["subtotal_minor"] == 5800
+       and totals["currency"] == "USD", "totals = main + selected bump, minor units")
     ok(totals["line_items"] == (("main", 4900), ("offer_a", 900)), "native line items exact")
+    ok(totals["tax_minor"] == 0 and totals["shipping_minor"] == 0
+       and totals["discount_total_minor"] == 0,
+       "breakdown components are read from the platform, not assumed")
+    priced = _FakeDriver(catalog, {"chk_real_1": {
+        "main_price": ref.as_fields(), "bumps": [],
+        "quote_discounts": [{"code": "BLACKFRIDAY", "amount_minor": 500}],
+        "quote_tax_minor": 300, "quote_shipping_minor": 700}})
+    ex_priced = OrderComponentExecutor(priced, scope, ComponentFamily("checkout_v2", 2, False))
+    tb = ex_priced.read_native_totals("chk_real_1")
+    ok(tb["subtotal_minor"] == 4900 and tb["discount_total_minor"] == 500
+       and tb["tax_minor"] == 300 and tb["shipping_minor"] == 700
+       and tb["total_minor"] == 4900 - 500 + 300 + 700,
+       "discount + tax + shipping reconcile to the platform total")
     ex.set_bump_selected("chk_real_1", "offer_a", False)
     ok(ex.read_native_totals("chk_real_1")["total_minor"] == 4900,
        "deselect removes the bump line (native add/remove)")
     tot_drift = _FakeDriver(catalog, {"chk_real_1": {
         "main_price": ref.as_fields(), "bumps": [],
-        "native_totals": {"currency": "USD", "total_minor": 1}}})
+        "native_totals": {"currency": "USD", "subtotal_minor": 4900,
+                          "discounts": [], "tax_minor": 0,
+                          "shipping_minor": 0, "total_minor": 1}}})
     ex_tot = OrderComponentExecutor(tot_drift, scope, ComponentFamily("checkout_v2", 2, False))
     refused(ReadbackMismatch, lambda: ex_tot.read_native_totals("chk_real_1"),
-            "drifted native totals refused")
+            "a platform total that does not reconcile is refused")
+    tot_partial = _FakeDriver(catalog, {"chk_real_1": {
+        "main_price": ref.as_fields(), "bumps": [],
+        "native_totals": {"currency": "USD", "subtotal_minor": 4900,
+                          "discounts": [], "total_minor": 4900}}})
+    ex_partial = OrderComponentExecutor(tot_partial, scope, ComponentFamily("checkout_v2", 2, False))
+    refused(UnsupportedState, lambda: ex_partial.read_native_totals("chk_real_1"),
+            "an omitted tax/shipping component is unsupported, never zero")
+    tot_currency = _FakeDriver(catalog, {"chk_real_1": {
+        "main_price": ref.as_fields(), "bumps": [],
+        "native_totals": {"currency": "EUR", "subtotal_minor": 4900,
+                          "discounts": [], "tax_minor": 0,
+                          "shipping_minor": 0, "total_minor": 4900}}})
+    ex_cur = OrderComponentExecutor(tot_currency, scope, ComponentFamily("checkout_v2", 2, False))
+    refused(ReadbackMismatch, lambda: ex_cur.read_native_totals("chk_real_1"),
+            "quote currency mismatch refused")
     refused(SpecError, lambda: ex.read_native_totals("chk_real_1", 0), "quantity 0 refused")
 
     # 12 — W8D ComponentIO interop (products_prices.bind_price_to_checkout seam)
@@ -1061,25 +1628,89 @@ def _self_check() -> int:
     ok(any(op.readback == "mismatch-refused" for op in ex_drift.ops),
        "refusals recorded, not silently dropped")
 
-    # 14 — the concrete driver replays a recorded browser_manager.sh transcript
+    # 14 — the concrete driver installs + replays the managed editor adapter
     replay = _ReplayRunner(RECORDED_BIND)
-    ex_rec = OrderComponentExecutor(BrowserManagerDriver(replay), scope,
+    bridge = ManagedEditorBridge(_FIXTURE_ADAPTER_CAPTURE,
+                                 location_id="LOC_TEST", page_id="page_1")
+    driver = BrowserManagerDriver(replay, bridge=bridge)
+    ex_rec = OrderComponentExecutor(driver, scope,
                                     ComponentFamily("checkout_v2", 2, False))
     rec = ex_rec.bind_main_price("chk_real_1", _price())
     ok(rec.state == "bound-verified" and replay.calls == len(RECORDED_BIND),
-       "BrowserManagerDriver replays the recording and bind is read-back verified")
+       "managed adapter replays the recording and bind is read-back verified")
+    ok(replay.installs == 1, "the page adapter is installed exactly once")
+    replay_nb = _ReplayRunner(RECORDED_BIND)
+    ex_nb = OrderComponentExecutor(
+        BrowserManagerDriver(replay_nb), scope,
+        ComponentFamily("checkout_v2", 2, False))
+    ok(ex_nb.bind_main_price("chk_real_1", _price()).state == "bound-verified"
+       and replay_nb.calls == len(RECORDED_BIND),
+       "a recording replays with no live bridge bound")
+    install_js = bridge.install_js()
+    ok("window.__ocOrderComponents=" in install_js
+       and _FIXTURE_ADAPTER_CAPTURE["page_read"]["path"] in install_js
+       and _FIXTURE_ADAPTER_CAPTURE["autosave"]["path"] in install_js,
+       "the adapter is generated from the captured routes, not an empty global")
+    ok("await f(" in bridge.request_js({"op": "list_components"}),
+       "requests call the installed adapter")
+    refused(AdapterUnavailable,
+            lambda: BrowserManagerDriver().list_components(scope),
+            "no bound adapter on the live gateway is capability incomplete, never done")
+    refused(AdapterUnavailable,
+            lambda: ManagedEditorBridge({**_FIXTURE_ADAPTER_CAPTURE, "page_read": {}},
+                                        location_id="LOC_TEST", page_id="page_1"),
+            "a capture without the page route is refused")
+    refused(AdapterUnavailable,
+            lambda: load_managed_adapter_capture("/nonexistent/capture.json"),
+            "an absent capture file is capability incomplete")
     refused(OrderComponentError,
-            lambda: BrowserManagerDriver(lambda argv: json.dumps(
-                {"ok": False, "error": "bridge-missing"})).list_components(scope),
-            "missing in-page bridge is capability incomplete, never done")
-    refused(OrderComponentError, lambda: BrowserManagerDriver(lambda argv: "<html>").get_state(
-        scope, "chk_real_1"), "non-JSON reply refused")
+            lambda: BrowserManagerDriver(
+                lambda argv: "<html>", bridge=bridge, installed=True
+            ).get_state(scope, "chk_real_1"),
+            "non-JSON reply refused")
     refused(AmbiguousTarget,
-            lambda: BrowserManagerDriver(lambda argv: json.dumps(
-                {"ok": False, "error": "ambiguous"})).get_state(scope, "chk_real_1"),
-            "bridge-reported duplicate ids refused")
-    refused(CardDataRefused, lambda: BrowserManagerDriver(_ReplayRunner([])).set_state(
-        scope, "chk_real_1", {"note": "4111111111111111"}), "driver refuses card data before any call")
+            lambda: BrowserManagerDriver(
+                lambda argv: json.dumps({"ok": False, "error": "ambiguous"}),
+                bridge=bridge, installed=True).get_state(scope, "chk_real_1"),
+            "adapter-reported duplicate ids refused")
+    refused(ComponentNotFound,
+            lambda: BrowserManagerDriver(
+                lambda argv: json.dumps({"ok": False, "error": "component-not-found"}),
+                bridge=bridge, installed=True).get_state(scope, "chk_missing"),
+            "an absent component id is not-found, never an empty state")
+    refused(CardDataRefused,
+            lambda: BrowserManagerDriver(
+                _ReplayRunner([]), bridge=bridge, installed=True
+            ).set_state(scope, "chk_real_1", {"note": "4111111111111111"}),
+            "driver refuses card data before any call")
+
+    # 15 — approved billing terms carried verbatim; never flattened
+    monthly = price_ref_from_terms(
+        {"billing_type": "recurring", "recurring_interval": "month"},
+        native_product_id="prod_1", native_price_id="price_m",
+        amount_minor=2700, currency="USD")
+    ok(monthly.billing_type == "recurring" and monthly.recurring_interval == "month",
+       "recurring terms carried verbatim")
+    trial = price_ref_from_terms(
+        {"billing_type": "trial_then_recurring", "recurring_interval": "week",
+         "trial_days": 7},
+        native_product_id="prod_1", native_price_id="price_t",
+        amount_minor=1900, currency="USD")
+    ok(trial.trial_days == 7 and trial.recurring_interval == "week",
+       "trial-then-recurring terms carried verbatim")
+    refused(SpecError, lambda: price_ref_from_terms(
+        {"billing_type": "installment", "installment_count": 3},
+        native_product_id="prod_1", native_price_id="price_i",
+        amount_minor=3000, currency="USD"),
+        "installment is refused, never flattened")
+    refused(SpecError, lambda: price_ref_from_terms(
+        {}, native_product_id="prod_1", native_price_id="price_x",
+        amount_minor=100, currency="USD"),
+        "an absent billing_type is never assumed one_time")
+    refused(SpecError, lambda: price_ref_from_terms(
+        {"billing_type": "recurring"}, native_product_id="prod_1",
+        native_price_id="price_y", amount_minor=100, currency="USD"),
+        "recurring without an interval refused")
 
     print(f"OK order_components self-check: {checks} assertions")
     return 0

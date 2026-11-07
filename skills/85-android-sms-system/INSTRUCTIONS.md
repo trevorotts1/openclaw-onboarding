@@ -16,7 +16,7 @@ $HOME/Downloads/openclaw-master-files/mycrmsim/
 | `_manifest.json` | Machine-readable list of every doc: `doc_id`, `title`, `file`, `category`, `updated`, `path_cat` |
 | `_labels.json`, `_labels-parts/` | Label data |
 | `_assets/<Doc ID>/` | Screenshots and GIFs, linked relatively so the set reads offline |
-| `_source-html/` | Original saved pages, for provenance only — never the answer source |
+| `_source-html/` | Original saved pages — removed in cleanup; never the answer source |
 
 Covered: Android SMS, MMS, iMessage, WhatsApp, RCS, voice calling, devices and SIMs, HighLevel / HubSpot / Zapier / Make / Salesforce / Zoho integrations, automations and AI agents, the myCRMSIM dashboard, snapshot workflows, and troubleshooting.
 
