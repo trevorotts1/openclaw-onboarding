@@ -307,6 +307,8 @@ def _token(doc, qid):
 def cond_met(doc, cond):
     if cond in (None, "always"):
         return True
+    if " and " in cond:  # every part must hold; a question with two conditions is never half-asked
+        return all(cond_met(doc, c.strip()) for c in cond.split(" and "))
     m = re.fullmatch(r"(\w+) (==|!=) (\w+)", cond)
     if m:
         t = _token(doc, m.group(1))
@@ -314,6 +316,14 @@ def cond_met(doc, cond):
     m = re.fullmatch(r"(\w+) answered", cond)
     if m:
         return get(doc, m.group(1)) is not None and get(doc, m.group(1))["status"] != "unknown"
+    m = re.fullmatch(r"(\w+) contains (\w+)", cond)
+    if m:  # a follow-up question that only applies when the answer names a word, e.g. channels contains text
+        e = get(doc, m.group(1))
+        if e is None or e["status"] == "unknown":
+            return False
+        v = e["value"]
+        words = " ".join(_norm(x) for x in (v if isinstance(v, list) else [v]))
+        return (" " + m.group(2) + " ") in (" " + words + " ")
     m = re.fullmatch(r"needs_role (\w+)", cond)
     if m:
         return needs_role(doc, m.group(1))
@@ -574,8 +584,16 @@ def _need(msg):
     return {"ok": False, "message": msg}
 
 
-def _normalize(doc, q, raw):
-    """(value, status, note) or a _need() dict. Free text always wins over the listed choices."""
+def _package_key(p):
+    """One package's identity while accumulating: its name and its own price. A resent package is the
+    same package, never a second copy."""
+    price = p.get("price") if isinstance(p.get("price"), dict) else {}
+    return (_norm(p.get("display_name")), price.get("amount_minor"), price.get("currency"))
+
+
+def _normalize(doc, q, raw, *, accumulate=True):
+    """(value, status, note) or a _need() dict. Free text always wins over the listed choices.
+    accumulate=False reads an answer without touching the saved partial packages (citation checks)."""
     qid, t, ch = q["id"], q["answer_type"], q["choices"]
     text = str(raw).strip() if not isinstance(raw, (dict, list)) else raw
     low = _norm(text) if isinstance(text, str) else ""
@@ -642,11 +660,54 @@ def _normalize(doc, q, raw):
         h = ph.to_hex(text)
         return ([h], "provided", None) if h else _need("Light, dark, or a color code for the background?")
     if qid == "logo":
-        if pick == "Use my business name as text" or "text" in low and "name" in low:
+        # Three ways, all the client's own choice: an existing logo, a clean name wordmark, or a new
+        # logo made by the existing graphics capability. None is assumed and nothing is redrawn.
+        if pick == "Create a new logo for me" or (("create" in low or "make" in low or "design" in low) and "logo" in low):
+            brief = logo_brief(doc)
+            propose(doc, qid, artifact={"kind": "logo", "brief": brief, "capability": GRAPHICS_CAPABILITY},
+                    why="A new logo made from the name, colours, voice and style you already gave.")
+            return ({"mode": "create", "brief": brief,
+                     "capability": GRAPHICS_CAPABILITY["name"]}, "provided",
+                    "I will have a new logo made and put it in the same asset map every page uses. "
+                    "We keep going on the offers and the copy while it is made.")
+        if pick == "Use my business name as text" or ("text" in low and "name" in low):
             return {"mode": "wordmark", "text": val(doc, "business_name")}, "provided", None
         if pick == "I will send it" or low in ("yes", "i will send it"):
-            return _need("Please send the logo file (PNG or SVG), or say 'use my business name as text'.")
+            return _need("Please send the logo file (PNG or SVG), say 'use my business name as text', "
+                         "or say 'create a new logo for me'.")
         return {"mode": "file", "path": str(text)}, "provided", None
+    if qid == "billing_detail":
+        # The rest of the plan the client actually asked for. Anything they did not say stays missing.
+        n = re.search(r"\b(\d+)\s*(?:payments?|installments?)\b", low) or re.search(r"\d+", low)
+        detail = {}
+        for word, unit in _INTERVAL_WORDS:
+            if word in low:
+                detail["interval"] = unit
+                break
+        # the count of payments is only read when the client said how many payments there are
+        if re.search(r"\b\d+\s*(?:payments?|installments?)\b", low):
+            detail["installment_count"] = int(n.group(1))
+        if "trial" in low or "free" in low:
+            detail["trial"] = True
+        if not detail:
+            return _need("How many payments, how often, and is there a trial or an amount due today?")
+        return detail, "provided", None
+    if qid == "lead_magnet":
+        # The free lead product is its own record: price zero is valid here and only here. A genuinely
+        # paid offer keeps the positive-price rule.
+        if isinstance(text, dict):
+            return text, "provided", None
+        if low in ("none", "no", "no thanks", "skip"):
+            return "none", "provided", None
+        structured = normalize_offer_prose(text, qid=qid)
+        if pick == "Recommend one" or "recommend" in low:
+            return _need("I only recommend from what you can actually give away. Tell me what you could "
+                         "hand over for free and I will shape it for you to review.")
+        if not structured["display_name"]:
+            return _need("What is the free item called, and what do people get?")
+        structured["price"] = {"amount_minor": 0, "currency": structured["price"]["currency"]
+                               if structured["price"] else "USD"}
+        return structured, "provided", None
     if qid == "fonts":
         if pick == "Pick good ones for me":
             return {"mode": "derive", "suggested": ph.fonts_suggestions()[0]}, "suggested", "Chosen by us; confirm or give your own."
@@ -670,7 +731,17 @@ def _normalize(doc, q, raw):
         m, why = ({"amount_minor": 0, "currency": "USD"}, None) if free else _parse_money(text)
         if m and pick != "Suggest one for me to review":
             if m["amount_minor"] <= 0 and doc.get("meta", {}).get("mode") == "bf":
-                return _need("A free main offer is not valid in the Black Friday launcher. Is this a lead magnet? A lead magnet needs another journey mode. What paid price should I use for the main offer?")
+                # The free item is a lead product with its own record and its own opt-in journey. It is
+                # never pushed through the paid checkout, and the paid offer keeps its positive price.
+                propose(doc, "price", artifact={"kind": "free_entry", "name": val(doc, "offer_name"),
+                                                "price": m},
+                        why="The free item becomes a lead product with its own opt-in and thank-you, "
+                            "not a paid checkout line.",
+                        capability=None)
+                return _need("That is a free lead magnet - a lead product, so I will carry it as its own "
+                             "free entry, with its own opt-in page and thank-you page, and it never goes "
+                             "through the paid checkout. The paid offer still needs a price above zero. "
+                             "What should the paid offer cost?")
             return m, "provided", None
         if pick == "Suggest one for me to review" or "suggest" in low:
             return _need("Tell me what it includes and roughly who buys it. I will suggest a range with my reasoning for you to approve.")
@@ -695,7 +766,22 @@ def _normalize(doc, q, raw):
             return _need("What is it called, what does the buyer get, and what does it cost?")
         if pick == "Recommend one" or "recommend" in low:
             return _need("I only recommend from products you have told me about. Tell me what you could offer and I will shape it for you to review.")
-        return str(text), "provided", None
+        if doc.get("meta", {}).get("mode") == "legacy":
+            # the older step-by-step funnel's brief is plain text: a deliberate legacy request keeps
+            # exactly the answers it always had, never a restructured record it does not read
+            return str(text), "provided", None
+        # Ordinary prose becomes the existing structured offer record, and the client's own words are
+        # kept under source_text. A part they did not give stays missing, never invented.
+        structured = normalize_offer_prose(text, qid=qid)
+        if structured["missing"]:
+            propose(doc, qid, artifact={"kind": "offer", **structured},
+                    why="Read from what you wrote: " + ", ".join(structured["missing"]) + " still to confirm.",
+                    action=structured)
+            return dict(_need(f"I saved what you wrote. I still need the "
+                              f"{', '.join(structured['missing'])}. One line with the name, what they "
+                              "get and the price is enough."), action="proposal", id=qid,
+                        proposal=structured)
+        return structured, "provided", None
     if qid == "image_provider":
         n = {"My connected service": "connected", "Recommend one": "kie"}.get(pick or "")
         n = n or (low if low in ("kie", "agnes", "connected") else None)
@@ -732,14 +818,12 @@ def _normalize(doc, q, raw):
         return {"community_url": url.group(0).rstrip(".,;"), "bonus": bonus, "founder_text_confirmed": True}, "provided", None
     if t == "packages":
         rows = text if isinstance(text, list) else [ln for ln in str(text).splitlines() if ln.strip()]
-        pk, bad, st = [], [], "provided"
+        pk, bad = [], []
         for row in rows:
             if isinstance(row, dict):
                 err = _bad_package(row)
                 if err:
                     return _need(err)
-                if row.get("price_status") == "recommended_unapproved":
-                    st = "suggested"
                 pk.append(row)
                 continue
             sym = re.findall(r"[$\u20ac\u00a3]\s*\d[\d,]*(?:\.\d+)?", row)
@@ -749,14 +833,43 @@ def _normalize(doc, q, raw):
             rest = [x.strip() for x in re.split(r"\|", row)[1:] if x.strip() and not re.fullmatch(r"[\$\u20ac\u00a3]?\s*[\d,.]+(\s*[A-Za-z]{3})?", x.strip(), re.I)]
             inc = [i.strip() for r in rest for i in re.split(r";", r) if i.strip()]
             if name and m and m["amount_minor"] > 0:
-                pk.append({"display_name": name, "deliverables": inc, "price": m})
+                pk.append({"display_name": name, "deliverables": inc, "price": m,
+                           "source_text": row.strip()})
             else:
                 bad.append(row.strip()[:60])
         if bad:
             return _need("I could not read one clear price in: " + "; ".join(bad) + ". Each package needs a name and one price, like: Premium | 12 lessons; 4 live calls | $497")
-        if len(pk) < 2:
-            return _need("I need at least two, each with a name and a price, one per line. For example: Premium | 12 lessons; 4 live calls | $497")
-        return pk, st, None
+        if not pk:
+            return _need("I need one package to start: a name and one price, like: Premium | 12 lessons; 4 live calls | $497")
+        # Successive single-package turns ACCUMULATE. The first package is a valid PARTIAL record the
+        # next turn adds to, so a client answering one package per turn still finishes; a resend of a
+        # package already saved is the same package, never a second copy. The answer stays incomplete
+        # until the client has actually described two, so nothing is invented to reach the minimum.
+        part = doc.get("packages_partial") if accumulate else None
+        if isinstance(part, dict):
+            merged = list(part.get("packages") or [])
+        else:  # a package added after the set was already recorded extends the recorded set
+            have = val(doc, "packages") if accumulate else None
+            merged = list(have) if isinstance(have, list) else []
+        seen = {_package_key(p) for p in merged}
+        for p in pk:
+            k = _package_key(p)
+            if k not in seen:
+                seen.add(k)
+                merged.append(p)
+        if len(merged) < 2:
+            if accumulate:
+                doc["packages_partial"] = {"packages": merged,
+                                           "note": f"{len(merged)} package saved; more collected next"}
+            return _need("I need at least two, each with a name and a price, one per line. "
+                         "I have saved the first one; send the next the same way. For example: "
+                         "Premium | 12 lessons; 4 live calls | $497")
+        # the completion path consumes the whole accumulated set, and with it each package's own words,
+        # price and price_status, so a saved partial can never be dropped or silently re-statused. The
+        # partial is cleared by record() only once the answer is actually saved, so a refused citation
+        # never throws the packages the client already described away.
+        st = "suggested" if any(p.get("price_status") == "recommended_unapproved" for p in merged) else "provided"
+        return merged, st, None
     if t == "list":
         items = text if isinstance(text, list) else [s.strip(" -*•") for s in re.split(r"\n|;|,(?=\s)", text) if s.strip(" -*•")]
         return (items, "provided", None) if items else _need("Please give me at least one.")
@@ -815,7 +928,7 @@ def _client_said(doc, q, raw, v, msg):
     if isinstance(raw, str):
         if _norm(raw) and _norm(raw) in nm:
             return True
-        out = _normalize(doc, q, msg)
+        out = _normalize(doc, q, msg, accumulate=False)  # a citation check never edits the partial
         return isinstance(out, tuple) and out[0] == v
     nums = _numbers(msg)
     for it in raw if isinstance(raw, list) else []:
@@ -891,6 +1004,8 @@ def record(doc, qid, value, *, source="client", status=None, note=None, source_m
             assumed = "" if re.search(r"[A-Za-z$\u20ac\u00a3]", str(value)) else " (no currency given, so I took USD)"
             return {"ok": False, "action": "confirm_price", "heard": v, "message": f"I heard {shown}{assumed}, correct? Say yes to record it, or give me the right price."}
     e = _set(doc, qid, v, st, source, note or nt)
+    if qid == "packages":
+        doc.pop("packages_partial", None)  # the accumulated set is the recorded answer now
     if qid in CITED_QUESTIONS and st == "provided":
         e["source_message_ref"] = ref_for_entry
         if confirmed:
@@ -1467,6 +1582,497 @@ def image_inputs(doc):
             "allow_paid": ref is not None}
 
 
+# ---------------------------------------------------------------- which run mode is this
+# An explicit COMPLETE Black Friday / launch request routes into the signature launch. An
+# explicit request for the older step-by-step funnel keeps legacy. Nothing here guesses: an
+# ambiguous opening is asked about with one plain question, never routed by default.
+MODE_ROUTING = {
+    "launch": {
+        "phrases": ("black friday", "black friday launch", "signature launch", "signature funnel",
+                    "launch my", "launch this", "launch the", "run a launch", "bfcm", "cyber monday",
+                    "holiday promotion", "seasonal promotion"),
+        "reason": "You asked for a launch, so this runs the signature launch interview.",
+    },
+    "legacy": {
+        "phrases": ("legacy", "legacy mode", "old step-by-step", "old step by step", "step-by-step funnel",
+                    "step by step funnel", "3-step funnel", "5-step funnel", "7-step funnel",
+                    "the older funnel", "classic funnel"),
+        "reason": "You asked for the older step-by-step funnel, so this keeps legacy mode.",
+    },
+}
+ROUTE_QUESTION = ("Is this a Black Friday or launch promotion, or do you want the older step-by-step "
+                  "funnel? Reply launch or legacy.")
+
+
+def _routing_table():
+    """The bank's own routing table when it carries one, else the default above."""
+    table = load_bank().get("mode_routing")
+    return table if isinstance(table, dict) and table else MODE_ROUTING
+
+
+def route_mode(text, bank=None):
+    """('launch'|'legacy'|None, reason) for what the client actually asked for.
+
+    A deliberate legacy request is preserved; an explicit launch request becomes the signature
+    launch. Both markers present is ambiguous and is asked, never silently resolved."""
+    t = " " + _norm(text) + " "
+    if not t.strip():
+        return None, ROUTE_QUESTION
+    table = (bank or {}).get("mode_routing") if isinstance(bank, dict) else None
+    table = table if isinstance(table, dict) and table else _routing_table()
+    hits = []
+    for mode in ("launch", "legacy"):
+        block = table.get(mode) or {}
+        for phrase in block.get("phrases") or MODE_ROUTING[mode]["phrases"]:
+            if " " + _norm(phrase) + " " in t:
+                hits.append((mode, block.get("reason") or MODE_ROUTING[mode]["reason"]))
+                break
+    if len(hits) == 1:
+        return hits[0]
+    if not hits:
+        return None, ROUTE_QUESTION
+    return None, ("I heard both a launch and the older step-by-step funnel. Which one should I set up? "
+                  "Reply launch or legacy.")
+
+
+def apply_mode(doc, text, *, asked=False):
+    """Stamp the routed mode on the doc. `asked=True` means the client named the mode, so the
+    reason is kept. A doc already carrying a client-set mode is never overwritten by a guess."""
+    mode, reason = route_mode(text)
+    if mode is None:
+        return {"ok": False, "action": "ask_mode", "question": reason}
+    doc.setdefault("meta", {})["mode"] = mode
+    doc["meta"]["mode_source"] = "explicit_request" if asked or mode else "routing"
+    doc["meta"]["mode_reason"] = reason
+    return {"ok": True, "mode": mode, "reason": reason}
+
+
+# ---------------------------------------------------------------- answer provenance
+# Every saved answer says what it IS, so a proposal can never read as a promise and a generated
+# file can never read as a confirmed fact.
+PROVENANCE_CLASSES = ("confirmed_fact", "ai_proposal", "user_selected_recommendation",
+                      "generated_asset", "unresolved_capability")
+
+
+def provenance_of(entry):
+    """The class of one saved answer, or None when nothing is saved."""
+    if not isinstance(entry, dict):
+        return None
+    if entry.get("generated"):
+        return "generated_asset"
+    if entry.get("unresolved_capability") or entry.get("status") == "unknown":
+        return "unresolved_capability"
+    if entry.get("status") in ("suggested", "default_to_confirm"):
+        return "ai_proposal"
+    source = str(entry.get("source") or "")
+    if entry.get("accepted_proposal") or source.startswith(("recommendation", "feel-words", "palette-help")):
+        return "user_selected_recommendation"
+    return "confirmed_fact"
+
+
+def proposed_action(qid, answer=None, *, artifact=None, why="", capability=None):
+    """One proposed artifact or action for an answer the client has not given yet.
+
+    Stored on the launch record (`proposals`) beside the answers, so a missing answer becomes a
+    reviewable proposal instead of a dead end. `capability` names the limit when the proposal
+    needs something the run cannot do, and stays unresolved rather than pretending."""
+    return {"question_id": qid, "artifact": artifact, "action": answer, "why": why,
+            "state": "proposed", "provenance": "ai_proposal",
+            "capability": capability,
+            "unresolved": bool(capability)}
+
+
+def propose(doc, qid, *, artifact=None, action=None, why="", capability=None):
+    """Record a proposal on the launch record. Never an answer: the client still accepts it."""
+    doc.setdefault("proposals", {})[qid] = proposed_action(
+        qid, action, artifact=artifact, why=why, capability=capability)
+    return {"ok": True, "action": "proposal", "id": qid, **doc["proposals"][qid]}
+
+
+def proposals(doc):
+    """Every open proposal, keyed by question id, each carrying its provenance class."""
+    return {k: dict(v, provenance="ai_proposal") for k, v in (doc.get("proposals") or {}).items()
+            if isinstance(v, dict) and v.get("state") == "proposed"}
+
+
+def accept_proposal(doc, qid, *, accepted_by="client", note=None):
+    """THE one proposal-acceptance transition, used by Skill 49 and Skill 83 alike.
+
+    Accepting turns the stored proposal into the answer, marked user_selected_recommendation and
+    leaving the artifact provenance intact. A proposal that needs a capability the run does not
+    have cannot be accepted into a confirmed fact: it stays unresolved, by name."""
+    p = (doc.get("proposals") or {}).get(qid)
+    if not isinstance(p, dict) or p.get("state") != "proposed":
+        return _refused("no_open_proposal", f"No open proposal is recorded for {qid}.")
+    if p.get("unresolved"):
+        entry = _set(doc, qid, p.get("action"), "unknown", f"proposal-accepted:{accepted_by}", note)
+        entry["accepted_proposal"] = True
+        entry["unresolved_capability"] = p.get("capability")
+        p["state"] = "accepted_unresolved"
+        _sync_to_confirm(doc)
+        return {"ok": True, "id": qid, "provenance": "unresolved_capability",
+                "capability": p.get("capability"), "entry": entry,
+                "message": f"Recorded, but {p.get('capability')} is not available in this run, so it stays open."}
+    entry = _set(doc, qid, p.get("action"), "provided", f"proposal-accepted:{accepted_by}", note)
+    entry["accepted_proposal"] = True
+    entry["proposal_artifact"] = p.get("artifact")
+    p["state"] = "accepted"
+    autofill_roles(doc)
+    derive_payment_plans(doc)
+    _sync_to_confirm(doc)
+    return {"ok": True, "id": qid, "provenance": "user_selected_recommendation", "entry": entry}
+
+
+# ---------------------------------------------------------------- revision
+# A change is reconciled, never re-interviewed: only the answers, approvals and artifacts the
+# change actually touches are reopened. Brand and context answers are never collateral.
+REVISION_DEPENDENTS = {
+    "upsell_1": ("downsell_1", "upsell_2"),   # no U1 means no D1 and no U2 route
+    "funnel_shape": ("price", "packages"),
+    "brand_colors": ("brand_primary", "brand_secondary", "brand_accent", "brand_background", "brand_text"),
+    "price": ("billing",),
+    "logo": ("logo_create",),
+}
+APPROVAL_ANSWERS = ("plan_approval",)
+
+
+def reconcile_revision(doc, changed):
+    """Reconcile a revision. `changed` is {question_id: new_value} for what the client changed.
+
+    Reopens only the dependent answers, drops the approvals tied to the changed plan, and leaves
+    every unrelated answer untouched. Returns what moved so the caller can re-plan exactly that."""
+    reopened, invalidated, kept = [], [], []
+    for qid in changed:
+        for dep in REVISION_DEPENDENTS.get(qid, ()):
+            if get(doc, dep) is not None:
+                _set(doc, dep, None, "unknown", f"reopened-by:{qid}", keep_count=False)
+                reopened.append(dep)
+        for approval in APPROVAL_ANSWERS:
+            e = get(doc, approval)
+            if e is not None and e["status"] != "unknown":
+                _set(doc, approval, None, "unknown", f"reopened-by:{qid}", keep_count=False)
+                invalidated.append(approval)
+            doc.get("meta", {}).pop("route_graph_ref", None)
+            doc.get("meta", {}).pop("route_graph_hash", None)
+    touched = set(changed) | set(reopened) | set(invalidated)
+    for qid, e in doc["answers"].items():
+        if qid not in touched and e.get("status") != "unknown":
+            kept.append(qid)
+    for qid in changed:
+        doc.get("proposals", {}).pop(qid, None)
+    _sync_to_confirm(doc)
+    return {"ok": True, "changed": sorted(changed), "reopened": sorted(set(reopened)),
+            "invalidated": sorted(set(invalidated)), "kept": sorted(kept),
+            "next_question": (next_question(doc) or {}).get("id")}
+
+
+# ---------------------------------------------------------------- billing terms, never flattened
+BILLING_TERMS_FIELDS = ("amount_minor", "currency", "interval", "interval_count", "installment_count",
+                        "trial", "upfront_minor", "total_commitment_minor")
+_INTERVAL_WORDS = (("month", "month"), ("week", "week"), ("year", "year"), ("quarter", "quarter"))
+_UNSUPPORTED_BILLING = ("recurring", "installment")
+BILLING_ALTERNATIVE = "one paid amount at checkout"
+BILLING_LIMIT = ("this release's checkout takes one paid amount per purchase, so it cannot charge a "
+                 "repeating or split payment")
+
+
+def billing_terms(doc):
+    """The complete billing terms for the offer, or None when billing is unanswered.
+
+    amount/currency come from the price or the cheapest package; interval, count, trial, upfront and
+    total commitment come from the client's own detail answer. A term the client did not give stays
+    None: a plan is never flattened into one-time and never invented."""
+    b = get(doc, "billing")
+    key = _billing_key(b["value"]) if b is not None and b["status"] != "unknown" else None
+    if key is None:
+        return None
+    price = val(doc, "price")
+    if not isinstance(price, dict) and val(doc, "packages"):
+        price = min((p.get("price") for p in val(doc, "packages") if isinstance(p.get("price"), dict)),
+                    key=lambda x: x["amount_minor"], default=None)
+    detail = val(doc, "billing_detail") or {}
+    terms = {f: None for f in BILLING_TERMS_FIELDS}
+    if isinstance(price, dict):
+        terms["amount_minor"], terms["currency"] = price.get("amount_minor"), price.get("currency")
+    if key == "recurring":
+        terms["interval"] = detail.get("interval") or "month"
+        terms["interval_count"] = detail.get("interval_count") or 1
+    elif key == "installment":
+        terms["installment_count"] = detail.get("installment_count")
+        terms["upfront_minor"] = detail.get("upfront_minor")
+        terms["trial"] = detail.get("trial")
+    if terms["amount_minor"] is not None:
+        n = terms["installment_count"] or terms["interval_count"] or 1
+        terms["total_commitment_minor"] = terms["amount_minor"] * (n if key != "one_time" else 1)
+    e = get(doc, "billing")
+    return dict(terms, billing_type=key, source_ref="answers-file:billing",
+                state=_STATE.get(e["status"], "unknown") if e else "unknown")
+
+
+def billing_supported(doc):
+    """Whether the selected execution path can bill this plan, and when it cannot, the specific limit
+    plus ONE supported alternative. The request itself stays unresolved until the alternative is
+    accepted, so nothing is silently flattened into a one-time payment."""
+    terms = billing_terms(doc)
+    if terms is None:
+        return {"supported": True, "billing_type": None, "limit": None, "alternative": None,
+                "unresolved": False}
+    key = terms["billing_type"]
+    if key in _UNSUPPORTED_BILLING:
+        return {"supported": False, "billing_type": key, "requested": terms,
+                "limit": BILLING_LIMIT, "alternative": BILLING_ALTERNATIVE,
+                "unresolved": True,
+                "message": (f"Your {key.replace('installment', 'split-payment')} plan needs billing this "
+                            f"release does not have: {BILLING_LIMIT}. The one plan I can build is "
+                            f"{BILLING_ALTERNATIVE}. I have kept your request as it is until you choose.")}
+    return {"supported": True, "billing_type": key, "terms": terms, "limit": None,
+            "alternative": None, "unresolved": False}
+
+
+# ---------------------------------------------------------------- extra-offer prose
+_OFFER_PRICE_RE = re.compile(r"[$€£]\s*\d[\d,]*(?:\.\d{1,2})?|\b(?:USD|EUR|GBP)\s*\d[\d,]*(?:\.\d{1,2})?|\b\d[\d,]*\s*(?:USD|EUR|GBP)\b", re.I)
+
+
+# How a buyer receives the offer, and whether it exists yet: read only from the client's own words.
+# No hint means the fact is missing, and missing stays missing.
+_DELIVERY_HINTS = (
+    ("generated", ("pdf", "template", "download", "video", "recordings", "checklist", "guide", "workbook", "file")),
+    ("human_service", ("call", "session", "coaching", "done-for-you", "done for you", "1:1", "live", "consultation", "review", "service")),
+    ("physical", ("ship", "shipped", "printed", "book", "kit")),
+)
+_PRODUCTION_HINTS = (
+    ("ready_now", ("ready", "already", "have it", "exists")),
+    ("being_made", ("being made", "in progress", "building", "half done")),
+    ("needs_creation", ("create", "make it", "record it", "write it", "new", "not yet")),
+)
+
+
+def _first_hint(low, hints):
+    for value, words in hints:
+        if any(w in low for w in words):
+            return value
+    return None
+
+
+def normalize_offer_prose(text, *, qid=None):
+    """Ordinary extra-offer prose -> the existing structured offer record, keeping the source text.
+
+    Name, deliverables and price are read from what the client wrote; a part they did not give stays
+    missing, never invented. The prose is preserved verbatim under source_text so nothing is lost."""
+    raw = str(text or "").strip()
+    out = {"display_name": None, "deliverables": [], "price": None,
+           "source_text": raw, "source_ref": (f"answers-file:{qid}" if qid else None),
+           "missing": []}
+    if not raw:
+        out["missing"] = ["whole offer"]
+        return out
+    money = _OFFER_PRICE_RE.search(raw)
+    if money:
+        parsed = _money(money.group(0))
+        if parsed:
+            out["price"] = parsed
+    head = _OFFER_PRICE_RE.sub(" ", raw).strip(" ,;.-")
+    name = re.split(r"\s*(?:\||:|\s-\s|\(|,)\s*", head, maxsplit=1)[0].strip()
+    out["display_name"] = name or None
+    tail = head[len(name):].strip(" ,;.-|:") if name else head
+    items = [x.strip() for x in re.split(r";|\n|,", tail) if x.strip()]
+    out["deliverables"] = items
+    if not out["display_name"]:
+        out["missing"].append("name")
+    if not out["price"]:
+        out["missing"].append("price")
+    if not out["deliverables"]:
+        out["missing"].append("what the buyer gets")
+    low = " " + _norm(raw) + " "
+    # delivery method and production status are read from the same words; no hint leaves them absent
+    out["delivery_kind"] = _first_hint(low, _DELIVERY_HINTS)
+    out["production_status"] = _first_hint(low, _PRODUCTION_HINTS)
+    return out
+
+
+OFFER_RECORD_FIELDS = ("offer_id", "product_id", "product_role", "display_name", "audience_problem",
+                       "promised_result", "deliverables", "price", "billing_type", "delivery_kind",
+                       "production_status", "native_product_id", "native_price_id", "pages", "source_text")
+
+
+def offer_record(doc, qid, *, role=None, product_role=None):
+    """One real offer, as the launch model records it: a role SEPARATE from the product identity,
+    the audience problem it solves, the result it promises, what the buyer gets, its price and
+    payment choice, how it is delivered, whether it exists yet, its native ids when known, and the
+    pages that use it. A fact the client did not give stays None; nothing is invented."""
+    e = get(doc, qid)
+    if e is None or e["status"] == "unknown" or e["value"] in (None, "none"):
+        return None
+    v = e["value"]
+    v = v if isinstance(v, dict) else normalize_offer_prose(v, qid=qid)
+    name = v.get("display_name")
+    price = v.get("price")
+    if qid == "price":  # the price question answers the price; the offer's identity is its own answer
+        name, price = val(doc, "offer_name") or name, v if "amount_minor" in v else price
+    billing = _billing_key((get(doc, "billing") or {}).get("value"))
+    main = qid in ("price", "packages", "offer_name")
+    return {
+        "offer_id": (qid if qid != "price" else "MAIN").upper().replace("_", "-"),
+        "product_id": _slug_name(name) if name else None,
+        "product_role": product_role or _ROLE_OF_QUESTION.get(qid) or (
+            _TIER_IN_SHAPE.get(val(doc, "funnel_shape") or "", None) if qid == "price" else None),
+        "role": role or OFFER_ROLE_OF.get(qid, "main"),
+        "display_name": name,
+        # the main offer's problem and result are already answered; an extra offer keeps its own when
+        # the client stated them on the offer, and stays None when they did not
+        "audience_problem": (val(doc, "pains") or None) if main else v.get("audience_problem"),
+        "promised_result": (val(doc, "offer_transformation") if main else v.get("promised_result")),
+        "deliverables": v.get("deliverables") or [],
+        "price": price,
+        "billing_type": billing,
+        "delivery_kind": v.get("delivery_kind"),
+        "production_status": v.get("production_status"),
+        "native_product_id": (v.get("checkout") or {}).get("native_product_id"),
+        "native_price_id": (v.get("checkout") or {}).get("native_price_id"),
+        "pages": _pages_for(doc, OFFER_ROLE_OF.get(qid, "main")),
+        "source_text": v.get("source_text"),
+    }
+
+
+# a question id -> the page-level role it plays, and the product identity it names
+OFFER_ROLE_OF = {"price": "main", "packages": "main", "bump": "bump", "upsell_1": "upsell_1",
+                 "downsell_1": "downsell_1", "upsell_2": "upsell_2", "lead_magnet": "free_entry"}
+_ROLE_OF_QUESTION = {"lead_magnet": "free_lead", "bump": "bump", "upsell_1": "upsell_1",
+                     "downsell_1": "downsell_1", "upsell_2": "upsell_2"}
+_TIER_IN_SHAPE = {"single_simple": "mid"}
+
+
+def _slug_name(name):
+    return re.sub(r"[^A-Za-z0-9]+", "-", str(name or "")).strip("-").upper() or None
+
+
+def _pages_for(doc, role):
+    """The pages that actually use this offer, from the existing page set. Never every page."""
+    pages = ["sales", "checkout"]
+    if role == "free_entry":
+        return ["opt_in", "thank_you"]
+    if role == "main" and (val(doc, "funnel_shape") == "multiple_options"):
+        pages.insert(1, "product_selection")
+    if role in ("upsell_1", "downsell_1", "upsell_2"):
+        pages = ["sales", "checkout"]
+    pages.append("thank_you")
+    return pages
+
+
+# ---------------------------------------------------------------- one approved brand record
+LOGO_VARIANTS = ("existing_file", "wordmark", "created")
+# The existing graphics capability the launch already uses for its pictures: Skill 66 (kie-image)
+# draws, and Skill 83's graphics hooks carry the QC and delivery record. Nothing new is invented.
+GRAPHICS_CAPABILITY = {"name": "kie-image", "skill": 66, "produces": "logo",
+                       "qc": "83:launcher_core.graphics_hooks", "blocking": False}
+
+
+def _logo_variant(doc):
+    e = get(doc, "logo")
+    v = e["value"] if e and e["status"] != "unknown" else None
+    if e is None or e["status"] == "unknown":
+        return {"kind": None, "state": "unknown"}
+    if isinstance(v, dict):
+        mode = v.get("mode")
+        if mode == "create" or v.get("create"):
+            return {"kind": "created", "state": "pending_assets", "brief": v.get("brief"),
+                    "provenance": provenance_of(e)}
+        if mode == "wordmark":
+            return {"kind": "wordmark", "text": v.get("text") or val(doc, "business_name"),
+                    "state": "provided", "provenance": provenance_of(e)}
+        return {"kind": "existing_file", "path": v.get("path"), "state": "provided",
+                "provenance": provenance_of(e)}
+    return {"kind": "existing_file", "path": str(v), "state": "provided", "provenance": provenance_of(e)}
+
+
+def logo_brief(doc):
+    """The brief handed to the existing graphics capability when the client asks for a new logo.
+
+    Built only from facts the client gave; the run continues with offer and copy work while the
+    asset is made, so this is never a blocking gate."""
+    name = val(doc, "business_name")
+    r = roles(doc)
+    # no colours yet: the brief carries the small coherent palette we recommend, as a proposal
+    palette = (r or {}).get("roles")
+    if not palette:
+        rec = recommended_palette(doc, val(doc, "voice") or "")
+        palette = (rec or {}).get("proposal", {}).get("roles")
+    return {"schema": "logo-brief/v1",
+            "business_name": name,
+            "wordmark_text": name,
+            "palette": palette,
+            "voice": val(doc, "voice"),
+            "design_style": val(doc, "design_style"),
+            "image_direction": val(doc, "visual_direction"),
+            "usage": ["site_header", "checkout", "email_header", "social_avatar"],
+            "must_not": ["redraw a logo the client already has", "invent a trademark or registration"],
+            "capability": GRAPHICS_CAPABILITY}
+
+
+def brand_record(doc):
+    """ONE approved brand record every page reads: logo variants, colour roles, typography, image
+    direction and voice, each carrying its provenance class.
+
+    Assets that are still being made are `pending_assets` and never block the offer or copy work."""
+    r = roles(doc)
+    logo = _logo_variant(doc)
+    jobs = []
+    if logo["kind"] == "created":
+        brief = logo.get("brief") or logo_brief(doc)
+        jobs.append({"asset": "logo", "capability": GRAPHICS_CAPABILITY,
+                     "brief": brief, "blocking": False, "state": "queued"})
+    typo = val(doc, "fonts") or {}
+    voice = val(doc, "voice")
+    direction = {"design_style": val(doc, "design_style"),
+                 "creative_direction": val(doc, "visual_direction")}
+    statuses = [provenance_of(get(doc, q)) for q in ("logo", "brand_colors", "fonts", "design_style", "voice")]
+    if logo["kind"] == "created" or "pending_assets" in (logo.get("state"),):
+        # the logo is being made: one record, not yet final, and it never blocks offer or copy work
+        status = "pending_assets"
+    elif logo["kind"] is None or not r:
+        status = "pending"
+    elif "unresolved_capability" in statuses:
+        status = "pending_assets"
+    elif "ai_proposal" in statuses:
+        status = "proposed"
+    else:
+        status = "approved"
+    return {"schema": "brand-record/v1", "status": status,
+            "logo_variants": [logo],
+            "colors": {"roles": (r or {}).get("roles"), "status": (r or {}).get("status"),
+                       "warnings": (r or {}).get("warnings", [])},
+            "typography": {"value": typo, "provenance": provenance_of(get(doc, "fonts"))},
+            "image_direction": direction,
+            "voice": {"value": voice, "provenance": provenance_of(get(doc, "voice"))},
+            "asset_jobs": jobs,
+            "work_independent": {"offers": True, "copy": True, "assets": status != "approved"},
+            "blocks_offer_work": False}
+
+
+def asset_map(doc):
+    """Every page reads this one map for its files. A slot that is still being made says so."""
+    out = {}
+    logo = _logo_variant(doc)
+    out["logo"] = {"state": "pending_assets" if logo["kind"] == "created" else logo.get("state"),
+                   "variant": logo["kind"], "path": logo.get("path"),
+                   "brief": logo.get("brief") if logo["kind"] == "created" else None}
+    photos = val(doc, "photos_founder")
+    out["founder_photo"] = {"state": "provided" if isinstance(photos, str) and photos.startswith("yes") else "empty_frame",
+                            "path": None}
+    return {"schema": "asset-map/v1", "slots": out, "source": "brand_record"}
+
+
+def recommended_palette(doc, mood=""):
+    """A small coherent palette when the client has no colours yet, as a proposal, never a fact."""
+    seed = (_colors(doc) or [None])[0]
+    pals = ph.suggest_palettes(seed, mood or "")
+    if not pals:
+        return None
+    best = pals[0]
+    return {"proposal": best, "provenance": "ai_proposal", "alternatives": pals[1:],
+            "message": "I suggest this small palette; say yes to use it, or send your own colours."}
+
+
 # ---------------------------------------------------------------- CLI
 def _flag(a, name):
     return a[a.index(name) + 1] if name in a else None
@@ -1505,6 +2111,20 @@ def main(argv=None):
             print(f"TO CONFIRM  {t['id']}: {t['value']}\n    {t['reason']}\n    {t['how_to_change']}")
     elif cmd == "show":
         print(json.dumps(view(doc), indent=2))
+    elif cmd == "route" and len(a) >= 3:
+        print(json.dumps(apply_mode(doc, " ".join(a[2:]), asked=True), indent=2))
+    elif cmd == "propose" and len(a) >= 3:
+        print(json.dumps(propose(doc, a[2], action=(a[3] if len(a) > 3 else None)), indent=2))
+    elif cmd == "accept" and len(a) >= 3:
+        print(json.dumps(accept_proposal(doc, a[2]), indent=2))
+    elif cmd == "reconcile" and len(a) >= 3:
+        print(json.dumps(reconcile_revision(doc, {a[2]: (a[3] if len(a) > 3 else None)}), indent=2))
+    elif cmd == "brand-record":
+        print(json.dumps({"brand": brand_record(doc), "assets": asset_map(doc)}, indent=2))
+    elif cmd == "billing":
+        print(json.dumps({"terms": billing_terms(doc), "supported": billing_supported(doc)}, indent=2))
+    elif cmd == "proposals":
+        print(json.dumps(proposals(doc), indent=2))
     else:
         print(__doc__)
         return 2
