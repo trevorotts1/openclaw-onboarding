@@ -6,7 +6,9 @@ prompts (Kie.ai gpt-image-2.5). A clone of the presentations two-floor prompt ga
 enforcer (shared-utils/kie_prompt_enforcer.py) instead of a band of its own.
 
 THE TWO FLOORS (both must clear or the prompt NEVER reaches a paid Kie call):
-  FLOOR 1 — LENGTH: 80 percent <= stripped chars <= 100 percent of the model max. -> AF-FUN-PROMPT-FLOOR / -CEILING
+  FLOOR 1 — LENGTH: strict 95 percent <= stripped chars <= 100 percent of the verified
+            model max (F18 2026-11-07; below 95 fails, above the max fails, an unknown max
+            refuses). -> AF-FUN-PROMPT-FLOOR / -CEILING
   FLOOR 2 — STRUCTURE/EXCELLENCE: a real rich prompt carries the load-bearing blocks:
     * the SIGNATURE GRADE BLOCK fingerprint (the canonical grade paragraph, 2.4). -> AF-FUN-PROMPT-GRADE
     * a final-paragraph NEGATIVE BLOCK with at least one 'Do not ' imperative.     -> AF-FUN-PROMPT-NEGATIVE
@@ -49,6 +51,24 @@ def _load_kie_prompt_enforcer():
 
 
 KPE = _load_kie_prompt_enforcer()
+
+
+def _load_prompt_policy():
+    """The ONE canonical prompt policy (shared-utils/prompt_policy.py)."""
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
+    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+        Path.home() / ".openclaw" / "skills" / "shared-utils", Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "prompt_policy.py").is_file():
+            if str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+            import prompt_policy
+            return prompt_policy
+    return None
+
+
+POLICY = _load_prompt_policy()
 
 EXIT_OK = 0
 EXIT_VIOLATION = 2
@@ -170,23 +190,44 @@ def _check_grade_block(stripped: str, lc: str, who: str) -> List[Tuple[str, str]
              f">={GRADE_CONTIGUOUS_NORM_CHARS}-char verbatim run) — missing e.g.: {miss_preview}")]
 
 
-def evaluate_prompt(record: Dict[str, Any]) -> List[Tuple[str, str]]:
-    """Return a list of (AF-code, message) for ONE image-prompt record. Empty == clean."""
+def evaluate_prompt(record: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], Optional[Dict[str, Any]]]:
+    """Return (list of (AF-code, message), frozen policy receipt). Empty failures == clean.
+
+    The length verdict and the frozen hash come from the ONE canonical policy service.
+    A record that carries `prompt_sha256` (the review artifact's hash) is bound to the
+    SAME frozen string; a stale review fails rather than authorizing a different prompt.
+    """
     fails: List[Tuple[str, str]] = []
+    receipt = None
     who = f"page '{record.get('page_type', '?')}' section {record.get('section', '?')}"
     prompt = record.get("prompt")
     if not isinstance(prompt, str) or not prompt.strip():
         fails.append(("AF-FUN-PROMPT-FLOOR", f"{who}: empty / whitespace-only prompt"))
-        return fails
+        return fails, receipt
 
     stripped = _stripped(prompt)
     lc = stripped.lower()
+    model = str(record.get("model") or IMAGE_MODEL_DEFAULT)
 
-    # FLOOR 1 — length band (KIE rule 12 through the shared enforcer)
-    verdict = KPE.check(str(record.get("model") or IMAGE_MODEL_DEFAULT), stripped)
-    if not verdict["ok"]:
-        code = "AF-FUN-PROMPT-CEILING" if verdict["status"] == "ABOVE_MAX" else "AF-FUN-PROMPT-FLOOR"
-        fails.append((code, f"{who}: {verdict['message']}; NOT sent to Kie"))
+    # FLOOR 1 — length band (strict 95-100 percent through the one policy service)
+    if POLICY is not None:
+        receipt = POLICY.freeze(stripped, model=model,
+                                review_ref=record.get("prompt_sha256"),
+                                job_id=record.get("job_id"))
+        if not receipt["verdict"]["ok"]:
+            status = receipt["verdict"]["status"]
+            code = "AF-FUN-PROMPT-CEILING" if status == "ABOVE_MAX" else "AF-FUN-PROMPT-FLOOR"
+            fails.append((code, f"{who}: {receipt['verdict']['message']}; NOT sent to Kie"))
+    else:
+        verdict = KPE.check(model, stripped)
+        if not verdict["ok"]:
+            code = "AF-FUN-PROMPT-CEILING" if verdict["status"] == "ABOVE_MAX" else "AF-FUN-PROMPT-FLOOR"
+            fails.append((code, f"{who}: {verdict['message']}; NOT sent to Kie"))
+        receipt = {"final_prompt_sha256": verdict.get("prompt_sha256"),
+                   "count": verdict.get("count"), "max": verdict.get("max"),
+                   "ratio": verdict.get("ratio"),
+                   "policy_version": verdict.get("policy_version"),
+                   "payload_sha256": None}
 
     # FLOOR 2 — density
     distinct = _distinct_words(stripped)
@@ -232,7 +273,7 @@ def evaluate_prompt(record: Dict[str, Any]) -> List[Tuple[str, str]]:
             fails.append(("AF-FUN-PROMPT-TYPO",
                           f"{who}: non-text prompt does not state 'no text / no letters / no words'"))
 
-    return fails
+    return fails, receipt
 
 
 def verify(ledger: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], List[str]]:
@@ -246,8 +287,19 @@ def verify(ledger: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], List[str]]:
         if not isinstance(rec, dict):
             violations.append(("AF-FUN-PROMPT-FLOOR", "a prompt entry is not an object"))
             continue
-        violations.extend(evaluate_prompt(rec))
-    notes.append(f"checked {len(prompts)} image prompt(s) against the KIE rule 12 length band")
+        got, receipt = evaluate_prompt(rec)
+        violations.extend(got)
+        if receipt:
+            payload_sha = (POLICY.payload_sha256(
+                {"model": str(rec.get("model") or IMAGE_MODEL_DEFAULT),
+                 "input": {"prompt": receipt.get("prompt")}})
+                if POLICY is not None and receipt.get("prompt") is not None else None)
+            notes.append(
+                "frozen %s section %s: %s chars, %.2f%% of %s, prompt sha256 %s, payload %s"
+                % (rec.get("page_type", "?"), rec.get("section", "?"), receipt.get("count"),
+                   receipt.get("ratio") or 0.0, receipt.get("max"),
+                   receipt.get("final_prompt_sha256"), payload_sha))
+    notes.append(f"checked {len(prompts)} image prompt(s) against the strict 95-100 percent band")
     return violations, notes
 
 
