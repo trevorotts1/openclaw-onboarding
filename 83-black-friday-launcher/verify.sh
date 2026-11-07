@@ -51,8 +51,30 @@ echo "== open and decided seams =="
 # is installed here, exactly as conftest.py installs it for pytest: once before any setUpClass, and again
 # around every test (test_entitlement_readback resets the seam itself). Fixtures name TEST-ONLY references
 # only; the transport resolves those and nothing else, and no test is skipped.
+# The unittest runner is BOUNDED. Eight client boxes had to find and SIGTERM a
+# spinning runner by hand because this script had no ceiling.
+# The bound is a background job plus a watchdog, deliberately not timeout(1):
+# on macOS coreutils timeout exists only via Homebrew, and under a clean
+# /usr/bin:/bin:/usr/sbin:/sbin PATH neither `timeout` nor `gtimeout` resolves
+# (measured), so relying on it would bound the operator box and hang every other
+# one. perl is the same kind of "usually there" bet. The shell is always present.
+# The watchdog writes an explicit marker only when it actually delivered the
+# TERM, so exit 124 means exactly "the bound fired" and a stray SIGKILL (an OOM
+# kill, say) keeps its own status instead of being misreported as a timeout.
+# A healthy stage-1 discovery measured 633 s on a quiet Mac Mini and 807.881 s
+# on the same box under load (Ran 657 tests), so the bound has to clear the SLOW
+# end by a real margin: 1800 s is 2.2x the contended measurement. Anything near
+# the quiet number would convert a passing but busy box into a false timeout.
+# UNIT_TIMEOUT=<seconds> moves the bound without editing this file.
+UNIT_TIMEOUT="${UNIT_TIMEOUT:-1800}"
+case "$UNIT_TIMEOUT" in
+    '' | *[!0-9]*) echo "verify: UNIT_TIMEOUT must be whole seconds, got '$UNIT_TIMEOUT'" >&2; exit 1 ;;
+esac
+
 run_unittest() {
-    "$PY" - "$HERE" "$@" <<'RUNNER'
+    local mark pid wd rc=0 waited=0
+    mark="$(mktemp "${TMPDIR:-/tmp}/bf83-unit.XXXXXX")" || return 1
+    "$PY" - "$HERE" "$@" <<'RUNNER' &
 import sys
 import unittest
 
@@ -76,6 +98,35 @@ def run(self, result=None):
 unittest.TestCase.run = run
 unittest.main(module=None, argv=["unittest", "discover", *argv], exit=True)
 RUNNER
+    pid=$!
+    # ponytail: this kills one pid, not a process group, so a stuck GRANDCHILD
+    # of the runner would survive. The reported spinner was the top-level runner
+    # itself (faulthandler stack), so one pid is enough; add `set -m` plus
+    # `kill -TERM -- -$pid` if a grandchild ever turns out to spin.
+    ( while [ "$waited" -lt "$UNIT_TIMEOUT" ] && kill -0 "$pid" 2>/dev/null; do
+          sleep 1; waited=$((waited + 1))
+      done
+      # The runner finished on its own: nothing to bound.
+      kill -0 "$pid" 2>/dev/null || exit 0
+      printf 'timed out\n' >"$mark"
+      kill -TERM "$pid" 2>/dev/null || true
+      sleep 5
+      kill -KILL "$pid" 2>/dev/null || true ) &
+    wd=$!
+
+    # A genuinely failing test still returns unittest's own status here, and a
+    # crash keeps its own status; only the marker path returns 124.
+    wait "$pid" || rc=$?
+    kill "$wd" 2>/dev/null || true
+    wait "$wd" 2>/dev/null || true
+
+    if [ -s "$mark" ]; then
+        echo "verify: the unittest runner exceeded UNIT_TIMEOUT=${UNIT_TIMEOUT}s and was killed" >&2
+        rm -f "$mark"
+        return 124
+    fi
+    rm -f "$mark"
+    return "$rc"
 }
 
 echo "== unit + integration checks =="
