@@ -346,6 +346,9 @@ def validate_launch(launch: Any) -> List[str]:
                 fail("free_entry.delivery_ref is required (null when no real "
                      "delivery reference exists yet; a missing key is not a "
                      "recorded gap)")
+            if isinstance(free.get("delivery_ref"), str) and not free["delivery_ref"].strip():
+                fail("free_entry.delivery_ref, when a string, must be the real "
+                     "delivery reference; null is the recorded gap")
             if "source_ref" in free and (not isinstance(free["source_ref"], str)
                                          or not free["source_ref"].strip()):
                 fail("free_entry.source_ref, when present, must resolve back to the "

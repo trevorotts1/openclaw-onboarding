@@ -431,6 +431,8 @@
             "string",
             "null"
           ],
+          "minLength": 1,
+          "pattern": "\\S",
           "description": "The real delivery reference the free item is handed over with (hosted asset URL, access link, or fulfillment reference). null until a real one exists; a null here is a recorded gap, not a delivery."
         },
         "source_ref": {
