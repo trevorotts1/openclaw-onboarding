@@ -164,13 +164,18 @@ def _canonical_trigger(step: dict, raw_type: str) -> dict:
     return {"type": raw_type}
 
 
-def _export_allow_multiple(obj: dict, workflow_data: dict) -> bool:
+def _export_allow_multiple(obj: dict, workflow_data: dict):
+    """The native Allow Reentry value, or None when the export does not report it.
+
+    F05: an absent value is an UNOBSERVED setting, not False.  Normalising it
+    to False would let the receiver claim a reentry state it never read.
+    """
     for key in _REENTRY_KEYS:
         for source in (obj, workflow_data):
             value = source.get(key)
             if isinstance(value, bool):
                 return value
-    return False
+    return None
 
 
 def _normalize_export(obj: dict, workflow_id: str) -> dict:

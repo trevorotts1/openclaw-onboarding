@@ -74,6 +74,17 @@ survives tab close and extra-offer failure).
   region, the summary as a real text table, per-item Paid / Pending /
   Failed labels, access blocks only for entitlements in the view, and
   every action carrying its allowed `data-cta-class`.
+- `scripts/build_thank_you_page.py` — the production page: wraps the
+  unchanged fragment in a full HTML document and adds the buyer's
+  DELIVERY INSTRUCTIONS, one per actually purchased item (from the
+  fulfillment/entitlement read; never invented). It refuses a view not
+  built from a verified purchase snapshot, an item slot the approved
+  route graph does not carry, and any access block whose item is not
+  `paid` in this view — so visiting U1/D1/U2 without buying can never
+  show that offer's access. It renders state only: it grants nothing,
+  sends nothing, and is not on the fulfilment path, so closing the
+  browser before thank-you cannot deny a confirmed buyer access.
+  Self-check: `python3 scripts/build_thank_you_page.py --selftest --out-dir <dir>`.
 - `schemas/thank-you-request.schema.json`,
   `schemas/thank-you-result.schema.json`,
   `schemas/order-view.schema.json`,
@@ -163,6 +174,9 @@ python3 scripts/confirmation_observation.py --view order-view.json
 python3 scripts/run_manifest.py --view order-view.json [--snapshot snapshot.json] [--fulfillment fulfillment.json]
 python3 scripts/purchase_event_adapter.py --events purchase-events.json [--require-live-evidence]
 python3 scripts/semantic_scan.py rendered-thank-you.html
+python3 scripts/build_thank_you_page.py --view order-view.json \
+    --fulfillment fulfillment.json --route-graph route-graph.json \
+    [--brand brand.json] --out-dir <dir>
 python3 -m unittest discover -s tests -v
 ```
 

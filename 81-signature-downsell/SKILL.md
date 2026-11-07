@@ -6,7 +6,26 @@ version: 0.1.7
 
 # Signature Downsell Page (Skill 81)
 
-Status: design package (Signature Launch packet v1.0, spec 11), shipped in this repo at the version above. **Design only; not installed.** The package holds the copy contract, design profile, schemas, validators, fixtures and tests. It has no runtime: nothing here installs the D1 page or its one-click action, and Skill 6 has no D1 install step yet (scheduled Skill 06 work items S06-02 and UPS-08). Every D1 result and client summary line must read "design only; not installed" until Skill 6 records a binding read-back for D1.
+Status: design package (Signature Launch packet v1.0, spec 11), shipped in this repo at the version above. **Design only; not installed.** The package holds the copy contract, design profile, schemas, validators, fixtures, tests and the S06 install plan layer. Every D1 result and client summary line must read "design only; not installed" until Skill 6 records a binding read-back for D1.
+
+### Production handoff (added; still not installed)
+
+`adapters/s06_install_wrapper.py` now carries the production handoff,
+`production_handoff(request, product_binding, page_bundle, route_graph)`. It
+builds the S06 install plan and extends it with `handoff`: the D1 page id, the
+native product/price, the purchase and decline action refs, the paid and
+decline targets READ from the approved route graph, the pending/failed
+behaviour (neither acceptance nor decline), the rail entry
+(`06-ghl-install-pages/tools/ghl_funnel_steps.install_funnel`, offer role
+`downsell_1`), and `installed: false`. It refuses a graph that is not the
+approved one: a page id, success route, decline route or canonical U2 id that
+diverges from the graph fails closed, so page generation, the native button
+configuration and the workflow delivery all read ONE route source.
+
+A handoff is not evidence of an installed binding: `binding_readback.recorded`
+stays false until a real install read-back exists, and `install_d1_page`
+still refuses by name (S06-02 / UPS-08). Self-check:
+`python3 adapters/s06_install_wrapper.py --selftest`.
 
 ## Route responsibility (packet 02 section 4, binding)
 

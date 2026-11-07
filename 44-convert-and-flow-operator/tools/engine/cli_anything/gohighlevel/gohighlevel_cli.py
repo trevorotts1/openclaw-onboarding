@@ -1456,7 +1456,14 @@ def workflows_build(ctx, plan_file, automation_file, journal_path, folder, check
                 "errors": errors,
                 "workflows": [
                     {"key": k, "name": v.get("name"), "unit_key": v.get("unit_key"),
-                     "phase": v.get("phase"), "steps": len(v.get("templates") or [])}
+                     "phase": v.get("phase"), "steps": len(v.get("templates") or []),
+                     # which compiler shape ran, what browser work is still
+                     # owed, and which channel actions are not complete
+                     "compile_mode": v.get("compile_mode"),
+                     "browser_steps": len(v.get("browser_steps") or []),
+                     "channel_actions": v.get("channel_actions"),
+                     "incomplete_actions": v.get("incomplete_actions") or [],
+                     "purchase_identity": v.get("purchase_identity")}
                     for k, v in campaign.items()
                 ],
             }

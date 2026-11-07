@@ -20,14 +20,27 @@ verified-purchase eligibility, exact disclosure, and native one-click binding.
 > the frontmatter above and in `skill-version.txt`) for owner batch approval.
 > It is merged to main, but it is **NOT production-ready.**
 >
-> **U1 and U2 are DESIGN DELIVERABLES ONLY.** This skill produces approved
-> copy, adapter bundles, wireframes and mockups. It has **no production HTML
-> builder**: `components/pages/render_pages.py` renders three fixed TEST ONLY
-> bundles, consumes no brand tokens and no Skill 71 image map, and refuses to
-> run without `--test-only` (exit 2, message points here). No step in this
-> skill turns an approved upsell design into a page a client can publish; a
-> production renderer that consumes the bundle, the brand tokens and the
-> Skill 71 image map is future work and is not claimed anywhere below.
+> **U1 and U2 are DESIGN DELIVERABLES, and the production page builder is
+> now separate from the TEST ONLY renderer.** This skill produces approved
+> copy, adapter bundles, wireframes and mockups, and it ships ONE production
+> constructor: `components/pages/build_production_pages.py`. It builds the
+> U1, D1 and U2 pages as full publishable documents from the approved route
+> graph, the approved launch record's verified native product/price ids, the
+> copy documents and the brand tokens. It refuses - writing nothing - when
+> the route graph is missing or diverges from the launch record's
+> `route_graph_hash`, when the checkout family is not identified, when an
+> enabled slot has no native product/price, when any CTA ref diverges, or
+> when a purchase control navigates instead of carrying the native one-click
+> action. Every purchase CTA is a `<button>` bound to the slot's native
+> product/price inside the native payment session with NO href; the only
+> navigation on a page is the explicit-decline control
+> (`data-charges="false"`), and each page carries its own slot identity so
+> two upsells can never share a key.
+>
+> `components/pages/render_pages.py` is UNCHANGED: it remains the TEST ONLY
+> local renderer (three fixed fixture bundles, neutral styling, no brand, no
+> native ids) and still refuses without `--test-only` (exit 2, message
+> points here). Nothing here claims a page has been installed or published.
 >
 > What is proven is local only:
 > L0 schema/static checks, L1 deterministic tests, and L2 local rendered
@@ -48,9 +61,10 @@ verified-purchase eligibility, exact disclosure, and native one-click binding.
 >   association, the successful-purchase redirect, and the native
 >   configuration screenshot are provisioned and verified through Skill 6;
 >   that install is gated on S06 answers to open questions Q1–Q6, formally
->   requested in `CR-S80-001` (S80 → S06, cc S79, 2026-10-16). Until then
->   every rendered CTA binds the interface-conformant binding ref and
->   cannot charge anything.
+>   requested in `CR-S80-001` (S80 → S06, cc S79, 2026-10-16). The
+>   production builder carries `action_id: null` for the same reason: it
+>   binds the verified product/price from the launch record, not a live
+>   action id.
 > - **L3 (installed GHL test location) and L4 (native sandbox payment) are
 >   `not_run`.** S80-09 installed purchase tests have not run; they require
 >   the S06 native install and an approved test location.
@@ -58,14 +72,14 @@ verified-purchase eligibility, exact disclosure, and native one-click binding.
 >   exist in the build environment, but neither produced a screenshot file
 >   when invoked headlessly; no screenshot was fabricated. The spec §8
 >   mockup-vs-render screenshot comparison remains open.
-> - **Brand tokens and final imagery are not in the rendered pages here.**
->   Wireframes and mockups (desktop and mobile, review PDFs, overview boards,
->   Design Board for the page role) come from Skill 71's page-type runner
+> - **Brand tokens and final imagery.** The production builder accepts brand
+>   tokens (`--brand`) and applies the primary/text/background/tint colors;
+>   wireframes and mockups still come from Skill 71's page-type runner
 >   (`71-blackceo-signature-page/scripts/run_page_type.py`, spec
 >   `71-blackceo-signature-page/references/copy-specs/upsell-v6.json`),
 >   called by Skill 49's `49-signature-funnel/scripts/upsell_wrapper.py
->   --bridge-config`. The HTML pages in this skill use
->   neutral TEST ONLY styling and carry no images; no brand was invented.
+>   --bridge-config`. The TEST ONLY pages carry no images; no brand was
+>   invented.
 > - All shipped fixtures are **TEST ONLY**. No production copy may be trusted
 >   on a validator PASS alone: deterministic checks enforce evidence
 >   *structure*; the *truth* of a referenced record is proven at S49 /
@@ -269,7 +283,28 @@ Pages (run from the skill root):
 ```bash
 python3 components/pages/render_pages.py --test-only   # TEST ONLY: regenerates the fixture HTML deterministically; exits 2 without --test-only
 python3 components/pages/check_pages.py    # L2 assertions over 3 instances x 8 states
+python3 components/pages/build_production_pages.py --selftest --out-dir <dir>   # PRODUCTION: builds U1/D1/U2 from the real Skill 49 compiler output
 ```
+
+Production pages (one route graph, one checkout family, verified native ids):
+
+```bash
+python3 components/pages/build_production_pages.py \
+    --launch  <approved-launch-record.json> \
+    --route-graph <approved-route-graph.json> \
+    --checkout-family order_upsell_v2_funnel \
+    --copy upsell_1=components/80-signature-upsell/fixtures/copy-upsell1-public.valid.json \
+    --copy upsell_2=components/80-signature-upsell/fixtures/copy-upsell2-public.valid.json \
+    --downsell-page ../81-signature-downsell/fixtures/valid-downsell-page.json \
+    --brand <brand-tokens.json> \
+    --out-dir <output-directory>
+```
+
+It writes one page per enabled slot plus `manifest.json`, and exits 2 having
+written nothing on any refusal. The `--selftest` form drives the REAL Skill 49
+compiler, so the pages are proven against the compiler's own graph (hash
+`622e345b…` equals the launch record's `route_graph_hash`), not a hand-written
+one.
 
 Whole package:
 
@@ -292,15 +327,23 @@ page and native action; S44 maps native purchase events back to the
 `upsell_1` / `upsell_2` slots. Worked examples live in `examples/` (example
 result bundles and requests, byte-identical to the verified fixtures).
 
+The production builder's `manifest.json` is the machine handoff to Skill 6:
+one entry per built slot carrying the page id, the file and its sha256, the
+native product/price, the payment session, the exact disclosure text, the
+paid and explicit-decline targets from the approved graph, the
+pending/failed behaviour, and the disabled CTA states.
+
 ## Proof levels (doc 18)
 
 L0 schema/static · L1 deterministic tests · L2 local rendered browser ·
 L3 installed GHL test location · L4 native sandbox payment · L5 approved
-production. This candidate stands at **L0–L2 local only**, and the L2 pages are TEST ONLY
-fixtures, not a production page. A mocked or local
-result never closes a higher-level unit: A10/A12 native and installed
-outcomes remain `not_run` until the S06 native install (S80-06 at L3) and
-S80-09 produce real evidence.
+production. This candidate stands at **L0–L2 local only**. The L2 renders are
+TEST ONLY fixtures; the production builder produces real publishable pages
+from an approved launch record and graph, but none has been installed on a
+location or charged anything (L3/L4 `not_run`). A mocked or local result never
+closes a higher-level unit: A10/A12 native and installed outcomes remain
+`not_run` until the S06 native install (S80-06 at L3) and S80-09 produce real
+evidence.
 
 ## Python dependency: jsonschema (operator note, never for the client)
 
