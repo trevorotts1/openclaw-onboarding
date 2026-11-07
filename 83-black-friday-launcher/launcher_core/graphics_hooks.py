@@ -809,7 +809,12 @@ def brand_answer(doc: Any) -> Dict[str, Any]:
     answer's own status. A missing answer is a missing answer, never a guessed one.
     """
     answers = (doc or {}).get("answers") if isinstance(doc, dict) else {}
-    entry = (answers or {}).get("logo") if isinstance(answers, dict) else None
+    entry = None
+    for key in ("logo", "brand_logo", "logo_choice", "brand_mark"):
+        candidate = (answers or {}).get(key) if isinstance(answers, dict) else None
+        if candidate:
+            entry = candidate
+            break
     entry = entry if isinstance(entry, dict) else {}
     value = entry.get("value")
     mode = path = text = ""
