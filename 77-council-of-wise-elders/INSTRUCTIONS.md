@@ -93,10 +93,13 @@ and dispatch are the proven live legs.
    pass `--ollama-plan 20` or `--ollama-plan 100`, and
    `--fallback-model ID` to name the OpenRouter model used when Ollama
    fails. When the client has no Ollama plan, convene on their OpenRouter
-   route instead — `--route openrouter-configured --model <their own
-   configured OpenRouter model, namespace and all>` — because uncapped
-   parallelism finishes the sitting sooner; never pick the model for them
-   without asking. Convening is
+   route instead — `--route openrouter-configured` — because uncapped
+   parallelism finishes the sitting sooner. OpenRouter carries a standing
+   default so no model name is needed: DeepSeek Flash, preferring the pinned
+   1017 variant, otherwise the newest DeepSeek Flash the provider offers. Pass
+   `--model <their own configured OpenRouter model, namespace and all>` to
+   choose a different one; an explicit model always wins. Anyone who wants
+   OpenRouter gets OpenRouter. Convening is
    the approval: no grant, no approval prompt. Report the session id, the
    exact model
    label, whether it was the client's choice or the harness default, and
