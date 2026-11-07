@@ -234,17 +234,13 @@ def reconcile_launch(ledger: Optional[Dict[str, Any]], *, revision: int,
         key = f"{answer_prefix}{slot}"
         entry = ledger.get(key)
         prior_state = state_of(entry)
+        # An entry already not_applicable keeps its FIRST reconciliation note. Re-noting it on
+        # every later answer would replace the record of what the client had supplied with a
+        # record of our own earlier note, and would report a reconcile that did not happen.
         if isinstance(entry, dict) and prior_state != NOT_APPLICABLE:
             kind = provenance_kind(entry)
             prior_value = entry.get("value")
             prior_source = entry.get("source")
-            existed = True
-        else:
-            kind = None
-            prior_value = None
-            prior_source = None
-            existed = isinstance(entry, dict)
-        if existed:
             note = {"revision": revision, "rule": "upsell_1_disabled",
                     "disabled": list(report["disabled"]), "reason": reason,
                     "from_state": prior_state, "from_provenance": kind,
@@ -261,6 +257,8 @@ def reconcile_launch(ledger: Optional[Dict[str, Any]], *, revision: int,
                 report["client_notices"].append(
                     f"{slot} was supplied by the client before this revision; "
                     f"{reason}. Tell the client it has been removed and why; do not rebuild it silently.")
+        # The offer/extras cleanup below runs even when the answer needed no new note: a stale
+        # offer list or a stale extras flag must never survive the reconciliation.
         for offer in [o for o in offs if isinstance(o, dict) and (o.get("role") or o.get("slot")) == slot]:
             report["removed_offers"].append({"slot": slot, "offer_id": offer.get("offer_id"),
                                              "display_name": offer.get("display_name") or offer.get("name")})
