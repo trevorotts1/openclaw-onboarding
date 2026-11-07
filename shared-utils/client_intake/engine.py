@@ -1520,10 +1520,21 @@ def to_launch_known(doc):
     v = view(doc)
     ent = lambda value, qid: {"value": value, "state": _STATE[doc["answers"][qid]["status"]], "source_ref": f"answers-file:{qid}"}  # noqa: E731
     out = {}
+    prop = proposed_offer(doc)   # a missing or partial offer still becomes a record, flagged as a proposal
+    if prop is not None:
+        # The proposal rides beside the answers, never in place of a fact: the offer
+        # record itself is still built only from answers the client actually gave, so a
+        # paid offer's state is unchanged by this record.
+        out["proposed_offer"] = {"value": prop, "state": "recommended_unapproved",
+                                 "source_ref": "answers-file:proposed_offer"}
     if "offer_description" in v or "offer_name" in v:
         out["offers.main.description"] = ent({"display_name": v.get("offer_name") or v.get("offer_description"), "description": v.get("offer_description"),
                                               "deliverables": v.get("deliverables", [])}, "offer_name" if "offer_name" in v else "offer_description")
-    for field, qid in (("audience", "audience"), ("offers.main.transformation", "offer_transformation"), ("offers.main.pains", "pains"),
+    # The launch interview's two opening questions (a0_outcome / a0_difficulty) target
+    # these answer ids verbatim; without them the client's own answers file could not
+    # close those questions and the flow asked them a second time.
+    for field, qid in (("business_outcome", "business_outcome"), ("difficulty", "difficulty"),
+                       ("audience", "audience"), ("offers.main.transformation", "offer_transformation"), ("offers.main.pains", "pains"),
                        ("offers.main.deliverables", "deliverables"), ("journey_mode", "funnel_shape"), ("offers.main.price", "price"),
                        ("offers.main.packages", "packages"),
                        ("offers.main.billing_type", "billing"), ("copy_profile", "copy_profile"), ("image_provider", "image_provider")):
@@ -1531,6 +1542,17 @@ def to_launch_known(doc):
             out[field] = ent(v[qid], qid)
     if "image_provider" in out:  # the launch record knows kie, agnes and other_explicit only
         out["image_provider"]["value"] = {"connected": "kie", "none": "other_explicit"}.get(v["image_provider"], v["image_provider"])
+    if "journey_mode" in out and is_free_offer(doc) and out["journey_mode"]["value"] == "single_simple":
+        # The free route is the only one that accepts a zero price (launch_plan's
+        # _free_route_supported; every launch schema lists free_entry). Without this the
+        # client's "It is free" answer could never become a buildable plan.
+        out["journey_mode"] = dict(out["journey_mode"], value=FREE_SHAPE,
+                                   source_ref="answers-file:price")
+    # What each deliverable IS, beside the deliverable list it belongs to.
+    out["deliverables_plan"] = {
+        "value": deliverable_records(doc),
+        "state": "recommended_unapproved" if prop is not None else "provided",
+        "source_ref": "answers-file:deliverables"}
     out["offers.main.exclusions"] = {"value": [], "state": "not_applicable", "source_ref": "answers-file:exclusions"}
     out["offers.main.schedule"] = {"value": [], "state": "provided", "source_ref": "answers-file:billing"}
     if v.get("interview_mode"):
@@ -2071,6 +2093,185 @@ def recommended_palette(doc, mood=""):
     best = pals[0]
     return {"proposal": best, "provenance": "ai_proposal", "alternatives": pals[1:],
             "message": "I suggest this small palette; say yes to use it, or send your own colours."}
+
+
+# ---------------------------------------------------------------- the free lane, the offer, and deliverable kinds
+# A free item is the ONE route that accepts a zero price: every launch schema's
+# journey_mode enum carries `free_entry`, compile_launch_route accepts it, and
+# launch_plan._free_route_supported accepts a zero amount only there. The interview
+# could always record "It is free", but to_launch_known never emitted the free route,
+# so assembly stopped at "main offer price (unknown is not a price)" and the client's
+# answer reached no producer at all. These helpers close that gap.
+FREE_SHAPE = "free_entry"
+PROPOSED_OFFER_ID = "MAIN-PROPOSED"
+_OFFER_FIELDS = ("offer_name", "offer_description", "deliverables", "price")
+
+# What a deliverable IS, so a generated file is never read as a human service and an
+# unfinished course is never read as a finished product. `unknown` is a real answer.
+DELIVERABLE_KINDS = ("generated_file", "human_service", "future_session",
+                     "unfinished_course", "unknown")
+_NOT_YET_RX = re.compile(r"\b(?:will record|to be recorded|not yet|coming soon|in progress|"
+                         r"still building|being built|tbd|to come|drafting|planned)\b")
+_COURSE_RX = re.compile(r"\b(?:course|curriculum|modules?|lessons?|units?|program|programme)\b")
+_SESSION_RX = re.compile(r"\b(?:(?:live|group|coaching|discovery|strategy|clarity|q ?& ?a)\s+"
+                         r"(?:call|calls|session|sessions|class|classes|clinic|webinar))s?\b|"
+                         r"\b(?:webinar|workshop|masterclass|bootcamp|retreat|office hours)\b|"
+                         r"\b\d+\s*(?:x\s*)?(?:live|group)?\s*calls?\b")
+_SERVICE_RX = re.compile(r"\bdone[\s-]?for[\s-]?you\b|\bdone with you\b|"
+                         r"\b(?:i|we)\s(?:will|'ll)\s[a-z]|\bpersonal(?:ly)?\s+"
+                         r"(?:review|edit|audit|coaching|call)\b|\b(?:audit|consultation|"
+                         r"consult|managed service|hand[\s-]?delivered)\b")
+_FILE_RX = re.compile(r"\b(?:pdf|checklists?|templates?|swipe file|worksheets?|workbooks?|"
+                      r"guides?|ebooks?|e-books?|planners?|spreadsheets?|scripts?|"
+                      r"prompt packs?|printables?|cheat sheets?|toolkits?|downloads?|"
+                      r"one[\s-]?pagers?)\b")
+
+
+def _sibling_skill_dirs(numbered):
+    """Where a sibling skill can live: repo tree, then each installed skills tree, numbered or flat.
+
+    The distribution layout keeps every skill under <root>/.claude/skills (999-setup),
+    so that tree is searched before any home install: the copy that ships beside this
+    engine is the one it must find, never an older install of the same name."""
+    names = (numbered, numbered.split("-", 1)[1])
+    parents = list(Path(__file__).resolve().parents)
+    bases = [p / n for p in parents for n in names]
+    bases += [p / ".claude" / "skills" / n for p in parents for n in names]
+    bases += [p / "skills" / n for p in parents for n in names]
+    home = Path.home()
+    for root in (home / ".openclaw" / "skills", home / ".claude" / "skills",
+                 home / ".claude-nine" / "skills", Path("/data/.openclaw/skills")):
+        bases += [root / n for n in names]
+    return bases
+
+
+def _persona_adapter():
+    """49-signature-funnel/scripts/launch_persona_adapter.py, beside this tree or installed.
+    None when it is not there: a missing adapter never blocks the interview."""
+    for base in _sibling_skill_dirs("49-signature-funnel"):
+        f = base / "scripts" / "launch_persona_adapter.py"
+        if f.is_file():
+            if str(f.parent) not in sys.path:
+                sys.path.insert(0, str(f.parent))
+            try:
+                import launch_persona_adapter  # noqa: F401
+            except Exception:  # noqa: BLE001 - an unimportable adapter is simply absent
+                return None
+            return launch_persona_adapter
+    return None
+
+
+def classify_deliverable(item):
+    """What KIND of thing one deliverable is, from the client's own words only.
+
+    generated_file     a file this run can actually write (checklist, template, PDF, planner)
+    human_service      a person delivers it (done-for-you, audit, personal review)
+    future_session     a scheduled live happening (live call, workshop, webinar)
+    unfinished_course  course content the client has said is not made yet
+    unknown            the words name nothing that decides it - never a guess
+
+    `evidence` is the exact phrase that decided it, or None. Nothing is inferred from
+    the price, the funnel shape, or another deliverable.
+    """
+    text = str(item or "").strip()
+    low = text.lower()
+    if not low:
+        return {"item": text, "kind": "unknown", "evidence": None}
+    if _NOT_YET_RX.search(low) and _COURSE_RX.search(low):
+        return {"item": text, "kind": "unfinished_course",
+                "evidence": _NOT_YET_RX.search(low).group(0)}
+    for kind, rx in (("future_session", _SESSION_RX), ("human_service", _SERVICE_RX),
+                     ("generated_file", _FILE_RX)):
+        m = rx.search(low)
+        if m:
+            return {"item": text, "kind": kind, "evidence": m.group(0)}
+    return {"item": text, "kind": "unknown", "evidence": None}
+
+
+def deliverable_records(doc):
+    """Every deliverable the client named, each with its kind. Empty when none were named."""
+    items = val(doc, "deliverables")
+    if not isinstance(items, list):
+        return []
+    return [classify_deliverable(i) for i in items if str(i).strip()]
+
+
+def is_free_offer(doc):
+    """True only when the client said, in their own words, that the offer is free."""
+    e = get(doc, "price")
+    if e is None or e["status"] != "provided":
+        return False
+    p = e["value"]
+    return isinstance(p, dict) and p.get("amount_minor") == 0
+
+
+def offer_gaps(doc):
+    """The offer facts the client has not given, in plain words. Never a proposed value."""
+    gaps = []
+    name, desc = val(doc, "offer_name"), val(doc, "offer_description")
+    if not (isinstance(name, str) and name.strip()):
+        # The name is used word for word on the page and is never invented, so its
+        # absence is a real gap even when a description exists.
+        gaps.append("the offer's name (it is used word for word on the page)")
+    if not (isinstance(desc, str) and desc.strip()):
+        gaps.append("one sentence about the offer")
+    items = val(doc, "deliverables")
+    if not isinstance(items, list) or not items:
+        gaps.append("what the buyer actually gets")
+    e = get(doc, "price")
+    if e is None or e["status"] == "unknown":
+        gaps.append("the price (a number you give, or say 'it is free')")
+    return gaps
+
+
+def _offer_recommendation(doc):
+    """The persona adapter's offer-architecture recommendation, or None when the adapter or
+    its Skill 22 blueprints are not installed. It only re-reads the client's own answers and
+    never quotes or implies anyone's endorsement."""
+    mod = _persona_adapter()
+    if mod is None:
+        return None
+    try:
+        return mod.recommend("offer_architecture", view(doc))
+    except Exception:  # noqa: BLE001 - a missing blueprint never blocks the interview
+        return None
+
+
+def proposed_offer(doc):
+    """The offer record a partial answer supports, or None when the offer is complete.
+
+    It carries no name, price or promise the client did not give: display_name is their
+    words or None, price is None, and state is recommended_unapproved so no consumer can
+    read it as approved. A record with display_name None names the gap and nothing else.
+    """
+    gaps = offer_gaps(doc)
+    if not gaps:
+        return None
+    name, desc = val(doc, "offer_name"), val(doc, "offer_description")
+    name = name.strip() if isinstance(name, str) else ""
+    desc = desc.strip() if isinstance(desc, str) else ""
+    free = is_free_offer(doc)
+    rec = _offer_recommendation(doc)
+    kinds = deliverable_records(doc)
+    return {
+        "offer_id": PROPOSED_OFFER_ID,
+        "slot": "main",
+        "display_name": name or (desc[:80] if desc else None),
+        "description": desc or None,
+        "deliverables": [r["item"] for r in kinds],
+        "deliverable_kinds": kinds,
+        "price": None,
+        "price_status": "recommended_unapproved",
+        "state": "recommended_unapproved",
+        "journey_mode": FREE_SHAPE if free else (rec or {}).get("recommended_journey_mode"),
+        "free_item": free,
+        "missing": gaps,
+        "derived_from": [f"answers-file:{q}" for q in _OFFER_FIELDS if get(doc, q) is not None],
+        "persona": rec,
+        "note": ("A proposal built only from what you have already said. No name, price or "
+                 "promise is invented, and nothing here is approved."),
+        "how_to_change": "Answer the offer questions, or say which part you want changed.",
+    }
 
 
 # ---------------------------------------------------------------- CLI
