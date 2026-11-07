@@ -1,5 +1,15 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.82: the OpenRouter standing-default release
+
+In plain English: an OpenRouter route still refused to convene unless the caller named one of the client's own models, because a provider that allows many models and names no default was treated as "ambiguous, never guessed". In practice that was a wall between a client and the provider they wanted. OpenRouter now carries a standing default: **DeepSeek Flash, preferring the pinned `1017` variant, otherwise the newest DeepSeek Flash the provider offers.** It is deterministic from the candidate list, it shows in the route's model label, and an explicit `--model` still wins. Nobody is blocked from OpenRouter, and nobody is silently handed a model they did not ask for.
+
+- Route discovery: `providerPolicyDefault()` resolves OpenRouter's standing default instead of refusing `ROUTE_MODEL_AMBIGUOUS`. Other providers keep the refusal — the council still never guesses.
+- Ordering is explicit and testable: the `1017` variant wins when present; otherwise candidates are ranked by parsed numeric version so the newest DeepSeek Flash wins.
+- Instructions: step 7 now says `--route openrouter-configured` needs no model name, and that an explicit `--model` overrides the default.
+- Tests: four cases cover the pinned variant, the newest-fallback, a non-OpenRouter provider, and an OpenRouter allow-list with no DeepSeek Flash at all. `tests/route-discovery.test.ts` 15/15.
+- Version carriers: `version`, `skill-version.txt` and the `SKILL.md` frontmatter read 1.0.82.
+
 ## v1.0.81: the "say why, and ask before you answer" release
 
 In plain English: on one client box an explicit "ask the council" never opened a chamber. The front door ran the runtime, the runtime refused, and the refusal arrived on stderr while the door only read stdout, so every real reason became the same empty `CONVENE_REFUSED`. The agent could not tell what was wrong, so it did what a helpful model does: it started answering the question in chat. Two more faults sat underneath — the brief carried the client's question with a stray leading sentence period, and an OpenRouter route could never be named because provider model ids contain a slash the opaque-ID rule forbids.

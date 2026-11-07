@@ -23,6 +23,7 @@ import {
   discoverConfiguredRoutes,
   discoverHostRoutes,
   discoverHostLayout,
+  providerPolicyDefault,
   resolveDiscoveredCredential,
   resolveRouteForDispatch,
   routeDiscoveryInfo,
@@ -632,3 +633,26 @@ test('W77S: a route whose only failure is model ambiguity becomes usable with a 
   assert.equal(info.usable_with_model, true);
   assert.deepEqual(info.model_candidates, ['model-a', 'model-b']);
 });
+
+// The OpenRouter standing default: DeepSeek Flash, 1017 pinned, newest otherwise.
+{
+  const allowed = [
+    'z-ai/glm-5.3-flash',
+    'deepseek/deepseek-v4.1-flash-1017',
+    'deepseek/deepseek-v4-flash',
+    'google/gemini-3-flash-preview',
+  ];
+  test('openrouter default prefers the pinned DeepSeek Flash 1017 variant', () => {
+    assert.equal(providerPolicyDefault('openrouter', allowed), 'deepseek/deepseek-v4.1-flash-1017');
+  });
+  test('openrouter default falls back to the newest DeepSeek Flash when 1017 is absent', () => {
+    const withoutPinned = allowed.filter((id) => !id.includes('1017'));
+    assert.equal(providerPolicyDefault('openrouter', withoutPinned), 'deepseek/deepseek-v4-flash');
+  });
+  test('a non-OpenRouter provider has no policy default', () => {
+    assert.equal(providerPolicyDefault('agnes', allowed), null);
+  });
+  test('openrouter with no DeepSeek Flash candidate has no policy default', () => {
+    assert.equal(providerPolicyDefault('openrouter', ['z-ai/glm-5.3-flash']), null);
+  });
+}
