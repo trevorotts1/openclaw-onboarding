@@ -554,7 +554,12 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
             "record": delivered["record_path"],
             "kind": delivered["plan"]["kind"],
             "kind_state": delivered["plan"]["kind_state"],
-            "sheets": {k: v["path"] for k, v in sorted(delivered["produced"].items())},
+            # Projected from the record, never re-derived: one artifact identity (path +
+            # sha256) per offer, the same one product-delivery.json carries. `sheets`
+            # stays as the path-only view earlier readers were given.
+            "artifacts": {o["offer_id"]: o["artifact"] for o in delivered["record"]["offers"]},
+            "sheets": {o["offer_id"]: o["artifact"]["path"] for o in delivered["record"]["offers"]},
+            "delivery_modes": {o["offer_id"]: o["delivery_mode"] for o in delivered["record"]["offers"]},
             "free_entry": delivered["record"]["free_entry"],
         },
     }

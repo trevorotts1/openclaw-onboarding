@@ -17,22 +17,37 @@ three facts apart instead of collapsing them into one "delivered" flag:
 The delivery KIND comes from the client's own answer, never from a guess:
 
   answers.access_delivery == "Yes, send access after purchase"
-      -> ``access``; the destination is the answered ``access_url`` when it is
-         an https address, else the owner-confirmed per-offer destination.
+      -> ``access``; the answered ``access_url`` IS the buyer-facing destination,
+         so it must be https: a non-https one is refused, never downgraded. With
+         no answered address, the owner-confirmed per-offer destination is the
+         fallback.
   answers.access_delivery == "No, nothing to deliver"
       -> ``schedule_included_service``; the question's own guidance says this is
-         "a service where a person follows up by hand". A confirmed destination
-         is still carried (a booking page is a legitimate destination); absence
-         of one is recorded, not invented.
+         "a service where a person follows up by hand". Nobody is sent to
+         ``access_url`` on this path, so it is neither used nor validated: the
+         owner-confirmed per-offer destination is carried (a booking page is a
+         legitimate destination) and absence of one is recorded, not invented.
   no answer
       -> the pre-existing behaviour, byte for byte: ``access`` plus the
-         owner-confirmed per-offer destination.
+         owner-confirmed per-offer destination. ``access_url`` is not consulted.
 
 ``download`` is deliberately unreachable here. It is the launch schema's kind for
 a buyer-facing file, and a file only becomes a delivery when hosting returns a
 real https URL. Producing bytes and calling them a delivery would be the exact
 substitution this module exists to prevent; ``record()`` names hosting as the
 missing capability instead.
+
+The DELIVERY MODE is a second, separate fact, recorded per offer exactly as the
+run's own evidence proves it: a ``generated_file`` (bytes this run wrote, with
+their digest), a ``human_delivered_service`` (the client answered "No, nothing
+to deliver" — a person follows up by hand), a ``future_session`` (a session at a
+recorded later time), or an ``unfinished_course`` (promised content no producer
+in this repository writes). A service is never described as a file that failed
+to generate, a future session is never guessed from a service, and nothing is
+called produced because a catalog record or a description sheet exists. No
+question in the bank asks for a session date, so ``future_session`` is named in
+the record's ``unrecorded_modes`` and never selected: the missing fact is
+stated instead of filled with a guess.
 
 Stdlib only. Deterministic: the same facts produce the same bytes and digest.
 """
@@ -55,9 +70,25 @@ KIND_DOWNLOAD = "download"
 KIND_SCHEDULE = "schedule_included_service"
 
 # What happened to one promise. ``produced`` means bytes exist in this run and
-# their digest is recorded; nothing else is ever called produced.
+# their digest is recorded; ``human_delivered`` means a person hands it over;
+# nothing else is ever called produced.
 PROMISE_PRODUCED = "produced"
+PROMISE_HUMAN = "human_delivered"
 PROMISE_NOT_PRODUCED = "not_produced"
+
+# How an offer's promised item is delivered. Four different facts that a single
+# "delivered" flag would collapse into a lie.
+MODE_FILE = "generated_file"
+MODE_SERVICE = "human_delivered_service"
+MODE_UNWRITTEN = "unfinished_course"
+
+# The one mode this intake cannot record: no question asks for a session date or
+# a booking time, so a call that happens later is indistinguishable from a
+# service a person arranges by hand. Recorded by name, never guessed.
+UNRECORDED_SESSION = (
+    "the intake records no session date, start time or booking reference, so a "
+    "future session cannot be told apart from a service a person delivers by "
+    "hand; it is never selected by guesswork")
 
 # The client's own two answers (shared-utils/client_intake/question-bank.json,
 # question ``access_delivery``), verbatim.
@@ -133,32 +164,46 @@ def load_answers(normalized: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
 def decide(normalized: Mapping[str, Any], answers: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """The launch-wide delivery decision the client's answers carry.
 
-    Returns {"kind", "url", "state", "source"}. ``kind`` is one of DELIVERY_KINDS;
-    ``url`` is an https address or None (kind bound, no destination recorded yet).
-    ``state`` is "answered" only when the client really answered, so a caller can
-    tell a decision from the pre-existing default.
+    Returns {"kind", "url", "state", "source", "unused_access_url"}. ``kind`` is
+    one of DELIVERY_KINDS; ``url`` is an https address or None (kind bound, no
+    destination recorded yet). ``state`` is "answered" only when the client really
+    answered, so a caller can tell a decision from the pre-existing default.
+
+    The answered ``access_url`` is validated ONLY where it becomes the buyer's
+    link: the "send access after purchase" branch. The question bank asks it only
+    for that answer (its condition is ``access_delivery == yes``), so an answer
+    left behind on a service run, or on the no-answer default, is not a delivery
+    destination and must never abort a build that does not use it. Such a value is
+    returned as ``unused_access_url`` so the record can say it was seen and not
+    used, instead of silently dropped.
     """
     answers = load_answers(normalized) if answers is None else answers
     choice = _answer(answers, "access_delivery")
-    url = _answer(answers, "access_url")
-    if _nonempty(url) and not _https(url.strip()):
-        raise DeliveryError(
-            "AF-LAUNCH-DELIVERY-URL",
-            f"the answered access_url {url!r} is not an https address; a buyer-facing "
-            "destination is never guessed and never plain http")
+    raw = _answer(answers, "access_url")
+    url = raw.strip() if _nonempty(raw) else None
     if choice == ANSWER_SEND_ACCESS:
-        return {"kind": KIND_ACCESS, "url": url.strip() if _nonempty(url) else None,
-                "state": "answered", "source": "answers:access_delivery"}
+        if url is not None and not _https(url):
+            raise DeliveryError(
+                "AF-LAUNCH-DELIVERY-URL",
+                f"the answered access_url {url!r} is not an https address; a buyer-facing "
+                "destination is never guessed and never plain http")
+        return {"kind": KIND_ACCESS, "url": url, "state": "answered",
+                "source": "answers:access_delivery", "unused_access_url": None}
     if choice == ANSWER_NOTHING:
-        return {"kind": KIND_SCHEDULE, "url": url.strip() if _nonempty(url) else None,
-                "state": "answered", "source": "answers:access_delivery"}
+        # A human-delivered service has no buyer-facing link. The bank asks
+        # access_url only for "send access after purchase", so a value here is
+        # leftover: it is recorded as unused, never used as the buyer's destination,
+        # and never fatal. The owner-confirmed per-offer destination stands.
+        return {"kind": KIND_SCHEDULE, "url": None, "state": "answered",
+                "source": "answers:access_delivery", "unused_access_url": url}
     if choice is not None:
         raise DeliveryError(
             "AF-LAUNCH-DELIVERY-ANSWER",
             f"access_delivery {choice!r} is not one of the two recorded choices "
             f"({ANSWER_SEND_ACCESS!r}, {ANSWER_NOTHING!r})")
     return {"kind": KIND_ACCESS, "url": None, "state": "absent",
-            "source": "offer.delivery (owner-confirmed destination)"}
+            "source": "offer.delivery (owner-confirmed destination)",
+            "unused_access_url": url}
 
 
 def _promises(offer: Mapping[str, Any]) -> List[str]:
@@ -203,7 +248,8 @@ def plan(normalized: Mapping[str, Any], answers: Optional[Mapping[str, Any]] = N
             "exclusions": list((offer.get("canonical") or {}).get("exclusions") or []),
         })
     return {"kind": decision["kind"], "kind_state": decision["state"],
-            "kind_source": decision["source"], "offers": offers}
+            "kind_source": decision["source"], "offers": offers,
+            "unused_access_url": decision["unused_access_url"]}
 
 
 def _money(price: Mapping[str, Any]) -> str:
@@ -295,33 +341,55 @@ def bindings(planned: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
     Every entitlement this launch grants is bound, including the ones a bigger
     level's buyers hold by inclusion, so Skill 44's fulfillment map never finds a
     granted entitlement with no entry. A binding comes from the offer that OWNS the
-    entitlement (its id is the lowercased offer id), never from an offer that merely
-    grants it by inclusion: a level's buyers hold the bump's entitlement, but the
-    bump's own destination is where that item lives.
+    entitlement, never from an offer that merely grants it by inclusion: a level's
+    buyers hold the bump's entitlement, but the bump's own destination is where that
+    item lives. Ownership is the offer whose id is the entitlement (lowercased, the
+    launcher's own convention); when an entitlement id is the client's custom one,
+    the first offer that lists it is its owner. Assuming the id shape would refuse a
+    launch the intake already validated.
     """
-    owner = {entry["offer_id"].lower(): entry for entry in planned["offers"]}
-    granted = sorted({entitlement_id for entry in planned["offers"]
+    entries = list(planned["offers"])
+    by_lower = {entry["offer_id"].lower(): entry for entry in entries}
+    granted = sorted({entitlement_id for entry in entries
                       for entitlement_id in entry["entitlement_ids"]})
     out: Dict[str, Dict[str, Any]] = {}
     for entitlement_id in granted:
-        entry = owner.get(entitlement_id)
-        if entry is None:
+        entry = by_lower.get(entitlement_id) or next(
+            (e for e in entries if entitlement_id in e["entitlement_ids"]), None)
+        if entry is None:  # unreachable: ``granted`` is built from these same entries
             raise DeliveryError(
                 "AF-LAUNCH-DELIVERY-OWNER",
-                f"entitlement {entitlement_id!r} is granted by this launch but no offer owns it")
+                f"entitlement {entitlement_id!r} is granted by this launch but no offer lists it")
         out[entitlement_id] = {"delivery_kind": entry["delivery_kind"],
                                "delivery_url": entry["delivery_url"]}
     return out
+
+
+def _mode(entry: Mapping[str, Any], item_artifact: Optional[Mapping[str, Any]]) -> Dict[str, str]:
+    """The one delivery mode this offer's recorded facts prove, and the fact it rests on.
+
+    ``future_session`` is never returned: see ``UNRECORDED_SESSION``. A human service
+    is never reported as an unwritten file, and an unwritten item is never reported
+    as a service, so neither fact is substituted for the other.
+    """
+    if item_artifact:
+        return {"mode": MODE_FILE, "basis": "artifact: bytes produced in this run"}
+    if entry["human_service"]:
+        return {"mode": MODE_SERVICE,
+                "basis": "answers:access_delivery = 'No, nothing to deliver'"}
+    return {"mode": MODE_UNWRITTEN, "basis": MISSING_AUTHORING_PRODUCER}
 
 
 def record(planned: Mapping[str, Any], produced: Mapping[str, Any],
            launch: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """The honest production record: what exists, what does not, and why.
 
-    A promise is ``produced`` only when this run wrote bytes for it; every other
-    promise carries the exact missing capability. The delivery sheet itself is
-    recorded separately from the promises it lists, so a sheet can never be read
-    as the product.
+    A promise is ``produced`` only when this run wrote bytes for it, and
+    ``human_delivered`` only for a service the client said a person hands over.
+    Every other promise carries the exact missing capability. The one file this
+    run writes per offer (its delivery sheet) is recorded once, as that offer's
+    ``artifact``, so the record, the dispatch report and the free-entry block all
+    name the same path and digest rather than three near-copies of it.
     """
     launch = launch or {}
     offers: List[Dict[str, Any]] = []
@@ -330,7 +398,20 @@ def record(planned: Mapping[str, Any], produced: Mapping[str, Any],
         if sheet is None:
             raise DeliveryError("AF-LAUNCH-DELIVERY-SHEET",
                                 f"offer {entry['offer_id']!r} has no produced delivery sheet")
-        missing: List[str] = [MISSING_AUTHORING_PRODUCER]
+        mode = _mode(entry, sheet.get("item"))
+        if mode["mode"] == MODE_SERVICE:
+            promises = [{"item": item, "state": PROMISE_HUMAN, "delivered_by": "person"}
+                        for item in entry["promises"]]
+            missing: List[str] = []
+        elif mode["mode"] == MODE_FILE:
+            promises = [{"item": item, "state": PROMISE_PRODUCED,
+                         "artifact": dict(sheet["item"])} for item in entry["promises"]]
+            missing = []
+        else:
+            promises = [{"item": item, "state": PROMISE_NOT_PRODUCED,
+                         "missing_capability": MISSING_AUTHORING_PRODUCER}
+                        for item in entry["promises"]]
+            missing = [MISSING_AUTHORING_PRODUCER]
         if entry["delivery_url"] is None and entry["delivery_kind"] != KIND_SCHEDULE:
             missing.append(MISSING_HOSTING)
         offers.append({
@@ -340,15 +421,16 @@ def record(planned: Mapping[str, Any], produced: Mapping[str, Any],
             "delivery_kind": entry["delivery_kind"],
             "delivery_url": entry["delivery_url"],
             "human_service": entry["human_service"],
-            "sheet": {"path": sheet["path"], "sha256": sheet["sha256"],
-                      "size": sheet["size"], "content": "delivery_sheet"},
-            "promises": [{"item": item, "state": PROMISE_NOT_PRODUCED,
-                          "missing_capability": MISSING_AUTHORING_PRODUCER}
-                         for item in entry["promises"]],
-            # ponytail: every promise is not_produced because no producer in this tree writes
-            # the promised item's own content. When one lands (a course/video/template
-            # producer), flip the entries it writes to PROMISE_PRODUCED with that artifact's
-            # path+sha256 here — the record, not the sheet, is where "produced" is claimed.
+            "delivery_mode": mode["mode"],
+            "mode_basis": mode["basis"],
+            # ONE artifact reference for the file this run wrote for this offer.
+            "artifact": {"path": sheet["path"], "sha256": sheet["sha256"],
+                         "size": sheet["size"], "content": "delivery_sheet"},
+            "promises": promises,
+            # ponytail: no producer in this tree writes a promised item's own content (a
+            # course module, video lesson, live call or template pack). When one lands,
+            # ``produce`` returns its bytes as ``sheet["item"]`` and this record flips
+            # that offer to MODE_FILE without a second edit.
             "missing_capability": missing,
             "native_product_id_state": "unknown",
         })
@@ -360,6 +442,8 @@ def record(planned: Mapping[str, Any], produced: Mapping[str, Any],
         "kind": planned["kind"],
         "kind_state": planned["kind_state"],
         "kind_source": planned["kind_source"],
+        "unused_access_url": planned.get("unused_access_url"),
+        "unrecorded_modes": {"future_session": UNRECORDED_SESSION},
         "offers": offers,
         "free_entry": _free_entry(planned, produced),
     }
@@ -386,6 +470,7 @@ def _free_entry(planned: Mapping[str, Any], produced: Optional[Mapping[str, Any]
         if not is_free:
             continue
         sheet = produced.get(entry["offer_id"])
+        mode = _mode(entry, (sheet or {}).get("item"))
         return {
             "state": "declared" if sheet else "declared_not_produced",
             "offer_id": entry["offer_id"],
@@ -393,17 +478,27 @@ def _free_entry(planned: Mapping[str, Any], produced: Optional[Mapping[str, Any]
             "entitlement_ids": list(entry["entitlement_ids"]),
             "delivery_kind": entry["delivery_kind"],
             "delivery_url": entry["delivery_url"],
-            "sheet": ({k: sheet[k] for k in ("path", "sha256", "size")} if sheet else None),
+            "delivery_mode": mode["mode"],
+            "mode_basis": mode["basis"],
+            "artifact": ({k: sheet[k] for k in ("path", "sha256", "size")} if sheet else None),
             "promises": list(entry["promises"]),
             "missing_capability": [] if sheet else [MISSING_AUTHORING_PRODUCER],
+            # The launch record's ``free_entry.delivery_ref`` (launch schema 1.2, BFL-001) is
+            # the field this artifact belongs in. It is emitted by the record producer, not
+            # here: this module writes the file and its digest, and the launch record owns
+            # where its own field points.
         }
     return {
         "state": "absent",
         "missing_capability": (
-            "the launcher offer model has no free-entry role (constants.OFFER_ROLES) and "
-            "launcher_core/intake.py refuses a price of zero, so no free lead product can be "
-            "declared, produced or bound in this build; the free-entry record is the offer "
-            "model's half (F08, W05)"),
+            "no free lead product can exist on this path, recorded by name: (1) the launcher's "
+            "offer roles (constants.OFFER_ROLES) have no free/lead role, (2) "
+            "launcher_core/intake.py refuses a price of 0 at _validate_offer and refuses "
+            "journey_mode 'free_entry' as not implemented, and (3) "
+            "shared-utils/client_intake/launcher_intake.py refuses a free price at _price "
+            "('a free or unpriced offer cannot be built'). Building one needs the offer model "
+            "(F08, W05) to carry a zero-price free role first; this module then produces and "
+            "binds its artifact with no second edit"),
     }
 
 
