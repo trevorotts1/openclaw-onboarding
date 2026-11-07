@@ -165,6 +165,71 @@ def require_publish(approval, *, location_id, page_id, evidence_root=None,
     return read_record(approval, store_dir) or {}
 
 
+# ── Publication state and read-back (F06) ────────────────────────────────────
+# The four states a page moves through are separate facts, never one label:
+#   local_prepared   — built locally, nothing written to the tenant
+#   draft_constructed— saved as a draft (pageType draft; the live pointer did not move)
+#   installed        — a native record exists (order form/workflow) and was read back
+#   published        — the live page was re-read and its URL observed
+# A save click, a draft response, or a local "published" field never proves the
+# last two. The read-back record comes from the canonical page re-read.
+PUBLICATION_STATES = ("local_prepared", "draft_constructed", "installed",
+                      "published")
+_READBACK_ROUTES = ("GET /funnels/page/", "GET /funnels/funnel/fetch/")
+_READBACK_REQUIRED = ("page_id", "page_version", "page_type", "url", "observed_at")
+
+
+def readback_refusals(readback, *, page_id, location_id=None) -> list[str]:
+    """Reasons *readback* does NOT prove this page is published (empty = proved).
+
+    The record must come from an observed canonical GET, name this page, carry
+    the live integer ``page_version``, say ``page_type`` published/live, and
+    carry the actual https page URL and when it was observed. A bare
+    ``{"published": true}`` or a save response is refused by name.
+    """
+    if not isinstance(readback, dict):
+        return ["no publication read-back record: re-read the canonical page "
+                "after publication; a save click or a local 'published' field "
+                "is not published state"]
+    why = []
+    source = str(readback.get("source") or "").strip()
+    if not any(source.startswith(route) for route in _READBACK_ROUTES):
+        why.append(f"read-back source {source!r} is not an observed canonical read")
+    for key in _READBACK_REQUIRED:
+        value = readback.get(key)
+        if key == "page_version":
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                why.append("read-back page_version must be the observed live integer")
+        elif not isinstance(value, str) or not value.strip():
+            why.append(f"read-back {key} must be the observed value")
+    if str(readback.get("page_id") or "").strip() != str(page_id).strip():
+        why.append(f"read-back is for page {readback.get('page_id')!r}, not {page_id!r}")
+    if location_id and readback.get("location_id") is not None \
+            and str(readback.get("location_id")).strip() != str(location_id).strip():
+        why.append(f"read-back names location {readback.get('location_id')!r}")
+    if str(readback.get("page_type") or "").strip().lower() not in ("published", "live"):
+        why.append("read-back page_type is not published/live; a draft stays a draft")
+    if not str(readback.get("url") or "").strip().lower().startswith("https://"):
+        why.append("read-back url must be the actual https page URL")
+    return why
+
+
+def require_published(approval, readback, *, location_id, page_id,
+                      evidence_root=None, store_dir: str | None = None) -> dict:
+    """The approval record AND observed live state, or ``PublishApprovalError``.
+
+    Call this after the one canonical publication. It never re-asks the client:
+    the same approval record authorizes the same page/location scope. What it
+    adds is proof the page is actually live.
+    """
+    record = require_publish(approval, location_id=location_id, page_id=page_id,
+                             evidence_root=evidence_root, store_dir=store_dir)
+    why = readback_refusals(readback, page_id=page_id, location_id=location_id)
+    if why:
+        raise PublishApprovalError("REFUSE published claim: " + "; ".join(why))
+    return record
+
+
 def require_live_write(approval, *, location_id, store_dir: str | None = None) -> dict:
     """Same record, for a live write that is not one page's publish (the
     graphics media push). Checks everything except page ids and the page gate."""

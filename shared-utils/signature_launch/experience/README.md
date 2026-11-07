@@ -5,7 +5,7 @@ One experience across claude-nine, Claude Code and OpenClaw. Stdlib only; no net
 | File | Job |
 |---|---|
 | `harness_profile.py` | Detect the harness: `--harness` flag, then answers file, then environment, then `plain`. Never guesses a skills path. |
-| `render_question.py` | One canonical question to the structured tool payload (Claude Code, claude-nine) or a numbered chat message (OpenClaw, plain). `parse_reply`, `pending` (resume from the answers file). |
+| `render_question.py` | ONE canonical question to the structured tool payload (Claude Code, claude-nine) or a numbered chat message (OpenClaw, plain). Which question is not decided here: `pending` asks `shared-utils/client_intake/engine.py` for the single next APPLICABLE question (conditions evaluated, confirmed answers never re-asked, suggestions still asked), and `render` gives that one its shape. `parse_reply`, resume from the answers file. |
 | `progress_report.py` | Status table (Claude Code, claude-nine) or one message per finished page (OpenClaw, plain). |
 | `delivery_report.py` | Pages by deliverables (desktop and mobile), "To confirm" list with a one-line change, spend. Says INCOMPLETE and MISSING plainly. |
 | `skill-md-harness-block.md` | Marked block for the three SKILL.md files, pasted at integration. |

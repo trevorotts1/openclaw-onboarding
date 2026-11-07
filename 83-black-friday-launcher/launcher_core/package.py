@@ -81,6 +81,21 @@ DELIVERY_LABEL_DESIGN_ONLY = ("design-only (open page blockers: the pages are dr
 # Open until the native checkout install (CHK-01) ships; recorded on every package.
 SEAM_NATIVE_CHECKOUT_INSTALL = "native_checkout_install"
 
+# F06: installation and publication are separate stages, recorded separately from the
+# construction receipts. A package is only ever labelled with the stage the EVIDENCE
+# proves; a local or draft package is never relabelled installed or live.
+ACTIVATION_STATES = ("local_prepared", "draft_constructed", "installed", "published")
+ACTIVATION_RECORD_REL = "activation.json"
+ACTIVATION_LABELS = {
+    "local_prepared": "prepared locally (nothing installed and nothing published)",
+    "draft_constructed": "drafts constructed (saved as drafts; nothing live)",
+    "installed": "installed (native records read back; not published)",
+    "published": "published (the live page was re-read and its URL observed)",
+}
+_ACTIVATION_READBACK_ROUTES = ("GET /funnels/page/", "GET /funnels/funnel/fetch/")
+_INSTALL_FACTS = ("native_product_id", "native_price_id", "workflow_id",
+                  "order_form_step", "funnel_step_id")
+
 # ENF-03: the dispatch run this package is bound to. launch_bridge.run lays these down.
 DISPATCH_MANIFEST_REL = "dispatch/dispatch-manifest.json"
 LAUNCH_RECORD_REL = "launch.json"
@@ -935,6 +950,139 @@ def _is_repo_fixture(src: Path, run_roots: Sequence[Path]) -> bool:
     return "fixtures" in parts or "tests" in parts
 
 
+def _activation_readback_violations(readback: Any, stage: str) -> List[str]:
+    """Why *readback* does not prove *stage*. Observed facts only; never a local flag."""
+    if not isinstance(readback, Mapping):
+        return ["no activation read-back record"]
+    why: List[str] = []
+    source = str(readback.get("source") or "").strip()
+    if not any(source.startswith(route) for route in _ACTIVATION_READBACK_ROUTES):
+        why.append(f"read-back source {source!r} is not an observed canonical read")
+    for key in ("page_id", "page_url", "observed_at"):
+        if not _nonempty_str(readback.get(key)):
+            why.append(f"read-back {key} must be the observed value")
+    url = str(readback.get("page_url") or "").strip().lower()
+    if url and not url.startswith("https://"):
+        why.append("read-back page_url must be the actual https page URL")
+    if stage == "published":
+        if str(readback.get("page_type") or "").strip().lower() not in ("published", "live"):
+            why.append("read-back page_type is not published/live; a draft stays a draft")
+        version = readback.get("page_version")
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            why.append("read-back page_version must be the observed live integer")
+    if stage == "installed":
+        install = readback.get("install")
+        if not isinstance(install, Mapping) or not any(
+                _nonempty_str(install.get(key)) for key in _INSTALL_FACTS):
+            why.append("read-back install carries no observed native record "
+                       f"(one of {list(_INSTALL_FACTS)})")
+        elif any(key in install and not _nonempty_str(install[key]) for key in _INSTALL_FACTS):
+            why.append("every install fact present must be a non-empty observed value")
+    return why
+
+
+def _activation(intake: Dict[str, Any], binding: Optional[Dict[str, Any]],
+                readback: Any) -> Dict[str, Any]:
+    """The desired stage, the stage the evidence proves, and the authority carried.
+
+    Base stage is decided by the run itself: no dispatch run means ``local_prepared``;
+    a bound dispatch means ``draft_constructed``. A read-back may lift the achieved
+    stage, but only to the stage the caller actually authorized: a local/draft intake
+    with a "published" read-back is refused (never relabel a local package live), and a
+    read-back past the desired stage is refused. A desired install/publication with no
+    read-back stays pending and says so; it is never claimed.
+    """
+    desired = ((intake.get("activation") or {}).get("desired_state")
+               or "local_prepared")
+    if desired not in ACTIVATION_STATES:
+        raise PackageError("AF-LAUNCH-ACTIVATION-STATE",
+                           f"unknown desired activation state {desired!r}")
+    base = "draft_constructed" if binding is not None else "local_prepared"
+    achieved = base
+    pending: Optional[str] = None
+    if readback is not None:
+        stage = str(readback.get("stage") or "").strip()
+        if stage not in ACTIVATION_STATES:
+            raise PackageError("AF-LAUNCH-ACTIVATION-STATE",
+                               f"read-back stage {stage!r} is not one of {ACTIVATION_STATES!r}")
+        if stage in ("local_prepared", "draft_constructed"):
+            raise PackageError("AF-LAUNCH-ACTIVATION-READBACK",
+                               "a read-back proves an installed or published stage, not "
+                               f"{stage!r}; the run itself decides that stage")
+        if ACTIVATION_STATES.index(stage) > ACTIVATION_STATES.index(desired):
+            raise PackageError("AF-LAUNCH-ACTIVATION-SCOPE",
+                               f"the read-back proves {stage!r} but the recorded authority "
+                               f"covers only {desired!r}; never claim more than was authorized")
+        why = _activation_readback_violations(readback, stage)
+        if why:
+            raise PackageError("AF-LAUNCH-ACTIVATION-READBACK", "; ".join(why))
+        achieved = stage
+    if desired in ("installed", "published") and achieved != desired:
+        pending = desired
+    return {
+        "desired_state": desired,
+        "achieved_state": achieved,
+        "label": ACTIVATION_LABELS[achieved],
+        "authority": (intake.get("activation") or {}).get("authority"),
+        "pending_stage": pending,
+        "activation_pending": pending is not None,
+        "readback": dict(readback) if isinstance(readback, Mapping) else None,
+        "source": (intake.get("activation") or {}).get("source"),
+    }
+
+
+def _client_handoff(intake: Dict[str, Any], ordered: List[Dict[str, Any]],
+                    plan_record: Optional[Dict[str, Any]], activation: Dict[str, Any],
+                    open_blockers: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """One concise handoff naming what the client actually has — nothing invented.
+
+    Free asset, approved paid offers, page links, workflow states and delivery
+    destinations come from the records that hold them. A link exists only when a
+    read-back observed it; an unobserved page is listed as not published. Every
+    unresolved operation is named, never smoothed over.
+    """
+    offers = intake.get("offers") or []
+    free = [{"offer_id": o["offer_id"], "name": o["name"]}
+            for o in offers if int((o.get("price") or {}).get("amount_minor") or 0) == 0]
+    paid = [{"offer_id": o["offer_id"], "name": o["name"], "role": o["role"],
+             "amount_minor": o["price"]["amount_minor"], "currency": o["price"]["currency"]}
+            for o in offers if int(o["price"]["amount_minor"]) > 0]
+    readback = activation.get("readback") or {}
+    links = ([{"page_id": readback.get("page_id"), "url": readback.get("page_url")}]
+             if activation.get("achieved_state") in ("installed", "published")
+             and readback.get("page_url") else [])
+    workflow_states: List[Dict[str, Any]] = []
+    if plan_record is not None:
+        workflow_states = [{"unit_id": u["id"], "type": u["type"], "state": u["state"]}
+                           for u in (plan_record.get("completeness") or {}).get("units") or []
+                           if u["type"] in ("email", "text", "automation", "conversation_ai")]
+    destinations = {o["offer_id"]: (o.get("delivery") or {}).get("destination")
+                    for o in offers if (o.get("delivery") or {}).get("destination")}
+    unresolved: List[str] = []
+    if activation.get("activation_pending"):
+        unresolved.append(f"activation: {activation['pending_stage']} still pending")
+    if plan_record is not None:
+        unresolved += [f"planned unit not delivered: {u}"
+                       for u in (plan_record.get("completeness") or {}).get("missing") or []]
+    unresolved += [f"{b['slot']}: open blocker" for b in open_blockers]
+    pages = [p["slot"] for p in ordered]
+    return {
+        "free_asset": free or None,
+        "free_asset_note": ("recorded" if free else
+                            "this intake records no free asset"),
+        "approved_paid_offers": paid,
+        "page_links": links,
+        "page_links_note": ("observed read-back" if links else
+                            "not published; no read-back observed a public URL"),
+        "pages": pages,
+        "workflow_states": workflow_states,
+        "delivery_destinations": destinations,
+        "activation": {"desired_state": activation.get("desired_state"),
+                       "achieved_state": activation.get("achieved_state")},
+        "unresolved_operations": unresolved,
+    }
+
+
 def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
              pieces: Dict[str, Any], source_root: Optional[Path] = None,
              council: Optional[Dict[str, Any]] = None,
@@ -948,7 +1096,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
              delivery_scope: Optional[str] = None,
              dispatch_run: Optional[Path] = None,
              design_waiver: Optional[Dict[str, Any]] = None,
-             checkout_readback: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+             checkout_readback: Optional[Dict[str, Any]] = None,
+             activation_readback: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Write package-manifest.json + receipt.json into run_dir. Returns both records.
 
     Artifacts are copied into run_dir/pieces/<page_id>/ so the delivered package
@@ -989,6 +1138,16 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     plan the only honest scope is ``page_only``, which is recorded in the manifest
     and the receipt. When the caller names no scope it follows the plan, so a
     plan-free package is labelled page-only rather than silently accepted.
+
+    Activation (F06) is recorded SEPARATELY from construction: ``activation.json`` carries
+    the client's desired stage, the stage the evidence proves (``local_prepared``,
+    ``draft_constructed``, ``installed`` or ``published``), the recorded authority, and the
+    construction receipts it belongs to. ``activation_readback`` is the observed record of
+    an installation or publication (route, page id, https page URL, observed_at, and for a
+    publication the live page_type/page_version; for an installation the native record
+    id). A read-back past the authorized stage is refused, a local/draft intake with a
+    live read-back is refused (never relabel a local package live), and a desired
+    installation/publication with no read-back stays pending instead of being claimed.
 
     Bound to the dispatch (ENF-03). ``dispatch_run`` names the run dir that holds launch.json and
     dispatch/dispatch-manifest.json (when omitted, ``source_root`` or ``run_dir`` is used if it holds
@@ -1054,6 +1213,33 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         approved = intake["approval"]["hash"]
         dispatch_record = {"state": DISPATCH_STATE_UNBOUND_FIXTURE,
                            "detail": "no dispatch run: hand-built test fixture, not a dispatched build"}
+    activation = _activation(intake, binding, activation_readback)
+    # The activation record is written SEPARATELY from the construction receipts,
+    # before the manifest, so its own digest can be carried by the manifest without
+    # a cycle. The construction receipts it names stay the originals.
+    activation_record = {
+        "schema": "launcher.activation/v1",
+        "launch_id": intake["launch_id"],
+        "tenant_id": intake["tenant_id"],
+        "location_id": intake["location_id"],
+        "revision": intake["revision"],
+        **{k: activation[k] for k in ("desired_state", "achieved_state", "authority",
+                                      "pending_stage", "activation_pending", "readback",
+                                      "source")},
+        "construction_receipts": {
+            "dispatch_binding": dispatch_record,
+            "launch_record": LAUNCH_RECORD_REL,
+            "dispatch_manifest": DISPATCH_MANIFEST_REL,
+        },
+        "recorded_at": _now(),
+        "note": ("activation is recorded apart from construction: an installed or published "
+                 "stage is claimed only from an observed read-back, and a local/draft package "
+                 "is never relabelled live"),
+    }
+    activation_path = run_dir / ACTIVATION_RECORD_REL
+    activation_path.write_text(json.dumps(activation_record, indent=2, sort_keys=True) + "\n",
+                               encoding="utf-8")
+    activation_ref = {"path": ACTIVATION_RECORD_REL, "sha256": _sha256_file(activation_path)}
     evidence = receipt_evidence(run_dir)
     if evidence["state"] in ("malformed", "unavailable"):
         raise PackageError("AF-LAUNCH-PKG-RECEIPTS",
@@ -1241,6 +1427,12 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "journey_mode": intake["journey_mode"],
         "delivery_scope": scope,
         "delivery_label": delivery_label,
+        "activation": {**activation, "record": activation_ref},
+        "activation_label": f"{activation['achieved_state']}: {activation['label']}"
+                            + (f"; pending {activation['pending_stage']}"
+                               if activation["activation_pending"] else ""),
+        "client_handoff": _client_handoff(intake, ordered, plan_record, activation,
+                                          open_blockers),
         "open_blockers": open_blockers,
         "design_waiver": waiver,
         "intake": {"path": "intake.json", "sha256": _sha256_file(intake_path)},
@@ -1300,6 +1492,9 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "assembled_at": manifest["assembled_at"],
         "delivery_scope": scope,
         "delivery_label": delivery_label,
+        "activation": {**activation, "record": activation_ref},
+        "activation_label": manifest["activation_label"],
+        "client_handoff": manifest["client_handoff"],
         "open_blockers": open_blockers,
         "design_waiver": waiver,
         "manifest": {"path": "package-manifest.json", "sha256": _sha256_file(manifest_path)},

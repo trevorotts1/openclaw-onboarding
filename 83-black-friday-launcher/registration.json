@@ -9,7 +9,7 @@
     "directory": "83-black-friday-launcher",
     "directory_source": "launcher_core/constants.py:SKILL_DIR_NAME",
     "entry": "SKILL.md",
-    "version": "0.2.16",
+    "version": "0.2.17",
     "status": "enabled-in-999"
   },
   "number_assignment": {
@@ -57,17 +57,11 @@
     "branch": "recovery/launcher-portability"
   },
   "depends_on": {
-    "49-signature-funnel": "intake validation, route substrate, delegation receipt collection",
-    "71-blackceo-signature-page": "landing page producer (separate skill, not edited here)",
-    "77-council-of-wise-elders": "Council planning-step invocation through the documented offline entry point",
-    "shared-utils/signature_launch": "schemas and domain utilities",
-    "78-signature-product-selection": "product_selection page producer",
-    "79-signature-order-form": "native checkout contract and cross-field validator",
-    "80-signature-upsell": "upsell_1 and upsell_2 page producer",
-    "81-signature-downsell": "downsell_1 validators",
-    "82-signature-thank-you": "thank_you result and run manifest",
-    "44-convert-and-flow-operator": "launch automations: automation-templates/launch-c/plan_reader.py reads the Skill 50 build plans and tools/siglaunch builds and receipts them",
-    "50-email-engine": "writes the DRAFT-ONLY launch email, text and automation build plans"
+    "authoritative_manifest": "launcher_core/dependencies.json",
+    "requirements_digest": "ebea953916de58ea5acfa4d165fe4c5aa9c3c93da5946d6cee906b9acd0c82c6",
+    "manifest_entry_count": 19,
+    "required_entry_count": 19,
+    "note": "NON-AUTHORITATIVE POINTER. This record does not list requirements. launcher_core/dependencies.json is the single executable source of truth (schema blackceo.launcher.dependencies/1), read by launcher_core/dependencies.py:load_manifest; launcher_core/dependencies.py:metadata_spine compares this pointer's target, digest and counts against that manifest and reports any mismatch as a finding in `python3 -m launcher_core.cli dependencies`. The hand-kept list this replaced had drifted from the executable requirement set: it named shared-utils/signature_launch, which the manifest replaced with shared-utils/signature_launch_contract, and it omitted shared-utils/client_intake. Re-stamp the digest and counts with the manifest whenever a requirement entry changes."
   },
   "entitlements": {
     "status": "decided",
@@ -114,7 +108,11 @@
   },
   "journey_modes": {
     "status": "decided",
-    "modes": ["single_simple", "multiple_options", "folded_levels"],
+    "modes": [
+      "single_simple",
+      "multiple_options",
+      "folded_levels"
+    ],
     "folded_levels": "N >= 2 distinct main offers folded into the signature page, no product_selection node, never relabelled a single offer"
   },
   "open_decisions": [

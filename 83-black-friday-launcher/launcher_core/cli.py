@@ -149,7 +149,9 @@ def cmd_assemble(args: argparse.Namespace) -> int:
                                launch_plan=plan, deliveries=deliveries,
                                delivery_scope=scope,
                                checkout_readback=(_read_json(args.checkout_readback)
-                                                  if args.checkout_readback else None))
+                                                  if args.checkout_readback else None),
+                               activation_readback=(_read_json(args.activation_readback)
+                                                    if args.activation_readback else None))
     except package.PackageError as exc:
         _launch_event(normalized["launch_id"], {"event_type": "stage_blocked", "stage": "assemble",
                                                 "failures": [exc.code]})
@@ -160,6 +162,8 @@ def cmd_assemble(args: argparse.Namespace) -> int:
            "to_confirm": out["manifest"]["to_confirm"],
            "delivery_scope": out["manifest"]["delivery_scope"],
            "delivery_label": out["manifest"]["delivery_label"],
+           "activation": out["manifest"]["activation"],
+           "activation_label": out["manifest"]["activation_label"],
            "launch_plan_completeness":
                (out["manifest"].get("launch_plan") or {}).get("completeness")})
     return 0
@@ -393,6 +397,17 @@ def cmd_dependencies(args: argparse.Namespace) -> int:
           f"would_enable={report['would_enable']}")
     for entry in report["entries"]:
         print(f"  {entry['status'].upper():12s} {entry['id']}  ({entry['evidence']})")
+    # The metadata spines (registration.json, skill.json) are pointers, not a second
+    # requirement list. A disagreement is printed as a finding and never changes the
+    # exit code: those two files record nothing that runs.
+    meta = report.get("metadata") or {}
+    findings = meta.get("findings") or []
+    print(f"\nmetadata spine: {meta.get('authoritative_manifest')} "
+          f"digest={str(meta.get('requirements_digest'))[:12]} "
+          f"entries={meta.get('entry_count')} required={meta.get('required_entry_count')}; "
+          f"{len(findings)} finding(s)")
+    for finding in findings:
+        print(f"  METADATA   {finding}")
     return 2 if args.install and report["blockers"] else 0
 
 
@@ -439,6 +454,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="the Skill 06 install read-back record (JSON): the native capability evidence, "
                         "fulfillment mapping and failed/pending copy the order form needs. Without it the "
                         "order-form mapping lists those facts as unknown and check refuses it")
+    a.add_argument("--activation-readback",
+                   help="the OBSERVED record of an installation or publication (JSON: stage "
+                        "'installed' or 'published', the read route as source, page_id, https "
+                        "page_url, observed_at and — for published — page_type and page_version; "
+                        "for installed — the native install facts). A save click or a local "
+                        "'published' field is refused")
     a.add_argument("--page-only", action="store_true",
                    help="assemble pages alone and label the package page-only: no shared launch "
                         "plan, so no Black Friday calendar and no planned email, text or automation "
