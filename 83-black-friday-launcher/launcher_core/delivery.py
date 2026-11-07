@@ -394,9 +394,11 @@ def run(normalized: Mapping[str, Any], out_dir: Path,
 
     Returns {"plan", "produced", "bindings", "record", "record_path"}. The caller
     puts ``bindings`` into the launch record and the record path into its report.
+    The presentation locale is the intake's (it is not a launch-record field).
     """
     planned = plan(normalized, answers)
-    produced = produce(planned, out_dir, launch)
+    produced = produce(planned, out_dir, {**(launch or {}),
+                                          "locale": normalized.get("locale") or "en"})
     doc = record(planned, produced, launch)
     path = write_record(doc, out_dir)
     return {"plan": planned, "produced": produced, "bindings": bindings(planned),
