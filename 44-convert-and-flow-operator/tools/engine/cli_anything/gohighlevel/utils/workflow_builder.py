@@ -860,9 +860,12 @@ def compile_guard_conditions(*, promotional: bool, close_at: Optional[str] = Non
 
 def compile_settings(*, sender: Mapping[str, Any], lifecycle: Mapping[str, Any],
                      phase: Optional[str], close_at: Optional[str],
-                     promotional: bool) -> dict:
+                     promotional: bool,
+                     allow_reentry: Optional[bool] = None) -> dict:
     settings: dict[str, Any] = {
         "phase": phase,
+        # F05: the marketing flag is the promotional flag itself, never its
+        # negation (999 carried `not promotional`, which inverted every send).
         "marketing": bool(promotional),
         "suppression": {
             "stopOnUnsubscribe": True,
@@ -880,6 +883,15 @@ def compile_settings(*, sender: Mapping[str, Any], lifecycle: Mapping[str, Any],
         settings["replyToRef"] = reply_to
     if close_at:
         settings["closeAt"] = close_at
+    if isinstance(allow_reentry, bool):
+        # F05: the requested native Allow Reentry setting is APPLIED on the
+        # workflow settings object and read back after the save.  GHL's
+        # restriction (no reentry while the contact is still active) is the
+        # provider's; it is not modelled here.
+        # ponytail: the internal settings key is `allowReentry`; the readback
+        # accepts allowMultiple/reEntry/allow_reentry too, and an absent value
+        # stays unknown rather than being read as False.
+        settings["allowReentry"] = allow_reentry
     return settings
 
 
@@ -946,8 +958,18 @@ def _guarded_templates(templates: list, *, promotional: bool,
 
 
 def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optional[list] = None,
-                             depends_on: Optional[list] = None) -> dict:
-    """Compile ONE launch-c build entry into one or more provider workflow defs."""
+                             depends_on: Optional[list] = None,
+                             purchase_tag_set: bool = False,
+                             bindings: Optional[Mapping[str, Any]] = None) -> dict:
+    """Compile ONE launch-c build entry into one or more provider workflow defs.
+
+    Step compilation is delegated to ``launch_step_compiler.compile_installable``
+    — the one launch compiler — so the expanded template graph (tags, branches,
+    waits, SMS, goals, the short purchase handler and its browser ledger) is
+    reachable from the production command instead of being bypassed here.
+    """
+    from cli_anything.gohighlevel.utils.launch_step_compiler import compile_installable
+
     if not isinstance(build, Mapping):
         raise WorkflowCompileError("BUILD-SHAPE", "build entry is not an object")
     if build.get("draft_only") is not True:
@@ -1006,21 +1028,37 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
                 % (build.get("id"), workflow.get("key"), ", ".join(missing)),
                 detail={"unit_key": unit_key, "missing": missing})
 
-        templates = _guarded_templates(
-            workflow.get("steps") or [], promotional=promotional,
-            close_at=close_at,
-            schedule_by_id={node.get("step_id"): node
-                            for node in seq_schedule.get("nodes", [])
-                            if isinstance(node, Mapping) and node.get("step_id")})
+        installable = compile_installable(
+            workflow, build, seq_schedule=seq_schedule,
+            promotional=promotional, close_at=close_at,
+            bindings={**(bindings or {}), **(build.get("bindings") or {})},
+            purchase_tag_set=purchase_tag_set)
+        if installable["blocked_by"]:
+            raise WorkflowCompileError(
+                "BUILD-UNCOMPILABLE",
+                "build %r workflow %r cannot be compiled without guessing: %s"
+                % (build.get("id"), workflow.get("key"),
+                   ", ".join(installable["blocked_by"])),
+                detail={"unit_key": unit_key,
+                        "blocked_by": installable["blocked_by"]})
+        allow_reentry = build.get("allow_reentry")
+        if not isinstance(allow_reentry, bool):
+            allow_reentry = workflow.get("allow_multiple")
         wf_key = "%s__%s" % (build.get("id"), workflow.get("key"))
+        # The trigger is the automation's approved one.  A contact-tag trigger
+        # carries the tag the builder creates; any other approved trigger has
+        # no verified payload and stays an owed native step (the builder then
+        # creates NO tag trigger rather than silently substituting one).
+        trigger = installable["trigger"]
+        trigger_tag = trigger.get("tag") if trigger.get("type") == "contact_tag" else None
         required = ["workflow_id", "steps_saved", "readback_verified"]
-        if workflow.get("tag"):
+        if trigger_tag:
             required.append("trigger_created")
         compiled[wf_key] = {
             "name": workflow.get("name"),
-            "tag": workflow.get("tag"),
+            "tag": trigger_tag,
             "status": "draft",
-            "templates": templates,
+            "templates": installable["steps"],
             "unit_key": "%s/%s" % (unit_key, workflow.get("key")),
             "source_unit": build.get("id"),
             "phase": seq_id or phase,
@@ -1031,13 +1069,27 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
             "sender": dict(sender),
             "settings": compile_settings(
                 sender=sender, lifecycle=lifecycle, phase=seq_id or phase,
-                close_at=close_at, promotional=promotional),
-            "trigger_conditions": compile_trigger_conditions(
-                workflow.get("tag"), list(eligibility)),
+                close_at=close_at, promotional=promotional,
+                allow_reentry=allow_reentry if isinstance(allow_reentry, bool) else None),
+            # The requested reentry setting, applied above and read back after
+            # the save.  None (not declared, not observed) stays unknown.
+            "allow_reentry": allow_reentry if isinstance(allow_reentry, bool) else None,
+            "trigger": trigger,
+            "trigger_conditions": trigger.get("conditions") or [],
             "expected_source_hash": build.get("expected_graph_hash"),
             "depends_on": list(depends_on or []) + list(previous_keys),
             "external_depends_on": list(external_deps or []),
             "requires": required,
+            # F04/F05 result surfaces, read by CampaignBuilder.build and the
+            # CLI dry run: which compiler shape ran, what the browser ledger
+            # still owes, and which channel actions are not complete.
+            "compile_mode": installable["compile_mode"],
+            "template": installable.get("template"),
+            "browser_steps": installable["browser_steps"],
+            "channel_actions": installable["channel_actions"],
+            "incomplete_actions": installable["incomplete_actions"],
+            "purchase_identity": installable["purchase_identity"],
+            "compile_notes": installable["notes"],
         }
         previous_keys.append(wf_key)
     return compiled
@@ -1092,6 +1144,30 @@ def compile_launch_builds(document: Mapping[str, Any], *, require_ready: bool = 
 
     campaign = CompiledLaunch()
     refused_ids: set = set()
+    # The short post-sale handler is what sets the launch buyer tag the
+    # promotional purchase gate reads, so a ready post-sale build in this
+    # document is the precondition for installing that real gate.
+    purchase_tag_set = any(
+        isinstance(build, Mapping)
+        and build.get("family") == "post_sale"
+        and build.get("state") == "ready"
+        and not build.get("blocked_by")
+        for build in builds)
+    # Approved names only: the promotional tags this document actually carries
+    # are the ones a purchase handler may remove.  No name is invented here.
+    from cli_anything.gohighlevel.utils.launch_step_compiler import (
+        PROMO_FAMILIES,
+        VARIANT_BINDING,
+    )
+    document_bindings: dict = {}
+    promo_tags = sorted({
+        workflow.get("tag")
+        for build in builds if isinstance(build, Mapping)
+        and build.get("family") in PROMO_FAMILIES
+        for workflow in build.get("workflows") or []
+        if isinstance(workflow, Mapping) and workflow.get("tag")})
+    if promo_tags:
+        document_bindings["every launch promotional tag on the buyer"] = promo_tags
     for build in builds:
         try:
             if not isinstance(build, Mapping):
@@ -1131,8 +1207,14 @@ def compile_launch_builds(document: Mapping[str, Any], *, require_ready: bool = 
                         dependency_keys.append(candidate_key)
             external = [dep for dep in (build.get("depends_on") or [])
                         if not any(wf.get("source_unit") == dep for wf in campaign.values())]
+            build_bindings = dict(document_bindings)
+            if isinstance(build.get("variant_tag"), str) and build["variant_tag"].strip():
+                # Only an approved variant binding unlocks the short handler's
+                # variant tag; without it the handler stays on its sequence.
+                build_bindings[VARIANT_BINDING] = [build["variant_tag"].strip()]
             compiled = compile_automation_build(
-                build, external_deps=external, depends_on=dependency_keys)
+                build, external_deps=external, depends_on=dependency_keys,
+                purchase_tag_set=purchase_tag_set, bindings=build_bindings)
             clash = next((key for key in compiled if key in campaign), None)
             if clash is not None:
                 raise WorkflowCompileError("DUPLICATE-WORKFLOW-KEY", clash)
@@ -1222,6 +1304,36 @@ def _readback_templates(client: Any, location_id: str,
         return workflow_data["templates"]
     if isinstance(data.get("templates"), list):
         return data["templates"]
+    return None
+
+
+def _readback_settings(client: Any, location_id: str,
+                       workflow_id: str) -> Optional[dict]:
+    """The saved workflow's settings as the provider reports them, or None."""
+    try:
+        data = client.request("GET", "/workflow/%s/%s" % (location_id, workflow_id))
+    except Exception:  # noqa: BLE001 - an unreadable readback is an explicit unknown
+        return None
+    if not isinstance(data, dict) or data.get("_error"):
+        return None
+    settings = data.get("settings")
+    if isinstance(settings, dict):
+        return settings
+    workflow_data = data.get("workflowData")
+    if isinstance(workflow_data, dict) and isinstance(workflow_data.get("settings"), dict):
+        return workflow_data["settings"]
+    return None
+
+
+def _observed_reentry(settings: Optional[dict], source: Optional[dict] = None):
+    """Allow Reentry as observed, or None when the provider did not report it."""
+    for container in (settings, source):
+        if not isinstance(container, dict):
+            continue
+        for key in ("allowReentry", "allowMultiple", "reEntry", "allow_reentry"):
+            value = container.get(key)
+            if isinstance(value, bool):
+                return value
     return None
 
 
@@ -1584,6 +1696,7 @@ class CampaignBuilder:
         folder_id: Optional[str] = None,
         *,
         journal: Any = None,
+        browser_executor: Any = None,
     ) -> dict:
         """Build an entire campaign. Returns stats dict.
 
@@ -1593,6 +1706,12 @@ class CampaignBuilder:
         `journal` (path or ``BuildJournal``) opts a compiled launch build into
         the receipt journal + readback verification; plans without a compiled
         unit key keep the unchanged private-rail behaviour.
+
+        `browser_executor` is the selected capability for browser-required
+        ledger steps (F11). It is called as ``browser_executor(rows, location)``
+        and returns the observed result, which is merged into the stats. With
+        none wired the rows are recorded as pending — a task description alone
+        never counts as an executed action.
 
         Idempotent: a repeated call reuses an existing folder with the same
         name instead of creating a duplicate, and refuses (via stats["errors"])
@@ -1607,7 +1726,7 @@ class CampaignBuilder:
         with WriteLock(self.loc):
             return self._build_locked(
                 campaign, folder_name=folder_name, folder_id=folder_id,
-                journal=_journal_for(journal),
+                journal=_journal_for(journal), browser_executor=browser_executor,
             )
 
     def _build_locked(
@@ -1617,6 +1736,7 @@ class CampaignBuilder:
         folder_id: Optional[str] = None,
         *,
         journal: Optional[BuildJournal] = None,
+        browser_executor: Any = None,
     ) -> dict:
         """Internal build implementation (called under WriteLock)."""
         self.stats["start_time"] = time.time()
@@ -1624,6 +1744,9 @@ class CampaignBuilder:
         self.stats.setdefault("readback", {})
         self.stats.setdefault("adopted", [])
         self.stats.setdefault("needs_reconcile", [])
+        # Actions that were compiled but not completed (unresolved copy,
+        # browser-required work with no selected capability).
+        self.stats.setdefault("incomplete_actions", [])
         if journal is not None:
             self.stats["journal_path"] = str(journal.path)
         # Remember whether the caller pinned an explicit folder id: the V4
@@ -2168,6 +2291,35 @@ class CampaignBuilder:
                                    status="ok", expected_hash=expected_hash,
                                    readback_hash=observed)
 
+            # F05: the requested Allow Reentry setting is APPLIED on the
+            # settings object (create_body/PUT above) and READ BACK here. An
+            # absent native value stays unknown; it is never normalised to
+            # False, and an unproven setting is never reported as applied.
+            declared_reentry = wf_def.get("allow_reentry")
+            if isinstance(declared_reentry, bool):
+                observed_reentry = _observed_reentry(
+                    _readback_settings(self.client, self.loc, str(wf_id)))
+                applied = observed_reentry == declared_reentry
+                self.stats.setdefault("reentry", {})[key] = {
+                    "declared": declared_reentry,
+                    "observed": observed_reentry,
+                    "applied": applied,
+                }
+                if journal and unit_key:
+                    journal.append(
+                        unit_key=unit_key, name=wf_name, remote_id=str(wf_id),
+                        phase="reentry",
+                        status=("ok" if applied else
+                                "unknown" if observed_reentry is None else "mismatch"),
+                        expected_hash=expected_hash)
+                if not applied:
+                    step_err = (
+                        f"{wf_name}: Allow Reentry was requested "
+                        f"{declared_reentry} but read back "
+                        + ("an unreadable/absent value" if observed_reentry is None
+                           else str(observed_reentry))
+                        + " — the setting is NOT proven applied.")
+
             return key, wf_id, steps_ok, trigger_ok, step_err, readback_ok
 
         # Run all (non-colliding) workflows in parallel (burst-capped;
@@ -2245,6 +2397,49 @@ class CampaignBuilder:
                 self.stats["errors"].append(
                     f"{wf_def.get('name') or key}: required output "
                     "'readback_verified' missing")
+
+        # ── browser-required work through the selected capability (F04/F11) ──
+        # The compiler emits ledger rows for work no verified payload covers.
+        # They are executed through the selected capability when one is wired;
+        # otherwise they are recorded as pending, because naming an action is
+        # not performing it.
+        browser_rows = []
+        for key, wf_def in campaign.items():
+            if not isinstance(wf_def, Mapping):
+                continue
+            for row in wf_def.get("browser_steps") or []:
+                if isinstance(row, Mapping):
+                    browser_rows.append(dict(row, workflow=wf_def.get("name"),
+                                             workflow_key=key))
+        if browser_rows:
+            route = self.route_for("browser_step")
+            observed = None
+            if browser_executor is not None:
+                try:
+                    observed = browser_executor(browser_rows, self.loc)
+                except Exception as exc:  # noqa: BLE001 - a failed capability is recorded
+                    observed = {"error": "%s: %s" % (type(exc).__name__, exc)}
+            self.stats["browser_steps"] = {
+                "route": route.as_evidence(),
+                "requested": browser_rows,
+                "executed": observed is not None,
+                "observed": observed,
+            }
+            if observed is None:
+                self.stats.setdefault("notes", []).append(
+                    "browser-required work is recorded, not executed: no selected "
+                    "capability executor is wired for this run (%d step(s))."
+                    % len(browser_rows))
+                self.stats.setdefault("incomplete_actions", []).extend(
+                    "browser:%s" % row.get("ledger_id") for row in browser_rows)
+
+        # Channel actions the compiler could not complete (unresolved copy).
+        for key, wf_def in campaign.items():
+            if not isinstance(wf_def, Mapping):
+                continue
+            for action in wf_def.get("incomplete_actions") or []:
+                self.stats.setdefault("incomplete_actions", []).append(
+                    "%s:%s" % (wf_def.get("name") or key, action))
 
         self.stats["workflows_reused"] = len(adopted_ids)
         self.stats["end_time"] = time.time()

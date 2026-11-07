@@ -129,16 +129,36 @@ The path, in order: **reader -> build command -> QC -> receipt**.
    with `blocked_by` naming what is missing. A blocked build is never built; fix the named
    input (a page URL, a text set, a Skill 50 build plan, the calendar) and re-read. Never
    upgrade a blocked build by assumption.
-2. **Build command** — only `ready` builds proceed. The compile step is
-   `compile_launch_builds()` in `tools/engine/cli_anything/gohighlevel/utils/workflow_builder.py`
-   (`document -> campaign dict`; it refuses blocked builds and missing guards, and every
-   workflow it produces is a draft). On main it is a Python function, not a CLI command, and
-   `automation-builds.json` is NOT a campaign plan: never pass it directly to
-   `caf workflows build --from-plan`. Run the compiled campaign through PLAN MODE (Step 0.5),
-   the Step 0.7 existence check, `caf --experimental workflows precheck --from-plan <campaign.json>` and then
-   `caf --experimental workflows build --from-plan <campaign.json>` (internal API, needs the
-   Firebase refresh token, serialized by the write lock). Set `CAF_BUILD_JOURNAL` to a path so
-   each unit key, remote workflow id and read-back hash is journaled.
+2. **Build command** — only `ready` builds proceed, and the launch document is compiled and
+   built in ONE command:
+
+   ```bash
+   caf --json --experimental workflows build \
+     --from-automation-build automation-builds.json \
+     --journal workflow-build-journal.json
+   ```
+
+   `--from-automation-build` runs `compile_launch_builds()` (document -> campaign dict; it
+   refuses blocked builds, missing required outputs and missing suppression guards, and every
+   workflow it produces is a draft) and then the campaign build under the write lock. `--journal`
+   is REQUIRED on that path: it is the receipt file (unit key, remote id, phase, expected and
+   read-back hash) that makes a re-run safe. `--dry-run` compiles and prints the workflows,
+   their compiler mode, owed browser steps and incomplete channel actions, and writes nothing.
+
+   `automation-builds.json` is NOT a campaign plan, and a Skill 50 plan carrying
+   `_meta.profile` is refused by `--from-plan` (exit 2) with a pointer to this command; both
+   refusals exist so launch guards can never be dropped silently.
+
+   Step compilation is `launch_step_compiler.compile_installable()` — the ONE launch compiler,
+   called by both this command and `compile_launch_builds()`. It installs the buildable
+   template graph (tags, branches, waits, SMS, goals and the short post-sale purchase handler)
+   when every `wait until` token resolves to a real calendar date and every email slot has
+   approved copy; otherwise it installs the approved email/wait sequence and RECORDS why the
+   template graph was skipped (`compile_mode`, `compile_notes`). Guards, absolute-wait ledger
+   rows and the real purchase gate are applied in both modes.
+
+   Still run the compiled work through PLAN MODE (Step 0.5) and the Step 0.7 existence check,
+   and set `CAF_BUILD_JOURNAL` when you use the older `--from-plan <campaign.json>` path.
 3. **QC** — the independent QC sub-agent (a different model than the builder, Step 9) runs
    `./qc-built-workflow.sh <workflow-id> [--fab]` on every built workflow: WF-1..21 PASS, then
    the quality rubric at 8.5 or better. Any FAIL: fix and re-run.
@@ -148,8 +168,27 @@ The path, in order: **reader -> build command -> QC -> receipt**.
    hand-off the executor returns the stage receipt that Skill 71 files at
    `private/receipts/automation-wiring.json` (see Consumers). No receipt, no "done".
 
+**Channel actions are complete only when their copy is bound.** A compiled SMS step whose body
+comes from no approved source stays `copy_pending` (the compiler reports it under
+`channel_actions.sms` and `incomplete_actions`); an email step always carries its approved
+sender/subject/body. A pending SMS is recorded as unavailable and never blocks the email work.
+
+**Settings are applied and read back.** `settings.marketing` is the promotional flag itself
+(never its negation), and a requested Allow Reentry is written as `settings.allowReentry` and
+read back after the save: the build records `declared`/`observed`/`applied` under
+`stats["reentry"]`. An absent native value stays UNKNOWN — it is never normalised to false and
+never reported as applied.
+
+**Browser-required work is executed, not described.** Ledger rows the compiler emits
+(trigger without a verified payload, `wait until date`) are handed to the selected capability
+when one is wired and their observed result is merged into `stats["browser_steps"]`. With none
+wired they are recorded as pending and listed in `incomplete_actions`.
+
 Purchase and entitlement events for a live launch go through `tools/siglaunch/` (normalizer ->
 receiver -> processor -> provisioning), under this skill's own approval and read-back gates.
+The siglaunch receiver is deliberately NOT a production entry (`PRODUCTION_ENTRY_ENABLED =
+False`); the declared Black Friday 2026 purchase path is the native GHL post-sale workflows.
+Repairing a launch goes through the build command above, never by enabling that runner.
 
 **Native products and prices are not a safe default.** `caf payments create-product` and
 `caf payments create-price` exist, but on main they are not tied to an approval record and
