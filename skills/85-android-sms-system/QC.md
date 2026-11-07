@@ -1,11 +1,11 @@
 # QC Checklist: Android SMS System (skill 85)
 
 Quality gate for the skill built at
-`/Users/blackceomacmini/Downloads/openclaw-master-files/85-android-sms-system`
+`$HOME/Downloads/openclaw-master-files/85-android-sms-system`
 and installed at `~/.openclaw/skills/85-android-sms-system/`.
 
 Source documentation set (read-only):
-`/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim`
+`$HOME/Downloads/openclaw-master-files/mycrmsim`
 
 A reviewer runs every numbered check below and records PASS or FAIL with the
 command output. Self-approval is not evidence. A check without a recorded
@@ -42,7 +42,7 @@ any bundle drift.
 Reproduce 0.3 and 0.4:
 
 ```bash
-cd /Users/blackceomacmini/Downloads/openclaw-master-files/85-android-sms-system
+cd $HOME/Downloads/openclaw-master-files/85-android-sms-system
 python3 -I - <<'EOF'
 import json,re
 t=open('CHANGELOG.md').read()
@@ -84,8 +84,8 @@ Reproduce:
 
 ```bash
 python3 -I - <<'EOF'
-import re,sys
-p='/Users/blackceomacmini/Downloads/openclaw-master-files/85-android-sms-system/SKILL.md'
+import re,os,sys
+p=os.path.expanduser('~/Downloads/openclaw-master-files/85-android-sms-system/SKILL.md')
 t=open(p).read()
 m=re.match(r'^---\n(.*?)\n---\n', t, re.S)
 assert m, 'frontmatter missing'
@@ -106,17 +106,19 @@ PASS prints `frontmatter OK`; any assertion is FAIL.
 
 ## 2. Documentation path correct (PASS/FAIL)
 
-- [ ] **2.1** Every skill file that names the source docs uses the absolute path
-      `/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim`.
-      No relative path, no `~` path, no stale download date.
+- [ ] **2.1** Every skill file that names the source docs writes the docs root as
+      `$HOME/Downloads/openclaw-master-files/mycrmsim`. `$HOME` is the home
+      directory of the user running the agent, so the path is portable.
+      Forbidden: a concrete user name (`/Users/<login>/…`, `/home/<login>/…`
+      with a real login baked in), a bare relative path, a stale download date.
 - [ ] **2.2** `00-INDEX.md`, `_manifest.json`, `_labels.json`, `articles/`,
       `categories/`, `_assets/`, `_source-html/` all exist at that root.
-- [ ] **2.3** No skill file points at `~/Downloads` as the runtime location for
-      installed articles; the deep reference ships inside the skill folder so an
-      installed agent does not depend on the operator's Downloads directory.
+- [ ] **2.3** The deep reference ships inside the skill folder, so an installed
+      agent answers core questions without the docs set. Losing the docs set may
+      degrade an answer; it must never make the skill unusable.
 
-PASS: 2.1–2.3 all true. FAIL: wrong root, stale date, or a runtime dependency on
-the operator's Downloads directory.
+PASS: 2.1–2.3 all true. FAIL: a baked-in user name, stale date, or a skill that
+cannot answer at all without the external docs set.
 
 ---
 
@@ -132,7 +134,7 @@ PASS: all four true. FAIL: any count other than 156, any dangling manifest path,
 any duplicate Doc ID.
 
 ```bash
-cd /Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim
+cd $HOME/Downloads/openclaw-master-files/mycrmsim
 find articles -type f -name '*.md' | wc -l
 python3 -I - <<'EOF'
 import json,os
@@ -162,7 +164,7 @@ pages, 660 images, `_assets/` about 788 MB.
 PASS: 4.1–4.4 all true. FAIL: count drift, broken link, or set mismatch.
 
 ```bash
-cd /Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim
+cd $HOME/Downloads/openclaw-master-files/mycrmsim
 python3 -I - <<'EOF'
 import json,re,os
 t=open('00-INDEX.md').read()
@@ -246,7 +248,7 @@ one-to-two-sentence pointer naming WHAT, WHERE (absolute path), and WHEN
 Reproduce the 6.2 budget check:
 
 ```bash
-cd /Users/blackceomacmini/Downloads/openclaw-master-files/85-android-sms-system
+cd $HOME/Downloads/openclaw-master-files/85-android-sms-system
 python3 -I - <<'EOF'
 budgets={'SKILL.md':12000,'INSTRUCTIONS.md':18000,'INSTALL.md':22000,
          'EXAMPLES.md':18000,'CORE_UPDATES.md':8000}
@@ -267,8 +269,8 @@ Reproduce the duplication check, reporting only file and offset, never the text:
 ```bash
 python3 -I - <<'EOF'
 import os,re
-skill='/Users/blackceomacmini/Downloads/openclaw-master-files/85-android-sms-system'
-docs='/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim/articles'
+skill=os.path.expanduser('~/Downloads/openclaw-master-files/85-android-sms-system')
+docs=os.path.expanduser('~/Downloads/openclaw-master-files/mycrmsim/articles')
 def words(s): return re.findall(r"[A-Za-z0-9']+", s.lower())
 arts=[]
 for r,_,fs in os.walk(docs):
@@ -307,7 +309,7 @@ PASS requires `duplicate 80-word runs: 0`.
       prints a matched value into the transcript.
 
 ```bash
-cd /Users/blackceomacmini/Downloads/openclaw-master-files/85-android-sms-system
+cd $HOME/Downloads/openclaw-master-files/85-android-sms-system
 grep -rInE '(sk-[A-Za-z0-9]{10,}|ghp_[A-Za-z0-9]{20,}|xox[baprs]-|AKIA[0-9A-Z]{16}|Bearer [A-Za-z0-9._-]{20,}|pit-[A-Za-z0-9-]{10,}|password\s*[:=]\s*\S+|eyJ[A-Za-z0-9_-]{20,})' \
   --include='*.md' --include='*.json' --include='*.sh' --include='*.txt' . || echo 'no secret patterns'
 ```

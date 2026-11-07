@@ -8,7 +8,7 @@ This file is the **map, not the territory**. It indexes all 156 articles in the 
 
 It is not a substitute for the articles. Exact settings, click paths, error codes, screenshots, limits and caveats live in the articles themselves - always open the article and answer from what it actually says. A summary line tells you which article to open and nothing more. Never answer a customer question from a summary alone, and never state a number, limit or menu path that you have not confirmed in the article body.
 
-Offline set root: `/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim` - articles under `articles/`, category pages under `categories/`, screenshots under `_assets/<Doc ID>/`, machine index in `_manifest.json`, source pages in `_source-html/`.
+Offline set root: `$HOME/Downloads/openclaw-master-files/mycrmsim` - articles under `articles/`, category pages under `categories/`, screenshots under `_assets/<Doc ID>/`, machine index in `_manifest.json`, source pages in `_source-html/`.
 
 Match each Doc ID below against `_manifest.json` to get its exact relative path under `articles/`, then read the file there in full.
 

@@ -30,16 +30,21 @@ If the question is about myCRMSIM at all, this skill applies. Route it through t
 
 ## Where The Documents Live
 
-Absolute path to the documentation set:
+Resolve the docs root in this order and use the first one that exists —
+`$HOME` is the home directory of the user running the agent:
+
+1. `$ASMS_DOCS_DIR`, when that environment variable is set
+2. `docs/` beside this `SKILL.md`
+3. `$HOME/Downloads/openclaw-master-files/mycrmsim` (the usual location)
 
 ```
-/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim
+$HOME/Downloads/openclaw-master-files/mycrmsim
 ```
 
 The entry point — always the first file opened — is:
 
 ```
-/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim/00-INDEX.md
+$HOME/Downloads/openclaw-master-files/mycrmsim/00-INDEX.md
 ```
 
 What sits inside the set:
@@ -106,4 +111,4 @@ Common routing shortcuts:
 
 ## Next
 
-Point-in-time execution steps, defaults and file-by-file reading order for this skill folder live in `/Users/blackceomacmini/Downloads/openclaw-master-files/85-android-sms-system/INSTRUCTIONS.md`.
+Point-in-time execution steps, defaults and file-by-file reading order for this skill folder live in `$HOME/Downloads/openclaw-master-files/85-android-sms-system/INSTRUCTIONS.md`.

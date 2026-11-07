@@ -8,18 +8,18 @@
       "type": "path",
       "label": "myCRMSIM offline documentation set",
       "check": {
-        "path": "/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim",
+        "path": "$HOME/Downloads/openclaw-master-files/mycrmsim",
         "mustContain": ["00-INDEX.md", "_manifest.json", "articles/"]
       },
       "severity": "required",
-      "satisfy": "Place the offline documentation set at /Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim, or re-fetch it from https://support.mycrmsim.com and update skills.85-android-sms-system.docsPath in ADVANCED_CONFIG.md if the location differs."
+      "satisfy": "Place the offline documentation set at $HOME/Downloads/openclaw-master-files/mycrmsim, or re-fetch it from https://support.mycrmsim.com and update skills.85-android-sms-system.docsPath in ADVANCED_CONFIG.md if the location differs."
     },
     {
       "id": "article-count",
       "type": "content",
       "label": "Minimum 156 support articles present",
       "check": {
-        "path": "/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim/articles",
+        "path": "$HOME/Downloads/openclaw-master-files/mycrmsim/articles",
         "command": "find \"$DOCS_PATH/articles\" -type f -name '*.md' | wc -l",
         "minimum": 156
       },
@@ -47,7 +47,7 @@
       "type": "content",
       "label": "Article images (optional, absent by default — 660 references, 0 files)",
       "check": {
-        "path": "/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim/_assets",
+        "path": "$HOME/Downloads/openclaw-master-files/mycrmsim/_assets",
         "command": "find \"$DOCS_PATH/_assets\" -type f 2>/dev/null | wc -l",
         "minimum": 0
       },

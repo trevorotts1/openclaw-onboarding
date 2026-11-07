@@ -21,7 +21,7 @@ extend the nearest existing skill index line. Never append a new section at the 
 file, never add the same entry twice, and never restate the trigger in a second core file.
 
 Coordinate with Skill 70 (`70-lean-core-file-system`,
-`/Users/blackceomacmini/Downloads/openclaw-master-files/70-lean-core-file-system/lean-core-file-system-full.md`),
+`$HOME/Downloads/openclaw-master-files/70-lean-core-file-system/lean-core-file-system-full.md`),
 which owns the trim, baseline and audit workflow and treats any
 `<!-- BEGIN skill:NN-name:... -->` block as MANAGED. If the pointer cannot be placed without
 pushing an over-budget file further over, stage the change for the owner as pending and report
@@ -34,7 +34,7 @@ path and trigger in place and stop. Otherwise add exactly this block:
 
 ```markdown
 <!-- BEGIN skill:85-android-sms-system:pointer -->
-When a task involves sending or receiving SMS, iMessage, WhatsApp, RCS or voice calls through Android devices or Macs with a CRM (HighLevel, HubSpot, Zapier, Make, Salesforce or Zoho), read `/Users/blackceomacmini/.openclaw/skills/85-android-sms-system/SKILL.md` first. Offline documentation set of 156 articles starts at `/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim/00-INDEX.md`.
+When a task involves sending or receiving SMS, iMessage, WhatsApp, RCS or voice calls through Android devices or Macs with a CRM (HighLevel, HubSpot, Zapier, Make, Salesforce or Zoho), read `$HOME/.openclaw/skills/85-android-sms-system/SKILL.md` first. Offline documentation set of 156 articles starts at `$HOME/Downloads/openclaw-master-files/mycrmsim/00-INDEX.md`.
 <!-- END skill:85-android-sms-system:pointer -->
 ```
 
@@ -58,7 +58,7 @@ copy beside the TOOLS.md entry.
 
 ```markdown
 <!-- BEGIN skill:85-android-sms-system:agents-pointer -->
-For SMS, iMessage, WhatsApp, RCS or voice sending from Android devices or Macs, with HighLevel, HubSpot, Zapier, Make, Salesforce or Zoho, read `/Users/blackceomacmini/.openclaw/skills/85-android-sms-system/SKILL.md`.
+For SMS, iMessage, WhatsApp, RCS or voice sending from Android devices or Macs, with HighLevel, HubSpot, Zapier, Make, Salesforce or Zoho, read `$HOME/.openclaw/skills/85-android-sms-system/SKILL.md`.
 <!-- END skill:85-android-sms-system:agents-pointer -->
 ```
 

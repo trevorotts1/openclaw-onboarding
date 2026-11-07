@@ -23,7 +23,7 @@ there, **B** they are not.
 On the operator box that resolves to:
 
 ```
-/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim/
+$HOME/Downloads/openclaw-master-files/mycrmsim/
 ```
 
 Required structure at that path:
@@ -81,7 +81,7 @@ directory from any machine that already has it:
 
 ```bash
 rsync -a --info=progress2 \
-  /Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim/ \
+  $HOME/Downloads/openclaw-master-files/mycrmsim/ \
   ~/Downloads/openclaw-master-files/mycrmsim/
 ```
 
@@ -154,13 +154,13 @@ The skill must be readable at the installed path. Two supported arrangements:
 
 ```bash
 # Symlink from the build repo (development; edits go live immediately)
-ln -sfn /Users/blackceomacmini/Downloads/openclaw-master-files/85-android-sms-system \
+ln -sfn $HOME/Downloads/openclaw-master-files/85-android-sms-system \
         ~/.openclaw/skills/85-android-sms-system
 ```
 
 ```bash
 # Copy (a client box, or once the skill is frozen)
-cp -R /Users/blackceomacmini/Downloads/openclaw-master-files/85-android-sms-system \
+cp -R $HOME/Downloads/openclaw-master-files/85-android-sms-system \
       ~/.openclaw/skills/
 ```
 
@@ -374,20 +374,20 @@ count. `grep` exits 1 on zero matches, which here means an empty index stub.
 
 ### 3. Point the skill at the VPS path
 
-The docs root is written literally in two files. Edit them by hand — there is no
-setting to change and no command to run:
+Set one environment variable in the box's OpenClaw env. Nothing in the skill has
+to be edited:
 
-- `SKILL.md` — the docs root line and the `00-INDEX.md` line near the top.
-- `INSTRUCTIONS.md` — the docs root line at the top, the example article path,
-  and the `cd` at the start of the tools section.
-
-Write this string in each place:
-
-```
-/data/.openclaw/docs/myCRMSIM-Support-Docs-2026-11-05
+```bash
+ASMS_DOCS_DIR=/data/.openclaw/docs/myCRMSIM-Support-Docs-2026-11-05
 ```
 
-That is the whole change. No symlink is needed.
+`qc-android-sms-system.sh` reads the same variable, so verification and answering
+stay on the same path. Resolution order when the variable is unset: `docs/` beside
+`SKILL.md`, then `$HOME/Downloads/openclaw-master-files/mycrmsim`.
+
+If you would rather not set a variable, edit the docs-root lines in `SKILL.md`
+(the docs root and the `00-INDEX.md` line) and `INSTRUCTIONS.md` (the docs root
+line, the example article path, and the `cd` in the tools section) by hand.
 
 ### 4. Optional: symlink instead of editing the path
 

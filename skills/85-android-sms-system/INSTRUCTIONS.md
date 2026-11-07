@@ -5,7 +5,7 @@ This is the day-to-day procedure for answering myCRMSIM questions from the offli
 The documentation set is installed on this machine at:
 
 ```
-/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim/
+$HOME/Downloads/openclaw-master-files/mycrmsim/
 ```
 
 | Path | What it is |
@@ -116,7 +116,7 @@ Rules for the reply:
 [Direct answer to the question in one or two sentences.]
 
 From MCS-131 — Setting Up Your Android Device with myCRMSIM SMS Gateway
-(/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim/articles/01-Devices and Installation/01-myCRMSIM SMS Installation and Setup/01-SMS Device Setup/MCS-131 - Setting Up Your Android Device with myCRMSIM SMS Gateway.md)
+($HOME/Downloads/openclaw-master-files/mycrmsim/articles/01-Devices and Installation/01-myCRMSIM SMS Installation and Setup/01-SMS Device Setup/MCS-131 - Setting Up Your Android Device with myCRMSIM SMS Gateway.md)
 
 1. [the article's step 1, in its words]
 2. [the article's step 2]
@@ -161,7 +161,7 @@ Never fill the gap with general Android or CRM advice presented as myCRMSIM guid
 Use these from a terminal. Quote every path — folder and file names contain spaces. Start from the docs root so the paths stay short:
 
 ```bash
-cd "/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim"
+cd "$HOME/Downloads/openclaw-master-files/mycrmsim"
 ```
 
 **Find every article that mentions a word or phrase (filenames only):**

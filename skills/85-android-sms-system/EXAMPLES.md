@@ -2,7 +2,7 @@
 
 Five worked examples, each answered from a real article in the offline myCRMSIM support set. Every step below is taken from the article named in the **Opened** line; nothing is added from outside it. Paths are absolute on this machine so they can be opened directly.
 
-Docs root: `/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim`
+Docs root: `$HOME/Downloads/openclaw-master-files/mycrmsim`
 
 ---
 
@@ -29,7 +29,7 @@ The setup order matters, and two steps are the usual culprits:
 
 If it still fails, the article's own troubleshooting table maps: Play Protect ON > turn OFF; RCS Chat Features > turn OFF; permissions missing > allow ALL; app paused > disable pause setting; not default SMS app > set it; device not assigned > check dashboard. It also says to check device status, battery, connection, permission status and last ping in the dashboard.
 
-**Article path:** `/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim/articles/01-Devices and Installation/01-myCRMSIM SMS Installation and Setup/01-SMS Device Setup/MCS-131 - Setting Up Your Android Device with myCRMSIM SMS Gateway.md`
+**Article path:** `$HOME/Downloads/openclaw-master-files/mycrmsim/articles/01-Devices and Installation/01-myCRMSIM SMS Installation and Setup/01-SMS Device Setup/MCS-131 - Setting Up Your Android Device with myCRMSIM SMS Gateway.md`
 
 ---
 
@@ -52,7 +52,7 @@ Work the article's steps in order:
 9. If the gateway pauses after inactivity, check power settings so the machine does not sleep.
 10. If all of that fails, submit a support ticket with details and a Loom video if possible.
 
-**Article path:** `/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim/articles/01-Devices and Installation/01-myCRMSIM iMessage Installation and Setup/MCS-081 - iMessage Trouble Shooting.md`
+**Article path:** `$HOME/Downloads/openclaw-master-files/mycrmsim/articles/01-Devices and Installation/01-myCRMSIM iMessage Installation and Setup/MCS-081 - iMessage Trouble Shooting.md`
 
 ---
 
@@ -72,7 +72,7 @@ A restriction does not always mean the number is lost, but the article treats it
 
 The article's settings recap: temporary restriction > stop sending, review the trigger, restart slowly; weak delivery before a restriction > reduce pace and improve contact quality immediately; permanent ban > use official appeal options if available and prepare a safer replacement process. Final note: strong opt-in practices, gradual pacing, relevant content and close monitoring keep a number healthy; document what happened and what changed so the team does not repeat it.
 
-**Article path:** `/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim/articles/01-Devices and Installation/01-myCRMSIM WhatsApp Installation and Setup/MCS-104 - What to Do If Your WhatsApp Number Gets Restricted.md`
+**Article path:** `$HOME/Downloads/openclaw-master-files/mycrmsim/articles/01-Devices and Installation/01-myCRMSIM WhatsApp Installation and Setup/MCS-104 - What to Do If Your WhatsApp Number Gets Restricted.md`
 
 ---
 
@@ -95,7 +95,7 @@ Prerequisites per the article: an active myCRMSIM account, access to the HighLev
 
 The integration is then complete and the connected providers can be used inside the HighLevel sub-account.
 
-**Article path:** `/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim/articles/04-Integrations/04-HighLevel Setup/MCS-042 - myCRMSIM HighLevel Integration Guide.md`
+**Article path:** `$HOME/Downloads/openclaw-master-files/mycrmsim/articles/04-Integrations/04-HighLevel Setup/MCS-042 - myCRMSIM HighLevel Integration Guide.md`
 
 ---
 
@@ -127,5 +127,5 @@ Messages that show "Pending" in the HighLevel conversation provider may appear a
 For the specific case of messages staying Pending **after an Android OS update**, MCS-126 gives the correct update procedure because the app is distributed outside the Play Store: delete the old device from the dashboard (Devices > remove; it reconnects after the new install), turn off Play Protect (Scan apps with Play Protect and Improve harmful app detection — note Play Protect will refuse to disable during a call or meeting; restart the phone if it turns back on), install the new APK (allowing "Install unknown apps" if prompted), allow ALL in-app permissions, then grant the remaining permissions from Android settings including Battery > Unrestricted / Allow background activity and Auto Start. Once permissions are fully granted the app generates a new Firebase token, registers the device and connects to the dashboard with no extra action.
 
 **Article paths:**
-- `/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim/articles/01-Devices and Installation/01-myCRMSIM SMS Installation and Setup/01-SMS Trouble Shooting/MCS-015 - What Happens If Messages Fail.md`
-- `/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim/articles/01-Devices and Installation/01-myCRMSIM SMS Installation and Setup/01-SMS Trouble Shooting/MCS-126 - SMS Staying in Pending after updating android OS to latest version.md`
+- `$HOME/Downloads/openclaw-master-files/mycrmsim/articles/01-Devices and Installation/01-myCRMSIM SMS Installation and Setup/01-SMS Trouble Shooting/MCS-015 - What Happens If Messages Fail.md`
+- `$HOME/Downloads/openclaw-master-files/mycrmsim/articles/01-Devices and Installation/01-myCRMSIM SMS Installation and Setup/01-SMS Trouble Shooting/MCS-126 - SMS Staying in Pending after updating android OS to latest version.md`
