@@ -328,15 +328,20 @@ def main(argv=None):
     ap.add_argument("--harness")
     ap.add_argument("--mode", choices=("launch", "legacy", "bf"),
                     help="run mode when the answers file does not name one")
+    ap.add_argument("--request", help="the client's opening words: routes launch vs legacy when --mode is absent")
     a = ap.parse_args(argv)
+    mode, routed = a.mode, None
+    if mode is None and a.request:
+        mode, routed = engine_module().route_mode(a.request)
     qs = (json.loads(Path(a.questions_file).read_text(encoding="utf-8"))
           if a.questions_file else str(_CLIENT_INTAKE / "question-bank.json"))
     if isinstance(qs, str):
         qs = json.loads(Path(qs).read_text(encoding="utf-8"))
     answers = json.loads(Path(a.answers_file).read_text(encoding="utf-8")) if a.answers_file else None
     prof = harness_profile.detect(a.harness, answers)
-    one = pending(qs, answers, a.mode)
-    print(json.dumps({"profile": prof, "next_id": one[0]["id"] if one else None,
+    one = pending(qs, answers, mode)
+    print(json.dumps({"profile": prof, "mode": mode, "mode_reason": routed,
+                      "next_id": one[0]["id"] if one else None,
                       "done": not one, "render": render(one, prof)}, indent=2))
 
 
