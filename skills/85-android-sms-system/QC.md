@@ -109,8 +109,9 @@ PASS prints `frontmatter OK`; any assertion is FAIL.
 - [ ] **2.1** Every skill file that names the source docs writes the docs root as
       `$HOME/Downloads/openclaw-master-files/mycrmsim`. `$HOME` is the home
       directory of the user running the agent, so the path is portable.
-      Forbidden: a concrete user name (`/Users/<login>/…`, `/home/<login>/…`
-      with a real login baked in), a bare relative path, a stale download date.
+      Forbidden: a concrete user name baked into a home path (the macOS user
+      home root or the Linux home root followed by a real login), a bare
+      relative path, a stale download date.
 - [ ] **2.2** `00-INDEX.md`, `_manifest.json`, `_labels.json`, `articles/`,
       `categories/`, `_assets/`, `_source-html/` all exist at that root.
 - [ ] **2.3** The deep reference ships inside the skill folder, so an installed

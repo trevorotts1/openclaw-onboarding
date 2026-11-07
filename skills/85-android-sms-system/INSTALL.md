@@ -17,7 +17,7 @@ there, **B** they are not.
 ## Expected documentation path
 
 ```
-/Users/<user>/Downloads/openclaw-master-files/mycrmsim/
+$HOME/Downloads/openclaw-master-files/mycrmsim/
 ```
 
 On the operator box that resolves to:
