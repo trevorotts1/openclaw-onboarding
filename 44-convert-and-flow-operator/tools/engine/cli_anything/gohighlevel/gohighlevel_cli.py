@@ -1366,8 +1366,16 @@ def _campaign_from_plan(plan, folder):
 def _campaign_from_automation_build(doc, folder):
     """automation-build doc -> (campaign, folder_name) via compile_launch_builds.
 
-    require_ready=True: a blocked build, a missing required output or a missing
-    suppression guard refuses the whole document, never a partial build.
+    Two refusal scopes, deliberately different:
+
+    * DOCUMENT-WIDE (raised, nothing built): not an object, not draft_only, no
+      ``builds`` list, or a ``warnings[]`` entry marked ``blocking``.  The
+      document itself is invalid, so no unit may be trusted.
+    * PER UNIT (recorded on ``campaign.refusals``, other units continue): a
+      blocked build, a zero-workflow build, a missing required output, a
+      missing suppression guard, or an upstream refusal.  The remaining builds
+      still compile and build; ``CampaignBuilder.build`` reports every refusal
+      as an error, so a partial campaign never looks clean.
     """
     from cli_anything.gohighlevel.utils.workflow_builder import (
         WorkflowCompileError,
@@ -1446,14 +1454,29 @@ def workflows_build(ctx, plan_file, automation_file, journal_path, folder, check
             errors = validate_campaign(campaign) + _contract_errors(campaign)
             # compile_launch_builds records blocked/refused builds on the result
             # instead of raising; a dry run must not look clean while it hides them.
+            refusals = list(getattr(campaign, "refusals", None) or [])
             errors += ["%s: %s: %s" % (r.get("id"), r.get("code"), r.get("reason"))
-                       for r in getattr(campaign, "refusals", None) or []]
+                       for r in refusals]
+            from cli_anything.gohighlevel.utils.workflow_builder import (
+                resolve_browser_executor,
+            )
+            browser_reasons: list = []
+            selected = resolve_browser_executor(reasons=browser_reasons)
             report = {
                 "dry_run": True,
                 "source": "automation-build" if automation_file else "plan",
                 "folder": folder_name,
                 "journal": journal_path,
                 "errors": errors,
+                # Per-unit refusal/continuation, stated plainly: which units the
+                # compiler refused and which ones continue to build.
+                "refusals": [{"id": r.get("id"), "unit_key": r.get("unit_key"),
+                              "code": r.get("code"), "reason": r.get("reason")}
+                             for r in refusals],
+                "browser_capability": {
+                    "selected": selected is not None,
+                    "reasons": browser_reasons,
+                },
                 "workflows": [
                     {"key": k, "name": v.get("name"), "unit_key": v.get("unit_key"),
                      "phase": v.get("phase"), "steps": len(v.get("templates") or []),
@@ -1474,10 +1497,23 @@ def workflows_build(ctx, plan_file, automation_file, journal_path, folder, check
 
         client = _get_internal_client(ctx)
         location_id = _loc(ctx)
+        # Browser-required work runs through the SELECTED capability (F04/F11).
+        # resolve_browser_executor reads Skill 6's declared attempt order and
+        # returns None when no executable rung is selected; the rows then stay
+        # pending with the reason on the record.
+        from cli_anything.gohighlevel.utils.workflow_builder import (
+            resolve_browser_executor,
+        )
+        browser_reasons: list = []
+        browser_executor = resolve_browser_executor(reasons=browser_reasons)
         with WriteLock(location_id):
             v4, _route_reason = _get_public_v4(ctx)
             builder = CampaignBuilder(client, v4=v4)
-            stats = builder.build(campaign, folder_name, journal=journal_path)
+            stats = builder.build(campaign, folder_name, journal=journal_path,
+                                  browser_executor=browser_executor)
+        if browser_executor is None:
+            stats.setdefault("notes", []).append(
+                "browser capability selection: " + "; ".join(browser_reasons))
         _emit_build_result(ctx, builder, stats)
     except Exception as e:
         _handle_error(e)

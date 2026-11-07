@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import threading
 import time
 import uuid
@@ -1533,6 +1534,134 @@ def _index_existing(
     return workflow_ids, folder_ids, workflow_parents
 
 
+# ── Browser-required work: capability selection (F04/F11 seam) ─────────────
+#
+# The launch compiler emits a ledger row for editor work no verified API
+# payload covers: a non-contact_tag trigger, an if_else condition it could
+# not parse, an absolute "wait until date" step.  Those rows are executed
+# through the SELECTED capability — Skill 6's managed browser lane, whose
+# attempt order is declared once in tools/fallback-ladder.json.  Selection
+# reads that declaration; it never assumes a browser is available, and it
+# never fabricates a rung.  With no executable rung the rows stay pending
+# with the exact reason on the record, because naming an action is not
+# performing it.
+BROWSER_LADDER_SURFACE = "page"
+_BROWSER_RUNG_CALLABLE = "run_workflow_step"
+
+
+def _skill6_tool(name: str):
+    """Load a Skill 6 tool module by file path, or None when it is absent.
+
+    Searched in order: $CAF_SKILL6_DIR, the repo/installed skills tree next to
+    this skill (both share the NN-<skill>/tools layout).
+    """
+    import importlib.util
+
+    module_name = "_caf_skill6_" + name
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+    leaf = name + ".py"
+    candidates = []
+    override = os.environ.get("CAF_SKILL6_DIR", "").strip()
+    if override:
+        candidates.append(os.path.join(override, leaf))
+    here = os.path.abspath(__file__)
+    # <skills>/44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils
+    #   -> seven levels up is the skills root (numbered in onboarding, canonical
+    #      unnumbered in 999; both layouts are checked).
+    skill_roots = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.dirname(here)))))))
+    for folder in ("06-ghl-install-pages", "ghl-install-pages"):
+        candidates.append(os.path.join(skill_roots, folder, "tools", leaf))
+    for path in candidates:
+        path = os.path.normpath(path)
+        if not os.path.isfile(path):
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, path)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+            return module
+        except Exception:  # noqa: BLE001 - an unloadable tool is a named absence
+            sys.modules.pop(module_name, None)
+            continue
+    return None
+
+
+def resolve_browser_executor(*, reasons: Optional[list] = None):
+    """The selected capability for browser-required rows, or None.
+
+    ``None`` is a real answer: it means no executable rung is selected for
+    workflow-editor steps, and the caller records the rows as pending.  Every
+    reason lands in ``reasons`` so the record names what was checked.
+    """
+    reasons = reasons if reasons is not None else []
+    ladder = _skill6_tool("ghl_fallback_ladder")
+    if ladder is None:
+        reasons.append(
+            "Skill 6 ghl_fallback_ladder is not installed on this host; no "
+            "declared attempt order to select from")
+        return None
+    try:
+        order = ladder.get_ladder(BROWSER_LADDER_SURFACE)
+    except Exception as exc:  # noqa: BLE001 - an unreadable declaration is an absence
+        reasons.append("Skill 6 fallback ladder unreadable (%s: %s)"
+                       % (type(exc).__name__, exc))
+        return None
+    reasons.append(
+        "declared attempt order for surface %r: %s"
+        % (BROWSER_LADDER_SURFACE, " -> ".join(order) or "(none)"))
+    for transport in order:
+        rung = _skill6_tool(transport)
+        if rung is None:
+            reasons.append("rung %r: no Skill 6 module named %s.py"
+                           % (transport, transport))
+            continue
+        step_runner = getattr(rung, _BROWSER_RUNG_CALLABLE, None)
+        if callable(step_runner):
+            reasons.append("rung %r selected (%s.%s)"
+                           % (transport, transport, _BROWSER_RUNG_CALLABLE))
+            return step_runner
+        reasons.append("rung %r declares no callable %s"
+                       % (transport, _BROWSER_RUNG_CALLABLE))
+    reasons.append(
+        "no declared rung supplies %s(rows, location); browser-required rows "
+        "stay pending" % _BROWSER_RUNG_CALLABLE)
+    return None
+
+
+def merged_browser_result(rows: list, observed: Any) -> tuple:
+    """Split an executor's observed result into (completed, still_pending).
+
+    A row counts as executed only when the observation names THAT ledger row
+    and reports it done.  Anything else — a missing entry, a failure, an
+    unrecognised shape — keeps the row pending: an unmerged observation is
+    not a performed action.
+    """
+    entries = {}
+    if isinstance(observed, dict):
+        for key in ("steps", "results", "rows", "observed"):
+            value = observed.get(key)
+            if isinstance(value, list):
+                entries = {e.get("ledger_id") or e.get("step_id"): e
+                           for e in value if isinstance(e, dict)}
+                break
+        if not entries:
+            entries = {k: v for k, v in observed.items() if isinstance(v, dict)}
+    done, pending = [], []
+    for row in rows:
+        entry = entries.get(row.get("ledger_id")) or entries.get(row.get("step_id"))
+        status = str((entry or {}).get("status") or "").lower()
+        if isinstance(entry, dict) and status in ("ok", "done", "complete",
+                                                  "completed", "pass", "verified"):
+            done.append(dict(row, observed=entry))
+        else:
+            pending.append(row)
+    return done, pending
+
+
 # ── Campaign Builder ──────────────────────────────────────────────────────
 
 class CampaignBuilder:
@@ -1755,10 +1884,27 @@ class CampaignBuilder:
         requested_folder_id = folder_id
 
         # Builds the compiler refused must never vanish from a partial campaign.
-        for refusal in getattr(campaign, "refusals", None) or []:
+        refusals = list(getattr(campaign, "refusals", None) or [])
+        for refusal in refusals:
             self.stats["errors"].append(
                 "build %s refused at compile (%s): %s" % (
                     refusal.get("id"), refusal.get("code"), refusal.get("reason")))
+        if refusals:
+            # Per-unit refusal/continuation: the units that DID compile are
+            # named, so a partial campaign is never mistaken for either a clean
+            # build or a total refusal.
+            self.stats.setdefault("notes", []).append(
+                "per-unit refusal: %d build(s) refused at compile (%s); %d "
+                "workflow(s) from the remaining units continue."
+                % (len(refusals),
+                   ", ".join(str(r.get("id")) for r in refusals) or "unknown",
+                   len(campaign)))
+        if refusals and not campaign:
+            # Nothing compiled.  Refuse BEFORE any write: a folder created on a
+            # document that then refuses is a write on a path that should have
+            # refused outright (the same rule the dependency gate follows).
+            self.stats["end_time"] = time.time()
+            return self.stats
 
         # Pre-flight validation
         errors = validate_campaign(campaign)
@@ -2419,19 +2565,24 @@ class CampaignBuilder:
                     observed = browser_executor(browser_rows, self.loc)
                 except Exception as exc:  # noqa: BLE001 - a failed capability is recorded
                     observed = {"error": "%s: %s" % (type(exc).__name__, exc)}
+            done, still_pending = merged_browser_result(browser_rows, observed)
             self.stats["browser_steps"] = {
                 "route": route.as_evidence(),
                 "requested": browser_rows,
-                "executed": observed is not None,
+                "completed": [row.get("ledger_id") for row in done],
+                "executed": bool(done),
                 "observed": observed,
             }
-            if observed is None:
+            if still_pending:
+                reason = (
+                    "no selected capability executor is wired for this run"
+                    if observed is None else
+                    "the selected capability did not report these rows done")
                 self.stats.setdefault("notes", []).append(
-                    "browser-required work is recorded, not executed: no selected "
-                    "capability executor is wired for this run (%d step(s))."
-                    % len(browser_rows))
+                    "browser-required work is recorded, not executed for %d of "
+                    "%d step(s): %s." % (len(still_pending), len(browser_rows), reason))
                 self.stats.setdefault("incomplete_actions", []).extend(
-                    "browser:%s" % row.get("ledger_id") for row in browser_rows)
+                    "browser:%s" % row.get("ledger_id") for row in still_pending)
 
         # Channel actions the compiler could not complete (unresolved copy).
         for key, wf_def in campaign.items():
