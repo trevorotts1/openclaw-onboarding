@@ -70,10 +70,8 @@ KIND_DOWNLOAD = "download"
 KIND_SCHEDULE = "schedule_included_service"
 
 # What happened to one promise. ``produced`` means bytes exist in this run and
-# their digest is recorded; ``human_delivered`` means a person hands it over;
-# nothing else is ever called produced.
+# their digest is recorded; nothing else is ever called produced.
 PROMISE_PRODUCED = "produced"
-PROMISE_HUMAN = "human_delivered"
 PROMISE_NOT_PRODUCED = "not_produced"
 
 # How an offer's promised item is delivered. Four different facts that a single
@@ -343,23 +341,20 @@ def bindings(planned: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
     granted entitlement with no entry. A binding comes from the offer that OWNS the
     entitlement, never from an offer that merely grants it by inclusion: a level's
     buyers hold the bump's entitlement, but the bump's own destination is where that
-    item lives. Ownership is the offer whose id is the entitlement (lowercased, the
-    launcher's own convention); when an entitlement id is the client's custom one,
-    the first offer that lists it is its owner. Assuming the id shape would refuse a
-    launch the intake already validated.
+    item lives. Ownership is the offer whose id is the entitlement (lowercased):
+    ``route.offer_entitlements`` mints every id that way, so an id no offer owns is a
+    caller defect and is refused rather than bound to whichever offer listed it.
     """
-    entries = list(planned["offers"])
-    by_lower = {entry["offer_id"].lower(): entry for entry in entries}
-    granted = sorted({entitlement_id for entry in entries
+    owner = {entry["offer_id"].lower(): entry for entry in planned["offers"]}
+    granted = sorted({entitlement_id for entry in planned["offers"]
                       for entitlement_id in entry["entitlement_ids"]})
     out: Dict[str, Dict[str, Any]] = {}
     for entitlement_id in granted:
-        entry = by_lower.get(entitlement_id) or next(
-            (e for e in entries if entitlement_id in e["entitlement_ids"]), None)
-        if entry is None:  # unreachable: ``granted`` is built from these same entries
+        entry = owner.get(entitlement_id)
+        if entry is None:
             raise DeliveryError(
                 "AF-LAUNCH-DELIVERY-OWNER",
-                f"entitlement {entitlement_id!r} is granted by this launch but no offer lists it")
+                f"entitlement {entitlement_id!r} is granted by this launch but no offer owns it")
         out[entitlement_id] = {"delivery_kind": entry["delivery_kind"],
                                "delivery_url": entry["delivery_url"]}
     return out
@@ -384,12 +379,14 @@ def record(planned: Mapping[str, Any], produced: Mapping[str, Any],
            launch: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """The honest production record: what exists, what does not, and why.
 
-    A promise is ``produced`` only when this run wrote bytes for it, and
-    ``human_delivered`` only for a service the client said a person hands over.
-    Every other promise carries the exact missing capability. The one file this
-    run writes per offer (its delivery sheet) is recorded once, as that offer's
-    ``artifact``, so the record, the dispatch report and the free-entry block all
-    name the same path and digest rather than three near-copies of it.
+    A promise is ``produced`` only when this run wrote bytes for it; every other
+    promise carries the exact missing capability. A human-delivered service is
+    recorded as that offer's ``delivery_mode`` and ``mode_basis``, never as a
+    produced promise: this run hands over no bytes, so the promise stays
+    ``not_produced`` with its capability named. The one file this run writes per
+    offer (its delivery sheet) is recorded once, as that offer's ``sheet``, so the
+    record, the dispatch report and the free-entry block all name the same path and
+    digest and a sheet can never be read as the product.
     """
     launch = launch or {}
     offers: List[Dict[str, Any]] = []
@@ -399,14 +396,10 @@ def record(planned: Mapping[str, Any], produced: Mapping[str, Any],
             raise DeliveryError("AF-LAUNCH-DELIVERY-SHEET",
                                 f"offer {entry['offer_id']!r} has no produced delivery sheet")
         mode = _mode(entry, sheet.get("item"))
-        if mode["mode"] == MODE_SERVICE:
-            promises = [{"item": item, "state": PROMISE_HUMAN, "delivered_by": "person"}
-                        for item in entry["promises"]]
-            missing: List[str] = []
-        elif mode["mode"] == MODE_FILE:
+        if mode["mode"] == MODE_FILE:
             promises = [{"item": item, "state": PROMISE_PRODUCED,
                          "artifact": dict(sheet["item"])} for item in entry["promises"]]
-            missing = []
+            missing: List[str] = []
         else:
             promises = [{"item": item, "state": PROMISE_NOT_PRODUCED,
                          "missing_capability": MISSING_AUTHORING_PRODUCER}
@@ -423,9 +416,10 @@ def record(planned: Mapping[str, Any], produced: Mapping[str, Any],
             "human_service": entry["human_service"],
             "delivery_mode": mode["mode"],
             "mode_basis": mode["basis"],
-            # ONE artifact reference for the file this run wrote for this offer.
-            "artifact": {"path": sheet["path"], "sha256": sheet["sha256"],
-                         "size": sheet["size"], "content": "delivery_sheet"},
+            # ONE reference for the file this run wrote for this offer, under the name
+            # the record has always used: a sheet, never the product itself.
+            "sheet": {"path": sheet["path"], "sha256": sheet["sha256"],
+                      "size": sheet["size"], "content": "delivery_sheet"},
             "promises": promises,
             # ponytail: no producer in this tree writes a promised item's own content (a
             # course module, video lesson, live call or template pack). When one lands,
@@ -480,25 +474,23 @@ def _free_entry(planned: Mapping[str, Any], produced: Optional[Mapping[str, Any]
             "delivery_url": entry["delivery_url"],
             "delivery_mode": mode["mode"],
             "mode_basis": mode["basis"],
-            "artifact": ({k: sheet[k] for k in ("path", "sha256", "size")} if sheet else None),
+            "sheet": ({k: sheet[k] for k in ("path", "sha256", "size")} if sheet else None),
             "promises": list(entry["promises"]),
             "missing_capability": [] if sheet else [MISSING_AUTHORING_PRODUCER],
             # The launch record's ``free_entry.delivery_ref`` (launch schema 1.2, BFL-001) is
-            # the field this artifact belongs in. It is emitted by the record producer, not
+            # the field this sheet belongs in. It is emitted by the record producer, not
             # here: this module writes the file and its digest, and the launch record owns
             # where its own field points.
         }
     return {
         "state": "absent",
         "missing_capability": (
-            "no free lead product can exist on this path, recorded by name: (1) the launcher's "
-            "offer roles (constants.OFFER_ROLES) have no free/lead role, (2) "
-            "launcher_core/intake.py refuses a price of 0 at _validate_offer and refuses "
-            "journey_mode 'free_entry' as not implemented, and (3) "
-            "shared-utils/client_intake/launcher_intake.py refuses a free price at _price "
-            "('a free or unpriced offer cannot be built'). Building one needs the offer model "
-            "(F08, W05) to carry a zero-price free role first; this module then produces and "
-            "binds its artifact with no second edit"),
+            "the launcher offer model has no free-entry role (constants.OFFER_ROLES) and "
+            "launcher_core/intake.py refuses a price of zero (it also refuses journey_mode "
+            "'free_entry' as not implemented), and shared-utils/client_intake/launcher_intake.py "
+            "refuses a free price at _price ('a free or unpriced offer cannot be built'), so no "
+            "free lead product can be declared, produced or bound in this build; the free-entry "
+            "record is the offer model's half (F08, W05)"),
     }
 
 
