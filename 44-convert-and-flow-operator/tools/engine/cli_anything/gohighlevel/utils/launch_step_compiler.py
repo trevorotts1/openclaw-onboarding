@@ -61,6 +61,13 @@ FAMILY_TEMPLATE = {
 PROMO_FAMILIES = {"pre_launch", "opt_in", "upsell_downsell", "abandoned_checkout",
                   "page_retargeting", "win_back"}
 
+# The literal placeholder the buildable post-sale template carries for the
+# purchased-variant tag (launch-b/post-sale-purchase.json, node n2).  The launch
+# reader supplies the value on the build entry as ``variant_tag``; ONE spelling
+# of the binding key lives here so the document compiler below and
+# workflow_builder.compile_launch_builds can never drift apart.
+VARIANT_BINDING = "variant tag (main / upsell-N / downsell-N)"
+
 # Must equal launch-c/plan_reader.DEFAULT_LIFECYCLE (a test asserts parity).  A
 # lifecycle that is exactly this contract default, with no build-plan provenance,
 # was synthesized by the reader, not authored by Skill 50: treated as absent.
@@ -253,6 +260,12 @@ def compile_build(build: Mapping[str, Any], *, bindings: Optional[Mapping[str, A
                            "workflows": {}, "browser_steps": []}
     blocked = out["blocked_by"]
     bindings = dict(bindings or {})
+    # The variant tag the reader carried on this build (it validates the shape);
+    # without it the template's variant placeholder cannot resolve and the
+    # purchase handler would compile without the tag that marks the variant.
+    variant = build.get("variant_tag")
+    if isinstance(variant, str) and variant.strip():
+        bindings.setdefault(VARIANT_BINDING, [variant.strip()])
 
     if build.get("draft_only") is not True:
         blocked.append("not_draft")

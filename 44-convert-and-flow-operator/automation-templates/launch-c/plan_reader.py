@@ -125,6 +125,18 @@ DEFAULT_SENDER = {
     "reply_to_ref": "sender-config:default",
 }
 
+# The post-sale short handler's variant identity.  The buildable template
+# (launch-b/post-sale-purchase.json, node n2) carries the literal placeholder
+# "variant tag (main / upsell-N / downsell-N)"; the launch compiler binds that
+# placeholder from build["variant_tag"] (workflow_builder.compile_launch_builds
+# -> launch_step_compiler._resolve_tags).  So the launch plan declares the tag
+# ONCE, on the automation unit, and this reader carries it through under the
+# same key: one identity, never a second variant system.
+VARIANT_TAG_KEY = "variant_tag"
+# Must accept exactly what launch_step_compiler._resolve_tags accepts, so a
+# plan-supplied tag can never pass this reader and then fail to bind.
+VARIANT_TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:_./-]*$")
+
 
 class ReaderError(Exception):
     def __init__(self, code, message):
@@ -364,6 +376,16 @@ def read_launch_plan(plan, source="launch-plan"):
                          "automation %r template %r is not in buildable-templates.json "
                          "(a 'new' template needs new_template.owner_approved_reason and "
                          "new_template.compile_spec)" % (item["id"], template))
+                # A declared variant tag must really be a contact tag: it is
+                # written to the provider, and a value that does not bind leaves
+                # the post-sale handler on its sequence instead of its graph.
+                variant = item.get(VARIANT_TAG_KEY)
+                if variant is not None:
+                    _require(isinstance(variant, str) and bool(VARIANT_TAG_RE.match(variant)),
+                             "LAUNCH-PLAN-VARIANT-TAG",
+                             "automation %r %s %r is not a contact tag; it must "
+                             "match %s" % (item["id"], VARIANT_TAG_KEY, variant,
+                                           VARIANT_TAG_RE.pattern))
                 automations.append(item)
             elif kind in targets:
                 targets[kind][item["id"]] = item
@@ -875,6 +897,10 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowle
             "family": automation["family"],
             "phase": automation["family"],
             "template": automation.get("template"),
+            # The variant tag the short post-sale handler sets, declared once on
+            # the launch plan.  Always present (null when the plan declares none)
+            # so the key set a compiler reads never depends on the plan's mood.
+            VARIANT_TAG_KEY: automation.get(VARIANT_TAG_KEY),
             "build_rail": automation["build_rail"],
             "draft_only": True,
             "trigger": automation["trigger"],

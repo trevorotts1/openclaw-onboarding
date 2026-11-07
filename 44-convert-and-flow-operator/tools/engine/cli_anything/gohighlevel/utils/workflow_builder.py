@@ -1155,7 +1155,10 @@ def compile_launch_builds(document: Mapping[str, Any], *, require_ready: bool = 
         for build in builds)
     # Approved names only: the promotional tags this document actually carries
     # are the ones a purchase handler may remove.  No name is invented here.
-    from cli_anything.gohighlevel.utils.launch_step_compiler import PROMO_FAMILIES
+    from cli_anything.gohighlevel.utils.launch_step_compiler import (
+        PROMO_FAMILIES,
+        VARIANT_BINDING,
+    )
     document_bindings: dict = {}
     promo_tags = sorted({
         workflow.get("tag")
@@ -1208,8 +1211,7 @@ def compile_launch_builds(document: Mapping[str, Any], *, require_ready: bool = 
             if isinstance(build.get("variant_tag"), str) and build["variant_tag"].strip():
                 # Only an approved variant binding unlocks the short handler's
                 # variant tag; without it the handler stays on its sequence.
-                build_bindings["variant tag (main / upsell-N / downsell-N)"] = [
-                    build["variant_tag"].strip()]
+                build_bindings[VARIANT_BINDING] = [build["variant_tag"].strip()]
             compiled = compile_automation_build(
                 build, external_deps=external, depends_on=dependency_keys,
                 purchase_tag_set=purchase_tag_set, bindings=build_bindings)
