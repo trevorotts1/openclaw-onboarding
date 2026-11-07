@@ -137,6 +137,25 @@ VARIANT_TAG_KEY = "variant_tag"
 # plan-supplied tag can never pass this reader and then fail to bind.
 VARIANT_TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:_./-]*$")
 
+# The automation's own provider settings, declared on the launch plan unit under
+# ``settings`` (shared launch contract).  The builder APPLIES Allow Reentry to the
+# workflow settings object and reads it back after the save
+# (workflow_builder.compile_settings -> CampaignBuilder); like the variant tag,
+# the reader is the only producer of an automation build document, so it must
+# carry the declared value or the setting can never reach the provider.
+#
+# ``unknown`` and an absent value both stay UNKNOWN (None): a reentry setting the
+# plan did not decide is never normalised to False, and an unproven setting is
+# never reported as applied.
+REENTRY_SETTINGS = {"allow": True, "block": False, "unknown": None}
+# ``successive`` keeps a SECOND purchase's fulfilment (deduplicated by the native
+# event/transaction/line identity); ``single`` enrols once; ``unknown`` is not a
+# claim.  Absent stays None for the same reason as reentry.
+ENROLLMENT_SETTINGS = {"single": "single", "successive": "successive",
+                       "unknown": None}
+ALLOW_REENTRY_KEY = "allow_reentry"
+ENROLLMENT_KEY = "enrollment"
+
 
 class ReaderError(Exception):
     def __init__(self, code, message):
@@ -337,6 +356,34 @@ def read_calendar(calendar, black_friday_required=False):
 
 
 # ------------------------------------------------------------------- launch plan
+def automation_settings(item):
+    """``(allow_reentry, enrollment)`` from one automation unit's ``settings``.
+
+    Only the two values the builder can actually act on travel onward:
+    ``allow_reentry`` as a bool (or None when the plan did not decide) and
+    ``enrollment`` as "single" / "successive" (or None).  A value outside the
+    shared contract's own vocabulary is refused here rather than dropped, so a
+    typo can never silently become "not declared".
+    """
+    settings = item.get("settings")
+    if settings is None:
+        return None, None
+    _require(isinstance(settings, dict), "LAUNCH-PLAN-SETTINGS",
+             "automation %r settings is not an object" % item.get("id"))
+    reentry = settings.get("reentry")
+    if reentry is not None and reentry not in REENTRY_SETTINGS:
+        _fail("LAUNCH-PLAN-SETTINGS",
+              "automation %r settings.reentry %r is not one of %s"
+              % (item.get("id"), reentry, sorted(REENTRY_SETTINGS)))
+    enrollment = settings.get("enrollment")
+    if enrollment is not None and enrollment not in ENROLLMENT_SETTINGS:
+        _fail("LAUNCH-PLAN-SETTINGS",
+              "automation %r settings.enrollment %r is not one of %s"
+              % (item.get("id"), enrollment, sorted(ENROLLMENT_SETTINGS)))
+    return (REENTRY_SETTINGS.get(reentry) if reentry is not None else None,
+            ENROLLMENT_SETTINGS.get(enrollment) if enrollment is not None else None)
+
+
 def read_launch_plan(plan, source="launch-plan"):
     _require(isinstance(plan, dict), "LAUNCH-PLAN-SHAPE", "%s is not an object" % source)
     # The shared contract validator goes first and is refused with its own text.
@@ -386,6 +433,9 @@ def read_launch_plan(plan, source="launch-plan"):
                              "automation %r %s %r is not a contact tag; it must "
                              "match %s" % (item["id"], VARIANT_TAG_KEY, variant,
                                            VARIANT_TAG_RE.pattern))
+                # Declared settings are proved here so a typo refuses the plan
+                # instead of silently reaching the build as "not declared".
+                automation_settings(item)
                 automations.append(item)
             elif kind in targets:
                 targets[kind][item["id"]] = item
@@ -816,6 +866,14 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowle
         workflows = []
         missing = []
         blocked_by = []
+        # The plan's own reentry / enrolment decision, carried so the builder can
+        # APPLY it, read it back, and refuse to call an unproven setting applied.
+        allow_reentry, enrollment = automation_settings(automation)
+        if enrollment == "successive" and allow_reentry is False:
+            # Successive delivery means a second purchase must be able to enter
+            # this automation. With reentry blocked the provider drops it, so the
+            # plan asks for something the workflow forbids: blocked, never built.
+            blocked_by.append("settings:successive_without_reentry")
         for seq_id in refs:
             if seq_id not in bound:
                 missing.append(seq_id)
@@ -901,6 +959,12 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowle
             # the launch plan.  Always present (null when the plan declares none)
             # so the key set a compiler reads never depends on the plan's mood.
             VARIANT_TAG_KEY: automation.get(VARIANT_TAG_KEY),
+            # The provider settings the plan decided.  Always present (null when
+            # the plan decided nothing) so the key set a compiler reads never
+            # depends on the plan's mood, and "not declared" stays distinguishable
+            # from "declared false".
+            ALLOW_REENTRY_KEY: allow_reentry,
+            ENROLLMENT_KEY: enrollment,
             "build_rail": automation["build_rail"],
             "draft_only": True,
             "trigger": automation["trigger"],

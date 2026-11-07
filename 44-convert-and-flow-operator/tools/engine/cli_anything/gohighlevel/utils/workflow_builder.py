@@ -1089,6 +1089,9 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
             "browser_steps": installable["browser_steps"],
             "channel_actions": installable["channel_actions"],
             "incomplete_actions": installable["incomplete_actions"],
+            # The plan's enrolment decision: which succession this workflow
+            # promises, and the identity a delivered purchase is deduplicated on.
+            "enrollment": installable.get("enrollment"),
             "purchase_identity": installable["purchase_identity"],
             "compile_notes": installable["notes"],
         }
