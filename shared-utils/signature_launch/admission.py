@@ -56,6 +56,9 @@ _HERE = Path(__file__).resolve().parent
 _CONTRACT_DIR = _HERE.parent / "signature_launch_contract"
 _HEX64 = re.compile(r"^[a-f0-9]{64}$")
 _PLAN_HASH = re.compile(r"^(?:sha256:)?[a-f0-9]{64}$")
+# Input hashes are hashes, not free text: a bare 64-hex digest or a
+# ``sha256:``-prefixed one.  An arbitrary nonempty string is not an input hash.
+_INPUT_HASH = _PLAN_HASH
 
 # Unit kinds come from the EXISTING launch-plan contract
 # (signature_launch_contract/launch-plan.schema.json) through
@@ -312,6 +315,10 @@ def evidence(unit, plan_hash_value, artifacts, *, inputs, identity_facts=None,
     facts = dict(inputs or {})
     if not facts:
         raise AdmissionError("evidence needs the current input hashes")
+    for key, value in facts.items():
+        if not isinstance(value, str) or not _INPUT_HASH.match(value.strip()):
+            raise AdmissionError("input hash %r must be a sha256 hash, got %r"
+                                 % (key, value))
     out = {
         "schema": SCHEMA,
         "unit": unit,
@@ -347,12 +354,17 @@ def verify_evidence(candidate, *, identity_facts=None, require_review=False,
                     root=None, ledger=None, author_session=None,
                     request_id=None, author_model=None,
                     require_model_independence=False,
-                    exact_artifact_set=True):
+                    exact_artifact_set=True, unit=None, plan_hash=None):
     """The canonical evidence validator. Returns failures and computed facts.
 
     A nonempty file, a truthy object, a zero-exit subprocess, a nonempty URL or
     a declared ``status`` are not inputs to this function; they are not
     evidence and can never reach it as success.
+
+    ``unit`` and ``plan_hash`` bind the evidence to the record asking: evidence
+    that names a DIFFERENT unit, or was produced under a different plan, is
+    refused.  Omit them only for a structural check of an object that is not
+    being admitted into a record.
     """
     fails = []
     result = {
@@ -366,23 +378,35 @@ def verify_evidence(candidate, *, identity_facts=None, require_review=False,
         return result
     if candidate.get("schema") not in (None, SCHEMA):
         fails.append("evidence schema is not %s" % SCHEMA)
-    unit = candidate.get("unit")
-    if not isinstance(unit, str) or not unit.strip():
+    declared_unit = candidate.get("unit")
+    if not isinstance(declared_unit, str) or not declared_unit.strip():
         fails.append("evidence names no unit")
     else:
-        result["unit"] = unit.strip()
+        result["unit"] = declared_unit.strip()
     try:
         result["plan_hash"] = _hash(candidate.get("plan_hash"), "plan_hash")
         result["inputs_hash"] = sha256_text(
             canonical({str(k): str(v) for k, v in (candidate.get("inputs") or {}).items()}))
     except AdmissionError as error:
         fails.append(str(error))
+    if unit is not None and result["unit"] != str(unit):
+        fails.append("evidence names unit %r, not %r"
+                     % (result["unit"], str(unit)))
+    if plan_hash is not None:
+        try:
+            wanted_plan = _hash(plan_hash, "plan_hash")
+        except AdmissionError as error:
+            wanted_plan = None
+            fails.append(str(error))
+        if wanted_plan is not None and result["plan_hash"] != wanted_plan:
+            fails.append("evidence plan_hash %r does not match the record plan_hash %r"
+                         % (result["plan_hash"], wanted_plan))
     inputs = candidate.get("inputs")
     if not isinstance(inputs, dict) or not inputs:
         fails.append("evidence carries no current input hashes")
     else:
         for key, value in inputs.items():
-            if not isinstance(value, str) or not value.strip():
+            if not isinstance(value, str) or not _INPUT_HASH.match(value.strip()):
                 fails.append("input hash %r is not a hash" % key)
     arts = candidate.get("artifacts")
     if not isinstance(arts, list) or not arts:
@@ -540,7 +564,8 @@ def dimension_status(record, uid):
     if unit is None:
         raise AdmissionError("unknown unit: %s" % uid)
     verified = unit.get("verified") is True and unit.get("state") == "done"
-    stale = bool(unit.get("stale")) or bool(unit.get("superseded"))
+    stale = bool(unit.get("stale"))
+    superseded = bool(unit.get("superseded"))
     facts = {
         "production": "complete" if verified
         else "in_progress" if unit.get("state") == "running"
@@ -552,8 +577,10 @@ def dimension_status(record, uid):
         else "required_pending" if unit.get("review_required")
         else "not_required",
         "deployment": (unit.get("deployment") or "not_deployed"),
-        "availability": "stale" if stale
-        else "superseded" if unit.get("superseded")
+        # Superseded is tested BEFORE stale: a superseded unit is not merely
+        # stale, and the stale branch used to shadow this one (D5).
+        "availability": "superseded" if superseded
+        else "stale" if stale
         else "failed" if unit.get("state") == "failed"
         else "blocked" if unit.get("state") == "blocked"
         else "unverified" if unit.get("state") == "done" and not verified
@@ -604,8 +631,20 @@ EXCLUDED_CATEGORIES = ("dropped", "skipped", "stale", "superseded",
 
 
 def delivered(record):
-    """Delivered work against the one denominator, with every exclusion named."""
+    """Delivered work against the one denominator, with every exclusion named.
+
+    The denominator is the required unit set persisted at init
+    (``new_progress`` writes ``record["required_units"]``), never the current
+    size of the ``units`` dict: editing that dict used to shrink the
+    denominator and silently raise the percentage.  A legacy record with no
+    persisted set falls back to its own unit ids.  Units missing from the dict,
+    or present outside the approved set, are reported as ``drift``.
+    """
     units = record.get("units") or {}
+    persisted = record.get("required_units")
+    required = [str(uid) for uid in persisted] \
+        if isinstance(persisted, list) and persisted else list(units)
+    required_set = set(required)
     excluded = {name: [] for name in EXCLUDED_CATEGORIES}
     delivered_units = []
     for uid, unit in units.items():
@@ -622,13 +661,19 @@ def delivered(record):
             excluded["unverified_done"].append(uid)
         elif state == "done" and unit.get("verified") is True:
             delivered_units.append(uid)
-    total = len(units)
+    delivered_units = [uid for uid in delivered_units if uid in required_set]
+    missing = [uid for uid in required if uid not in units]
+    extra = sorted(uid for uid in units if uid not in required_set)
+    total = len(required)
     count = len(delivered_units)
     return {
         "schema": SCHEMA,
         "launch_id": record.get("launch_id"),
         "plan_hash": record.get("plan_hash"),
         "required": total,
+        "required_units": required,
+        "drift": {"missing": missing, "extra": extra,
+                  "drifted": bool(missing or extra)},
         "delivered": count,
         "delivered_units": delivered_units,
         "percent": round(100.0 * count / total, 2) if total else 0.0,

@@ -23,6 +23,11 @@
   "launch_id": "l03-ai-on",
   "percent": 66.67,
   "plan_hash": "sha256:1df7e4b665fc5b32762e6d38dc65e6a964b74a7c9616fd8e1f3e2ecc5eaa2113",
+  "required_units": [
+    "page_landing",
+    "email_pre_launch",
+    "auto_ai_reply"
+  ],
   "schema_version": "1.0",
   "stall": {
     "auto_ai_reply": [

@@ -23,6 +23,12 @@
   "launch_id": "l03-stall",
   "percent": 0.0,
   "plan_hash": "sha256:bd71d8227676171e771255736616c7c20a0a86d9d8205197243fe5eb4009e702",
+  "required_units": [
+    "page_landing",
+    "page_sales",
+    "text_doors",
+    "auto_opt_in"
+  ],
   "schema_version": "1.0",
   "stall": {
     "auto_opt_in": [

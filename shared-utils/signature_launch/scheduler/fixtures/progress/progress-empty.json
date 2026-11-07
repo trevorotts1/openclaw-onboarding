@@ -23,6 +23,7 @@
   "launch_id": "l03-empty",
   "percent": 0.0,
   "plan_hash": "sha256:1be93be5bb5fbf0669f6f959136e8a7dba08a788bcb16536a0bd24bad335bf72",
+  "required_units": [],
   "schema_version": "1.0",
   "stall": {},
   "units": {},

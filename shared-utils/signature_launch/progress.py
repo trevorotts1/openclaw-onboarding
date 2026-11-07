@@ -117,6 +117,9 @@ def new_progress(plan, clock=_now):
         "schema_version": SCHEMA_VERSION,
         "launch_id": launch_id,
         "plan_hash": plan_hash(plan),
+        # The required unit set is persisted at init so the delivered
+        # denominator can never shrink by editing the ``units`` dict.
+        "required_units": [u["id"] for u in units],
         "created_at": stamp,
         "updated_at": stamp,
         "units": {
@@ -295,7 +298,16 @@ def _lease_is_fresh(unit, now):
 
 
 def _resolved(record):
-    return {uid for uid, unit in record["units"].items() if unit["state"] in TERMINAL}
+    """Unit ids that unlock dependents: verified done, or client dropped.
+
+    A ``done`` row whose ``verified`` is not True is NOT resolved (D3).  It
+    used to unlock dependents and let ``claim`` start them, while
+    ``model.satisfies_dependency`` and ``admission.admit_entry`` both refused
+    the same row.
+    """
+    return {uid for uid, unit in record["units"].items()
+            if unit["state"] == "dropped"
+            or (unit["state"] == "done" and unit.get("verified") is True)}
 
 
 def _dependencies_met(unit, resolved):
@@ -424,7 +436,8 @@ def recover_report(record, exists=None, verify=None, evidence=None, now=None):
             _reject(unit, uid, "evidence_refused", detail)
             result["rejected"].append({"unit": uid, "detail": detail})
             continue
-        checked = admission.verify_evidence(candidate)
+        checked = admission.verify_evidence(candidate, unit=uid,
+                                            plan_hash=record.get("plan_hash"))
         if not checked["ok"]:
             detail = "; ".join(checked["reasons"]) or "evidence refused"
             _reject(unit, uid, "evidence_refused", detail)
@@ -595,6 +608,16 @@ def complete(record, uid, result, owner=None, artifact=None, clock=_now, attempt
     if status is None:
         envelope = model.envelope(model.FAILED, detail="unknown result status")
         status = model.FAILED
+    # The evidence must belong to THIS unit under THIS plan's hash (D1/D2).
+    # normalize_result validated it structurally; this binds it to the record.
+    if status == model.VERIFIED_SUCCESS:
+        recheck = admission.verify_evidence(envelope.get("evidence"), unit=uid,
+                                            plan_hash=record.get("plan_hash"))
+        if not recheck["ok"]:
+            envelope = model.envelope(model.FAILED, detail=(
+                "completion evidence does not belong to unit %s under the "
+                "current plan: %s" % (uid, "; ".join(recheck["reasons"]) or "refused")))
+            status = model.FAILED
     unit["state"] = model.PERSISTED_STATE[status]
     unit["owner"] = None
     unit["lease_expires_at"] = None
@@ -656,7 +679,8 @@ def mark(record, uid, state, artifact=None, charged=None, note=None, clock=_now,
     if state == "done":
         if unit["state"] != "running":
             raise ProgressError("state done requires a claim and completion evidence")
-        checked = _admission().verify_evidence(evidence)
+        checked = _admission().verify_evidence(evidence, unit=uid,
+                                               plan_hash=record.get("plan_hash"))
         if not checked["ok"]:
             raise ProgressError("state done requires verified admission evidence: %s"
                                 % ("; ".join(checked["reasons"]) or "none supplied"))

@@ -52,19 +52,23 @@ ADMISSION = _load("l03_admission", LAUNCH / "admission.py")
 PH = "sha256:" + "a" * 64
 
 
-def ok_evidence(unit, path=None):
+def ok_evidence(unit, path=None, plan_hash_value=None):
     """The S1 completion evidence: one artifact hash plus the current inputs.
 
     A plain return value or a declared status is deliberately NOT evidence.
+    ``plan_hash_value`` binds the evidence to a record's own plan hash; evidence
+    built for a different plan is refused by the record.
     """
+    ph = plan_hash_value or PH
     return ADMISSION.evidence(
-        unit, PH,
+        unit, ph,
         [ADMISSION.artifact(path or "artifacts/%s.html" % unit, sha256="c" * 64)],
-        inputs={"plan": PH})
+        inputs={"plan": ph})
 
 
-def ok_result(unit):
-    return model.envelope(model.VERIFIED_SUCCESS, evidence=ok_evidence(unit))
+def ok_result(unit, plan_hash_value=None):
+    return model.envelope(model.VERIFIED_SUCCESS,
+                          evidence=ok_evidence(unit, plan_hash_value=plan_hash_value))
 
 
 def local(name):
@@ -265,7 +269,8 @@ class ProgressTests(unittest.TestCase):
     def test_restart_preserves_paid_success_without_duplicate_generation(self):
         progress.claim(self.record, "page_landing", "owner-a")
         progress.complete(self.record, "page_landing",
-                          ok_result("page_landing"), owner="owner-a")
+                          ok_result("page_landing", self.record["plan_hash"]),
+                          owner="owner-a")
         self.record["units"]["page_landing"]["charged"] = True
         progress.save(self.record, self.path)
         restored = progress.load(self.path)
@@ -318,7 +323,8 @@ class ProgressTests(unittest.TestCase):
 
         # Current admission evidence DOES recover it.
         report = progress.recover_report(
-            self.record, evidence={"page_landing": ok_evidence("page_landing")})
+            self.record, evidence={"page_landing": ok_evidence(
+                "page_landing", plan_hash_value=self.record["plan_hash"])})
         self.assertEqual(report["recovered"], ["page_landing"])
         unit = self.record["units"]["page_landing"]
         self.assertEqual(unit["state"], "done")

@@ -303,8 +303,10 @@ def envelope(status, *, verified=None, detail=None, artifacts=None,
                 verified = True
                 artifacts = [entry.get("path") or entry.get("resource_id")
                              for entry in checked["artifacts"]]
-    if verified is None:
-        verified = canonical == VERIFIED_SUCCESS
+    # Only a verified success may report ``verified``.  Every other canonical
+    # status reports False, so a consumer that reads ``verified`` without also
+    # reading ``status`` is never told a failed/blocked/dropped unit verified.
+    verified = bool(verified) and canonical == VERIFIED_SUCCESS
     if retryable is None:
         retryable = canonical in (FAILED, AWAITING_FACTS)
     facts = [str(item) for item in (missing_facts or []) if str(item).strip()]
