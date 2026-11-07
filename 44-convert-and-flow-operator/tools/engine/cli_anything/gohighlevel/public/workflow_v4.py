@@ -835,6 +835,35 @@ class WorkflowV4Adapter:
                 detail={"allowed": sorted(_DOCUMENTED_STATUSES)},
             )
 
+        # W3-4: a publication needs the RECORDED authorization for its own
+        # ACTION scope, not merely an approval-shaped value. The adapter's seam
+        # validates shape only (ref/kind), so the action scope is decided here —
+        # exactly as the deletion path decides its own scope below. The caller
+        # passes the approval_ref that was already recorded for this location
+        # and action; this never asks for a second approval.
+        if status == "published" and not _publication_scope(approval):
+            return self._refusal(
+                key,
+                tenant=tenant,
+                status=Status.denied,
+                rule="publish_approval_not_publication_scoped",
+                attempt=attempt,
+                path_params=path_params,
+                body={"status": status},
+                detail={
+                    "reason": (
+                        "the recorded authorization does not name a publication "
+                        "scope; a publication is never authorized by an approval "
+                        "recorded for some other action"
+                    ),
+                    "required_scope": "publication",
+                    "hint": (
+                        "pass the approval_ref already recorded for this "
+                        "location/action; do not request a new approval"
+                    ),
+                },
+            )
+
         # The status change is the one write whose result is carried at the
         # root of the definition read (GU-003 WF-07: ``workflowId``,
         # ``status``), so the read-back asserts the write is reflected too.
@@ -889,6 +918,13 @@ class WorkflowV4Adapter:
                 "status_after": observed,
                 "revision_after": revision_after,
                 "fresh_read_after_status_change": True,
+                # The proof of publication is the FRESH READ above — never this
+                # method's own request body and never a locally assumed value.
+                "observed_status": observed,
+                "status_source": "fresh_read_after_status_change",
+                "authorization_scope": (
+                    "publication" if status == "published" else None
+                ),
                 "publish_authorized": status == "published",
             },
         )
@@ -1635,6 +1671,46 @@ def _identity_readback(
         expect=expect,
         description="the read-back must return this workflow id",
     )
+
+
+_PUBLICATION_SCOPE_WORDS = frozenset(
+    {"publication", "publications", "publish", "published", "live"}
+)
+_SCOPE_TOKEN_SPLIT = re.compile(r"[^a-z0-9]+")
+
+
+def _publication_scope(approval: ApprovalRef | Mapping[str, Any] | str) -> bool:
+    """True only for an approval that explicitly names a PUBLICATION scope.
+
+    The frozen ``ApprovalRef`` vocabulary carries one ``ref`` and one ``kind``, so
+    an action scope travels as text: an explicit ``scope`` key on a mapping, or a
+    scope marker inside ``ref`` (``approved_live_publication``,
+    ``workflow-publish-2026``). A ``gate_token`` approval IS the approval seam and
+    counts as its own authority.
+
+    An ABSENT marker never authorises a publication — the same rule
+    ``_deletion_scope`` applies to removals — and a ref that merely happens to
+    contain letters like "live" inside another word does not count, because the
+    text is split into whole tokens.
+    """
+
+    ref = ""
+    scope = ""
+    kind = ""
+    if isinstance(approval, ApprovalRef):
+        ref, kind = str(approval.ref), str(approval.kind)
+    elif isinstance(approval, Mapping):
+        ref = str(approval.get("ref") or "")
+        scope = str(approval.get("scope") or "")
+        kind = str(approval.get("kind") or "")
+    elif isinstance(approval, str):
+        ref = approval
+    if kind == "gate_token":
+        return True
+    tokens: set[str] = set()
+    for text in (scope, ref):
+        tokens.update(t for t in _SCOPE_TOKEN_SPLIT.split(text.lower()) if t)
+    return bool(tokens & _PUBLICATION_SCOPE_WORDS)
 
 
 def _deletion_scope(approval: ApprovalRef | Mapping[str, Any] | str) -> bool:
