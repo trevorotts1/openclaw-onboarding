@@ -236,8 +236,19 @@ class ReportViolationTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def report(self, **rec):
-        record = {"local_path": str(self.image), "asset_id": self.image.stem, "average": 9.1, "pass": True,
-                  "triggered_autofails": []}
+        digest = hashlib.sha256(self.image.read_bytes()).hexdigest()
+        review = self.root / "qc" / "reviews" / "hero.review.json"
+        review.parent.mkdir(parents=True, exist_ok=True)
+        review.write_text(json.dumps({
+            "artifact_sha256": digest, "verdict": "pass", "automatic_failures": [],
+            "independent_review": True, "performed_check": "read the image at delivery size",
+            "author_model": "prompt-model", "reviewer_model": "review-model",
+            "criteria": {"image_quality": {"score": 9.1, "note": "clean and on brand"}}}),
+            encoding="utf-8")
+        record = {"local_path": str(self.image), "asset_id": self.image.stem, "sha256": digest,
+                  "average": 9.1, "pass": True, "triggered_autofails": [],
+                  "prompt_author_model": "prompt-model", "reviewer_model": "review-model",
+                  "review_ref": str(review.relative_to(self.root))}
         record.update(rec)
         write(self.root / graphics_hooks.QC_REPORT_REL, json.dumps({"assets": [record]}))
 
@@ -295,9 +306,23 @@ class PackageCheckTests(Base):
         write(root / image_stages.REPORT_REL, json.dumps({"pages": pages}))
 
     def write_clean_qc(self, manifest, root):
-        assets = [{"local_path": i["local_path"], "asset_id": i["asset_id"], "average": 9.0, "pass": True,
-                   "triggered_autofails": []} for i in graphics_hooks.collect_images(manifest, root)]
-        write(root / graphics_hooks.QC_REPORT_REL, json.dumps({"assets": assets}))
+        """A passing SOP-GIP-02 report whose every record is bound to a real review of its bytes."""
+        assets, records = graphics_hooks.collect_images(manifest, root), []
+        (root / "qc" / "reviews").mkdir(parents=True, exist_ok=True)
+        for n, asset in enumerate(assets):
+            review = root / "qc" / "reviews" / f"{n}.review.json"
+            review.write_text(json.dumps({
+                "artifact_sha256": asset["sha256"], "verdict": "pass", "automatic_failures": [],
+                "independent_review": True, "performed_check": "read every image at delivery size",
+                "author_model": "prompt-model", "reviewer_model": "review-model",
+                "criteria": {"image_quality": {"score": 9.0, "note": "clean and on brand"}}}),
+                encoding="utf-8")
+            records.append({"local_path": asset["local_path"], "asset_id": asset["asset_id"],
+                            "sha256": asset["sha256"], "average": 9.0, "pass": True,
+                            "triggered_autofails": [], "prompt_author_model": "prompt-model",
+                            "reviewer_model": "review-model",
+                            "review_ref": str(review.relative_to(root))})
+        write(root / graphics_hooks.QC_REPORT_REL, json.dumps({"assets": records}))
 
     def launched(self, root):
         """The mark a launch dispatch leaves in the package root."""
