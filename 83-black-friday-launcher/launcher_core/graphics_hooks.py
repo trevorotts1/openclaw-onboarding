@@ -587,7 +587,7 @@ def _review_problems(rec: Dict[str, Any], img: Dict[str, Any], job_dir: Path,
         problems.append(f"{QC_CODE}: {where} review_ref {ref!r} is not a readable review record")
         return problems
     recorded_hash = _text(rec.get("review_sha256"))
-    if recorded_hash and _sha(path) != recorded_hash:
+    if not recorded_hash or _sha(path) != recorded_hash:
         problems.append(f"{QC_CODE}: {where} review receipt {path.name!r} does not match the hash the "
                         "report recorded; it changed after the report was written")
     reviewed = str(review.get("artifact_sha256") or "").strip().lower()

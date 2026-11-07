@@ -2467,7 +2467,6 @@ def new_page_blob(
             ``require_ghl_media`` default below is funnel-specific.
         head_code: Optional ``trackingCode.head`` content.
         allow_row_max_width: Section-level "Allow Rows to take entire width"
-        allow_row_max_width: Section-level "Allow Rows to take entire width"
             flag (``metaData.extra.allowRowMaxWidth.value``). DEFAULT ``True`` —
             full width is the normal policy (see ``FULL_WIDTH_POLICY``): the flag
             is set AND the outer wrapper's px width cap

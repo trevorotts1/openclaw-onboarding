@@ -624,25 +624,6 @@ def ladder_enabled(env: Optional[Mapping[str, str]] = None) -> bool:
 # ── result types ────────────────────────────────────────────────────────────
 
 @dataclass
-class RunContext:
-    """The logical run preserved across every fallback rung."""
-    run_id: str
-    surface: str
-    operation: str
-    tenant_location_id: Optional[str] = None
-    native_object_ids: Dict[str, str] = field(default_factory=dict)
-
-    def to_dict(self) -> dict:
-        return {
-            "run_id": self.run_id,
-            "surface": self.surface,
-            "operation": self.operation,
-            "tenant_location_id": self.tenant_location_id,
-            "native_object_ids": dict(self.native_object_ids),
-        }
-
-
-@dataclass
 class RungAttempt:
     transport: str
     ok: Any = False             # True ONLY for operation_complete
@@ -690,6 +671,7 @@ class RungAttempt:
 class LadderResult:
     surface: str
     order: Tuple[str, ...]
+    # W3 connection 7: the requested operation survives every fallback.
     operation: str
     operation_scope: str = "surface"
     attempts: List[RungAttempt] = field(default_factory=list)
@@ -709,10 +691,6 @@ class LadderResult:
     # and the location a rung's read-back observed, when either is known.
     expected_location_id: Optional[str] = None
     observed_location_id: Optional[str] = None
-    # W3 connection 7: the requested operation survives every fallback.
-    operation: Optional[str] = None
-    incomplete_operation: Optional[str] = None
-    native_object_ids: Mapping[str, str] = field(default_factory=dict)
     prerequisite_rungs: List[str] = field(default_factory=list)
     cleanup: List[Mapping[str, Any]] = field(default_factory=list)
     state: Mapping[str, Any] = field(default_factory=dict)
@@ -743,9 +721,6 @@ class LadderResult:
             "location_bound": self.location_bound,
             "warnings": list(self.warnings),
             "decided_at": self.decided_at,
-            "operation": self.operation,
-            "incomplete_operation": self.incomplete_operation,
-            "native_object_ids": dict(self.native_object_ids),
             "prerequisite_rungs": list(self.prerequisite_rungs),
             "cleanup": [dict(c) for c in self.cleanup],
             "state": dict(self.state),
@@ -994,173 +969,6 @@ def _require_bool_field(outcome: Mapping[str, Any], field_name: str,
 
 def _mismatch(expected: Optional[str], observed: Optional[str]) -> bool:
     return bool(expected) and bool(observed) and expected != observed
-
-
-def _run_rung(
-    surface: str,
-    transport: str,
-    kind: str,
-    callable_: Callable[[], Mapping[str, Any]],
-    *,
-    context: RunContext,
-    entry: Mapping[str, Any],
-    observed_location_id: Optional[str],
-    warnings: List[str],
-    require_operation_named: bool,
-) -> RungAttempt:
-    """Call one rung and classify its outcome. Never fabricates a pass."""
-    try:
-        outcome = callable_()
-    except Exception as exc:  # noqa: BLE001 — deliberately re-raised, typed
-        raise LadderRungError(
-            f"rung {transport!r} for surface {surface!r} raised instead of "
-            f"returning a taxonomy-tagged dict (rung callables must never raise, "
-            f"per the smoke_first() convention): {exc!r}"
-        ) from exc
-
-    if not isinstance(outcome, Mapping):
-        raise LadderRungError(
-            f"rung {transport!r} for surface {surface!r} returned "
-            f"{type(outcome).__name__!r}, not a mapping"
-        )
-
-    ok = _require_bool_field(outcome, "ok", transport, surface)
-    if ok is None:
-        raise LadderRungError(
-            f"rung {transport!r} for surface {surface!r} returned no boolean 'ok' — "
-            "a rung must state success or failure"
-        )
-
-    attempt = RungAttempt(
-        transport=transport,
-        kind=kind,
-        ok=ok,
-        operation=outcome.get("operation") if isinstance(outcome.get("operation"), str) else None,
-        operation_complete=_require_bool_field(
-            outcome, "operation_complete", transport, surface) is True,
-        prerequisite_ready=_require_bool_field(
-            outcome, "prerequisite_ready", transport, surface) is True,
-        partial=_require_bool_field(outcome, "partial", transport, surface) is True,
-        location_id=str(outcome.get("location_id") or outcome.get("observed_location_id") or "")
-        or None,
-        run_id=str(outcome.get("run_id") or "") or None,
-        dom_epoch=outcome.get("dom_epoch"),
-        detail=str(outcome.get("detail", "")),
-    )
-    native = outcome.get("native_ids")
-    if isinstance(native, Mapping):
-        attempt.native_ids = {str(k): str(v) for k, v in native.items()}
-
-    if not ok:
-        code = outcome.get("code")
-        if code not in TAXONOMY_TAGS:
-            raise LadderRungError(
-                f"rung {transport!r} for surface {surface!r} failed with "
-                f"unrecognized taxonomy code {code!r} (must be one of {TAXONOMY_TAGS}) — "
-                "refusing to write a fabricated receipt for it"
-            )
-        attempt.code = str(code)
-        attempt.status = CLASS_FAILED
-        return attempt
-
-    # ── ok is literally True: now decide whether it COMPLETED the operation ──
-    # A prerequisite rung can never complete an operation, whatever it claims.
-    if kind == "prerequisite":
-        if attempt.operation_complete:
-            warnings.append(
-                f"rung {transport!r} is declared prerequisite but claimed "
-                f"operation_complete for {context.operation!r}; recorded as "
-                "prerequisite_ready, never as completion"
-            )
-        # ``ok: True`` from a declared prerequisite means the prerequisite
-        # work succeeded; record that as its own state. A rung that reports
-        # neither prerequisite_ready nor operation_complete has not said what
-        # it finished, so it is only ``partial`` — never completion.
-        if attempt.prerequisite_ready or attempt.operation_complete:
-            attempt.prerequisite_ready = True
-            attempt.status = CLASS_PREREQUISITE
-        else:
-            attempt.status = CLASS_PARTIAL
-            warnings.append(
-                f"rung {transport!r} is declared prerequisite but reported "
-                "neither prerequisite_ready nor operation_complete; recorded "
-                "as partial, not as preparation"
-            )
-        attempt.code = None
-        return attempt
-
-    # The rung must name the SAME operation the caller requested. When the
-    # surface declares operation ids, a completion claim that does not name
-    # one has not shown WHICH operation it finished.
-    if require_operation_named and attempt.operation is None:
-        attempt.status = CLASS_PARTIAL
-        attempt.code = None
-        attempt.context_ok = False
-        warnings.append(
-            f"rung {transport!r} reported completion without naming "
-            f"{context.operation!r}; recorded as partial, not completion"
-        )
-        return attempt
-    if attempt.operation is not None and attempt.operation != context.operation:
-        attempt.status = CLASS_PARTIAL
-        attempt.code = None
-        attempt.context_ok = False
-        warnings.append(
-            f"rung {transport!r} completed {attempt.operation!r}, not the requested "
-            f"{context.operation!r}; recorded as partial, not completion"
-        )
-        return attempt
-
-    # A logical run may not silently change under a fallback.
-    if attempt.run_id is not None and attempt.run_id != context.run_id:
-        attempt.status = CLASS_FAILED
-        attempt.code = "VERIFY-FAIL"
-        attempt.context_ok = False
-        attempt.detail = (
-            f"run_id {attempt.run_id!r} does not match the logical run "
-            f"{context.run_id!r}"
-        )
-        return attempt
-
-    # Tenant binding: a cross-tenant read-back is a contradiction, never a create.
-    expected = context.tenant_location_id
-    if _mismatch(expected, attempt.location_id):
-        attempt.status = CLASS_FAILED
-        attempt.code = "VERIFY-FAIL"
-        attempt.context_ok = False
-        attempt.detail = (
-            f"observed location {attempt.location_id!r} does not match the gated "
-            f"tenant {expected!r}"
-        )
-        return attempt
-    if _mismatch(expected, observed_location_id) and attempt.location_id is None:
-        attempt.status = CLASS_FAILED
-        attempt.code = "VERIFY-FAIL"
-        attempt.context_ok = False
-        attempt.detail = (
-            f"a prior rung observed location {observed_location_id!r} but the gated "
-            f"tenant is {expected!r}"
-        )
-        return attempt
-
-    # A location-required surface is not complete without a bound location.
-    location = entry.get("location") or {}
-    if location.get("required") and not (expected or attempt.location_id):
-        attempt.status = CLASS_PARTIAL
-        attempt.code = None
-        attempt.detail = (
-            "operation finished without a connected location; a location-required "
-            f"surface needs {location.get('carrier')!r} bound"
-        )
-        warnings.append(attempt.detail)
-        return attempt
-
-    if attempt.operation_complete:
-        attempt.status = CLASS_COMPLETE
-        return attempt
-
-    attempt.status = CLASS_PREREQUISITE if attempt.prerequisite_ready else CLASS_PARTIAL
-    return attempt
 
 
 def run_ladder(
