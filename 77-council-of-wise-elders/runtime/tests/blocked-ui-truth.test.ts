@@ -84,6 +84,7 @@ class FakeNode {
   }
   setAttribute(k: string, v: string) { this.attrs[k] = String(v); }
   getAttribute(k: string) { return k in this.attrs ? this.attrs[k] : null; }
+  hasAttribute(k: string) { return k in this.attrs; }
   addEventListener(t: string, fn: (e: Any) => void) { (this.listeners[t] ||= []).push(fn); }
   get classList() {
     const self = this;
