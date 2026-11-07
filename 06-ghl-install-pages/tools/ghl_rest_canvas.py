@@ -360,7 +360,13 @@ assert tuple(FOLDER_CREATE_CAPTURE_SCHEMA) == FOLDER_CREATE_REQUIRED_CAPTURE_FIE
 
 
 class CaptureRequired(RuntimeError):
-    """The live capture that would authorize a folder create is missing."""
+    """A live capture a capability depends on is missing.
+
+    Used by the folder-create gate (the Create-folder dialog interior / create
+    route were never captured) and by ``native_section_full_width_plan`` (the
+    page-builder chrome is a documented KNOWN-GAP, so its locators must come
+    from a capture rather than a guess).
+    """
 
 
 class FolderCreateRefused(RuntimeError):
@@ -1789,12 +1795,342 @@ def _apply_brand_palette(
     return patched_colors, patched_styles
 
 
+# ── FULL-WIDTH POLICY (F01) ──────────────────────────────────────────────────
+# Full width is the NORMAL state of an APPLICABLE host section — a section that
+# hosts managed content (the custom-code element this module writes). Such a
+# section must span the page, not sit in the ~1170px centred column the captured
+# golden carries. TWO independent things drive the rendered width, and BOTH must
+# move together or the flag is cosmetic:
+#
+#   1. the native section metadata flag ``metaData.extra.allowRowMaxWidth.value``
+#      — the same value the builder's Section -> General "Allow rows to take
+#      entire width" switch writes, and
+#   2. the section CSS the flag does NOT override: the outer content wrapper rule
+#      ``#section-...>.inner{max-width:1170px}`` in ``section.general.sectionStyles``.
+#      The LIVE preview probe (2026-06) showed the flag ALONE produced no
+#      observable width change; the CSS cap is the real driver.
+#
+# DELIBERATELY UNTOUCHED, because they are what keeps the page readable:
+# card widths, text-container measures (``p{max-width:60ch}``), inner grids, and
+# every padding / margin / responsive rule. Only a rule whose selector ENDS in
+# the section's ``.inner`` wrapper is rewritten, and only its px width locks.
+# Everything else is preserved byte for byte.
+FULL_WIDTH_POLICY = (
+    "full width is the default for sections that host managed content; the "
+    "native allowRowMaxWidth flag and the outer .inner width cap move together"
+)
+FULL_WIDTH_ENABLED_VALUE = True
+FULL_WIDTH_INNER_WRAPPER = ".inner"
+FULL_WIDTH_INNER_WIDTH = "100%"
+
+# One CSS rule, selector -> declaration block. ``[^{}]+?`` / ``[^{}]*`` keep each
+# match inside ONE rule, so a match can never span an ``@media`` prelude or a
+# nested block; a rule nested in a media query is still matched on its own (its
+# selector cannot contain ``{``/``}``), which is what we want — the responsive
+# cap is lifted too.
+_CSS_RULE_RE = re.compile(r"(?P<selector>[^{}]+?)\{(?P<decls>[^{}]*)\}")
+# The selector must END in the section wrapper: ``.inner``, ``.inner:hover``,
+# ``.inner::before``, ``.inner.col``. ``.inner-wrap`` / ``.innerGrid`` / a
+# middle-of-selector ``.inner`` never match.
+_INNER_RULE_SELECTOR_RE = re.compile(r"\.inner(?:[.:][\w\-()]+)*\s*$")
+# Only px width LOCKS are rewritten; ``max-width:100%`` / ``auto`` / ``none`` and
+# ``!important`` pass through untouched. The lookbehind is load-bearing: without
+# it ``border-width:0px`` / ``min-width:320px`` / a ``--max-width`` custom
+# property would match the bare ``width``/``max-width`` and be corrupted.
+_CSS_WIDTH_DECL_RE = re.compile(
+    r"(?<![\w\-])(?P<prop>(?:max-width|width)\s*:\s*)"
+    r"(?P<val>[^;{}!]+)(?P<bang>\s*!important)?(?P<tail>\s*;?)"
+)
+_PX_LENGTH_RE = re.compile(r"^\s*\d+(?:\.\d+)?px\s*$")
+
+
+def lift_inner_width_caps(css: str) -> str:
+    """Return *css* with the section outer wrapper's px width lock lifted.
+
+    Rewrites the value to ``100%`` for a ``width`` / ``max-width`` declaration
+    inside a rule whose selector ends in ``.inner``, and ONLY when the value is
+    a px length (a deliberate readable measure such as ``max-width:60ch`` or
+    ``max-width:640px`` on a CARD is a different selector and is never touched;
+    ``border-width`` / ``min-width`` / ``--max-width`` are never matched).
+    ``!important`` and every other declaration survive.
+    Idempotent: ``lift_inner_width_caps(lift_inner_width_caps(x)) ==
+    lift_inner_width_caps(x)``, because the replacement is not a length.
+
+    Raises ``TypeError`` on non-string input; a falsy string is returned as-is.
+    """
+    if not isinstance(css, str):
+        raise TypeError(f"lift_inner_width_caps: expected str, got {type(css).__name__}")
+    if not css:
+        return css
+
+    def _rule(match: "re.Match[str]") -> str:
+        selector, decls = match.group("selector"), match.group("decls")
+        if not _INNER_RULE_SELECTOR_RE.search(selector):
+            return match.group(0)
+
+        def _decl(d: "re.Match[str]") -> str:
+            raw = d.group("val")
+            if not _PX_LENGTH_RE.match(raw):
+                return d.group(0)
+            # Keep any trailing whitespace the declaration carried, so the rest
+            # of the stylesheet's formatting survives byte for byte.
+            trail_ws = raw[len(raw.rstrip()):]
+            return (d.group("prop") + FULL_WIDTH_INNER_WIDTH + trail_ws
+                    + (d.group("bang") or "") + (d.group("tail") or ""))
+
+        return selector + "{" + _CSS_WIDTH_DECL_RE.sub(_decl, decls) + "}"
+
+    return _CSS_RULE_RE.sub(_rule, css)
+
+
+def apply_section_full_width(section: dict) -> bool:
+    """Set the native ``allowRowMaxWidth`` flag and lift the ``.inner`` cap on ONE
+    section in place. Returns ``True`` when anything changed.
+
+    Safe on a section of ANY page kind (funnel step, website page, affiliate
+    page): missing ``metaData`` / ``extra`` / ``general`` levels are created, and
+    every other key is left exactly as found. Never raises on a non-dict — it
+    returns ``False`` so a malformed section cannot crash a whole save.
+    """
+    if not isinstance(section, dict):
+        return False
+    changed = False
+
+    metadata = section.get("metaData")
+    if not isinstance(metadata, dict):
+        metadata = {}
+        section["metaData"] = metadata
+        changed = True
+    extra = metadata.get("extra")
+    if not isinstance(extra, dict):
+        extra = {}
+        metadata["extra"] = extra
+        changed = True
+    flag = extra.get("allowRowMaxWidth")
+    if not isinstance(flag, dict):
+        flag = {}
+        extra["allowRowMaxWidth"] = flag
+        changed = True
+    if flag.get("value") is not FULL_WIDTH_ENABLED_VALUE:
+        flag["value"] = FULL_WIDTH_ENABLED_VALUE
+        changed = True
+
+    general = section.get("general")
+    if isinstance(general, dict):
+        styles = general.get("sectionStyles")
+        if isinstance(styles, str):
+            lifted = lift_inner_width_caps(styles)
+            if lifted != styles:
+                general["sectionStyles"] = lifted
+                changed = True
+
+    return changed
+
+
+def normalize_full_width(page_data: dict, *, section_idx: int | None = None,
+                         locator: dict | None = None) -> dict:
+    """Return a DEEP-COPIED blob with its host section(s) set to full width.
+
+    The edit path normalises exactly the section that hosts the managed content
+    (``section_idx`` / ``locator['section_idx']``); with neither supplied every
+    section is normalised, which is what the create path wants. Pure: the input
+    blob is untouched, so a pristine baseline still survives for the revert.
+
+    Raises:
+        TypeError: ``page_data`` is not a dict, or an index is not an int.
+        KeyError: the blob has no ``sections`` list.
+        IndexError: ``section_idx`` is out of range (intentional — a locator
+            that addresses nothing must fail loud).
+    """
+    if not isinstance(page_data, dict):
+        raise TypeError("page_data must be a dict (the editable blob)")
+    out = copy.deepcopy(page_data)
+    sections = out.get("sections")
+    if not isinstance(sections, list):
+        raise KeyError("page_data has no 'sections' list")
+
+    idx = section_idx
+    if idx is None and isinstance(locator, dict):
+        idx = locator.get("section_idx")
+        if not isinstance(idx, int):
+            raise TypeError(
+                "locator must carry an integer 'section_idx' "
+                f"(got {locator.get('section_idx')!r})"
+            )
+    if idx is None:
+        targets: tuple[int, ...] = tuple(range(len(sections)))
+    else:
+        if isinstance(idx, bool) or not isinstance(idx, int):
+            raise TypeError(f"section_idx must be an int (got {idx!r})")
+        sections[idx]  # IndexError when out of range — intentional
+        targets = (idx,)
+
+    for i in targets:
+        apply_section_full_width(sections[i])
+    return out
+
+
+def assert_section_is_full_width(section: dict, *, where: str = "section") -> None:
+    """Assert ONE section really is full width — the read-back gate.
+
+    Two independent checks, because either one alone is a lie: the native
+    ``allowRowMaxWidth`` value is exactly ``True``, AND no px width lock remains
+    on the outer ``.inner`` wrapper. Raises ``AssertionError`` naming which half
+    failed. Never raises ``AssertionError`` for a section that is already full
+    width, so it is safe to call after a save read-back.
+    """
+    metadata = section.get("metaData") if isinstance(section, dict) else None
+    extra = metadata.get("extra") if isinstance(metadata, dict) else None
+    flag = extra.get("allowRowMaxWidth") if isinstance(extra, dict) else None
+    flag_value = flag.get("value") if isinstance(flag, dict) else None
+    assert flag_value is FULL_WIDTH_ENABLED_VALUE, (
+        f"{where}: allowRowMaxWidth is {flag_value!r}, not True — the native "
+        "section is not set to full width"
+    )
+    general = section.get("general") if isinstance(section, dict) else None
+    styles = general.get("sectionStyles") if isinstance(general, dict) else None
+    assert isinstance(styles, str), (
+        f"{where}: general.sectionStyles is missing, so the outer .inner width "
+        "cap cannot be checked"
+    )
+    assert lift_inner_width_caps(styles) == styles, (
+        f"{where}: general.sectionStyles still carries a px width lock on the "
+        f"outer {FULL_WIDTH_INNER_WRAPPER} wrapper — the section is not full width"
+    )
+
+
+# The label the native Section -> General switch carries. The switch writes
+# exactly the ``allowRowMaxWidth`` value this module sets in the blob, so the
+# two paths must agree on it.
+NATIVE_FULL_WIDTH_SWITCH_LABEL = "Allow rows to take entire width"
+NATIVE_FULL_WIDTH_LOCATOR_KEYS = (
+    "section_locator", "general_tab_locator", "switch_locator", "save_locator",
+)
+
+
+def native_section_full_width_plan(*, section_locator: dict | None = None,
+                                   general_tab_locator: dict | None = None,
+                                   switch_locator: dict | None = None,
+                                   save_locator: dict | None = None,
+                                   section_idx: int | None = None) -> dict:
+    """Emit the MANAGED NATIVE-EDITOR plan for one section's full-width switch.
+
+    Ordered, side-effect-free steps an agent executes in the page builder, with
+    the inspect-before-set contract baked in: read the EXACT switch state, click
+    it ONLY when that reading is ``off``, stop when the state cannot be read
+    (never a blind toggle), then save and read the saved blob back.
+
+    CAPTURE-GATED ON PURPOSE. The page-builder app chrome (the Section -> General
+    panel and its switch) is a documented KNOWN-GAP: ``selectors-live.json``
+    ``page.builder.chrome`` is confidence 0 / "UNDOCUMENTED" and
+    ``SELECTORS-LIVE-page.md`` §E lists it as never reached. Inventing a selector
+    here would be exactly the guess that map forbids, so the four locators must
+    come from a live capture; without them this raises ``CaptureRequired``.
+
+    The authoritative width fix is the REST blob path
+    (``apply_section_full_width`` through ``new_page_blob`` /
+    ``edit_element_customcode``); this plan exists for a run that must set the
+    switch through the editor UI.
+
+    Args:
+        section_locator: observed locator for the section that hosts the content.
+        general_tab_locator: observed locator for that section's General tab.
+        switch_locator: observed locator for the ``allowRowMaxWidth`` switch.
+        save_locator: observed locator for the page save (autosave is OFF).
+        section_idx: index of the host section, for the read-back assertion.
+
+    Returns:
+        ``{plan, policy, label, captured_locators, section_idx, steps}``.
+
+    Raises:
+        CaptureRequired: any locator is missing — the chrome is a known gap.
+    """
+    supplied = {
+        "section_locator": section_locator,
+        "general_tab_locator": general_tab_locator,
+        "switch_locator": switch_locator,
+        "save_locator": save_locator,
+    }
+    missing = [k for k in NATIVE_FULL_WIDTH_LOCATOR_KEYS
+               if not isinstance(supplied[k], dict) or not supplied[k]]
+    if missing:
+        raise CaptureRequired(
+            "native section full-width: the page-builder app chrome was never "
+            "captured (selectors-live.json page.builder.chrome is confidence 0 / "
+            "UNDOCUMENTED; SELECTORS-LIVE-page.md §E). Supply the observed "
+            f"locator(s) {missing} from a live capture — a guessed selector is "
+            "not evidence. The REST blob path needs no UI at all: "
+            "new_page_blob() and edit_element_customcode() already set "
+            "allowRowMaxWidth and lift the .inner cap."
+        )
+
+    steps = [
+        {
+            "step": "select_section", "order": 1, "action": "click",
+            "locator": section_locator,
+            "expect": {"selected": True},
+            "note": "select the section that hosts the managed content",
+        },
+        {
+            "step": "open_general", "order": 2, "action": "click",
+            "locator": general_tab_locator,
+            "expect": {"panel": "General"},
+            "note": "open that section's General panel",
+        },
+        {
+            "step": "inspect_switch", "order": 3, "action": "read_state",
+            "locator": switch_locator, "label": NATIVE_FULL_WIDTH_SWITCH_LABEL,
+            "expect": {"state": ["on", "off"]},
+            "on_unreadable": "stop",
+            "note": "read the EXACT switch state before touching it; an "
+                    "unreadable state is a STOP, never a toggle",
+        },
+        {
+            "step": "set_switch_on", "order": 4, "action": "click",
+            "locator": switch_locator,
+            "run_only_if": {"step": "inspect_switch", "state": "off"},
+            "skip_if": {"step": "inspect_switch", "state": "on"},
+            "never_blind_toggle": True,
+            "expect": {"state": "on"},
+            "note": "click ONLY when the inspected state was off; already-on is "
+                    "a NO-OP, so re-running this plan is idempotent",
+        },
+        {
+            "step": "inspect_switch_after", "order": 5, "action": "read_state",
+            "locator": switch_locator, "expect": {"state": "on"},
+            "note": "confirm the switch reads ON after the (possibly skipped) set",
+        },
+        {
+            "step": "save", "order": 6, "action": "click", "locator": save_locator,
+            "expect": {"saved": True},
+            "note": "page save — autosave is OFF in the editor, so the switch is "
+                    "lost without it",
+        },
+        {
+            "step": "read_back", "order": 7, "action": "rest_read_back",
+            "verify": "GET /funnels/page/<id> -> fetch pageDataDownloadUrl -> "
+                      "assert_section_is_full_width(pageData['sections'][<idx>])",
+            "expect": {"allowRowMaxWidth": True, "inner_px_width_lock": None},
+            "note": "the read-back is on the SAVED blob, not on the switch's "
+                    "pixels: that is the only proof the setting persisted",
+        },
+    ]
+    return {
+        "plan": "native_section_full_width",
+        "policy": FULL_WIDTH_POLICY,
+        "label": NATIVE_FULL_WIDTH_SWITCH_LABEL,
+        "captured_locators": supplied,
+        "section_idx": section_idx,
+        "steps": steps,
+    }
+
+
 def new_page_blob(
     raw_custom_code: str,
     *,
     surface: str = "funnel",
     head_code: str = "",
-    allow_row_max_width: bool = False,
+    allow_row_max_width: bool = True,
     primary_color: str | None = None,
     secondary_color: str | None = None,
     require_ghl_media: bool | None = None,
@@ -1838,19 +2174,21 @@ def new_page_blob(
         raw_custom_code: The page's HTML fragment (e.g. the hero markup + real
             ``<img>`` CDN tag + the per-page marker).  Full ``<!DOCTYPE html>``
             documents are accepted and stripped automatically by ``html_fragment()``.
-        surface: ``"funnel"`` (default) or ``"website"``.  Selects funnel- vs
-            website-specific rules; both use the identical inlined nested scaffold.
+        surface: ``"funnel"`` (default), ``"website"`` or ``"affiliate"``. The
+            three page kinds share the identical inlined nested scaffold, so all
+            of them get the same full-width treatment; only the
+            ``require_ghl_media`` default below is funnel-specific.
         head_code: Optional ``trackingCode.head`` content.
         allow_row_max_width: Section-level "Allow Rows to take entire width"
-            flag (``extra.allowRowMaxWidth.value``). DEFAULT ``False`` — the
-            render-verified safe state: the LIVE preview probe (2026-06) showed
-            ``False`` renders a CENTERED ~1170px content column (NOT a thin/
-            collapsed strip, and visually identical to ``True`` in the probe).
-            The 1170px cap is driven by the section ``sectionStyles`` CSS rule
-            ``#section-...>.inner{max-width:1170px}``, not by the metadata flag
-            alone. When ``True``, this lifts that inner ``max-width`` cap so the
-            row can span the full page width. NOTE: true full-bleed rendering is
-            NOT yet confirmed by a live save round-trip — keep the default.
+            flag (``metaData.extra.allowRowMaxWidth.value``). DEFAULT ``True`` —
+            full width is the normal policy (see ``FULL_WIDTH_POLICY``): the flag
+            is set AND the outer wrapper's px width cap
+            (``#section-...>.inner{max-width:1170px}``) is lifted to ``100%`` by
+            ``apply_section_full_width``, because the LIVE probe (2026-06) showed
+            the flag ALONE changes nothing while the CSS cap is the real width
+            driver. Pass ``False`` only for a deliberate centred column; that is
+            the only way to keep the ~1170px cap. Card widths, text-container
+            measures and responsive padding/margins are never touched either way.
         primary_color: Client brand primary color as a CSS hex string (e.g.
             ``'#c0392b'``).  When supplied, replaces the ``Primary`` entry in
             ``general.general.colors`` AND the ``--primary`` CSS custom property
@@ -1879,15 +2217,18 @@ def new_page_blob(
 
     Raises:
         TypeError: if ``raw_custom_code`` is not a str.
-        ValueError: if ``surface`` is not ``"funnel"`` or ``"website"``.
+        ValueError: if ``surface`` is not ``"funnel"``, ``"website"`` or
+            ``"affiliate"``.
         ValueError: if ``raw_custom_code`` is empty after stripping wrappers.
         ValueError: if ``primary_color`` or ``secondary_color`` is not a valid
             CSS hex color (``#rgb``, ``#rrggbb``, or ``#rrggbbaa``).
         FileNotFoundError: if the golden reference is absent (5-step capture
             procedure included in the error message).
-        AssertionError: if the assembled blob fails any renderability invariant.
+        AssertionError: if the assembled blob fails any renderability invariant,
+            or (when ``allow_row_max_width`` is True) the section did not come
+            back full width.
     """
-    _VALID_SURFACES = {"funnel", "website"}
+    _VALID_SURFACES = {"funnel", "website", "affiliate"}
     if surface not in _VALID_SURFACES:
         raise ValueError(
             f"new_page_blob: surface must be one of {sorted(_VALID_SURFACES)}, got {surface!r}"
@@ -1942,8 +2283,8 @@ def new_page_blob(
     metadata = copy.deepcopy(_FLAT_SECTION_METADATA)
     metadata["id"] = section_id
     metadata["child"] = [row_id]
-    # P1-2: parameterised "Allow Rows to take entire width" (section-level).
-    # Default False = render-verified centered ~1170px column (LIVE probe).
+    # "Allow Rows to take entire width" (section-level) — full width is the
+    # DEFAULT policy; ``allow_row_max_width=False`` is the deliberate opt-out.
     metadata["extra"]["allowRowMaxWidth"]["value"] = bool(allow_row_max_width)
 
     section_general = copy.deepcopy(_FLAT_SECTION_GENERAL)
@@ -1953,13 +2294,11 @@ def new_page_blob(
         section_general["sectionStyles"] = section_general["sectionStyles"].replace(
             _FLAT_SECTION_ID_TOKEN, section_id
         )
-        # When full-width is requested, lift the 1170px inner cap that the LIVE
-        # probe identified as the actual width driver (the metadata flag alone
-        # produced NO observable width change). Default path is untouched.
-        if allow_row_max_width:
-            section_general["sectionStyles"] = section_general["sectionStyles"].replace(
-                "max-width:1170px", "max-width:100%"
-            )
+    if allow_row_max_width:
+        # Same helper the EDIT path uses, so create and edit can never drift: the
+        # flag alone is not the width driver (LIVE probe) — the outer ``.inner``
+        # px cap has to move with it.
+        apply_section_full_width({"metaData": metadata, "general": section_general})
 
     # ── Brand palette injection ───────────────────────────────────────────────
     # Apply client brand colors to the 18-entry colors list and the pageStyles
@@ -2001,12 +2340,19 @@ def new_page_blob(
     # Validate before returning — raises AssertionError with a clear message.
     assert_renderable_shape(blob, surface)
 
+    # Read back what we just built: a create path that silently shipped the old
+    # centred column is the exact defect this policy exists to prevent.
+    if allow_row_max_width:
+        assert_section_is_full_width(blob["sections"][0],
+                                     where=f"new_page_blob({surface}) sections[0]")
+
     return blob
 
 
 # ── The GAP-1 edit: image-swap / Code-element value set (pure transform) ──────
 
-def edit_element_customcode(page_data: dict, locator: dict, new_value: str) -> dict:
+def edit_element_customcode(page_data: dict, locator: dict, new_value: str, *,
+                            full_width: bool = True) -> dict:
     """GAP-1 image-swap / Code-element edit — pure transform, returns a MUTATED
     COPY (the input blob is never modified, so the caller keeps the pristine
     baseline for the byte-identical revert).
@@ -2015,15 +2361,26 @@ def edit_element_customcode(page_data: dict, locator: dict, new_value: str) -> d
     ``new_value``. This is the exact node the cross-origin canvas path was
     fighting for — done as a plain JSON splice.
 
+    It ALSO repairs the width of the section that hosts that node: setting the
+    HTML without fixing the host section is the edit-path half of the capped-
+    section defect, so ``apply_section_full_width`` runs on ``sections[s]`` —
+    the native ``allowRowMaxWidth`` flag is set to True and the outer ``.inner``
+    px cap is lifted, leaving cards, text containers and responsive spacing
+    alone. Idempotent, so an unchanged section round-trips byte-identically.
+
     Args:
         page_data: The editable blob (from the signed ``pageDataDownloadUrl``).
         locator: ``{"section_idx": int, "element_idx": int}`` — the section and
             element indices addressing the custom-code node.
         new_value: The new ``rawCustomCode`` string (e.g. the swapped ``<img>``
             tag, or an injected tracking/Code snippet).
+        full_width: Normalise the HOSTING section to full width (default True —
+            the standing policy). ``False`` writes only the HTML, for a caller
+            that deliberately owns the section's width.
 
     Returns:
-        A deep-copied blob with the custom-code value replaced.
+        A deep-copied blob with the custom-code value replaced and the hosting
+        section set to full width (unless ``full_width=False``).
 
     Raises:
         KeyError / IndexError / TypeError: when the locator does not resolve to a
@@ -2077,6 +2434,12 @@ def edit_element_customcode(page_data: dict, locator: dict, new_value: str) -> d
     # node (e.g. successive image swaps) cannot compound &amp; -> &amp;amp;. This
     # is a fixpoint, so an already-canonical value passes through unchanged.
     value["rawCustomCode"] = normalize_entities(new_value)
+
+    # Repair the width of THIS section — the one hosting the managed content.
+    # Flipping the HTML without the section setting is how a page keeps rendering
+    # in the ~1170px centred column after a successful splice.
+    if full_width:
+        apply_section_full_width(section)
     return out
 
 
@@ -3090,6 +3453,16 @@ __all__ = [
     "assert_images_are_ghl_media",
     "assert_renderable_shape",
     "_apply_brand_palette",
+    "FULL_WIDTH_POLICY",
+    "FULL_WIDTH_ENABLED_VALUE",
+    "FULL_WIDTH_INNER_WRAPPER",
+    "FULL_WIDTH_INNER_WIDTH",
+    "NATIVE_FULL_WIDTH_SWITCH_LABEL",
+    "lift_inner_width_caps",
+    "apply_section_full_width",
+    "normalize_full_width",
+    "assert_section_is_full_width",
+    "native_section_full_width_plan",
     "new_page_blob",
     "edit_element_customcode",
     "SEO_TITLE_MAX",
