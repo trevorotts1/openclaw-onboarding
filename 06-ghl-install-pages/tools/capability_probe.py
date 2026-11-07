@@ -37,6 +37,32 @@ keeps its historical boolean behavior (presence counts as current when the
 expected version is unknown) — the new record is where unknown currentness
 is surfaced as the string "unknown" instead of a silent pass.
 
+PER-OPERATION CAPABILITY (F11): `selectedLane` is a DEFAULT browser lane for
+this host, never a blanket claim that every operation is capable. The report
+also carries `operationCapabilities` and the module exports
+`resolve_operation_capability(operation, location_id=...)`, which selects the
+capable rail PER OPERATION and PER CONNECTED LOCATION:
+
+  * products, prices, CRM, workflow operations and media prefer the capable
+    Skill 44 / public API / official MCP operation;
+  * native editor design/insertion, form designer work, unsupported settings
+    and unsupported publication route to Skill 6's managed builder path;
+  * desktop/CUA is offered only when a real CUA capability is present.
+
+A rail is `capable=False` only when the probe measured its prerequisite
+missing; `"unknown"` means the probe cannot assert the account/tenant grant
+from this host (it never upgrades to True by assumption). Mac and Linux/VPS
+are the same probe: every step is platform-aware and non-fatal.
+
+ONE WRITER: the report's `browserWriter` section states the single active
+writer contract (one session, one manager lock) so two lanes are never driven
+concurrently on one host.
+
+CLEANUP: the probe opens no page/context/session of its own and takes no
+manager lock. Its one real browser is the isolated Playwright launch proof,
+which closes that browser and removes its temp artifacts; the proof verdict
+reports `closed` / `tempRemoved` so a leak is visible instead of assumed.
+
 Lane selection (plan 2.2 + 9.6 REVISED table, engine order revised 2026-10-13):
   1  openclaw_managed_browser — the OpenClaw browser lane (Chrome extension seat
                               first): ONLY if OpenClaw >= 2026.8.1 AND browser plugin
@@ -66,7 +92,7 @@ import platform as _platform
 import re
 import subprocess
 import sys
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # Plan Part 0: OpenClaw "2.0" shipped as version 2026.8.1 — that is the floor.
 OC_2X_FLOOR = (2026, 8, 1)
@@ -673,9 +699,10 @@ def _first_env_reference(env: Dict[str, str], aliases: tuple) -> Optional[str]:
 # carrying that exact string.
 _PW_PROOF_SCRIPT = r"""
 import json, os, tempfile
-def _verdict(launched, shot, err):
+def _verdict(launched, shot, err, closed=False, temp_removed=False):
     print(json.dumps({"launched": launched, "screenshotTaken": shot,
-                      "errorClass": err}))
+                      "errorClass": err, "closed": closed,
+                      "tempRemoved": temp_removed}))
 try:
     from playwright.sync_api import sync_playwright
 except Exception:
@@ -683,28 +710,43 @@ except Exception:
     raise SystemExit(0)
 _tmp = tempfile.mkdtemp(prefix="skill6-pw-proof-")
 _shot = os.path.join(_tmp, "proof.png")
+_b = None
+_ok = False
+_err = None
+_closed = False
 try:
     with sync_playwright() as _p:
         _b = _p.chromium.launch(headless=True)
         _pg = _b.new_page()
         _pg.set_content("<title>skill6-proof</title><h1>ok</h1>")
         _pg.screenshot(path=_shot)
+        _ok = os.path.isfile(_shot) and os.path.getsize(_shot) > 0
         _b.close()
-    _ok = os.path.isfile(_shot) and os.path.getsize(_shot) > 0
-    _verdict(True, bool(_ok), None if _ok else "screenshot-failed")
+        _closed = True
+        _b = None
 except Exception as _e:
     _msg = str(_e)
     if "Executable doesn't exist" in _msg or "has not been installed" in _msg:
-        _verdict(False, False, "browser-binary-missing")
+        _err = "browser-binary-missing"
     else:
-        _verdict(False, False, "launch-failed")
+        _err = "launch-failed"
 finally:
+    if _b is not None:
+        try:
+            _b.close()
+            _closed = True
+        except Exception:
+            _closed = False
+    _removed = False
     try:
         if os.path.exists(_shot):
             os.remove(_shot)
         os.rmdir(_tmp)
+        _removed = True
     except Exception:
-        pass
+        _removed = False
+    _verdict(True, bool(_ok), None if _ok else (_err or "screenshot-failed"),
+             _closed, _removed)
 """
 
 
@@ -714,7 +756,8 @@ def _default_playwright_launcher(runner: Callable[..., Any],
     the child's JSON verdict. A transport-level failure (no verdict line)
     is classified from the package probe, never upgraded to a pass."""
     proof: Dict[str, Any] = {"attempted": True, "launched": False,
-                             "screenshotTaken": False, "errorClass": None}
+                             "screenshotTaken": False, "errorClass": None,
+                             "closed": False, "tempRemoved": False}
     cp = _run(runner, [sys.executable or "python3", "-c", _PW_PROOF_SCRIPT],
               TO_PW_PROOF_S)
     verdict = None
@@ -729,6 +772,8 @@ def _default_playwright_launcher(runner: Callable[..., Any],
         proof["launched"] = bool(verdict.get("launched"))
         proof["screenshotTaken"] = bool(verdict.get("screenshotTaken"))
         proof["errorClass"] = verdict.get("errorClass")
+        proof["closed"] = bool(verdict.get("closed"))
+        proof["tempRemoved"] = bool(verdict.get("tempRemoved"))
     else:
         proof["errorClass"] = ("playwright-missing" if not package_available
                                else "launch-failed")
@@ -799,6 +844,242 @@ _DECLARED_API_OPERATIONS: Dict[str, Any] = {
                  "official stable API"},
     ],
 }
+
+
+# ── per-operation capability selection (F11) ─────────────────────────────────
+# "selectedLane" answers "which browser lane can this HOST drive?". It does NOT
+# answer "which rail can this OPERATION use at this CONNECTED LOCATION", and a
+# single host-wide answer must never be presented as a blanket capability
+# claim. This table declares the capable rail per operation family; the
+# resolver below measures the prerequisites the probe actually observed.
+#
+# Longest matching prefix wins. ``auth`` names the credential the rail needs so
+# the resolver can report a measured False (for example, no PIT at all) rather
+# than an assumed True. The account/tenant grant itself is never asserted from
+# a host probe: MCP and any present credential stay ``"unknown"`` here.
+_OPERATION_ROUTES: Tuple[Tuple[str, Dict[str, Any]], ...] = (
+    ("products.prices.", {"skill": "44", "surface": "media", "rails": ("api", "mcp"),
+                          "auth": "pit",
+                          "why": "public product/price writes are a REST/MCP operation"}),
+    ("products.", {"skill": "44", "surface": "media", "rails": ("api", "mcp"),
+                   "auth": "pit",
+                   "why": "public product CRUD is a REST/MCP operation"}),
+    ("contacts.", {"skill": "44", "surface": "contact", "rails": ("api", "mcp"),
+                   "auth": "pit", "why": "CRM contacts are a REST/MCP operation"}),
+    ("opportunities.", {"skill": "44", "surface": "opportunity",
+                        "rails": ("api", "mcp"), "auth": "pit",
+                        "why": "CRM opportunities are a REST/MCP operation"}),
+    ("pipelines.", {"skill": "44", "surface": "pipeline", "rails": ("api",),
+                    "auth": "pit",
+                    "why": "pipeline reads/updates are REST; pipeline CREATE is not a public API"}),
+    ("calendars.", {"skill": "44", "surface": "calendar", "rails": ("api", "mcp"),
+                    "auth": "pit", "why": "calendars are a REST/MCP operation"}),
+    ("conversations.", {"skill": "44", "surface": "conversation",
+                        "rails": ("api", "mcp"), "auth": "pit",
+                        "why": "conversations are a REST/MCP operation"}),
+    ("workflows.private.", {"skill": "44", "surface": "workflow",
+                            "rails": ("mcp",), "auth": "firebase",
+                            "why": "workflow builds use Skill 44's internal Build API"}),
+    ("workflows.definition.", {"skill": "44", "surface": "workflow",
+                               "rails": ("api",), "auth": "pit",
+                               "why": "public workflow-definition CRUD rows; the "
+                                      "registry still freezes them at staging-only "
+                                      "v4 (B-V4-S) and the capability gate is "
+                                      "default-deny, so they cannot complete a "
+                                      "build until the ledger re-freezes and "
+                                      "enables them"}),
+    ("workflows.", {"skill": "44", "surface": "workflow",
+                    "rails": ("api", "mcp"), "auth": "pit",
+                    "why": "workflow list/enroll/remove are CRM operations, not builder work"}),
+    ("media.", {"skill": "44", "surface": "media", "rails": ("api", "mcp"),
+                "auth": "pit",
+                "why": "media upload/folder/list is a REST/MCP operation; browser is forbidden"}),
+    ("funnels.pages.autosave", {"skill": "6", "surface": "page",
+                                "rails": ("api", "browser"), "auth": "pit",
+                                "why": "the page blob autosaves over the internal REST canvas"}),
+    ("funnels.pages.authoring", {"skill": "6", "surface": "page",
+                                 "rails": ("browser",), "auth": "firebase",
+                                 "why": "native editor design/insertion is builder work"}),
+    ("forms.authoring", {"skill": "6", "surface": "form", "rails": ("browser",),
+                         "auth": "firebase",
+                         "why": "form designer placement has no REST API"}),
+    ("forms.update", {"skill": "6", "surface": "form", "rails": ("browser",),
+                      "auth": "firebase",
+                      "why": "form settings the public API does not expose are builder work"}),
+    ("surveys.authoring", {"skill": "6", "surface": "survey", "rails": ("browser",),
+                           "auth": "firebase",
+                           "why": "the survey drag rail is the primary authoring lane"}),
+    ("surveys.write", {"skill": "6", "surface": "survey",
+                       "rails": ("browser", "api"), "auth": "firebase",
+                       "why": "capture-gated REST autosave is the fallback authoring lane"}),
+    ("community.", {"skill": "6", "surface": "community", "rails": ("browser",),
+                    "auth": "firebase",
+                    "why": "no public create API exists for a community/group"}),
+    ("course.", {"skill": "6", "surface": "course", "rails": ("browser",),
+                 "auth": "firebase",
+                 "why": "no public create API exists for a course"}),
+    ("publication.", {"skill": "6", "surface": "page", "rails": ("browser",),
+                      "auth": "firebase",
+                      "why": "publication has no supported public API; managed builder only"}),
+    ("settings.", {"skill": "6", "surface": "page", "rails": ("browser",),
+                   "auth": "firebase",
+                   "why": "unsupported settings have no public API; managed builder only"}),
+)
+
+
+def _operation_route(operation: str) -> Optional[Dict[str, Any]]:
+    """Longest declared prefix match for ``operation``; ``None`` when the
+    probe has no declared route (never an invented one)."""
+    op = str(operation or "")
+    best: Optional[Tuple[int, Dict[str, Any]]] = None
+    for prefix, entry in _OPERATION_ROUTES:
+        if op.startswith(prefix) and (best is None or len(prefix) > best[0]):
+            best = (len(prefix), dict(entry, prefix=prefix))
+    return best[1] if best else None
+
+
+def _rail_capability(rail: str, probe: Dict[str, Any], auth: str,
+                     location_id: Optional[str]) -> Dict[str, Any]:
+    """Measured capability for one rail on THIS host. ``True`` only when the
+    probe observed the prerequisite; ``False`` only when it observed it
+    absent; ``"unknown"`` when a host probe cannot assert it."""
+    secrets = probe.get("secrets") or {}
+    lanes = probe.get("lanes") or {}
+    if rail == "api":
+        if auth == "firebase":
+            present = bool(secrets.get("firebaseRefreshToken"))
+            basis = "secrets.firebaseRefreshToken"
+        else:
+            present = bool(secrets.get("locationPit"))
+            basis = "secrets.locationPit"
+        # The credential existing on the host is not the same as the account
+        # granting this specific operation at this location.
+        return {
+            "rail": "api",
+            "capable": "unknown" if present else False,
+            "evidence": (f"{basis} present; account grant not probed"
+                         if present else f"{basis} absent"),
+            "location_bound": bool(location_id),
+        }
+    if rail == "mcp":
+        return {
+            "rail": "mcp",
+            "capable": "unknown",
+            "evidence": ("official GHL MCP needs a per-account OAuth grant; a host "
+                         "probe cannot assert it (documented endpoint + catalog only)"),
+            "location_bound": bool(location_id),
+        }
+    if rail == "browser":
+        selected = probe.get("selectedLane")
+        return {
+            "rail": "browser",
+            "capable": bool(selected),
+            "evidence": (f"browser lane {selected!r} selected by this probe"
+                         if selected else "no CDP browser lane available on this host"),
+            "location_bound": bool(location_id),
+        }
+    if rail == "cua":
+        cua = lanes.get("cua") or {}
+        provider = cua.get("providerSelected")
+        return {
+            "rail": "cua",
+            "capable": provider in ("cua", "peekaboo"),
+            "evidence": f"lanes.cua.providerSelected={provider!r}",
+            "location_bound": bool(location_id),
+        }
+    return {"rail": rail, "capable": False, "evidence": "undeclared rail",
+            "location_bound": bool(location_id)}
+
+
+def resolve_operation_capability(operation: str, *,
+                                 location_id: Optional[str] = None,
+                                 probe: Optional[Dict[str, Any]] = None
+                                 ) -> Dict[str, Any]:
+    """Select the capable rail for ONE operation at ONE connected location.
+
+    ``probe`` is a full probe result (default: run the probe now). Returns a
+    record rather than a boolean: the caller can see which rail is preferred,
+    which rails are measured False and which remain unknown. Nothing here is
+    upgraded to True by assumption.
+    """
+    result = probe if probe is not None else run_probe()
+    entry = _operation_route(operation)
+    if entry is None:
+        return {
+            "operation": str(operation),
+            "locationId": location_id,
+            "declared": False,
+            "surface": None,
+            "skill": None,
+            "preferredRail": None,
+            "capable": "unknown",
+            "rails": [],
+            "note": "no declared route for this operation; it is not invented here",
+        }
+    rails = [_rail_capability(rail, result, entry.get("auth", "pit"),
+                              location_id) for rail in entry["rails"]]
+    preferred = next((r["rail"] for r in rails if r["capable"] is True), None)
+    if preferred is None:
+        preferred = next((r["rail"] for r in rails if r["capable"] == "unknown"), None)
+    measured = [r["capable"] for r in rails]
+    if any(m is True for m in measured):
+        capable: Any = True
+    elif all(m is False for m in measured) and measured:
+        capable = False
+    else:
+        capable = "unknown"
+    out = {
+        "operation": str(operation),
+        "locationId": location_id,
+        "locationBound": bool(location_id),
+        "declared": True,
+        "surface": entry["surface"],
+        "skill": entry["skill"],
+        "preferredRail": preferred,
+        "preferredRailProven": bool(
+            preferred and next(r["capable"] for r in rails
+                              if r["rail"] == preferred) is True),
+        "capable": capable,
+        "rails": rails,
+        "why": entry["why"],
+    }
+    if out["preferredRail"] and not out["preferredRailProven"]:
+        out["requiresVerification"] = (
+            "the preferred rail's tenant/account grant is not asserted by a host "
+            "probe; verify before treating the operation as capable")
+    if not location_id:
+        # Capability is per connected location; without one it is unknown,
+        # never a host-wide "yes".
+        out["capable"] = "unknown"
+        out["note"] = ("no connected location supplied; capability is asserted per "
+                       "location, not per host")
+    return out
+
+
+def operation_capabilities(location_id: Optional[str] = None,
+                           probe: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """The declared operation families resolved against one probe result."""
+    declared = []
+    seen = set()
+    for prefix, entry in _OPERATION_ROUTES:
+        family = prefix.rstrip(".")
+        if family in seen:
+            continue
+        seen.add(family)
+        declared.append(family)
+    return {
+        "schema": "skill6-operation-capabilities/1",
+        "scope": "per-operation-and-per-connected-location",
+        "locationId": location_id,
+        "note": ("selectedLane is a host-level DEFAULT browser lane only; call "
+                 "resolve_operation_capability() for the requested operation at the "
+                 "connected location"),
+        "families": {
+            family: resolve_operation_capability(family, location_id=location_id,
+                                                 probe=probe)
+            for family in declared
+        },
+    }
 
 
 def _build_environment_capabilities(
@@ -909,6 +1190,8 @@ def _build_environment_capabilities(
         "launched": bool(proof.get("launched")),
         "screenshotTaken": bool(proof.get("screenshotTaken")),
         "errorClass": proof.get("errorClass"),
+        "closed": bool(proof.get("closed")),
+        "tempRemoved": bool(proof.get("tempRemoved")),
         "evidenceAt": stamp(),
     }
     ext = managed.get("extension") or {}
@@ -957,6 +1240,27 @@ def _build_environment_capabilities(
     }
     api_operations = dict(_DECLARED_API_OPERATIONS)
     api_operations["evidenceAt"] = stamp()
+    # ONE WRITER (host/session contract). The probe states the contract; it
+    # does not take the lock, so it can never deadlock a live build.
+    browser_writer = {
+        "singleActiveWriter": True,
+        "maxSessions": OPTIMIZATIONS["maxParallelTabs"],
+        "managerLock": "tools/browser_manager.sh bm_ensure (flock/mkdir singleton per host)",
+        "leaseScope": "canonical session per box (bm_session_name)",
+        "takenByProbe": False,
+        "evidenceAt": stamp(),
+    }
+    # CLEANUP evidence: the probe opens no page/context/session of its own; its
+    # one real browser is the isolated Playwright proof above, which must close
+    # that browser and remove its temp artifacts.
+    cleanup = {
+        "probeOpensBrowserSessions": False,
+        "probeTakesManagerLock": False,
+        "playwrightBrowserClosed": playwright_proof["closed"],
+        "tempArtifactsRemoved": playwright_proof["tempRemoved"],
+        "unrelatedUserSessionsTouched": False,
+        "evidenceAt": stamp(),
+    }
     return {
         "schema": "skill6-environment-capabilities/1",
         "generatedAt": stamp(),
@@ -972,6 +1276,8 @@ def _build_environment_capabilities(
         "extension": extension,
         "authMethods": auth_methods,
         "apiOperations": api_operations,
+        "browserWriter": browser_writer,
+        "cleanup": cleanup,
     }
 
 
@@ -979,9 +1285,14 @@ def _build_environment_capabilities(
 
 def _oc_lane_eligible(oc: Dict[str, Any]) -> bool:
     """The OpenClaw browser lane (PRIMARY since 2026-10-13) requires the
-    plugin + a working CLI + the Chrome extension installed and current."""
+    OpenClaw version floor + the plugin + a working CLI + the Chrome
+    extension installed and current. The floor belongs HERE, not only in a
+    post-selection demotion: a below-floor box must fall through to the NEXT
+    eligible lane in order (agent-browser before playwright_direct), and the
+    fallbackChain must not offer a lane this host cannot use."""
     ext = oc.get("extension") or {}
-    return bool(oc.get("pluginEnabled") and oc.get("cliWorks")
+    return bool(oc.get("openclawFloorMet") is True
+                and oc.get("pluginEnabled") and oc.get("cliWorks")
                 and ext.get("installed") and ext.get("current"))
 
 
@@ -1055,6 +1366,10 @@ def run_probe(runner: Callable[..., Any] = subprocess.run,
             "playwrightAvailable": managed["playwrightAvailable"],
             "profile": managed["profile"],
             "doctorOk": managed["doctorOk"],
+            # The version floor is part of lane eligibility (see
+            # _oc_lane_eligible): selection AND fallbackChain read this flag,
+            # so a below-floor host can never be offered the lane.
+            "openclawFloorMet": _is_2x_or_newer(oc.get("semver")),
             "extension": extension,
         },
         "existing_session": existing,
@@ -1086,19 +1401,15 @@ def run_probe(runner: Callable[..., Any] = subprocess.run,
 
     selected = _select_lane(lanes, env)
 
-    # OpenClaw-lane gate: the OpenClaw browser lane only when OC >= 2026.8.1
-    # AND plugin enabled AND cli works AND the Chrome extension is installed
-    # and current (plan 2.2, engine order revised 2026-10-13). Demote with a
-    # warning when below the floor.
+    # OpenClaw-floor warning. The floor is enforced inside _oc_lane_eligible
+    # (so selection and fallbackChain agree); this block only RECORDS why the
+    # managed lane was not offered. It must never re-select a lane: the old
+    # post-selection demotion skipped agent-browser and could hand a capable
+    # box to playwright_direct (or to nothing) instead of the next lane in
+    # order.
     oc_semver = oc.get("semver")
-    if selected == "openclaw_managed_browser" and not _is_2x_or_newer(oc_semver):
-        selected = "playwright_direct" if pw["available"] else None
-        warnings.append("openclaw older than 2026.8.1 — managed-browser lane "
-                        "not eligible (plan 2.2)")
-    elif (oc.get("cliPresent") and managed["pluginEnabled"]
+    if (oc.get("cliPresent") and managed["pluginEnabled"]
             and managed["cliWorks"] and not _is_2x_or_newer(oc_semver)):
-        # Below-floor OpenClaw: the lane was never selected (the extension
-        # gate or the floor), but the operator still gets the floor warning.
         warnings.append("openclaw older than 2026.8.1 — managed-browser lane "
                         "not eligible (plan 2.2)")
 
@@ -1131,13 +1442,16 @@ def run_probe(runner: Callable[..., Any] = subprocess.run,
         pw_package_available=pw["available"],
         pw_launcher=pw_launcher, sys_root=sys_root)
 
-    return {
+    result = {
         "probedAt": now,
         "platform": _platform_name(),  # mac | linux | win per plan Part 2.1
         "openclaw": oc,
         "lanes": lanes,
         "secrets": secrets,
         "selectedLane": selected,
+        "selectedLaneScope": (
+            "host-default-browser-lane-only; capability for a specific operation "
+            "at a connected location comes from resolve_operation_capability()"),
         "fallbackChain": fallback_chain,
         "optimizations": dict(OPTIMIZATIONS),
         "iframeDrag": iframe_drag,
@@ -1145,6 +1459,11 @@ def run_probe(runner: Callable[..., Any] = subprocess.run,
         "warnings": warnings,
         "environmentCapabilities": environment_capabilities,
     }
+    # Per-operation, per-location view. Additive: the legacy keys above keep
+    # their exact meaning, and this record never upgrades an unobserved tenant
+    # grant to a capability claim.
+    result["operationCapabilities"] = operation_capabilities(probe=result)
+    return result
 
 
 def main(argv: Optional[List[str]] = None) -> int:

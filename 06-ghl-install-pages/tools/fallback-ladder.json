@@ -1,30 +1,83 @@
 {
   "_doc": [
-    "U113 (E5-8; closes G6) — Unified browser->API->MCP fallback ladder ('inability to fail').",
-    "ONE auditable declaration of the attempt order across the three transports for each",
-    "Skill 6 build surface, so the order is testable and never silently drifts from the",
-    "code paths it describes. Read by tools/ghl_fallback_ladder.py.",
+    "U113 (E5-8; closes G6) / F11 — Unified browser->API->MCP fallback ladder",
+    "('inability to fail'), selected PER OPERATION and PER CONNECTED LOCATION.",
     "",
-    "GATE: the ladder only OVERLAYS existing per-surface methods when GHL_FALLBACK_LADDER=1",
-    "(see tools/ghl_fallback_ladder.py::FLAG_ENV). Flag OFF (default) => only the FIRST",
-    "declared rung is attempted, i.e. today's single-method + ad-hoc-fallback behavior is",
-    "unchanged. Revert = flip the flag back off, then revert the commit.",
+    "ONE auditable declaration of the attempt order across the three transports for",
+    "each Skill 6 build surface, so the order is testable and never silently drifts",
+    "from the code paths it describes. Read by tools/ghl_fallback_ladder.py.",
+    "",
+    "ENABLEMENT IS EXPLICIT (F11): GHL_FALLBACK_LADDER unset => the FULL ladder runs",
+    "(failover is the production default; a silently single-rung ladder was the",
+    "defect). '1'/'true'/'yes'/'on' => explicit-on. '0'/'false'/'no'/'off' =>",
+    "explicit-off: only the first OPERATION rung is attempted — the deliberate",
+    "single-rung revert. Any other value is a config error, never a guess. The",
+    "chosen state is stamped on every receipt as 'enablement'.",
+    "",
+    "COMPLETION CONTRACT (F11): a rung succeeds only when ok IS the boolean true,",
+    "operation_complete IS the boolean true, and 'operation' names the SAME operation",
+    "the caller requested — at the connected location. 'prerequisite_ready' and",
+    "'partial' are recorded as their own states and are distinct from",
+    "'operation_complete'; they never end the ladder.",
+    "",
+    "RUNG KINDS: 'rungs' marks a rung whose success is a PREREQUISITE only. A",
+    "prerequisite rung can never report an entire page/form operation complete, even",
+    "if it wrongly claims operation_complete — the runner records the contradiction",
+    "and keeps walking. Every surface keeps at least one 'operation' rung.",
+    "",
+    "LOCATION: 'location.required' + 'location.carrier' name how the connected",
+    "location is bound. A location-required surface is never complete with no bound",
+    "location, and a rung's observed location must match the gated tenant.",
+    "",
+    "DOM: 'dom_refresh: true' means a browser rung reached as a FALLBACK (after",
+    "another rung has run) must re-establish the page/context and refresh DOM",
+    "references through an enter hook (returning 'dom_epoch'). A fallback never",
+    "assumes it shares a session with the rung that failed. The PRIMARY browser",
+    "rung establishes the session itself and needs no enter hook.",
+    "",
+    "OPERATION NAMING: a surface that declares several operations requires the",
+    "caller to name ONE. A rung may not report completion without naming that",
+    "same operation; an unnamed completion is recorded as 'partial'.",
     "",
     "Every 'order' entry is grounded in a real file this repo already ships — see the",
     "'evidence' map per surface. A surface with only ONE real transport today (no",
-    "fabricated second rung) is listed under 'not_laddered' with the reason, never given",
-    "an invented fallback (D8 'zero invented selectors' doctrine, generalized)."
+    "fabricated second rung) is listed under 'not_laddered' with the reason, never",
+    "given an invented fallback (D8 'zero invented selectors' doctrine, generalized).",
+    "",
+    "RETIRED TRANSPORT: the self-hosted community GHL MCP is retired (GU-009/GU-010).",
+    "It is not a rung anywhere in this file; the official GHL MCP (Tier 1) is the",
+    "only MCP transport."
   ],
   "flag_env": "GHL_FALLBACK_LADDER",
   "transports": ["browser", "api", "mcp"],
   "taxonomy_source": "06-ghl-install-pages/tools/cc_board.py:_CC_BLOCK_REASONS (cc_board.py:103)",
   "surfaces": {
     "page": {
+      "operations": ["funnels.pages.autosave", "funnels.pages.authoring"],
       "order": ["api", "browser", "mcp"],
+      "location": {
+        "required": true,
+        "carrier": "query.locationId (public reads) / seeded session's location (authoring)"
+      },
+      "dom_refresh": true,
+      "rungs": {
+        "api": {
+          "kind": "operation",
+          "why": "REST canvas splice writes the page blob for funnels.pages.autosave"
+        },
+        "browser": {
+          "kind": "operation",
+          "why": "the page builder performs design/insertion the blob cannot express (funnels.pages.authoring)"
+        },
+        "mcp": {
+          "kind": "prerequisite",
+          "why": "uploads media objects the page may later reference; an uploaded asset is not a finished page"
+        }
+      },
       "evidence": {
         "api": "tools/ghl_rest_canvas.py — pure REST JSON splice into the page blob; \"GLUE, NOT THE CLICKER\" — no drag, no browser, no network of its own.",
         "browser": "tools/ghl_iframe_drag.py PAGE/FUNNEL CODE-ELEMENT DRAG FALLBACK (B-U16 item 1) — GHL_PAGE_CODE_DRAG flag-wired UI-drive fallback, wired in U30.",
-        "mcp": "tools/ghl_media.py — folders/uploads go via the GHL API / official MCP / Skill 44, NEVER by driving the page builder UI (media-object rung for page content). The community MCP is RETIRED and is not a rung: the docstring wording predates the retirement, so read 'official MCP' only."
+        "mcp": "tools/ghl_media.py — folders/uploads go via the GHL API / official MCP / Skill 44, NEVER by driving the page builder UI. The community MCP is RETIRED and is not a rung."
       }
     },
     "funnel": {
@@ -34,45 +87,142 @@
       }
     },
     "form": {
+      "operations": ["forms.authoring", "forms.update"],
       "order": ["mcp", "browser"],
+      "location": {
+        "required": true,
+        "carrier": "token-id (the seeded browser session's location)"
+      },
+      "dom_refresh": true,
+      "rungs": {
+        "mcp": {
+          "kind": "prerequisite",
+          "why": "pre-creates the custom fields and tags the form will reference; creating fields is not creating the form"
+        },
+        "browser": {
+          "kind": "operation",
+          "why": "the form designer places the pre-created fields on the canvas — the only rail that finishes forms.authoring"
+        }
+      },
       "evidence": {
         "mcp": "tools/ghl_form_builder.py — SMART layer \"PRE-CREATES every custom field and tag through the GHL API layer (Skill 44)\" before any browser action.",
         "browser": "tools/ghl_form_builder.py — DUMB/DO layer drags the pre-created zhc_ fields onto the canvas via snapshot-and-bind (smoke_first); no field-placement REST API exists, so 'api' is NOT a real third rung here (never fabricated)."
       }
     },
     "survey": {
+      "operations": ["surveys.authoring", "surveys.write"],
       "order": ["browser", "api"],
+      "location": {
+        "required": true,
+        "carrier": "token-id (the seeded browser session's location)"
+      },
+      "dom_refresh": true,
+      "rungs": {
+        "browser": {
+          "kind": "operation",
+          "why": "the survey drag rail writes the survey canvas"
+        },
+        "api": {
+          "kind": "operation",
+          "why": "capture-gated REST autosave writes the same payload when the drag rail is not viable"
+        }
+      },
       "evidence": {
         "browser": "tools/ghl_survey_builder.py — \"The survey builder's PRIMARY lane is the browser drag rail\" (ghl_survey_rest.py docstring).",
         "api": "tools/ghl_survey_rest.py — CANVAS-FREE capture-gated REST fallback (build_method='rest'); refuses to blind-POST, derives the save route ONLY from a recorded capture receipt."
       }
     },
     "workflow": {
+      "operations": ["workflows.private.create", "workflows.private.save"],
       "order": ["mcp", "browser"],
+      "location": {
+        "required": true,
+        "carrier": "path.locationId (internal Build API) / seeded session's location (browser)"
+      },
+      "dom_refresh": true,
+      "rungs": {
+        "mcp": {
+          "kind": "operation",
+          "why": "the Skill 44 internal Build API is the normal workflow build path"
+        },
+        "browser": {
+          "kind": "operation",
+          "why": "the Automations builder backstop builds the same workflow when the token path is unavailable"
+        }
+      },
       "evidence": {
         "mcp": "tools/ghl_workflow_builder.py — \"Skill 44 documented a Tier 4 agent-browser workflow-BUILD backstop for when the Firebase token is unread/misconfigured\" implies Skill 44 (MCP) is the normal build path.",
-        "browser": "tools/ghl_workflow_builder.py — the Tier-4 agent-browser backstop itself; drives the Automations builder UI through browser_manager.sh when the MCP/token path is unavailable."
+        "browser": "tools/ghl_workflow_builder.py — the Tier-4 agent-browser backstop itself; drives the Automations builder UI through browser_manager.sh when the MCP/token path is unavailable.",
+        "not_a_rung": "workflows.definition.* (the public V4 definition CRUD) is NOT a completion rung: its registry rows are frozen staging-only and stay default-deny behind the capability gate, so it cannot finish a build today. See 44-convert-and-flow-operator/.../public/operations.py and evidence/W18."
       }
     },
     "community": {
+      "operations": ["community.authoring"],
       "order": ["mcp", "browser"],
+      "location": {
+        "required": true,
+        "carrier": "token-id (the seeded browser session's location)"
+      },
+      "dom_refresh": true,
+      "rungs": {
+        "mcp": {
+          "kind": "prerequisite",
+          "why": "a Tier-1 tool-list check can only prove a create tool exists; a capability check is not a created community"
+        },
+        "browser": {
+          "kind": "operation",
+          "why": "the Memberships builder is the only create surface for a community/group"
+        }
+      },
       "evidence": {
-        "mcp": "tools/ghl_community_builder.py — \"spec §3 marks it ASSUMED until the first-hour Tier-1 tool-list check; the router flips primary automatically if a create tool is found.\" (Tier 2 — the community MCP — is RETIRED and unassigned in ghl_object_router.py, so only Tier 1 official MCP can ever satisfy this check.)",
+        "mcp": "tools/ghl_community_builder.py — \"spec §3 marks it ASSUMED until the first-hour Tier-1 tool-list check; the router flips primary automatically if a create tool is found.\" The official GHL MCP (Tier 1) is the only MCP transport; the retired community MCP is unassigned in ghl_object_router.py.",
         "browser": "tools/ghl_community_builder.py — \"GoHighLevel has NO known public create API for a community/group ... The create surface is therefore browser-only\" (today's actual path, U106-hardened)."
       }
     },
     "course": {
+      "operations": ["course.authoring"],
       "order": ["mcp", "browser"],
+      "location": {
+        "required": true,
+        "carrier": "token-id (the seeded browser session's location)"
+      },
+      "dom_refresh": true,
+      "rungs": {
+        "mcp": {
+          "kind": "prerequisite",
+          "why": "a Tier-1 tool-list check proves a create tool exists; it does not create a course"
+        },
+        "browser": {
+          "kind": "operation",
+          "why": "the Memberships builder is the only create + outline surface for a course"
+        }
+      },
       "evidence": {
-        "mcp": "tools/ghl_course_builder.py — same Tier-1 tool-list check as the community builder (Tier 2 community MCP is RETIRED and unassigned in ghl_object_router.py); router flips primary automatically if a create tool is found.",
+        "mcp": "tools/ghl_course_builder.py — same Tier-1 tool-list check as the community builder; the official GHL MCP is the only MCP transport (the retired community MCP is unassigned in ghl_object_router.py).",
         "browser": "tools/ghl_course_builder.py — \"GoHighLevel has NO known public create API for a course ... The create + outline surface is browser-only\" (today's actual path, U106-hardened)."
       }
     },
     "media": {
+      "operations": ["media.upload", "media.folders.create", "media.files.list"],
       "order": ["api", "mcp"],
+      "location": {
+        "required": true,
+        "carrier": "body.locationId"
+      },
+      "dom_refresh": false,
+      "rungs": {
+        "api": {
+          "kind": "operation",
+          "why": "the proven public upload/folder/list route"
+        },
+        "mcp": {
+          "kind": "operation",
+          "why": "the official GHL MCP / Skill 44 alternate upload path"
+        }
+      },
       "evidence": {
         "api": "tools/ghl_media.py — proven POST services.leadconnectorhq.com/medias/upload-file Bearer-PIT call.",
-        "mcp": "tools/ghl_media.py — \"official MCP / Skill 44\" alternate upload path. The community MCP rung is RETIRED and removed from this ladder.",
+        "mcp": "tools/ghl_media.py — \"official MCP / Skill 44\" alternate upload path. The retired community MCP rung is removed from this ladder.",
         "browser_excluded": "tools/ghl_media.py — \"NO browser control for media storage ... NEVER by driving the page builder UI\" — browser is explicitly forbidden for this surface, not merely unproven."
       }
     }
