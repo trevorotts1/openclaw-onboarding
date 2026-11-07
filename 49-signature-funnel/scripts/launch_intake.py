@@ -342,13 +342,14 @@ def _answered(session: Dict[str, Any], field_key: str) -> bool:
 
 
 # The eight launch answers (calendar, channels, AI, access delivery, payment plans,
-# sender, reply-to, A2P readiness) as typed ledger keys. Published in the versioned
-# session contract and carried on the assembled launch plan for Skill 50 (L06).
+# sender, reply-to, A2P readiness) plus the after-purchase reentry and purchase-identity
+# answers, as typed ledger keys. Published in the versioned session contract and carried
+# on the assembled launch plan for Skill 50 (L06).
 LAUNCH_ANSWER_KEYS = (
     "launch.launch_at", "launch.doors_open_at", "launch.doors_close_at", "launch.timezone",
     "launch.channels", "launch.conversation_ai", "launch.access_delivery",
     "launch.payment_plans", "launch.sender_name", "launch.reply_to_email",
-    "launch.a2p_ready",
+    "launch.a2p_ready", "launch.automation_reentry", "launch.purchase_identity",
 )
 
 # The guided-answer records (shared-utils/client_intake/engine.py: to_launch_known)

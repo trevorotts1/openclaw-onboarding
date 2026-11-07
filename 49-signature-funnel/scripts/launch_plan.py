@@ -84,6 +84,37 @@ SCHEMA_VERSION = "1.0.0"
 SEND_WINDOW_DEFAULT = {"start": "08:00", "end": "21:00", "timezone": "recipient_local"}
 PROMOTIONAL_CAP = 5
 
+# F04: the contact tag that marks WHICH purchased variant the post-sale handler
+# serves. It is derived from the plan's own purchased slot (the `slot` of the
+# main-slot package in `offer.packages`, i.e. the base purchase this handler
+# delivers access for) — the same slot vocabulary the access block and the
+# offer records already carry. It is never a second variant system and never a
+# tag the plan did not ask for: the buildable launch-b template n2 names the
+# placeholder "variant tag (main / upsell-N / downsell-N)" and the launch-c
+# reader carries this one value verbatim to the launch compiler.
+VARIANT_TAG_KEY = "variant_tag"
+PURCHASE_IDENTITY_KEY = "purchase_identity"
+SETTINGS_KEY = "settings"
+
+# F05: reentry/enrolment as the CLIENT answered them (intake d6_reentry). The
+# schema's own vocabulary is used (settings.reentry allow|block, settings
+# .enrollment single|successive). An unanswered question emits NO settings key,
+# so the compiler records the setting as insufficient instead of guessing.
+REENTRY_CHOICES = (
+    (("allow", "run it again", "run again", "each new purchase"), "allow", "successive"),
+    (("block", "once per contact", "run it once", "only once"), "block", "single"),
+)
+
+# F05: the purchase-event identity the handler deduplicates on. The client's
+# answer (intake d7_purchase_identity) names the native field the selected
+# checkout supplies; the plan carries the field REFERENCE, never a purchase
+# value it cannot know at plan time. An order id alone is grouping only, so it
+# is emitted (honestly) but the compiler records it insufficient.
+PURCHASE_IDENTITY_CHOICES = (
+    (("purchased line", "purchased_line"), "purchased_line_id", "ghl.purchased_line.id"),
+    (("transaction",), "transaction_id", "ghl.transaction.id"),
+)
+
 # The two guided-answer ledger entries the intake records for a missing or
 # partial offer (shared-utils/client_intake/engine.py: to_launch_known).
 GUIDED_PROPOSAL_KEY = "proposed_offer"
@@ -797,11 +828,64 @@ def _text_sets(*, text_channel: bool, has_landing: bool,
     return sets
 
 
+def _automation_settings(answers: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The client's reentry/enrolment answer, as the contract's `settings` block.
+
+    None when the question was not answered: emitting an invented setting would
+    be a guess, so an unanswered question emits NO key and the compiler records
+    the setting as insufficient instead. The values are the contract's own
+    vocabulary (reentry allow|block, enrollment single|successive).
+    """
+    value = fact(answers, "launch.automation_reentry")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip().lower()
+    for tokens, reentry, enrollment in REENTRY_CHOICES:
+        if text.startswith(tokens) or any(token in text for token in tokens):
+            return {"reentry": reentry, "enrollment": enrollment}
+    return None
+
+
+def _purchase_identity(answers: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The client's purchase-event identity answer, as the contract's block.
+
+    The value is the native FIELD REFERENCE the selected checkout supplies
+    (e.g. ghl.transaction.id), never a purchase value this planner cannot know.
+    None when unanswered: no identity is invented.
+    """
+    value = fact(answers, "launch.purchase_identity")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip().lower()
+    for tokens, field, reference in PURCHASE_IDENTITY_CHOICES:
+        if any(token in text for token in tokens):
+            return {field: reference}
+    return None
+
+
+def _post_sale_variant_tag(packages: Sequence[Dict[str, Any]]) -> Optional[str]:
+    """The variant the post-sale handler marks, from the plan's main package slot.
+
+    The short handler delivers the BASE purchase's access (its waits and
+    entitlements are the main-slot ones), so its variant is that package's own
+    `slot` value — "main" for the single-offer launch. None when the plan has no
+    main package: no tag is invented and the compiler stays on the sequence.
+    """
+    for package in packages:
+        if package.get("slot") == "main":
+            slot = package.get("slot")
+            return slot if isinstance(slot, str) and slot.strip() else None
+    return None
+
+
 def _automations(*, has_upsells: bool, has_checkout: bool, has_thank_you: bool,
                  has_sales: bool, has_landing: bool, payment_plans: bool,
                  ai_requested: bool, text_ids: Sequence[str],
                  email_ids: Sequence[str], black_friday: bool,
-                 event_eligible: bool = False) -> List[Dict[str, Any]]:
+                 event_eligible: bool = False,
+                 variant_tag: Optional[str] = None,
+                 settings: Optional[Dict[str, Any]] = None,
+                 purchase_identity: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Spec §3.3, one unit per family, template per the spec table. Every unit is
     draft_only and builds through the Skill 44 engine (U-GHL-PROBE)."""
     text = set(text_ids)
@@ -810,11 +894,17 @@ def _automations(*, has_upsells: bool, has_checkout: bool, has_thank_you: bool,
         return [i for i in ids if i in text]
 
     def unit(uid: str, family: str, template: str, trigger_type: str, detail: str,
-             waits: Sequence[str]) -> Dict[str, Any]:
-        return {"id": uid, "family": family, "template": template,
-                "build_rail": BUILD_RAIL, "draft_only": True,
-                "trigger": {"type": trigger_type, "detail": detail},
-                "waits_for": list(waits)}
+             waits: Sequence[str], **extra: Any) -> Dict[str, Any]:
+        out = {"id": uid, "family": family, "template": template,
+               "build_rail": BUILD_RAIL, "draft_only": True,
+               "trigger": {"type": trigger_type, "detail": detail},
+               "waits_for": list(waits)}
+        # Declared fields only. An absent value stays absent (never null-filled
+        # with a guess), so a consumer can tell declared from undeclared.
+        for key, value in extra.items():
+            if value is not None:
+                out[key] = value
+        return out
 
     landing_wait = "page_landing" if has_landing else ("page_sales" if has_sales else "")
     out = [
@@ -839,7 +929,11 @@ def _automations(*, has_upsells: bool, has_checkout: bool, has_thank_you: bool,
         + tset("text_access_link")
     out.append(unit("auto_post_sale", "post_sale", TEMPLATE_BY_FAMILY["post_sale"], "payment_succeeded",
                     "access + welcome, promotional sends stop, next follow-up starts",
-                    post_sale_waits))
+                    post_sale_waits,
+                    # The three facts the launch-b purchase handler installs from:
+                    # which variant it marks, and how it reenters and deduplicates.
+                    variant_tag=variant_tag, settings=settings,
+                    purchase_identity=purchase_identity))
     if has_upsells:
         followups = [f"email_{k}" for k in ("upsell_1", "upsell_2", "downsell_1", "downsell_2")]
         out.append(unit("auto_upsell_branch", "upsell_downsell", TEMPLATE_BY_FAMILY["upsell_downsell"],
@@ -1011,7 +1105,13 @@ def build_launch_plan(launch: Dict[str, Any], answers: Dict[str, Any], *,
         payment_plans=offer["payment_plans"], ai_requested=ai_requested,
         text_ids=text_ids, email_ids=sorted(email_ids),
         black_friday="black_friday" in calendar,
-        event_eligible=event["eligible"])
+        event_eligible=event["eligible"],
+        # F04/F05: the purchase handler's own variant, reentry/enrolment and
+        # purchase-event identity, from the plan's own packages and the client's
+        # own answers. Undeclared stays undeclared (no key), never guessed.
+        variant_tag=_post_sale_variant_tag(offer["packages"]),
+        settings=_automation_settings(answers),
+        purchase_identity=_purchase_identity(answers))
 
     # Welcome/access units deliver the purchased BASE offer only: an optional
     # upsell right never lands in every buyer's welcome instructions. Upsell
@@ -1263,6 +1363,23 @@ def _self_test() -> int:
         "base-a" in plan["access"]["entitlements"] and
         "upgrade-b" in plan["access"]["entitlements"],
         "the welcome/access actions resolve the approved destination and every entitlement")
+    post_sale = next(a for a in plan["automations"] if a["id"] == "auto_post_sale")
+    say(post_sale.get("variant_tag") == "main",
+        "the post-sale handler declares the plan's own main-slot variant tag")
+    say("settings" not in post_sale and "purchase_identity" not in post_sale,
+        "an unanswered reentry/identity question emits no guessed setting")
+    declared = dict(answers, **{
+        "launch.automation_reentry": {"value": "Run it again for each new purchase",
+                                      "state": "provided"},
+        "launch.purchase_identity": {"value": "Convert & Flow transaction ID (recommended)",
+                                     "state": "provided"},
+    })
+    p4 = build_launch_plan(launch, declared)["plan"]
+    ps = next(a for a in p4["automations"] if a["id"] == "auto_post_sale")
+    say(ps.get("settings") == {"reentry": "allow", "enrollment": "successive"},
+        "the client's reentry answer reaches the automation settings")
+    say(ps.get("purchase_identity") == {"transaction_id": "ghl.transaction.id"},
+        "the client's purchase identity reaches the plan as a native field reference")
 
     no_calendar = {k: v for k, v in answers.items() if not k.startswith("launch.launch")}
     blocked = build_launch_plan(launch, no_calendar)

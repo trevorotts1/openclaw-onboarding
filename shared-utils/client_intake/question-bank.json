@@ -1,6 +1,6 @@
 {
   "schema": "client-intake-question-bank/v1",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "notes": "One canonical question per ask, shared by Skill 49 (launch and legacy), Skill 71, Skill 83. Same questions and same answers file in claude-nine, Claude Code and OpenClaw; only the rendering differs. choices has at most 3 entries; the renderer always adds the help_label option. never_default questions are never defaulted; every other question may fall back to its default, flagged 'to confirm'. Launch-automation questions (spec 3.5) apply to launch and bf modes, never legacy; the launch date and the sender facts are never defaulted, so no deadline or sender is invented. Mode page is Skill 71's page-only profile (profiles.page): one page, not a funnel, and it opens the client's existing answers file so every confirmed launch answer is reused instead of asked again. The profile's question list is the ask list for a page run. A signature page always needs its canonical renders, so the image questions no longer offer a no-pictures option. The payment-plan flag is derived from billing and is never asked; see system_fields.payment_plans.",
   "help_label": "I'm not sure, help me",
   "introduction": "Let's build a launch that fits your business. I'll help you clarify what you're selling, who it helps, and how to present it. Then we'll turn your approved plan into the supported launch pages and follow-up materials. We'll take one question at a time. You can ask for an example, ask me to recommend an answer, or ask me to use what you've already shared. You'll review the plan before we build.",
@@ -1872,6 +1872,90 @@
       "choice_explanations": {
         "Yes, it is approved": "Texting can go live.",
         "No, not yet": "Texts stay drafts until the approval lands."
+      }
+    },
+    {
+      "id": "d6_reentry",
+      "group": "launch",
+      "text": "If someone buys from you more than once — the main offer now and an upgrade or a second package later — should the after-purchase automation run again for that new purchase?",
+      "why": "It sets the after-purchase automation's reentry and enrolment. Running again delivers the new purchase's access once per purchase; running once per contact never re-delivers. The setting is applied to the workflow and read back, and if you do not answer it is recorded as not set rather than guessed.",
+      "answer_type": "choice",
+      "choices": [
+        "Run it again for each new purchase",
+        "Run it once per contact",
+        "Not sure — decide later"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "The safe default for most launches is to run it again for each new purchase, so a real second purchase still gets its access.",
+        "examples": [
+          "Run it again for each new purchase.",
+          "Run it once per contact."
+        ],
+        "actions": [
+          "Show me an example.",
+          "Help me answer this.",
+          "Recommend something using what you already know about my business."
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "optional",
+      "condition": "mode == bf",
+      "targets": [
+        "launch.automation_reentry"
+      ],
+      "legacy_ids": [
+        "d6_reentry"
+      ],
+      "required_by": [],
+      "choice_explanations": {
+        "Run it again for each new purchase": "A later, separate purchase gets its own access and welcome. The same purchase never repeats because delivery is deduplicated on the purchase identity.",
+        "Run it once per contact": "Each contact enters the after-purchase automation only once, even if they buy again later.",
+        "Not sure — decide later": "Nothing is set and it is recorded as not set. You can answer later and the plan updates."
+      }
+    },
+    {
+      "id": "d7_purchase_identity",
+      "group": "launch",
+      "text": "Which record from your checkout will identify one purchase, so the same purchase can never grant access twice?",
+      "why": "The after-purchase automation grants access once per purchase, so it needs the record that identifies a purchase. A transaction ID or a purchased line ID identifies one purchase; an order ID alone can carry several purchases, so it is never used as the dedupe key. If you are not sure, it is left unknown and nothing is guessed.",
+      "answer_type": "choice",
+      "choices": [
+        "Transaction ID (recommended)",
+        "Purchased line ID",
+        "Not sure — leave unknown"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Choose Transaction ID unless your checkout reports each purchased line separately, in which case Purchased line ID is the precise key.",
+        "examples": [
+          "Transaction ID (recommended)",
+          "Purchased line ID"
+        ],
+        "actions": [
+          "Show me an example.",
+          "Help me answer this.",
+          "Recommend something using what you already know about my business."
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "optional",
+      "condition": "mode == bf",
+      "targets": [
+        "launch.purchase_identity"
+      ],
+      "legacy_ids": [
+        "d7_purchase_identity"
+      ],
+      "required_by": [],
+      "choice_explanations": {
+        "Transaction ID (recommended)": "One settled transaction identifies one purchase. This is the safest key.",
+        "Purchased line ID": "One purchased line identifies one purchase, even when an order carries several changes.",
+        "Not sure — leave unknown": "Nothing is assumed. The plan records the identity as not declared, and the automation must not claim it can deduplicate."
       }
     },
     {
