@@ -107,7 +107,10 @@ const BRIEF = {
   display_timezone: 'America/New_York',
 } as never;
 
-function scoredVerdict(label: string): unknown {
+function scoredVerdict(
+  label: string,
+  actionDescription = 'Publish one repurposed episode each week.',
+): unknown {
   return {
     schema_version: 'wise-elders.verdict/v1',
     result_kind: 'scored',
@@ -134,7 +137,7 @@ function scoredVerdict(label: string): unknown {
         session_id: SESSION_ID,
         verdict_revision: 1,
         title: 'Publish one weekly episode',
-        description: 'Publish one repurposed episode each week.',
+        description: actionDescription,
         rationale: 'Recorded in the draft resolution.',
         source_condition_ids: [],
         department_id: null,
@@ -162,9 +165,10 @@ function scoredVerdict(label: string): unknown {
 
 function model(
   snapshot: InstallationCapabilitySnapshot | null = null,
+  actionDescription?: string,
 ): Record<string, unknown> {
   return buildReportModel({
-    verdict: scoredVerdict('GO_WITH_CONDITIONS') as never,
+    verdict: scoredVerdict('GO_WITH_CONDITIONS', actionDescription) as never,
     brief: BRIEF,
     final_cards: SEAT_IDS.map((seat) => advisorCard(seat)),
     context: {
@@ -244,7 +248,7 @@ test('a seven-match capability list shows six rows and states all seven', () => 
     },
   ]);
   assert.equal(matches.length, 7);
-  const built = model(snapshot);
+  const built = model(snapshot, `Use ${names.join(', ')} for the release.`);
   const tools = built.your_tools as Record<string, unknown>;
   assert.equal(tools.items_total, 7);
   assert.equal(tools.items_shown, 6);

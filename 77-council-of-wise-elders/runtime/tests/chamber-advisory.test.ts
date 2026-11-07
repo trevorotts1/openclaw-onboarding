@@ -204,8 +204,8 @@ test('the copyable request names the session and never claims approval', () => {
 });
 
 test('duplicate removal keeps the first occurrence in order', () => {
-  assert.deepEqual(api.unique(['a', 'b', 'a', '', null, 'b', 'c']), ['a', 'b', 'c']);
-  assert.deepEqual(api.unique('not a list'), []);
+  assert.deepEqual(plain(api.unique(['a', 'b', 'a', '', null, 'b', 'c'])), ['a', 'b', 'c']);
+  assert.deepEqual(plain(api.unique('not a list')), []);
 });
 
 test('the advisory stylesheet uses theme tokens only and keeps 44px targets', () => {
