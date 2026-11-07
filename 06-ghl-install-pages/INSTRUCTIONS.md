@@ -137,7 +137,7 @@ This step makes your design span the entire page width. If you skip this, your d
    - The GREEN border = the section container (this IS what you want)
 2. Move your mouse slowly between the top edge of the blue code element and the edge of the section. When you see a green line or green highlight appear, click on it.
 3. A settings panel will appear on the right side of the screen
-4. Find the toggle labeled "Allow rows to take entire width" (it might also say "Full Width")
+4. Find the toggle labeled "Allow Rows to take entire width" (it might also say "Full Width")
 5. Turn this toggle ON (click it so it is enabled)
 6. The section will now span the full page width
 
@@ -204,14 +204,15 @@ Sometimes you need to update a page that has already been deployed, not create a
 2. Find the existing funnel in the list and click on it
 3. Click on the specific step/page you want to update
 4. The page builder will open with the EXISTING content already loaded
-5. Click on the code element (the blue "Custom HTML/JavaScript" box)
-6. Click "Open Code Editor"
-7. You will see the current code. Select ALL of it and DELETE it.
-8. Paste the NEW updated code
-9. Click Save in the code editor
-10. Click the Save button (floppy disk) in the top toolbar
-11. Preview to verify the changes look correct
-12. Publish ONLY if the user approves
+5. Set full width on the SECTION container (the green highlight), never the code element (the blue box): click the section, find the toggle labeled exactly "Allow Rows to take entire width" in the right-hand settings panel, and turn it ON. READ the toggle first — if it is already ON, leave it alone, because clicking an ON toggle turns full width OFF. The same step applies to an existing page: an update that replaces the code while leaving the switch OFF (or leaving the conflicting `max-width:1170px` section rule in place) ships a half-width page. In code this is `ghl_rest_canvas.edit_element_customcode` (width repair on by default) or `edit_element_customcode_full_width` (which also returns the change record); prove it afterwards with `ghl_rest_canvas.assert_full_width(blob, section_idx)` on the RE-READ blob, passing the section index the edit repaired.
+6. Click on the code element (the blue "Custom HTML/JavaScript" box)
+7. Click "Open Code Editor"
+8. You will see the current code. Select ALL of it and DELETE it.
+9. Paste the NEW updated code
+10. Click Save in the code editor
+11. Click the Save button (floppy disk) in the top toolbar
+12. Preview to verify the changes look correct (check the page spans full width)
+13. Publish ONLY if the user approves
 
 IMPORTANT: When updating, you do NOT create a new funnel or add new steps. You are editing the existing code in the existing page. Do not accidentally create a duplicate.
 

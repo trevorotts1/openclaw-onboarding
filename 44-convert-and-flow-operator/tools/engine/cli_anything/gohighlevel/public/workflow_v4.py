@@ -857,6 +857,14 @@ class WorkflowV4Adapter:
                         "recorded for some other action"
                     ),
                     "required_scope": "publication",
+                    "accepted_scope_forms": (
+                        "an approval mapping whose scope is publication/publish/"
+                        "live, or a ref carrying an explicit marker such as "
+                        "scope:publication, publication-scoped, allow-publish or "
+                        "approved_live_publication — a ref that merely contains "
+                        "the word 'live' does not qualify, and a bare gate_token "
+                        "names no action scope"
+                    ),
                     "hint": (
                         "pass the approval_ref already recorded for this "
                         "location/action; do not request a new approval"
@@ -1673,44 +1681,63 @@ def _identity_readback(
     )
 
 
-_PUBLICATION_SCOPE_WORDS = frozenset(
-    {"publication", "publications", "publish", "published", "live"}
+_PUBLICATION_SCOPE_VALUES = frozenset({"publication", "publish", "live"})
+_PUBLICATION_MARKERS: tuple[str, ...] = (
+    "publication-scoped",
+    "publication_scoped",
+    "scope:publication",
+    "scope=publication",
+    "scope:publish",
+    "scope=publish",
+    "scope:live",
+    "scope=live",
+    "allow-publication",
+    "allow_publication",
+    "allow-publish",
+    "allow_publish",
+    # the Skill 06 page path's recorded live-publication target, carried as a
+    # ref by a caller that already holds it
+    "approved_live_publication",
 )
-_SCOPE_TOKEN_SPLIT = re.compile(r"[^a-z0-9]+")
 
 
 def _publication_scope(approval: ApprovalRef | Mapping[str, Any] | str) -> bool:
     """True only for an approval that explicitly names a PUBLICATION scope.
 
     The frozen ``ApprovalRef`` vocabulary carries one ``ref`` and one ``kind``, so
-    an action scope travels as text: an explicit ``scope`` key on a mapping, or a
-    scope marker inside ``ref`` (``approved_live_publication``,
-    ``workflow-publish-2026``). A ``gate_token`` approval IS the approval seam and
-    counts as its own authority.
+    an action scope travels as text. This uses the SAME marker discipline as
+    ``_deletion_scope``: either an explicit ``scope`` key whose value IS a
+    publication scope (``publication`` / ``publish`` / ``live``, plural
+    tolerated), or an explicit scope marker inside ``ref``
+    (``scope:publication``, ``publication-scoped``, ``allow-publish``,
+    ``approved_live_publication``, ...).
 
-    An ABSENT marker never authorises a publication — the same rule
-    ``_deletion_scope`` applies to removals — and a ref that merely happens to
-    contain letters like "live" inside another word does not count, because the
-    text is split into whole tokens.
+    Two weaker rules were REMOVED because they authorized by accident:
+
+    * a bare keyword anywhere in the ref — a copy- or delete-scoped ref that
+      merely contained the word "live" or "publish" satisfied the old gate;
+    * the ``gate_token`` kind auto-passing with no scope at all. A gate token is
+      an approval SEAM, not a statement about which action it approves, so a
+      publication still needs its own scope named. A ``gate_token`` carrying a
+      publication scope (key or marker) still passes.
+
+    An ABSENT marker never authorises a publication, and text is matched as whole
+    markers, so a word that merely contains "live" does not count.
     """
 
     ref = ""
     scope = ""
-    kind = ""
     if isinstance(approval, ApprovalRef):
-        ref, kind = str(approval.ref), str(approval.kind)
+        ref = str(approval.ref)
     elif isinstance(approval, Mapping):
         ref = str(approval.get("ref") or "")
         scope = str(approval.get("scope") or "")
-        kind = str(approval.get("kind") or "")
     elif isinstance(approval, str):
         ref = approval
-    if kind == "gate_token":
+    if scope.strip().lower().rstrip("s") in _PUBLICATION_SCOPE_VALUES:
         return True
-    tokens: set[str] = set()
-    for text in (scope, ref):
-        tokens.update(t for t in _SCOPE_TOKEN_SPLIT.split(text.lower()) if t)
-    return bool(tokens & _PUBLICATION_SCOPE_WORDS)
+    lowered = ref.lower()
+    return any(marker in lowered for marker in _PUBLICATION_MARKERS)
 
 
 def _deletion_scope(approval: ApprovalRef | Mapping[str, Any] | str) -> bool:

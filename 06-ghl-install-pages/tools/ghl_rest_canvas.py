@@ -765,6 +765,13 @@ def autosave_body(
     UNPUBLISHED — the live pointer never moves. Default ``publish=False`` (draft);
     callers gate ``publish`` behind ``ghl_builder.may_publish`` (A13.1).
 
+    The publish gate is decided ONCE per call, here, inside
+    ``_autosave_body_with_record``: a ``publish=True`` that lacks a valid
+    recorded authorization raises
+    ``ghl_publish_approval.PublishApprovalError`` before the body is built.
+    ``page_autosave`` uses the same helper to carry the record it validated into
+    the save step's receipt.
+
     Args:
         funnel_id: The parent funnel id.
         page_data: The (already edited or pristine) page-data blob.
@@ -780,15 +787,55 @@ def autosave_body(
             authorization inputs (ignored for a draft).
 
     Returns:
-        The JSON-serialisable POST body.
+        The JSON-serialisable POST body (the authorization record is dropped
+        here; use ``_autosave_body_with_record`` to keep it).
+    """
+    body, _authorization = _autosave_body_with_record(
+        funnel_id,
+        page_data,
+        page_version,
+        integrations,
+        publish,
+        approval=approval,
+        page_id=page_id,
+        location_id=location_id,
+        evidence_root=evidence_root,
+        store_dir=store_dir,
+    )
+    return body
+
+
+def _autosave_body_with_record(
+    funnel_id: str,
+    page_data: dict,
+    page_version: int,
+    integrations: dict | None = None,
+    publish: bool = False,
+    *,
+    approval=None,
+    page_id: str | None = None,
+    location_id: str | None = None,
+    evidence_root: str | None = None,
+    store_dir: str | None = None,
+) -> tuple[dict, dict | None]:
+    """Build the autosave body and return ``(body, authorization_record)``.
+
+    The publish decision is made exactly once: ``require_publish`` reads the
+    store record, and the SAME record object is returned to the caller, so a
+    save step can name the ``approval_ref`` it was validated against instead of
+    re-reading the store (a second read could answer from a different file).
+    ``authorization_record`` is ``None`` for a draft — no approval is consulted.
     """
     if not isinstance(page_data, dict):
         raise TypeError("page_data must be a dict (the editable blob)")
+    authorization: dict | None = None
     if publish:
         # Lazy: a module-level import would cycle (ghl_gate -> ghl_builder -> here).
         import ghl_publish_approval as _pa
-        _pa.require_publish(approval, location_id=location_id, page_id=page_id,
-                            evidence_root=evidence_root, store_dir=store_dir)
+        authorization = _pa.require_publish(
+            approval, location_id=location_id, page_id=page_id,
+            evidence_root=evidence_root, store_dir=store_dir,
+        )
     try:
         n = int(page_version)
     except (TypeError, ValueError) as exc:  # UUID / None / junk all rejected here
@@ -796,7 +843,7 @@ def autosave_body(
             f"page_version must be a number (got {page_version!r}); "
             "a UUID 422s with 'pageVersion must be a number'"
         ) from exc
-    return {
+    body = {
         "funnelId": funnel_id,
         "pageData": page_data,
         "pageVersion": n + 1,
@@ -804,6 +851,7 @@ def autosave_body(
         "manualSave": True,
         "integrations": integrations or {},
     }
+    return body, authorization
 
 
 def next_page_version(page_record: dict) -> int:
@@ -1769,12 +1817,29 @@ def _set_full_width_inplace(page_data: dict, section_idx: int) -> dict:
     switch is never flipped to False (there is no toggle). The 1170px cap is
     lifted wherever it appears in this section's ``sectionStyles`` and in the
     top-level ``pageStyles``.
+
+    A section with no ``metaData`` is never a reason to refuse the caller's
+    edit: the ``metaData`` / ``metaData.extra`` objects the switch lives in are
+    CREATED here and the switch is then set. This module's own contract and its
+    fixtures carry sections without ``metaData`` (a live GHL read carries it),
+    so raising would block a valid splice on a blob shape the caller legitimately
+    holds. The change record reports whether the container was created
+    (``metaData_attached``) and whether the switch existed before
+    (``switch_present_before``), so a reader is never told a switch was flipped
+    when it was in fact added.
     """
     state = section_full_width_state(page_data, section_idx)
     section = page_data["sections"][section_idx]
+    if not isinstance(section, dict):
+        raise TypeError(
+            f"section {section_idx} is not an object ({type(section).__name__}); "
+            "the width switch cannot be attached to it"
+        )
     meta = section.get("metaData")
-    if not isinstance(meta, dict):
-        raise KeyError(f"section {section_idx} has no metaData object")
+    meta_attached = not isinstance(meta, dict)
+    if meta_attached:
+        meta = {}
+        section["metaData"] = meta
     extra = meta.get("extra")
     if not isinstance(extra, dict):
         extra = {}
@@ -1799,6 +1864,8 @@ def _set_full_width_inplace(page_data: dict, section_idx: int) -> dict:
         "section_id": state["section_id"],
         "switch": FULL_WIDTH_SWITCH_PATH,
         "was": state["value"],
+        "switch_present_before": state["present"],
+        "metaData_attached": meta_attached,
         "now": True,
         "changed": action == "set_on",
         "action": action,
@@ -1830,7 +1897,12 @@ def set_section_full_width(page_data: dict, section_idx: int = 0, *,
     return out, change
 
 
-FULL_WIDTH_SWITCH_LABEL = "Allow rows to take entire width"
+# The EXACT captured label, character for character: gates.json gate 14
+# (``full_width_toggle``, label_source ``screenshot-confirmed-label``) records
+# "Allow Rows to take entire width". The managed-editor step resolves the
+# switch by this text in a runtime snapshot, so the capitalisation is
+# load-bearing — a lowercase "rows" does not match the captured control.
+FULL_WIDTH_SWITCH_LABEL = "Allow Rows to take entire width"
 
 
 def full_width_switch_step(*, section_ref: str = "") -> dict:
@@ -1884,7 +1956,17 @@ def full_width_switch_step(*, section_ref: str = "") -> dict:
 def assert_full_width(page_data: dict, section_idx: int = 0) -> None:
     """SAVE-AND-READ-BACK gate: the RE-READ blob must show the switch ON and no
     1170px cap. A save response alone is not enough — call this on the blob read
-    back from ``page_read``."""
+    back from ``page_read``.
+
+    ``section_idx`` is the section the EDIT repaired and it is not optional
+    knowledge: the default of 0 exists only so a single-section page needs no
+    argument. On a multi-section page, passing 0 proves section 0 while the edit
+    landed on another index — the save would be "verified" against a section
+    nobody touched. Take the index from
+    ``edit_element_customcode_full_width(...)["full_width"]["section_idx"]`` (or
+    from the ``full_width_readback["section_idx"]`` the save step reports) and
+    pass it here.
+    """
     state = section_full_width_state(page_data, section_idx)
     assert state["on"], (
         f"full-width FAIL: section {section_idx} ({state['section_id']!r}) "
@@ -2136,8 +2218,10 @@ def new_page_blob(
     metadata = copy.deepcopy(_FLAT_SECTION_METADATA)
     metadata["id"] = section_id
     metadata["child"] = [row_id]
-    # P1-2: parameterised "Allow Rows to take entire width" (section-level).
-    # Default False = render-verified centered ~1170px column (LIVE probe).
+    # P1-2: the section-level "Allow Rows to take entire width" switch.
+    # DEFAULT True = the W3-4 full-width policy: the switch is written ON and the
+    # conflicting 1170px inner cap is lifted below. The explicit False escape
+    # leaves the legacy render-verified centered ~1170px column.
     metadata["extra"]["allowRowMaxWidth"]["value"] = bool(allow_row_max_width)
 
     section_general = copy.deepcopy(_FLAT_SECTION_GENERAL)
@@ -2222,7 +2306,10 @@ def edit_element_customcode(page_data: dict, locator: dict, new_value: str, *,
             ``metaData.extra.allowRowMaxWidth.value`` switch is set ON only when
             it is OFF, and any conflicting 1170px outer cap is lifted. An edit
             path that leaves the switch OFF ships a half-width page, so this is
-            on by default and is reached by every existing caller unchanged.
+            on by default and is reached by every existing caller unchanged. A
+            section that carries no ``metaData`` is NOT a refusal: the container
+            is created and the switch set in it (see
+            ``_set_full_width_inplace``), so the splice always happens.
             ``False`` is only for a caller that immediately runs
             ``edit_element_customcode_full_width`` (which reports the change).
 
@@ -2631,7 +2718,8 @@ def page_seo_autosave(page_id: str, page_data: dict, seo_meta: dict, *,
                      approval=None, location_id: str | None = None,
                      evidence_root: str | None = None, store_dir: str | None = None,
                      session: str | None = None,
-                     token_global: str = TOKEN_JS_GLOBAL) -> dict:
+                     token_global: str = TOKEN_JS_GLOBAL,
+                     full_width_section_idx: int | None = None) -> dict:
     """§2 save step: splice the validated ``seoMeta`` onto the blob and emit the
     ordered in-browser autosave POST that persists it.
 
@@ -2646,7 +2734,9 @@ def page_seo_autosave(page_id: str, page_data: dict, seo_meta: dict, *,
     ``evidence_root`` / ``store_dir`` are therefore forwarded UNCHANGED, so a
     ``publish=True`` here uses the SAME recorded authorization for its valid
     page/location scope as any other save — no new approval is requested, and no
-    caller can publish by an ungated route.
+    caller can publish by an ungated route. ``full_width_section_idx`` is
+    forwarded unchanged too, so the width read-back names the section the edit
+    repaired rather than defaulting to section 0.
 
     Returns the ``page_autosave`` step descriptor with ``expect.seo_populated`` and
     the splice result under ``seo_meta``.
@@ -2658,6 +2748,7 @@ def page_seo_autosave(page_id: str, page_data: dict, seo_meta: dict, *,
         integrations=integrations, publish=publish, approval=approval,
         location_id=location_id, evidence_root=evidence_root, store_dir=store_dir,
         session=session, token_global=token_global,
+        full_width_section_idx=full_width_section_idx,
     )
     step["seo_meta"] = copy.deepcopy(seo_meta)
     step.setdefault("expect", {})
@@ -2922,7 +3013,8 @@ def page_autosave(page_id: str, page_data: dict, *, funnel_id: str, page_version
                   integrations: dict | None = None, publish: bool = False,
                   session: str | None = None, token_global: str = TOKEN_JS_GLOBAL,
                   approval=None, location_id: str | None = None,
-                  evidence_root: str | None = None, store_dir: str | None = None) -> dict:
+                  evidence_root: str | None = None, store_dir: str | None = None,
+                  full_width_section_idx: int | None = None) -> dict:
     """GAP-1 save step: emit the in-browser DRAFT autosave POST.
 
     Executed INSIDE the agent-browser eval per the Cloudflare-WAF note. Returns
@@ -2946,17 +3038,34 @@ def page_autosave(page_id: str, page_data: dict, *, funnel_id: str, page_version
         token_global: The staged-JWT window global.
         approval, location_id, evidence_root, store_dir: publish authorization
             (see ``autosave_body``); ignored for a draft.
+        full_width_section_idx: The section index the edit repaired. Named in
+            ``expect.full_width_readback`` so the read-back is proved against the
+            section that actually changed, never assumed to be section 0. Pass
+            ``edit_element_customcode_full_width(...)["full_width"]["section_idx"]``.
 
     Returns:
         ``{method, path, url, body, eval, argv?, expect}`` — the step the agent
         executes, plus the saved-blob + draft-pointer-unchanged confirmation
-        contract under ``expect``.
+        contract under ``expect``. A ``publish=True`` step also carries
+        ``expect["authorization"]``: the ``approval_ref`` (and its scope fields)
+        this save was VALIDATED against, read once — not a new approval.
     """
     path = page_autosave_path(page_id)
-    body = autosave_body(funnel_id, page_data, page_version, integrations, publish,
-                         approval=approval, page_id=page_id, location_id=location_id,
-                         evidence_root=evidence_root, store_dir=store_dir)
+    body, authorization = _autosave_body_with_record(
+        funnel_id, page_data, page_version, integrations, publish,
+        approval=approval, page_id=page_id, location_id=location_id,
+        evidence_root=evidence_root, store_dir=store_dir,
+    )
     js = build_fetch_js("POST", path, body=body, token_global=token_global)
+    # The read-back target is the section the EDIT repaired. Leaving the index
+    # unnamed makes a multi-section edit read as "section 0 is full width" while
+    # the edit landed elsewhere, so the contract states which index to prove.
+    if full_width_section_idx is None:
+        width_gate = ("assert_full_width(blob, <section_idx>) with the index this "
+                      "edit repaired — a multi-section edit is never proved "
+                      "against section 0")
+    else:
+        width_gate = f"assert_full_width(blob, {full_width_section_idx})"
     expect: dict[str, Any] = {
         # The 201 response shape (the "saved-blob" pointer).
         "status": 201,
@@ -2972,16 +3081,29 @@ def page_autosave(page_id: str, page_data: dict, *, funnel_id: str, page_version
         # W3-4: the save is only proven by reading the width policy BACK.
         "full_width_readback": {
             "switch": FULL_WIDTH_SWITCH_PATH,
+            "section_idx": full_width_section_idx,
+            "section_idx_named": full_width_section_idx is not None,
             "require_switch_on": True,
             "require_no_1170_cap": True,
             "verify": "on the blob read back from pageDataDownloadUrl, call "
-                      "assert_full_width(blob) — a save response alone is not "
-                      "the proof",
+                      f"{width_gate} — a save response alone is not the proof",
         },
     }
     if publish:
         # A 201 here — or this step's own ``pageType`` — is NOT a publication
         # result. The status and the URL come from the RE-READ record only.
+        expect["authorization"] = {
+            "approval_ref": authorization.get("approval_ref", approval),
+            "allowed_write_target": authorization.get("allowed_write_target"),
+            "test_only": authorization.get("test_only"),
+            "location_id": authorization.get("location_id"),
+            "page_ids": list(authorization.get("page_ids") or []),
+            "expires_at": authorization.get("expires_at"),
+            "carried_forward": (
+                "the recorded authorization this save was validated against, "
+                "read once from the approval store — not a new approval"
+            ),
+        }
         expect["published_readback"] = {
             "read": "GET " + page_read_path(page_id, location_id),
             "require_page_type": "published",

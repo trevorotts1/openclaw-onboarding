@@ -1037,13 +1037,26 @@ class TestChildLinkChainInvariant:
 
 
 class TestAllowRowMaxWidth:
-    def test_default_is_false_centered_1170(self):
-        """Default (LIVE-probe safe state) keeps allowRowMaxWidth False and the
-        1170px inner cap that drives the centered column."""
+    def test_default_is_true_full_width(self):
+        """RE-BASELINED for W3-4: the DEFAULT is now full width. Every created
+        section gets allowRowMaxWidth True and the conflicting 1170px inner cap
+        lifted, because the LIVE probe showed the metadata flag alone produced no
+        observable width change (the cap was the real driver). The previous
+        version of this test asserted the superseded centered-column default; the
+        explicit False escape that still yields that column is asserted at the
+        end of this test so the old coverage is not lost."""
         blob = rc.new_page_blob("<p>x</p>", surface="funnel")
         meta = blob["sections"][0]["metaData"]
-        assert meta["extra"]["allowRowMaxWidth"]["value"] is False
-        assert "max-width:1170px" in blob["sections"][0]["general"]["sectionStyles"]
+        assert meta["extra"]["allowRowMaxWidth"]["value"] is True
+        styles = blob["sections"][0]["general"]["sectionStyles"]
+        assert "max-width:1170px" not in styles
+        assert "max-width:100%" in styles
+
+        # The legacy centered column is still reachable, deliberately, via False.
+        legacy = rc.new_page_blob("<p>x</p>", surface="funnel",
+                                  allow_row_max_width=False)
+        assert legacy["sections"][0]["metaData"]["extra"]["allowRowMaxWidth"]["value"] is False
+        assert "max-width:1170px" in legacy["sections"][0]["general"]["sectionStyles"]
 
     def test_true_sets_flag_and_lifts_inner_cap(self):
         """Opt-in full width flips the metadata flag AND lifts the 1170px cap that
