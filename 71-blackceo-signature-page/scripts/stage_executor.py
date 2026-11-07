@@ -1254,6 +1254,23 @@ def _same_identity(call, key) -> bool:
     return bool(key) and str((call.get("identity") or {}).get("key") or "") == str(key)
 
 
+BASE_IDENTITY_FIELDS = ("run", "plan_revision", "page_instance", "viewport", "stage", "slot")
+
+
+def _same_target(call, identity) -> bool:
+    """The same LOGICAL job: the six base fields, attempt EXCLUDED.
+
+    A retry always claims a fresh attempt, so a guard keyed on the seven-field request key
+    never fires for the one case it exists for — resubmitting a job whose earlier attempt is
+    still accepted or uncertain. The scope is exactly what the refusal message states.
+    """
+    if not identity:
+        return False
+    got = call.get("identity") or {}
+    return all(str(got.get(f) or "") == str(identity.get(f) or "")
+               for f in BASE_IDENTITY_FIELDS)
+
+
 def held_rows(run_dir: Path, key: str | None = None) -> list:
     """Paid work that is in flight or unresolved (reserved, accepted, uncertain)."""
     try:
@@ -1283,14 +1300,14 @@ def reserve_render(run_dir: Path, cap: int, label: str, identity: dict | None = 
     """Count one paid render against the ceiling BEFORE the call (parallel workers cannot
     overshoot); a crash leaves the reservation in place, which fails closed.
 
-    Refused while an earlier job for the SAME identity is accepted or uncertain: an
-    unresolved submit is never proof that resubmitting is free."""
+    Refused while an earlier job for the SAME logical target (run, plan revision, page,
+    viewport, stage, slot — the attempt is the retry, not the job) is accepted or
+    uncertain: an unresolved submit is never proof that resubmitting is free."""
     rid = uuid.uuid4().hex
-    key = (identity or {}).get("key")
 
     def edit(calls):
         for call in calls:
-            if _same_identity(call, key) and row_state(call) in ("accepted", "uncertain"):
+            if _same_target(call, identity) and row_state(call) in ("accepted", "uncertain"):
                 raise ExecutorError(
                     f"{label}: this exact job is {row_state(call)!r} "
                     f"(task_id={call.get('task_id')!r}); reconcile it before issuing another paid "
@@ -1517,7 +1534,9 @@ def promote_attempt(run_dir: Path, job: dict, source: Path | None = None) -> boo
     """Copy this attempt's bytes to the delivered artifact ONLY while the attempt is current.
 
     An older attempt that finishes late is recorded historically and never replaces the
-    artifact or the current pointer.
+    artifact or the current pointer. The currency check, the copy and the pointer advance
+    are ONE critical section: a check made before a newer attempt advanced the pointer must
+    not licence a copy afterwards, or the artifact and the pointer would disagree.
     """
     ident = job["identity"]
     final = Path(job.get("final") or job["out"])
@@ -1526,14 +1545,18 @@ def promote_attempt(run_dir: Path, job: dict, source: Path | None = None) -> boo
         advance_current(run_dir, ident, {"file": str(final.relative_to(run_dir)),
                                          "sha256": sha256(final)})
         return True
-    if not attempt_is_current(run_dir, ident):
-        return False
-    final.parent.mkdir(parents=True, exist_ok=True)
-    tmp = final.with_name(f"{final.name}.a{int(ident['attempt']):03d}.part")
-    shutil.copyfile(source, tmp)
-    os.replace(tmp, final)
-    advance_current(run_dir, ident, {"file": str(final.relative_to(run_dir)),
-                                     "sha256": sha256(final)})
+    with _jobs_lock(run_dir):
+        if not attempt_is_current(run_dir, ident):
+            return False
+        final.parent.mkdir(parents=True, exist_ok=True)
+        tmp = final.with_name(f"{final.name}.a{int(ident['attempt']):03d}.part")
+        shutil.copyfile(source, tmp)
+        os.replace(tmp, final)
+        atomic_write_json(current_pointer_path(run_dir, ident),
+                          {"attempt": int(ident["attempt"]), "key": ident["key"],
+                           "at": now_iso(),
+                           "record": {"file": str(final.relative_to(run_dir)),
+                                      "sha256": sha256(final)}})
     return True
 
 
