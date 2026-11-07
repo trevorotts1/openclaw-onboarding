@@ -51,6 +51,12 @@ GHL_MEDIA_REF = "06-ghl-install-pages/tools/ghl_media.py"
 GRAPHICS_PUSH_REF = "45-design-intelligence-library/scripts/graphics_ghl_push.py"
 STAGE_CONTRACT_REF = "71-blackceo-signature-page/references/stage-contract.json"
 QC_CODE = "AF-LAUNCH-IMAGE-QC"
+# The request and the report it names are written ONCE for the whole launch, in the launch run's
+# qc/ folder (the request lists every page's images and its expected_report is the report beside
+# it). A page run is nested inside that folder (<launch run>/dispatch/<page>), so every reader
+# resolves the report through qc_report_root instead of assuming the folder it was handed is the
+# one the request was written to.
+QC_LAUNCH_MARKS = (QC_REPORT_REL, QC_REQUEST_REL)
 
 # What an asset is, which decides which automatic fails can apply to it.
 SCOPE_AI_IMAGE = "ai_image"        # drawn by the image service: the whole battery
@@ -74,6 +80,25 @@ def autofail_battery(root: Optional[Path] = None) -> List[Dict[str, str]]:
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def qc_report_root(run: Path) -> Path:
+    """The folder that holds this run's SOP-GIP-02 request and report — the launch run folder.
+
+    The review is written ONCE for the whole launch: ``qc_request`` lists every page's images
+    under one ``expected_report``, and it is written into the launch run's folder. A page run is
+    nested inside that folder (``<launch run>/dispatch/<page>``), so a page run's own ``qc/``
+    folder is not where the report is. This resolves to the folder that really carries it, so the
+    producer, the package gate and the image-map producer cannot disagree about which file they
+    mean. The report itself is looked for first, then the request that names it; a page run driven
+    on its own (no enclosing launch folder — the old flat layout) resolves to itself unchanged.
+    """
+    run = Path(run)
+    for rel in QC_LAUNCH_MARKS:
+        for folder in (run, *run.parents):
+            if (folder / rel).is_file():
+                return folder
+    return run
 
 
 def applicable_autofails(scope: str, root: Optional[Path] = None) -> List[Dict[str, str]]:
@@ -342,9 +367,11 @@ def report_violations(manifest: Dict[str, Any], package_root: Path,
     named reviewer model that differs from the prompt author's, with a real average of at least
     PASS_AVERAGE, ``pass`` true and no automatic failure. A missing report, a missing image, a low or
     non-numeric average, a changed file, a missing hash and an unbound record each fail by name.
-    An empty list passes."""
+    An empty list passes. The report is read from the launch folder that carries it
+    (``qc_report_root``), which is the folder its records' relative paths and review_refs resolve
+    against — the same one ``qc_request`` wrote the request into."""
     package_root = Path(package_root)
-    job_dir = Path(job_dir) if job_dir else package_root
+    job_dir = qc_report_root(job_dir if job_dir else package_root)
     report = _read(job_dir / QC_REPORT_REL)
     if not isinstance(report, dict) or not isinstance(report.get("assets"), list):
         return [f"{QC_CODE}: {QC_REPORT_REL} is missing or unreadable; every image in the package needs "
@@ -425,9 +452,12 @@ def host_assets(job_dir: Path, approval_ref: Any = None, approval_store: Optiona
 def delivery_record(manifest: Dict[str, Any], package_root: Path, job_dir: Path,
                     probe_env: Optional[Dict[str, str]] = None,
                     repo_root: Optional[Path] = None) -> Dict[str, Any]:
-    """Write <job>/delivery_record.json (SOP-GIP-03). Records; never uploads, never publishes."""
+    """Write <job>/delivery_record.json (SOP-GIP-03). Records; never uploads, never publishes.
+
+    Only the SOP-GIP-02 report is launch-scoped (``qc_report_root``); the ledger and the record
+    this writes are the job's own, beside the files it delivered."""
     job_dir = Path(job_dir)
-    report = _read(job_dir / QC_REPORT_REL) or {}
+    report = _read(qc_report_root(job_dir) / QC_REPORT_REL) or {}
     qc = {str(a.get("local_path")): a for a in (report.get("assets") or []) if isinstance(a, dict)}
     ledger = _read(job_dir / LEDGER_REL) or {}
     hosted = {str(e.get("local_path")): e for e in (ledger.get("uploaded") or []) if isinstance(e, dict)}

@@ -31,6 +31,11 @@ answer produced), the SOP-GIP-02 verdicts and the public URLs the Skill 45 uploa
 page's local file references with those hosted URLs while responsive-html is still open. An entry
 with no passing review, or with no hosted URL on a production run, stops the stage by name.
 
+The SOP-GIP-02 request and the report it names are the launch's, written once in
+``<launch run>/qc/``. A page run is nested (``<launch run>/dispatch/<page>``), so both are read
+through ``graphics_hooks.qc_report_root`` — the same resolution the package gate uses — and a
+page run's own ``qc/`` folder is never mistaken for the launch's.
+
 ``python3 -m launcher_core.image_stages --run-dir <launch run folder>`` exits 0 only when every page
 has all five stages closed, and always writes ``qc/image_stages_report.json``. The package check
 (check_rules/image_qc.py) re-reads each page's own stage state, so the report is never trusted.
@@ -199,10 +204,23 @@ def _png_ratio(path: Path) -> str:
     return f"{width // divisor}:{height // divisor}"
 
 
-def _qc_records(root: Path) -> Dict[str, Dict[str, Any]]:
-    """SOP-GIP-02 report records by resolved asset path."""
+def _qc_folder(run: Path) -> Path:
+    """The launch folder that holds this run's SOP-GIP-02 request and report.
+
+    A page run is nested inside its launch run (``<launch run>/dispatch/<page>``) and the review is
+    written once for the whole launch, in the launch run's ``qc/`` folder — the folder the
+    launcher's own ``_write_qc_request`` writes the request into and the one the package gate
+    reads (``graphics_hooks.qc_report_root``). Asking the page run for its own ``qc/`` found
+    nothing, which is why the same report could pass the package gate and leave this map
+    unverified."""
     from . import graphics_hooks
-    doc = _read(Path(root) / graphics_hooks.QC_REPORT_REL) or {}
+    return graphics_hooks.qc_report_root(run)
+
+
+def _qc_records(root: Path) -> Dict[str, Dict[str, Any]]:
+    """SOP-GIP-02 report records by resolved asset path, from the launch folder that holds them."""
+    from . import graphics_hooks
+    doc = _read(_qc_folder(root) / graphics_hooks.QC_REPORT_REL) or {}
     out: Dict[str, Dict[str, Any]] = {}
     for rec in (doc.get("assets") or []) if isinstance(doc, dict) else []:
         if isinstance(rec, dict) and rec.get("local_path"):
@@ -227,10 +245,11 @@ def _map_entry(run: Path, slot_id: str, path: Path, digest: str, slot: Dict[str,
     from . import graphics_hooks
     rec = qc.get(str(path.resolve())) or {}
     # the same binding the package gate applies: only a review of these bytes by two named,
-    # different models earns the word "passed" in the map
+    # different models earns the word "passed" in the map. It is judged against the launch folder
+    # the report lives in, so a relative review_ref resolves exactly as it does for the gate.
     passed = bool(rec) and not graphics_hooks.asset_review_problems(
         rec, {"local_path": str(path), "page": slot_id, "sha256": digest, "asset_id": slot_id},
-        Path(run))
+        _qc_folder(run))
     url = hosted.get(str(path.resolve()))
     width, height = _png_size(path)
     # the validator resolves asset paths against the image-map's own folder
@@ -409,11 +428,13 @@ class _Page:
         closing on an empty or invented link."""
         doc = write_image_map(self.run)
         if doc["qc_state"] != "covered":
+            from . import graphics_hooks
+            launch = _qc_folder(self.run)  # the one folder the request and the report live in
             raise Stop("needs_qc",
                        "image-map-upload: " + "; ".join(doc["missing"]) + ". Run SOP-GIP-02 "
-                       "(qc/image_qc_request.json lists every asset), write each review with "
-                       "scripts/write_review.py --author-model/--reviewer-model and record it in "
-                       "qc/image_qc_report.json, then run this again")
+                       f"({launch / graphics_hooks.QC_REQUEST_REL} lists every asset), write each "
+                       "review with scripts/write_review.py --author-model/--reviewer-model and "
+                       f"record it in {launch / graphics_hooks.QC_REPORT_REL}, then run this again")
         if doc["hosting_state"] != "hosted":
             intake = _read(self.run / "intake.json") or {}
             if not (isinstance(intake, dict) and intake.get("test_run")):
@@ -582,13 +603,18 @@ def layout_approval(run_dir: Path, path: Optional[Path] = None) -> Optional[Dict
 
 
 def _write_qc_request(run_dir: Path) -> Optional[str]:
-    """SOP-GIP-02 request for every image the launch's pieces list (graphics_hooks.qc_request)."""
-    pieces = [_read(p) for p in sorted((Path(run_dir) / "pieces").glob("*.json"))]
+    """SOP-GIP-02 request for every image the launch's pieces list (graphics_hooks.qc_request).
+
+    Written into the launch run's own folder — the one canonical place ``qc_report_root`` finds
+    from every nested page run — and with absolute asset paths, so a record names the same bytes
+    whichever folder reads it back. The reviewer's report is ``expected_report`` beside it."""
+    run_dir = Path(run_dir).resolve()
+    pieces = [_read(p) for p in sorted((run_dir / "pieces").glob("*.json"))]
     pieces = [p for p in pieces if isinstance(p, dict)]
     if not pieces:
         return None
     from . import graphics_hooks
-    graphics_hooks.qc_request({"pieces": pieces}, Path(run_dir), Path(run_dir))
+    graphics_hooks.qc_request({"pieces": pieces}, run_dir, run_dir)
     return graphics_hooks.QC_REQUEST_REL
 
 
