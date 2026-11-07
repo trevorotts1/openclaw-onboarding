@@ -142,27 +142,51 @@ def gate_refusals(evidence_root, page_id) -> list[str]:
     return []
 
 
-def publish_refusals(approval, *, location_id, page_id, evidence_root=None,
-                     store_dir: str | None = None, now: float | None = None) -> list[str]:
-    """Every reason this page may NOT be published live (empty = may publish)."""
+def publish_authorization(approval, *, location_id, page_id, evidence_root=None,
+                          store_dir: str | None = None,
+                          now: float | None = None) -> tuple[dict | None, list[str]]:
+    """READ the recorded authorization ONCE and return ``(record, refusals)``.
+
+    ``record`` is the exact store record this decision was made from (None when
+    nothing resolves), so a caller carries the EXISTING authorization reference
+    forward into the publication call and its receipt. Reading once also means
+    the record that was validated is the record that is returned — a second read
+    could answer from a different file.
+
+    This is the one place a publish decision is made: ``publish_refusals`` and
+    ``require_publish`` are thin wrappers over it, so there is a single gate and
+    no caller can assemble its own.
+    """
     if not location_id or not page_id:
-        return ["publish needs the target location_id and page_id"]
+        return None, ["publish needs the target location_id and page_id"]
     record = read_record(approval, store_dir)
     why = record_refusals(record, approval, location_id=location_id,
                           page_id=page_id, now=now)
     if why:
-        return why  # no point reading evidence for an unapproved page
-    return gate_refusals(evidence_root, page_id)
+        return record, why  # no point reading evidence for an unapproved page
+    return record, gate_refusals(evidence_root, page_id)
+
+
+def publish_refusals(approval, *, location_id, page_id, evidence_root=None,
+                     store_dir: str | None = None, now: float | None = None) -> list[str]:
+    """Every reason this page may NOT be published live (empty = may publish)."""
+    return publish_authorization(
+        approval, location_id=location_id, page_id=page_id,
+        evidence_root=evidence_root, store_dir=store_dir, now=now)[1]
 
 
 def require_publish(approval, *, location_id, page_id, evidence_root=None,
                     store_dir: str | None = None) -> dict:
-    """Return the approval record, or raise ``PublishApprovalError``."""
-    why = publish_refusals(approval, location_id=location_id, page_id=page_id,
-                           evidence_root=evidence_root, store_dir=store_dir)
+    """Return the approval record actually used, or raise
+    ``PublishApprovalError``. The returned record IS the recorded authorization
+    for this page/location/action — callers carry its ``approval_ref`` into the
+    publish receipt instead of asking for a new approval."""
+    record, why = publish_authorization(
+        approval, location_id=location_id, page_id=page_id,
+        evidence_root=evidence_root, store_dir=store_dir)
     if why:
         raise PublishApprovalError("REFUSE publish: " + "; ".join(why))
-    return read_record(approval, store_dir) or {}
+    return record or {}
 
 
 # ── Publication state and read-back (F06) ────────────────────────────────────

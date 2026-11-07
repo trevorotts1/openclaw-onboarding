@@ -783,6 +783,13 @@ def autosave_body(
     UNPUBLISHED — the live pointer never moves. Default ``publish=False`` (draft);
     callers gate ``publish`` behind ``ghl_builder.may_publish`` (A13.1).
 
+    The publish gate is decided ONCE per call, here, inside
+    ``_autosave_body_with_record``: a ``publish=True`` that lacks a valid
+    recorded authorization raises
+    ``ghl_publish_approval.PublishApprovalError`` before the body is built.
+    ``page_autosave`` uses the same helper to carry the record it validated into
+    the save step's receipt.
+
     Args:
         funnel_id: The parent funnel id.
         page_data: The (already edited or pristine) page-data blob.
@@ -798,15 +805,55 @@ def autosave_body(
             authorization inputs (ignored for a draft).
 
     Returns:
-        The JSON-serialisable POST body.
+        The JSON-serialisable POST body (the authorization record is dropped
+        here; use ``_autosave_body_with_record`` to keep it).
+    """
+    body, _authorization = _autosave_body_with_record(
+        funnel_id,
+        page_data,
+        page_version,
+        integrations,
+        publish,
+        approval=approval,
+        page_id=page_id,
+        location_id=location_id,
+        evidence_root=evidence_root,
+        store_dir=store_dir,
+    )
+    return body
+
+
+def _autosave_body_with_record(
+    funnel_id: str,
+    page_data: dict,
+    page_version: int,
+    integrations: dict | None = None,
+    publish: bool = False,
+    *,
+    approval=None,
+    page_id: str | None = None,
+    location_id: str | None = None,
+    evidence_root: str | None = None,
+    store_dir: str | None = None,
+) -> tuple[dict, dict | None]:
+    """Build the autosave body and return ``(body, authorization_record)``.
+
+    The publish decision is made exactly once: ``require_publish`` reads the
+    store record, and the SAME record object is returned to the caller, so a
+    save step can name the ``approval_ref`` it was validated against instead of
+    re-reading the store (a second read could answer from a different file).
+    ``authorization_record`` is ``None`` for a draft — no approval is consulted.
     """
     if not isinstance(page_data, dict):
         raise TypeError("page_data must be a dict (the editable blob)")
+    authorization: dict | None = None
     if publish:
         # Lazy: a module-level import would cycle (ghl_gate -> ghl_builder -> here).
         import ghl_publish_approval as _pa
-        _pa.require_publish(approval, location_id=location_id, page_id=page_id,
-                            evidence_root=evidence_root, store_dir=store_dir)
+        authorization = _pa.require_publish(
+            approval, location_id=location_id, page_id=page_id,
+            evidence_root=evidence_root, store_dir=store_dir,
+        )
     try:
         n = int(page_version)
     except (TypeError, ValueError) as exc:  # UUID / None / junk all rejected here
@@ -814,7 +861,7 @@ def autosave_body(
             f"page_version must be a number (got {page_version!r}); "
             "a UUID 422s with 'pageVersion must be a number'"
         ) from exc
-    return {
+    body = {
         "funnelId": funnel_id,
         "pageData": page_data,
         "pageVersion": n + 1,
@@ -822,6 +869,7 @@ def autosave_body(
         "manualSave": True,
         "integrations": integrations or {},
     }
+    return body, authorization
 
 
 def next_page_version(page_record: dict) -> int:
@@ -1723,6 +1771,233 @@ _CC_COL_TEMPLATE = {'type': 'col', 'child': [], 'class': {}, 'styles': {'boxShad
 
 _CC_ELEMENT_TEMPLATE = {'extra': {'nodeId': '', 'visibility': {'value': {'hideDesktop': False, 'hideMobile': False}}, 'customCode': {'value': {'rawCustomCode': ''}}, 'customClass': {'value': []}}, 'class': {}, 'styles': {}, 'wrapper': {'marginTop': {'unit': 'px', 'value': 0}, 'marginBottom': {'unit': 'px', 'value': 0}, 'marginLeft': {'unit': 'px', 'value': 0}, 'marginRight': {'unit': 'px', 'value': 0}, 'width': {'value': 'auto', 'unit': ''}, 'height': {'value': 'auto', 'unit': ''}}, 'customCss': [], 'type': 'element', 'child': [], 'meta': 'custom-code', 'tagName': 'c-custom-code', 'title': 'Custom Code', 'tag': ''}
 
+# ── Native full-width policy — CREATE and EDIT (W3-4) ────────────────────────
+# The ONE native width switch is the section metadata
+# ``extra.allowRowMaxWidth.value``. Nothing else here is the switch. The captured
+# section CSS above ALSO carries ``#section-...>.inner{max-width:1170px}``, and
+# that rule is the CONFLICTING outer width cap: the LIVE probe found the metadata
+# flag ALONE produced no observable width change, because this rule capped the
+# row regardless. Creation and edit therefore do BOTH — set the switch ON (only
+# when it is OFF) and lift that cap. Row/column inner widths stay as authored.
+FULL_WIDTH_SWITCH_PATH = "metaData.extra.allowRowMaxWidth.value"
+CONFLICTING_INNER_CAP = "max-width:1170px"
+FULL_WIDTH_INNER_CAP = "max-width:100%"
+
+
+def _uncap_inner_width(styles):
+    """Replace the conflicting 1170px outer width cap with a full-width cap.
+
+    Pure and idempotent: only the EXACT declaration is touched, and a string
+    without it is returned unchanged. Returns ``(styles, removed_count)``.
+    """
+    if not isinstance(styles, str) or CONFLICTING_INNER_CAP not in styles:
+        return styles, 0
+    removed = styles.count(CONFLICTING_INNER_CAP)
+    return styles.replace(CONFLICTING_INNER_CAP, FULL_WIDTH_INNER_CAP), removed
+
+
+def section_full_width_state(page_data: dict, section_idx: int = 0) -> dict:
+    """READ the exact native width switch for one section. Never guesses.
+
+    An absent switch is reported as ``present: False`` — never rounded down to
+    "off" and never written by this read-only probe.
+    """
+    if not isinstance(page_data, dict):
+        raise TypeError("page_data must be a dict (the editable blob)")
+    sections = page_data.get("sections")
+    if not isinstance(sections, list) or not (0 <= section_idx < len(sections)):
+        raise IndexError(f"page_data has no section at index {section_idx}")
+    section = sections[section_idx]
+    meta = section.get("metaData") if isinstance(section, dict) else None
+    extra = meta.get("extra") if isinstance(meta, dict) else None
+    flag = extra.get("allowRowMaxWidth") if isinstance(extra, dict) else None
+    value = flag.get("value") if isinstance(flag, dict) else None
+    general = section.get("general") if isinstance(section, dict) else None
+    styles = general.get("sectionStyles") if isinstance(general, dict) else None
+    section_id = None
+    if isinstance(section, dict):
+        section_id = section.get("id") or (meta.get("id") if isinstance(meta, dict) else None)
+    return {
+        "section_idx": section_idx,
+        "section_id": section_id,
+        "switch": FULL_WIDTH_SWITCH_PATH,
+        "present": isinstance(flag, dict) and "value" in flag,
+        "value": value if isinstance(value, bool) else None,
+        "on": value is True,
+        "capped_1170": isinstance(styles, str) and CONFLICTING_INNER_CAP in styles,
+    }
+
+
+def _set_full_width_inplace(page_data: dict, section_idx: int) -> dict:
+    """Apply the policy to an ALREADY-COPIED blob and return the change record.
+
+    SET ON ONLY WHEN OFF: an already-True switch is not written again, and the
+    switch is never flipped to False (there is no toggle). The 1170px cap is
+    lifted wherever it appears in this section's ``sectionStyles`` and in the
+    top-level ``pageStyles``.
+
+    A section with no ``metaData`` is never a reason to refuse the caller's
+    edit: the ``metaData`` / ``metaData.extra`` objects the switch lives in are
+    CREATED here and the switch is then set. This module's own contract and its
+    fixtures carry sections without ``metaData`` (a live GHL read carries it),
+    so raising would block a valid splice on a blob shape the caller legitimately
+    holds. The change record reports whether the container was created
+    (``metaData_attached``) and whether the switch existed before
+    (``switch_present_before``), so a reader is never told a switch was flipped
+    when it was in fact added.
+    """
+    state = section_full_width_state(page_data, section_idx)
+    section = page_data["sections"][section_idx]
+    if not isinstance(section, dict):
+        raise TypeError(
+            f"section {section_idx} is not an object ({type(section).__name__}); "
+            "the width switch cannot be attached to it"
+        )
+    meta = section.get("metaData")
+    meta_attached = not isinstance(meta, dict)
+    if meta_attached:
+        meta = {}
+        section["metaData"] = meta
+    extra = meta.get("extra")
+    if not isinstance(extra, dict):
+        extra = {}
+        meta["extra"] = extra
+    flag = extra.get("allowRowMaxWidth")
+    if not isinstance(flag, dict):
+        flag = {}
+        extra["allowRowMaxWidth"] = flag
+    action = "already_on" if state["on"] else "set_on"
+    if not state["on"]:
+        flag["value"] = True
+    cap_removed = 0
+    general = section.get("general")
+    if isinstance(general, dict) and "sectionStyles" in general:
+        general["sectionStyles"], removed = _uncap_inner_width(general["sectionStyles"])
+        cap_removed += removed
+    if "pageStyles" in page_data:
+        page_data["pageStyles"], removed = _uncap_inner_width(page_data["pageStyles"])
+        cap_removed += removed
+    return {
+        "section_idx": section_idx,
+        "section_id": state["section_id"],
+        "switch": FULL_WIDTH_SWITCH_PATH,
+        "was": state["value"],
+        "switch_present_before": state["present"],
+        "metaData_attached": meta_attached,
+        "now": True,
+        "changed": action == "set_on",
+        "action": action,
+        "cap_removed": cap_removed,
+    }
+
+
+def set_section_full_width(page_data: dict, section_idx: int = 0, *,
+                           enabled: bool = True) -> tuple[dict, dict]:
+    """Set the native width switch ON — only when it is OFF — plus lift the cap.
+
+    Returns ``(blob, change)`` on a MUTATED COPY (the input is never modified).
+    ``change`` is the switch-handling record the save/read-back step reports:
+    the exact switch path, its previous value, whether it was written, and how
+    many 1170px caps were removed.
+
+    ``enabled`` may only be True. This is the full-width policy, not a toggle: a
+    caller cannot invert it here, and there is no blind flip.
+    """
+    if enabled is not True:
+        raise ValueError(
+            "set_section_full_width only sets the native switch ON; refusing to "
+            f"toggle it (enabled={enabled!r})"
+        )
+    if not isinstance(page_data, dict):
+        raise TypeError("page_data must be a dict (the editable blob)")
+    out = copy.deepcopy(page_data)
+    change = _set_full_width_inplace(out, section_idx)
+    return out, change
+
+
+# The EXACT captured label, character for character: gates.json gate 14
+# (``full_width_toggle``, label_source ``screenshot-confirmed-label``) records
+# "Allow Rows to take entire width". The managed-editor step resolves the
+# switch by this text in a runtime snapshot, so the capitalisation is
+# load-bearing — a lowercase "rows" does not match the captured control.
+FULL_WIDTH_SWITCH_LABEL = "Allow Rows to take entire width"
+
+
+def full_width_switch_step(*, section_ref: str = "") -> dict:
+    """MANAGED NATIVE-EDITOR step for the same policy (create AND edit).
+
+    The REST path sets ``metaData.extra.allowRowMaxWidth.value`` directly. When
+    an operator/agent drives the managed editor instead, the identical policy is
+    applied through the section settings switch — and the load-bearing rule is
+    the same: READ the switch first and click it ONCE ONLY WHEN IT IS OFF. A
+    blind toggle on an already-ON switch turns full width OFF, which is exactly
+    the half-width page this policy exists to prevent.
+
+    Glue, not the clicker: this returns a step descriptor the agent executes. The
+    selector is a RUNTIME snapshot gate (resolved by the visible label), never a
+    hard-coded CSS path shipped as fact.
+    """
+    step: dict[str, Any] = {
+        "step": "set_full_width",
+        "action": "set_switch_on_only_when_off",
+        "target": (
+            "the SECTION container (green highlight) — never the custom-code "
+            "element (blue box)"
+        ),
+        "switch_label": FULL_WIDTH_SWITCH_LABEL,
+        "switch_path": FULL_WIDTH_SWITCH_PATH,
+        "resolve": (
+            "runtime snapshot gate: resolve the section settings panel and the "
+            "switch by its visible label; no hard-coded selector"
+        ),
+        "read_first": "read the switch's CURRENT state and record it as `was`",
+        "then": (
+            "click the switch ONCE only when `was` is OFF; when it is already ON, "
+            "do not click it"
+        ),
+        "never": (
+            "never toggle a switch that is already ON — a blind toggle turns full "
+            "width OFF"
+        ),
+        "save": "the page Save (disk) control after the switch is set",
+        "read_back": (
+            "re-open the section settings and confirm the switch is ON, then "
+            "re-read the page blob and call assert_full_width(blob)"
+        ),
+        "expect": {"switch_on_after": True, "capped_1170_after": False},
+    }
+    if section_ref:
+        step["section_ref"] = section_ref
+    return step
+
+
+def assert_full_width(page_data: dict, section_idx: int = 0) -> None:
+    """SAVE-AND-READ-BACK gate: the RE-READ blob must show the switch ON and no
+    1170px cap. A save response alone is not enough — call this on the blob read
+    back from ``page_read``.
+
+    ``section_idx`` is the section the EDIT repaired and it is not optional
+    knowledge: the default of 0 exists only so a single-section page needs no
+    argument. On a multi-section page, passing 0 proves section 0 while the edit
+    landed on another index — the save would be "verified" against a section
+    nobody touched. Take the index from
+    ``edit_element_customcode_full_width(...)["full_width"]["section_idx"]`` (or
+    from the ``full_width_readback["section_idx"]`` the save step reports) and
+    pass it here.
+    """
+    state = section_full_width_state(page_data, section_idx)
+    assert state["on"], (
+        f"full-width FAIL: section {section_idx} ({state['section_id']!r}) "
+        f"{FULL_WIDTH_SWITCH_PATH} is {state['value']!r} after the save; the native "
+        "switch did not land ON"
+    )
+    assert not state["capped_1170"], (
+        f"full-width FAIL: section {section_idx} ({state['section_id']!r}) still "
+        f"carries {CONFLICTING_INNER_CAP} after the save; the conflicting outer "
+        "width cap did not come off"
+    )
+
+
 # ── CSS hex-color regex (GoHighLevel uses #rgb, #rrggbb, or #rrggbbaa) ──────
 _HEX_COLOR_RE = re.compile(
     r'^#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3}(?:[0-9a-fA-F]{2})?)?$'
@@ -2192,6 +2467,7 @@ def new_page_blob(
             ``require_ghl_media`` default below is funnel-specific.
         head_code: Optional ``trackingCode.head`` content.
         allow_row_max_width: Section-level "Allow Rows to take entire width"
+        allow_row_max_width: Section-level "Allow Rows to take entire width"
             flag (``metaData.extra.allowRowMaxWidth.value``). DEFAULT ``True`` —
             full width is the normal policy (see ``FULL_WIDTH_POLICY``): the flag
             is set AND the outer wrapper's px width cap
@@ -2201,6 +2477,8 @@ def new_page_blob(
             driver. Pass ``False`` only for a deliberate centred column; that is
             the only way to keep the ~1170px cap. Card widths, text-container
             measures and responsive padding/margins are never touched either way.
+            Read the result back with ``assert_full_width`` (or
+            ``assert_section_is_full_width``) before recording a save.
         primary_color: Client brand primary color as a CSS hex string (e.g.
             ``'#c0392b'``).  When supplied, replaces the ``Primary`` entry in
             ``general.general.colors`` AND the ``--primary`` CSS custom property
@@ -2296,7 +2574,8 @@ def new_page_blob(
     metadata["id"] = section_id
     metadata["child"] = [row_id]
     # "Allow Rows to take entire width" (section-level) — full width is the
-    # DEFAULT policy; ``allow_row_max_width=False`` is the deliberate opt-out.
+    # DEFAULT policy; ``allow_row_max_width=False`` is the deliberate opt-out and
+    # leaves the legacy render-verified centered ~1170px column.
     metadata["extra"]["allowRowMaxWidth"]["value"] = bool(allow_row_max_width)
 
     section_general = copy.deepcopy(_FLAT_SECTION_GENERAL)
@@ -2364,7 +2643,7 @@ def new_page_blob(
 # ── The GAP-1 edit: image-swap / Code-element value set (pure transform) ──────
 
 def edit_element_customcode(page_data: dict, locator: dict, new_value: str, *,
-                            full_width: bool = True) -> dict:
+                            repair_full_width: bool = True) -> dict:
     """GAP-1 image-swap / Code-element edit — pure transform, returns a MUTATED
     COPY (the input blob is never modified, so the caller keeps the pristine
     baseline for the byte-identical revert).
@@ -2386,13 +2665,20 @@ def edit_element_customcode(page_data: dict, locator: dict, new_value: str, *,
             element indices addressing the custom-code node.
         new_value: The new ``rawCustomCode`` string (e.g. the swapped ``<img>``
             tag, or an injected tracking/Code snippet).
-        full_width: Normalise the HOSTING section to full width (default True —
-            the standing policy). ``False`` writes only the HTML, for a caller
-            that deliberately owns the section's width.
+        repair_full_width: Normalise the HOSTING section to full width (default
+            ``True`` — the standing policy). ``apply_section_full_width`` sets the
+            native ``metaData.extra.allowRowMaxWidth.value`` switch and lifts any
+            conflicting 1170px outer cap; a section that carries no ``metaData``
+            is not a refusal, the container is created so the splice always
+            happens. An edit path that leaves the switch OFF ships a half-width
+            page, so this is on by default and every existing caller gets it
+            unchanged. ``False`` is only for a caller that immediately runs
+            ``edit_element_customcode_full_width`` (which reports the change).
 
     Returns:
         A deep-copied blob with the custom-code value replaced and the hosting
-        section set to full width (unless ``full_width=False``).
+        section set to full width (unless ``repair_full_width=False``). The input
+        blob is never modified, so it stays the pristine revert baseline.
 
     Raises:
         KeyError / IndexError / TypeError: when the locator does not resolve to a
@@ -2449,10 +2735,38 @@ def edit_element_customcode(page_data: dict, locator: dict, new_value: str, *,
 
     # Repair the width of THIS section — the one hosting the managed content.
     # Flipping the HTML without the section setting is how a page keeps rendering
-    # in the ~1170px centred column after a successful splice.
-    if full_width:
+    # in the ~1170px centred column after a successful splice. The same helper the
+    # create path uses, so create and edit can never drift; the change record is
+    # surfaced by ``edit_element_customcode_full_width`` for the read-back step.
+    if repair_full_width:
         apply_section_full_width(section)
     return out
+
+
+def edit_element_customcode_full_width(page_data: dict, locator: dict,
+                                       new_value: str) -> dict:
+    """The GAP-1 splice PLUS the native full-width repair, with its record.
+
+    Same transform as ``edit_element_customcode`` (one deep copy, the input blob
+    never mutated), but returns the switch-handling record the save step reports:
+
+        ``{"page_data": <edited blob>, "full_width": <change record>}``
+
+    The change record names the exact switch
+    (``metaData.extra.allowRowMaxWidth.value``), its previous value, whether it
+    was written (``set_on`` vs ``already_on`` — never a toggle) and how many
+    conflicting 1170px caps were removed.
+    """
+    s_idx = locator.get("section_idx") if isinstance(locator, dict) else None
+    if not isinstance(s_idx, int):
+        raise TypeError(
+            "locator must carry integer 'section_idx' "
+            f"(got section_idx={s_idx!r})"
+        )
+    out = edit_element_customcode(page_data, locator, new_value,
+                                  repair_full_width=False)
+    change = _set_full_width_inplace(out, s_idx)
+    return {"page_data": out, "full_width": change}
 
 
 # ── §2 SEO / AI-search Content panel (seoMeta on the pageData blob) ───────────
@@ -2861,7 +3175,8 @@ def page_seo_autosave(page_id: str, page_data: dict, seo_meta: dict, *,
                      evidence_root: str | None = None,
                      store_dir: str | None = None,
                      session: str | None = None,
-                     token_global: str = TOKEN_JS_GLOBAL) -> dict:
+                     token_global: str = TOKEN_JS_GLOBAL,
+                     full_width_section_idx: int | None = None) -> dict:
     """§2 save step: splice the validated ``seoMeta`` onto the blob and emit the
     ordered in-browser autosave POST that persists it.
 
@@ -2870,12 +3185,16 @@ def page_seo_autosave(page_id: str, page_data: dict, seo_meta: dict, *,
     confirmation to the step's ``expect`` contract so the verifier scores the §2
     end-state. The ``seoMeta`` rides inside ``pageData`` — no separate endpoint.
 
-    ONE publication path (F06): a draft save is the default. ``publish=True``
-    forwards the SAME recorded approval, target location and gate evidence the
-    canonical publisher uses into the one autosave, so this save and the final
-    publication cannot diverge; without that authority it refuses rather than
-    opening a second, ungated publication path. Nothing here asks for the same
-    approval twice: the record's own page/location scope is what is forwarded.
+    ONE publication path (F06). This is not a second, parallel publisher: the save
+    it emits is ``page_autosave``, which reaches the single live-publication gate
+    (``ghl_publish_approval.require_publish``). ``approval`` / ``location_id`` /
+    ``evidence_root`` / ``store_dir`` are therefore forwarded UNCHANGED, so a
+    ``publish=True`` here uses the SAME recorded authorization for its valid
+    page/location scope as any other save — nothing asks for the same approval
+    twice, and no caller can publish by an ungated route; without that authority
+    it refuses rather than opening a second, ungated publication path.
+    ``full_width_section_idx`` is forwarded unchanged too, so the width read-back
+    names the section the edit repaired rather than defaulting to section 0.
 
     Returns the ``page_autosave`` step descriptor with ``expect.seo_populated``,
     the splice result under ``seo_meta``, and — when publishing — the
@@ -2895,6 +3214,7 @@ def page_seo_autosave(page_id: str, page_data: dict, seo_meta: dict, *,
         integrations=integrations, publish=publish, session=session,
         token_global=token_global, approval=approval, location_id=location_id,
         evidence_root=evidence_root, store_dir=store_dir,
+        full_width_section_idx=full_width_section_idx,
     )
     step["seo_meta"] = copy.deepcopy(seo_meta)
     step.setdefault("expect", {})
@@ -3165,7 +3485,8 @@ def page_autosave(page_id: str, page_data: dict, *, funnel_id: str, page_version
                   integrations: dict | None = None, publish: bool = False,
                   session: str | None = None, token_global: str = TOKEN_JS_GLOBAL,
                   approval=None, location_id: str | None = None,
-                  evidence_root: str | None = None, store_dir: str | None = None) -> dict:
+                  evidence_root: str | None = None, store_dir: str | None = None,
+                  full_width_section_idx: int | None = None) -> dict:
     """GAP-1 save step: emit the in-browser DRAFT autosave POST.
 
     Executed INSIDE the agent-browser eval per the Cloudflare-WAF note. Returns
@@ -3189,36 +3510,92 @@ def page_autosave(page_id: str, page_data: dict, *, funnel_id: str, page_version
         token_global: The staged-JWT window global.
         approval, location_id, evidence_root, store_dir: publish authorization
             (see ``autosave_body``); ignored for a draft.
+        full_width_section_idx: The section index the edit repaired. Named in
+            ``expect.full_width_readback`` so the read-back is proved against the
+            section that actually changed, never assumed to be section 0. Pass
+            ``edit_element_customcode_full_width(...)["full_width"]["section_idx"]``.
 
     Returns:
         ``{method, path, url, body, eval, argv?, expect}`` — the step the agent
         executes, plus the saved-blob + draft-pointer-unchanged confirmation
-        contract under ``expect``.
+        contract under ``expect``. A ``publish=True`` step also carries
+        ``expect["authorization"]``: the ``approval_ref`` (and its scope fields)
+        this save was VALIDATED against, read once — not a new approval.
     """
     path = page_autosave_path(page_id)
-    body = autosave_body(funnel_id, page_data, page_version, integrations, publish,
-                         approval=approval, page_id=page_id, location_id=location_id,
-                         evidence_root=evidence_root, store_dir=store_dir)
+    body, authorization = _autosave_body_with_record(
+        funnel_id, page_data, page_version, integrations, publish,
+        approval=approval, page_id=page_id, location_id=location_id,
+        evidence_root=evidence_root, store_dir=store_dir,
+    )
     js = build_fetch_js("POST", path, body=body, token_global=token_global)
+    # The read-back target is the section the EDIT repaired. Leaving the index
+    # unnamed makes a multi-section edit read as "section 0 is full width" while
+    # the edit landed elsewhere, so the contract states which index to prove.
+    if full_width_section_idx is None:
+        width_gate = ("assert_full_width(blob, <section_idx>) with the index this "
+                      "edit repaired — a multi-section edit is never proved "
+                      "against section 0")
+    else:
+        width_gate = f"assert_full_width(blob, {full_width_section_idx})"
+    expect: dict[str, Any] = {
+        # The 201 response shape (the "saved-blob" pointer).
+        "status": 201,
+        "response_keys": ["pageDataUrl", "pageDataDownloadUrl", "traceId"],
+        "saved_page_version": int(page_version) + 1,
+        "saved_page_type": body["pageType"],
+        # The draft-pointer-unchanged confirmation: re-read the canonical
+        # record and assert the LIVE pageVersion did NOT move when draft.
+        "live_pointer_unchanged": (not publish),
+        "verify": "re-read GET /funnels/page/<id>; fetch its OWN "
+                  "pageDataDownloadUrl; confirm the edit is present AND "
+                  "(when draft) the record pageVersion is unchanged",
+        # W3-4: the save is only proven by reading the width policy BACK.
+        "full_width_readback": {
+            "switch": FULL_WIDTH_SWITCH_PATH,
+            "section_idx": full_width_section_idx,
+            "section_idx_named": full_width_section_idx is not None,
+            "require_switch_on": True,
+            "require_no_1170_cap": True,
+            "verify": "on the blob read back from pageDataDownloadUrl, call "
+                      f"{width_gate} — a save response alone is not the proof",
+        },
+    }
+    if publish:
+        # A 201 here — or this step's own ``pageType`` — is NOT a publication
+        # result. The status and the URL come from the RE-READ record only.
+        expect["authorization"] = {
+            "approval_ref": authorization.get("approval_ref", approval),
+            "allowed_write_target": authorization.get("allowed_write_target"),
+            "test_only": authorization.get("test_only"),
+            "location_id": authorization.get("location_id"),
+            "page_ids": list(authorization.get("page_ids") or []),
+            "expires_at": authorization.get("expires_at"),
+            "carried_forward": (
+                "the recorded authorization this save was validated against, "
+                "read once from the approval store — not a new approval"
+            ),
+        }
+        expect["published_readback"] = {
+            "read": "GET " + page_read_path(page_id, location_id),
+            "require_page_type": "published",
+            "require_live_pointer_moved": True,
+            "report_page_url": (
+                "the page URL exactly as the re-read record returns it — never a "
+                "constructed or assumed URL, and never this step's request body"
+            ),
+            "failure": (
+                "a save click, a 201 with pageType draft, or a locally assumed "
+                "'published' value is NOT publication"
+            ),
+        }
     step: dict[str, Any] = {
         "method": "POST",
         "path": path,
         "url": GHL_BACKEND_ORIGIN.rstrip("/") + path,
         "body": body,
         "eval": js,
-        "expect": {
-            # The 201 response shape (the "saved-blob" pointer).
-            "status": 201,
-            "response_keys": ["pageDataUrl", "pageDataDownloadUrl", "traceId"],
-            "saved_page_version": int(page_version) + 1,
-            "saved_page_type": body["pageType"],
-            # The draft-pointer-unchanged confirmation: re-read the canonical
-            # record and assert the LIVE pageVersion did NOT move when draft.
-            "live_pointer_unchanged": (not publish),
-            "verify": "re-read GET /funnels/page/<id>; fetch its OWN "
-                      "pageDataDownloadUrl; confirm the edit is present AND "
-                      "(when draft) the record pageVersion is unchanged",
-        },
+        "expect": expect,
     }
     if publish:
         # F06: a published autosave must prove itself by an OBSERVED re-read.
@@ -3607,7 +3984,16 @@ __all__ = [
     "assert_section_is_full_width",
     "native_section_full_width_plan",
     "new_page_blob",
+    "FULL_WIDTH_SWITCH_PATH",
+    "CONFLICTING_INNER_CAP",
+    "FULL_WIDTH_INNER_CAP",
+    "section_full_width_state",
+    "set_section_full_width",
+    "full_width_switch_step",
+    "FULL_WIDTH_SWITCH_LABEL",
+    "assert_full_width",
     "edit_element_customcode",
+    "edit_element_customcode_full_width",
     "SEO_TITLE_MAX",
     "SEO_DESCRIPTION_MAX",
     "SEO_DESCRIPTION_SAVE_MAX",
