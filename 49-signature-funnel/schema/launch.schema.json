@@ -152,6 +152,23 @@
               "null"
             ]
           },
+          "production_state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "authored",
+              "draft_delivered",
+              "locally_verified",
+              "installed_test_verified",
+              "ready_for_activation",
+              "live_verified",
+              "failed",
+              null
+            ],
+            "description": "Shared-semantics boundary: OFFER IDENTITY (BFL-001). How far this offer's own sellable artifacts (native product, native price, delivery artifact) have actually got. The values are the unit receipt's existing ladder in 83-black-friday-launcher/receipt.schema.json (definitions.unit_receipt.status) plus 'failed', so the package cannot hold two competing vocabularies; 'authored' means the offer is written down only. null or absence means nothing is recorded, and no lane may infer production from the offer being present, from a native id being planned, or from an artifact existing on disk. Only the receipt row that actually proves the state may set it."
+          },
           "prices": {
             "type": "array",
             "minItems": 1,
@@ -388,6 +405,42 @@
         "agnes",
         "other_explicit"
       ]
+    },
+    "free_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Shared-semantics boundary: FREE ENTRY (BFL-001). The distinct free product/asset a launch gives away, the opt-in path that acquires it, and the real delivery reference for it. Present only when journey_mode is 'free_entry'; absent means the launch records no free item. The free item is handed over by delivery_ref and is never routed through paid checkout: it names an offers[] entry whose price amount_minor is 0 with an approval_status that is not 'unknown', which is the only zero-price route 49-signature-funnel/scripts/launch_plan.py already accepts (outside free_entry a zero amount is a missing fact, never a price). Because the field is additive, absence is not refused by this schema; the record producer must supply it whenever journey_mode is 'free_entry'.",
+      "required": [
+        "offer_id",
+        "opt_in_path",
+        "delivery_ref"
+      ],
+      "properties": {
+        "offer_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The offers[] entry that is the free product/asset. It reuses that entry's stable offer id; no second id is minted here."
+        },
+        "opt_in_path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The opt-in the client actually runs to acquire the free item (form or landing path). Never synthesized."
+        },
+        "delivery_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "The real delivery reference the free item is handed over with (hosted asset URL, access link, or fulfillment reference). null until a real one exists; a null here is a recorded gap, not a delivery."
+        },
+        "source_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "answers-file:<key>[<index>] entry this free item came from, in the client-intake-answers/v1 convention, so the client's own source text and acceptance references keep resolving from the answers file instead of being copied here."
+        }
+      }
     },
     "source_refs": {
       "type": "array",
