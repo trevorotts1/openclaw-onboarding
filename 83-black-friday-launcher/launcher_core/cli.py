@@ -1,7 +1,13 @@
 """CLI: compile a route, dispatch every page, assemble a package, check one, or report dependencies.
 
 Exit 0 pass, 2 fail. The Council planning step runs on route/assemble and is
-always recorded; a not-ready Council never changes the exit code.
+always recorded; a not-ready Council never changes the exit code. At the
+coherent-plan stage it runs ONLY the offline readiness probe
+(``scripts/doctor.mjs``: no network, no writes, no model call) and records it as
+a package check. It never calls a Council front door and never convenes a
+session. A Council session result that was already returned to the client can be
+supplied as a JSON file with ``--council-session`` and is recorded as data; with
+none, the record says no Council advice was obtained and the build continues.
 
 ``dispatch`` and ``assemble`` run the dependency preflight first and refuse on any
 required entry that is missing, so a green preflight means the launch can run.
@@ -104,11 +110,32 @@ def _json_object(path: Path) -> dict:
     return doc if isinstance(doc, dict) else {}
 
 
+def _council_session(args: argparse.Namespace) -> "dict | None":
+    """A Council session result that was already returned, supplied as JSON data.
+
+    A path is read as data only: no Council front door is called and no session is
+    opened. A named file that cannot be read as a JSON object is refused by name,
+    so a mistyped path never reads as "no advice"."""
+    path = (getattr(args, "council_session", None) or "").strip()
+    if not path:
+        return None
+    try:
+        doc = _read_json(Path(path))
+    except (OSError, ValueError):
+        raise CliError("AF-LAUNCH-COUNCIL-SESSION",
+                       f"{path!r} is not a readable JSON Council session result")
+    if not isinstance(doc, dict):
+        raise CliError("AF-LAUNCH-COUNCIL-SESSION",
+                       f"{path!r} must hold one JSON object (the returned session result)")
+    return doc
+
+
 def cmd_route(args: argparse.Namespace) -> int:
     normalized = intake.validate(_read_json(args.intake))
-    advice = council.planning_step(normalized)
+    graph = route.compile_route(normalized)
+    advice = council.planning_step(normalized, graph=graph,
+                                   session=_council_session(args))
     record = route.launch_record(normalized, advice)
-    graph = route.compile_route(normalized, advice)
     _emit({"council": advice, "graph": graph, "launch_record": record})
     return 0
 
@@ -128,8 +155,9 @@ def cmd_assemble(args: argparse.Namespace) -> int:
         raise CliError("AF-LAUNCH-APPROVAL-UNBOUND",
                             f"no dispatch record (launch.json) in {source_root}, so the approval cannot be "
                             "tied to a plan. Pass --run-dir of the dispatch run.")
-    advice = council.planning_step(normalized)
-    graph = route.compile_route(normalized, advice)
+    graph = route.compile_route(normalized)
+    advice = council.planning_step(normalized, graph=graph, run_dir=str(source_root),
+                                   session=_council_session(args))
     pieces = {role: _read_json(pieces_dir / f"{role}.json")
               for role in (n["role"] for n in graph["nodes"])}
     for slot in package.EXTRA_SLOTS:  # a second page of a role (downsell_2) rides beside its parent
@@ -424,6 +452,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     r = sub.add_parser("route", help="validate intake and compile the route graph")
     r.add_argument("--intake", required=True)
+    r.add_argument("--council-session", dest="council_session", default=None,
+                   help="a JSON file holding a Council session result that was already "
+                        "returned to the client; it is recorded as data, never asked for")
     r.set_defaults(fn=cmd_route)
 
     a = sub.add_parser("assemble", help="assemble package-manifest.json and receipt.json")
@@ -460,6 +491,9 @@ def build_parser() -> argparse.ArgumentParser:
                         "page_url, observed_at and — for published — page_type and page_version; "
                         "for installed — the native install facts). A save click or a local "
                         "'published' field is refused")
+    a.add_argument("--council-session", dest="council_session", default=None,
+                   help="a JSON file holding a Council session result that was already returned "
+                        "to the client; it is recorded as data, never asked for")
     a.add_argument("--page-only", action="store_true",
                    help="assemble pages alone and label the package page-only: no shared launch "
                         "plan, so no Black Friday calendar and no planned email, text or automation "
