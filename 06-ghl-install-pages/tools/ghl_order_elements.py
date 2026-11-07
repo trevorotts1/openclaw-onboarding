@@ -321,10 +321,25 @@ def _price_verify(binding: dict, verify: dict) -> dict:
     return verify
 
 
+def _route_graph_bytes(graph: dict) -> bytes:
+    """The approved route graph's bytes, EXACTLY as Skill 49's
+    ``compile_launch_route.serialize_graph`` emits them: ``json.dumps(...,
+    indent=2, ensure_ascii=False)`` plus one trailing newline, keys in the
+    graph's own order. This is a copy of the authority's serializer, not a
+    lookalike: the launch record's ``route_graph_hash`` IS these bytes."""
+    return (json.dumps(graph, indent=2, ensure_ascii=False) + "\n").encode(
+        "utf-8")
+
+
 def graph_hash(graph: dict) -> str:
-    """sha256 of the approved route graph, in the same canonical form the
-    launch record carries as ``route_graph_hash`` (``_canon`` below)."""
-    return hashlib.sha256(_canon(graph)).hexdigest()
+    """sha256 of the approved route graph in the SAME form Skill 49 records as
+    the launch record's ``route_graph_hash``
+    (``compile_launch_route.serialize_graph`` / ``graph_hash``). Byte equality
+    with that serializer is the contract - button binding and page generation
+    must read one identity for one graph, so this hash is NOT ``_canon``
+    (that is the plan canonicaliser, a different function for a different
+    job)."""
+    return hashlib.sha256(_route_graph_bytes(graph)).hexdigest()
 
 
 def approved_routes(graph: Any) -> Dict[str, dict]:
