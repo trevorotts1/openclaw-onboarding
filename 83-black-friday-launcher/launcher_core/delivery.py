@@ -361,18 +361,42 @@ def record(planned: Mapping[str, Any], produced: Mapping[str, Any],
         "kind_state": planned["kind_state"],
         "kind_source": planned["kind_source"],
         "offers": offers,
-        "free_entry": _free_entry(planned),
+        "free_entry": _free_entry(planned, produced),
     }
 
 
-def _free_entry(planned: Mapping[str, Any]) -> Dict[str, Any]:
+FREE_ENTRY_ROLES = ("free", "free_lead", "lead_magnet")
+
+
+def _free_entry(planned: Mapping[str, Any], produced: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """The separate free lead product, if the offer model carries one.
 
-    This release's launcher offer roles are main/bump/upsell_1/downsell_1/upsell_2
-    (constants.OFFER_ROLES) and every one of them is priced above zero, so a free
-    lead product cannot reach this module yet. That is recorded by name instead of
-    being filled with a stand-in offer.
+    A free entry is an offer whose recorded price is zero, or whose role names the
+    free lane. This release's launcher roles are main/bump/upsell_1/downsell_1/
+    upsell_2 (constants.OFFER_ROLES) and intake.py refuses a price of zero, so none
+    can reach here yet — that is recorded by name rather than filled with a
+    stand-in offer. When the offer model gains the role, this reads it without a
+    second edit.
     """
+    produced = produced or {}
+    for entry in planned["offers"]:
+        price = entry.get("price") or {}
+        is_free = (entry.get("role") in FREE_ENTRY_ROLES
+                   or price.get("amount_minor") == 0)
+        if not is_free:
+            continue
+        sheet = produced.get(entry["offer_id"])
+        return {
+            "state": "declared" if sheet else "declared_not_produced",
+            "offer_id": entry["offer_id"],
+            "role": entry["role"],
+            "entitlement_ids": list(entry["entitlement_ids"]),
+            "delivery_kind": entry["delivery_kind"],
+            "delivery_url": entry["delivery_url"],
+            "sheet": ({k: sheet[k] for k in ("path", "sha256", "size")} if sheet else None),
+            "promises": list(entry["promises"]),
+            "missing_capability": [] if sheet else [MISSING_AUTHORING_PRODUCER],
+        }
     return {
         "state": "absent",
         "missing_capability": (
