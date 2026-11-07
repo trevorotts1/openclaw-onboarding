@@ -16,7 +16,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 from urllib.parse import urlsplit
 
 from . import entitlement, image_plan
@@ -60,7 +60,9 @@ PERMITTED_DEFAULTS = {
 
 # Optional intake blocks. image_plan carries the picture choices (style, brand file, owner, spend
 # cap, provider); it is shape-checked here and resolved, with flagged defaults, only at dispatch.
-OPTIONAL_FIELDS = ("image_plan", "client_choices", "promotion")
+# proposal_acceptance names the approval record that accepted any AI proposal in the answers file
+# (the same transition Skill 49's approve() runs); without it the proposals stay proposals.
+OPTIONAL_FIELDS = ("image_plan", "client_choices", "promotion", "proposal_acceptance")
 
 OFFER_REQUIRED = ("offer_id", "name", "role", "price", "delivery")
 OFFER_OPTIONAL = ("level", "relationships", "checkout")
@@ -94,6 +96,15 @@ LEVELED_ROLES = ("upsell_1", "downsell_1", "upsell_2")
 # supplied or explicitly unknown.
 COMMERCIAL_ROOTS = ("offers", "entitlement_attestation", "level",
                     "cross_sales", "relationships", "checkout_terms")
+# The shared answer-provenance vocabulary (shared-utils/client_intake/revision.py) applied
+# to a price's approval status, so a consumer of offer_facts() reads the same five kinds the
+# answer ledgers use instead of inventing a sixth.
+_PROVENANCE_FOR_APPROVAL = {
+    "provided": "confirmed_fact",
+    "approved": "confirmed_fact",
+    "recommended_unapproved": "ai_proposal",
+    "unknown": "unresolved_capability",
+}
 
 
 class IntakeError(Exception):
@@ -414,6 +425,43 @@ ANSWERS_SCHEMA = "client-intake-answers/v1"
 _SKILL_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _revision():
+    """shared-utils/client_intake/revision.py, loaded once by path (stdlib only).
+
+    The same file Skill 49's launch intake consumes: one proposal-acceptance transition and
+    one revision reconciliation. Duplicating either rule here is the drift this avoids.
+    """
+    mod = sys.modules.get("client_intake_revision")
+    if mod is not None:
+        return mod
+    path = REPO_ROOT / "shared-utils" / "client_intake" / "revision.py"
+    if not path.is_file():
+        _fail("AF-LAUNCH-INTAKE-PROVENANCE", "answers_file",
+              "the shared revision module is not installed, so a revision cannot reconcile "
+              "the offers it disabled")
+    spec = importlib.util.spec_from_file_location("client_intake_revision", path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["client_intake_revision"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _validate_proposal_acceptance(raw: Any) -> Dict[str, str]:
+    """The approval record that accepted the answers file's AI proposals. Named, never assumed:
+    an acceptance with no approval id would launder a suggestion into a fact."""
+    field = "proposal_acceptance"
+    if not isinstance(raw, dict):
+        _fail("AF-LAUNCH-INTAKE-PROPOSAL", field, "must be an object naming the approval record")
+    extra = set(raw) - {"ref", "hash"}
+    if extra:
+        _fail("AF-LAUNCH-INTAKE-PROPOSAL", field, f"undeclared field(s) {sorted(extra)!r}")
+    for key in ("ref", "hash"):
+        if not _nonempty_str(raw.get(key)):
+            _fail("AF-LAUNCH-INTAKE-PROPOSAL", f"{field}.{key}",
+                  "must be a non-empty string; a proposal is never accepted anonymously")
+    return {"ref": raw["ref"].strip(), "hash": raw["hash"].strip()}
+
+
 def _offer_mapper():
     """shared-utils/signature_launch_contract/offer_mapper.py, loaded once by path (stdlib only)."""
     mod = sys.modules.get("offer_mapper")
@@ -472,7 +520,22 @@ def _bind_provenance(raw_offers: List[Any], offers: List[Dict[str, Any]], answer
 
 
 def validate(payload: Any) -> Dict[str, Any]:
-    """Return a normalized launch intake or raise IntakeError. Fail-closed."""
+    """Return a normalized launch intake or raise IntakeError. Fail-closed.
+
+    The reconciliation report is available from validate_with_reconciliation(); this entry
+    point keeps the normalized record's shape unchanged for every existing consumer.
+    """
+    return _validate(payload)[0]
+
+
+def validate_with_reconciliation(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """(normalized intake, reconciliation report) for a caller that must show what a revision
+    disabled and which saved answers and offers were removed because of it."""
+    return _validate(payload)
+
+
+def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Return (normalized launch intake, reconciliation report) or raise IntakeError. Fail-closed."""
     if not isinstance(payload, dict):
         _fail("AF-LAUNCH-INTAKE-SHAPE", "<root>", "intake must be a JSON object")
 
@@ -536,8 +599,27 @@ def validate(payload: Any) -> Dict[str, Any]:
     offers = payload["offers"]
     if not isinstance(offers, list) or not offers:
         _fail("AF-LAUNCH-INTAKE-OFFER", "offers", "at least one offer is required")
-    clean_offers: List[Dict[str, Any]] = [_validate_offer(i, o) for i, o in enumerate(offers)]
     answers_path, answers_doc = _load_answers(payload["answers_file"])
+    rev = _revision()
+    answers_ledger = answers_doc.get("answers") if isinstance(answers_doc.get("answers"), dict) else {}
+    acceptance = (_validate_proposal_acceptance(payload["proposal_acceptance"])
+                  if payload.get("proposal_acceptance") is not None else None)
+    # ONE shared transition for an AI proposal the client accepted, and ONE shared
+    # reconciliation for the answers a revision disabled. Both live in
+    # shared-utils/client_intake/revision.py and are the same code Skill 49 runs. The
+    # reconciliation runs on the RAW offers: a stale dependent offer is removed because its
+    # parent is disabled, so it is never asked to satisfy a shape it will not be built from.
+    reconciliation = rev.reconcile_launch(answers_ledger, revision=revision,
+                                          offers=offers, answer_prefix="")
+    if acceptance is not None:
+        reconciliation["accepted_proposals"] = rev.accept_proposals(answers_ledger, acceptance)
+    dropped = {row["slot"] for row in reconciliation["removed_offers"]}
+    if dropped:
+        # A revision that disables U1 removes the saved D1/U2 offers instead of letting the
+        # route graph refuse the build ("U1 disabled requires D1 and U2 disabled") or, worse,
+        # carrying them into a stale page set, follow-up emails and route nodes.
+        offers = [o for o in offers if (o.get("role") if isinstance(o, dict) else None) not in dropped]
+    clean_offers: List[Dict[str, Any]] = [_validate_offer(i, o) for i, o in enumerate(offers)]
     _bind_provenance(offers, clean_offers, answers_doc, payload.get("test_only", True) is not False)
     _check_relationship_targets(clean_offers)
     _check_offer_set(clean_offers, mode)
@@ -635,7 +717,7 @@ def validate(payload: Any) -> Dict[str, Any]:
         normalized["promotion"] = promotion
     normalized["provenance"] = provenance
     assert_no_commercial_defaults(normalized)
-    return normalized
+    return normalized, reconciliation
 
 
 def offer_facts(normalized: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -643,6 +725,7 @@ def offer_facts(normalized: Dict[str, Any]) -> List[Dict[str, Any]]:
     provenance = normalized.get("provenance") or {}
     facts: List[Dict[str, Any]] = []
     for i, offer in enumerate(normalized["offers"]):
+        approval = ((offer.get("canonical") or {}).get("prices") or [{}])[0].get("approval_status")
         facts.append({
             "offer_id": offer["offer_id"],
             "role": offer["role"],
@@ -650,6 +733,7 @@ def offer_facts(normalized: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "amount_minor": offer["price"]["amount_minor"],
                 "currency": offer["price"]["currency"],
                 "provenance": provenance.get(f"offers[{i}].price", "unknown"),
+                "provenance_kind": _PROVENANCE_FOR_APPROVAL.get(approval, "unresolved_capability"),
             },
             "level": {
                 "state": offer["level"]["state"],
