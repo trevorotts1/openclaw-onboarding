@@ -89,6 +89,12 @@ nothing is published.
   receipts it belongs to. `package-manifest.json` and `receipt.json` carry that record
   and its digest. A desired install/publication with no read-back stays pending and
   says so; a local/draft package is never relabelled installed or live.
+- `check` RE-PROVES the stage (`launcher_core/check_rules/activation.py`): the sealed
+  `activation.json` must resolve and match its digest, agree with the manifest and the
+  receipt, and an `installed`/`published` stage must still be proved by the read-back —
+  bound to this package's pages and this launch's location — under the same recorded
+  authority. A stage receipt carries no unit receipts of its own, so it is never
+  counted as the package being complete.
 
 ## Build order and parallel lanes
 
