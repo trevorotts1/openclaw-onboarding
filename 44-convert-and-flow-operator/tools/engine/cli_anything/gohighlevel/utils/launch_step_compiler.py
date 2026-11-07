@@ -496,6 +496,242 @@ def _apply_purchase_gate(steps: list, bid: str, ptag: str) -> None:
                   "parentKey": sends[-1]["id"], "next": None})
 
 
+# ── one bound workflow -> installable provider steps (canonical entry) ───────
+#
+# The CLI build path (workflow_builder.compile_automation_build) and the
+# document compiler below both compile through the functions in this module.
+# ``compile_installable`` is the entry the production command uses, so the
+# expanded compiler is no longer bypassed by the real execution path.
+PURCHASE_IDENTITY_FIELDS = ("event_id", "transaction_id", "purchased_line_id")
+
+
+def purchase_identity(build: Mapping[str, Any]) -> dict:
+    """The identity a purchase handler deduplicates on, or an explicit unknown.
+
+    One native order can carry several paid changes (the main order plus an
+    upsell), so an order id alone never proves two deliveries are the same
+    purchase.  Only an event / transaction / purchased-line identity is
+    sufficient; anything less is recorded as insufficient rather than
+    normalised into a usable key.
+    """
+    observed = build.get("purchase_identity")
+    if not isinstance(observed, Mapping):
+        return {"basis": None, "value": None, "dedupe_key": None,
+                "sufficient": False, "reason": "no purchase-event identity declared"}
+    for field in PURCHASE_IDENTITY_FIELDS:
+        value = observed.get(field)
+        if isinstance(value, str) and value.strip():
+            return {"basis": field, "value": value,
+                    "dedupe_key": "%s:%s" % (field, value), "sufficient": True,
+                    "reason": None}
+    order_id = observed.get("order_id")
+    return {
+        "basis": "order_id" if order_id else None,
+        "value": str(order_id) if order_id else None,
+        "dedupe_key": None,
+        "sufficient": False,
+        "reason": ("an order id alone cannot deduplicate a purchase: one order "
+                   "can carry several paid changes") if order_id
+                  else "no purchase-event identity declared",
+    }
+
+
+def _unresolved_until(graph: list, until_dates: Mapping[str, Any]) -> Optional[str]:
+    """The first template ``wait until`` token this build cannot resolve."""
+    for node in graph:
+        if not isinstance(node, Mapping) or node.get("type") != "wait":
+            continue
+        attrs = node.get("attributes") or {}
+        if attrs.get("kind") != "until":
+            continue
+        token = re.sub(r"[{}\s]", "", str(attrs.get("until") or ""))
+        if token not in until_dates:
+            return token or "(empty)"
+    return None
+
+
+def compile_installable(workflow: Mapping[str, Any], build: Mapping[str, Any], *,
+                        seq_schedule: Optional[Mapping[str, Any]] = None,
+                        promotional: bool = True,
+                        close_at: Optional[str] = None,
+                        bindings: Optional[Mapping[str, Any]] = None,
+                        purchase_tag_set: bool = False,
+                        root: Optional[Path] = None,
+                        manifest: Optional[Mapping[str, Any]] = None,
+                        allow_browser_steps: bool = True) -> dict:
+    """Compile ONE bound Skill 50 workflow into installable provider steps.
+
+    Two supported shapes, and the chosen one is always recorded:
+
+    ``template_graph``
+        The build's buildable template resolves, every ``wait until`` token
+        binds to a real calendar/binding date, and every email slot has
+        approved copy: the template's tags, branches, waits, SMS and goal
+        nodes are installed.
+    ``bound_sequence``
+        Otherwise the approved Skill 50 email/wait sequence is installed with
+        its guards, its absolute-wait ledger rows and the real purchase gate.
+
+    An unresolved template is a recorded note, never a silent substitution.
+    Copy that no approved source supplies stays ``copy_pending`` and the
+    channel action is reported incomplete; it never blocks the email work.
+    """
+    from cli_anything.gohighlevel.utils.workflow_builder import (
+        _guarded_templates,
+        link_steps,
+    )
+
+    bindings = dict(bindings or {})
+    bid = str(build.get("id"))
+    unit_key = build.get("unit_key") or bid
+    launch_id = unit_key.split("/")[0] if "/" in unit_key else None
+    ptag = purchase_tag(launch_id) if launch_id else None
+    if ptag:
+        bindings.setdefault("launch buyer tag", [ptag])
+
+    seq_schedule = seq_schedule or {}
+    schedule = build.get("schedule") or {}
+    tz = schedule.get("timezone")
+    out: dict[str, Any] = {
+        "id": bid, "unit_key": unit_key, "status": "ok", "blocked_by": [],
+        "browser_steps": [], "notes": [], "steps": [],
+        "compile_mode": "bound_sequence", "template": None,
+        "channel_actions": {}, "incomplete_actions": [],
+        "purchase_identity": purchase_identity(build),
+    }
+    blocked = out["blocked_by"]
+
+    steps = _guarded_templates(
+        workflow.get("steps") or [], promotional=promotional,
+        close_at=close_at,
+        schedule_by_id={node.get("step_id"): node
+                        for node in seq_schedule.get("nodes") or []
+                        if isinstance(node, Mapping) and node.get("step_id")})
+
+    until_dates = {"%s_at" % node["phase"]: node["at"]
+                   for node in schedule.get("calendar_nodes") or []
+                   if isinstance(node, Mapping) and node.get("phase") and node.get("at")}
+    until_dates.update(bindings.get("until") or {})
+
+    # Template expansion: only when the whole short handler resolves.  A long
+    # nurture/wait graph whose date tokens are not on this build stays on the
+    # approved sequence, and says so.
+    spec, key, reason = resolve_template(build, root=root, manifest=manifest)
+    out["template"] = key
+    emails = [step for step in workflow.get("steps") or []
+              if isinstance(step, Mapping) and step.get("type") == "email"]
+    if spec is None:
+        out["notes"].append("template_graph_skipped:%s" % (reason or "unresolved"))
+    elif not emails:
+        out["notes"].append("template_graph_skipped:no_email_copy")
+    else:
+        token = _unresolved_until(spec.get("build_graph") or [], until_dates)
+        if token:
+            out["notes"].append("template_graph_skipped:unresolved_until:%s" % token)
+        else:
+            trial = {"unit_key": unit_key, "blocked_by": [], "browser_steps": []}
+            graph_steps = _compile_graph(trial, spec["build_graph"], bid, emails,
+                                         bindings, promotional, close_at, ptag,
+                                         build.get("family"))
+            if trial["blocked_by"] or not graph_steps:
+                out["notes"].append("template_graph_skipped:" + ",".join(
+                    trial["blocked_by"] or ["empty_graph"]))
+            else:
+                steps = graph_steps
+                out["browser_steps"] = trial["browser_steps"]
+                out["compile_mode"] = "template_graph"
+
+    # Trigger: the automation's OWN declared trigger decides.  A contact-tag
+    # trigger is installed only when that is the approved trigger type; any
+    # other approved trigger (Order Submitted / Payment Received, checkout
+    # abandoned, ...) has no verified create payload here, so it is recorded
+    # as an owed native step instead of being replaced by a silent tag default.
+    declared = build.get("trigger") if isinstance(build.get("trigger"), Mapping) else {}
+    trigger_type = str(declared.get("type") or "")
+    approved_tag = workflow.get("tag")
+    if VERIFIED_TRIGGER_TYPES.get(trigger_type) == "contact_tag" and approved_tag:
+        out["trigger"] = {"type": "contact_tag", "tag": approved_tag,
+                          "status": "draft", "rail": "api",
+                          "conditions": compile_trigger_conditions(
+                              approved_tag, list(build.get("eligibility") or []))}
+    else:
+        out["trigger"] = {"type": trigger_type or None, "status": "unverified",
+                          "rail": "managed_browser", "tag": None, "conditions": []}
+        out["incomplete_actions"].append("trigger:%s" % (trigger_type or "missing"))
+        out["notes"].append("trigger_unverified:%s" % (trigger_type or "missing"))
+        if allow_browser_steps:
+            _ledger(out, "set_trigger", trigger_type=trigger_type,
+                    detail=declared.get("detail"))
+
+    linked, unlinked = link_steps(steps)
+    if unlinked:
+        blocked.append("branch_unwired:%s" % ",".join(str(n) for n in unlinked))
+    steps = linked
+
+    sched = {node.get("step_id"): node
+             for node in seq_schedule.get("nodes") or []
+             if isinstance(node, Mapping) and node.get("step_id")
+             and node.get("kind") == "absolute" and node.get("at")
+             and node.get("status") != "suppressed"}
+    steps = _apply_absolute(out, steps, sched, until_dates, tz, allow_browser_steps)
+
+    if promotional and ptag and steps:
+        if purchase_tag_set:
+            _apply_purchase_gate(steps, bid, ptag)
+        else:
+            out["notes"].append("purchase_gate_unset:%s" % ptag)
+
+    # F05 short purchase handler: the tag it sets is what lets the promotional
+    # gate fire.  A handler that installs no tag step is recorded as an
+    # incomplete action — it is reported, not silently graded complete.
+    handler_incomplete = []
+    if build.get("family") == "post_sale" and ptag and not any(
+            step.get("type") == "add_contact_tag"
+            and ptag in (step.get("attributes") or {}).get("tags", [])
+            for step in steps):
+        out["notes"].append("purchase_tag_step_missing:%s" % ptag)
+        handler_incomplete.append("purchase_tag:%s" % ptag)
+
+    sms_copy = bindings.get("sms_copy") if isinstance(bindings.get("sms_copy"),
+                                                      Mapping) else {}
+    pending = []
+    for step in steps:
+        if step.get("type") != "sms":
+            continue
+        attrs = step.setdefault("attributes", {})
+        ref = str(attrs.get("body_ref") or "")
+        supplied = sms_copy.get(step.get("id")) or sms_copy.get(ref)
+        if isinstance(supplied, str) and supplied.strip():
+            attrs["body"] = supplied
+            attrs["body_ref"] = ref or step.get("name")
+            attrs["copy_pending"] = False
+        elif attrs.get("copy_pending") or not str(attrs.get("body") or "").strip():
+            attrs["copy_pending"] = True
+            pending.append(step.get("id"))
+        else:
+            # Body text copied verbatim from the template is bound copy; the
+            # marker is cleared so the action is not reported half-done.
+            attrs["copy_pending"] = False
+    email_actions = sum(1 for step in steps if step.get("type") == "email")
+    sms_actions = sum(1 for step in steps if step.get("type") == "sms")
+    out["steps"] = steps
+    out["channel_actions"] = {
+        "email": {"actions": email_actions, "complete": email_actions > 0,
+                  "copy_pending": []},
+        "sms": {"actions": sms_actions,
+                "complete": sms_actions > 0 and not pending,
+                "copy_pending": pending,
+                "unavailable": bool(sms_actions) and len(pending) == sms_actions,
+                "reason": ("no approved SMS copy in the build plan or bindings; "
+                           "the action stays copy_pending") if pending else None},
+    }
+    out["incomplete_actions"] = handler_incomplete + [
+        "sms:%s" % step_id for step_id in pending]
+    if pending:
+        out["notes"].append("sms_copy_pending:%d" % len(pending))
+    return out
+
+
 # ── document-level compile ───────────────────────────────────────────────────
 def compile_launch_document(document: Mapping[str, Any], **kw: Any) -> dict:
     """Compile a whole launch-c automation-build document.

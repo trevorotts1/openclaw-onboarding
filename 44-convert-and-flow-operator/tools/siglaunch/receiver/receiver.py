@@ -836,10 +836,18 @@ class Receiver:
         checks.append({
             "name": "draft_state_recorded",
             "ok": export.get("status") == "draft"})
+        # F05: an absent Allow Reentry value on the export is UNKNOWN, never
+        # False.  The setting is only proven when the provider reported a
+        # boolean and it matches what the dispatch requested.
+        observed_reentry = export.get("allowMultiple")
+        declared_reentry = declared.get("allow_multiple")
+        expected_reentry = declared_reentry if isinstance(declared_reentry, bool) else False
         checks.append({
             "name": "reentry_matches_contract",
-            "ok": export.get("allowMultiple") ==
-                  declared.get("allow_multiple", False)})
+            "ok": isinstance(observed_reentry, bool)
+                  and observed_reentry == expected_reentry,
+            "observed": observed_reentry,
+            "expected": expected_reentry})
         checks.append({
             "name": "qc_exit_zero",
             "ok": result.get("qc_exit_code") == 0})
