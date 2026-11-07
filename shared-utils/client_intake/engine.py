@@ -1497,6 +1497,19 @@ def launch_answers(doc):
                      ("payment_plans", "launch.payment_plans"),
                      ("a2p_ready", "launch.a2p_ready")):
         put(qid, key, _typed_bool(qid, (get(doc, qid) or {}).get("value")))
+    # The two after-purchase answers (d6_reentry, d7_purchase_identity). The launch
+    # plan reads its own vocabulary out of these strings (settings.reentry allow|block,
+    # the purchase-identity field reference), so the client's chosen words are passed
+    # on as recorded. The "not sure / decide later" choice is a real answer that
+    # decides nothing, so it is recorded as not set instead of as text a consumer
+    # could read as a setting.
+    for qid, key in (("d6_reentry", "launch.automation_reentry"),
+                     ("d7_purchase_identity", "launch.purchase_identity")):
+        e = get(doc, qid)
+        if e is not None:
+            raw = e.get("value")
+            put(qid, key, raw.strip() if isinstance(raw, str) and raw.strip()
+                and not _norm(raw).startswith("not sure") else None)
     for qid, key in (("sender_name", "launch.sender_name"), ("reply_to_email", "launch.reply_to_email")):
         e = get(doc, qid)
         if e is not None:
