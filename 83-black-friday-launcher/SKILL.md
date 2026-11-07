@@ -311,10 +311,15 @@ python3 -m launcher_core.cli assemble --intake fixtures/elevation/intake.json \
 - **Elevation** (no-price 12-section page -> separate three-level selection -> native order form) routes,
   assembles and passes the fixture runner's completeness checks offline.
 - **7FigurePreneur** (three levels folded into the signature page -> native order form, no selection page)
-  routes and assembles through the settled `folded_levels` mode with its three distinct offers intact, but it
-  is **delivery-blocked**: the Skill 79 contract names no checkout mode for `folded_levels`
-  (`checkout_mode_state: contract_gap`, `AF-LAUNCH-CHECKOUT-MODE`), so `check` fails the package until
-  Skill 79 names a mode. The fixture runner asserts that block; it is not a green build.
+  routes and assembles through the settled `folded_levels` mode with its three distinct offers intact, and
+  it is **not blocked**: `launcher_core/checkout_instances.py` realises the Skill 79
+  `combined_single_offer` mode once per main price choice (`realisation: per_offer_instances`,
+  `selection_ref` always null), so the mapping records `checkout_mode_state: resolved` and
+  `checkout.delivery_blocked: false`. Each level gets its own native order form, its own page id and its
+  own bump applicability, and the real S78 `emit_binding_plan` maps one native target to each instance. A
+  missing native id, terms, consent, capability/fulfillment reference or bump component fact is recorded
+  as a rejected instance (`AF-LAUNCH-CHECKOUT-REJECTED`), never defaulted. The fixture runner asserts the
+  three accepted instances, not a block.
 
 `python3 fixtures/run_fixtures.py` proves both. These packages hold build plans, not page bytes.
 
@@ -390,7 +395,6 @@ tracked are named.
 | Charge, create an entitlement or call a billing API | permanent boundary; membership and purchase truth is PRD-12 |
 | Start a live Council session; Council advice is a readiness record until then | CON-16 |
 | Install the native order form, bump and one-click steps (Skill 06 has the step, S06-02, but it refuses to write until the live commerce capture CHK-19 is done) | S06-02, CHK-19 |
-| Name a checkout mode for `folded_levels` (delivery stays blocked) | Skill 79 contract gap, `AF-LAUNCH-CHECKOUT-MODE` |
 | Choose a distribution target | open seam `distribution_run_target` in `DECISIONS-PENDING.md` |
 | Cross-sale teaching content (the surface is present, the teaching is marked pending) | open seam `cross_sales_teaching_source` |
 | Build automations or workflows | Skill 44 and Skill 50 (see "Launch mode"); S44-25 |

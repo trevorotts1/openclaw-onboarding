@@ -153,6 +153,18 @@ This step makes your design span the entire page width. If you skip this, your d
    for a section that hosts managed content, on every page kind (funnel step, website, affiliate) —
    never an optional polish step.
 
+   > **MERGE-ORDER PREREQUISITE (2026-11-07) — Phase 7 step 7 requires the BFL-002 full-width API,
+   > and must not ship before BFL-002 is integrated into this repository.** At the integration base
+   > before that merge, `06-ghl-install-pages/tools/ghl_rest_canvas.py` has
+   > `edit_element_customcode(page_data, locator, new_value)` with **no** `full_width` parameter,
+   > `new_page_blob` defaults `allow_row_max_width=False`, and nothing else named in step 7 exists.
+   > The required symbols are `FULL_WIDTH_POLICY`, `apply_section_full_width(section)`,
+   > `lift_inner_width_caps(css)`, `assert_section_is_full_width(section)`,
+   > `edit_element_customcode(..., full_width=True)` and
+   > `new_page_blob(..., allow_row_max_width=True)`. Check for them before treating this step as
+   > executable; if any is missing, stop and report the missing dependency instead of inventing a
+   > partial full-width repair.
+
 
 ### Phase 8: Paste Your Code
 
