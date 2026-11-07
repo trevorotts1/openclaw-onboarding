@@ -33,7 +33,7 @@ if str(_ROUTES_DIR) not in sys.path:
 
 import substrate  # noqa: E402
 
-from . import image_plan, intake as intake_module, page_designs, route  # noqa: E402
+from . import delivery, image_plan, intake as intake_module, page_designs, route  # noqa: E402
 
 LAUNCH_SCHEMA_VERSION = "1.2"
 FIRST_ROLE = "landing"  # first when pages are built one at a time (side by side, Skill 49 starts every page together)
@@ -108,12 +108,42 @@ def _https_url(url: Any) -> bool:
 
 
 def delivery_bindings(normalized: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    """entitlement id -> {delivery_kind, delivery_url}, from each offer's owner-confirmed https destination.
+    """entitlement id -> {delivery_kind, delivery_url}, from the client's own delivery answer.
 
-    All or none: an intake that states no destination for any offer yields no bindings (absence is the
-    record's one encoding of "no bindings"); one that states some but not all is refused, because a
-    buyer of the unbound item would read "being prepared" with no link."""
+    The kind comes from the answered ``access_delivery`` (launcher_core/delivery.py):
+    "send access after purchase" binds ``access``, "nothing to deliver" binds
+    ``schedule_included_service`` — a person follows up by hand. With no answer the
+    record is exactly what it has always been: ``access`` plus each offer's
+    owner-confirmed https destination, all or none.
+
+    All or none is kept for the access case: an intake that states no destination
+    for any offer yields no bindings (absence is the record's one encoding of "no
+    bindings"); one that states some but not all is refused, because a buyer of the
+    unbound item would read "being prepared" with no link. A human-delivered
+    service needs no per-offer destination, so its absence is recorded, not refused.
+    """
+    try:
+        decision = delivery.decide(normalized)
+    except delivery.DeliveryError as exc:
+        raise BridgeError("AF-LAUNCH-BRIDGE-DELIVERY",
+                          f"{exc.detail}. Nothing was dispatched and nothing was spent.") from exc
     offers = normalized["offers"]
+    if decision["state"] != "absent":
+        try:
+            planned = delivery.plan(normalized)
+            out = delivery.bindings(planned)
+        except delivery.DeliveryError as exc:
+            raise BridgeError("AF-LAUNCH-BRIDGE-DELIVERY",
+                              f"{exc.detail}. Nothing was dispatched and nothing was spent.") from exc
+        if decision["kind"] == delivery.KIND_ACCESS:
+            unbound = [e["offer_id"] for e in planned["offers"] if e["delivery_url"] is None]
+            if unbound:
+                raise BridgeError(
+                    "AF-LAUNCH-BRIDGE-DELIVERY",
+                    f"no access destination for {', '.join(unbound)}: the client asked for access "
+                    "after purchase, so every offer needs the https address where its buyer gets it. "
+                    "Nothing was dispatched and nothing was spent.")
+        return out
     stated = [o for o in offers if o.get("delivery") is not None]
     if not stated:
         return {}
@@ -129,7 +159,7 @@ def delivery_bindings(normalized: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
             raise BridgeError("AF-LAUNCH-BRIDGE-DELIVERY",
                               f"the delivery destination for {o['offer_id']} must be an https address the "
                               "owner confirmed. Nothing was dispatched and nothing was spent.")
-        out[o["offer_id"].lower()] = {"delivery_kind": "access", "delivery_url": d["destination"]}
+        out[o["offer_id"].lower()] = {"delivery_kind": decision["kind"], "delivery_url": d["destination"]}
     return out
 
 
@@ -497,6 +527,13 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
         shutil.copyfile(dispatch_dir / f"page-result-{lane}.json", pieces_dir / f"{lane}.json")
         written.append(lane)
 
+    # F08 delivery: produce each offer's delivery sheet, bind it, and record what the
+    # run did and did not make. A failed dispatch above leaves no product record.
+    try:
+        delivered = delivery.run(normalized, out_dir, launch=launch)
+    except delivery.DeliveryError as exc:
+        raise BridgeError(exc.code, f"{exc.detail}. The pages were built; no product record was written.") from exc
+
     report = {
         "launch_id": normalized["launch_id"],
         "execution": manifest["execution"],
@@ -513,6 +550,18 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
         "executor_provider": inputs["executor_provider"],
         "paid_calls_allowed": inputs["allow_paid"],
         "to_confirm": to_confirm + landing_to_confirm,
+        "delivery": {
+            "record": delivered["record_path"],
+            "kind": delivered["plan"]["kind"],
+            "kind_state": delivered["plan"]["kind_state"],
+            # Projected from the record, never re-derived: one identity (path + sha256)
+            # per offer, the same one product-delivery.json carries. `sheets` stays as
+            # the path-only view earlier readers were given.
+            "artifacts": {o["offer_id"]: o["sheet"] for o in delivered["record"]["offers"]},
+            "sheets": {o["offer_id"]: o["sheet"]["path"] for o in delivered["record"]["offers"]},
+            "delivery_modes": {o["offer_id"]: o["delivery_mode"] for o in delivered["record"]["offers"]},
+            "free_entry": delivered["record"]["free_entry"],
+        },
     }
     (out_dir / "dispatch-report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n",
                                                   encoding="utf-8")
