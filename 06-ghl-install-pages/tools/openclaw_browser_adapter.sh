@@ -348,13 +348,9 @@ _ocb_parse_flags() {
         _OCB_ARGS[${#_OCB_ARGS[@]}]="$1"; shift ;;
     esac
   done
-  # bash-3.2-safe hand-off: reuse main's positional parameters so no verb
-  # ever expands a possibly-empty array inside quotes.
-  if [ "${#_OCB_ARGS[@]}" -gt 0 ]; then
-    set -- "${_OCB_ARGS[@]}"
-  else
-    set --
-  fi
+  # The stripped verb args are handed back in _OCB_ARGS. main() re-binds its
+  # OWN positional parameters from that array: `set --` here would only change
+  # this function's parameters and let the adapter flags leak to the CLI.
 }
 
 # ── Receipt (the ONLY place a completion may be claimed) ─────────────────────
@@ -536,6 +532,13 @@ main() {
   esac
 
   _ocb_parse_flags "$@"
+  # Strip the adapter flags before the CLI: re-bind main's positional
+  # parameters to the parsed verb args (bash-3.2-safe empty-array expansion).
+  if [ "${#_OCB_ARGS[@]}" -gt 0 ]; then
+    set -- "${_OCB_ARGS[@]}"
+  else
+    set --
+  fi
   _ocb_out=""
   _ocb_rc=0
 
@@ -617,9 +620,9 @@ main() {
       require_capability
       _ocb_out="$(mktemp "${TMPDIR:-/tmp}/ocb-out.XXXXXX" 2>/dev/null || printf '')"
       if [ -n "$_ocb_out" ]; then
-        run_snapshot --frame "$_ocb_sel" "${_OCB_FRAME_ARGS[@]+"${_OCB_FRAME_ARGS[@]}"}" >"$_ocb_out" 2>&1
+        run_snapshot --frame "$_ocb_sel" "$@" >"$_ocb_out" 2>&1
       else
-        run_snapshot --frame "$_ocb_sel" "${_OCB_FRAME_ARGS[@]+"${_OCB_FRAME_ARGS[@]}"}"
+        run_snapshot --frame "$_ocb_sel" "$@"
       fi
       _ocb_rc=$?
       [ -n "$_ocb_out" ] && cat "$_ocb_out"

@@ -72,6 +72,14 @@ _GATE_SKIPPED_ROUTES = frozenset({"skill44_private"})
 #: Route classes whose frozen contract declares NO API/MCP route: the managed
 #: browser is the only real route, so dispatch() may hand them over.
 _BROWSER_ROUTE_CLASSES = frozenset({"skill06_authoring", "capability_gap"})
+#: Frozen ``tenant_binding`` literals that mean "no API binding exists to carry
+#: this operation" (``n/a`` authoring rows, ``token-id`` Skill 6 rows whose
+#: identity travels in a Firebase token, ``unknown`` rows the freeze could not
+#: settle). They are refusals the HTTP path cannot resolve, NOT capability
+#: decisions; a browser-only row may therefore be handed to the browser route.
+#: ``tenant_mismatch`` / approval / idempotency refusals are absent here, so a
+#: real refusal is still never laundered into the UI.
+_NO_API_TENANT_BINDINGS = frozenset({"n/a", "token-id", "unknown"})
 
 
 @dataclass(frozen=True)
@@ -870,14 +878,20 @@ class PublicGhlAdapter:
         #   auth_kind_not_allowed    the authoring row deliberately declares NO
         #                            public auth class, because no public route
         #                            exists — the browser is the route;
-        #   unknown_tenant_binding   only when the frozen row records the literal
-        #                            binding "n/a" (no API tenant binding exists).
+        #   unknown_tenant_binding   only when the frozen row records a binding
+        #                            literal with no API binding to carry it
+        #                            (n/a, token-id, unknown). Those rows are
+        #                            browser-only by contract, so the browser is
+        #                            the real route; the refusal is not a
+        #                            capability decision and no API route is
+        #                            bypassed.
         # Any other refusal (tenant mismatch, approval, idempotency, readback)
         # is returned unchanged; dispatch never launders a real refusal.
         rule = (first.error or {}).get("rule")
         binding = _row_attr(row, "tenant_binding")
         allowed = rule in ("capability_disabled", "auth_kind_not_allowed") or (
-            rule == "unknown_tenant_binding" and str(binding) == "n/a"
+            rule == "unknown_tenant_binding"
+            and str(binding) in _NO_API_TENANT_BINDINGS
         )
         if not allowed:
             return first
@@ -1058,6 +1072,59 @@ class PublicGhlAdapter:
                     "detail": (
                         "'ok' must be the boolean true or false, got "
                         f"{type(ok).__name__} {ok!r}"
+                    ),
+                },
+                extra=lint,
+            )
+
+        if outcome.get("references_reused") is True:
+            # DOM refs must be refreshed for this invocation, never inherited
+            # from a session the rung merely assumes is shared.
+            return finish(
+                Status.unavailable,
+                error={
+                    "rule": "browser_route_contract_invalid",
+                    "detail": (
+                        "references_reused=true — a browser rung must refresh "
+                        "DOM references for its own invocation"
+                    ),
+                },
+                extra=lint,
+            )
+
+        if complete is True and (
+            outcome.get("prerequisite_ready") is True
+            or outcome.get("partial") is True
+        ):
+            # prerequisite_ready / partial are distinct non-completion states;
+            # claiming completion at the same time is a contradiction, not a
+            # stronger proof.
+            return finish(
+                Status.unavailable,
+                error={
+                    "rule": "browser_route_contract_invalid",
+                    "detail": (
+                        "operation_complete=true cannot also be "
+                        "prerequisite_ready/partial"
+                    ),
+                },
+                extra=lint,
+            )
+
+        if (
+            ok is True
+            and complete is True
+            and outcome.get("references_fresh") is not True
+        ):
+            # Same rule the ladder applies: a browser completion without refs
+            # refreshed for THIS invocation is not proof.
+            return finish(
+                Status.unavailable,
+                error={
+                    "rule": "browser_route_contract_invalid",
+                    "detail": (
+                        "a browser completion must report references_fresh=true "
+                        "(DOM refs refreshed for this invocation)"
                     ),
                 },
                 extra=lint,
