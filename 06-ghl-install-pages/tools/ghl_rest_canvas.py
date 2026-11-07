@@ -65,6 +65,18 @@ RESIDUALS (carried verbatim from the solver doc §7)
     (GHL auto-prunes at ~30). Reversibility bar = "live pointer unchanged +
     content byte-identical", not "zero extra draft rows".
   * The /funnels/* routes MUST run in-browser (Cloudflare 1010 from bare Python).
+
+FULL WIDTH (F01)
+----------------
+Full width is the NORMAL policy for a section that hosts managed content, on
+every page kind (funnel step, website page, affiliate page) and on BOTH the
+create path (``new_page_blob``) and the edit path (``edit_element_customcode``,
+which repairs the hosting section). The native
+``metaData.extra.allowRowMaxWidth`` flag and the outer ``.inner`` px width cap
+move together through ``apply_section_full_width`` — the flag alone changes
+nothing (LIVE 2026-06 probe) because the CSS cap is the real width driver.
+Deliberate readable measures (card widths, text-container measures, responsive
+padding/margins) are never touched. See ``FULL_WIDTH_POLICY``.
 """
 
 from __future__ import annotations
