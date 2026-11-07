@@ -31,7 +31,8 @@ class Detect(unittest.TestCase):
         self.assertEqual(hp.detect(None, {}, {"CLAUDE_CODE_SESSION_ID": "x"})["harness"], "claude-code")
         self.assertEqual(hp.detect(None, {}, {"CLAUDE_CONFIG_DIR": "/h/.claude-nine"})["harness"], "claude-nine")
         self.assertEqual(hp.detect(None, {}, {}), {"harness": "plain", "source": "default", "skills_root": None,
-                                                    "question_shape": "chat", "progress_shape": "messages"})
+                                                    "question_shape": "chat", "progress_shape": "messages",
+                                                    "question_tool": False})
 
     def test_unknown_flag_is_plain_not_a_guess_and_never_a_skills_path(self):
         p = hp.detect("emacs", None, {"CLAUDECODE": "1"})

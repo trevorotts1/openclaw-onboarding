@@ -1,6 +1,21 @@
 # Harness experience (LANE-HARNESS)
 
-One experience across claude-nine, Claude Code and OpenClaw. Stdlib only; no network, no credentials, nothing is sent: the agent says the output in its own session.
+One experience across claude-nine, Claude Code, Codex (`claude-codex`) and OpenClaw. Stdlib only; no network, no credentials, nothing is sent: the agent says the output in its own session.
+
+## Two distributions, one source
+
+This directory is the **source of truth**: this repository is a source repo, and it never
+vendors or pins a copy of itself. Its own distribution is a straight copy — `install.sh`
+and the repo-root `update-skills.sh` copy skills and sync `shared-utils` verbatim into the
+installed box (see `UPDATE-PLAYBOOK.md`); there is no `installer-registration/` here.
+
+The **999 setup repository** is the distribution that installs. It vendors this tree under
+`installer-registration/helpers/shared-utils/` and pins every file in
+`installer-registration/helper-dependencies.json`, produced only by
+`python3 installer-registration/helper-deps.py repin`. `check-helper-pins.py --onboarding
+<checkout>` fails when a vendored byte or pin differs from the onboarding ref, so the
+vendored copy can never drift quietly. A change here must land here first, then be
+re-vendored and re-pinned in 999; the pins are never edited by hand.
 
 | File | Job |
 |---|---|
