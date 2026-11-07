@@ -75,11 +75,72 @@ def test_plan_attaches_product_and_price_and_places_bump(plan):
 
 
 def test_thank_you_step_and_accept_decline_links(plan):
-    by = {e["kind"]: e for e in plan["elements"]}
-    assert by["upsell"]["links"] == {"accept": "thank_you", "decline": "downsell"}
-    assert by["downsell"]["links"] == {"accept": "thank_you",
-                                       "decline": "thank_you"}
-    assert by["thank_you"]["binding"] is None
+    # A plan built without the approved route graph keeps its slot identity
+    # but carries NO links: this module never invents a route. It is not
+    # install-ready, and every extra element says so.
+    assert plan["install_ready"] is False
+    assert plan["blockers"]
+    by_slot = {e["slot"]: e for e in plan["elements"] if e.get("slot")}
+    assert "links" not in by_slot["upsell_1"]
+    assert "links" not in by_slot["downsell_1"]
+    assert by_slot["thank_you"]["binding"] is None
+
+    graph_plan = oe.build_order_plan(dict(
+        SPEC,
+        checkout_family=oe.CHECKOUT_FAMILY_ORDER_UPSELL_V2_FUNNEL,
+        route_graph=_TEST_GRAPH,
+        # the install path binds the price its one-click action charges
+        upsell=None,
+        upsells=[
+            {"slot": "upsell_1",
+             "product": {"product_ref": "prod_up", "price_ref": "price_up",
+                         "source": "s44_phase_a"}},
+            {"slot": "upsell_2",
+             "product": {"product_ref": "prod_up2", "price_ref": "price_up2",
+                         "source": "caller_supplied"}},
+        ],
+        downsell={"product": {"product_ref": "prod_down",
+                              "price_ref": "price_down",
+                              "source": "caller_supplied"}}))
+    assert graph_plan["install_ready"] is True and not graph_plan["blockers"]
+    by_slot = {e["slot"]: e for e in graph_plan["elements"] if e.get("slot")}
+    assert (by_slot["upsell_1"]["links"]["accept"],
+            by_slot["upsell_1"]["links"]["decline"]) == ("G-U2", "G-D1")
+    assert (by_slot["downsell_1"]["links"]["accept"],
+            by_slot["downsell_1"]["links"]["decline"]) == ("G-U2", "G-TY")
+    assert by_slot["upsell_2"]["links"]["accept"] == "G-TY"
+    assert by_slot["upsell_1"]["links"]["on_payment_failed"]["is_decline"] is False
+
+
+# TEST-SHAPED route graph for the link assertions above: the same node/edge
+# shape Skill 49's compiler emits, with fixture page ids only.
+_TEST_GRAPH = {
+    "schema_version": "1.0", "tenant_id": "T", "location_id": "LOC_TEST",
+    "launch_id": "G", "revision": 1, "test_only": True,
+    "nodes": [{"page_id": "G-CHECKOUT", "role": "checkout"},
+              {"page_id": "G-U1", "role": "upsell_1"},
+              {"page_id": "G-D1", "role": "downsell_1"},
+              {"page_id": "G-U2", "role": "upsell_2"},
+              {"page_id": "G-TY", "role": "thank_you"}],
+    "edges": [
+        {"from": "G-CHECKOUT", "event": "payment_succeeded", "to": "G-U1",
+         "guard": "verified_main_payment"},
+        {"from": "G-U1", "event": "payment_succeeded", "to": "G-U2",
+         "guard": "verified_u1_payment"},
+        {"from": "G-U1", "event": "explicit_decline", "to": "G-D1",
+         "guard": "no_charge_decline"},
+        {"from": "G-D1", "event": "payment_succeeded", "to": "G-U2",
+         "guard": "verified_d1_payment"},
+        {"from": "G-D1", "event": "explicit_decline", "to": "G-TY",
+         "guard": "no_charge_decline"},
+        {"from": "G-U2", "event": "payment_succeeded", "to": "G-TY",
+         "guard": "verified_u2_payment"},
+        {"from": "G-U2", "event": "explicit_decline", "to": "G-TY",
+         "guard": "no_charge_decline"},
+    ],
+    "pending_failed_payment_behavior":
+        oe.PENDING_BEHAVIOR,
+}
 
 
 def test_per_element_bindings_reach_form_task_patch(plan):
