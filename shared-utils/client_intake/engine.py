@@ -8,17 +8,21 @@
                             default flagged "to confirm". Never-default questions stay blocked, by name.
   finalize(doc)             apply the safe default to every remaining defaultable question, then check()
   check(doc)                {"ready", "blocking", "unanswered", "to_confirm", "warnings"}
+  answer_contract(doc)      the F16 block every consumer reads: the design decision state,
+                            the brand the plan was built from, the approved spend ceiling,
+                            and the exact plan revision + approval binding
 
 The doc is plain JSON (answers.schema.json). Every function mutates the doc in memory; save() writes it
 atomically, so any harness can stop and resume from the file. stdlib only; palette_help needs Pillow for
 logo files only.
 
 CLI:  engine.py FILE next | record ID VALUE [--ref MESSAGE_ID] | help ID [--logo F --site URL --palette N --mood "..."] |
-      check | finalize | report | show      (FILE is created on first use;
+      check | finalize | report | show | contract [--brand-file F]      (FILE is created on first use;
       --mode launch|legacy|bf|page, --page-kind sales|opt_in for a page run)
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -33,6 +37,28 @@ import palette_help as ph  # noqa: E402
 
 BANK_PATH = Path(__file__).with_name("question-bank.json")
 STATUSES = ("provided", "suggested", "default_to_confirm", "unknown")
+# ---------------------------------------------------------------- F16 answer contract
+# The smallest set of canonical fields the other lanes code against. Every value carries
+# its own state, and absence is `unknown` - never a choice nobody made.
+ANSWER_CONTRACT_SCHEMA = "client-intake-answer-contract/v1"
+DECISION_SCHEMA = "client-intake-decision/v1"
+BRAND_PROVENANCE_SCHEMA = "client-intake-brand-provenance/v1"
+SPEND_CONTRACT_SCHEMA = "client-intake-spend-contract/v1"
+PLAN_BINDING_SCHEMA = "client-intake-plan-binding/v1"
+# Exactly three RECORDED decision states. A proposal the client has not accepted is not one
+# of them: it stays proposed, and "help me choose" / recommendation mode are never approval.
+DECISION_STATES = ("client_choice", "accepted_recommendation", "unknown")
+# The answers that make up the brand a page is drawn from.
+BRAND_ANSWER_IDS = ("brand_colors", "brand_primary", "brand_secondary", "brand_accent",
+                    "brand_background", "brand_text", "logo", "fonts",
+                    "photos_founder", "photos_permission")
+# Sources that mean the client picked something we suggested, not something they supplied.
+_ACCEPTED_SOURCE_PREFIXES = ("recommendation-accepted", "proposal-accepted", "palette-help",
+                             "recommended-option")
+_ACCEPTED_SOURCES = ("feel-words",)
+# A design-style example is shown only when the library says it is a real uploaded image.
+# A placeholder entry (no example yet) is named as such, never shown as a URL.
+_REAL_EXAMPLE_STATUSES = ("uploaded", "published", "live")
 HELP_WORDS = {"help", "help me", "not sure", "not sure yet", "im not sure", "i am not sure", "i dont know", "idk",
               "unsure", "i have no idea", "no idea", "dont know", "im not sure, help me", "im not sure help me", "no clue"}
 # a short reply built from one of these phrases is a help request, never an answer
@@ -150,11 +176,76 @@ def _set(doc, qid, value, status, source, note=None, keep_count=True):
     if keep_count and old.get("unknown_count"):
         e["unknown_count"] = old["unknown_count"]
     doc["answers"][qid] = e
+    if qid in BRAND_ANSWER_IDS:  # the brand version moves with the brand answers it describes
+        meta = doc.setdefault("meta", {})
+        meta["brand_version"] = int(meta.get("brand_version") or 0) + 1
     return e
 
 
 def _norm(t):
     return " ".join(re.sub(r"[^a-z0-9' ,.\-]", " ", str(t or "").lower()).split())
+
+
+# ---------------------------------------------------------------- the recorded decision
+def decision_state(doc, qid):
+    """client_choice | accepted_recommendation | unknown, or None when nothing is decided.
+
+    A suggestion or a flagged default is a PROPOSAL: it stays None until the client accepts
+    it, so a recommendation can never be read as their choice. Guidance mode, a help request
+    and 'help me choose' record no decision at all.
+    """
+    e = get(doc, qid)
+    if not isinstance(e, dict):
+        return "unknown"
+    accepted = e.get("accepted") if isinstance(e.get("accepted"), dict) else {}
+    if e.get("accepted_proposal") or accepted.get("approval_ref"):
+        return "accepted_recommendation"
+    if e.get("status") == "unknown":
+        return "unknown"
+    if e.get("status") in ("suggested", "default_to_confirm"):
+        return None  # still proposed, never a recorded decision
+    source = str(e.get("source") or "")
+    if source.startswith(_ACCEPTED_SOURCE_PREFIXES) or source in _ACCEPTED_SOURCES:
+        return "accepted_recommendation"
+    return "client_choice"
+
+
+def decision_record(doc, qid):
+    """The canonical decision block for one answer: the state, the value it decides, whether a
+    proposal is still open, and the acceptance it would be bound to.
+
+    `value` is None whenever there is no recorded decision, so a proposal is never carried as
+    if the client had chosen it."""
+    entry = get(doc, qid)
+    e = entry if isinstance(entry, dict) else {}
+    state = decision_state(doc, qid)
+    acc = e.get("accepted") if isinstance(e.get("accepted"), dict) else {}
+    pend = e.get("pending") if isinstance(e.get("pending"), dict) else {}
+    # A proposal is whatever we offered and the client has not accepted yet: a suggestion or
+    # flagged default, or a recommendation waiting in `pending`. It is never a recorded state.
+    proposed = e.get("value") if e.get("status") in ("suggested", "default_to_confirm") else None
+    if state != "accepted_recommendation" and proposed is None and pend.get("recommendation"):
+        proposed = pend["recommendation"]
+    return {"schema": DECISION_SCHEMA,
+            "question_id": qid,
+            "state": state,
+            "value": e.get("value") if state in ("client_choice", "accepted_recommendation") else None,
+            "proposal_pending": proposed is not None,
+            "proposed_value": proposed,
+            "acceptance_ref": acc.get("approval_ref"),
+            "source": e.get("source"),
+            "source_ref": f"answers-file:{qid}"}
+
+
+def _accept_recommendation(doc, qid, value, note=None):
+    """Record OUR suggestion as the client's accepted recommendation - never as a fact they
+    supplied. The status stays the intake's `provided` (the value is usable); the acceptance
+    is what distinguishes it from a client_choice."""
+    e = _set(doc, qid, value, "provided", "recommendation-accepted",
+             note or "Accepted from the suggestion we made; the client said yes.")
+    e["accepted_proposal"] = True
+    _sync_to_confirm(doc)
+    return e
 
 
 # ---------------------------------------------------------------- brand colour roles
@@ -234,6 +325,163 @@ def roles(doc):
     status = ("default_to_confirm" if "default_to_confirm" in sts
               else "suggested" if "suggested" in sts else "provided")
     return {"roles": out, "status": status, "confirmed": status == "provided", "warnings": ph.check_palette(out)}
+
+
+# ---------------------------------------------------------------- the brand the plan was built from
+def _brand_source_kind(source):
+    """What kind of source the brand answers came from. An unknown source stays unknown."""
+    s = str(source or "")
+    if not s:
+        return "none"
+    if s == "website" or s.startswith("website"):
+        return "website"
+    if s == "logo" or s.startswith("logo"):
+        return "logo_file"
+    if s.startswith("palette-help"):
+        return "palette_help"
+    if s == "safe-default":
+        return "safe_default"
+    if s in ("feel-words", "recommendation-accepted"):
+        return "recommendation"
+    if s == "client":
+        return "client"
+    return "derived"
+
+
+def brand_provenance(doc, *, brand_file=None):
+    """The brand the plan is drawn from: source identity, version, digest, what was extracted,
+    and whether the palette is CONFIRMED.
+
+    A producer matches the brand file it used to the plan by `sha256` (when it is given the
+    file) and by `version`; the answers file carries both. A missing or unrecognized palette
+    status is `unknown` - never `provided` - so no page is paid for in colours nobody confirmed.
+    """
+    r = roles(doc)
+    raw_status = (r or {}).get("status")
+    palette_status = raw_status if raw_status in STATUSES else "unknown"
+    bc = get(doc, "brand_colors")
+    source = bc.get("source") if isinstance(bc, dict) else None
+    digest = None
+    if brand_file:
+        try:
+            digest = hashlib.sha256(Path(brand_file).read_bytes()).hexdigest()
+        except (OSError, ValueError, TypeError):
+            digest = None
+    logo = _logo_variant(doc) if any(get(doc, q) for q in ("logo", "business_name")) else {"kind": None, "state": "unknown"}
+    fonts = val(doc, "fonts")
+    palette = (r or {}).get("roles") or {}
+    return {"schema": BRAND_PROVENANCE_SCHEMA,
+            "source_kind": _brand_source_kind(source),
+            "source_ref": source or None,
+            "brand_file_sha256": digest,
+            "version": int((doc.get("meta") or {}).get("brand_version") or 0),
+            "palette_status": palette_status,
+            "palette_confirmed": palette_status == "provided",
+            # what was actually extracted or supplied, so a consumer never re-reads a file
+            "extracted": {"colors": _colors(doc),
+                          "color_roles": palette,
+                          "fonts": fonts,
+                          "logo": logo,
+                          "assets": [a for a in (logo.get("path") if isinstance(logo, dict) else None,) if a]},
+            "confirmation": {"confirmed": palette_status == "provided",
+                             "status": palette_status,
+                             "source": source or None,
+                             "to_confirm": sorted(t["id"] for t in doc.get("to_confirm") or []
+                                                  if str(t.get("id", "")).startswith("brand"))},
+            "source_ref_question": "answers-file:brand_colors"}
+
+
+# ---------------------------------------------------------------- the approved spend ceiling
+def spend_contract(doc):
+    """The approved MONETARY ceiling for paid pictures: cap_minor + ISO currency, and the
+    approval reference it is bound to.
+
+    An integer picture count is a bookkeeping number, never a spend ceiling. Absence is
+    `unknown` - never zero and never provided; 'no paid pieces' is a real `not_applicable`
+    answer that approves no money. A paid run needs cap_minor and currency here, because the
+    paid resolver downstream refuses without them.
+    """
+    e = get(doc, "paid_render_approval")
+    base = {"schema": SPEND_CONTRACT_SCHEMA, "source_ref": "answers-file:paid_render_approval",
+            "picture_cap_is_not_a_ceiling": True}
+    if not isinstance(e, dict):
+        return dict(base, state="unknown", approved=False, cap_minor=None, currency=None,
+                    approval_ref=None, plan_hash=None)
+    v = e.get("value") if isinstance(e.get("value"), dict) else {}
+    approved = bool(v.get("approved"))
+    cap, cur = v.get("cap_minor"), v.get("currency")
+    usable = (isinstance(cap, int) and not isinstance(cap, bool) and cap > 0
+              and isinstance(cur, str) and cur in ISO_CURRENCIES)
+    ref = v.get("approval_id") if isinstance(v.get("approval_id"), str) and v["approval_id"].strip() else None
+    plan_hash = v.get("plan_hash") if isinstance(v.get("plan_hash"), str) and v["plan_hash"].strip() else None
+    if e.get("status") == "unknown":
+        state = "unknown"
+    elif not approved:
+        state = "not_applicable"  # "no paid pieces" / "decide later": no money is approved
+    elif usable:
+        state = _STATE[e["status"]]  # provided only when the client gave it
+    else:
+        state = "unknown"  # approved without a usable amount is not a ceiling
+    return dict(base, state=state, approved=approved if state != "unknown" else False,
+                cap_minor=cap if usable and state == "provided" else None,
+                currency=cur if usable and state == "provided" else None,
+                approval_ref=ref, plan_hash=plan_hash)
+
+
+# ---------------------------------------------------------------- the exact plan the approval binds
+def bind_plan_approval(doc, *, plan_hash, revision, approval_ref):
+    """Bind the client's approval to ONE plan subject: the hash and the revision it was given
+    for. A later consumer can then tell a current approval from a stale one instead of
+    trusting the word 'approve'. Nothing is bound anonymously or to an unknown subject."""
+    if not isinstance(plan_hash, str) or not plan_hash.strip():
+        raise ValueError("plan_hash is required: an approval is never bound to an unknown plan")
+    if not isinstance(approval_ref, str) or not approval_ref.strip():
+        raise ValueError("approval_ref is required: an approval is never anonymous")
+    rev = int(revision)
+    meta = doc.setdefault("meta", {})
+    meta["plan_hash"] = plan_hash.strip()
+    meta["plan_revision"] = rev
+    meta["plan_approval_ref"] = approval_ref.strip()
+    meta["approval_subject"] = {"plan_hash": plan_hash.strip(), "revision": rev,
+                                "approval_ref": approval_ref.strip()}
+    if get(doc, "plan_approval") is None:
+        _set(doc, "plan_approval", "approve", "provided", "approval-record",
+             "Bound to the plan the client approved.")
+    return plan_binding(doc)
+
+
+def plan_binding(doc):
+    """The exact plan revision and approval references, and whether they still describe the
+    current subject. `binds_current_subject` is true only when an approval was recorded for
+    the plan hash and revision this doc carries now."""
+    meta = doc.get("meta") or {}
+    e = get(doc, "plan_approval")
+    decision = e.get("value") if isinstance(e, dict) and e.get("status") != "unknown" else None
+    revision = int(meta.get("plan_revision") or 1)
+    subject = meta.get("approval_subject") if isinstance(meta.get("approval_subject"), dict) else {}
+    current = bool(subject) and subject.get("plan_hash") == meta.get("plan_hash") \
+        and subject.get("revision") == revision
+    return {"schema": PLAN_BINDING_SCHEMA,
+            "decision": decision,
+            "state": "approved" if decision == "approve" else ("unknown" if decision is None else "provided"),
+            "plan_revision": revision,
+            "subject_hash": meta.get("plan_hash"),
+            "approval_ref": meta.get("plan_approval_ref"),
+            "approval_subject": subject or None,
+            "stale": bool(subject) and not current,
+            "binds_current_subject": bool(decision == "approve" and current),
+            "source_ref": "answers-file:plan_approval"}
+
+
+def answer_contract(doc, *, brand_file=None):
+    """The F16 canonical answer/provenance contract in one block: the design decision, the
+    brand the plan was built from, the approved spend ceiling, and the exact plan revision and
+    approval. Every part carries its own state; missing evidence is `unknown`."""
+    return {"schema": ANSWER_CONTRACT_SCHEMA,
+            "design": decision_record(doc, "design_style"),
+            "brand": brand_provenance(doc, brand_file=brand_file),
+            "spend": spend_contract(doc),
+            "plan": plan_binding(doc)}
 
 
 # ---------------------------------------------------------------- profiles and derived fields
@@ -405,15 +653,18 @@ def _style_links():
 
 def _style_lines(styles):
     """One honest line per style. A malformed entry is skipped, never crashes the ask
-    (a nameless entry has nothing to disclose); a missing or non-string URL is "none"."""
+    (a nameless entry has nothing to disclose); a missing, non-string or still-placeholder
+    example is "none" - a placeholder URL is never presented as a real example."""
     out = []
     for s in styles if isinstance(styles, list) else []:
         if not isinstance(s, dict):
             continue
         ex = s.get("example")
         url = ex.get("url") if isinstance(ex, dict) else None
+        status = (ex.get("status") if isinstance(ex, dict) else None) or ""
+        real = isinstance(url, str) and bool(url) and str(status).lower() in _REAL_EXAMPLE_STATUSES
         name = f"{s.get('id', '?')} {s.get('name', '')}".strip()
-        out.append(f"{name} example: {url}" if isinstance(url, str) and url
+        out.append(f"{name} example: {url}" if real
                    else f"{name} example: none available yet - this style has no example image")
     return out
 
@@ -1015,7 +1266,19 @@ def record(doc, qid, value, *, source="client", status=None, note=None, source_m
     autofill_roles(doc)
     derive_payment_plans(doc)  # billing answered: the payment-plan flag follows, never asked
     _sync_to_confirm(doc)
-    return {"ok": True, "id": qid, "entry": e, "warnings": (roles(doc) or {}).get("warnings", []) if qid.startswith("brand_") else []}
+    out = {"ok": True, "id": qid, "entry": e,
+           "warnings": (roles(doc) or {}).get("warnings", []) if qid.startswith("brand_") else []}
+    # The canonical block follows the answer it belongs to, so a harness never has to guess
+    # which of the three states a value is in.
+    if qid == "design_style":
+        out["decision"] = decision_record(doc, qid)
+    elif qid in BRAND_ANSWER_IDS:
+        out["brand"] = brand_provenance(doc)
+    elif qid == "paid_render_approval":
+        out["spend"] = spend_contract(doc)
+    elif qid == "plan_approval":
+        out["plan"] = plan_binding(doc)
+    return out
 
 
 # ---------------------------------------------------------------- not knowing the answer
@@ -1038,7 +1301,14 @@ def _help_reply(doc, q, text):
     helped = e.get("status") == "unknown" and e.get("unknown_count", 0) >= 1
     if qid == "design_style":
         if pend.get("recommendation") and low in _YES:
-            return record(doc, qid, pend["recommendation"])
+            # The client said yes to OUR suggestion: record it as an accepted recommendation,
+            # never as a fact they supplied. The status stays usable; the acceptance is the
+            # difference a consumer reads.
+            e = _accept_recommendation(
+                doc, qid, pend["recommendation"],
+                "Accepted from our suggestion" + (f" for the words {pend['mood']!r}" if pend.get("mood") else "") + ".")
+            return {"ok": True, "id": qid, "entry": e, "accepted": True,
+                    "decision": decision_record(doc, qid)}
         if pend.get("recommendation") and low in ("no", "n", "nope"):
             return _need("No problem. Pick A, B or C, or tell me three other words for how you want your brand to feel.")
         if helped and not re.match(r"^\(?[abc]\b", low) and not re.search(r"\b(block|circle|hybrid)\b", low) and low not in _YES and low:
@@ -1596,6 +1866,17 @@ def to_launch_known(doc):
                                         "approval": "separate paid_asset_budget approval required"}, "paid_render_approval")
     elif pra:  # no paid pieces, or decide later: nothing paid is approved
         out["paid_asset_budget"] = {"value": None, "state": "not_applicable", "source_ref": "answers-file:paid_render_approval"}
+    # F16: the one canonical answer/provenance block. The design decision, the brand the plan
+    # was built from, the approved monetary ceiling and the exact plan revision/approval. Each
+    # part carries its own state, and the block is a proposal only when one of its parts is.
+    contract = answer_contract(doc)
+    parts = (contract["design"]["state"], contract["brand"]["palette_status"],
+             contract["spend"]["state"], contract["plan"]["state"])
+    out["answer_contract"] = {"value": contract,
+                              "state": "unknown" if "unknown" in parts
+                              else "recommended_unapproved" if contract["design"]["proposal_pending"]
+                              else "provided",
+                              "source_ref": "answers-file:answer_contract"}
     out.update(launch_answers(doc))  # typed, with provenance; unknown and unapproved survive
     return out
 
@@ -1609,11 +1890,17 @@ def image_inputs(doc):
     # currency); 83 verifies the record itself. "No paid pieces" / "Decide later" carry no ref and allow nothing paid,
     # and a free-text yes is never an approval ref.
     ref = pra.get("approval_id") if approved and isinstance(pra.get("approval_id"), str) and pra["approval_id"].strip() else None
+    # The paid resolver downstream needs the MONEY (cap_minor + currency) as well as the
+    # approval ref. The guided path used to emit them only when a ref existed, so an approved
+    # ceiling never reached the resolver; they are emitted from the spend contract now, while
+    # `allow_paid` still needs the approval ref.
+    spend = spend_contract(doc)
     return {"design_style": v.get("design_style"), "image_cap": v.get("image_cap"), "image_provider": v.get("image_provider"),
             "paid_render_approved": approved, "page_set": v.get("page_set"),
             "paid_render_approval_ref": ref,
-            "image_cap_minor": pra.get("cap_minor") if ref else None,
-            "image_currency": pra.get("currency") if ref else None,
+            "image_cap_minor": spend["cap_minor"],
+            "image_currency": spend["currency"],
+            "spend_state": spend["state"],
             "allow_paid": ref is not None}
 
 
@@ -2335,6 +2622,8 @@ def main(argv=None):
         print(json.dumps(reconcile_revision(doc, {a[2]: (a[3] if len(a) > 3 else None)}), indent=2))
     elif cmd == "brand-record":
         print(json.dumps({"brand": brand_record(doc), "assets": asset_map(doc)}, indent=2))
+    elif cmd == "contract":
+        print(json.dumps(answer_contract(doc, brand_file=_flag(a, "--brand-file")), indent=2))
     elif cmd == "billing":
         print(json.dumps({"terms": billing_terms(doc), "supported": billing_supported(doc)}, indent=2))
     elif cmd == "proposals":
