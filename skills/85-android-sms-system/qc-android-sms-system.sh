@@ -33,6 +33,7 @@ info() { printf '  INFO — %s\n' "$1"; }
 
 # ── resolve the docs folder ───────────────────────────────────────────────────
 DOCS_DIR="${ASMS_DOCS_DIR:-}"
+[ -n "$DOCS_DIR" ] && [ ! -d "$DOCS_DIR" ] && DOCS_DIR=""
 if [ -z "$DOCS_DIR" ]; then
   for d in "$SKILL_DIR/docs" \
            "$SKILL_DIR/85-android-sms-system-docs" \
