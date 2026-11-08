@@ -1,7 +1,7 @@
 {
   "schema": "client-intake-question-bank/v1",
-  "version": "1.3.0",
-  "notes": "One canonical question per ask, shared by Skill 49 (launch and legacy), Skill 71, Skill 83. Same questions and same answers file in claude-nine, Claude Code and OpenClaw; only the rendering differs. choices has at most 3 entries; the renderer always adds the help_label option. never_default questions are never defaulted; every other question may fall back to its default, flagged 'to confirm'. Launch-automation questions (spec 3.5) apply to launch and bf modes, never legacy; the launch date and the sender facts are never defaulted, so no deadline or sender is invented. Mode page is Skill 71's page-only profile (profiles.page): one page, not a funnel, and it opens the client's existing answers file so every confirmed launch answer is reused instead of asked again. The profile's question list is the ask list for a page run. A signature page always needs its canonical renders, so the image questions no longer offer a no-pictures option. The payment-plan flag is derived from billing and is never asked; see system_fields.payment_plans.",
+  "version": "1.4.0",
+  "notes": "One canonical question per ask, shared by Skill 49 (launch and legacy), Skill 71, Skill 83. Same questions and same answers file in claude-nine, Claude Code and OpenClaw; only the rendering differs. choices has at most 3 entries; the renderer always adds the help_label option. never_default questions are never defaulted; every other question may fall back to its default, flagged 'to confirm'. Launch-automation questions (spec 3.5) apply to launch and bf modes, never legacy; the launch date and the sender facts are never defaulted, so no deadline or sender is invented. Mode page is Skill 71's page-only profile (profiles.page): one page, not a funnel, and it opens the client's existing answers file so every confirmed launch answer is reused instead of asked again. The profile's question list is the ask list for a page run. A signature page always needs its canonical renders, so the image questions no longer offer a no-pictures option. The payment-plan flag is derived from billing and is never asked; see system_fields.payment_plans. The design style (A Block / B Circle / C Hybrid) is a foundation question asked right after the client's name, before any design work or paid pictures, and it never carries a stand-in example image. The engine records every answer under one answer contract: client_choice, accepted_recommendation or unknown - a recommendation stays proposed until the client accepts it, and missing evidence stays unknown. The brand provenance (source, version, digest, palette status) and the approved monetary spend ceiling (cap_minor plus currency) travel with the answers, so the producer that used a brand file can match it to the plan and a paid run can never read a picture count as its budget.",
   "help_label": "I'm not sure, help me",
   "introduction": "Let's build a launch that fits your business. I'll help you clarify what you're selling, who it helps, and how to present it. Then we'll turn your approved plan into the supported launch pages and follow-up materials. We'll take one question at a time. You can ask for an example, ask me to recommend an answer, or ask me to use what you've already shared. You'll review the plan before we build.",
   "question_estimate_template": "about {n} short questions, depending on what we already know",
@@ -51,6 +51,7 @@
         "deliverables",
         "proof",
         "voice",
+        "design_style",
         "founder_story",
         "funnel_shape",
         "price",
@@ -65,7 +66,6 @@
         "fonts",
         "photos_founder",
         "photos_permission",
-        "design_style",
         "image_provider",
         "image_cap",
         "paid_render_approval",
@@ -507,6 +507,76 @@
         "q9"
       ],
       "required_by": []
+    },
+    {
+      "id": "design_style",
+      "group": "design",
+      "text": "Which look do you want for your pages: A Block, B Circle, or C Hybrid?",
+      "why": "The style sets the shape of the photos and sections on every page. I ask it here, in the foundation questions, so it is settled before any design work or paid pictures.",
+      "answer_type": "choice",
+      "choices": [
+        "A Block",
+        "B Circle",
+        "C Hybrid"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "style",
+        "explain": "A Block: clean rectangles with straight edges, like a well-made magazine - classic and polished. B Circle: round photos with colored rings and soft curves - warm and friendly. C Hybrid: the Block layout, with round frames only on the personal pictures (you, your team, your clients) - modern and personal. Each style changes the SHAPE of the pictures and sections; it never changes your colors, your words or your brand. If you are not sure, tell me three words for how you want your brand to feel and I will recommend one for you to approve or change.",
+        "examples": [
+          "Classic and professional, like a business magazine: A",
+          "Warm and friendly, round photos of real people: B",
+          "Modern and personal, straight layout with round photos of people: C"
+        ]
+      },
+      "default": {
+        "value": "A",
+        "flag": "to confirm",
+        "reason": "Block is the most neutral look."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "design_style"
+      ],
+      "legacy_ids": [],
+      "required_by": [
+        "71:design-style"
+      ],
+      "feel_keywords": {
+        "A": [
+          "classic",
+          "polished",
+          "professional",
+          "corporate",
+          "trusted",
+          "clean",
+          "serious"
+        ],
+        "B": [
+          "warm",
+          "friendly",
+          "playful",
+          "soft",
+          "fun",
+          "cozy",
+          "community"
+        ],
+        "C": [
+          "modern",
+          "personal",
+          "approachable",
+          "balanced",
+          "fresh",
+          "human"
+        ]
+      },
+      "choice_explanations": {
+        "A Block": "Clean rectangles and straight edges, like a magazine layout - classic, polished and easy to read.",
+        "B Circle": "Round photos with colored rings and soft curves - warm, friendly and a little playful.",
+        "C Hybrid": "The Block layout with round frames only on the personal pictures (you, your team, your clients) - modern and personal. No example image is shown for Hybrid yet: none has been uploaded, so I will not show a stand-in as if it were real."
+      }
     },
     {
       "id": "representation",
@@ -1264,76 +1334,6 @@
         "Yes, I give permission": "Your photos may appear on the pages and follow-up.",
         "No": "Understood - they stay off the pages.",
         "Not sure": "Nothing is used until you say yes."
-      }
-    },
-    {
-      "id": "design_style",
-      "group": "design",
-      "text": "Which look do you want for your page: A, B or C?",
-      "why": "The style sets the shape of the photos and sections.",
-      "answer_type": "choice",
-      "choices": [
-        "A Block",
-        "B Circle",
-        "C Hybrid"
-      ],
-      "help": {
-        "label": "I'm not sure, help me",
-        "kind": "style",
-        "explain": "A Block: clean rectangles, classic and polished. B Circle: round photos with colored rings, warm and friendly. C Hybrid: Block structure with round photos only for personal pictures. If you are unsure, tell me three words for how you want your brand to feel.",
-        "examples": [
-          "Classic and professional: A",
-          "Warm and friendly: B",
-          "Modern and personal: C"
-        ]
-      },
-      "default": {
-        "value": "A",
-        "flag": "to confirm",
-        "reason": "Block is the most neutral look."
-      },
-      "never_default": false,
-      "required": "always",
-      "condition": "always",
-      "targets": [
-        "design_style"
-      ],
-      "legacy_ids": [],
-      "required_by": [
-        "71:design-style"
-      ],
-      "feel_keywords": {
-        "A": [
-          "classic",
-          "polished",
-          "professional",
-          "corporate",
-          "trusted",
-          "clean",
-          "serious"
-        ],
-        "B": [
-          "warm",
-          "friendly",
-          "playful",
-          "soft",
-          "fun",
-          "cozy",
-          "community"
-        ],
-        "C": [
-          "modern",
-          "personal",
-          "approachable",
-          "balanced",
-          "fresh",
-          "human"
-        ]
-      },
-      "choice_explanations": {
-        "A Block": "Rectangles and clean edges - structured and confident.",
-        "B Circle": "Rounded shapes - softer and friendlier.",
-        "C Hybrid": "A mix of both - balanced and flexible."
       }
     },
     {
