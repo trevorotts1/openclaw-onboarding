@@ -115,31 +115,28 @@ t2i model `gpt-image-2-text-to-image`; i2i model `gpt-image-2-image-to-image`.
   ratio parameter will only be converted to 1K images"; "Images with a 1:1
   aspect ratio cannot be converted to 4K images".
 
-### 6.1b GPT Image 2.5 Sunburst (Default, operator ruling 2026-09-09)
+### 6.1b GPT Image 2.6 Sunburst (Default, verified live 2026-11-08)
 
-OWNER-PREFERRED DEFAULT, supersedes GPT Image 2 above. Two-model system: this
-route does NOT serve 3:1, 1:3, 9:21 (those dispatch to 6.1 above instead).
+OWNER-PREFERRED DEFAULT, supersedes GPT Image 2 above. One model serves every ratio in
+its enum: no ratio dispatches to 6.1 and none is substituted.
 
-t2i model `gpt-image-2-5-sunburst-text-to-image`; i2i model
-`gpt-image-2-5-sunburst-image-to-image`.
+t2i model `gpt-image-2-6/sunburst-text-to-image`; i2i model
+`gpt-image-2-6/sunburst-image-to-image`. The version is followed by a SLASH — a hyphenated
+`gpt-image-2-6-sunburst-*` id is HTTP 422.
 
-- `prompt` (required; max 20,000 chars per KIE docs dated 2026-09-09 — DOCS
-  status, NOT owner-confirmed; the GPT Image 2 25K owner-confirmation does
-  not carry forward, see prompt-policy.md).
-- `aspect_ratio`: `auto, 1:1, 3:2, 2:3, 16:9, 9:16, 4:3, 3:4, 21:9, 27:16,
-  16:27, 9:8, 8:9` (13 values; 5:4/4:5/2:1/1:2/3:1/1:3/9:21 are NOT in this
-  enum — see the routing note below).
+- `prompt` (required; maxLength **32,000** per live schema 2026-11-08).
+- `aspect_ratio`: `auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1, 1:2, 21:9,
+  9:21, 3:1, 1:3` (16 values). `27:16`, `16:27`, `9:8`, `8:9` are NOT members at any
+  resolution.
 - `resolution`: `1K`, `2K`, `4K`.
-- i2i refs: `input_urls` array, **maxItems: 16**, max 30MB, formats JPEG/PNG/
-  WEBP/JPG (carried forward unchanged from GPT Image 2 — not ruled on).
-- Per-resolution exclusions: 27:16, 16:27, 9:8, 8:9 are 1K only (2K/4K
-  rejected). The legacy "auto -> 1K only" and "1:1 cannot convert to 4K"
-  rules are RETIRED here — not restated in the 2.5 docs.
-- Routing (operator ruling 2026-09-09, enforced by `scripts/select_image_model.py`,
-  never as a raw API-level substitution): 5:4, 4:5, 2:1, 1:2 dispatch here via
-  an operator-approved substitution (5:4→4:3, 4:5→3:4, 2:1→16:9, 1:2→9:16);
-  3:1, 1:3, 9:21 are NOT served here at all and dispatch to the legacy 6.1
-  route instead.
+- No per-resolution exclusions: no ratio is 1K-only and none is rejected at 2K/4K. The
+  legacy "auto -> 1K only" and "1:1 cannot convert to 4K" rules are RETIRED here — not
+  restated in the 2.6 schema.
+- i2i refs: `input_urls` array, **maxItems: 16**, max 30MB, formats JPEG/PNG/WEBP/JPG
+  (carried forward unchanged from GPT Image 2 — not ruled on).
+- No ratio routing: `3:1`, `1:3` and `9:21` are served natively and do NOT dispatch to the
+  legacy 6.1 route; `5:4`, `4:5`, `2:1` and `1:2` are served literally and are NOT
+  substituted to `4:3`, `3:4`, `16:9` and `9:16`.
 
 ### 6.2 Qwen Image 3.0 / Pro
 
