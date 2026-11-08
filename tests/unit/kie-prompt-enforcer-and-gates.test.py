@@ -35,8 +35,8 @@ os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)
 
 import kie_prompt_enforcer as K  # noqa: E402
 
-M = "gpt-image-2-6/sunburst-text-to-image"  # maxLength 32,000 in the registry snapshot
-MAX = 32000
+M = "gpt-image-2-6/sunburst-text-to-image"  # owner cap 20,000 (vendor schema 32,000 retained for provenance)
+MAX = 20000
 
 
 class TestEnforcer(unittest.TestCase):
@@ -44,8 +44,8 @@ class TestEnforcer(unittest.TestCase):
         v = K.check(M, "x" * (MAX * 79 // 100))
         self.assertFalse(v["ok"])
         self.assertEqual(v["status"], "BELOW_FLOOR")
-        self.assertEqual(v["add"], 5120)  # to the strict 95 percent floor, not the old 80 percent
-        self.assertIn("ADD at least 5120", v["message"])
+        self.assertEqual(v["add"], 3200)  # to the strict 95 percent floor, not the old 80 percent
+        self.assertIn("ADD at least 3200", v["message"])
 
     def test_floor_95_and_100_percent_pass(self):
         self.assertFalse(K.check(M, "x" * (MAX * 80 // 100))["ok"])  # 80 percent is no longer a warning-only pass
@@ -60,8 +60,8 @@ class TestEnforcer(unittest.TestCase):
         v = K.check(M, "x" * (MAX * 101 // 100))
         self.assertFalse(v["ok"])
         self.assertEqual(v["status"], "ABOVE_MAX")
-        self.assertEqual(v["cut"], 320)
-        self.assertIn("CUT exactly 320", v["message"])
+        self.assertEqual(v["cut"], 200)
+        self.assertIn("CUT exactly 200", v["message"])
 
     def test_verbatim_is_exempt_from_the_floor_but_keeps_the_ceiling(self):
         self.assertTrue(K.check(M, "a short spoken script", "verbatim")["ok"])
