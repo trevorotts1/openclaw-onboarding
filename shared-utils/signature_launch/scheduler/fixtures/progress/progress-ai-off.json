@@ -2,6 +2,7 @@
   "counts": {
     "awaiting_facts": 0,
     "blocked": 0,
+    "delivered": 2,
     "done": 2,
     "dropped": 0,
     "empty": 0,
@@ -10,21 +11,31 @@
     "ready": 0,
     "retryable": 0,
     "running": 0,
+    "skipped": 0,
+    "stale": 0,
+    "superseded": 0,
     "terminal": 2,
-    "total": 2
+    "total": 2,
+    "unverified_done": 0
   },
   "created_at": "2030-01-01T00:00:00Z",
   "empty": false,
   "launch_id": "l03-ai-off",
   "percent": 100.0,
   "plan_hash": "sha256:029cf065b268aad22a91831ed1c562804ce1c5497dc50d574635770e0ad82d28",
+  "required_units": [
+    "page_landing",
+    "email_pre_launch"
+  ],
   "schema_version": "1.0",
   "stall": {},
   "units": {
     "email_pre_launch": {
-      "artifact": "artifacts/email_pre_launch.json",
+      "artifact": "artifacts/email_pre_launch.html",
       "attempts": 1,
       "charged": false,
+      "content_checked": false,
+      "evidence_digest": "sha256:93c64a70a68137167d0b6db95eac20b258edb52f2baa5775e128a43d155b1ad3",
       "kind": "email_sequence",
       "lease_expires_at": null,
       "missing_facts": [],
@@ -37,10 +48,32 @@
       },
       "result": {
         "artifacts": [
-          "artifacts/email_pre_launch.json"
+          "artifacts/email_pre_launch.html"
         ],
         "blocker": null,
         "detail": "synthetic local drafts",
+        "evidence": {
+          "artifacts": [
+            {
+              "path": "artifacts/email_pre_launch.html",
+              "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            }
+          ],
+          "inputs": {
+            "plan": "sha256:029cf065b268aad22a91831ed1c562804ce1c5497dc50d574635770e0ad82d28"
+          },
+          "plan_hash": "sha256:029cf065b268aad22a91831ed1c562804ce1c5497dc50d574635770e0ad82d28",
+          "revision": "1",
+          "schema": "signature-launch-admission/v1",
+          "unit": "email_pre_launch"
+        },
+        "evidence_checked": {
+          "artifact_set_hash": "sha256:93c64a70a68137167d0b6db95eac20b258edb52f2baa5775e128a43d155b1ad3",
+          "content_checked": false,
+          "inputs_hash": "sha256:ff67b5fc1df2e399c66e57f88f86b2878d5c34ae0c723c1b33bb1d037190d602",
+          "outcome": "verified",
+          "reviewed": false
+        },
         "missing_facts": [],
         "owner": null,
         "payload": null,
@@ -48,8 +81,15 @@
         "status": "verified_success",
         "verified": true
       },
+      "review": null,
+      "review_required": false,
+      "revision": 1,
+      "skipped": false,
+      "stale": false,
       "state": "done",
+      "superseded": false,
       "updated_at": "2030-01-01T00:00:00Z",
+      "verified": true,
       "waits_for": [
         "page_landing"
       ]
@@ -58,6 +98,8 @@
       "artifact": "artifacts/page_landing.html",
       "attempts": 1,
       "charged": false,
+      "content_checked": false,
+      "evidence_digest": "sha256:ce52b259ca75d2306180f06b926a2fda29d70aa887db2daf2fa91869a7b50623",
       "kind": "page",
       "lease_expires_at": null,
       "missing_facts": [],
@@ -74,6 +116,28 @@
         ],
         "blocker": null,
         "detail": "synthetic local build",
+        "evidence": {
+          "artifacts": [
+            {
+              "path": "artifacts/page_landing.html",
+              "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            }
+          ],
+          "inputs": {
+            "plan": "sha256:029cf065b268aad22a91831ed1c562804ce1c5497dc50d574635770e0ad82d28"
+          },
+          "plan_hash": "sha256:029cf065b268aad22a91831ed1c562804ce1c5497dc50d574635770e0ad82d28",
+          "revision": "1",
+          "schema": "signature-launch-admission/v1",
+          "unit": "page_landing"
+        },
+        "evidence_checked": {
+          "artifact_set_hash": "sha256:ce52b259ca75d2306180f06b926a2fda29d70aa887db2daf2fa91869a7b50623",
+          "content_checked": false,
+          "inputs_hash": "sha256:ff67b5fc1df2e399c66e57f88f86b2878d5c34ae0c723c1b33bb1d037190d602",
+          "outcome": "verified",
+          "reviewed": false
+        },
         "missing_facts": [],
         "owner": null,
         "payload": null,
@@ -81,8 +145,15 @@
         "status": "verified_success",
         "verified": true
       },
+      "review": null,
+      "review_required": false,
+      "revision": 1,
+      "skipped": false,
+      "stale": false,
       "state": "done",
+      "superseded": false,
       "updated_at": "2030-01-01T00:00:00Z",
+      "verified": true,
       "waits_for": []
     }
   },
