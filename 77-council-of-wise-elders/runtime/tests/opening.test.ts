@@ -101,8 +101,10 @@ import type { CouncilRouteSelection } from '../src/providers/selection.js';
 import { analyzeDecision } from '../src/scoring/index.js';
 import {
   OpeningRoundExecutor,
+  OPENING_ROUND_SYSTEM,
   type OpeningRoundDeps,
 } from '../src/protocol/opening.js';
+import { cardSystemBytes } from '../src/cli/card-contract.js';
 
 // ------------------------------------------------------------- fixtures
 
@@ -114,6 +116,16 @@ const ids = { newId: () => `id-${(idCounter += 1).toString().padStart(4, '0')}` 
 const SESSION_ID = 'sess-opening-1';
 const PACK_VERSION = 'pack-test-1.0.0';
 const PREFERENCE_MARKER = 'pref-marker-SECRET-024';
+
+/**
+ * The exact system-rules reservation the opening executor derives from
+ * the prompt it sends. Computed here rather than pinned as a literal so
+ * a route fixture can cover the real system text as the card contract
+ * prose grows, instead of silently dropping below it (which the
+ * assembler correctly refuses as CONTEXT_ROUTE_INVALID, not
+ * CONTEXT_TOO_SMALL).
+ */
+const OPENING_SYSTEM_RULES_BYTES = cardSystemBytes(OPENING_ROUND_SYSTEM, 'advisor', 1);
 
 const SESSION_SCOPE: ScopeFields = {
   tenant_id: 'tenant-a',
@@ -873,9 +885,11 @@ test('context too small: the typed readiness outcome refuses dispatch with zero 
       // A real but tiny budget: the reserves fit, the minimum context
       // (brief plus the seat's first item) does not, which is exactly
       // the Section 9.5 CONTEXT_TOO_SMALL case. The limit covers the
-      // system text with its card-contract prose (about 7.5 KB).
+      // system text with its card-contract prose (measured, not
+      // pinned) plus the two reserves, leaving a 1 KB content
+      // allowance that the minimum context exceeds.
       routeBudget: () => ({
-        context_limit_bytes: 9500,
+        context_limit_bytes: OPENING_SYSTEM_RULES_BYTES + 500 + 500 + 1024,
         response_schema_bytes: 500,
         output_reserve_bytes: 500,
       }),

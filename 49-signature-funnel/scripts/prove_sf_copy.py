@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -49,6 +50,49 @@ from typing import Any, Dict, List, Optional, Tuple
 EXIT_OK = 0
 EXIT_VIOLATION = 2
 EXIT_FAILCLOSED = 3
+
+
+def _load_prompt_policy():
+    """The ONE canonical policy service, which owns the explicit CTA precedence."""
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
+    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+        Path.home() / ".openclaw" / "skills" / "shared-utils",
+        Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "prompt_policy.py").is_file():
+            if str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+            import prompt_policy
+            return prompt_policy
+    return None
+
+
+POLICY = _load_prompt_policy()
+
+
+def cta_rule(section_spec: Dict[str, Any], profile: Dict[str, Any]) -> Dict[str, str]:
+    """Explicit CTA precedence (F18 item 9).
+
+    1. The section contract's own prohibition ALWAYS wins: a derived page's
+       `cta_every_section` never overrides main-page Section 6's ban, and no prover is
+       deleted to make the two agree.
+    2. A profile-wide `cta_every_section` then requires a CTA where the section is silent.
+    3. Otherwise the section contract's own require/forbid flags govern.
+    Skills 80/81 keep their own derived-copy contracts; this resolver is only for the
+    legacy-49 structure ledger.
+    """
+    if POLICY is not None:
+        return POLICY.cta_requirement(section_spec, profile)
+    if section_spec.get("forbid_cta") or section_spec.get("forbid_cta_button"):
+        return {"cta": "forbidden", "cta_button": "forbidden", "source": "section-contract:forbid",
+                "precedence": "section-over-profile"}
+    if profile.get("cta_every_section") is True:
+        return {"cta": "required", "cta_button": "optional", "source": "profile:cta_every_section",
+                "precedence": "profile-where-silent"}
+    return {"cta": "required" if section_spec.get("requires_cta") else "optional",
+            "cta_button": "required" if section_spec.get("requires_cta_button") else "optional",
+            "source": "section-contract", "precedence": "default"}
 
 
 # ---------------------------------------------------------------------------
@@ -123,12 +167,26 @@ _STEP_KIND_KEYWORDS = {
 # ---------------------------------------------------------------------------
 # Per-section checkers. Each appends (AF-code, message) to `fail`.
 # ---------------------------------------------------------------------------
+def _copy_band(text: Any, lo: int, hi: int, unit: str) -> Dict[str, Any]:
+    """One copy-profile limit, enforced on normalized visible text.
+
+    Copy bands are separate from image prompt bands: no model maximum is involved and no
+    percentage is computed. The canonical policy owns the counting when available.
+    """
+    if POLICY is not None:
+        return POLICY.evaluate_copy(text, [{"unit": unit, "min": lo, "max": hi}])
+    n = _wcount(text) if unit == "words" else _slen(text)
+    ok = lo <= n <= hi
+    return {"ok": ok, "count": n, "unit": unit,
+            "message": "" if ok else f"{n} {unit}, outside the copy band [{lo}, {hi}]"}
+
+
 def _check_charband(sec, spec, sid, af, fail, label):
     lo = int(spec.get("char_min", 0))
     hi = int(spec.get("char_max", 10 ** 9))
-    n = _slen(sec.get("copy", ""))
-    if n < lo or n > hi:
-        fail(af, f"{label}: {n} stripped chars, outside the sacred band [{lo}, {hi}]")
+    got = _copy_band(sec.get("copy", ""), lo, hi, "chars")
+    if not got["ok"]:
+        fail(af, f"{label}: {got['message']} (copy profile band [{lo}, {hi}] chars)")
 
 
 def _check_wordband(sec, spec, af, fail, label, field="copy"):
@@ -137,12 +195,13 @@ def _check_wordband(sec, spec, af, fail, label, field="copy"):
     a whitespace-padded thin section can never satisfy the band (stripped-word count)."""
     lo = int(spec.get("word_min", 0))
     hi = int(spec.get("word_max", 10 ** 9))
-    n = _wcount(sec.get(field, ""))
-    if n > hi:
-        fail(af, f"{label}: {n} words, over the sacred maximum of {hi}")
-    elif n < lo:
-        fail(af, f"{label}: {n} words, under the sacred minimum of {lo} "
-                 f"(under-length is as much a hard miss as over-length)")
+    got = _copy_band(sec.get(field, ""), lo, hi, "words")
+    if not got["ok"]:
+        if got["count"] > hi:
+            fail(af, f"{label}: {got['count']} words, over the sacred maximum of {hi}")
+        else:
+            fail(af, f"{label}: {got['count']} words, under the sacred minimum of {lo} "
+                     "(under-length is as much a hard miss as over-length)")
 
 
 def required_page_types(structure: Dict[str, Any], size: Any) -> List[str]:
@@ -222,6 +281,11 @@ def verify(structure: Dict[str, Any], ledger: Dict[str, Any],
             continue
 
         # ---- 12-section (main / upsell / downsell / upsell-2 / downsell-2) ----
+        if profile.get("cta_every_section") is True:
+            notes.append(
+                f"page '{ptype}': CTA precedence — the profile requires a CTA in every section "
+                "where the section contract is silent; the section's own prohibition "
+                "(Section 6, Benefits 1/2) still wins")
         required = [int(x) for x in (profile.get("sections") or [])]
         repl_key = profile.get("section8_replacement")
         by_num: Dict[int, Dict[str, Any]] = {}
@@ -253,20 +317,22 @@ def verify(structure: Dict[str, Any], ledger: Dict[str, Any],
             sec = by_num.get(num)
             if sec is None:
                 continue
-            _verify_section(num, sec, ptype, sections_spec, repl_key, repl_spec,
+            _verify_section(num, sec, ptype, profile, sections_spec, repl_key, repl_spec,
                             product_title, fail)
 
     return violations, notes
 
 
-def _verify_section(num, sec, ptype, sections_spec, repl_key, repl_spec, product_title, fail):
+def _verify_section(num, sec, ptype, profile, sections_spec, repl_key, repl_spec,
+                    product_title, fail):
     # Section 8 on a derived page is the REPLACEMENT block, not Benefit 1.
     if num == 8 and repl_key:
-        _verify_section8_replacement(sec, ptype, repl_spec.get(repl_key) or {}, fail)
+        _verify_section8_replacement(sec, ptype, profile, repl_spec.get(repl_key) or {}, fail)
         return
 
     spec = sections_spec.get(str(num)) or {}
     label = f"page '{ptype}' Section {num} ({spec.get('name', '?')})"
+    rule = cta_rule(spec, profile)
 
     if num == 1:
         _check_charband(sec, spec, num, "AF-FUN-SEC1-CHARBAND", fail, label)
@@ -274,8 +340,10 @@ def _verify_section(num, sec, ptype, sections_spec, repl_key, repl_spec, product
             if not product_title or _norm(product_title) not in _norm(sec.get("copy", "")):
                 fail("AF-FUN-SEC1-TITLE",
                      f"{label}: does not contain the product title {product_title!r}")
-        if spec.get("requires_cta") and not _has_cta(sec):
+        if rule["cta"] == "required" and not _has_cta(sec):
             fail("AF-FUN-SEC1-CTA", f"{label}: missing a labeled CTA")
+        elif rule["cta"] == "forbidden" and (_has_cta(sec) or _has_cta_button(sec)):
+            fail("AF-FUN-SEC1-CTA", f"{label}: carries a CTA the section contract forbids")
         return
 
     if num in (2, 3, 4):
@@ -285,8 +353,10 @@ def _verify_section(num, sec, ptype, sections_spec, repl_key, repl_spec, product
             fail("AF-FUN-PAIN-QUESTION", f"{label}: written in question format ('?' present)")
         if spec.get("second_person") and not re.search(r"\byou\b|\byour\b|\byou'\w+", _norm(copy)):
             fail("AF-FUN-PAIN-2ND-PERSON", f"{label}: not written in 2nd person (no you/your)")
-        if spec.get("requires_cta") and not _has_cta(sec):
+        if rule["cta"] == "required" and not _has_cta(sec):
             fail("AF-FUN-PAIN-CTA", f"{label}: missing a labeled CTA")
+        elif rule["cta"] == "forbidden" and (_has_cta(sec) or _has_cta_button(sec)):
+            fail("AF-FUN-PAIN-CTA", f"{label}: carries a CTA the section contract forbids")
         return
 
     if num == 5:
@@ -296,8 +366,10 @@ def _verify_section(num, sec, ptype, sections_spec, repl_key, repl_spec, product
             body = _norm(sec.get("copy", "")).lstrip('"\'' + " ")
             if not body.startswith(lead):
                 fail("AF-FUN-SEC5-LEAD", f"{label}: does not start '{spec.get('lead_phrase')}'")
-        if spec.get("requires_cta") and not _has_cta(sec):
+        if rule["cta"] == "required" and not _has_cta(sec):
             fail("AF-FUN-SEC5-CTA", f"{label}: missing its motivational CTA")
+        elif rule["cta"] == "forbidden" and (_has_cta(sec) or _has_cta_button(sec)):
+            fail("AF-FUN-SEC5-CTA", f"{label}: carries a CTA the section contract forbids")
         return
 
     if num == 6:
@@ -308,7 +380,8 @@ def _verify_section(num, sec, ptype, sections_spec, repl_key, repl_spec, product
         if n < lo or n > hi:
             fail("AF-FUN-SEC6-PERSONAS",
                  f"{label}: {n if n >= 0 else 'missing'} personas, outside [{lo}, {hi}]")
-        if spec.get("forbid_cta") and (_has_cta(sec) or _has_cta_button(sec)):
+        # The section's own prohibition wins over a profile-wide CTA rule.
+        if rule["cta"] == "forbidden" and (_has_cta(sec) or _has_cta_button(sec)):
             fail("AF-FUN-SEC6-NO-CTA", f"{label}: carries a CTA (Section 6 forbids any CTA)")
         return
 
@@ -324,17 +397,21 @@ def _verify_section(num, sec, ptype, sections_spec, repl_key, repl_spec, product
         nb = len(blist)
         if nb < blo or nb > bhi:
             fail("AF-FUN-SEC7-BULLETS", f"{label}: {nb} bullets, outside [{blo}, {bhi}]")
+        if rule["cta"] == "required" and not _has_cta(sec):
+            fail("AF-FUN-SEC7-CTA",
+                 f"{label}: the '{ptype}' profile requires a CTA in every section where the "
+                 "section contract is silent")
         return
 
     if num in (8, 9):  # main-page Benefit 1 / Benefit 2
         _check_wordband(sec, spec, "AF-FUN-BENEFIT-WORDS", fail, label)
-        if spec.get("forbid_cta") and (_has_cta(sec) or _has_cta_button(sec)):
+        if rule["cta"] == "forbidden" and (_has_cta(sec) or _has_cta_button(sec)):
             fail("AF-FUN-BENEFIT-NO-CTA", f"{label}: carries a CTA (Benefit 1/2 forbid a CTA)")
         return
 
     if num == 10:
         _check_wordband(sec, spec, "AF-FUN-BENEFIT-WORDS", fail, label)
-        if spec.get("requires_cta_button") and not _has_cta_button(sec):
+        if rule["cta_button"] == "required" and not _has_cta_button(sec):
             fail("AF-FUN-SEC10-CTA", f"{label}: missing its inspirational CTA button")
         return
 
@@ -413,7 +490,7 @@ def _verify_section12(sec, spec, label, fail):
                  f"{label}: part 2 (The Big Struggle) does not start '{spec.get('part2_lead')}'")
 
 
-def _verify_section8_replacement(sec, ptype, rspec, fail):
+def _verify_section8_replacement(sec, ptype, profile, rspec, fail):
     label = f"page '{ptype}' Section 8 (replacement)"
     pattern = rspec.get("name_pattern")
     name = _norm(sec.get("name", ""))
@@ -432,6 +509,12 @@ def _verify_section8_replacement(sec, ptype, rspec, fail):
     if len(items) != want:
         fail("AF-FUN-SEC8REPL-COUNT",
              f"{label}: {len(items)} items, expected exactly {want} ({rspec.get('item_kind')})")
+    # A derived profile's CTA rule applies to the replacement (the section contract has
+    # no prohibition of its own here).
+    if cta_rule({}, profile)["cta"] == "required" and not _has_cta(sec):
+        fail("AF-FUN-SEC8REPL-CTA",
+             f"{label}: the '{ptype}' profile requires a CTA in every section where the "
+             "section contract is silent")
 
 
 def _verify_thank_you(page, ty_spec, product_title, fail):
@@ -618,7 +701,8 @@ def _valid_upsell_page() -> Dict[str, Any]:
                      "personas": ["doers", "builders", "leaders"]})
     sections.append({"section": 7, "name": "The Big Bold What",
                      "copy": " ".join(["access"] * 55),
-                     "bullets": ["you get the accelerated done for you upgrade"] * 6})
+                     "bullets": ["you get the accelerated done for you upgrade"] * 6,
+                     "cta": "CTA: Yes Upgrade My Order"})
     sections.append({"section": 8, "name": "7 Reasons To Commit To Your Unstoppable Future",
                      "items": [f"Reason {i}: you move faster and keep the momentum you started" for i in range(1, 8)],
                      "cta": "CTA: Yes Upgrade My Order"})
@@ -711,6 +795,12 @@ def _violation_cases():
         _sec(d, 0, 6)["personas"] = ["only", "two"]
     def sec6_cta(d):
         _sec(d, 0, 6)["cta"] = "CTA: Start My Reset"
+    def derived_sec6_cta(d):
+        # F18 item 9: the derived profile's "CTA every section" must NOT override the
+        # section contract's own ban on a Section 6 CTA.
+        _sec(d, 1, 6)["cta"] = "CTA: Yes Upgrade My Order"
+    def derived_sec7_no_cta(d):
+        _sec(d, 1, 7).pop("cta", None)
     def sec7_bullets(d):
         _sec(d, 0, 7)["bullets"] = ["you get the toolkit"] * 3
     def sec10_button(d):
@@ -750,6 +840,8 @@ def _violation_cases():
         ("sec10_short_words", "AF-FUN-BENEFIT-WORDS", lambda: _mut(sec10_short_words)),
         ("sec6_personas", "AF-FUN-SEC6-PERSONAS", lambda: _mut(sec6_personas)),
         ("sec6_cta", "AF-FUN-SEC6-NO-CTA", lambda: _mut(sec6_cta)),
+        ("derived_sec6_cta", "AF-FUN-SEC6-NO-CTA", lambda: _mut(derived_sec6_cta)),
+        ("derived_sec7_no_cta", "AF-FUN-SEC7-CTA", lambda: _mut(derived_sec7_no_cta)),
         ("sec7_bullets", "AF-FUN-SEC7-BULLETS", lambda: _mut(sec7_bullets)),
         ("sec10_button", "AF-FUN-SEC10-CTA", lambda: _mut(sec10_button)),
         ("sec11_stepband", "AF-FUN-SEC11-STEPBAND", lambda: _mut(sec11_stepband)),

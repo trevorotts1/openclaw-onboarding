@@ -44,6 +44,29 @@ A paid buyer gets no further promotional emails or texts for this launch, for an
 
 **Does not stop:** transactional access and receipt notices · the buyer's own onboarding / review / referral sequence · a genuinely different later offer approved in the launch plan.
 
+## Dedupe identity
+
+One delivery per **verified purchased line** — never per order, never per contact.
+
+The identity is **tenant + native transaction ref + purchased line ref + action + campaign version**. The order ref is grouping only: when an event carries no transaction ref it stands in for it, and even then the line ref and action keep the key line-scoped, so a bare order id is never an identity. Successive extra purchases under one order each keep their own transaction identity; nothing collapses into the order.
+
+This is enforced by the S44 claimed action ledger (`processor.purchase_identity()`, `_action_key()`, `_right_key()`): a redelivery finds the existing claim and adds no effect. An unresolved or absent observation stays **unknown** — it is never normalised to granted, delivered, or a convenient boolean.
+
+## Delivery paths (no thank-you visit required)
+
+Access is delivered from the **verified purchase event**. The thank-you page is a view, never a step in delivery.
+
+| Path | Owner | Triggers on | What it does |
+|---|---|---|---|
+| `event_access_message` | this short handler | the verified paid transaction line | Access + welcome email (and the approved access text when email + text and A2P is approved) |
+| `entitlement_fulfillment` | S44 event worker | the same verified paid transaction line | One `initiate_fulfillment` claimed action per line, executed by the fulfillment worker from `DurableProcessor.pending_fulfillments()` |
+
+Closing the browser before thank-you cannot deny a confirmed buyer access. The page grants nothing and emits no send; it records one idempotent `confirmation_shown` observation.
+
+## Long sequences stay separate
+
+This handler is short and wait-free. Long nurture / onboarding / review / win-back sequences are **separate workflows** it references through `add_to_workflow` (exactly one variant-appropriate follow-up), never workflows it contains — no wait, drip or nurture node may live here. Suppression is still the first action, so a queued promotional send is suppressed before the welcome or the follow-up.
+
 ## Variants
 
 | Variant | Match | Next follow-up |
@@ -67,6 +90,9 @@ Checklist lines **A1**, **A2**, **X1**. WF-1..21 plus FAB-QC ≥ 8.5 apply to th
 - Suppression runs before any welcome or follow-up step.
 - No long wait in the short handler.
 - Access granted once per verified transaction line.
+- Dedupe uses tenant + transaction + purchased-line + action + campaign version, never order id alone.
+- Access and fulfillment are created from the purchase event with no thank-you visit required.
+- An unknown grant is withheld from delivery and reported as unknown.
 - No promo node remains reachable for a paid buyer.
 - Everything is `draft_only`; no live switch-on.
 - No client account touched during the build.

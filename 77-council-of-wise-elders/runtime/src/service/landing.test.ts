@@ -302,7 +302,15 @@ test('unknown paths still answer the SERVICE_ROUTE_NOT_FOUND 404', async () => {
 // front of is asserted above; what is left to guard is containment: the front
 // door may depend only on its own layers, so it can never grow a second owner
 // of the routes, the store or the browser open.
-const FRONT_DOOR_LAYERS = ['node:', './', '../bridges/', '../contracts/'];
+//
+// `../reports/` is a named layer, not an escape hatch: the door serves the
+// saved-session report download (CTR-136, its port type) and carries the ONE
+// shared reader projection that the PDF export and the chamber both read
+// (CTR-156), so both surfaces cannot tell the reader two different stories.
+// Those two facts are pinned by the product's own tests; the guard that still
+// matters — no second owner of the routes, the store or the browser open —
+// stays enforced by the cli/persistence check below.
+const FRONT_DOOR_LAYERS = ['node:', './', '../bridges/', '../contracts/', '../reports/'];
 
 function importedSpecifiers(source: string): string[] {
   return source

@@ -1,7 +1,24 @@
 {
-  "_comment": "The declared list of every gate that enforces KIE prompt length (rule 12, owner order 2026-10-05). Read by tests/unit/kie-prompt-enforcer-and-gates.test.py, which (a) fails when a declared gate module holds a numeric character band (a len(...) compared with a literal, a band-named integer constant, a min/max/floor/ceiling key with a number) outside the allowed_numeric list, (b) fails when a gate imports the enforcer but never calls it, and (c) walks every skill's scripts and fails when an undeclared module compares a prompt length with a literal or defines a prompt-length constant. Add a new gate here when it is written.",
-  "rule": "KIE prompt rule 12 (07-kie-setup/references/kie-common-rules.md)",
+  "_comment": "The declared list of every gate that enforces KIE prompt length. F18 (2026-11-07): the band, the counter and the freeze live in shared-utils/prompt_policy.py, and every gate calls it (directly or through shared-utils/kie_prompt_enforcer.py). Read by tests/unit/kie-prompt-enforcer-and-gates.test.py, which (a) fails when a declared gate module holds a numeric character band (a len(...) compared with a literal, a band-named integer constant, a min/max/floor/ceiling key with a number) outside the allowed_numeric list, (b) fails when a gate imports the enforcer but never calls it, and (c) walks every skill's scripts and fails when an undeclared module compares a prompt length with a literal or defines a prompt-length constant. Add a new gate here when it is written.",
+  "rule": "Strict production band, policy 2.0.0 (F18 2026-11-07): 95-100 percent of the verified maximum passes; below 95 percent fails; below 80 percent is a hard failure; above the maximum fails; an unknown maximum refuses a pass. -> shared-utils/prompt_policy.py",
   "enforcer": "shared-utils/kie_prompt_enforcer.py",
+  "policy": "shared-utils/prompt_policy.py",
+  "policy_calls": [
+    "freeze",
+    "evaluate",
+    "require",
+    "problems",
+    "band_numbers",
+    "assert_payload",
+    "apply_input_extra",
+    "evaluate_copy",
+    "cta_requirement",
+    "label_policy"
+  ],
+  "policy_gate_modules": [
+    "71-blackceo-signature-page/scripts/validate_prompt.py",
+    "49-signature-funnel/scripts/prove_sf_copy.py"
+  ],
   "enforcer_calls": [
     "check",
     "check_count",
@@ -54,7 +71,6 @@
     "49-signature-funnel/scripts/prove_sf_prompt_floor.py",
     "56-sales-page-assets/scripts/prove_sp_prompt_floor.py",
     "57-social-media-in-a-box/scripts/prove_bands.py",
-    "71-blackceo-signature-page/scripts/validate_prompt.py",
     "06-ghl-install-pages/tools/ghl_media.py",
     "universal-sops/video-production/scripts/probe_prompt_band.py",
     "23-ai-workforce-blueprint/templates/presentation-render/render_deck.py",
@@ -200,6 +216,14 @@
   "allowed_numeric_reasons": "68 caps are first-party verbatim ceilings (text-to-speech, lyrics) and the policy-owner fallback limits for dedicated routes the Skill 74 schema does not cover; the rest are file-size, output-token, copy-context and context-budget numbers that are not KIE prompt lengths; Skill 25's `max` is the integer seed range 0 to 2147483647 in the per-model input-type table, not a prompt length. Skill 71's 'len-compare:chars < tripwire' is the FIX-PLAN Amendment 6 Part C-rule 3 tripwire in 71-blackceo-signature-page/scripts/validate_prompt.py: a warning-only completeness smell test (element completeness governs inside Skill 71 and prompt length is telemetry there), registered here as rule 12's declared divergence rather than a hidden local band. Skill 75 script_writer's RAW_KEEP_CHARS is the raw authored RESPONSE retention cap kept for diagnosis, not a prompt length: the module measures no prompt, and _raw_keep_chars() confirms the declared number through the shared enforcer's own budget arithmetic (advisory; the declared 20,000 stands unchanged when shared-utils is absent), so the emitted raw capture stays byte-identical.",
   "exemptions": [
     {
+      "path": "shared-utils/prompt_policy.py",
+      "names": [
+        "POLICY_VERSION"
+      ],
+      "reason": "the canonical prompt-policy service itself: it owns the strict band arithmetic, the counter, the freeze and the copy-profile separation, and it is the single validator every declared gate calls",
+      "status": "canonical"
+    },
+    {
       "path": "62-cinematic-web-funnel-engine/providers/_fixture_support.py",
       "names": [
         "FIXTURE_PROMPT_MAX"
@@ -321,5 +345,9 @@
     "45-design-intelligence-library/scripts/_kie_prompt_enforcer_embedded.py",
     "06-ghl-install-pages/tools/_kie_prompt_enforcer_embedded.py"
   ],
-  "enforcer_copies_note": "Byte-identical generated copies of shared-utils/kie_prompt_enforcer.py that a standalone gate imports only when shared-utils is absent (scripts/embed-kie-prompt-enforcer.py regenerates them; tests/unit/kie-prompt-enforcer-embedded-lock.test.py locks them)."
+  "policy_copies": [
+    "45-design-intelligence-library/scripts/prompt_policy.py",
+    "06-ghl-install-pages/tools/prompt_policy.py"
+  ],
+  "enforcer_copies_note": "Byte-identical generated copies of shared-utils/kie_prompt_enforcer.py and shared-utils/prompt_policy.py that a standalone gate imports only when shared-utils is absent (scripts/embed-kie-prompt-enforcer.py regenerates them; tests/unit/kie-prompt-enforcer-embedded-lock.test.py locks them). Both files are copies of the ONE policy: no copy carries a band of its own."
 }

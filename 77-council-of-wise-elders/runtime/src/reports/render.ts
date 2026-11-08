@@ -930,7 +930,6 @@ p { margin: 0 0 3mm 0; orphans: 3; widows: 3; }
   font-size: 14pt;
   color: var(--gold-text);
 }
-.verdict-label { color: var(--gold-text); font-weight: bold; }
 .report-cover {
   page-break-after: always;
   break-after: page;
@@ -1441,7 +1440,7 @@ function pushSummaryHtml(
   );
   out.push('</dl>');
   out.push(
-    `<p class="verdict-line"><span class="verdict-label">Verdict:</span> ${escapeHtml(asString(verdict.label))}${asStringOrNull(summary.verdict_label_text) === null ? '' : ` — ${escapeHtml(asString(summary.verdict_label_text))}`}</p>`,
+    `<p class="verdict-line">Verdict: ${escapeHtml(asString(verdict.label))}${asStringOrNull(summary.verdict_label_text) === null ? '' : ` — ${escapeHtml(asString(summary.verdict_label_text))}`}</p>`,
   );
   const recommended = asStringOrNull(verdict.recommended_option_id);
   out.push(

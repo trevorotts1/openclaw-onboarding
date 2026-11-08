@@ -41,7 +41,7 @@
       out.push({
         letter: letter,
         label: label,
-        valueText: hasVotes && typeof voters === 'number' && voters > 0 ? o.votes + '/' + voters : hasVotes ? String(o.votes) : '–',
+        valueText: hasVotes ? String(o.votes) : '–',
         widthPct: hasVotes ? pct(share) : 0,
         recommended: !!o.recommended || (verdictId != null && verdictId === o.id),
         srText: srText(letter, label, hasVotes ? o.votes : null, voters, session ? session.votesRound : null)
