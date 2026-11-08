@@ -751,10 +751,10 @@ SELFTEST_CASES = [
     # substitution (Ruling 5); the request stays on the 2.5 sunburst route.
     ("product shot in 4:5 aspect ratio", "gpt-image-2-5-sunburst-text-to-image", True, None),
     ("banner in 2:1 aspect ratio", "gpt-image-2-5-sunburst-text-to-image", True, None),
-    # A 1K-only 2.5 ratio (9:8, 16:27, 27:16, 8:9) requested at 2K/4K hard-fails.
+    # 9:8 / 16:27 / 27:16 / 8:9 are NOT members of the GPT Image 2.6 enum at
+    # all, so they hard-fail at EVERY resolution -- not just at 2K/4K.
     ("photo at 9:8 aspect ratio in 4K", None, False, None),
-    # Same 1K-only ratio at 1K (implicit default resolution) is fine.
-    ("photo at 9:8 aspect ratio", "gpt-image-2-5-sunburst-text-to-image", True, None),
+    ("photo at 9:8 aspect ratio", None, False, None),
 ]
 
 
