@@ -227,11 +227,11 @@ Do not add any watermark, caption, or badge.
 
 
 class TestPartCBudget(unittest.TestCase):
-    """F18 (2026-11-07): the STRICT production band governs length through the one
-    canonical policy service. 95-100 percent PASSES; below 95 percent FAILS and must be
-    revised; below 80 percent is a particularly clear hard failure; above the maximum
-    FAILS; an UNKNOWN maximum refuses a pass. The old 80-to-below-95 warning-only path is
-    removed. Element completeness still governs acceptance; cap_status survives as
+    """Owner rule 12 (2026-10-05; Decision 1, 2026-10-15; Q1, 2026-10-17): the rule 12
+    band governs length through the one canonical policy service. 95-100 percent
+    PASSES; 80 to below 95 percent PASSES with a warn-and-expand naming the chars to
+    ADD; below 80 percent FAILS hard; above the maximum FAILS; an UNKNOWN maximum
+    refuses a pass. F18's strict 95 percent reading is withdrawn. Element completeness still governs acceptance; cap_status survives as
     provenance only; the 2,000-character tripwire is retained as a recorded short-prompt
     flag (it never turns a band failure into a pass)."""
 

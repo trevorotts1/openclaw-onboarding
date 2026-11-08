@@ -4,7 +4,7 @@
 Two halves:
   * the enforcer itself (shared-utils/kie_prompt_enforcer.py, a thin surface over the ONE
     canonical policy shared-utils/prompt_policy.py): 79 percent rejected naming the chars to
-    ADD, 94 percent rejected (the removed warning-only path), 96 and 100 percent pass, 101
+    ADD, 80 to below 95 percent PASSES with a warn-and-expand naming the chars to ADD, 101
     percent rejected naming the chars to CUT, verbatim fields exempt from the floor, an
     UNKNOWN limit REFUSES a pass, the 3-try rewrite loop and its escalation, fail closed
     without the adapter. It runs the REAL Skill 74 adapter against its registry snapshot
