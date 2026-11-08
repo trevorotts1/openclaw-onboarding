@@ -70,6 +70,7 @@ DEFAULT_CONTRACT = SKILL_ROOT / "references" / "stage-contract.json"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import browser_sessions  # Item 33 session registry (scripts/browser_sessions.py)
+import governed_runner  # F14 item 2: the one admission caller (entry, resume, delegation)
 
 # Item 33: for browser-using stages (contract flag "uses_browser": true)
 # the runner is the launching wrapper: it registers one session per work
@@ -650,6 +651,18 @@ class Runner:
             self.browser_session_close(name, via=via)
 
     # -- briefs ------------------------------------------------------------
+    def canonical_instructions_text(self):
+        """F14 item 8: resolve the canonical entry instructions ONCE and reuse.
+
+        They replace the conflicting general runner guidance: completion is
+        evidence, not file existence, and a worker MUST read its declared
+        dependencies. `governed_runner` caches them by hash in the run.
+        """
+        if getattr(self, "_canonical_instructions", None) is None:
+            self._canonical_instructions = governed_runner.canonical_entry_instructions(
+                self.run_dir)["text"]
+        return self._canonical_instructions
+
     def render_brief(self, node, attempt=1, lane=None, extra_context=""):
         stage, kind, item = node["stage"], node["kind"], node["item"]
         spec = self.contract["stages"][stage]
@@ -713,6 +726,7 @@ class Runner:
                 .replace("{{purpose}}", spec.get("purpose", "")))
         if extra_context:
             text += "\n" + extra_context
+        text += "\n\n" + self.canonical_instructions_text() + "\n"
         brief_path = (self.run_dir / "private" / "briefs" /
                       f"{stage}-{item}-{kind}-attempt{attempt}.md")
         brief_path.parent.mkdir(parents=True, exist_ok=True)
@@ -721,6 +735,11 @@ class Runner:
 
     # -- workers -----------------------------------------------------------
     def spawn_worker(self, node, brief_path, note_file, timeout_s):
+        # F14 item 2: a delegated worker is admitted through the same service,
+        # and its brief carries the canonical entry instructions (render_brief).
+        governed_runner.admit(self.run_dir, kind="delegation", authority="local",
+                              owner="swarm_worker", stage=node["stage"],
+                              item=None if node["item"] == "stage" else node["item"])
         cmd = self.worker_cmd
         values = {"brief": str(brief_path), "note": str(note_file),
                   "item": str(node["item"]), "stage": node["stage"],
@@ -1187,6 +1206,14 @@ class Runner:
 
     # -- scheduling ----------------------------------------------------------
     def run(self):
+        # F14 item 2: resume consults the same admission service the entry did.
+        # A run root with no intake is refused before a single node is scheduled.
+        if not (self.run_dir / "intake.json").is_file():
+            raise SystemExit(
+                f"FAIL: {self.run_dir} has no intake.json; the swarm runner will not "
+                "schedule governed work for a run the pipeline never admitted")
+        governed_runner.admit(self.run_dir, kind="resume", authority="local",
+                              owner="swarm_runner")
         self.state.setdefault("run", {"started_at": now_iso(),
                                       "runtime": self.runtime,
                                       "swarm_mode": "swarm"})
@@ -1407,6 +1434,14 @@ def main(argv=None):
     if args.timeout_generation is not None:
         overrides["generation"] = args.timeout_generation
     stages = args.stages.split(",") if args.stages else None
+    # F14 item 2: the initial launch entry consults the one admission service
+    # before a worker is constructed.
+    if not (args.run_dir.resolve() / "intake.json").is_file():
+        print(f"FAIL: {args.run_dir.resolve()} has no intake.json; the runner will "
+              "not start a run the pipeline never admitted", file=sys.stderr)
+        return 2
+    governed_runner.admit(args.run_dir.resolve(), kind="entry", authority="local",
+                          owner="swarm_runner")
     runner = Runner(args.run_dir, args.contract, profile, evidence,
                     args.runtime, worker_cmd, stages=stages,
                     limiter_path=limiter_path_for(profile, os.environ,

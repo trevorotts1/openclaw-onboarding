@@ -671,18 +671,23 @@ class TestImagePlanReconciled(RealTreeCase):
         self.assertFalse(self.run_dir.exists())
 
     def test_a_finished_lane_that_waited_for_copy_drew_nothing_and_is_refused(self):
-        self.config(draft=False, pipeline_command=[PY, "-c", "pass"])  # the gate is out of the way
+        # F14 item 10: the substitutable command no longer takes the canonical
+        # stage gate out of the way, so the first named refusal is the gate's.
+        # A draft=False run that drew nothing is still refused (the image guard
+        # below it), which the message names too.
+        self.config(draft=False, pipeline_command=[PY, "-c", "pass"])
         cfg = json.loads(self.bridge_config_path.read_text(encoding="utf-8"))
         cfg["landing"].pop("manuscript")
         self.bridge_config_path.write_text(json.dumps(cfg), encoding="utf-8")
-        self.refused("drew nothing")
+        self.refused("stage_gate report exited")
 
-    def test_a_matching_plan_that_drew_its_pages_is_delivered(self):
+    def test_a_matching_plan_with_an_open_gate_is_refused_and_places_nothing(self):
+        # F14 item 10: a zero-exit substitute is not canonical stage evidence.
         self.config(draft=False, pipeline_command=[PY, "-c", "pass"])
         proc, result_path = self.run_bridge_directly(self.make_request(), self.run_dir)
-        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertEqual(json.loads(proc.stdout)["pipeline"]["images"]["status"], "drawn")
-        self.assertIs(json.loads(proc.stdout)["draft"], False)
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("stage_gate report exited", proc.stdout)
+        self.assertFalse(result_path.exists())
 
 
 FAKE_ADAPTER = """#!/usr/bin/env python3
