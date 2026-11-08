@@ -64,12 +64,14 @@ class CliDocumentationParity(unittest.TestCase):
     @staticmethod
     def _shipped() -> set:
         source = (SKILL_ROOT / "launcher_core" / "cli.py").read_text(encoding="utf-8")
-        return set(re.findall(r'add_parser\(\s*"([a-z_]+)"', source))
+        # argparse names may carry a hyphen (`revise-image`); a class that omits it cannot see the
+        # shipped command at all and reports the documented prefix ("revise") as missing.
+        return set(re.findall(r'add_parser\(\s*"([a-z_-]+)"', source))
 
     @staticmethod
     def _documented() -> set:
         text = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
-        return set(re.findall(r"launcher_core\.cli\s+([a-z_]+)", text))
+        return set(re.findall(r"launcher_core\.cli\s+([a-z_-]+)", text))
 
     def test_every_subcommand_is_documented(self) -> None:
         shipped, documented = self._shipped(), self._documented()
