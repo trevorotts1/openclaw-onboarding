@@ -174,15 +174,15 @@ STATIC_CASES = [
      "BELOW_TARGET", False),
     ("wan 3999 below 80% hard floor rejected", 3999, "wan/2-7-image", False, "BELOW_FLOOR", False),
     ("wan 4000 = 80% floor now FAILS", 4000, "wan/2-7-image", False, "BELOW_TARGET", False),
-    ("gpt-2.6 %d = max ok" % CAP_26, CAP_26, "gpt-image-2-6/sunburst-text-to-image", True, "PASS", False),
-    ("gpt-2.6 %d = 95%% ok" % _26_95, _26_95, "gpt-image-2-6/sunburst-text-to-image", True, "PASS", False),
-    ("gpt-2.6 %d = 96%% ok" % _26_96, _26_96, "gpt-image-2-6/sunburst-text-to-image", True, "PASS", False),
-    ("gpt-2.6 %d = 94%% FAILS" % _26_94, _26_94, "gpt-image-2-6/sunburst-text-to-image", False,
+    ("gpt-2.6 20000 = owner cap max ok", CAP_26, "gpt-image-2-6/sunburst-text-to-image", True, "PASS", False),
+    ("gpt-2.6 19000 = 95% ok", _26_95, "gpt-image-2-6/sunburst-text-to-image", True, "PASS", False),
+    ("gpt-2.6 19200 = 96% ok", _26_96, "gpt-image-2-6/sunburst-text-to-image", True, "PASS", False),
+    ("gpt-2.6 18800 = 94% FAILS", _26_94, "gpt-image-2-6/sunburst-text-to-image", False,
      "BELOW_TARGET", False),
-    ("gpt-2.6 %d above max rejected" % (CAP_26 + 1), CAP_26 + 1, "gpt-image-2-6/sunburst-text-to-image", False, "ABOVE_MAX", True),
-    ("gpt-2.6 %d = 80%% floor now FAILS" % _26_80, _26_80, "gpt-image-2-6/sunburst-text-to-image", False,
+    ("gpt-2.6 20001 above owner cap rejected", CAP_26 + 1, "gpt-image-2-6/sunburst-text-to-image", False, "ABOVE_MAX", True),
+    ("gpt-2.6 16000 = 80% floor now FAILS", _26_80, "gpt-image-2-6/sunburst-text-to-image", False,
      "BELOW_TARGET", False),
-    ("gpt-2.6 %d under 80%% rejected" % (_26_80 - 1), _26_80 - 1, "gpt-image-2-6/sunburst-text-to-image", False,
+    ("gpt-2.6 15999 under 80% rejected", _26_80 - 1, "gpt-image-2-6/sunburst-text-to-image", False,
      "BELOW_FLOOR", False),
     ("gpt-2.6 9500 (old house target) now rejected", 9500, "gpt-image-2-6/sunburst-text-to-image", False,
      "BELOW_FLOOR", False),
@@ -261,7 +261,7 @@ def selftest():
         os.environ["KIE_LIVE_ADAPTER_PATH"] = script
         _run_cases(ADAPTER_CASES, failures)
         os.environ["KIE_LIVE_ADAPTER_PATH"] = os.path.join(d, "missing.py")  # unreachable adapter -> models.json
-        _run_cases([("adapter unreachable: models.json limit (2.6 = %d)" % CAP_26, CAP_26,
+        _run_cases([("adapter unreachable: models.json owner cap (2.6 = 20000)", CAP_26,
                      "gpt-image-2-6/sunburst-text-to-image", True, "PASS", False)], failures)
     if saved is None:
         os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)
