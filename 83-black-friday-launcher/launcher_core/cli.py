@@ -142,7 +142,7 @@ def cmd_route(args: argparse.Namespace) -> int:
 
 
 def cmd_assemble(args: argparse.Namespace) -> int:
-    dependencies.require()
+    dependencies.require(mode="assemble")
     run_dir = Path(args.run_dir) if args.run_dir else None
     pieces_dir = Path(args.pieces) if args.pieces else (run_dir / "pieces" if run_dir else None)
     if pieces_dir is None:
@@ -322,8 +322,11 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         except li.AnswersError as exc:
             print(f"FAIL {exc}", file=sys.stderr)
             return 2
-    dependencies.require()
     payload = _read_json(args.intake)
+    # The mode is read from the intake's own claim (paid KIE pictures or a stub
+    # practice run) before anything is built, so a paid run's transport helpers are
+    # checked and a practice run is not refused for helpers it never calls.
+    dependencies.require(mode=dependencies.mode_for_intake(payload))
     approval = _read_json(args.approval)
     launch_id = str(payload.get("launch_id") or "") if isinstance(payload, dict) else ""
     normalized, launch = _resolved_launch(payload, **_page_choices(args))
@@ -475,9 +478,11 @@ def cmd_seams(_args: argparse.Namespace) -> int:
 
 def cmd_dependencies(args: argparse.Namespace) -> int:
     root = Path(args.root) if args.root else None
+    mode = args.mode
     try:
         # --install is the sanctioned fix: a missing runtime package goes into the shared pydeps folder
-        report = dependencies.ensure_runtime_packages(root) if args.install else dependencies.check(root)
+        report = (dependencies.ensure_runtime_packages(root, mode=mode) if args.install
+                  else dependencies.check(root, mode))
     except dependencies.DependencyError as exc:
         print(f"FAIL {exc}", file=sys.stderr)
         return 2
@@ -499,6 +504,18 @@ def cmd_dependencies(args: argparse.Namespace) -> int:
           f"{len(findings)} finding(s)")
     for finding in findings:
         print(f"  METADATA   {finding}")
+    # F24: which closure this report is about. The same manifest reports a paid run's KIE
+    # helpers as selected-conditional and a practice run's as unselected-optional.
+    cl = report["closure"]
+    print(f"\nclosure mode={cl['mode']} harness={cl['harness']}: "
+          f"{cl['counts']['required']} required, "
+          f"{cl['counts']['selected_conditional']} selected-conditional, "
+          f"{cl['counts']['unselected_optional']} unselected-optional")
+    print("  REQUIRED: " + (", ".join(cl["required"]) or "none"))
+    print("  SELECTED-CONDITIONAL: " + (", ".join(cl["selected_conditional"]) or "none"))
+    print("  UNSELECTED-OPTIONAL: " + (", ".join(cl["unselected_optional"]) or "none"))
+    if cl["selected_missing"]:
+        print("  SELECTED BUT MISSING: " + ", ".join(cl["selected_missing"]))
     return 2 if args.install and report["blockers"] else 0
 
 
@@ -659,6 +676,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="first install any missing runtime package (jsonschema) into the shared pydeps "
                         "folder <root>/pydeps/py<X.Y>/ with pip --target, never --break-system-packages "
                         "and never a venv; exit 2 if one is still missing")
+    d.add_argument("--mode", default=dependencies.DEFAULT_MODE,
+                   choices=list(dependencies.LAUNCH_MODES),
+                   help="the launch mode whose transitive closure to report (default: plan). "
+                        "dispatch-kie selects the paid KIE transport, receipts and image helpers; "
+                        "dispatch selects the stub practice closure")
     d.set_defaults(fn=cmd_dependencies)
     return p
 
