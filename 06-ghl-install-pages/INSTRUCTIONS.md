@@ -137,9 +137,33 @@ This step makes your design span the entire page width. If you skip this, your d
    - The GREEN border = the section container (this IS what you want)
 2. Move your mouse slowly between the top edge of the blue code element and the edge of the section. When you see a green line or green highlight appear, click on it.
 3. A settings panel will appear on the right side of the screen
-4. Find the toggle labeled "Allow rows to take entire width" (it might also say "Full Width")
-5. Turn this toggle ON (click it so it is enabled)
-6. The section will now span the full page width
+4. Find the toggle labeled "Allow Rows to take entire width" (it might also say "Full Width")
+5. Turn this toggle ON if it is OFF — READ it first: clicking an ON toggle turns full width OFF
+6. The toggle alone does not widen the page. Two things drive the rendered width and BOTH must move:
+   the native "Allow rows to take entire width" flag AND the hosting section's own CSS cap on its
+   outer content wrapper (`#section-…>.inner{max-width:1170px}` in the section styles). A live probe
+   (2026-06) showed the flag ALONE produces no observable width change — the CSS cap is the real
+   driver. Lift that px lock on the `.inner` wrapper rule (or set it to `100%`) and change nothing
+   else: card widths, text measures and responsive padding are deliberate measures, not locks.
+7. The same full width applies on the EDIT path: replacing a page's code without repairing its
+   hosting section ships a half-width page. In code,
+   `ghl_rest_canvas.edit_element_customcode(...)` repairs the hosting section by default
+   (`full_width=True`) and `ghl_rest_canvas.assert_section_is_full_width(section)` proves one
+   section; the create path does the same through `new_page_blob`. Full width is the normal policy
+   for a section that hosts managed content, on every page kind (funnel step, website, affiliate) —
+   never an optional polish step.
+
+   > **MERGE-ORDER PREREQUISITE (2026-11-07) — Phase 7 step 7 requires the BFL-002 full-width API,
+   > and must not ship before BFL-002 is integrated into this repository.** At the integration base
+   > before that merge, `06-ghl-install-pages/tools/ghl_rest_canvas.py` has
+   > `edit_element_customcode(page_data, locator, new_value)` with **no** `full_width` parameter,
+   > `new_page_blob` defaults `allow_row_max_width=False`, and nothing else named in step 7 exists.
+   > The required symbols are `FULL_WIDTH_POLICY`, `apply_section_full_width(section)`,
+   > `lift_inner_width_caps(css)`, `assert_section_is_full_width(section)`,
+   > `edit_element_customcode(..., full_width=True)` and
+   > `new_page_blob(..., allow_row_max_width=True)`. Check for them before treating this step as
+   > executable; if any is missing, stop and report the missing dependency instead of inventing a
+   > partial full-width repair.
 
 
 ### Phase 8: Paste Your Code
@@ -204,14 +228,15 @@ Sometimes you need to update a page that has already been deployed, not create a
 2. Find the existing funnel in the list and click on it
 3. Click on the specific step/page you want to update
 4. The page builder will open with the EXISTING content already loaded
-5. Click on the code element (the blue "Custom HTML/JavaScript" box)
-6. Click "Open Code Editor"
-7. You will see the current code. Select ALL of it and DELETE it.
-8. Paste the NEW updated code
-9. Click Save in the code editor
-10. Click the Save button (floppy disk) in the top toolbar
-11. Preview to verify the changes look correct
-12. Publish ONLY if the user approves
+5. Set full width on the SECTION container (the green highlight), never the code element (the blue box): click the section, find the toggle labeled exactly "Allow Rows to take entire width" in the right-hand settings panel, and turn it ON. READ the toggle first — if it is already ON, leave it alone, because clicking an ON toggle turns full width OFF. The same step applies to an existing page: an update that replaces the code while leaving the switch OFF (or leaving the conflicting `max-width:1170px` section rule in place) ships a half-width page. In code this is `ghl_rest_canvas.edit_element_customcode` (width repair on by default) or `edit_element_customcode_full_width` (which also returns the change record); prove it afterwards with `ghl_rest_canvas.assert_full_width(blob, section_idx)` on the RE-READ blob, passing the section index the edit repaired.
+6. Click on the code element (the blue "Custom HTML/JavaScript" box)
+7. Click "Open Code Editor"
+8. You will see the current code. Select ALL of it and DELETE it.
+9. Paste the NEW updated code
+10. Click Save in the code editor
+11. Click the Save button (floppy disk) in the top toolbar
+12. Preview to verify the changes look correct (check the page spans full width)
+13. Publish ONLY if the user approves
 
 IMPORTANT: When updating, you do NOT create a new funnel or add new steps. You are editing the existing code in the existing page. Do not accidentally create a duplicate.
 

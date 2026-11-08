@@ -12,7 +12,22 @@ above L1.
 - Fulfillment **begins promptly on the successful purchase event**,
   processed by S44's event-driven purchase handler. It does not
   depend on the buyer reaching, loading, or keeping open the
-  thank-you page.
+  thank-you page. Concretely, the handler writes one
+  `initiate_fulfillment` claimed action per **verified purchased
+  line**, and the fulfillment worker takes it from
+  `DurableProcessor.pending_fulfillments(tenant_id)` and executes it
+  with `DurableProcessor.fulfill(key, executor)`.
+- The action key is the delivery identity: **tenant + native
+  transaction ref + native line ref + action + campaign version**.
+  The order ref stands in only when the event carries no transaction
+  ref, and the key stays line-scoped even then; it is never an order
+  id alone. A main purchase and each later upsell are therefore
+  separate delivery items, and a redelivery finds the existing claim
+  and adds nothing.
+- A line whose grant is not recorded active is returned in the
+  queue's `withheld` list with its observed grant states (an unknown
+  grant stays unknown, including a right that was never recorded).
+  It is never delivered on an unknown.
 - **Tab-close survival (A20):** a buyer who pays and immediately
   closes the tab still receives every granted entitlement and the
   confirmation/access fallback (section 3). The page is a *view* of
@@ -94,6 +109,13 @@ twice. The rule:
   dedupe_key = sha256("<tenant_id>|<location_id>|<launch_id>|"
                       "<order_ref>|<entitlement_version>")
   ```
+
+  This is the **onboarding-send** key for one journey, not the
+  delivery key. Delivery deduplication lives in S44's claimed action
+  ledger under the per-line identity in section 1 (tenant +
+  transaction + purchased line + action + version), so a second
+  purchase in the same journey is never suppressed by the first
+  purchase's completion record.
 
 - If the worker reaches the send first, the page's observation is a
   no-op duplicate of an already-satisfied journey. If the page is

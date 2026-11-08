@@ -67,10 +67,64 @@
         "state": {"type": "string", "enum": ["verified", "absent"]}
       }
     },
-    "live_effects": {"type": "string", "const": "none"},
+    "live_effects": {"type": "string", "pattern": "^(none|paid_image_renders:[0-9]+)$"},
+    "activation": {"$ref": "#/definitions/activation_record"},
+    "activation_label": {"type": "string", "minLength": 1},
     "launch_plan": {"type": ["object", "null"]}
   },
   "definitions": {
+    "activation_record": {
+      "type": "object",
+      "description": "F06: the stage this package was delivered at, recorded apart from the construction receipts. A desired install/publication with no observed read-back stays pending (activation_pending true, achieved_state lower); an installed or published stage is claimed only from an observed read-back bound to this package's pages and location, and never by a package that was not authorized for it. Re-proved at check time by launcher_core/check_rules/activation.py.",
+      "required": [
+        "desired_state",
+        "achieved_state",
+        "authority",
+        "pending_stage",
+        "activation_pending",
+        "readback",
+        "source",
+        "record"
+      ],
+      "properties": {
+        "desired_state": {"$ref": "#/definitions/activation_stage"},
+        "achieved_state": {"$ref": "#/definitions/activation_stage"},
+        "label": {"type": "string"},
+        "authority": {
+          "type": ["object", "null"],
+          "description": "The recorded authorization that already covers this stage: null for local/draft construction, required for installed (scope installation) and published (scope publication), always for this launch's own location_id.",
+          "required": ["ref", "scope", "location_id"],
+          "properties": {
+            "ref": {"type": "string", "minLength": 1},
+            "scope": {"type": "string", "enum": ["installation", "publication"]},
+            "location_id": {"type": "string", "minLength": 1}
+          }
+        },
+        "pending_stage": {
+          "type": ["string", "null"],
+          "enum": ["local_prepared", "draft_constructed", "installed", "published", null]
+        },
+        "activation_pending": {"type": "boolean"},
+        "readback": {
+          "type": ["object", "null"],
+          "description": "The observed record of an installation or publication: the canonical read route as source, page_id, the https page_url, observed_at, and — published — the live page_type and integer page_version; installed — the observed native install facts. A save click, a draft response or a local 'published' field is not a read-back."
+        },
+        "source": {"type": ["string", "null"]},
+        "record": {
+          "type": "object",
+          "required": ["path", "sha256"],
+          "properties": {
+            "path": {"type": "string", "const": "activation.json"},
+            "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "activation_stage": {
+      "type": "string",
+      "enum": ["local_prepared", "draft_constructed", "installed", "published"]
+    },
     "unit_receipt": {
       "type": "object",
       "required": [

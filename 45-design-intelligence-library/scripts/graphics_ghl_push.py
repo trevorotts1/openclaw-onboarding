@@ -20,8 +20,9 @@ WHAT IT DOES (SOP-GIP-03)
      PRIMARY path (POST /medias/folder, Version 2021-07-28, client LOCATION PIT); on decline
      it falls back to the media ROOT with a "<job> — " name PREFIX. Either way ghl_folder_id
      is recorded ("root" is a valid PASSING fallback).
-  2. Uploads every QC-PASSED asset (reads <job>/qc/image_qc_report.json — only assets with
-     pass:true and ZERO auto-fails) via ghl_media.upload_media (POST /medias/upload-file,
+  2. Uploads every QC-PASSED asset (reads the job's SOP-GIP-02 report — only assets with
+     pass:true and ZERO auto-fails; the report is the launch's, see _qc_report_path) via
+     ghl_media.upload_media (POST /medias/upload-file,
      multipart, parentId), recording {fileId, url} per asset to <job>/media_library.json AND,
      best-effort, into the Vault provenance sidecar (ghl_media_id + ghl_public_url).
   3. Post-upload LIVENESS check: GET the returned public URL, expect HTTP 200 with a non-empty
@@ -132,8 +133,31 @@ def _ledger_path(job_dir: Path) -> Path:
     return Path(job_dir) / "media_library.json"
 
 
+# The SOP-GIP-02 request and the report it names are written ONCE for the whole launch, into the
+# launch run's qc/ folder (the request carries the report beside it as its expected_report). A page
+# run is nested inside it (<launch run>/dispatch/<page>), so the report is resolved up the tree.
+_QC_REPORT_REL = "image_qc_report.json"
+_QC_REQUEST_REL = "image_qc_request.json"
+
+
 def _qc_report_path(job_dir: Path) -> Path:
-    return Path(job_dir) / "qc" / "image_qc_report.json"
+    """The SOP-GIP-02 report this job's assets were reviewed in.
+
+    The launcher writes the request — and expects the report beside it — in the LAUNCH run folder,
+    while a job folder for one page is nested inside that launch run. Asking the job folder for its
+    own qc/ report therefore found nothing on a real launch and refused an upload every asset had
+    passed. The report is read from the nearest enclosing folder that carries it (the report first,
+    then the request that names it), and from the job folder itself only when no enclosing folder
+    does — a job driven on its own, which is the flat layout this chain used before pages nested.
+    Same rule as launcher_core/graphics_hooks.qc_report_root, so the upload and the package gate
+    can never disagree about which file is the review.
+    """
+    job_dir = Path(job_dir)
+    for name in (_QC_REPORT_REL, _QC_REQUEST_REL):
+        for folder in (job_dir, *job_dir.parents):
+            if (folder / "qc" / name).is_file():
+                return folder / "qc" / _QC_REPORT_REL
+    return job_dir / "qc" / _QC_REPORT_REL
 
 
 def _is_png(path_str: str) -> bool:
@@ -357,7 +381,7 @@ def gate_graphics_media_complete(job_dir):
     """HARD closeout gate. Returns (ok: bool, reasons: list[str]).
 
     PASS only when <job>/media_library.json records a resolved ghl_folder_id AND every
-    QC-PASSED asset (from <job>/qc/image_qc_report.json) is uploaded with a real ghl_media_id
+    QC-PASSED asset (from the SOP-GIP-02 report _qc_report_path resolves) is uploaded with a real ghl_media_id
     + ghl_upload_status:"complete" — OR a logged owner_skip_approval authorizes the skip. There
     is NO defer-to-pass."""
     job_dir = Path(job_dir)

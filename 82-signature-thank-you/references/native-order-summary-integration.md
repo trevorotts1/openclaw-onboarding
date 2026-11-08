@@ -110,6 +110,15 @@ S44 / vendor order events                 S82
    fallback — the offer ID itself with an empty one-time billing
    block. Amounts, currencies, slots, and entitlement IDs are never
    defaulted or invented.
+8. **Transaction identity is reported, never fabricated.** The
+   snapshot's `native_transaction_ref` is the one transaction the
+   order's events agree on; a multi-transaction order (successive
+   purchases) reports null rather than naming one event's transaction
+   as if it covered the whole order. Dedupe never uses that value:
+   events dedupe by `event_id` and purchased lines by
+   `native_line_ref`, matching S44's per-line delivery identity
+   (tenant + transaction + purchased line + action + version) — never
+   an order id alone.
 
 ## What stays blocked (live half — L3/L4 pending, NOT faked)
 

@@ -178,6 +178,148 @@
       "type": "string",
       "minLength": 1,
       "description": "Reference to the Command Center approval record that minted approved_plan_hash. A named reference, never a credential."
+    },
+    "asset_map": {
+      "type": "object",
+      "description": "Shared-semantics boundary: BRAND/ASSET (BFL-000). What was chosen, what was actually produced, whether it is hosted, and the real URL when one exists. Optional; absent means nothing is recorded yet and no lane may claim an asset or a link. Never a placeholder: an unknown value stays absent or null.",
+      "properties": {
+        "brand_choices": {
+          "type": "object",
+          "description": "The selected brand choices the client actually confirmed (palette role assignments, fonts, logo).",
+          "properties": {
+            "brand_file": {
+              "type": ["string", "null"],
+              "description": "Path or ref of the brand file the choices came from."
+            },
+            "brand_owner": {
+              "type": ["string", "null"]
+            },
+            "palette_status": {
+              "type": ["string", "null"],
+              "description": "provided, client-confirmed or suggested. A suggested palette is never paid for."
+            },
+            "design_style": {
+              "type": ["string", "null"],
+              "enum": ["A", "B", "C", null]
+            }
+          }
+        },
+        "assets": {
+          "type": "array",
+          "description": "One entry per final asset the launch produced.",
+          "items": {
+            "type": "object",
+            "required": ["asset_id"],
+            "properties": {
+              "asset_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "page_id": {
+                "type": ["string", "null"],
+                "description": "The page unit id this asset belongs to, when it belongs to one."
+              },
+              "kind": {
+                "type": ["string", "null"]
+              },
+              "final_identity": {
+                "type": "object",
+                "description": "The actual final bytes. Identity is a hash, never a filename alone.",
+                "properties": {
+                  "path": {
+                    "type": ["string", "null"]
+                  },
+                  "sha256": {
+                    "type": ["string", "null"],
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                }
+              },
+              "production_state": {
+                "type": ["string", "null"],
+                "enum": ["draft", "produced", "reviewed", "approved", null],
+                "description": "draft is a layout proof; approved means the client's recorded approval bound this exact hash."
+              },
+              "hosting_state": {
+                "type": ["string", "null"],
+                "enum": ["not_hosted", "hosted", "failed", null]
+              },
+              "url": {
+                "type": ["string", "null"],
+                "description": "The real hosted URL, or null. Never synthesized."
+              }
+            }
+          }
+        }
+      }
+    },
+    "publication": {
+      "type": "object",
+      "description": "Shared-semantics boundary: PUBLICATION (BFL-000). The existing authorization, the actual capability, the save/publish result and the observed status or URL. A save is never publication and a request file is never a review. Optional; absent means nothing was published.",
+      "properties": {
+        "authorization_ref": {
+          "type": ["string", "null"],
+          "description": "The already-existing authorization the publication ran under. Never minted here."
+        },
+        "scope": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The exact surfaces authorized for publication."
+        },
+        "capability": {
+          "type": ["string", "null"],
+          "enum": ["available", "unavailable", "unknown", null],
+          "description": "Observed capability only. Never assumed from a module being present."
+        },
+        "result": {
+          "type": ["string", "null"],
+          "enum": ["not_attempted", "saved", "published", "failed", null]
+        },
+        "observed_status": {
+          "type": ["string", "null"],
+          "description": "The platform's own observed status, verbatim, or null."
+        },
+        "url": {
+          "type": ["string", "null"]
+        },
+        "observed_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        }
+      }
+    },
+    "execution_stage": {
+      "$ref": "#/definitions/execution_stage"
+    },
+    "resume": {
+      "type": "object",
+      "description": "Shared-semantics boundary: RESUME (BFL-000). Where a stopped launch restarts from, proven by the run's own journal rather than by memory. Optional; absent means the launch does not claim to be resumable.",
+      "properties": {
+        "run_ref": {
+          "type": ["string", "null"],
+          "description": "The launch run folder the stages live in."
+        },
+        "journal_ref": {
+          "type": ["string", "null"],
+          "description": "The durable journal/state file a resume reads. A raw launch-profile plan is refused; the journal is required."
+        },
+        "last_closed_stage": {
+          "type": ["string", "null"]
+        },
+        "next_stage": {
+          "type": ["string", "null"]
+        },
+        "resumable": {
+          "type": ["boolean", "null"],
+          "description": "True only when the journal proves the closed stages are still intact."
+        },
+        "blocked_reason": {
+          "type": ["string", "null"],
+          "description": "Plain English: what is missing before a resume can continue."
+        }
+      }
     }
   },
   "definitions": {
@@ -193,6 +335,32 @@
       },
       "uniqueItems": true,
       "description": "Unit ids that must be COMPLETE before this unit starts. Empty means ready now. Must resolve to units in the same plan and must not form a cycle."
+    },
+    "execution_stage": {
+      "type": "object",
+      "description": "Shared-semantics boundary: EXECUTION STAGE (BFL-000). Which stage a unit or launch is in and the receipt that proves it. Optional; absent means no stage was recorded and no lane may report one complete.",
+      "properties": {
+        "stage": {
+          "type": ["string", "null"],
+          "description": "The stage name in the producing run's own vocabulary (Skill 71: image-inventory-prompts, image-generation-qc, image-map-upload, design-board, final-mockups)."
+        },
+        "state": {
+          "type": ["string", "null"],
+          "enum": ["queued", "running", "awaiting_approval", "blocked", "closed", "failed", null]
+        },
+        "receipt_ref": {
+          "type": ["string", "null"]
+        },
+        "receipt_status": {
+          "type": ["string", "null"],
+          "enum": ["pass", "fail", "blocked", "not_authorized", null],
+          "description": "The receipt's own status, in the vocabulary the producer actually writes: 71-blackceo-signature-page/scripts/stage_gate.py RECEIPT_STATUS and references/report-json.schema.json are pass, fail, blocked, not_authorized. Only closed + pass counts as a closed stage."
+        },
+        "closed_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        }
+      }
     },
     "commerce_unit": {
       "type": "object",
@@ -231,6 +399,77 @@
         },
         "waits_for": {
           "$ref": "#/definitions/waits_for"
+        },
+        "sections": {
+          "type": "array",
+          "description": "Shared-semantics boundary: PAGE INSTALLATION (BFL-000). The page's own section/element identity and its full-width policy. Optional; absent means the page has no recorded section map yet.",
+          "items": {
+            "type": "object",
+            "required": ["section_id"],
+            "properties": {
+              "section_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "element_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "full_width": {
+                "type": ["boolean", "null"],
+                "description": "The section's full-width policy as actually applied (create and edit alike), or null when not applied."
+              }
+            }
+          }
+        },
+        "native_checkout_family": {
+          "type": ["string", "null"],
+          "description": "Shared-semantics boundary: PAGE INSTALLATION (BFL-000). The selected native checkout family. Never invented; null until a real family is chosen."
+        },
+        "native_purchase_bindings": {
+          "type": "array",
+          "description": "Shared-semantics boundary: PAGE INSTALLATION (BFL-000). Real native product/price bindings for this page. Empty means nothing is bound.",
+          "items": {
+            "type": "object",
+            "required": ["slot"],
+            "properties": {
+              "slot": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The offer slot this binding serves, in the shared launch vocabulary: main, bump, upsell_1, downsell_1, upsell_2 (the offers slot enum in shared-utils/signature_launch/domain/launch.schema.json). order_bump is a commerce-unit kind, never a slot."
+              },
+              "native_product_id": {
+                "type": ["string", "null"]
+              },
+              "native_price_id": {
+                "type": ["string", "null"],
+                "description": "Null when prices are resolved by amount rather than a native price id."
+              }
+            }
+          }
+        },
+        "installation": {
+          "type": "object",
+          "description": "Shared-semantics boundary: PAGE INSTALLATION (BFL-000). The actual installation outcome, never a design-only claim.",
+          "properties": {
+            "state": {
+              "type": ["string", "null"],
+              "enum": ["planned", "design_only", "installed", "failed", null]
+            },
+            "readback_ref": {
+              "type": ["string", "null"],
+              "description": "The read-back that proves the page landed in the host."
+            },
+            "observed_at": {
+              "type": ["string", "null"],
+              "format": "date-time"
+            }
+          }
+        },
+        "execution_stage": {
+          "$ref": "#/definitions/execution_stage"
         }
       }
     },
@@ -357,6 +596,119 @@
         },
         "waits_for": {
           "$ref": "#/definitions/waits_for"
+        },
+        "variant_tag": {
+          "type": ["string", "null"],
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9:_./-]*$",
+          "description": "AUTOMATION VARIANT (BFL-000). The contact tag that marks WHICH purchased variant an automation serves (main / upsell-N / downsell-N). Declared once on the unit that installs the post-sale purchase handler and derived from the plan's own purchased slot (offer.packages[].slot), never a second variant identity. The launch-c reader carries it verbatim and the launch compiler binds it to the buildable template's variant placeholder; absent or null means the plan declares none and the helper must stay on its approved email sequence."
+        },
+        "purchase_identity": {
+          "type": ["object", "null"],
+          "description": "AUTOMATION PURCHASE IDENTITY (BFL-000). The purchase-event identity the post-sale handler deduplicates on, as the native field the selected flow supplies. Only an event / transaction / purchased-line identity is sufficient; an order id alone groups several paid changes and is never a dedupe key. Absent means the plan declares none and the compiler records the identity as insufficient rather than guessing.",
+          "properties": {
+            "transaction_id": {
+              "type": ["string", "null"],
+              "minLength": 1,
+              "description": "The native transaction field reference, e.g. ghl.transaction.id."
+            },
+            "event_id": {
+              "type": ["string", "null"],
+              "minLength": 1,
+              "description": "The native purchase-event field reference, e.g. ghl.event.id."
+            },
+            "purchased_line_id": {
+              "type": ["string", "null"],
+              "minLength": 1,
+              "description": "The native purchased-line field reference, e.g. ghl.purchased_line.id."
+            },
+            "order_id": {
+              "type": ["string", "null"],
+              "minLength": 1,
+              "description": "The native order field reference. Grouping only: an order id alone never deduplicates a purchase."
+            }
+          }
+        },
+        "filters": {
+          "type": "array",
+          "description": "Shared-semantics boundary: AUTOMATION (BFL-000). The intended trigger's filters, in the selected rail's own vocabulary. Optional; empty means the trigger has no filter.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "actions": {
+          "type": "array",
+          "description": "Shared-semantics boundary: AUTOMATION (BFL-000). The complete ordered actions the automation performs, including copy identity. Empty means the action list is not compiled yet; a plan with an empty list is never a complete automation.",
+          "items": {
+            "type": "object",
+            "required": ["order", "kind"],
+            "properties": {
+              "order": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["email", "sms", "wait", "branch", "webhook", "internal_note", "browser_task", "conversation_ai", "goal_event"]
+              },
+              "copy_ref": {
+                "type": ["string", "null"],
+                "description": "The real body/copy this action sends, by reference. Null when the action sends nothing."
+              },
+              "delay": {
+                "type": ["string", "null"],
+                "description": "The wait before this action, as the rail expresses it. Null when it runs immediately."
+              },
+              "condition": {
+                "type": ["string", "null"]
+              }
+            }
+          }
+        },
+        "settings": {
+          "type": "object",
+          "description": "Shared-semantics boundary: AUTOMATION (BFL-000). Workflow settings that change behaviour, chiefly reentry and enrolment.",
+          "properties": {
+            "reentry": {
+              "type": ["string", "null"],
+              "enum": ["allow", "block", "unknown", null],
+              "description": "unknown until the rail answers; never guessed."
+            },
+            "enrollment": {
+              "type": ["string", "null"],
+              "enum": ["single", "successive", "unknown", null],
+              "description": "successive keeps a second purchase's fulfilment, deduplicated by the native event/transaction/line identity."
+            },
+            "stop_on_response": {
+              "type": ["boolean", "null"]
+            }
+          }
+        },
+        "browser_work": {
+          "type": "array",
+          "description": "Shared-semantics boundary: AUTOMATION (BFL-000). The browser steps the automation requires that the API cannot perform, so an operation owner can route them. Optional.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "execution": {
+          "type": "object",
+          "description": "Shared-semantics boundary: AUTOMATION (BFL-000). The actual execution result, recorded rather than assumed.",
+          "properties": {
+            "state": {
+              "type": ["string", "null"],
+              "enum": ["not_executed", "executed", "partial", "failed", null]
+            },
+            "result_ref": {
+              "type": ["string", "null"]
+            },
+            "observed_at": {
+              "type": ["string", "null"],
+              "format": "date-time"
+            }
+          }
+        },
+        "execution_stage": {
+          "$ref": "#/definitions/execution_stage"
         }
       }
     }

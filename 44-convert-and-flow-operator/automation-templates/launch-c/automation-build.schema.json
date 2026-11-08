@@ -111,6 +111,30 @@
           "enum": ["pre_launch", "opt_in", "event_reminders", "post_sale", "upsell_downsell", "abandoned_checkout", "page_retargeting", "onboarding_review", "win_back", "failed_payment", "conversation_ai_reply"]
         },
         "template": { "type": ["string", "null"] },
+        "variant_tag": {
+          "type": ["string", "null"],
+          "description": "The contact tag the short post-sale handler sets for the purchased variant (main / upsell-N / downsell-N), carried verbatim from the launch plan's automation unit. The launch compiler binds it to the buildable template's variant placeholder, which is what lets the short handler install its template graph instead of falling back to its email sequence. Null when the plan declares none.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9:_./-]*$"
+        },
+        "settings": {
+          "type": ["object", "null"],
+          "description": "The launch plan's automations[].settings block, carried verbatim (reentry allow|block, enrollment single|successive). Null when the plan declares none; the compiler then records the setting insufficient instead of guessing.",
+          "additionalProperties": true
+        },
+        "allow_reentry": {
+          "type": ["boolean", "null"],
+          "description": "The native reentry boolean derived from settings.reentry: true for allow, false for block, null when the plan declares none. True/false is APPLIED to the workflow settings and read back after the save; null applies nothing."
+        },
+        "allow_enrollment": {
+          "type": ["string", "null"],
+          "enum": ["single", "successive", null],
+          "description": "settings.enrollment as declared, or null when the plan declares none. Recorded, never invented into a provider payload the rail has not verified."
+        },
+        "purchase_identity": {
+          "type": ["object", "null"],
+          "description": "The purchase-event identity the post-sale handler deduplicates on, carried verbatim from the launch plan (native field references only). Null when the plan declares none: the compiler records purchase_identity.sufficient false rather than normalising an order id into a key.",
+          "additionalProperties": true
+        },
         "build_rail": { "type": "string", "enum": ["ghl_api", "skill44_engine", "unknown"] },
         "draft_only": { "type": "boolean", "const": true },
         "trigger": {
