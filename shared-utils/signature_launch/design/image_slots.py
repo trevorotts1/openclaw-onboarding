@@ -9,7 +9,8 @@ entries (or ``{"images": [...]}``). Each entry names one slot:
                    returned by the upload). Absent until the image is uploaded.
     sha256         SHA-256 of the QC'd image file. When absent, it is the hash
                    of ``asset_file`` if that file can be read.
-    asset_file     the QC'd file, relative to the image-map (or the run)
+    asset_file     the QC'd file, relative to the image-map (or the run); the
+                   map stage spells it asset_path, and both are accepted
     alt_text       the image's alt text
 
 A renderer calls ``render_img`` (never hand-writes an ``<img>``): the slot id
@@ -19,6 +20,11 @@ must map to an entry (by ``data-image-slot``, else by its src) with a matching
 src, and its bytes must hash to the QC'd file. Nothing is invented: an unknown
 slot, a missing URL, a missing hash or a changed byte is an error, never a
 fallback.
+
+``apply_hosted_urls`` is the same contract applied to a page that was authored
+with local asset paths: once the upload has returned a URL, that URL replaces
+the local reference, so the delivered page never asks the client's browser to
+read a file on our disk.
 
 Deterministic, standard library only.
 """
@@ -43,7 +49,11 @@ class ImageSlotError(ValueError):
 
 
 def load_entries(source):
-    """The entry list from a path, a parsed list, or ``{"images": [...]}``."""
+    """The slot entries from a path, a parsed list, or an ``{"images": [...]}`` document.
+
+    A document may also carry ``brand_assets`` (the client's logo, which Skill 71's map
+    validator does not count as a generated master). Both lists are slots to a renderer, so
+    they are returned together: the page resolves its logo by the same contract as its photos."""
     data = source
     if isinstance(source, (str, Path)):
         try:
@@ -51,7 +61,11 @@ def load_entries(source):
         except (OSError, ValueError) as exc:
             raise ImageSlotError("image-map unreadable at %s: %s" % (source, exc))
     if isinstance(data, dict):
-        data = data.get("images")
+        images = data.get("images")
+        brand = data.get("brand_assets") or []
+        if isinstance(images, list) and isinstance(brand, list):
+            return images + brand
+        data = images
     if not isinstance(data, list):
         raise ImageSlotError("image-map must be a list of entries or {\"images\": [...]}")
     return data
@@ -93,7 +107,8 @@ def build_slots(source, base_dirs=()):
             if not isinstance(url, str) or urllib.parse.urlparse(url).scheme != "https" \
                     or not urllib.parse.urlparse(url).netloc:
                 raise ImageSlotError("slot %s: %s %r is not an https URL" % (slot_id, URL_KEY, url))
-        asset_file = entry.get("asset_file")
+        # the map stage names the file asset_path, the prompt plan names it asset_file
+        asset_file = entry.get("asset_file") or entry.get("asset_path")
         digest = entry.get(HASH_KEY)
         if digest is not None:
             digest = _hash_of(digest)
@@ -126,8 +141,60 @@ def render_img(slots, slot_id, alt=None, css_class="sl-image"):
         html.escape(url, quote=True), html.escape(str(text), quote=True))
 
 
+_IMG_TAG = re.compile(r"<img\b[^>]*>", re.I)
+_SRC_ATTR = re.compile(r"(\bsrc\s*=\s*)([\"'])([^\"']*)\2", re.I)
+_SLOT_ATTR = re.compile(r"\bdata-image-slot\s*=\s*([\"'])([^\"']*)\1", re.I)
+
+
 def _strip(src):
     return src.split("#")[0].split("?")[0]
+
+
+def hosted_slot_for(src, slots):
+    """The slot a rendered ``src`` belongs to AND that already carries its hosted URL, or None.
+
+    A local path that matches an entry whose image has not been uploaded resolves to None:
+    the caller keeps the local reference and the missing link stays visible."""
+    for slot in slots.values():
+        if slot["url"] and src_matches(slot, src):
+            return slot
+    return None
+
+
+def apply_hosted_urls(html_text, slots):
+    """Point every slot image on an authored page at its hosted URL.
+
+    A renderer or an author that could only name the local asset file is rewritten to the
+    ``ghl_media_url`` the upload returned, so the page the client opens carries the hosted
+    asset, never a path on our disk. Only an ``<img>`` whose src matches a slot's asset file
+    (or already carries its URL) is touched, and only when that slot is hosted; a src that
+    matches nothing, or a slot with no URL yet, is left exactly as it was — nothing is guessed.
+
+    Returns ``(html, changes)``, changes being ``[{slot, was, now}]`` for the caller to record.
+    """
+    changes = []
+
+    def _rewrite(tag):
+        slot_attr = _SLOT_ATTR.search(tag)
+        src_attr = _SRC_ATTR.search(tag)
+        if src_attr is None:
+            return tag
+        src = src_attr.group(3)
+        slot = slots.get(slot_attr.group(2)) if slot_attr else None
+        if slot is not None:
+            if not src_matches(slot, src) or not slot["url"] or _strip(src) == _strip(slot["url"]):
+                return tag
+        else:
+            slot = hosted_slot_for(src, slots)
+            if slot is None:
+                return tag
+        changes.append({"slot": slot["id"], "was": src, "now": slot["url"]})
+        new = _SRC_ATTR.sub(lambda m: m.group(1) + m.group(2) + slot["url"] + m.group(2), tag, count=1)
+        if slot_attr is None:  # name the slot too, so check_page_images can bind it by id
+            new = new[:-1] + ' data-image-slot="%s">' % html.escape(slot["id"], quote=True)
+        return new
+
+    return _IMG_TAG.sub(lambda m: _rewrite(m.group(0)), html_text), changes
 
 
 def src_matches(slot, src):

@@ -148,8 +148,8 @@ def _self_test() -> int:
             print(f"  {label:24s} -> {verdict}")
     lo = prompt_gate.length_problems(_rich_pass_prompt(GPT_MAX * 79 // 100))
     hi = prompt_gate.length_problems(_rich_pass_prompt(GPT_MAX * 101 // 100))
-    if not any("ADD at least 200" in m for m in lo):
-        failures.append(f"79 percent rejection must name the exact chars to add (200): {lo}")
+    if not any("ADD at least 3200" in m for m in lo):
+        failures.append(f"79 percent rejection must name the exact chars to add (3200 = the gap to the 95% band floor 19000): {lo}")
     if not any("CUT exactly 200" in m for m in hi):
         failures.append(f"101 percent rejection must name the exact chars to cut (200): {hi}")
 

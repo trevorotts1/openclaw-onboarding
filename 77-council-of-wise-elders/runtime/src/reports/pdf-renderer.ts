@@ -58,7 +58,7 @@ export interface PdfRenderPort {
 }
 
 export const PDF_RENDERER_MISSING_PIECE =
-  'no headless Chrome/Chromium or CUPS PDF filter (cupsfilter) is installed or discoverable on this host; install one, or set CHROME_PATH to a Chrome/Chromium binary, then retry the export';
+  'no headless renderer is installed or discoverable on this host: install Playwright/Chromium, a Chrome/Chromium binary, or the CUPS PDF filter (cupsfilter), or set CHROME_PATH to a Chrome/Chromium binary, then retry the export';
 
 const MIN_PDF_BYTES = 1000;
 

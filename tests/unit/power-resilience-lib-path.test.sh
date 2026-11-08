@@ -12,9 +12,9 @@
 #
 # Measured on the box: the updater was entered from the login cwd ($HOME), so
 # _PR_LIB became
-#   /Users/rockstar360/platform/mac/power-resilience/lib-power-resilience.sh
+#   $HOME/platform/mac/power-resilience/lib-power-resilience.sh
 # the `.openclaw` segment was DROPPED, while the library actually sat at
-#   /Users/rockstar360/.openclaw/platform/mac/power-resilience/lib-power-resilience.sh
+#   $HOME/.openclaw/platform/mac/power-resilience/lib-power-resilience.sh
 # The `[ -f "$_PR_LIB" ]` test therefore failed, the else-branch only echoed a
 # WARNING, and the ENTIRE outage-survival gate (pr_preflight_gate,
 # pr_apply_pmset, pr_check_ethernet) was skipped with rc 0. pmset autorestart

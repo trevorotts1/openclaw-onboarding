@@ -6,7 +6,8 @@ question is shown, never which question is asked or where the answer goes.
 
 | Piece | File |
 |---|---|
-| Question bank (60 questions) | `shared-utils/client_intake/question-bank.json` |
+| Question bank (62 questions, the canonical source) | `shared-utils/client_intake/question-bank.json` |
+| Run-mode routing (`mode_routing`) | `shared-utils/client_intake/question-bank.json` + `engine.route_mode` |
 | Engine: `next`, `record`, `resolve_unknown`, `check`, `finalize` | `shared-utils/client_intake/engine.py` |
 | Colour help: logo, website, three palettes, safe default | `shared-utils/client_intake/palette_help.py`, `palette-defaults.json` |
 | Answers file contract (C1) | `shared-utils/client_intake/answers.schema.json` |
@@ -39,6 +40,38 @@ roles in one message ("primary #0A7E8C, background white"), nothing more is aske
    generated.
 3. Everything defaulted or suggested is listed in the answers file under `to_confirm`, each with a one-line way to change
    it, and must be reported at delivery.
+
+## Which run mode, and what an answer IS
+
+`engine.route_mode(text)` reads the client's own opening words against the bank's `mode_routing`. An
+explicit Black Friday or launch request routes into the signature launch; a deliberate request for the
+older step-by-step funnel keeps `legacy` exactly as it was. Both markers, or neither, is asked as one
+plain question — never resolved by a default.
+
+Every saved answer carries a provenance class (`engine.provenance_of`): `confirmed_fact`, `ai_proposal`,
+`user_selected_recommendation`, `generated_asset`, or `unresolved_capability`. An answer the client has
+not given can be turned into a proposal on the same launch record (`engine.propose`), and accepted
+through ONE shared transition (`engine.accept_proposal`) that Skill 49 and Skill 83 both call.
+
+## Revision
+
+`engine.reconcile_revision(doc, changed)` reconciles a change instead of re-interviewing: disabling
+upsell 1 reopens the saved downsell 1 and upsell 2 and invalidates the plan approval, while every
+unrelated brand and context answer is kept.
+
+## Offers, billing and brand
+
+- Ordinary extra-offer prose is normalised into the existing structured offer record
+  (`engine.normalize_offer_prose`) and the client's own words are kept as `source_text`.
+- The first package is saved as a valid partial record before the next one is collected.
+- A free item is its own `free_entry` record with its own opt-in and thank-you journey: it never goes
+  through the paid checkout, and paid offers keep the positive-price rule.
+- Billing is carried whole (`engine.billing_terms`). Where the chosen execution path cannot serve a
+  plan, `engine.billing_supported` names the specific limit and exactly one supported alternative and
+  keeps the request unresolved until the client accepts it — never flattened into a one-time payment.
+- One approved brand record (`engine.brand_record`) holds the logo variants, colour roles, typography,
+  image direction and voice. A new logo is an asset job: offers and copy keep moving while it is made.
+- `engine.asset_map(doc)` is the one map every page reads for its files.
 
 ## Never defaulted
 

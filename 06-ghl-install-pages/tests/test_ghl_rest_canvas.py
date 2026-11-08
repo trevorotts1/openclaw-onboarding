@@ -1037,13 +1037,28 @@ class TestChildLinkChainInvariant:
 
 
 class TestAllowRowMaxWidth:
-    def test_default_is_false_centered_1170(self):
-        """Default (LIVE-probe safe state) keeps allowRowMaxWidth False and the
-        1170px inner cap that drives the centered column."""
+    def test_default_is_full_width_no_1170_cap(self):
+        """ADOPTED POLICY: full width is the DEFAULT for a created section. The
+        native allowRowMaxWidth flag is True AND the 1170px inner cap is lifted
+        to 100% — both must move together or the flag is cosmetic (LIVE probe)."""
         blob = rc.new_page_blob("<p>x</p>", surface="funnel")
         meta = blob["sections"][0]["metaData"]
+        assert meta["extra"]["allowRowMaxWidth"]["value"] is True
+        styles = blob["sections"][0]["general"]["sectionStyles"]
+        assert "max-width:1170px" not in styles
+        assert "max-width:100%" in styles
+
+    def test_opt_out_false_keeps_centered_1170_cap(self):
+        """The deliberate opt-out still produces the OLD constrained section:
+        allowRowMaxWidth False and the 1170px inner cap intact. This case proves
+        the switch works both ways."""
+        blob = rc.new_page_blob("<p>x</p>", surface="funnel",
+                                allow_row_max_width=False)
+        meta = blob["sections"][0]["metaData"]
         assert meta["extra"]["allowRowMaxWidth"]["value"] is False
-        assert "max-width:1170px" in blob["sections"][0]["general"]["sectionStyles"]
+        styles = blob["sections"][0]["general"]["sectionStyles"]
+        assert "max-width:1170px" in styles
+        assert "max-width:100%" not in styles
 
     def test_true_sets_flag_and_lifts_inner_cap(self):
         """Opt-in full width flips the metadata flag AND lifts the 1170px cap that

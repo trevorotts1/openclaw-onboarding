@@ -23,6 +23,19 @@ first time. Dispatch listed the page's files before that, so ``refresh_pieces`` 
 page's piece and in the dispatch's stored result the package binds the piece to; without it the package
 check would never see the final mockups of a real run.
 
+The map stage is produced here, not left to the author: ``write_image_map`` builds
+``image-map-upload/image-map.json`` from the files that exist, the client's logo (the file the brand
+answer produced), the SOP-GIP-02 verdicts and the public URLs the Skill 45 upload really recorded in
+``media_library.json``. The same map is the asset map every page renderer reads
+(``shared-utils/signature_launch/design/image_slots.py``), and ``rewrite_page_assets`` replaces a
+page's local file references with those hosted URLs while responsive-html is still open. An entry
+with no passing review, or with no hosted URL on a production run, stops the stage by name.
+
+The SOP-GIP-02 request and the report it names are the launch's, written once in
+``<launch run>/qc/``. A page run is nested (``<launch run>/dispatch/<page>``), so both are read
+through ``graphics_hooks.qc_report_root`` — the same resolution the package gate uses — and a
+page run's own ``qc/`` folder is never mistaken for the launch's.
+
 ``python3 -m launcher_core.image_stages --run-dir <launch run folder>`` exits 0 only when every page
 has all five stages closed, and always writes ``qc/image_stages_report.json``. The package check
 (check_rules/image_qc.py) re-reads each page's own stage state, so the report is never trusted.
@@ -33,6 +46,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import subprocess
 import sys
@@ -48,6 +62,15 @@ LAYOUT_APPROVAL_REL = "layout-proof-approval.json"
 SCHEMA = "launcher.image-stages/1"
 SKILL71_SCRIPTS = "71-blackceo-signature-page/scripts"
 FINAL_REQUEST = "production-request-final-mockups.json"
+# The asset map every page renderer reads (shared-utils/signature_launch/design/image_slots.py):
+# one entry per image slot, carrying the hosted URL the upload returned in `ghl_media_url`.
+IMAGE_MAP_DIR = "image-map-upload"
+IMAGE_MAP_REL = "image-map-upload/image-map.json"
+IMAGE_MAP_MD_REL = "image-map-upload/image-map.md"
+IMAGE_SLOTS_REF = "shared-utils/signature_launch/design/image_slots.py"
+HOSTED_LEDGER_REL = "media_library.json"
+PAGE_HTML_DIR = "responsive-html"
+BRAND_LOGO_SLOT = "BRAND-LOGO"
 _SKIP_DIRS = {"private", ".git", "node_modules", "__pycache__"}
 _MAX_DEPTH = 5
 
@@ -149,6 +172,318 @@ def default_runner(argv: List[str]) -> Tuple[int, str]:
     return done.returncode, "\n".join(text.strip().splitlines()[-12:])
 
 
+# ---------------------------------------------------------------- the asset map (image-map-upload)
+def _inventory_entries(run: Path) -> List[Dict[str, Any]]:
+    doc = _read(Path(run) / "desktop-wireframe" / "image-inventory.json")
+    if isinstance(doc, list):
+        return [i for i in doc if isinstance(i, dict)]
+    if isinstance(doc, dict):
+        for key in ("images", "items", "inventory"):
+            if isinstance(doc.get(key), list):
+                return [i for i in doc[key] if isinstance(i, dict)]
+    return []
+
+
+def _png_size(path: Path) -> Tuple[int, int]:
+    """The file's own pixel size from its PNG header, or (0, 0) when it cannot be read."""
+    try:
+        head = Path(path).read_bytes()[:24]
+    except OSError:
+        return (0, 0)
+    if head[:8] != b"\x89PNG\r\n\x1a\n" or head[12:16] != b"IHDR":
+        return (0, 0)
+    return (int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big"))
+
+
+def _png_ratio(path: Path) -> str:
+    """The file's own width:height, reduced; 1:1 when the header cannot be read."""
+    width, height = _png_size(Path(path))
+    if not width or not height:
+        return "1:1"
+    divisor = math.gcd(width, height)
+    return f"{width // divisor}:{height // divisor}"
+
+
+def _qc_folder(run: Path) -> Path:
+    """The launch folder that holds this run's SOP-GIP-02 request and report.
+
+    A page run is nested inside its launch run (``<launch run>/dispatch/<page>``) and the review is
+    written once for the whole launch, in the launch run's ``qc/`` folder — the folder the
+    launcher's own ``_write_qc_request`` writes the request into and the one the package gate
+    reads (``graphics_hooks.qc_report_root``). Asking the page run for its own ``qc/`` found
+    nothing, which is why the same report could pass the package gate and leave this map
+    unverified."""
+    from . import graphics_hooks
+    return graphics_hooks.qc_report_root(run)
+
+
+def _qc_records(root: Path) -> Dict[str, Dict[str, Any]]:
+    """SOP-GIP-02 report records by resolved asset path, from the launch folder that holds them."""
+    from . import graphics_hooks
+    doc = _read(_qc_folder(root) / graphics_hooks.QC_REPORT_REL) or {}
+    out: Dict[str, Dict[str, Any]] = {}
+    for rec in (doc.get("assets") or []) if isinstance(doc, dict) else []:
+        if isinstance(rec, dict) and rec.get("local_path"):
+            out[str(Path(str(rec["local_path"])).resolve())] = rec
+    return out
+
+
+_HTML_TYPES = ("text/html", "application/xhtml+xml")
+# Content type -> the format its BYTES must decode as. A recorded type alone is not evidence.
+# The accepted types are exactly the ones admission accepted before; nothing new is admitted.
+_IMAGE_TYPE_FORMATS = {"image/png": "png", "image/jpeg": "jpeg", "image/webp": "webp"}
+# Generic binary is a transport detail, not an image claim: admitted only with decoded image bytes.
+_GENERIC_BINARY_TYPES = ("application/octet-stream", "binary/octet-stream")
+
+
+def _image_evidence(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """What the fetched bytes ARE, as the hosting route recorded them: format, dimensions, decode.
+
+    ``45-design-intelligence-library/scripts/graphics_ghl_push.py`` reads the magic header and the
+    pixel dimensions of the body it fetched and records them under ``liveness.image``. An entry
+    that carries no such record is not evidence of a picture, so an empty dict here is refused."""
+    live = entry.get("liveness") if isinstance(entry.get("liveness"), dict) else {}
+    image = live.get("image") if isinstance(live.get("image"), dict) else {}
+    return image
+
+
+def remote_image_problems(entry: Dict[str, Any]) -> List[str]:
+    """Why the hosted URL's recorded remote evidence is not a picture (F17), or [].
+
+    A nonempty HTML response is insufficient proof of an image, so the route records the real
+    Content-Type header and what the fetched bytes decode to (magic header + dimensions). Admission
+    refuses by name: no content type at all (an unrecorded header is not evidence and is never
+    filled in from the filename), an HTML/XML/JSON or any other non-image type, bytes that do not
+    decode as an image, and a type that contradicts the bytes. A generic ``octet-stream`` is
+    admitted only when the bytes themselves decode as an image.
+    """
+    problems: List[str] = []
+    ctype = str(entry.get("content_type") or entry.get("mime_type") or "").split(";")[0].strip().lower()
+    evidence = _image_evidence(entry)
+    fmt = str(evidence.get("format") or "").strip().lower()
+    width, height = evidence.get("width"), evidence.get("height")
+    decodes = (evidence.get("decodes") is True and isinstance(width, int) and isinstance(height, int)
+               and width > 0 and height > 0)
+    if not ctype:
+        problems.append("records no remote content type, so a login page cannot be told from a picture")
+    elif ctype in _HTML_TYPES:
+        problems.append(f"the URL returned {ctype}, which is a page, not a picture")
+    elif ctype in _GENERIC_BINARY_TYPES:
+        pass  # a transport detail: the decoded bytes below are the evidence
+    elif ctype not in _IMAGE_TYPE_FORMATS:
+        problems.append(f"the URL returned {ctype}, not an image")
+    if not decodes:
+        problems.append("the fetched bytes do not decode as an image (no readable image header/dimensions)")
+    elif ctype in _IMAGE_TYPE_FORMATS and _IMAGE_TYPE_FORMATS[ctype] != fmt:
+        problems.append(f"the URL returned {ctype} but its bytes decode as {fmt}")
+    return problems
+
+
+def _hosted_urls(root: Path) -> Dict[str, str]:
+    """The public URL each asset really got: complete upload AND a live link, https only, and —
+    F17 — remote evidence that the URL really served a picture, never a 200 that is a login page."""
+    doc = _read(Path(root) / HOSTED_LEDGER_REL) or {}
+    out: Dict[str, str] = {}
+    for rec in (doc.get("uploaded") or []) if isinstance(doc, dict) else []:
+        url = str(rec.get("public_url") or "")
+        if rec.get("ghl_upload_status") == "complete" and (rec.get("liveness") or {}).get("live") is True \
+                and url.startswith("https://") and rec.get("local_path") \
+                and not remote_image_problems(rec):
+            out[str(Path(str(rec["local_path"])).resolve())] = url
+    return out
+
+
+def hosted_admission(run_dir: Path, run: Path) -> Dict[str, Any]:
+    """Admit each hosted link for this run's current artifacts. Returns a report, never raises.
+
+    The same rules the asset map applies — a complete upload, a live link, a usable http(s) URL
+    and a local file that still hashes to what the ledger recorded — plus the F17 remote evidence: the
+    URL must have served a real content type and bytes that decode as an image with readable
+    dimensions. Every refusal is named, so an HTTP 200 whose body is an HTML login page is refused
+    as a page rather than admitted as a picture.
+    """
+    run, run_dir = Path(run), Path(run_dir)
+    doc, source = None, ""
+    for path in (run / HOSTED_LEDGER_REL, run_dir / HOSTED_LEDGER_REL):
+        loaded = _read(path)
+        if isinstance(loaded, dict):
+            doc, source = loaded, str(path)
+            break
+    out: Dict[str, Any] = {"ledger": source or None, "admitted": [], "refused": []}
+    if doc is None:
+        out["state"] = "not_recorded"
+        out["reason"] = f"no {HOSTED_LEDGER_REL}: hosting has not recorded an upload for this run"
+        return out
+    rows = doc.get("uploaded") if isinstance(doc.get("uploaded"), list) else []
+    for entry in rows:
+        if not isinstance(entry, dict):
+            continue
+        local = str(entry.get("local_path") or "")
+        name = Path(local).name or str(entry.get("asset_id") or "?")
+        url = str(entry.get("public_url") or "")
+        problems: List[str] = []
+        target = Path(local) if Path(local).is_absolute() else run / local
+        if not local or not target.is_file():
+            problems.append("the local artifact does not exist")
+        elif entry.get("sha256") and _sha(target) != entry["sha256"]:
+            problems.append("is not the current artifact (the ledger's hash is stale)")
+        if entry.get("ghl_upload_status") != "complete":
+            problems.append(f"completion status is {entry.get('ghl_upload_status')!r}, not 'complete'")
+        if not url.lower().startswith(("http://", "https://")):
+            problems.append("records no usable hosted URL")
+        live = entry.get("liveness") if isinstance(entry.get("liveness"), dict) else {}
+        if live.get("live") is not True:
+            problems.append("the URL is not recorded as live")
+        problems.extend(remote_image_problems(entry))
+        if problems:
+            out["refused"].append({"file": name, "problems": problems})
+        else:
+            out["admitted"].append({"file": name, "local_path": local, "public_url": url,
+                                    "ghl_media_id": entry.get("ghl_media_id") or entry.get("file_id"),
+                                    "sha256": entry.get("sha256")})
+    out["state"] = "pass" if out["admitted"] and not out["refused"] else (
+        "partial" if out["admitted"] else "refused")
+    return out
+
+
+def _map_entry(run: Path, slot_id: str, path: Path, digest: str, slot: Dict[str, Any],
+               qc: Dict[str, Dict[str, Any]], hosted: Dict[str, str], alt: str) -> Dict[str, Any]:
+    from . import graphics_hooks
+    rec = qc.get(str(path.resolve())) or {}
+    # the same binding the package gate applies: only a review of these bytes by two named,
+    # different models earns the word "passed" in the map. It is judged against the launch folder
+    # the report lives in, so a relative review_ref resolves exactly as it does for the gate.
+    passed = bool(rec) and not graphics_hooks.asset_review_problems(
+        rec, {"local_path": str(path), "page": slot_id, "sha256": digest, "asset_id": slot_id},
+        _qc_folder(run))
+    url = hosted.get(str(path.resolve()))
+    width, height = _png_size(path)
+    # the validator resolves asset paths against the image-map's own folder
+    rel = os.path.relpath(str(path), str(Path(run) / IMAGE_MAP_DIR)).replace(os.sep, "/")
+    return {"id": slot_id, "job": page_role(run), "filename": path.name, "status": "ready",
+            "asset_path": rel, "sha256": digest, "width": width or None, "height": height or None,
+            "alt_text": str(slot.get("alt_text") or slot.get("alt") or slot.get("description") or alt),
+            "intended_ratio": str(slot.get("intended_ratio") or slot.get("ratio")
+                                  or slot.get("aspect_ratio") or _png_ratio(path)),
+            "crop_focal": slot.get("crop_focal") or "center",
+            "qc_status": "passed" if passed else "unverified",
+            "ghl_media_url": url, "hosting_state": "hosted" if url else "not_hosted"}
+
+
+def image_map_entries(run: Path) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
+    """(page entries, brand entries, state) for the run's asset map.
+
+    Every generated file in image-generation-qc gets its inventory id under ``images``; the
+    client's logo (the file the brand answer produced) gets BRAND_LOGO_SLOT under
+    ``brand_assets`` — Skill 71's validator counts every ``images`` entry as a generated
+    master, and the logo is not one, so it rides in the same file under its own key where
+    every renderer still resolves it. ``state`` names what is missing: no URL is ever written
+    that the upload did not return."""
+    run = Path(run)
+    qc, hosted = _qc_records(run), _hosted_urls(run)
+    inventory = {str(i.get("id")): i for i in _inventory_entries(run) if i.get("id")}
+    id_by_number = {_number(k): k for k in inventory if _number(k) is not None}
+    entries: List[Dict[str, Any]] = []
+    for path in sorted((run / "image-generation-qc").glob("Image-*.png")):
+        number = _number(path.stem)
+        slot_id = id_by_number.get(number) if number is not None else None
+        slot_id = str(slot_id) if slot_id else (f"IMG-{number:03d}" if number is not None else path.stem)
+        entry = _map_entry(run, slot_id, path, _sha(path), inventory.get(slot_id) or {},
+                           qc, hosted, f"{page_role(run)} image {number}")
+        # Skill 71's map contract names the prompt that made each generated image. It is
+        # recorded when it exists; an image with no prompt on file says so by status.
+        prompt = run / "image-inventory-prompts" / f"{slot_id}.txt"
+        entry["prompt_file"] = (os.path.relpath(str(prompt), str(run / IMAGE_MAP_DIR))
+                                .replace(os.sep, "/") if prompt.is_file() else None)
+        entry["status"] = "ready" if prompt.is_file() else "missing"
+        entries.append(entry)
+    from . import graphics_hooks
+    brand_entries: List[Dict[str, Any]] = []
+    for asset in graphics_hooks.brand_logo_assets(run):
+        path = Path(asset["local_path"])
+        brand_entries.append(_map_entry(run, BRAND_LOGO_SLOT, path, asset["sha256"], {},
+                                        qc, hosted, "the client's logo"))
+    every = entries + brand_entries
+    unverified = [e["id"] for e in every if e["qc_status"] != "passed"]
+    unhosted = [e["id"] for e in every if not e["ghl_media_url"]]
+    missing: List[str] = []
+    if unverified:
+        missing.append("no passing SOP-GIP-02 review for " + ", ".join(unverified))
+    if unhosted:
+        missing.append("no hosted URL recorded for " + ", ".join(unhosted))
+    return entries, brand_entries, {
+        "qc_state": "covered" if every and not unverified else "unverified",
+        "hosting_state": "hosted" if every and not unhosted else "not_hosted",
+        "missing": missing}
+
+
+def write_image_map(run: Path) -> Dict[str, Any]:
+    """Write image-map-upload/image-map.json and .md (Skill 71's stage artifacts)."""
+    run = Path(run)
+    entries, brand_entries, state = image_map_entries(run)
+    out_dir = run / IMAGE_MAP_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    doc = {"images": entries, "brand_assets": brand_entries,
+           "generated_by": "launcher_core.image_stages",
+           "qc_state": state["qc_state"], "hosting_state": state["hosting_state"],
+           "missing": state["missing"]}
+    (run / IMAGE_MAP_REL).write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    lines = [f"# Image map — {page_role(run)}", "",
+             "| slot | file | sha256 | QC | hosted URL |", "|---|---|---|---|---|"]
+    for e in entries + brand_entries:
+        lines.append(f"| {e['id']} | {e['filename']} | {e['sha256'][:12]}… | {e['qc_status']} | "
+                     f"{e['ghl_media_url'] or 'not hosted'} |")
+    if state["missing"]:
+        lines += ["", "## Missing", *[f"- {m}" for m in state["missing"]]]
+    (run / IMAGE_MAP_MD_REL).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return doc
+
+
+def _image_slots_module():
+    """The shared image-slot contract every page renderer uses; None when it is not installed."""
+    path = resolve_ref(IMAGE_SLOTS_REF, REPO_ROOT)
+    if not path.is_file():
+        return None
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("signature_launch_image_slots", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
+
+
+def rewrite_page_assets(run: Path) -> Dict[str, int]:
+    """Point the run's authored pages at the hosted asset URLs.
+
+    Runs only while responsive-html is open: rewriting a closed stage would change bytes the
+    gate already hashed. A page is left untouched when no entry carries a URL yet, so a page
+    is never rewritten to a link that does not exist."""
+    run = Path(run)
+    if stage_closed(run, PAGE_HTML_DIR):
+        return {}
+    doc = _read(run / IMAGE_MAP_REL)
+    if not isinstance(doc, dict):
+        return {}
+    listed = [e for group in (doc.get("images"), doc.get("brand_assets"))
+              for e in (group or []) if isinstance(e, dict)]
+    if not any(e.get("ghl_media_url") for e in listed):
+        return {}
+    module = _image_slots_module()
+    if module is None:
+        return {}
+    slots = module.build_slots(doc, [run, run / IMAGE_MAP_DIR])
+    changed: Dict[str, int] = {}
+    for html_path in sorted((run / PAGE_HTML_DIR).glob("*.html")):
+        try:
+            text = html_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        new_text, changes = module.apply_hosted_urls(text, slots)
+        if changes and new_text != text:
+            html_path.write_text(new_text, encoding="utf-8")
+            changed[str(html_path.relative_to(run))] = len(changes)
+    return changed
+
+
 class _Page:
     """One page run and the commands that move it."""
 
@@ -191,10 +526,29 @@ class _Page:
                 self.need(rc, out, "image-generation-qc", f"drawing {item}")
 
     def produce_map(self) -> None:
-        if not (self.run / "image-map-upload" / "image-map.json").is_file():
-            raise Stop("needs_authoring",
-                       "image-map-upload: image-map-upload/image-map.json (and image-map.md) is written from "
-                       "the generated files and their hosted links; it does not exist yet")
+        """Write the asset map from what exists: the generated files, the client's logo, the
+        SOP-GIP-02 verdicts and the URLs the upload really returned.
+
+        The map is written even when it is incomplete, so the pages can be pointed at whatever
+        is hosted; the stage then stops by name on what is genuinely missing rather than
+        closing on an empty or invented link."""
+        doc = write_image_map(self.run)
+        if doc["qc_state"] != "covered":
+            from . import graphics_hooks
+            launch = _qc_folder(self.run)  # the one folder the request and the report live in
+            raise Stop("needs_qc",
+                       "image-map-upload: " + "; ".join(doc["missing"]) + ". Run SOP-GIP-02 "
+                       f"({launch / graphics_hooks.QC_REQUEST_REL} lists every asset), write each "
+                       "review with scripts/write_review.py --author-model/--reviewer-model and "
+                       f"record it in {launch / graphics_hooks.QC_REPORT_REL}, then run this again")
+        if doc["hosting_state"] != "hosted":
+            intake = _read(self.run / "intake.json") or {}
+            if not (isinstance(intake, dict) and intake.get("test_run")):
+                raise Stop("needs_hosting",
+                           "image-map-upload: " + "; ".join(doc["missing"]) + ". Host the QC-passed "
+                           "assets with 45-design-intelligence-library/scripts/graphics_ghl_push.py "
+                           "(it needs an approval_ref for the client's location), then run this again: "
+                           "a page may not ship a file on our disk as the client's image")
 
     def produce_board(self) -> None:
         if not (self.run / "design-board" / "design-board.png").is_file():
@@ -355,13 +709,18 @@ def layout_approval(run_dir: Path, path: Optional[Path] = None) -> Optional[Dict
 
 
 def _write_qc_request(run_dir: Path) -> Optional[str]:
-    """SOP-GIP-02 request for every image the launch's pieces list (graphics_hooks.qc_request)."""
-    pieces = [_read(p) for p in sorted((Path(run_dir) / "pieces").glob("*.json"))]
+    """SOP-GIP-02 request for every image the launch's pieces list (graphics_hooks.qc_request).
+
+    Written into the launch run's own folder — the one canonical place ``qc_report_root`` finds
+    from every nested page run — and with absolute asset paths, so a record names the same bytes
+    whichever folder reads it back. The reviewer's report is ``expected_report`` beside it."""
+    run_dir = Path(run_dir).resolve()
+    pieces = [_read(p) for p in sorted((run_dir / "pieces").glob("*.json"))]
     pieces = [p for p in pieces if isinstance(p, dict)]
     if not pieces:
         return None
     from . import graphics_hooks
-    graphics_hooks.qc_request({"pieces": pieces}, Path(run_dir), Path(run_dir))
+    graphics_hooks.qc_request({"pieces": pieces}, run_dir, run_dir)
     return graphics_hooks.QC_REQUEST_REL
 
 
@@ -372,6 +731,9 @@ def drive(run_dir: Path, *, runner: Runner = default_runner, provider: str = "st
     run_dir = Path(run_dir)
     scripts = scripts_dir(repo_root)
     runs = discover_page_runs(run_dir)
+    # Written before the pages move, so the SOP-GIP-02 reviewer has the request in hand when
+    # the map stage stops for a missing review (it lists the logo too, once the brand file exists).
+    qc_request = _write_qc_request(run_dir) if runs else None
     approval = layout_approval(run_dir, layout_approval_file)
     pages: List[Dict[str, Any]] = []
     for run in runs:
@@ -385,6 +747,15 @@ def drive(run_dir: Path, *, runner: Runner = default_runner, provider: str = "st
             stages = page.advance()
             if stages.get("final-mockups") == "closed":  # the labeled final files exist now: list them in the piece
                 entry["pieces_refreshed"] = refresh_pieces(run_dir, run)
+            # The asset map carries the hosted URLs; an authored page still pointing at a local
+            # file is rewritten to them here, before responsive-html closes.
+            entry["pages_rewritten"] = rewrite_page_assets(run)
+            asset_map = _read(run / IMAGE_MAP_REL)
+            if isinstance(asset_map, dict):
+                entry["image_map"] = {"qc_state": asset_map.get("qc_state"),
+                                      "hosting_state": asset_map.get("hosting_state"),
+                                      "missing": list(asset_map.get("missing") or []),
+                                      "entries": len(asset_map.get("images") or [])}
             done = all(v == "closed" for v in stages.values())
             entry.update(status="complete" if done else (page.stop.status if page.stop else "blocked"),
                          stages=stages, reason=None if done else (page.stop.reason if page.stop else "a stage is still open"),
@@ -394,7 +765,7 @@ def drive(run_dir: Path, *, runner: Runner = default_runner, provider: str = "st
     report = {"schema": SCHEMA, "run_dir": str(run_dir.resolve()), "stages": list(STAGES),
               "first_checkpoint": "layout proofs", "layout_proof_approval": (approval or {}).get("approval_ref"),
               "provider": provider, "pages": pages, "complete": complete,
-              "qc_request": _write_qc_request(run_dir) if runs else None}
+              "qc_request": qc_request}
     if not runs:
         report["reason"] = "no Skill 71 page run folder (intake.json beside private/) was found under this run"
     path = run_dir / REPORT_REL

@@ -25,6 +25,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 ENFORCER = REPO / "shared-utils" / "kie_prompt_enforcer.py"
+POLICY = REPO / "shared-utils" / "prompt_policy.py"
 ADAPTER = REPO / "74-kie-live-adapter" / "scripts" / "kie_live_adapter.py"
 REGISTRY = REPO / "74-kie-live-adapter" / "references" / "kie-model-registry.json"
 GATES = REPO / "shared-utils" / "kie_prompt_gates.json"
@@ -51,7 +52,7 @@ def block(tab):
     lines = [BEGIN,
              "# Registry snapshot of the prompt maxLength per model id (descriptive prompt fields only). A gate passes",
              "# last_known(model) as fallback_max, so the live Skill 74 answer always wins and this table only keeps the",
-             "# 80 percent floor and 100 percent ceiling enforced when the adapter is not installed.",
+             "# strict band (95-100 percent passes, an unknown maximum refuses) enforced when the adapter is not installed.",
              "LAST_KNOWN_MAX = {"]
     lines += ['    %s: %d,' % (json.dumps(k), v) for k, v in tab.items()]
     lines += ["}", "",
@@ -74,7 +75,10 @@ def main(argv):
     tab = table()
     src = ENFORCER.read_text(encoding="utf-8")
     new = render(src, tab)
-    copies = json.loads(GATES.read_text(encoding="utf-8"))["enforcer_copies"]
+    decl = json.loads(GATES.read_text(encoding="utf-8"))
+    copies = decl["enforcer_copies"]
+    policy_copies = decl.get("policy_copies") or []
+    policy_src = POLICY.read_text(encoding="utf-8")
     stale = []
     if new != src:
         stale.append(str(ENFORCER.relative_to(REPO)))
@@ -86,11 +90,19 @@ def main(argv):
             stale.append(rel)
             if not check:
                 p.write_text(new, encoding="utf-8")
+    for rel in policy_copies:
+        p = REPO / rel
+        if not p.is_file() or p.read_text(encoding="utf-8") != policy_src:
+            stale.append(rel)
+            if not check:
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(policy_src, encoding="utf-8")
     if check:
         if stale:
             print("STALE (run python3 scripts/embed-kie-prompt-enforcer.py): " + ", ".join(stale))
             return 1
-        print("OK: last-known limit table matches the registry and %d embedded copies are byte-identical" % len(copies))
+        print("OK: last-known limit table matches the registry; %d enforcer copies and %d policy copies are "
+              "byte-identical" % (len(copies), len(policy_copies)))
         return 0
     print("wrote %d model limits; updated: %s" % (len(tab), ", ".join(stale) or "nothing"))
     return 0

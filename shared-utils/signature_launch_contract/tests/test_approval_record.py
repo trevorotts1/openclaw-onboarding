@@ -163,3 +163,163 @@ def test_schema_required_matches_module():
     schema = json.loads((HERE / "approval-record.schema.json").read_text())
     assert tuple(schema["required"]) == ar.REQUIRED
     assert tuple(schema["properties"]["kind"]["enum"]) == ar.KINDS
+
+
+# ---------------------------------------------------------------------------
+# Contract 2.0: the Command Center wire shape, the actor/tenant split, and the
+# effects a stored approval does NOT authorize (F20 / S1 Pair C).
+# ---------------------------------------------------------------------------
+
+# The row src/lib/launch-approvals.ts returns at audit anchor b1f3b64b2: kind
+# plan_build, scope as one string, flat cap fields, sha256:-prefixed hash,
+# tenant_id and client_identity_ref, and NO schema_version / verification_class.
+CC = {
+    "approval_id": "8f14e45f-ce2a-4c1e-9a1d-1c0f0e5b7a11",
+    "tenant_id": "tenant-acme",
+    "client_identity_ref": "owner@acme.example",
+    "kind": "plan_build",
+    "plan_hash": "sha256:" + HASH,
+    "scope": "launch_plan_build, pages",
+    "cap_minor": None,
+    "currency": None,
+    "expires_at": FUTURE,
+    "revoked": False,
+    "source_message_ref": "telegram:msg-77",
+    "active": True,
+}
+
+
+def cc_call(cc, **over):
+    """Ask as the plan gate does: canonical kind, bare hash, the PERSON's identity."""
+    args = dict(kind="launch_plan_build", plan_hash=HASH, scope=["launch_plan_build"],
+                client_identity="owner@acme.example", env=cc["env"])
+    args.update(over)
+    return ar.verify(args.pop("approval_id", "8f14e45f-ce2a-4c1e-9a1d-1c0f0e5b7a11"),
+                     args.pop("kind"), args.pop("plan_hash"), args.pop("scope"), **args)
+
+
+def test_genuine_command_center_approval_is_accepted(cc):
+    cc["record"] = dict(CC)
+    out = cc_call(cc)
+    assert out["ok"] is True
+    assert out["contract_version"] == "2.0"
+    assert out["record_version"] == "cc-unversioned"
+    assert out["kind"] == "launch_plan_build"
+    assert out["kind_wire"] == "plan_build"
+    assert out["plan_hash"] == HASH and out["plan_hash_wire"].startswith("sha256:")
+    assert out["consenting_actor_ref"] == "owner@acme.example"
+    assert out["tenant_ref"] == "tenant-acme"
+    assert out["identity_binding"] == "actor"
+    assert out["verification_class"] == "authenticated_platform_record"
+    assert out["authority"] == "command-center"
+
+
+def test_command_center_publish_maps_to_page_publication_and_string_scope_splits(cc):
+    cc["record"] = dict(CC, kind="publish", scope="images, pages")
+    out = cc_call(cc, kind="page_publication", scope=["images"])
+    assert out["kind"] == "page_publication" and out["kind_wire"] == "publish"
+    assert out["scope"] == ["images, pages", "images", "pages"]
+
+
+def test_command_center_flat_cap_becomes_nested_cap(cc):
+    cc["record"] = dict(CC, kind="paid_asset_budget", scope="paid_asset_budget",
+                        cap_minor=5000, currency="USD")
+    out = cc_call(cc, kind="paid_asset_budget", scope=["paid_asset_budget"],
+                  cap={"cap_minor": 4000, "currency": "USD"})
+    assert out["cap"] == {"cap_minor": 5000, "currency": "USD"}
+
+
+def test_a_tenant_slug_in_the_actor_position_fails_closed(cc):
+    """The wrong mapping: a company is never silently accepted as the person."""
+    cc["record"] = dict(CC)
+    with pytest.raises(ar.ApprovalRefused) as e:
+        cc_call(cc, client_identity="tenant-acme")
+    assert e.value.code == "APPROVAL-IDENTITY-KIND"
+
+
+def test_tenant_binding_is_available_only_when_declared(cc):
+    cc["record"] = dict(CC)
+    out = cc_call(cc, client_identity="tenant-acme", identity_kind="tenant")
+    assert out["ok"] is True and out["identity_binding"] == "tenant"
+    with pytest.raises(ar.ApprovalRefused) as e:
+        cc_call(cc, client_identity="owner@acme.example", identity_kind="tenant")
+    assert e.value.code == "APPROVAL-IDENTITY"
+
+
+def test_cross_client_and_cross_tenant_are_refused(cc):
+    cc["record"] = dict(CC)
+    for over in ({"client_identity": "owner@other.example"},
+                 {"client_identity": "tenant-other", "identity_kind": "tenant"}):
+        with pytest.raises(ar.ApprovalRefused) as e:
+            cc_call(cc, **over)
+        assert e.value.code == "APPROVAL-IDENTITY"
+
+
+def test_stale_subject_hash_is_refused(cc):
+    cc["record"] = dict(CC)
+    with pytest.raises(ar.ApprovalRefused) as e:
+        cc_call(cc, plan_hash="f" * 64)
+    assert e.value.code == "APPROVAL-HASH"
+
+
+def test_expired_and_revoked_command_center_records_are_refused(cc):
+    cc["record"] = dict(CC, expires_at=(datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat())
+    with pytest.raises(ar.ApprovalRefused) as e:
+        cc_call(cc)
+    assert e.value.code == "APPROVAL-EXPIRED"
+    cc["record"] = dict(CC, revoked=True)
+    with pytest.raises(ar.ApprovalRefused) as e:
+        cc_call(cc)
+    assert e.value.code == "APPROVAL-REVOKED"
+
+
+def test_an_unknown_kind_is_an_unknown_meaning(cc):
+    cc["record"] = dict(CC, kind="teleport_pages")
+    with pytest.raises(ar.ApprovalRefused) as e:
+        cc_call(cc)
+    assert e.value.code == "APPROVAL-KIND-UNKNOWN"
+
+
+def test_an_unknown_record_version_is_refused(cc):
+    cc["record"] = dict(CC, schema_version="3.0")
+    with pytest.raises(ar.ApprovalRefused) as e:
+        cc_call(cc)
+    assert e.value.code == "APPROVAL-NOT-FROM-AUTHORITY"
+
+
+def test_conflicting_and_half_caps_are_refused(cc):
+    cc["record"] = dict(CC, kind="paid_asset_budget", cap={"cap_minor": 5000, "currency": "USD"},
+                        cap_minor=9000)
+    with pytest.raises(ar.ApprovalRefused) as e:
+        cc_call(cc, kind="paid_asset_budget", scope=["paid_asset_budget"])
+    assert e.value.code == "APPROVAL-NOT-FROM-AUTHORITY"
+    cc["record"] = dict(CC, kind="paid_asset_budget", cap_minor=5000, currency=None)
+    with pytest.raises(ar.ApprovalRefused) as e:
+        cc_call(cc, kind="paid_asset_budget", scope=["paid_asset_budget"])
+    assert e.value.code == "APPROVAL-NOT-FROM-AUTHORITY"
+
+
+def test_a_stored_publish_approval_authorizes_no_other_live_effect():
+    publish = {"kind": "publish"}
+    assert ar.record_authorizes_effect(publish, "page_publication") is True
+    for effect in ar.LEGACY_PUBLISH_DOES_NOT_AUTHORIZE:
+        assert ar.record_authorizes_effect(publish, effect) is False, effect
+    assert all(not implied for implied in ar.IMPLIED_KINDS.values())
+
+
+def test_a_test_only_record_can_never_report_itself_authenticated(cc):
+    out = ar.verify(dict(CC), test_only=True, client_identity="owner@acme.example", env={},
+                    **{"kind": "launch_plan_build", "plan_hash": HASH, "scope": ["launch_plan_build"]})
+    assert out["verification_class"] == "local_test_record"
+    assert out["authority"] == "local-test-record"
+
+
+def test_the_command_center_contract_data_matches_this_module():
+    data = json.loads((HERE / "command-center-launch-contract.v2.json").read_text())
+    assert data["contract"] == "command-center-launch" and data["version"] == 2
+    assert data["approval"]["command_center_kind_aliases"] == ar.COMMAND_CENTER_KIND_ALIASES
+    assert tuple(data["approval"]["canonical_kinds"]) == ar.KINDS
+    assert set(data["run_identity"]["immutable_fields"]) <= set(data["run_identity"]["required_fields"])
+    assert data["run_identity"]["rebind_policy"] == "reject"
+    assert data["current_revision"]["monotonic"] is True
+    assert data["stage_registry"]["known_mismatch"]["status"] == "accepted_with_normalization"

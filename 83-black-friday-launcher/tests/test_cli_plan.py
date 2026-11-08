@@ -284,7 +284,12 @@ class ApprovalBindingTests(_Tmp):
         launch.update(launch_over)
         (run / "launch.json").write_text(json.dumps(launch), encoding="utf-8")
         fake = {"manifest_path": "m", "receipt_path": "r",
-                "manifest": {"to_confirm": [], "delivery_scope": "page_only", "delivery_label": "x"}}
+                # package.assemble always stamps the activation record and its label (package.py,
+                # manifest["activation"] / manifest["activation_label"]); cmd_assemble reports both.
+                "manifest": {"to_confirm": [], "delivery_scope": "page_only", "delivery_label": "x",
+                             "activation": {"desired_state": "local_prepared",
+                                            "achieved_state": "draft_constructed"},
+                             "activation_label": "draft_constructed: local draft package"}}
         with mock.patch.object(cli.package, "assemble", return_value=fake) as built, \
                 mock.patch.object(cli.council, "planning_step", return_value={"status": "ok"}):
             rc, out, err = run_cli("assemble", "--intake", self.write("intake.json", doc),

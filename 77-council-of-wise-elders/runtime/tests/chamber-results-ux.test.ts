@@ -150,7 +150,11 @@ test('all nine portrait files exist on disk and resolve from the seat roster', (
   assert.equal(seats.order.length, 9);
   for (const id of seats.order) {
     const sources = [`portraits/${id}.webp`, `portraits/${id}.svg`];
-    assert.deepEqual(seats.portraitSources(id), sources);
+    // The roster is evaluated in a separate vm realm, so its arrays carry that
+    // realm's Array.prototype and fail assert's strict prototype comparison
+    // even when the contents match. Re-home into this realm before comparing;
+    // the equality is still exact (same order, same length, same strings).
+    assert.deepEqual(Array.from(seats.portraitSources(id)), sources);
     for (const rel of sources) {
       assert.ok(existsSync(join(chamberDir, rel)), `${rel} must exist`);
     }

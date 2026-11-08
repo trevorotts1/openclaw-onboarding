@@ -7,6 +7,7 @@
 - Reject compound compatibility prompts and a second question before the client answers in the conversation scanner. The intake workflow exercises the agent, embedded and hosted app, signature intake and saved-session behavior.
 - Migration: repository changes only; this draft has not been merged, deployed or rolled onto any client box. New agent interviews use individual fields; historical compound conversation traces remain subject to the conversation gate rather than being rewritten as compliant evidence.
 - Risk: MEDIUM. Interview pacing changes and the number of turns can increase; required answers and consent are preserved. Skill 51 receives the standard patch bump in this release.
+- Skill 38's tunnel installer now refuses to hand a box a second cloudflared connector token: when another tunnel already owns the hostnames being served it exits 11 and names them, instead of silently taking the live connector and leaving the client link dead after Access login. bumps Skill 38 to v2.0.224; Skill 32's daemon installer gets the same preflight (v13.1.70).
 
 ## [v27.1.70]  -  2026-11-05  -  Skill 77 council: selected-tree gate accepts one release at two roots; boxes stop ending 78/79 wired
 

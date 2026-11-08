@@ -103,6 +103,19 @@ fi
 
 RUN_MODE=""
 if [ -n "$TOKEN" ]; then
+    # ---- 2b. Second-connector guard ---------------------------------------
+    # One connector per box. If another cloudflared service here already owns a
+    # different tunnel, installing this one takes the live connector away from
+    # it and those client links go dark after a successful Access login.
+    _TTG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../shared-utils" 2>/dev/null && pwd)/tunnel-takeover-guard.sh"
+    if [ -f "$_TTG" ]; then
+        # shellcheck source=/dev/null
+        . "$_TTG"
+        _NEW_TID="$(printf '%s' "$TOKEN" | ttg_token_tunnel_id_stdin)"
+        if [ -n "$_NEW_TID" ]; then
+            guard_tunnel_takeover "$_NEW_TID" "" || exit 11
+        fi
+    fi
     # ---- 3. Token-file, mode 600 (DEFECT 4 — SECURITY) ----------------------
     mkdir -p "$(dirname "$TOKEN_FILE")"
     chmod 700 "$(dirname "$TOKEN_FILE")" 2>/dev/null || true
