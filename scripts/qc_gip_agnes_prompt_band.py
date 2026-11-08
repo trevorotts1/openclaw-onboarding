@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """qc_gip_agnes_prompt_band.py -- QC gate that checks image-prompt length against KIE
-prompt rule 12 (owner order 2026-10-05) for GPT-image-2.5 and Agnes Image prompts.
+prompt rule 12 (owner order 2026-10-05) for GPT-Image 2.6 and Agnes Image prompts.
 
 This is a unified pre-commit / CI gate covering both scopes:
-  1. Graphics department GIP prompts (GPT-image-2.5 T2I/I2I)
+  1. Graphics department GIP prompts (GPT-Image 2.6 T2I/I2I)
   2. Agnes skills 63/64 prompts (Agnes Image 2.1 Flash)
 
 THE RULE (rule 12, 07-kie-setup/references/kie-common-rules.md):
@@ -337,7 +337,7 @@ def _gate_files(paths: List[Path], logo_check: bool = False,
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(
         description="QC gate: enforce KIE prompt rule 12 (95-100 percent of the model max, "
-                    "floor 80 percent) for GPT-image-2.5 and Agnes Image prompts, plus logo "
+                    "floor 80 percent) for GPT-Image 2.6 and Agnes Image prompts, plus logo "
                     "image-to-image rule and style-reference-only directive.")
     ap.add_argument("--model", default=DEFAULT_MODEL,
                     help="KIE model id whose maxLength sets the band (default: %(default)s)")

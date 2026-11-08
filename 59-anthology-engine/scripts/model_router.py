@@ -720,7 +720,7 @@ class ModelRouter:
         if tier in NON_TEXT_TIERS:
             raise NonTextTierError(
                 "tier %s is not a text turn; S7 covers route through cover_render.py "
-                "(Kie GPT-image-2.5 portrait via Skills 07/46), never model_router.py" % tier)
+                "(Kie GPT-Image 2.6 portrait via Skills 07/46), never model_router.py" % tier)
         if self.model_map is None:
             raise UnresolvedMapError("router has no model map loaded")
 

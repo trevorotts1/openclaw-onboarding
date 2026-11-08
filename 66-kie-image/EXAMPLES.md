@@ -32,7 +32,7 @@ ALWAYS run the validators first (see INSTRUCTIONS.md step 4): select_image_model
 validate_prompt.py, validate_payload.py. A bad payload never reaches the API.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EXAMPLE 1: GPT IMAGE 2.5 TEXT-TO-IMAGE (default pick, 1:1 1K)
+EXAMPLE 1: GPT IMAGE 2.6 TEXT-TO-IMAGE (default pick, 1:1 1K)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 curl -sS https://api.kie.ai/api/v1/jobs/createTask \
@@ -54,7 +54,7 @@ model — use the retained legacy `gpt-image-2-text-to-image` for those three
 ratios instead (see the MODEL NOTE at the end of this file).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EXAMPLE 2: GPT IMAGE 2.5 IMAGE-TO-IMAGE (16 refs max, 30MB)
+EXAMPLE 2: GPT IMAGE 2.6 IMAGE-TO-IMAGE (16 refs max, 30MB)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 curl -sS https://api.kie.ai/api/v1/jobs/createTask \
