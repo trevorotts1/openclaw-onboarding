@@ -87,10 +87,10 @@
     },
     "forms.configure": {
       "name": "12_configure_form_options",
-      "action": "options",
+      "action": "native_fields_or_options",
       "implemented": true,
       "proof": "PROFILE",
-      "use": "Recorded custom fields, choices, rules, legal content, redirect, notifications and integrations"
+      "use": "Captured standard field properties with independent reopen; advanced choices still need profiles"
     },
     "forms.style": {
       "name": "13_polish_form_css",
@@ -130,9 +130,9 @@
     "courses.create": {
       "name": "18_create_course",
       "action": "api",
-      "implemented": false,
+      "implemented": true,
       "proof": "API_FIRST",
-      "use": "Public Courses v3 API via Skill 44/official MCP; browser profile only for genuinely unsupported settings"
+      "use": "Courses v3 creation with modules/lessons/quizzes, guarded Skill44 transport and readback; live client run pending"
     },
     "courses.configure_ui": {
       "name": "19_configure_course_ui",
@@ -161,6 +161,41 @@
       "implemented": true,
       "proof": "CAPTURED",
       "use": "Seven explicit native form settings, row/count guards and editor reload read-back; scheduling excluded; Python live run pending"
+    },
+    "courses.update": {
+      "name": "23_update_course",
+      "action": "api",
+      "implemented": true,
+      "proof": "API_FIRST",
+      "use": "Documented course styling/content settings through Courses v3"
+    },
+    "courses.lesson_quiz.create": {
+      "name": "24_create_lesson_quiz",
+      "action": "api",
+      "implemented": true,
+      "proof": "API_FIRST",
+      "use": "Create quiz and questions on an existing course lesson"
+    },
+    "forms.conditions": {
+      "name": "25_configure_form_condition",
+      "action": "native_condition",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Captured Hide Field rule; persisted behavior verification pending"
+    },
+    "checkout.configure_native": {
+      "name": "26_configure_native_checkout",
+      "action": "native_checkout",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Native product/price/bump/action adapter with exact capture map; live/payment proof pending"
+    },
+    "meetings.update": {
+      "name": "27_update_meeting_room",
+      "action": "meeting",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Native room identity guard, Save changes and independent readback"
     }
   }
 }

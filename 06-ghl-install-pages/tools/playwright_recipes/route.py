@@ -13,7 +13,7 @@ import time
 API_OPERATIONS = {
     'funnels.list','pages.list','redirects.manage','forms.list','forms.submissions',
     'surveys.list','surveys.submissions','courses.create','courses.update',
-    'courses.lessons','courses.lesson_quiz','products.manage','prices.manage',
+    'courses.lessons','courses.lesson_quiz','courses.lesson_quiz.create','products.manage','prices.manage',
     'tags.manage','fields.manage','media.manage','calendars.appointments',
 }
 
@@ -24,6 +24,8 @@ def from_capability_probe(report, *, api_capabilities=None, recorded_profiles=()
     Its box-default ordering is historical; exact-operation routing below owns
     recipe selection. The probe already gates extension currency and version.
     """
+    if not isinstance(report, dict):
+        report = {}
     browser = report.get('operationCapabilities',{}).get('transports',{}).get('browser',{})
     routes = browser.get('routes',[])
     return {
@@ -40,10 +42,18 @@ def from_capability_probe(report, *, api_capabilities=None, recorded_profiles=()
 
 def decide(operation, location_id, probes, catalog=None, failed_lanes=()):
     catalog = catalog or json.loads((Path(__file__).parent/'catalog.json').read_text())
+    if not isinstance(operation, str) or not isinstance(location_id, str) or not location_id:
+        return {'lane':'STOP_INVALID_INPUT','reason':'Operation and location ID are required'}
+    if operation not in API_OPERATIONS and operation not in catalog.get('recipes', {}):
+        return {'lane':'STOP_UNKNOWN_OPERATION','operation':operation}
+    if not isinstance(probes, dict) or not isinstance(probes.get('api_capabilities', {}), dict):
+        return {'lane':'STOP_INVALID_PROBE','operation':operation}
     failed = set(failed_lanes)
     caps = probes.get('api_capabilities',{})
     cap = caps.get(operation,{})
-    fresh = isinstance(cap.get('observed_at'),(int,float)) and 0 <= time.time()-cap['observed_at'] <= 3600
+    if not isinstance(cap, dict):
+        return {'lane':'STOP_INVALID_PROBE','operation':operation}
+    fresh = type(cap.get('observed_at')) in (int,float) and 0 <= time.time()-cap['observed_at'] <= 3600
     bound = cap.get('location_id') == location_id and fresh
     if bound and cap.get('http_status') in (401,403):
         return {'lane':'STOP_AUTH','reason':'Credential/scope refusal; do not treat it as an unsupported API or try another identity'}
@@ -54,8 +64,12 @@ def decide(operation, location_id, probes, catalog=None, failed_lanes=()):
     entry = catalog['recipes'].get(operation)
     if entry is None:
         return {'lane':'STOP_UNKNOWN_OPERATION','operation':operation}
+    if not isinstance(probes.get('lanes', {}), dict):
+        return {'lane':'STOP_INVALID_PROBE','operation':operation}
     for lane in ('playwright','openclaw_extension','agent_browser','computer_use'):
         state = probes.get('lanes',{}).get(lane,{})
+        if not isinstance(state, dict):
+            return {'lane':'STOP_INVALID_PROBE','operation':operation}
         if lane in failed or state.get('available') is not True:
             continue
         if lane == 'openclaw_extension' and state.get('current') is not True:

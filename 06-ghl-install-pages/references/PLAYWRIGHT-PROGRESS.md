@@ -114,5 +114,31 @@ and messages. Python end-to-end execution remains pending, not marked LIVE_PATH.
 The private handoff now links to the original owner attachment in full. The
 repository was verified public; the full conversation is not published there.
 
-Continuation validation: 23 recipe/checkpoint/settings tests passed. Native form
-settings controls captured live; no settings mutation performed in that capture.
+## Parallel implementation pass
+
+Six workers implemented runtime, delivery API, assessments, meetings, native
+checkout, and acceptance review in parallel. New source modules assessments.py,
+delivery.py, meetings.py and pages_checkout.py have functional offline tests.
+Shared compiler/runner now dispatch captured form fields/conditions, native
+checkout, and room creation/update; host executes course API providers.
+Unknown, incomplete or missing handler results stop subsequent writes. Supplied
+page runs have an evidence-root exclusive lock.
+
+Current combined package suite: 103 tests passed before final follow-up edits.
+Prior auth/browser-manager suite: 64 passed unchanged, timeout not reproduced.
+Playwright package/driver installed, but Chromium download failed (corrupt
+response) and no supported browser executable is installed here.
+No final Mac/VPS Python live proof is claimed.
+
+Live room creation in a clearly named ZHC test fixture succeeded with waiting
+room enabled, guest access disabled and open room disabled; no call started, no
+cohosts added. Native saved detail and Edit settings controls were captured.
+Room invitation query credentials are excluded from source and receipts.
+Meeting Integrations confirms static calendar links and dynamic per-appointment
+connections are separate features. Native integrations screen is instructional.
+
+See PLAYWRIGHT-COMPLETION-MATRIX.md for 47 required acceptance checks. Added
+modules and catalog entries do not close pending live/profile/payment checks.
+Remaining actual UI capture includes advanced choices, survey branching, quiz
+scoring/results, split traffic/native binding maps, portal privacy/branding, and
+native calendar connections. Continue work; do not treat this checkpoint as done.

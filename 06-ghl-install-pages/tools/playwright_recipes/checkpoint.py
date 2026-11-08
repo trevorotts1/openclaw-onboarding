@@ -22,16 +22,22 @@ def snapshot(destination=None):
     files = sorted(package.glob('*.py')) + [package / 'catalog.json']
     files += sorted((package / 'examples').glob('*'))
     files += [skill / 'references' / name for name in (
-        'PLAYWRIGHT-RECIPES.md', 'PLAYWRIGHT-PROGRESS.md', 'PLAYWRIGHT-REQUIREMENTS.md')]
+        'PLAYWRIGHT-RECIPES.md', 'PLAYWRIGHT-PROGRESS.md', 'PLAYWRIGHT-REQUIREMENTS.md',
+        'PLAYWRIGHT-COMPLETION-MATRIX.md')]
     contents = {}
     for path in files:
         if path.is_symlink() or not path.is_file():
             raise ValueError('Checkpoint source missing or symlink: ' + path.name)
         contents[str(path.relative_to(repo))] = path.read_bytes()
-    commit = subprocess.run(['git', '-C', str(repo), 'rev-parse', 'HEAD'], capture_output=True, text=True)
+    try:
+        commit = subprocess.run(['git', '-C', str(repo), 'rev-parse', 'HEAD'], capture_output=True, text=True)
+        base_commit = commit.stdout.strip() if commit.returncode == 0 else None
+    except FileNotFoundError:
+        # A downloaded/installed skill can be backed up without a Git install.
+        base_commit = None
     manifest = {'schema': 'skill6-source-checkpoint/1',
         'created_at': datetime.now(timezone.utc).isoformat(),
-        'base_commit': commit.stdout.strip() if commit.returncode == 0 else None,
+        'base_commit': base_commit,
         'meaning': 'Exact source snapshot. No live readiness claim; see PLAYWRIGHT-PROGRESS.md.',
         'sha256': {name: hashlib.sha256(data).hexdigest() for name, data in contents.items()}}
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')

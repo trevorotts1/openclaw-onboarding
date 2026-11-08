@@ -45,13 +45,19 @@ def compile_recipe(operation, data):
         add('form_css',radius=data.get('radius',12))
     elif operation=='forms.settings':
         add('form_settings',settings=data['settings'])
+    elif operation=='forms.configure' and data.get('fields'):
+        add('native_fields', fields=data['fields'])
+    elif operation=='forms.conditions':
+        add('native_condition', **data['condition'])
+    elif operation in ('checkout.configure_native','checkout.one_click_upsell') and data.get('adapter_capture'):
+        add('native_checkout', payload=data)
     elif operation in ('surveys.create','quizzes.create'):
         add('assessment',kind='survey' if operation=='surveys.create' else 'quiz',name=data['name'],allow_creation=data.get('allow_creation',False),standard_fields=data.get('standard_fields',[]))
         if operation=='quizzes.create' and not data.get('options') and not data.get('fixture'):
             raise Stop('A production marketing quiz needs a captured scoring/result/options profile')
     elif operation=='communities.create':
         add('community',**data['community'])
-    elif operation=='meetings.setup':
+    elif operation in ('meetings.setup','meetings.update'):
         add('meeting',**data['meeting'])
     elif operation in ('forms.configure','checkout.one_click_upsell','funnels.split_variant','communities.configure','courses.configure_ui','meetings.integrate'):
         if operation=='checkout.one_click_upsell':

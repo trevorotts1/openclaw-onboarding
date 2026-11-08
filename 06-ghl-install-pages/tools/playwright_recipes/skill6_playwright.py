@@ -88,7 +88,7 @@ def validate_job(job, base):
     if not isinstance(steps,list) or not steps:
         raise Stop("No executable steps")
     keys = set()
-    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "form", "form_css", "form_settings", "community", "assessment", "meeting", "options"}
+    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_fields", "native_condition", "form", "form_css", "form_settings", "community", "assessment", "meeting", "options"}
     prepared = json.loads(json.dumps(job))
     for s in prepared["steps"]:
         if not isinstance(s,dict):
@@ -98,6 +98,15 @@ def validate_job(job, base):
         keys.add(s["id"])
         if not isinstance(s.get('action'),str) or s.get("action") not in allowed:
             raise Stop("Unknown or uncaptured action: " + str(s.get("action")))
+        if s['action'] in ('native_fields','native_condition'):
+            from playwright_recipes.assessments import validate_fields, validate_condition
+            (validate_fields if s['action']=='native_fields' else validate_condition)(s)
+        if s['action']=='native_checkout':
+            from playwright_recipes.pages_checkout import validate_checkout_inputs
+            validate_checkout_inputs(s.get('payload'))
+            s['_input_dir'] = str(base.resolve())
+        if s['action']=='meeting':
+            s['_context'] = {k:job[k] for k in ('location_id','location_name','start_url')}
         if s["action"] == "navigate" and s.get("area") not in ("Funnels", "Websites", "Forms", "Surveys", "Quizzes", "Communities", "Meeting Room", "Courses"):
             raise Stop("Unsupported navigation area")
         if s["action"] in ("container", "page") and s.get("surface") not in ("funnel", "website"):
@@ -700,25 +709,29 @@ def form_settings(page, step):
 
 
 def meeting(page, step):
-    navigate(page,'Meeting Room')
-    create=page.get_by_role('region',name='Meeting Room for meetings, webinars and more',exact=True).get_by_role('button',name='Create room',exact=True)
-    if not visible(create):
-        raise Stop("An existing room or different editor requires a captured update profile; never overwrite it")
-    click(create)
-    region=page.get_by_role('region',name='Create room',exact=True)
-    fields=region.get_by_role('textbox',name='Please Input',exact=True)
-    if fields.count()!=3:
-        raise Stop("Meeting details changed; capture required")
-    fill(fields.nth(0),step['name'])
-    fill(fields.nth(1),step['slug'])
-    # Retain GHL's generated passcode. Never print, copy into evidence, or capture it.
-    for key,label in [('waiting_room','Waiting room'),('guest_users','Allow guest users'),('open_room','Open room')]:
-        region.get_by_role('switch',name=label,exact=True).set_checked(step[key])
-    submit=region.get_by_role('button',name='Create room',exact=True)
-    wait_until(lambda:submit.is_enabled(),"Room slug is unavailable or details invalid")
-    click(submit)
-    region.wait_for(state='hidden',timeout=45000)
-    return {'status':'ROOM_SAVE_SUBMITTED','name':step['name'],'slug':step['slug'],'independent_readback':'REQUIRED','meeting_started':False}
+    from playwright_recipes.meetings import create_room, update_room
+    inputs = {**step, **step['_context']}
+    if step.get('expected_room_id'):
+        return update_room(page, inputs, expected_room_id=step['expected_room_id'])
+    return create_room(page, inputs)
+
+
+def native_fields(page, step):
+    from playwright_recipes.assessments import configure_fields
+    return configure_fields(page, step)
+
+
+def native_condition(page, step):
+    from playwright_recipes.assessments import configure_condition
+    return configure_condition(page, step)
+
+
+def native_checkout(page, step):
+    from playwright_recipes.pages_checkout import configure_native_checkout
+    result = configure_native_checkout(page, step['payload'], input_dir=step.get('_input_dir','.'))
+    result['checkout_ready'] = False
+    result['independent_readback'] = 'REQUIRED'
+    return result
 
 
 def option_locator(page, desc, frame_name=None):
@@ -817,6 +830,20 @@ def _text_equals(locator, text):
 
 
 def run_on_page(page, job, evidence_root):
+    root = Path(evidence_root).resolve()
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd = os.open(root / '.runner.lock', os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Stop('This run is already executing; no concurrent writes allowed') from None
+        return _run_on_page(page, job, root)
+    finally:
+        os.close(fd)
+
+
+def _run_on_page(page, job, evidence_root):
     """Host integration seam: use an already managed, signed-in Playwright Page.
 
     State records are intent-before-mutation. A crashed/uncertain step is never
@@ -839,7 +866,7 @@ def run_on_page(page, job, evidence_root):
         raise Stop("An interrupted job exists: reconcile recorded objects before any replay")
     results = []
     state = {"fingerprint":fingerprint, "location_id":job["location_id"], "status":"RUNNING", "results":results}
-    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "form":make_form, "form_css":form_css, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"options":options}
+    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_fields":native_fields, "native_condition":native_condition, "form":make_form, "form_css":form_css, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"options":options}
     for step in job["steps"]:
         assert_tenant(page, job)
         state["current_step"] = step["id"]
@@ -851,6 +878,24 @@ def run_on_page(page, job, evidence_root):
                 result = {"area":step["area"]}
             else:
                 result = handlers[step["action"]](page, step)
+            if not isinstance(result, dict):
+                raise Stop('Handler returned no structured outcome')
+            status = result.get('status')
+            completed = {
+                'RENDERED', 'SEO_RENDERED', 'COMPONENT_SAVED', 'SAVED_AND_REOPENED',
+                'FORM_CSS_RENDERED', 'FORM_SETTINGS_PERSISTED', 'ASSESSMENT_REUSED',
+                'ASSESSMENT_SAVE_SUBMITTED', 'ROOM_SAVE_SUBMITTED',
+                'RECORDED_OPTIONS_EXECUTED', 'GROUP_RETAINED_INACTIVE', 'GROUP_CREATED',
+                'FIELD_PROPERTIES_SAVED_AND_REOPENED', 'CONDITION_SAVE_SUBMITTED',
+                'NATIVE_CONFIGURATION_READBACK_VERIFIED', 'ROOM_PERSISTED',
+                'ROOM_CREATED_AND_VERIFIED', 'ROOM_REUSED_AND_VERIFIED',
+                'ROOM_CREATED_VERIFIED', 'ROOM_REUSED_VERIFIED', 'ROOM_UPDATED_VERIFIED',
+            }
+            statusless = {'navigate': 'area', 'container': 'container_url', 'page': 'editor_url'}
+            if status not in completed and not (
+                status is None and statusless.get(step['action']) in result
+            ):
+                raise Stop('Step requires reconciliation before later writes')
             assert_tenant(page, job)
             results.append({"id":step["id"], "action":step["action"], "result":result})
             state["current_step_status"] = "FINISHED"
