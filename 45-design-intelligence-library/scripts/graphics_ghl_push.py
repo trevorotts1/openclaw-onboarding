@@ -24,8 +24,11 @@ WHAT IT DOES (SOP-GIP-03)
      pass:true and ZERO auto-fails) via ghl_media.upload_media (POST /medias/upload-file,
      multipart, parentId), recording {fileId, url} per asset to <job>/media_library.json AND,
      best-effort, into the Vault provenance sidecar (ghl_media_id + ghl_public_url).
-  3. Post-upload LIVENESS check: GET the returned public URL, expect HTTP 200 with a non-empty
-     body (the Vault's existing url-liveness law, asset-provenance-librarian.md SOP 9.2 step 3).
+  3. Post-upload LIVENESS check: GET the returned public URL and record what it returned — the
+     HTTP status, the real Content-Type header, and what the bytes decode to (image magic header
+     and pixel dimensions). HTTP 200 with a non-empty body is NOT proof of a picture: a
+     Cloudflare/GHL login page is exactly that, so the ledger carries the evidence admission
+     needs (F17 item 12).
 
 CANONICAL LEDGER (the file the gate reads): <job>/media_library.json.
 
@@ -51,6 +54,7 @@ fabricated CDN URLs, ever. Stdlib only.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import sys
@@ -207,20 +211,108 @@ def _update_sidecar(job_dir: Path, asset: dict, ghl_media_id: str, ghl_public_ur
 
 
 def _url_live(url: str, opener=None, timeout: int = 30) -> dict:
-    """GET the returned public URL; expect HTTP 200 with a non-empty body (the Vault's
-    url-liveness law). Returns {live: bool, http: int|None, bytes: int}. Never raises — a
-    liveness failure is RECORDED (not fatal to the upload record), and surfaces in the ledger
-    so the Vault/QC can flag it."""
+    """GET the returned public URL and record WHAT it returned: status, byte count, the real
+    Content-Type header the transport exposed, and decoded-image evidence read from the bytes
+    themselves (magic header + dimensions).
+
+    A nonempty body is not proof of a picture: a Cloudflare/GHL login page answers HTTP 200 with
+    ``<!doctype html>…Sign in to continue`` (F17 item 12). ``content_type`` is null ONLY when the
+    transport exposed no header — the consumer refuses that; it is never filled in from the
+    filename or guessed. Never raises: a liveness failure is RECORDED (not fatal to the upload
+    record) and surfaces in the ledger so the Vault/QC can flag it."""
     _opener = opener or (lambda u, t: urllib.request.urlopen(u, timeout=t))
     try:
         resp = _opener(url, timeout)
         code = int(resp.getcode())
+        ctype = _content_type_of(resp)
         body = resp.read() or b""
-        return {"live": (200 <= code < 300) and len(body) > 0, "http": code, "bytes": len(body)}
     except urllib.error.HTTPError as exc:  # noqa: PERF203
-        return {"live": False, "http": int(getattr(exc, "code", 0)), "bytes": 0}
+        return {"live": False, "http": int(getattr(exc, "code", 0)), "bytes": 0,
+                "content_type": _content_type_of(exc), "image": image_evidence(b"")}
     except (urllib.error.URLError, OSError):
-        return {"live": False, "http": None, "bytes": 0}
+        return {"live": False, "http": None, "bytes": 0, "content_type": None,
+                "image": image_evidence(b"")}
+    return {"live": (200 <= code < 300) and len(body) > 0, "http": code, "bytes": len(body),
+            "content_type": ctype, "image": image_evidence(body)}
+
+
+def _content_type_of(resp) -> str | None:
+    """The response's own Content-Type header, or None when the transport did not expose one."""
+    headers = getattr(resp, "headers", None)
+    getter = getattr(headers, "get", None)
+    if not callable(getter):
+        return None
+    value = getter("Content-Type")
+    if not value:
+        return None
+    return str(value).strip() or None
+
+
+def image_evidence(data: bytes) -> dict:
+    """What these bytes ARE: the format their magic header names and its decoded dimensions.
+
+    ``decodes`` is True only when a recognised raster header AND real pixel dimensions were read,
+    so an HTML page, a JSON body or a truncated stub is never image evidence. Dimensions are
+    decoded from the container header (PNG IHDR, JPEG SOF, WebP VP8/VP8L/VP8X); a format whose
+    header cannot be read counts as not decoded."""
+    data = data or b""
+    out = {"format": None, "decodes": False, "width": None, "height": None,
+           "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest() if data else None}
+    size = None
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        out["format"], size = "png", _png_dimensions(data)
+    elif data.startswith(b"\xff\xd8\xff"):
+        out["format"], size = "jpeg", _jpeg_dimensions(data)
+    elif data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        out["format"], size = "webp", _webp_dimensions(data)
+    if size and size[0] > 0 and size[1] > 0:
+        out.update(decodes=True, width=size[0], height=size[1])
+    return out
+
+
+def _png_dimensions(data: bytes):
+    if len(data) < 24 or data[12:16] != b"IHDR":
+        return None
+    return (int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big"))
+
+
+_SOF_MARKERS = frozenset({0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF})
+
+
+def _jpeg_dimensions(data: bytes):
+    """Walk the JPEG marker segments to the first Start-Of-Frame (height at +5, width at +7)."""
+    pos, end = 2, len(data)
+    while pos + 4 <= end:
+        if data[pos] != 0xFF:
+            pos += 1
+            continue
+        marker = data[pos + 1]
+        if marker in (0xFF, 0x01, 0xD8) or 0xD0 <= marker <= 0xD7:  # fill / standalone / RSTn
+            pos += 1 if marker == 0xFF else 2
+            continue
+        length = int.from_bytes(data[pos + 2:pos + 4], "big")
+        if marker in _SOF_MARKERS:
+            if pos + 9 > end:
+                return None
+            return (int.from_bytes(data[pos + 7:pos + 9], "big"),
+                    int.from_bytes(data[pos + 5:pos + 7], "big"))
+        pos += 2 + length
+    return None
+
+
+def _webp_dimensions(data: bytes):
+    if len(data) < 30:
+        return None
+    chunk = data[12:16]
+    if chunk == b"VP8X":
+        return (1 + int.from_bytes(data[24:27], "little"), 1 + int.from_bytes(data[27:30], "little"))
+    if chunk == b"VP8 " and data[23:26] == b"\x9d\x01\x2a":
+        return (int.from_bytes(data[26:28], "little") & 0x3FFF,
+                int.from_bytes(data[28:30], "little") & 0x3FFF)
+    if chunk == b"VP8L" and data[20] == 0x2F:
+        bits = int.from_bytes(data[21:25], "little")
+        return ((bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +378,7 @@ def push_graphics_media(job_dir, *, folder_name: str | None = None, job_slug: st
             "file_id": res["fileId"],
             "ghl_media_id": res["fileId"],
             "http_status": res["http"],
+            "content_type": live.get("content_type"),
             "ghl_upload_status": "complete",
             "ghl_folder_id": ghl_folder_id,
             "liveness": live,
@@ -472,6 +565,11 @@ def _selftest() -> int:
     import tempfile
     fails = []
 
+    # A real 1x1 PNG: the bytes that must decode as image evidence, never a magic-byte stub.
+    PNG_BYTES = (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f"
+                 b"\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xf8\xff\xff?\x00\x05\xfe\x02\xfe\xa7\x9a\xa0\xa0\x00\x00"
+                 b"\x00\x00IEND\xaeB`\x82")
+
     def _setup(base, *, qc=None, media=None, pm=None, job=None):
         (base / "qc").mkdir(parents=True, exist_ok=True)
         (base / "checkpoints").mkdir(parents=True, exist_ok=True)
@@ -589,12 +687,39 @@ def _selftest() -> int:
 
     def _mock_live(url, timeout):
         class _R:
+            headers = {"Content-Type": "image/png"}
+
             def getcode(self):
                 return 200
 
             def read(self):
-                return b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+                return PNG_BYTES
         return _R()
+
+    # L — the liveness record is EVIDENCE, not merely a 200. An HTML login page answers 200 with
+    #     text/html and its bytes decode as no image; a real PNG records image/png and its size.
+    class _Resp:
+        def __init__(self, body, ctype):
+            self._body, self.headers = body, {"Content-Type": ctype}
+
+        def getcode(self):
+            return 200
+
+        def read(self):
+            return self._body
+
+    html = _url_live("https://host.test/a.png",
+                     opener=lambda u, t: _Resp(b"<!doctype html><body>Sign in to continue", "text/html; charset=utf-8"))
+    if (not html["live"] or html.get("content_type") != "text/html; charset=utf-8"
+            or html["image"]["decodes"] or html["image"]["format"]):
+        fails.append(f"L html200: expected a live 200 recording text/html and no image decode, got {html}")
+    png = _url_live("https://host.test/b.png", opener=lambda u, t: _Resp(PNG_BYTES, "image/png"))
+    if (png.get("content_type") != "image/png" or png["image"]["decodes"] is not True
+            or (png["image"]["width"], png["image"]["height"]) != (1, 1)):
+        fails.append(f"L png: expected image/png with decoded 1x1 evidence, got {png}")
+    missing = _url_live("https://host.test/c.png", opener=lambda u, t: _Resp(PNG_BYTES, ""))
+    if missing.get("content_type") is not None:
+        fails.append(f"L no-header: expected content_type None (never invented), got {missing}")
 
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
@@ -658,7 +783,8 @@ def _selftest() -> int:
         return 1
     print("graphics_ghl_push gate selftest -> PASS (10 cases: complete/empty/missing-upload/"
           "null-folder/incomplete/agent-skip/owner-skip/false-token/no-passed + end-to-end "
-          "push-hosts-passed-only/idempotent/gate-passes + approval-record refusals)")
+          "push-hosts-passed-only/idempotent/gate-passes + approval-record refusals + "
+          "liveness-evidence html200/png/no-header)")
     return 0
 
 

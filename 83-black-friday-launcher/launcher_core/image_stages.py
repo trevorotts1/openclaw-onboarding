@@ -41,11 +41,13 @@ and this driver owns the deterministic half of it:
   files and the hosting ledger, and is only accepted when the stage contract's own validator
   passes it;
 * the hosting ledger is admitted per asset: the current file's hash, the page/slot, the folder,
-  the media id, a recognised completion status and a usable URL — a non-empty HTML response is
-  never proof of a correct picture, and CDN transformation is expected (the LOCAL hash is the
-  identity; the remote bytes are never compared to it). ``write_hosting_binding`` emits that
-  binding from the hosting route's own receipts (or the Skill 49 rail's ledger) and
-  ``hosted_admission`` reads it; a raw upload row is never admitted without the binding.
+  the media id, a recognised completion status, a usable URL, and the remote evidence the route
+  observed — its real content type and bytes that decode as an image with readable dimensions.
+  A non-empty HTML response is never proof of a correct picture (a login page answers 200), and
+  CDN transformation is expected (the LOCAL hash is the identity; the remote bytes are never
+  compared to it). ``write_hosting_binding`` emits that binding from the hosting route's own
+  receipts (or the Skill 49 rail's ledger) and ``hosted_admission`` reads it; a raw upload row is
+  never admitted without the binding.
 
 The page SET comes from Skill 49's inventory (``page_types.json``) read against the run's launch
 record, never from a directory count: a planned page with no run folder is named missing.
@@ -764,7 +766,44 @@ def write_hosting_binding(run_dir: Path, run: Path,
 
 
 _HTML_TYPES = ("text/html", "application/xhtml+xml")
-_IMAGE_TYPES = ("image/png", "image/jpeg", "image/webp", "application/octet-stream", "binary/octet-stream")
+# Content type -> the format its BYTES must decode as. A recorded type alone is not evidence.
+# The accepted types are exactly the ones admission accepted before; nothing new is admitted.
+_IMAGE_TYPE_FORMATS = {"image/png": "png", "image/jpeg": "jpeg", "image/webp": "webp"}
+# Generic binary is a transport detail, not an image claim: admitted only with decoded image bytes.
+_GENERIC_BINARY_TYPES = ("application/octet-stream", "binary/octet-stream")
+
+
+def remote_image_problems(entry: Dict[str, Any]) -> List[str]:
+    """Why the hosted URL's recorded remote evidence is not a picture (F17 item 12), or [].
+
+    A nonempty HTML response is insufficient proof of an image, so the route records the real
+    Content-Type header and what the fetched bytes decode to (magic header + dimensions). Admission
+    refuses by name: no content type at all (an unrecorded header is not evidence and is never
+    filled in from the filename), an HTML/XML/JSON or any other non-image type, bytes that do not
+    decode as an image, and a type that contradicts the bytes. A generic ``octet-stream`` is
+    admitted only when the bytes themselves decode as an image.
+    """
+    problems: List[str] = []
+    ctype = str(entry.get("content_type") or entry.get("mime_type") or "").split(";")[0].strip().lower()
+    live = entry.get("liveness") if isinstance(entry.get("liveness"), dict) else {}
+    evidence = live.get("image") if isinstance(live.get("image"), dict) else {}
+    fmt = str(evidence.get("format") or "").strip().lower()
+    width, height = evidence.get("width"), evidence.get("height")
+    decodes = (evidence.get("decodes") is True and isinstance(width, int) and isinstance(height, int)
+               and width > 0 and height > 0)
+    if not ctype:
+        problems.append("records no remote content type, so a login page cannot be told from a picture")
+    elif ctype in _HTML_TYPES:
+        problems.append(f"the URL returned {ctype}, which is a page, not a picture")
+    elif ctype in _GENERIC_BINARY_TYPES:
+        pass  # a transport detail: the decoded bytes below are the evidence
+    elif ctype not in _IMAGE_TYPE_FORMATS:
+        problems.append(f"the URL returned {ctype}, not an image")
+    if not decodes:
+        problems.append("the fetched bytes do not decode as an image (no readable image header/dimensions)")
+    elif ctype in _IMAGE_TYPE_FORMATS and _IMAGE_TYPE_FORMATS[ctype] != fmt:
+        problems.append(f"the URL returned {ctype} but its bytes decode as {fmt}")
+    return problems
 
 
 def _inside_run(local: str, run: Path) -> bool:
@@ -790,9 +829,11 @@ def hosted_admission(run_dir: Path, run: Path) -> Dict[str, Any]:
     * a folder (``ghl_folder_id`` — a real id, or the route's documented "root" fallback) and a
       media id (``ghl_media_id`` or ``file_id``) are recorded;
     * the completion status is the route's recognised one (``ghl_upload_status == "complete"``);
-    * the URL is a usable HTTP(S) URL that the route recorded as live, and the content type it
-      recorded (when it recorded one) is an image or unspecified — never ``text/html``, which is
-      what a failed or login-intercepted fetch returns and is not proof of a picture.
+    * the URL is a usable HTTP(S) URL that the route recorded as live, and the remote evidence it
+      recorded is of a REAL image: a real content type (``content_type``; a null one is refused,
+      never assumed) that is an image or a generic octet-stream, and bytes that decode as an image
+      with readable dimensions. ``text/html`` — what a failed or login-intercepted fetch returns —
+      JSON or an image type whose bytes decode as something else is refused by name.
     """
     ledger, source = _hosting_ledger(run_dir, run)
     out: Dict[str, Any] = {"route": HOSTING_ROUTE, "ledger": source, "admitted": [], "refused": []}
@@ -840,11 +881,7 @@ def hosted_admission(run_dir: Path, run: Path) -> Dict[str, Any]:
         live = entry.get("liveness") if isinstance(entry.get("liveness"), dict) else {}
         if live.get("live") is not True:
             problems.append("the URL is not recorded as live")
-        ctype = str(entry.get("content_type") or entry.get("mime_type") or "").split(";")[0].strip().lower()
-        if ctype in _HTML_TYPES:
-            problems.append(f"the URL returned {ctype}, which is a page, not a picture")
-        elif ctype and ctype not in _IMAGE_TYPES:
-            problems.append(f"the URL returned {ctype}, not an image")
+        problems.extend(remote_image_problems(entry))
         if problems:
             out["refused"].append({"file": name, "problems": problems})
         else:
