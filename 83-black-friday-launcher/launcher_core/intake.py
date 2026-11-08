@@ -677,8 +677,18 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     # shared-utils/client_intake/revision.py and are the same code Skill 49 runs. The
     # reconciliation runs on the RAW offers: a stale dependent offer is removed because its
     # parent is disabled, so it is never asked to satisfy a shape it will not be built from.
+    #
+    # A slot counts as DISABLED only on a POSITIVE record (the answers ledger marks it
+    # not_applicable). Mere absence from this payload is not a disabling: a client who
+    # supplied upsell_2 with no parent gets the named AF-LAUNCH-INTAKE-ROUTE refusal below,
+    # never a silent deletion of the offer they asked for. Dropping it here would make the
+    # route law unreachable and lose a supplied commercial fact, which this module's
+    # contract forbids ("fail-closed; never invents a commercial fact").
+    disabled = [slot for slot in ("upsell_1", "downsell_1", "upsell_2")
+                if isinstance(answers_ledger.get(slot), dict)
+                and rev.state_of(answers_ledger[slot]) == rev.NOT_APPLICABLE]
     reconciliation = rev.reconcile_launch(answers_ledger, revision=revision,
-                                          offers=offers, answer_prefix="")
+                                          offers=offers, answer_prefix="", disabled=disabled)
     if acceptance is not None:
         reconciliation["accepted_proposals"] = rev.accept_proposals(answers_ledger, acceptance)
     dropped = {row["slot"] for row in reconciliation["removed_offers"]}
