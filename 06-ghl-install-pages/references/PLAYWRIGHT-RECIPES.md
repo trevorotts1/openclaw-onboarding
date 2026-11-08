@@ -42,10 +42,18 @@ The code lives in `tools/playwright_recipes/`:
 | `route.py` | Deterministic capability-based lane selection |
 | `catalog.json` | Operation names, best uses and evidence levels |
 | `preflight.py` | Read-only Mac/Linux runtime check |
-| `test_recipes.py` | Offline validation, routing and recovery tests |
+| `assessments.py` | Native field properties, conditions and preserved custom CSS |
+| `quiz_ui.py` | Native quiz categories, authored answers, scoring and three result tiers |
+| `survey_ui.py` | Native forward Jump To rules with source-slide checks |
+| `checkout_ui.py` | Native checkout layout, contact fields, display switches and content |
+| `pages_checkout.py` | Exact code targets and contract-bound native payment component adapter |
+| `delivery.py` | Course and permanent calendar-link API execution through existing credentials |
+| `meetings.py` | Room creation/update, persisted identity and security checks |
+| `checkpoint.py` | Dated source backups with a per-file integrity manifest |
+| `test_*.py` | Validation, routing, recovery, provider and opt-in Chromium contracts |
 
 There is one maintained executor, with multiple named recipes. Names below are
-entry points in the catalog, not 21 copied browser programs.
+30 named entry points in the catalog. Shared handlers avoid copying browser programs.
 
 | Recipe | Best use | Current coverage |
 | --- | --- | --- |
@@ -60,20 +68,30 @@ entry points in the catalog, not 21 copied browser programs.
 | `09_create_split_variant` / `funnels.split_variant` | Native variant and traffic allocation | Recorded profile still required; live alert blocked capture |
 | `10_fill_page_seo` / `pages.seo` | Title, description, keywords, author, canonical, language | Rendered metadata checked |
 | `11_create_form` / `forms.create` | Native form and standard required fields | Saved and reopened live |
-| `12_configure_form_options` / `forms.configure` | Fields, choices, rules, legal copy, redirects, notifications | Executor; per-control recorded profiles required |
-| `13_polish_form_css` / `forms.style` | Native iframe input/button polish | Four input types checked at 12 px |
+| `12_configure_form_options` / `forms.configure` | Existing standard-field labels, placeholders, keys, width, required/hidden/default values | Concrete saved-editor read-back; other field types and controls require capture |
+| `13_polish_form_css` / `forms.style` | Input radius or approved custom CSS in an owned block | Preserves other CSS; saved-editor and optional computed-style read-back |
 | `14_create_survey` / `surveys.create` | Native survey and standard-field placement | Native field placed/saved; branches need profiles |
 | `15_create_marketing_quiz` / `quizzes.create` | Lead quiz, scoring and result pages | Native question path exercised; scoring/result profiles needed |
 | `16_create_community` / `communities.create` | Native group creation | Group created, then retained inactive |
 | `17_configure_community` / `communities.configure` | Channels, privacy, branding, course links | Portal password expired; profile capture blocked |
-| `18_create_course` / `courses.create` | Course creation | API-first handoff, not a new UI implementation |
+| `18_create_course` / `courses.create` | Course, outline, lesson content and quizzes via Courses v3 | Concrete API provider; location/version/scope capability and independent read-back required |
 | `19_configure_course_ui` / `courses.configure_ui` | Genuinely UI-only course settings | Recorded profile required |
-| `20_setup_meeting_room` / `meetings.setup` | Personal room and explicit security choices | Live controls captured; final creation/read-back unverified |
-| `21_integrate_meeting_room` / `meetings.integrate` | Calendar/community/course event room links | Recorded profile required |
+| `20_setup_meeting_room` / `meetings.setup` | Personal room and explicit security choices | Concrete create/reuse with independent reader; native fixture created and reopened |
+| `21_integrate_meeting_room` / `meetings.integrate` | Explicit permanent calendar room link | Registered API provider with persisted read-back; dynamic appointment rooms and other associations remain uncaptured |
+| `22_configure_form_settings` / `forms.settings` | Seven ordinary native form switches | Concrete save/reopen path; scheduling values remain unsupported |
+| `23_update_course` / `courses.update` | Existing course content and styling | Concrete API update and read-back; live client proof pending |
+| `24_create_lesson_quiz` / `courses.lesson_quiz.create` | Course lesson quiz and questions | Courses API, separate from marketing quiz; live attempt proof pending |
+| `25_configure_form_condition` / `forms.conditions` | Native Hide Field conditions | Three-level save and exact persisted card check; other effects require capture |
+| `26_configure_native_checkout` / `checkout.configure_native` | Native product/price/bump/action binding | Location/page-bound component capture and payment dependencies required; payment behavior pending |
+| `27_update_meeting_room` / `meetings.update` | Update exact existing room | Existing room identity mandatory; cannot create on a missing target |
+| `28_configure_quiz_scores_and_tiers` / `quizzes.configure` | Categories, existing question/answer authoring, appended answers, scores and three tiers | Concrete native read-back; shared-field edit acknowledgment required for text changes |
+| `29_configure_survey_branch` / `surveys.configure` | Forward native Jump To condition | Concrete three-level save/read-back; separate live true/false preview exercise passed |
+| `30_configure_native_checkout_ui` / `checkout.configure_ui` | Layout, contact fields, display switches, 37 text fields and input style | Concrete save/reopen path; stays pending payment verification |
 
 **Evidence limit:** LIVE_PATH means the control sequence was exercised through
-the connected browser. The final Python process has not yet been run end to end
-on a client Mac or VPS. PROFILE means the common executor exists; it does not
+the connected browser. The package and four actual Chromium fixtures passed on Mac and Linux CI.
+The client Mac also passed the four fixtures and the managed browser lifecycle.
+These are distinct from a final native GHL job and from an actual client VPS run. PROFILE means the common executor exists; it does not
 mean all controls for that operation have been recorded. Do not describe this
 catalog as complete coverage of every GHL option.
 
@@ -187,8 +205,8 @@ locators require a captured count. Publish, purchase, deletion, invitations and
 credential actions remain outside this executor. An assertion must be present.
 
 Profiles needed before broad deployment include: all form choice/advanced
-controls, submit/redirect/tracking/notification rules; survey slides/conditional
-jumps; quiz categories/weights/results; native split creation/allocation;
+controls, submit/redirect/tracking/notification rules; additional survey question
+types/outcomes; quiz question creation, variable tiers and outcome behavior; native split creation/allocation;
 checkout products/bumps/one-click behavior; portal settings; course UI-only
 features; meeting calendar/co-host/recording/transcription integrations.
 
@@ -227,3 +245,20 @@ or client calendars have automatically migrated.
 - [Official Meeting Room release](https://ideas.gohighlevel.com/changelog/introducing-meeting-room)
 - [Official Courses v3 create operation](https://marketplace.gohighlevel.com/docs/ghl/courses/create-course/)
 - [Official course lesson quiz operations](https://marketplace.gohighlevel.com/docs/ghl/courses/quiz/)
+
+
+## Concrete native option examples
+
+See `tools/playwright_recipes/examples/NATIVE-OPTIONS.md` for captured form,
+quiz, survey and custom-CSS schemas. See `examples/checkout_ui.md` and
+`examples/checkout_ui.json` for the checkout UI recipe. Unknown keys are refused
+rather than silently omitted. These examples are schemas, not client approvals.
+
+For permanent calendar integration, use the host with
+`operation=meetings.integrate` and explicit
+`integration_mode=permanent_calendar_link`, exact `calendar_id`, verified `room`,
+and a fresh location/version/scope capability. The canonical Skill 44 registry
+owns `calendars.get` and `calendars.update`; default deny and read-back still
+apply. A permanent link cannot silently substitute for native dynamic room
+generation. Any authenticated invite is transient input; receipts retain only
+its hash and safe mode flags. Supply no secret in a public input example.

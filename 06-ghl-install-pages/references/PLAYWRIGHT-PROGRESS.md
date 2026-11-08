@@ -164,3 +164,60 @@ Created GitHub Actions Ubuntu/Mac real-Chromium fixture workflow; local Chromium
 remains unavailable. Offline tests and skipped fixture count are recorded by
 final suite. Do not claim native Mac/VPS proof or paid checkout proof from CI.
 Community portal independently still shows expired-password screen.
+
+
+## Client Mac and portability proof (20:10 UTC continuation)
+
+The saved d86983 checkpoint passed all 178 tests on Ubuntu and Mac GitHub runners,
+including four opt-in real Chromium fixtures. The browser lifecycle guard then
+caught the fixture's bare launch; it has been corrected to a persistent owned
+context without changing/exempting the guard. The guard passes locally; the
+corrected fixture needs a fresh CI run. This is synthetic browser proof, not
+native client API/payment/build proof.
+
+The existing OpenClaw app ran an isolated client-Mac worker. It verified the
+remote checkpoint, ran 178 tests (four opt-in skips), then passed all four actual
+Chromium fixtures using the already-installed Homebrew Python and matching
+cached headless shell. A separate unchanged PlaywrightSession smoke passed with
+about:blank/local content and clean teardown. No dependency was installed or
+credential/configuration changed. The earlier read-only preflight incorrectly
+required the full Chromium executable even with a working headless shell;
+preflight is being corrected to detect the matching installed shell revision.
+
+A source checkpoint was actually written to the client Mac's default Downloads
+folder and independently verified (34 manifest entries, zero mismatches). Exact
+private machine paths and execution receipts stay in the private owner handoff.
+Source archives exclude private auth/runtime state.
+
+Latest native additions include hidden field values with six-input shape guards,
+quiz question/answer authoring with explicit shared-field acknowledgment, owned
+custom-CSS preservation, native checkout settings/content/input style and a
+permanent-calendar-link API provider. Native checkout headline and Box input
+appearance were saved and independently reopened in the browser fixture.
+The native Python forms.settings host run is being tested separately; no success
+is claimed until its persisted setting and replay receipt are observed.
+
+Canonical Skill44 regression after calendar registry integration: 511 passed,
+3 skipped and 1,515 subtests passed. Registry breadth now explicitly checks the
+calendar operation contract. A preexisting stale automation fake signature was
+corrected with a callback-propagation assertion; production CLI was unchanged.
+Thirty named catalog operations exist; this is not a count of fully live-verified
+scripts. Consult the 47-row acceptance matrix for unfinished work.
+
+
+## Latest integrated source checkpoint
+
+Whole recipe package: 230 discovered, 223 passed, seven opt-in Chromium tests
+skipped in this workspace. Six new hydration tests cover the actual Mac-discovered
+race: exact editor routes wait for the expected iframe, then recheck origin,
+location and route. Dashboard navigation is never used as editor readiness.
+Direct/package imports share one Stop type; CLI native validator refusals are
+structured exit-2 outcomes. Native form settings support the captured eight- or
+nine-switch layout without changing scheduling or agency branding.
+
+Seven mandatory real-browser fixtures will run on both OSs in the next source
+checkpoint CI. No current source test is failed; native GHL forms.settings proof
+remains pending its separately recorded guarded run. An alternate documented
+host-API attempt left intent recorded and must be reconciled before any retry.
+All native client receipts and diagnostic scripts remain private and outside
+source checkpoints. Do not reset or overwrite uncertain client state.

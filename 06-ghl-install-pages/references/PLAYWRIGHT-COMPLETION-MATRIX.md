@@ -114,12 +114,14 @@ later sibling changes before they are integrated and rerun:
 ## Verification during parallel continuation
 
 - Central result validation now accepts recognized outcomes rather than a
-  blacklist. Four acceptance-boundary tests pass: nine incomplete/no-op status
-  cases, missing outcomes, pending read-back and meeting-update creation refusal.
-- At the reviewed parallel snapshot, `python3 -m unittest discover -s
-  06-ghl-install-pages/tools/playwright_recipes -p 'test_*.py' -v` ran 79 tests
-  with zero failures. Re-run after final integration; this snapshot is not the
-  final release verdict.
+  blacklist. Seven acceptance-boundary tests pass: nine incomplete/no-op status
+  cases, missing outcomes, pending read-back, meeting-update creation refusal
+  named HTML updates preserving their native element/section identity, direct CLI helper refusals and shared direct/package exception identity.
+- At the latest independently reviewed snapshot, `python3 -m unittest discover
+  -s 06-ghl-install-pages/tools/playwright_recipes -p 'test_*.py'` discovered
+  224 tests: 217 passed and the seven opt-in real-browser tests were explicitly
+  skipped. Exit 0. This is an offline result, not 224 browser passes. Re-run
+  after any later integration changes; it is not a final native release verdict.
 - Course execution, assessment models, native checkout adapter and Meeting Room
   components now have offline tests. Required host callbacks, captured adapters,
   native associations and actual live fixture behavior still require their own
@@ -127,16 +129,23 @@ later sibling changes before they are integrated and rerun:
 
 ## Mac/Linux GitHub Actions fixture proof
 
-The portability workflow and four real-browser fixtures are implemented in
+The portability workflow and seven real-browser fixtures are implemented in
 `.github/workflows/skill6-recipes-portability.yml` and
-`tools/playwright_recipes/test_browser_fixture.py`. Their browser pass still
-requires CI execution. A Chromium download failure on the development host is a
-real environment limit, not a successful browser check.
+`tools/playwright_recipes/test_browser_fixture.py`. At checkpoint `d86983`, the
+Mac and Linux portability jobs each passed 178 tests, including the four actual
+Chromium fixtures. That proves the tested synthetic browser behavior on those
+runners, not live GHL or client installation. The separate lifecycle guard caught
+the fixture's browser-launch form. It is now corrected to one suite-owned
+headless persistent context with a temporary profile, per-test page teardown,
+context shutdown and profile cleanup. The unchanged lifecycle guard passes
+locally; the corrected source still needs its next CI rerun. A Chromium download
+failure on the development host is a real environment limit, not a successful
+local browser check.
 
 | Layer | Runner and trigger | Required execution | What it proves |
 | --- | --- | --- | --- |
 | Offline contracts | `macos-latest` and `ubuntu-latest`, pull requests touching this package | Install the declared Python dependencies, run package imports and the complete unittest suite, record Python/OS versions and actual counts. | Both platforms can import and execute the tested contracts. No client operation is claimed. |
-| Real browser fixtures | Same two runner OSs, isolated local fixture servers | Install Playwright and its Chromium build; serve shell and builder on different loopback origins; exercise the actual maintained form-settings executor. Four cases cover save/reload of seven settings, row drift, count drift and a Save click that loses its data. Selected tests fail when browser launch fails. | Real Playwright frames, switch clicks, selector ambiguity, save/reopen, cross-origin isolation and cleanup work in the fixture. This still does not prove GHL live behavior. |
+| Real browser fixtures | Same two runner OSs, isolated local fixture servers | Install Playwright and its Chromium build; serve shell and builder on different loopback origins; exercise the actual maintained form-settings executor. Seven cases cover save/reload of seven settings with scheduling off and already on, protected branding preservation, row/count/branding drift and Save clicks that lose their data. Selected tests fail when browser launch fails. | Real Playwright frames, switch clicks, selector ambiguity, save/reopen, cross-origin isolation and cleanup work in the fixture. This still does not prove GHL live behavior. |
 | Native client smoke | Explicit manual dispatch to separate client-controlled Mac and Linux VPS workers | Use client-local secret resolver and existing browser lifecycle, exact location/account binding and named fixture objects. Run final installed scripts, then independently fetch/reopen each persisted result. | Actual native script execution on each required host. Record each operation separately. |
 | Functional journey | Explicit fixture-run scope with existing payment/message approvals | Submit form/survey/quiz fixtures and use the existing authorized test-payment contract for checkout and upsell. Prove branch boundaries, accept/decline and correct native associations. | Requested functional behavior, beyond editor saves. |
 
@@ -154,7 +163,50 @@ commit/manifest correspondence. Automated CI setup must use the repository's
 existing dependency/runner conventions rather than introduce another auth rail.
 
 Local validation: fixture Python AST and workflow YAML structure pass. Ordinary
-local discovery explicitly skips the four opt-in browser cases. An explicit
+local discovery explicitly skips the seven opt-in browser cases. An explicit
 `SKILL6_BROWSER_FIXTURE=1` run fails in setup because Chromium is unavailable;
 it does not silently skip or report a browser pass. CI enables that variable
 for both operating systems and installs Chromium before discovery.
+
+## Latest integrated implementation review
+
+The following advances were inspected in source during the parallel continuation.
+They describe implemented capabilities and tested contracts. Native final-script
+execution, functional journeys and platform evidence still close the matrix rows.
+
+| Requirements | Integrated advance | Evidence boundary or remaining work |
+| --- | --- | --- |
+| R02, R37-R39 | Courses v3 create/update and existing-lesson quiz executors use the existing Skill 44 resolver and write gate; schema-only host checks, location/version/scope checks, root leases, intent, safe IDs and read-back are implemented. | Fake-transport tests verify exact requests and failures; final client API executions and learner behavior remain separate evidence. |
+| R17-R18 | Named HTML update inputs preserve native element/section IDs; exact target inventory is available. Full Width now selects Full and verifies the class plus entire-width row toggle on the intended section. | A known native code target can be updated on a multi-section page. Uninventoried/ambiguous targets still stop; final rendered desktop/mobile checks remain required. |
+| R20 | Captured native checkout UI supports mode, product-display switches and guarded native contact required/visible states; enclosing function saves, reopens and compares. Separate native binding adapter supports verified product/price/bump/action identities. | UI appearance configuration is distinct from native binding and payment proof. Binding requires a location/page-specific captured adapter map and product/price contract. One-click payment behavior is not proven by these tests. |
+| R24-R25 | Native standard-field property edits validate current query/placeholder identities, containing property rows, counts and planned anchor uniqueness, then save and reopen. | Other/custom field types still require their concrete captured paths. Hidden-field writes are refused until a valid hidden-field reopen anchor is captured. |
+| R28 | Native Hide Field condition logic has separate rule/drawer/form saves and persisted-card identity checks; matching existing rules are reused. | Supported unary rule persistence has concrete read-back; unsupported/binary behavior and actual positive/negative submissions must retain their stated verification status. |
+| R31-R32 | Native forward survey Jump To rules verify actual slide containers, ordered names, condition-field ownership, target, all save levels and reopened summary cards; matching rules do not duplicate. | Native rule persistence is distinct from actual submission routing. Backward/self/dangling jumps and conflicting existing targets stop. |
+| R33-R34 | Native marketing quiz category creation, option category/score edits and captured three-tier result ranges verify question/query/option identities and independently reopen saved controls. | Current builder shape is captured, not all possible quiz types/templates. Authored scoring oracle and actual quiz submissions still need comparison; no live Python functional result is inferred from fake-page tests. |
+| R41-R42 | Meeting setup/update now have a concrete native reader, sourced empty-state handling, canonical room-link identity, explicit creation permission, expected update identity and saved-security read-back. Unknown recording/transcription/access requests are refused. | The canonical URL is a natural identity, not a claimed backend UUID. Final created/updated native-room execution receipts remain required. |
+| R43 | Static calendar association now has a canonical registered Skill 44 calendar-update operation, guarded dispatcher and GET/PUT/GET read-back. Clean room identity and optional private Invite link are kept distinct; private query is not written to source or receipts. | This is static permanent-room integration, not native per-appointment dynamic room generation or community/course event association. Normal capability default-deny and write approvals remain binding. |
+| R44 | Real Chromium synthetic fixtures and Mac/Linux portability workflow are implemented with explicit browser installation and mandatory fixture selection in CI; both OS jobs passed the earlier 178-test checkpoint. | Local Chromium cannot launch because its executable is absent. The persistent-context lifecycle correction needs the next CI rerun; actual Mac/VPS native client runs remain unverified. |
+
+Important remaining limits include full builder feature inventory coverage,
+uninventoried custom fields, schedule/notification variants, full native split
+creation/allocation, community portal access/settings, native dynamic Meeting
+Room integrations, approved payment journeys and final native host runs. A
+concrete refusal is safer than guessed clicks but does not close that requirement.
+
+## Scheduler-aware ordinary form settings correction
+
+The native builder exposes eight switches when scheduling is off and nine when
+scheduling is already on: Agency branding is inserted after the scheduler, so
+all seven ordinary-setting indices shift. The executor now validates the local
+scheduler row label/state and expected count, validates the inserted Agency
+branding row, derives ordinary indices and recomputes those guards after reopen.
+Neither scheduling nor branding is clicked or configured; their states must
+remain unchanged. Dates and outside-window pages remain outside this operation.
+
+Six fake-browser/schema tests pass, including both shapes, branding on/off,
+malformed branding, shape/state disagreement and scheduler drift after saving.
+Three additional real Chromium fixtures cover the scheduled shape, wrong-branding
+refusal and lost-save read-back. They require the next CI run. Direct CLI native
+checkout validator errors are normalized into the canonical Stop class, with no
+traceback or second package-specific exception class. The unchanged lifecycle
+guard passes all five sections after these edits.

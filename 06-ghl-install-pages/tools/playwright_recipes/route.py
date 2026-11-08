@@ -40,7 +40,7 @@ def from_capability_probe(report, *, api_capabilities=None, recorded_profiles=()
     }
 
 
-def decide(operation, location_id, probes, catalog=None, failed_lanes=()):
+def decide(operation, location_id, probes, catalog=None, failed_lanes=(), inputs=None):
     catalog = catalog or json.loads((Path(__file__).parent/'catalog.json').read_text())
     if not isinstance(operation, str) or not isinstance(location_id, str) or not location_id:
         return {'lane':'STOP_INVALID_INPUT','reason':'Operation and location ID are required'}
@@ -48,6 +48,16 @@ def decide(operation, location_id, probes, catalog=None, failed_lanes=()):
         return {'lane':'STOP_UNKNOWN_OPERATION','operation':operation}
     if not isinstance(probes, dict) or not isinstance(probes.get('api_capabilities', {}), dict):
         return {'lane':'STOP_INVALID_PROBE','operation':operation}
+    context = inputs if isinstance(inputs, dict) else {}
+    calendar_mode = operation == 'meetings.integrate' and context.get('integration_mode') == 'permanent_calendar_link'
+    if operation == 'meetings.integrate':
+        mode = context.get('integration_mode')
+        if mode is not None and mode != 'permanent_calendar_link':
+            return {'lane':'STOP_UNSUPPORTED_INTEGRATION_MODE','operation':operation,
+                    'reason':'Dynamic appointment rooms and other integrations require a separately captured implementation'}
+        if mode is None and not context.get('options'):
+            return {'lane':'STOP_INTEGRATION_MODE_REQUIRED','operation':operation,
+                    'reason':'Choose explicit permanent_calendar_link for calendar API integration; captured options remain a separate UI route'}
     failed = set(failed_lanes)
     caps = probes.get('api_capabilities',{})
     cap = caps.get(operation,{})
@@ -57,10 +67,14 @@ def decide(operation, location_id, probes, catalog=None, failed_lanes=()):
     bound = cap.get('location_id') == location_id and fresh
     if bound and cap.get('http_status') in (401,403):
         return {'lane':'STOP_AUTH','reason':'Credential/scope refusal; do not treat it as an unsupported API or try another identity'}
-    if bound and cap.get('supported') is True and cap.get('provider') in ('public_api','official_mcp','skill44') and cap.get('scope_ok') is True and cap.get('version'):
+    api_eligible = operation != 'meetings.integrate' or calendar_mode
+    if api_eligible and bound and cap.get('supported') is True and cap.get('provider') in ('public_api','official_mcp','skill44') and cap.get('scope_ok') is True and cap.get('version'):
         return {'lane':cap['provider'],'operation':operation,'version':cap['version'],'location_id':location_id}
-    if operation in API_OPERATIONS and not (bound and cap.get('supported') is False and cap.get('reason') in ('unsupported_endpoint','location_feature_unavailable')):
+    if (operation in API_OPERATIONS or calendar_mode) and not (bound and cap.get('supported') is False and cap.get('reason') in ('unsupported_endpoint','location_feature_unavailable')):
         return {'lane':'PROBE_API','operation':operation,'reason':'Resolve exact supported endpoint, version, token scopes and tenant before opening the editor'}
+    if calendar_mode:
+        return {'lane':'STOP_UNSUPPORTED_CALENDAR_API','operation':operation,
+                'reason':'A permanent calendar link cannot silently become a dynamic/UI integration'}
     entry = catalog['recipes'].get(operation)
     if entry is None:
         return {'lane':'STOP_UNKNOWN_OPERATION','operation':operation}
@@ -84,8 +98,8 @@ def decide(operation, location_id, probes, catalog=None, failed_lanes=()):
     return {'lane':'STOP_NO_LANE','operation':operation}
 
 
-def recovery(operation, location_id, probes, failed_lanes=('playwright',)):
-    return decide(operation,location_id,probes,failed_lanes=failed_lanes)
+def recovery(operation, location_id, probes, failed_lanes=('playwright',), inputs=None):
+    return decide(operation,location_id,probes,failed_lanes=failed_lanes,inputs=inputs)
 
 
 if __name__=='__main__':
@@ -94,5 +108,6 @@ if __name__=='__main__':
     p.add_argument('--operation',required=True)
     p.add_argument('--location-id',required=True)
     p.add_argument('--probes',type=Path,required=True)
+    p.add_argument('--inputs',type=Path,help='Operation input context, required for explicit integration modes')
     a=p.parse_args()
-    print(json.dumps(decide(a.operation,a.location_id,json.loads(a.probes.read_text()))))
+    print(json.dumps(decide(a.operation,a.location_id,json.loads(a.probes.read_text()),inputs=json.loads(a.inputs.read_text()) if a.inputs else None)))

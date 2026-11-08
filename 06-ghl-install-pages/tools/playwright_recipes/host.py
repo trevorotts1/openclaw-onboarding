@@ -74,7 +74,7 @@ def _execute_provider_owned(operation, inputs, route, root, executor):
         # Do not persist arbitrary API responses, credential strings or logs.
         objects = result.get('objects', [])
         allowed_kinds = {'course','category','lesson','quiz','question','page','form',
-                         'website','funnel','room','community','channel'}
+                         'website','funnel','room','community','channel','calendar'}
         if not isinstance(objects, list) or any(
             not isinstance(obj, Mapping) or obj.get('kind') not in allowed_kinds or
             not isinstance(obj.get('id'), str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', obj['id'])
@@ -100,7 +100,8 @@ def _recipe_readiness(operation, inputs, probes, input_dir):
     observed = deepcopy(probes)
     native = operation in ('checkout.configure_native','checkout.one_click_upsell') and bool(inputs.get('adapter_capture'))
     recorded = bool(inputs.get('options'))
-    if not native and not recorded:
+    ui = operation == 'checkout.configure_ui'
+    if not native and not recorded and not ui:
         return observed, None
     # A receipt for another input/profile cannot bless this specific capture.
     profiles = observed.get('recorded_profiles', [])
@@ -138,7 +139,7 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
         return {'status': 'STOP_INVALID_INPUT', 'browser_used': False,
                 'reason': 'Installed executors must be a provider mapping'}
     observed, capture_error = _recipe_readiness(operation, inputs, probes, input_dir)
-    route = decide(operation, inputs['location_id'], observed)
+    route = decide(operation, inputs['location_id'], observed, inputs=inputs)
     root = Path(evidence_root).resolve()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(root, 0o700)
@@ -153,6 +154,12 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
             else:
                 from delivery import course_executor
             provider = course_executor
+        if provider is None and operation == 'meetings.integrate' and inputs.get('integration_mode') == 'permanent_calendar_link' and route['lane'] in ('public_api','skill44') and all(inputs.get(key) for key in ('calendar_id','room','api_capability')):
+            if __package__:
+                from .delivery import meeting_calendar_executor
+            else:
+                from delivery import meeting_calendar_executor
+            provider = meeting_calendar_executor
         if route['lane'] in ('public_api', 'official_mcp', 'skill44') and callable(provider):
             try:
                 return _execute_provider(operation, inputs, route, root, provider)
@@ -170,7 +177,7 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
         handoff = {
             'status': 'NEEDS_BROWSER_RECOVERY', 'operation': operation,
             'location_id': inputs['location_id'], 'error_type': type(exc).__name__,
-            'route': recovery(operation, inputs['location_id'], observed),
+            'route': recovery(operation, inputs['location_id'], observed, inputs=inputs),
             'state_file': str(root / 'state.json'),
             'instruction': 'Inspect recorded objects and the failed step. Do not rerun a create/save until its persisted outcome is reconciled.',
         }
@@ -193,7 +200,7 @@ def main(argv=None):
         probes = json.loads(args.probes.read_text())
         if args.check:
             observed, capture_error = _recipe_readiness(args.operation, inputs, probes, args.inputs.resolve().parent)
-            selected = decide(args.operation, inputs['location_id'], observed)
+            selected = decide(args.operation, inputs['location_id'], observed, inputs=inputs)
             if capture_error and selected['lane'] not in ('public_api','skill44','official_mcp'):
                 print(json.dumps({'status':'STOP_INVALID_CAPTURE', 'route':selected,
                                   'error_type':capture_error, 'browser_used':False}))
@@ -208,6 +215,13 @@ def main(argv=None):
                 else:
                     from delivery import validate_api_inputs
                 validate_api_inputs(args.operation, inputs, selected)
+                status = 'VALIDATED_ONLY'
+            elif selected['lane'] in ('public_api','skill44','official_mcp') and args.operation == 'meetings.integrate' and inputs.get('integration_mode') == 'permanent_calendar_link':
+                if __package__:
+                    from .delivery import validate_calendar_integration
+                else:
+                    from delivery import validate_calendar_integration
+                validate_calendar_integration(inputs, selected)
                 status = 'VALIDATED_ONLY'
             elif selected['lane'] == 'PROBE_API':
                 status = 'API_PROBE_REQUIRED'

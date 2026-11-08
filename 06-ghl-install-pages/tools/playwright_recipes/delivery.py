@@ -590,6 +590,8 @@ class CalendarHttpTransport:
 
 def validate_calendar_integration(inputs, route):
     """Pure validation for the static permanent-room calendar integration."""
+    if inputs.get('integration_mode')!='permanent_calendar_link':
+        raise Stop('Calendar integration requires integration_mode=permanent_calendar_link')
     loc=_id(inputs.get('location_id'),'location_id')
     if not isinstance(route,dict) or route.get('operation')!='meetings.integrate' or route.get('location_id')!=loc or route.get('version')!='v3':
         raise Stop('Calendar integration route must match meetings.integrate, location and v3')

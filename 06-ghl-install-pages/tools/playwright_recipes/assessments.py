@@ -6,6 +6,7 @@ provide exact expected behavior for their independent submission checks.
 """
 from copy import deepcopy
 import re
+import hashlib
 from urllib.parse import urlsplit
 
 
@@ -50,7 +51,126 @@ def reopen_editor(page, kind, name, editor_url):
         raise Stop('Reopened native editor identity changed')
 
 
+def validate_css(step):
+    if not isinstance(step, dict) or set(step) - {'id', 'action', 'custom_css', 'css_key', 'expect_styles'}:
+        raise AssessmentError('Unsupported native CSS configuration option')
+    css = step.get('custom_css')
+    if not isinstance(css, str) or not css.strip():
+        raise AssessmentError('Approved custom CSS text is required')
+    key = step.get('css_key', 'approved-css')
+    if not isinstance(key, str) or not re.fullmatch(r'[a-z0-9_-]+', key):
+        raise AssessmentError('CSS key must be a simple lowercase identifier')
+    if 'ZHC-SKILL6-APPROVED-CSS-' in css:
+        raise AssessmentError('CSS text contains a reserved ownership marker')
+    checks = step.get('expect_styles', [])
+    if not isinstance(checks, list):
+        raise AssessmentError('Computed style checks must be a list')
+    for check in checks:
+        if not isinstance(check, dict) or set(check) != {'selector', 'count', 'properties'}:
+            raise AssessmentError('Each style check needs an exact selector/count/property mapping')
+        if not isinstance(check['selector'], str) or not check['selector'] or type(check['count']) is not int or check['count'] < 1:
+            raise AssessmentError('Style check selector and positive element count are required')
+        if not isinstance(check['properties'], dict) or not check['properties'] or any(
+            not isinstance(k, str) or not re.fullmatch(r'--?[a-z][a-z0-9-]*|[a-z][a-z0-9-]*', k)
+            or not isinstance(v, str) for k, v in check['properties'].items()):
+            raise AssessmentError('Style properties must be explicit CSS property/value strings')
+    return deepcopy(step)
+
+
+def merge_css(existing, step):
+    """Replace only this operation's owned block; preserve other client CSS."""
+    step = validate_css(step)
+    key = step.get('css_key', 'approved-css')
+    begin = '/* ZHC-SKILL6-APPROVED-CSS-' + key + '-BEGIN */'
+    end = '/* ZHC-SKILL6-APPROVED-CSS-' + key + '-END */'
+    if not isinstance(existing, str):
+        raise AssessmentError('Existing native CSS was not readable text')
+    if existing.count(begin) != existing.count(end) or existing.count(begin) > 1:
+        raise AssessmentError('Existing owned CSS markers are ambiguous; reconcile before replacement')
+    if begin in existing and existing.index(end) < existing.index(begin):
+        raise AssessmentError('Existing CSS ownership markers are out of order')
+    css = step['custom_css'].replace('\r\n', '\n').replace('\r', '\n').strip()
+    block = begin + '\n' + css + '\n' + end
+    if begin in existing:
+        return re.sub(re.escape(begin) + r'.*?' + re.escape(end), lambda _: block, existing, flags=re.S)
+    return existing + ('\n' if existing and not existing.endswith('\n') else '') + block + '\n'
+
+
+def configure_css(page, step):
+    """Install approved native form CSS, reopen it and check requested rendering."""
+    if __package__:
+        from .skill6_playwright import click, fill, form_builder, visible, wait_until, Stop
+    else:
+        from skill6_playwright import click, fill, form_builder, visible, wait_until, Stop
+    step = validate_css(step)
+    frame = form_builder(page)
+    title = frame.get_by_role('textbox', name='Form Name', exact=True)
+    title.wait_for(state='visible', timeout=45000)
+    name, editor_url = title.input_value(), page.url
+
+    def close_initial():
+        close = frame.get_by_role('dialog').get_by_role('button', name='Close', exact=True)
+        if visible(close):
+            click(close)
+
+    def open_css():
+        advanced = frame.get_by_text('Advanced', exact=True)
+        if not visible(advanced):
+            click(frame.get_by_role('button', name='Styles & Options', exact=True))
+        click(advanced)
+        click(frame.get_by_text('Custom CSS', exact=True))
+        pane = frame.get_by_role('dialog').filter(has_text='Custom CSS')
+        editor = pane.get_by_role('textbox')
+        if pane.count() != 1 or editor.count() != 1:
+            raise Stop('Native Custom CSS editor changed')
+        editor.wait_for(state='visible', timeout=45000)
+        return pane, editor
+
+    def content(editor):
+        value = editor.evaluate("el => el.value ?? el.innerText ?? ''")
+        if not isinstance(value, str):
+            raise Stop('Native CSS editor content could not be read')
+        return value
+
+    close_initial()
+    pane, editor = open_css()
+    expected = merge_css(content(editor), step)
+    fill(editor, expected)
+    click(pane.get_by_role('button', name='Close', exact=True))
+    click(frame.get_by_role('button', name='Save', exact=True))
+    wait_until(lambda: frame.get_by_role('button', name='Save', exact=True).count() == 1
+               and frame.get_by_role('button', name='Save', exact=True).is_enabled(), 'Native CSS save did not finish')
+    reopen_editor(page, 'form', name, editor_url)
+    close_initial()
+    pane, editor = open_css()
+    if content(editor) != expected:
+        raise Stop('Native form CSS did not persist exactly')
+    click(pane.get_by_role('button', name='Close', exact=True))
+    if step.get('expect_styles'):
+        with page.context.expect_page(timeout=45000) as event:
+            click(frame.get_by_role('button', name='Preview', exact=True))
+        preview = event.value
+        try:
+            preview.wait_for_load_state('domcontentloaded')
+            for check in step['expect_styles']:
+                elements = preview.locator(check['selector'])
+                elements.first.wait_for(state='visible', timeout=45000)
+                if elements.count() != check['count']:
+                    raise Stop('Native styled element count differs from request')
+                for prop, value in check['properties'].items():
+                    observed = elements.evaluate_all('(els, property) => els.map(el => getComputedStyle(el).getPropertyValue(property).trim())', prop)
+                    if len(observed) != check['count'] or any(actual != value for actual in observed):
+                        raise Stop('Native form computed CSS property differs: ' + prop)
+        finally:
+            preview.close()
+    return {'status': 'NATIVE_FORM_CSS_SAVED_AND_REOPENED', 'editor_url': page.url,
+            'css_sha256': hashlib.sha256(expected.encode()).hexdigest(),
+            'render_checks': len(step.get('expect_styles', [])), 'submission_verified': False}
+
+
 def validate_fields(step):
+    if not isinstance(step, dict) or set(step) - {'id', 'action', 'fields'}:
+        raise AssessmentError('Unsupported native field configuration option')
     fields = step.get('fields')
     if not isinstance(fields, list) or not fields:
         raise AssessmentError('fields must be a nonempty list')
@@ -62,9 +182,9 @@ def validate_fields(step):
         if field['field'] in seen:
             raise AssessmentError('Duplicate field edit')
         seen.add(field['field'])
-        if set(field) - {'field', *PROPERTIES, 'required', 'hidden', 'current_placeholder', 'current_query_key'}:
+        if set(field) - {'field', *PROPERTIES, 'required', 'hidden', 'hidden_value', 'current_placeholder', 'current_query_key'}:
             raise AssessmentError('Unknown field property')
-        if not set(field).intersection({*PROPERTIES, 'required', 'hidden'}):
+        if not set(field).intersection({*PROPERTIES, 'required', 'hidden', 'hidden_value'}):
             raise AssessmentError('A field edit must change at least one property')
         if ('current_placeholder' in field) != ('current_query_key' in field):
             raise AssessmentError('Current field anchor requires both placeholder and query key')
@@ -76,8 +196,8 @@ def validate_fields(step):
                 raise AssessmentError(key + ' must be a boolean')
         if field.get('required') and field.get('hidden'):
             raise AssessmentError('A field cannot be required and hidden')
-        if field.get('hidden') is True:
-            raise AssessmentError('Hidden-field reopen anchor has not been captured; no mutation allowed')
+        if 'hidden_value' in field and (not isinstance(field['hidden_value'], str) or field.get('hidden') is not True):
+            raise AssessmentError('Hidden value requires explicit hidden:true and a text value')
         for key in PROPERTIES[:-1]:
             if key in field and not isinstance(field[key], str):
                 raise AssessmentError(key + ' must be text')
@@ -123,11 +243,15 @@ def configure_fields(page, step):
         click(frame.get_by_label('Open settings', exact=True))
         frame.get_by_text('General Settings', exact=True).wait_for(state='visible', timeout=45000)
         inputs = frame.get_by_role('textbox', name='Please Input', exact=True)
-        if inputs.count() != 5:
+        hidden = frame.get_by_role('checkbox', name='Hidden', exact=True)
+        expected_count = 6 if hidden.is_checked() else 5
+        if inputs.count() != expected_count:
             raise Stop('Native field property panel changed; capture required')
         for index, label in enumerate(('Label', 'Placeholder', 'Short Label', 'Query Key', 'Field Width')):
             if label not in inputs.nth(index).evaluate("el => el.closest('.form-group')?.textContent || ''"):
                 raise Stop('Native field property order changed; capture required')
+        if expected_count == 6 and 'hidden value' not in inputs.nth(5).evaluate("el => el.closest('.form-group')?.textContent || ''").casefold():
+            raise Stop('Native hidden value control changed')
         return inputs
 
     def close_panel():
@@ -155,6 +279,7 @@ def configure_fields(page, step):
             required.set_checked(False)
         if not wanted_hidden:
             hidden.set_checked(False)
+            wait_until(lambda: inputs.count() == 5, 'Hidden value control did not close')
         for index, prop in enumerate(PROPERTIES):
             if prop in field:
                 fill(inputs.nth(index), str(field[prop]))
@@ -162,7 +287,12 @@ def configure_fields(page, step):
             required.set_checked(True)
         if wanted_hidden:
             hidden.set_checked(True)
-        expected.append((field, [inputs.nth(i).input_value() for i in range(5)], wanted_required, wanted_hidden))
+            wait_until(lambda: inputs.count() == 6, 'Hidden value control did not appear')
+            if 'hidden value' not in inputs.nth(5).evaluate("el => el.closest('.form-group')?.textContent || ''").casefold():
+                raise Stop('Native hidden value control changed')
+            if 'hidden_value' in field:
+                fill(inputs.nth(5), field['hidden_value'])
+        expected.append((field, [inputs.nth(i).input_value() for i in range(inputs.count())], wanted_required, wanted_hidden))
         close_panel()
     click(frame.get_by_role('button', name='Save', exact=True))
     wait_until(lambda: frame.get_by_role('button', name='Save', exact=True).count() == 1
@@ -172,7 +302,7 @@ def configure_fields(page, step):
         click(close)
     for field, values, required, hidden in expected:
         inputs = panel(field, values[1])
-        if [inputs.nth(i).input_value() for i in range(5)] != values:
+        if [inputs.nth(i).input_value() for i in range(inputs.count())] != values:
             raise Stop('Field properties did not persist: ' + field['field'])
         for label, value in (('Required', required), ('Hidden', hidden)):
             if frame.get_by_role('checkbox', name=label, exact=True).is_checked() != value:
@@ -184,6 +314,10 @@ def configure_fields(page, step):
 
 def validate_condition(step):
     """Current capture supports one explicit Hide Field condition per run."""
+    if not isinstance(step, dict) or set(step) - {'id', 'action', 'effect', 'if_field', 'operator', 'value', 'target'}:
+        raise AssessmentError('Unsupported native condition configuration option')
+    if 'action' in step and step['action'] not in ('native_condition', 'Hide Field'):
+        raise AssessmentError('Uncaptured condition action')
     allowed = {'First Name', 'Last Name', 'Phone', 'Email', 'TnC1', 'TnC2'}
     if step.get('if_field') not in allowed or step.get('target') not in allowed | {'Privacy Policy | Terms of Service'}:
         raise AssessmentError('Condition fields must match captured native labels')
@@ -191,7 +325,7 @@ def validate_condition(step):
                  'Starts With', 'Ends With', 'Is Empty', 'Is Filled'}
     if step.get('operator') not in operators:
         raise AssessmentError('Uncaptured condition operator')
-    if step.get('action', 'Hide Field') != 'Hide Field':
+    if step.get('effect', 'Hide Field') != 'Hide Field':
         raise AssessmentError('Only the captured Hide Field action is implemented')
     unary = step['operator'] in {'Is Empty', 'Is Filled'}
     if not unary and (not isinstance(step.get('value'), str) or not step['value']):
@@ -305,6 +439,8 @@ def validate_model(model):
     """
     if not isinstance(model, dict) or model.get('kind') not in ('survey', 'quiz'):
         raise AssessmentError('Model kind must be survey or quiz')
+    if set(model) - {'kind', 'questions', 'results'}:
+        raise AssessmentError('Unsupported assessment model setting')
     questions = model.get('questions')
     if not isinstance(questions, list) or not questions:
         raise AssessmentError('Questions are required')
@@ -312,6 +448,8 @@ def validate_model(model):
     if any(not isinstance(x, str) or not x for x in ids) or len(ids) != len(set(ids)):
         raise AssessmentError('Question IDs must be unique nonempty strings')
     for index, q in enumerate(questions):
+        if set(q) - {'id', 'choices'}:
+            raise AssessmentError('Unsupported modeled question setting')
         choices = q.get('choices')
         if not isinstance(choices, list) or not choices:
             raise AssessmentError('Explicit question choices are required')
@@ -319,6 +457,8 @@ def validate_model(model):
         if any(not isinstance(x, str) or not x for x in values) or len(values) != len(set(values)):
             raise AssessmentError('Choice values must be unique nonempty strings')
         for c in choices:
+            if set(c) - {'value', 'score', 'next'}:
+                raise AssessmentError('Unsupported modeled choice setting')
             if model['kind'] == 'quiz' and (type(c.get('score')) is not int):
                 raise AssessmentError('Each quiz choice needs an integer score')
             target = c.get('next')
@@ -333,6 +473,8 @@ def validate_model(model):
             raise AssessmentError('Result IDs must be unique nonempty strings')
         ranges = []
         for r in results:
+            if set(r) - {'id', 'min', 'max'}:
+                raise AssessmentError('Unsupported modeled result setting')
             if type(r.get('min')) is not int or type(r.get('max')) is not int or r['min'] > r['max']:
                 raise AssessmentError('Result ranges must have integer min <= max')
             ranges.append((r['min'], r['max']))

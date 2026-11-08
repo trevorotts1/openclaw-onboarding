@@ -6,6 +6,8 @@ No network, browser process, credentials or client account is involved.
 """
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -26,6 +28,54 @@ def two_steps():
 
 
 class AcceptanceBoundaryTests(unittest.TestCase):
+    def test_direct_cli_normalizes_native_helper_refusal_without_traceback(self):
+        inputs = {
+            'location_id': 'FIXTURE', 'location_name': 'Acceptance fixture',
+            'start_url': 'https://app.convertandflow.com/v2/location/FIXTURE/editor/page',
+            'element_id': 'native_order', 'expected_name': 'Fixture checkout',
+            'products': {'uncaptured_option': False},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory, 'inputs.json')
+            source.write_text(json.dumps(inputs))
+            result = subprocess.run([
+                sys.executable, str(Path(__file__).with_name('recipe_cli.py')),
+                '--recipe', 'checkout.configure_ui', '--inputs', str(source),
+            ], capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn('Traceback', result.stderr)
+        output = json.loads(result.stderr)
+        self.assertEqual(output['status'], 'NEEDS_BROWSER_RECOVERY')
+        self.assertEqual(output['error_type'], 'Stop')
+
+    def test_script_and_package_imports_share_stop_class(self):
+        package = Path(__file__).resolve().parent
+        source = (
+            'import sys;'
+            'sys.path.insert(0,' + repr(str(package)) + ');'
+            'sys.path.insert(0,' + repr(str(package.parent)) + ');'
+            'import skill6_playwright as direct;'
+            'from playwright_recipes import skill6_playwright as packaged;'
+            'assert direct is packaged;assert direct.Stop is packaged.Stop;'
+            'print("SHARED_CORE")'
+        )
+        result = subprocess.run([sys.executable, '-c', source],
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), 'SHARED_CORE')
+
+    def test_named_code_update_preserves_native_target_identity(self):
+        data = {
+            'location_id': 'FIXTURE', 'location_name': 'Acceptance fixture',
+            'start_url': 'https://app.convertandflow.com/v2/location/FIXTURE/editor/page',
+            'file': 'approved.html', 'marker': 'Approved fixture', 'seo': {},
+            'element_id': 'native_code', 'section_id': 'native_section',
+            'expected_name': 'Approved Code',
+        }
+        step = compile_recipe('pages.install_code', data)['steps'][0]
+        for key in ('element_id', 'section_id', 'expected_name'):
+            self.assertEqual(step.get(key), data[key])
+
     def test_meeting_update_cannot_downgrade_into_create(self):
         inputs = {
             'location_id': 'FIXTURE', 'location_name': 'Acceptance fixture',

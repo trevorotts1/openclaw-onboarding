@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+from tempfile import TemporaryDirectory
 from threading import Thread
 import unittest
 from unittest.mock import patch
@@ -27,6 +28,13 @@ INITIAL = [False, True, False, True, False, False, True, False]
 
 def builder_html(mode):
     labels = list(LABELS)
+    initial = list(INITIAL)
+    if mode.startswith('scheduled'):
+        labels.insert(1, 'Agency branding')
+        initial[0] = True
+        initial.insert(1, True)
+    if mode == 'scheduled-wrong-branding':
+        labels[1] = 'Unexpected branding control'
     if mode == 'wrong-row':
         labels[3], labels[6] = labels[6], labels[3]
     if mode == 'wrong-count':
@@ -43,7 +51,7 @@ def builder_html(mode):
 <main>''' + rows + '''</main>
 <script>
 const mode = ''' + json.dumps(mode) + ''';
-const defaults = ''' + json.dumps(INITIAL) + ''';
+const defaults = ''' + json.dumps(initial) + ''';
 const switches = [...document.querySelectorAll('[role="switch"]')];
 const stored = JSON.parse(localStorage.getItem('settings') || 'null');
 switches.forEach((control,index) => {
@@ -53,7 +61,7 @@ switches.forEach((control,index) => {
 });
 document.getElementById('save').onclick = () => {
   localStorage.setItem('saves', String(Number(localStorage.getItem('saves') || 0)+1));
-  if (mode !== 'lost-save') localStorage.setItem('settings', JSON.stringify(
+  if (!mode.endsWith('lost-save')) localStorage.setItem('settings', JSON.stringify(
     switches.map(control => control.getAttribute('aria-checked') === 'true')));
 };
 </script></html>'''
@@ -93,18 +101,27 @@ class RealBrowserFixtureTests(unittest.TestCase):
         # when the declared browser dependency is unavailable.
         from playwright.sync_api import sync_playwright
         cls.playwright = sync_playwright().start()
+        cls.profile = TemporaryDirectory(prefix='skill6-fixture-profile-')
         try:
-            cls.browser = cls.playwright.chromium.launch(headless=True)
+            cls.context = cls.playwright.chromium.launch_persistent_context(
+                cls.profile.name, headless=True
+            )
         except BaseException:
-            cls.playwright.stop()
+            try:
+                cls.playwright.stop()
+            finally:
+                cls.profile.cleanup()
             raise
 
     @classmethod
     def tearDownClass(cls):
         try:
-            cls.browser.close()
+            cls.context.close()
         finally:
-            cls.playwright.stop()
+            try:
+                cls.playwright.stop()
+            finally:
+                cls.profile.cleanup()
 
     @contextmanager
     def page_for(self, mode='normal'):
@@ -114,13 +131,20 @@ class RealBrowserFixtureTests(unittest.TestCase):
             def shell(_):
                 return '<!doctype html><html><title>Fixture shell</title><iframe name="form-builder-app" src="' + child + '/builder?mode=' + mode + '"></iframe></html>'
             with fixture_server(shell) as parent:
-                context = self.browser.new_context()
-                page = context.new_page()
+                page = self.context.new_page()
                 try:
                     page.goto(parent + '/v2/location/FIXTURE/form-builder-v2/fixture', wait_until='load')
+                    # A single persistent fixture context owns the suite. Clear
+                    # only this local builder's state once before a test, so OS
+                    # port reuse cannot leak state between tests. Reload checks
+                    # performed by the executor still see the saved values.
+                    child_frame = next(frame for frame in page.frames
+                                       if frame.name == 'form-builder-app')
+                    child_frame.evaluate('() => localStorage.clear()')
+                    page.reload(wait_until='load')
                     yield page
                 finally:
-                    context.close()
+                    page.close()
 
     def saved(self, page):
         frames = [frame for frame in page.frames if frame.name == 'form-builder-app']
@@ -146,6 +170,28 @@ class RealBrowserFixtureTests(unittest.TestCase):
             with self.assertRaises(runner.Stop):
                 runner.form_settings(page, {'settings': {'recommendations': False}})
             self.assertEqual(self.saved(page)['saves'], 0)
+
+    def test_existing_schedule_and_branding_are_preserved_while_flags_shift(self):
+        with self.page_for('scheduled') as page:
+            result = runner.form_settings(page, {'settings': {
+                'save_progress': False, 'capture_timezone': False, 'gdpr_font': True,
+            }})
+            self.assertEqual(result['status'], 'FORM_SETTINGS_PERSISTED')
+            observed = self.saved(page)
+            self.assertEqual(observed['saves'], 1)
+            self.assertEqual(observed['settings'], [True, True, False, False, True, False, False, False, True])
+
+    def test_scheduled_form_with_unknown_branding_row_never_saves(self):
+        with self.page_for('scheduled-wrong-branding') as page:
+            with self.assertRaises(runner.Stop):
+                runner.form_settings(page, {'settings': {'capture_timezone': False}})
+            self.assertEqual(self.saved(page)['saves'], 0)
+
+    def test_scheduled_form_lost_save_does_not_pass_reopen(self):
+        with self.page_for('scheduled-lost-save') as page:
+            with self.assertRaises(runner.Stop):
+                runner.form_settings(page, {'settings': {'capture_timezone': False}})
+            self.assertEqual(self.saved(page)['saves'], 1)
 
     def test_changed_control_count_refuses_before_save(self):
         original_wait = runner.wait_until

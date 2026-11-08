@@ -12,6 +12,30 @@ import tempfile
 from datetime import datetime, timezone
 
 
+# Exact repository integration sources only. Never include a directory tree,
+# client store, browser state, transcript, workforce file or arbitrary profile.
+INTEGRATION_SOURCES = (
+    '44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/operations.py',
+    '44-convert-and-flow-operator/tools/engine/tests/test_capability_breadth.py',
+    '44-convert-and-flow-operator/tools/engine/tests/test_build_from_automation.py',
+    '.github/workflows/skill6-recipes-portability.yml',
+    '06-ghl-install-pages/SKILL.md', '06-ghl-install-pages/README.md',
+    '06-ghl-install-pages/skill-version.txt', '06-ghl-install-pages/CHANGELOG.md',
+    '44-convert-and-flow-operator/SKILL.md',
+    '44-convert-and-flow-operator/skill-version.txt',
+    '44-convert-and-flow-operator/CHANGELOG.md',
+)
+REPOSITORY_DEPENDENCIES = (
+    '06-ghl-install-pages/tools/browser_manager.py',
+    '06-ghl-install-pages/tools/ghl_auth.py',
+    '06-ghl-install-pages/tools/order_components.py',
+    '44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/adapter.py',
+    '44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/transport.py',
+    '44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/capability.py',
+    '44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/ghl_client.py',
+)
+
+
 def snapshot(destination=None):
     package = Path(__file__).resolve().parent
     skill = package.parent.parent
@@ -24,6 +48,24 @@ def snapshot(destination=None):
     files += [skill / 'references' / name for name in (
         'PLAYWRIGHT-RECIPES.md', 'PLAYWRIGHT-PROGRESS.md', 'PLAYWRIGHT-REQUIREMENTS.md',
         'PLAYWRIGHT-COMPLETION-MATRIX.md')]
+    integrations = {'included': [], 'missing': []}
+    for relative in INTEGRATION_SOURCES:
+        source = repo / relative
+        if source.is_symlink():
+            raise ValueError('Checkpoint integration source is a symlink: ' + relative)
+        if source.is_file():
+            files.append(source)
+            integrations['included'].append(relative)
+        else:
+            integrations['missing'].append(relative)
+    dependencies = {
+        'requires_existing_repository': True,
+        'standalone_installation': False,
+        'required_existing_sources': list(REPOSITORY_DEPENDENCIES),
+        'present_in_source_tree': [relative for relative in REPOSITORY_DEPENDENCIES if (repo / relative).is_file()],
+        'missing_from_source_tree': [relative for relative in REPOSITORY_DEPENDENCIES if not (repo / relative).is_file()],
+        'meaning': 'These dependencies are not bundled; restore into the existing Skill 6/44 repository and run its runtime preflight.',
+    }
     contents = {}
     for path in files:
         if path.is_symlink() or not path.is_file():
@@ -38,7 +80,9 @@ def snapshot(destination=None):
     manifest = {'schema': 'skill6-source-checkpoint/1',
         'created_at': datetime.now(timezone.utc).isoformat(),
         'base_commit': base_commit,
-        'meaning': 'Exact source snapshot. No live readiness claim; see PLAYWRIGHT-PROGRESS.md.',
+        'meaning': 'Exact recipe and allowlisted integration source snapshot, not a standalone installation or live-readiness proof; see PLAYWRIGHT-PROGRESS.md.',
+        'integration_sources': integrations,
+        'repository_dependencies': dependencies,
         'sha256': {name: hashlib.sha256(data).hexdigest() for name, data in contents.items()}}
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     output = destination / ('skill6-checkpoint-' + stamp + '.tar.gz')

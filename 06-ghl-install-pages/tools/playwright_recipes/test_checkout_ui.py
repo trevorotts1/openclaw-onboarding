@@ -1,11 +1,17 @@
 """Native checkout UI tests based on captured roles, never live payment proof."""
 import re
+import json
+import tempfile
+import importlib
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
 import checkout_ui as ui
 from pages_checkout import CheckoutRefused
 import skill6_playwright as core
+import host
+from recipe_cli import compile_recipe
 
 
 def inputs():
@@ -24,7 +30,7 @@ class Locator:
         if self.kind=='order':return self.frame.order_count
         if self.kind=='textbox':return 1
         if isinstance(self.name,re.Pattern):return 1
-        if self.kind=='switch':return int(self.name in ui.PRODUCT_SWITCHES.values())
+        if self.kind=='switch':return int(self.name in (*ui.PRODUCT_SWITCHES.values(),*ui.CHECKOUT_SWITCHES.values()))
         if isinstance(self.name,str) and self.name.startswith('Steps '):return int(self.name=='Steps '+self.frame.mode)
         return 1
     def wait_for(self, **kwargs):
@@ -33,10 +39,21 @@ class Locator:
         elif not self.count():raise AssertionError('control absent')
     def filter(self, **kwargs):return self
     def get_by_test_id(self, value):return ContactRow(self.frame,value.replace('field-row-',''))
-    def get_by_role(self, role, **kwargs):return Locator(self.frame,role,kwargs.get('name'))
+    def get_by_role(self, role, **kwargs):
+        if self.kind=='group' and self.name in ('Appearance','Labels'):
+            return ThemeButton(self.frame,self.name,kwargs.get('name'))
+        return Locator(self.frame,role,kwargs.get('name'))
+    def get_by_text(self, text, **kwargs):return Locator(self.frame,'accordion',text)
     def evaluate(self, _):return self.frame.section
-    def input_value(self):return self.frame.name
-    def is_visible(self):return bool(self.count())
+    def input_value(self):return self.frame.name if self.name=='Element name' else self.frame.content.get(self.name,'Original '+str(self.name))
+    def fill(self,value):
+        if self.kind!='textbox' or self.name=='Element name':raise AssertionError('Unexpected text mutation')
+        self.frame.content[self.name]=value
+    def is_visible(self):
+        if self.kind=='textbox' and self.name!='Element name':
+            groups=[group for group,label in ui.CONTENT_FIELDS.values() if label==self.name]
+            return bool(groups and groups[0] in self.frame.expanded)
+        return bool(self.count())
     def get_attribute(self,key):
         if key=='aria-checked':return str(self.frame.switches.get(self.name,False)).lower()
         return None
@@ -46,12 +63,14 @@ class Locator:
         elif self.kind=='switch':self.frame.switches[self.name]=not self.frame.switches.get(self.name,False)
         elif self.name in ui.MODES:self.frame.mode=self.name
         elif self.name=='Alternative text for image not provided':self.frame.dialog=False
+        elif self.kind=='accordion':self.frame.expanded.add(self.name)
 
 
 class Frame:
     def __init__(self):
         self.section='section-fixture';self.name='Order Form';self.order_count=1
         self.mode='One-step';self.switches={};self.dialog=False;self.clicks=[]
+        self.content={};self.expanded={'Headlines'};self.theme={'Appearance':'Line','Labels':'Above'}
         self.fields={key:{'required':False,'visible':True,'label':label} for key,label in ui.CONTACT_FIELDS.items()}
     def locator(self, selector):return Locator(self,'order')
     def get_by_role(self,role,**kwargs):return Locator(self,role,kwargs.get('name'))
@@ -80,6 +99,16 @@ class FieldButton:
     def click(self):
         self.frame.clicks.append(('field',self.key+'.'+self.state))
         self.frame.fields[self.key][self.state]=not self.frame.fields[self.key][self.state]
+
+
+class ThemeButton:
+    def __init__(self,frame,group,value):self.frame,self.group,self.value=frame,group,value
+    def count(self):return 1
+    def wait_for(self,**kwargs):return None
+    def get_attribute(self,key):return str(self.frame.theme[self.group]==self.value).lower() if key=='aria-pressed' else None
+    def click(self):
+        self.frame.clicks.append(('theme',self.group+'.'+self.value))
+        self.frame.theme[self.group]=self.value
 
 
 class CheckoutUITests(unittest.TestCase):
@@ -159,6 +188,55 @@ class CheckoutUITests(unittest.TestCase):
         ui.apply_checkout_ui(frame,data);frame.fields['phone']['required']=False
         with self.assertRaises(CheckoutRefused):ui.verify_checkout_ui(frame,data)
 
+    def test_checkout_options_set_and_reopen_readback(self):
+        frame=Frame();data={**inputs(),'checkout_options':{
+            'sticky_contact':True,'new_contact_every_purchase':False,
+            'validate_disposable_email':True,'postal_code_on_payment_form':True,
+            'terms_and_conditions':False,'terms_and_conditions_step_2':False}}
+        ui.apply_checkout_ui(frame,data)
+        self.assertTrue(frame.switches['Sticky contact'])
+        self.assertTrue(frame.switches['Validate disposable email'])
+        self.assertEqual(ui.verify_checkout_ui(frame,data)['checkout_options'],data['checkout_options'])
+        frame.switches['Sticky contact']=False
+        with self.assertRaises(CheckoutRefused):ui.verify_checkout_ui(frame,data)
+
+    def test_legal_terms_enable_and_uncaptured_options_refused_before_browser(self):
+        for options in ({'terms_and_conditions':True},{'terms_and_conditions_step_2':True},
+                        {'uncaptured_option':False},{'sticky_contact':'true'}):
+            with self.subTest(options=options),self.assertRaises(CheckoutRefused):
+                ui.apply_checkout_ui(object(),{**inputs(),'checkout_options':options})
+
+    def test_all_captured_content_groups_preserve_supplied_strings(self):
+        frame=Frame();content={key:'Approved '+key+' {{contact.first_name}}' for key in ui.CONTENT_FIELDS}
+        self.assertEqual(len(content),37)
+        data={**inputs(),'mode':None,'products':{},'content':content}
+        ui.apply_checkout_ui(frame,data)
+        self.assertEqual(frame.content['Order button text'],content['order_button_text'])
+        self.assertEqual(frame.content['Full name validation error'],content['full_name_validation_error'])
+        groups=[name for kind,name in frame.clicks if kind=='accordion']
+        self.assertEqual(len(groups),5)
+        self.assertEqual(set(groups),{'Products & summary','Validation messages','Coupon','Payment & CTA','Two-step chrome'})
+        frame.expanded={'Headlines'}
+        self.assertEqual(ui.verify_checkout_ui(frame,data)['content'],content)
+        frame.content['Order button text']='Drift'
+        with self.assertRaises(CheckoutRefused):ui.verify_checkout_ui(frame,data)
+
+    def test_empty_nonstring_or_unknown_content_refused_before_browser(self):
+        for content in ({'order_button_text':''},{'step_1_headline':None},{'unknown_field':'Text'}):
+            with self.subTest(content=content),self.assertRaises(CheckoutRefused):
+                ui.apply_checkout_ui(object(),{**inputs(),'content':content})
+
+    def test_theme_inputs_explicit_choices_and_readback(self):
+        frame=Frame();data={**inputs(),'theme_inputs':{'appearance':'Box','labels':'Floating'}}
+        ui.apply_checkout_ui(frame,data)
+        self.assertEqual(frame.theme,{'Appearance':'Box','Labels':'Floating'})
+        self.assertEqual(ui.verify_checkout_ui(frame,data)['theme_inputs'],data['theme_inputs'])
+        frame.theme['Labels']='Above'
+        with self.assertRaises(CheckoutRefused):ui.verify_checkout_ui(frame,data)
+        for theme in ({'appearance':'Circle'},{'labels':'Invented'},{'radius':12}):
+            with self.subTest(theme=theme),self.assertRaises(CheckoutRefused):
+                ui.apply_checkout_ui(object(),{**inputs(),'theme_inputs':theme})
+
     def test_save_reopen_then_verify_and_close(self):
         frame=Frame();events=[]
         class Page:
@@ -175,6 +253,64 @@ class CheckoutUITests(unittest.TestCase):
         self.assertLess(events.index('save'),events.index('reopen'))
         self.assertFalse(frame.dialog)
         self.assertFalse(result['payment_verified'])
+
+
+class CheckoutUIIntegrationTests(unittest.TestCase):
+    def probes(self):
+        return {'api_capabilities':{},'lanes':{
+            'playwright':{'available':True},
+            'openclaw_extension':{'available':True,'current':True}}}
+
+    def test_named_recipe_compiles_validates_and_selects_script_without_adapter_map(self):
+        job=core.validate_job(compile_recipe('checkout.configure_ui',inputs()),Path('.'))
+        self.assertEqual(job['steps'][0]['action'],'native_checkout_ui')
+        observed,error=host._recipe_readiness('checkout.configure_ui',inputs(),self.probes(),Path('.'))
+        self.assertIsNone(error)
+        self.assertEqual(host.decide('checkout.configure_ui','fixture',observed)['lane'],'playwright')
+        self.assertNotIn('adapter_capture',job['steps'][0]['payload'])
+
+    def test_host_runs_actual_registered_handler_and_keeps_payment_pending(self):
+        package_ui=importlib.import_module('playwright_recipes.checkout_ui')
+        with (tempfile.TemporaryDirectory() as directory,
+                patch.object(core,'assert_tenant'),
+                patch.object(package_ui,'configure_native_checkout_ui',return_value={
+                    'status':'NATIVE_CHECKOUT_UI_READBACK_VERIFIED','element_id':'order-form-fixture',
+                    'payment_verified':False}) as actual_handler):
+            result=host.run_recipe('checkout.configure_ui',inputs(),self.probes(),directory,input_dir='.',page=object())
+            actual_handler.assert_called_once()
+            self.assertEqual(result['status'],'NEEDS_VERIFICATION')
+            self.assertEqual(result['route']['lane'],'playwright')
+            saved=json.loads(Path(directory,'state.json').read_text())
+            self.assertEqual(saved['results'][0]['action'],'native_checkout_ui')
+            self.assertFalse(saved['results'][0]['result']['checkout_ready'])
+            self.assertFalse(saved['results'][0]['result']['payment_verified'])
+
+    def test_invalid_ui_does_not_navigate_and_selects_current_browser_recovery(self):
+        package_ui=importlib.import_module('playwright_recipes.checkout_ui')
+        invalid={**inputs(),'contact_fields':{'email':{'required':False}}}
+        with tempfile.TemporaryDirectory() as directory, patch.object(package_ui,'configure_native_checkout_ui') as actual_handler:
+            result=host.run_recipe('checkout.configure_ui',invalid,self.probes(),directory,input_dir='.',page=object())
+            self.assertEqual(result['status'],'NEEDS_BROWSER_RECOVERY')
+            self.assertEqual(result['route']['lane'],'openclaw_extension')
+            actual_handler.assert_not_called()
+            self.assertFalse(Path(directory,'state.json').exists())
+
+    def test_nested_payload_cannot_retarget_checkout_away_from_job(self):
+        job=compile_recipe('checkout.configure_ui',inputs())
+        job['steps'][0]['payload']={**job['steps'][0]['payload'],'location_id':'another'}
+        with self.assertRaises(core.Stop):core.validate_job(job,Path('.'))
+
+    def test_only_the_exact_persisted_handler_status_is_accepted(self):
+        package_ui=importlib.import_module('playwright_recipes.checkout_ui')
+        with (tempfile.TemporaryDirectory() as directory,
+                patch.object(core,'assert_tenant'),
+                patch.object(package_ui,'configure_native_checkout_ui',return_value={
+                    'status':'NATIVE_CHECKOUT_UI_EDITED','payment_verified':False})):
+            result=host.run_recipe('checkout.configure_ui',inputs(),self.probes(),directory,input_dir='.',page=object())
+            self.assertEqual(result['status'],'NEEDS_BROWSER_RECOVERY')
+            saved=json.loads(Path(directory,'state.json').read_text())
+            self.assertEqual(saved['status'],'NEEDS_BROWSER_RECOVERY')
+            self.assertEqual(saved['results'],[])
 
 
 if __name__=='__main__':unittest.main()

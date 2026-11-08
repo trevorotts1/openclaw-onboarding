@@ -42,17 +42,37 @@ def compile_recipe(operation, data):
         add('form',name=data['name'],required=data.get('required',{}),allow_creation=data.get('allow_creation',False))
         add('form_css',radius=data.get('radius',12))
     elif operation=='forms.style':
-        add('form_css',radius=data.get('radius',12))
+        if 'custom_css' in data:
+            if 'radius' in data:
+                add('form_css', radius=data['radius'])
+            add('native_form_css', custom_css=data['custom_css'],
+                **{k:data[k] for k in ('css_key','expect_styles') if k in data})
+        else:
+            add('form_css',radius=data.get('radius',12))
     elif operation=='forms.settings':
         add('form_settings',settings=data['settings'])
     elif operation=='forms.configure' and data.get('fields'):
         add('native_fields', fields=data['fields'])
     elif operation=='forms.conditions':
-        add('native_condition', **data['condition'])
+        if not isinstance(data.get('condition'), dict):
+            raise Stop('Native form condition must be a configuration object')
+        condition = dict(data['condition'])
+        # `action` belongs to the executor step. Normalize the legacy semantic
+        # condition action before add() so it cannot collide with that argument.
+        if 'action' in condition:
+            effect = condition.pop('action')
+            if effect != 'Hide Field' or condition.get('effect', effect) != effect:
+                raise Stop('Conflicting or uncaptured native condition effect')
+            condition['effect'] = effect
+        if condition.get('effect', 'Hide Field') != 'Hide Field':
+            raise Stop('Only the captured Hide Field condition effect is implemented')
+        add('native_condition', **condition)
     elif operation=='quizzes.configure':
         add('quiz_configuration', **data['configuration'])
     elif operation=='surveys.configure':
         add('survey_configuration', **data['configuration'])
+    elif operation=='checkout.configure_ui':
+        add('native_checkout_ui', payload=data)
     elif operation in ('checkout.configure_native','checkout.one_click_upsell') and data.get('adapter_capture'):
         add('native_checkout', payload=data)
     elif operation in ('surveys.create','quizzes.create'):

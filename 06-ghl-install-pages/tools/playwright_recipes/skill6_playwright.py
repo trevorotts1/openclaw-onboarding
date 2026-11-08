@@ -26,6 +26,13 @@ _TOOLS_DIR = Path(__file__).resolve().parent.parent
 if (_TOOLS_DIR / 'browser_manager.py').exists() and str(_TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(_TOOLS_DIR))
 
+# Direct CLI and package helpers must share the same executor and Stop class.
+# Otherwise relative helper imports can load this file a second time, and a
+# known refusal escapes the CLI's exception boundary as an unrelated class.
+if __name__ in ('__main__', 'skill6_playwright', 'playwright_recipes.skill6_playwright'):
+    sys.modules.setdefault('skill6_playwright', sys.modules[__name__])
+    sys.modules.setdefault('playwright_recipes.skill6_playwright', sys.modules[__name__])
+
 
 class Stop(RuntimeError):
     pass
@@ -88,7 +95,7 @@ def validate_job(job, base):
     if not isinstance(steps,list) or not steps:
         raise Stop("No executable steps")
     keys = set()
-    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_fields", "native_condition", "quiz_configuration", "survey_configuration", "form", "form_css", "form_settings", "community", "assessment", "meeting", "options"}
+    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_fields", "native_condition", "quiz_configuration", "survey_configuration", "form", "form_css", "native_form_css", "form_settings", "community", "assessment", "meeting", "options"}
     prepared = json.loads(json.dumps(job))
     for s in prepared["steps"]:
         if not isinstance(s,dict):
@@ -101,20 +108,40 @@ def validate_job(job, base):
         if s['action'] in ('native_fields','native_condition'):
             from playwright_recipes.assessments import validate_fields, validate_condition
             (validate_fields if s['action']=='native_fields' else validate_condition)(s)
+        if s['action']=='native_form_css':
+            from playwright_recipes.assessments import validate_css
+            validate_css(s)
         if s['action']=='survey_configuration':
             from playwright_recipes.survey_ui import validate
             validate(s)
         if s['action']=='quiz_configuration':
             from playwright_recipes.quiz_ui import validate
             validate(s)
+        if s['action']=='native_checkout_ui':
+            from playwright_recipes.checkout_ui import validate_checkout_ui
+            from order_components import OrderComponentError
+            payload = s.get('payload')
+            try:
+                validate_checkout_ui(payload)
+            except OrderComponentError as exc:
+                raise Stop(str(exc)) from None
+            if any(payload.get(k) != job[k] for k in ('location_id','location_name','start_url')):
+                raise Stop('Native checkout UI payload belongs to another location/editor')
         if s['action']=='native_checkout':
             from playwright_recipes.pages_checkout import validate_checkout_inputs, load_checkout_capture
-            validate_checkout_inputs(s.get('payload'))
+            from order_components import OrderComponentError
+            try:
+                validate_checkout_inputs(s.get('payload'))
+            except OrderComponentError as exc:
+                raise Stop(str(exc)) from None
             payload = s['payload']
             capture = Path(payload['adapter_capture'])
             if not capture.is_absolute():
                 capture = base / capture
-            load_checkout_capture(capture, location_id=job['location_id'], page_id=payload['page_id'])
+            try:
+                load_checkout_capture(capture, location_id=job['location_id'], page_id=payload['page_id'])
+            except OrderComponentError as exc:
+                raise Stop(str(exc)) from None
             s['_input_dir'] = str(base.resolve())
         if s['action']=='meeting':
             s['_context'] = {k:job[k] for k in ('location_id','location_name','start_url')}
@@ -277,15 +304,63 @@ def wait_until(fn, message, timeout=45):
 
 
 def assert_tenant(page, job):
-    path = urlparse(page.url).path
-    if urlparse(page.url).netloc != urlparse(job["start_url"]).netloc:
-        raise Stop("Unexpected app origin")
-    if not re.search(r"/(?:v2/)?location/" + re.escape(job["location_id"]) + r"(?:/|$)", path):
-        raise Stop("Wrong tenant or authentication expired")
-    has_editor = page.locator('iframe[name$="-builder-app"],iframe[name="funnel-builder"]').count() > 0
-    if "/v2/location/" in path and not has_editor:
-        group = page.get_by_role("region", name="Workspace navigation", exact=True).get_by_role("group", name=job["location_name"], exact=True)
-        group.wait_for(state="visible", timeout=45000)
+    """Bind the shell identity to its URL and wait for the route's own builder.
+
+    Editor hydration is asynchronous. An iframe absent at DOMContentLoaded must
+    never switch an editor route into the dashboard's workspace-name guard.
+    """
+    requested = urlparse(job['start_url'])
+    location = re.compile(r'/(?:v2/)?location/' + re.escape(job['location_id']) + r'(?:/|$)')
+
+    def identity():
+        current = urlparse(page.url)
+        if (current.scheme, current.netloc) != (requested.scheme, requested.netloc):
+            raise Stop('Unexpected app origin')
+        if not location.search(current.path):
+            raise Stop('Wrong tenant or authentication expired')
+        return current.path
+
+    path = identity()
+    relative = location.split(path, maxsplit=1)[-1]
+    route = relative.strip('/').split('/', 1)[0]
+    editors = {
+        'form-builder-v2': 'form-builder-app',
+        'survey-builder-v2': 'survey-builder-app',
+        'quiz-builder-v2': 'quiz-builder-app',
+        'page-builder': 'funnel-builder',
+    }
+    expected = editors.get(route)
+    if expected:
+        selector = 'iframe[name="' + expected + '"]'
+        target = page.locator(selector)
+
+        def builder_identity():
+            current = identity()
+            if location.split(current, maxsplit=1)[-1].strip('/').split('/', 1)[0] != route:
+                raise Stop('Editor route changed during hydration')
+            for name in editors.values():
+                if name != expected and page.locator('iframe[name="' + name + '"]').count():
+                    raise Stop('Unexpected builder iframe for editor route')
+            if target.count() > 1:
+                raise Stop('Expected builder iframe is ambiguous')
+
+        builder_identity()
+        try:
+            target.wait_for(state='visible', timeout=45000)
+        except Exception:
+            # Prefer the exact identity failure if navigation changed while the
+            # iframe was loading. Do not leak raw Playwright error/page text.
+            builder_identity()
+            raise Stop('Expected editor iframe did not hydrate') from None
+        builder_identity()
+        if target.count() != 1:
+            raise Stop('Expected editor iframe is missing')
+        return
+    # Dashboard and lists prove their visible account name. The presence of an
+    # unrelated iframe does not bypass this guard.
+    group = page.get_by_role('region', name='Workspace navigation', exact=True).get_by_role('group', name=job['location_name'], exact=True)
+    group.wait_for(state='visible', timeout=45000)
+    identity()
 
 
 def builder(page):
@@ -710,19 +785,51 @@ def form_settings(page, step):
 
     def controls():
         switches = frame.get_by_role('switch')
-        wait_until(lambda: switches.count() == 8, 'Form settings control count changed')
+        wait_until(lambda: switches.count() in (8, 9), 'Form settings control count changed')
+
+        def row_text(control):
+            # The scheduler toggle is nested one level deeper than ordinary
+            # switches. Only consider a containing row that owns one switch.
+            return control.evaluate('''el => {
+                for (const row of [el.parentElement, el.parentElement?.parentElement]) {
+                    if (row && row.querySelectorAll('[role="switch"]').length === 1
+                            && row.textContent.trim()) return row.textContent;
+                }
+                return '';
+            }''')
+
+        scheduler = switches.nth(0)
+        if 'Schedule form visibility' not in row_text(scheduler):
+            raise Stop('Form scheduler row identity changed; capture required')
+        scheduling = scheduler.get_attribute('aria-checked')
+        if scheduling not in ('true', 'false'):
+            raise Stop('Form scheduler state is not exposed')
+        offset = int(scheduling == 'true')
+        if switches.count() != 8 + offset:
+            raise Stop('Form settings count disagrees with scheduler state')
+        protected = {'schedule_visibility': scheduling}
+        if offset:
+            branding = switches.nth(1)
+            if 'Agency branding' not in row_text(branding):
+                raise Stop('Scheduled form branding row identity changed; capture required')
+            state = branding.get_attribute('aria-checked')
+            if state not in ('true', 'false'):
+                raise Stop('Scheduled form branding state is not exposed')
+            protected['agency_branding'] = state
+        selected = {}
         for key in step['settings']:
             index, label = FORM_SETTINGS[key]
             frame.get_by_text(label, exact=True).wait_for(state='visible', timeout=45000)
-            # The directly containing row owns its switch and the visible label.
-            text = switches.nth(index).evaluate('el => el.parentElement.textContent')
+            control = switches.nth(index + offset)
+            text = row_text(control)
             if label not in text:
                 raise Stop('Form settings order changed; capture required')
-        return switches
+            selected[key] = control
+        return selected, protected
 
-    switches = controls()
+    selected, protected = controls()
     for key, value in step['settings'].items():
-        loc = switches.nth(FORM_SETTINGS[key][0])
+        loc = selected[key]
         expected = str(value).lower()
         if loc.get_attribute('aria-checked') != expected:
             click(loc)
@@ -739,9 +846,11 @@ def form_settings(page, step):
     if visible(close):
         click(close)
     click(frame.get_by_role('tab', name='Settings', exact=True))
-    switches = controls()
+    selected, reopened_protected = controls()
+    if reopened_protected != protected:
+        raise Stop('Form scheduling or branding changed while saving ordinary settings')
     for key, value in step['settings'].items():
-        if switches.nth(FORM_SETTINGS[key][0]).get_attribute('aria-checked') != str(value).lower():
+        if selected[key].get_attribute('aria-checked') != str(value).lower():
             raise Stop('Form setting was not persisted: ' + key)
     return {'status': 'FORM_SETTINGS_PERSISTED', 'settings': step['settings'], 'editor_url': page.url}
 
@@ -752,6 +861,11 @@ def meeting(page, step):
     if step.get('expected_room_id'):
         return update_room(page, inputs, expected_room_id=step['expected_room_id'])
     return create_room(page, inputs)
+
+
+def native_form_css(page, step):
+    from playwright_recipes.assessments import configure_css
+    return configure_css(page, step)
 
 
 def native_fields(page, step):
@@ -772,6 +886,15 @@ def quiz_configuration(page, step):
 def survey_configuration(page, step):
     from playwright_recipes.survey_ui import configure
     return configure(page, step)
+
+
+
+def native_checkout_ui(page, step):
+    from playwright_recipes.checkout_ui import configure_native_checkout_ui
+    result = configure_native_checkout_ui(page, step['payload'])
+    result['checkout_ready'] = False
+    result['payment_verified'] = False
+    return result
 
 
 def native_checkout(page, step):
@@ -914,7 +1037,7 @@ def _run_on_page(page, job, evidence_root):
         raise Stop("An interrupted job exists: reconcile recorded objects before any replay")
     results = []
     state = {"fingerprint":fingerprint, "location_id":job["location_id"], "status":"RUNNING", "results":results}
-    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_fields":native_fields, "native_condition":native_condition, "quiz_configuration":quiz_configuration, "survey_configuration":survey_configuration, "form":make_form, "form_css":form_css, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"options":options}
+    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_checkout_ui":native_checkout_ui, "native_fields":native_fields, "native_condition":native_condition, "quiz_configuration":quiz_configuration, "survey_configuration":survey_configuration, "form":make_form, "form_css":form_css, "native_form_css":native_form_css, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"options":options}
     for step in job["steps"]:
         assert_tenant(page, job)
         state["current_step"] = step["id"]
@@ -937,7 +1060,7 @@ def _run_on_page(page, job, evidence_root):
                 'FIELD_PROPERTIES_SAVED_AND_REOPENED', 'CONDITION_SAVE_SUBMITTED', 'CONDITION_SAVED_AND_REOPENED',
                 'QUIZ_CONFIGURATION_SAVED_AND_REOPENED', 'CONDITION_ALREADY_PRESENT',
                 'SURVEY_RULE_SAVED_AND_REOPENED', 'SURVEY_RULE_ALREADY_PRESENT',
-                'NATIVE_CONFIGURATION_READBACK_VERIFIED', 'ROOM_PERSISTED',
+                'NATIVE_CONFIGURATION_READBACK_VERIFIED', 'NATIVE_CHECKOUT_UI_READBACK_VERIFIED', 'ROOM_PERSISTED',
                 'ROOM_CREATED_AND_VERIFIED', 'ROOM_REUSED_AND_VERIFIED',
                 'ROOM_CREATED_VERIFIED', 'ROOM_REUSED_VERIFIED', 'ROOM_UPDATED_VERIFIED',
             }

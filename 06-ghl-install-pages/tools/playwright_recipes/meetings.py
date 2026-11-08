@@ -2,8 +2,8 @@
 """Meeting Room setup and permanent-link integration, without new auth paths.
 
 Create-dialog selectors were captured in Convert & Flow on 2026-11-08.
-An independent host reader is mandatory: absence, identity and saved settings
-cannot be inferred from a click. No call is started and no co-host is assigned.
+The native persisted-room reader verifies absence, identity and saved settings;
+they cannot be inferred from a click. No call is started and no co-host assigned.
 
 Official contracts checked 2026-11-08:
 https://help.gohighlevel.com/support/solutions/articles/155000009149-meeting-room-in-highlevel-overview
@@ -11,9 +11,17 @@ https://marketplace.gohighlevel.com/docs/ghl/calendars/update-calendar/
 https://marketplace.gohighlevel.com/docs/ghl/calendars/get-calendar/
 
 Static room-link integration below is NOT native per-appointment room generation.
-The existing frozen public registry does not include calendars.update. The host
-must supply its vetted API dispatcher with that operation enabled; this module
-does not invent a transport, credential resolver or override the registry gate.
+The canonical public registry includes calendars.get and calendars.update. Its
+dispatcher remains default-deny until a fresh location/version/scope capability
+receipt permits the exact operations. The delivery adapter preserves that gate
+and the existing Skill 44 write checks; this module supplies no new credentials,
+transport, capability override or unrestricted calendar write path.
+
+Calendar integration installs a permanent room link only. A clean canonical URL
+requires manual passcode entry; a separately supplied private Invite URL embeds
+the passcode in memory and the API payload, with only safe flags/hash in receipts.
+Unique per-appointment room creation is a distinct native workflow and is never
+inferred from this static custom-location configuration.
 """
 from copy import deepcopy
 import hashlib
@@ -362,8 +370,11 @@ def integrate_calendar(api, *, location_id, calendar_id, room, member_id=None, r
     """Run GET -> minimal PUT -> independent GET through a vetted dispatcher.
 
     api(operation_id, location_id=..., path_params=..., body=...) is the host's
-    existing capability-gated dispatcher, not a raw requests session. Missing
-    calendars.update in that registry must remain a refusal at the host boundary.
+    existing capability-gated dispatcher, not a raw requests session. The
+    canonical calendars.get/update operations still require the host's fresh
+    location/version/scope capability receipt; disabled or unverified operations
+    remain refusals. This installs a permanent link, never a dynamic room per
+    appointment. A private_invite_url is never included in the returned receipt.
     """
     if not callable(api) or not re.fullmatch(r'[A-Za-z0-9_-]+', str(calendar_id)):
         raise Stop('A vetted calendar dispatcher and exact calendar ID are required')

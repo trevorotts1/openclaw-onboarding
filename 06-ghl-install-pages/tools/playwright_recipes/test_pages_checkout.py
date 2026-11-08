@@ -21,7 +21,7 @@ PRICE = {'native_product_id':'prod_fixture','native_price_id':'price_fixture',
 
 def inputs():
     return {'location_id':'fixture','location_name':'Fixture',
-        'start_url':'https://app.convertandflow.com/v2/location/fixture/editor/page_fixture',
+        'start_url':'https://app.convertandflow.com/v2/location/fixture/page-builder/page_fixture',
         'page_id':'page_fixture','step_id':'step_upsell','component_id':'checkout_fixture',
         'tab_id':'tab_fixture','frame_name':'funnel-builder','adapter_capture':'capture.json',
         'family':{'name':'captured_family','max_bumps':2,'allows_recurring_bumps':False},
@@ -66,10 +66,16 @@ class Page:
     def __init__(self):
         self.url = inputs()['start_url']
         self.frames = [Frame()]
-    def locator(self, _):
-        return self
-    def count(self):
-        return 1
+    def locator(self, selector):
+        # Match the actual observed page-builder route's exact iframe. A stub
+        # reporting every possible iframe present bypasses identity readiness.
+        class Locator:
+            def count(self):
+                return int(selector == 'iframe[name="funnel-builder"]')
+            def wait_for(self, *, state, timeout):
+                if state != 'visible' or self.count() != 1:
+                    raise TimeoutError('Fixture frame is not visible')
+        return Locator()
 
 
 class NativeCheckoutTests(unittest.TestCase):

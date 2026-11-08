@@ -11,6 +11,58 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 
+def headless_shell_executable(full_executable, *, package_root=None, system=None, machine=None):
+    """Find only this Playwright package's expected headless-shell revision.
+
+    The public Chromium executable path is supplied by the installed driver, so
+    its browser cache root already follows OS defaults, PLAYWRIGHT_BROWSERS_PATH
+    (including 0), and relative-path/INIT_CWD semantics. No directory glob can
+    accidentally accept an older installed revision. Detection proves presence,
+    not launch/authentication. Layouts below are the vendor's old/new layouts.
+    """
+    if package_root is None:
+        import playwright
+        package_root = Path(playwright.__file__).resolve().parent / 'driver' / 'package'
+    manifest = json.loads((Path(package_root) / 'browsers.json').read_text())
+    descriptors = {entry['name']:entry for entry in manifest.get('browsers', [])}
+    shell = descriptors.get('chromium-headless-shell')
+    chromium = descriptors.get('chromium', {})
+    if not shell:
+        return None
+    supported_revisions = {str(chromium.get('revision'))}
+    supported_revisions.update(str(value) for value in chromium.get('revisionOverrides', {}).values())
+    full_dir = next((parent for parent in Path(full_executable).parents
+        if parent.name.startswith('chromium-') and parent.name.rsplit('-', 1)[-1] in supported_revisions), None)
+    if full_dir is None:
+        return None
+    # Chromium currently has no shell platform overrides. Do not guess a platform
+    # key if a future package introduces them; remain conservative for a probe.
+    if shell.get('revisionOverrides'):
+        return None
+    revision = str(shell.get('revision', ''))
+    if not revision.isdigit():
+        return None
+    system = system or platform.system()
+    machine = (machine or platform.machine()).lower()
+    if machine not in ('arm64','aarch64','x86_64','amd64','x64'):
+        return None
+    arm = machine in ('arm64','aarch64')
+    if system == 'Darwin':
+        layouts = [('chrome-headless-shell-mac-' + ('arm64' if arm else 'x64'), 'chrome-headless-shell'),
+                   ('chrome-mac', 'headless_shell')]
+    elif system == 'Linux':
+        layouts = [('chrome-headless-shell-linux-' + 'arm64', 'chrome-headless-shell')] if arm else [('chrome-headless-shell-linux64','chrome-headless-shell')]
+        layouts.append(('chrome-linux', 'headless_shell'))
+    else:
+        return None
+    directory = full_dir.parent / ('chromium_headless_shell-' + revision)
+    for parts in layouts:
+        candidate = directory.joinpath(*parts)
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
 def browser_runtime():
     """Ask Playwright for its installed executable; never infer it from pip."""
     if importlib.util.find_spec('playwright') is None:
@@ -20,10 +72,12 @@ def browser_runtime():
         from playwright.sync_api import sync_playwright
         # Starting the bundled driver does not launch a browser or attach a tab.
         with sync_playwright() as playwright:
-            installed = Path(playwright.chromium.executable_path).is_file()
+            executable = Path(playwright.chromium.executable_path)
+            installed = executable.is_file() and os.access(executable, os.X_OK)
+            shell_installed = headless_shell_executable(executable) is not None
         return {'package_installed':True, 'chromium_installed':installed,
-                'driver_usable':True,
-                'reason':'READY' if installed else 'CHROMIUM_EXECUTABLE_MISSING'}
+                'headless_shell_installed':shell_installed, 'driver_usable':True,
+                'reason':'READY' if shell_installed else 'HEADLESS_RUNTIME_EXECUTABLE_MISSING'}
     except Exception as exc:
         # No raw exception text; paths and environment may contain client data.
         return {'package_installed':True, 'chromium_installed':False,
@@ -45,6 +99,7 @@ def check():
         'python_supported': sys.version_info >= (3, 10),
         'playwright_installed': runtime['package_installed'],
         'chromium_installed': runtime['chromium_installed'],
+        'headless_shell_installed': runtime.get('headless_shell_installed', False),
         'playwright_driver_usable': runtime['driver_usable'],
         'browser_runtime_reason': runtime['reason'],
         'managed_loopback_cdp_configured': cdp,
@@ -58,7 +113,7 @@ def check():
     ready = all(checks[k] for k in ('os_supported','python_supported',
         'playwright_installed','playwright_driver_usable',
         'existing_browser_manager','existing_firebase_bridge'))
-    ready = ready and (runtime['chromium_installed'] or cdp)
+    ready = ready and (runtime.get('headless_shell_installed', runtime['chromium_installed']) or cdp)
     checks['status'] = 'READY_FOR_HOST_PROBE' if ready else 'HOST_SETUP_REQUIRED'
     checks['meaning'] = 'Runtime dependencies only; no authentication, tenant access or live job proved'
     return checks

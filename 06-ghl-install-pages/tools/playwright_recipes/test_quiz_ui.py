@@ -61,12 +61,38 @@ class QuizConfigurationValidation(unittest.TestCase):
         with self.assertRaises(quiz_ui.QuizError):
             quiz_ui.validate({})
 
+    def test_uncaptured_authored_question_routing_and_tier_colors_refuse_before_writes(self):
+        data = configuration()
+        data['questions'][0]['question'] = 'An unimplemented text change'
+        with self.assertRaises(quiz_ui.QuizError):
+            quiz_ui.validate(data)
+        data = configuration()
+        data['questions'][0]['options'][0]['next'] = 2
+        with self.assertRaises(quiz_ui.QuizError):
+            quiz_ui.validate(data)
+        with self.assertRaises(quiz_ui.QuizError):
+            quiz_ui.validate({'categories': ['Test'], 'redirect_url': 'https://example.invalid'})
+
+    def test_authored_question_and_choices_require_acknowledgment_and_unique_final_labels(self):
+        data = configuration()
+        q = data['questions'][0]
+        q['question'] = 'What is your preferred service?'
+        q['options'][0]['new_label'] = 'Coaching'
+        q['append_options'] = [{'label': 'Consulting', 'category': 'Overall Only', 'score': 5}]
+        with self.assertRaises(quiz_ui.QuizError):
+            quiz_ui.validate(data)
+        q['shared_field_change_ack'] = True
+        self.assertEqual(quiz_ui.validate(data), data)
+        q['append_options'][0]['label'] = 'Coaching'
+        with self.assertRaises(quiz_ui.QuizError):
+            quiz_ui.validate(data)
+
 
 class NativeQuestionExecution(unittest.TestCase):
     def surface(self, *, persist=True, row_drift=False, category_available=True):
         page, frame = MagicMock(), MagicMock()
         page.url = 'https://app.convertandflow.com/v2/location/fixture/quiz-builder-v2/quiz'
-        state = {'panel': False, 'selected': None, 'categories': [None] * 3, 'scores': [''] * 3, 'saves': 0}
+        state = {'panel': False, 'selected': None, 'categories': [None] * 3, 'scores': [''] * 3, 'saves': 0, 'labels': ['Option 1', 'Option 2', 'Option 3'], 'question': 'Single Choice fixture', 'appends': 0}
         title = MagicMock()
         title.input_value.return_value = 'ZHC Quiz Fixture'
         noop = MagicMock()
@@ -79,6 +105,8 @@ class NativeQuestionExecution(unittest.TestCase):
             if not persist:
                 state['categories'] = [None] * 3
                 state['scores'] = [''] * 3
+                state['labels'] = ['Option 1', 'Option 2', 'Option 3']
+                state['question'] = 'Single Choice fixture'
         back.click.side_effect = leave
         page.goto.side_effect = lambda *args, **kwargs: leave()
         open_settings = MagicMock()
@@ -95,34 +123,48 @@ class NativeQuestionExecution(unittest.TestCase):
             loc.input_value.return_value = value
             loc.evaluate.return_value = label
             props.append(loc)
+        props[0].input_value.side_effect = lambda: state['question']
+        props[0].fill.side_effect = lambda value: state.__setitem__('question', value)
         properties.nth.side_effect = lambda i: props[i]
         labels = MagicMock()
-        labels.count.side_effect = lambda: 4 if state['panel'] else 1
-        label_controls = [MagicMock() for _ in range(4)]
-        for index, loc in enumerate(label_controls):
-            loc.input_value.return_value = '' if index == 0 else 'Option ' + str(index)
-        labels.nth.side_effect = lambda i: label_controls[i]
+        labels.count.side_effect = lambda: len(state['labels']) + 1 if state['panel'] else 1
+        def label_control(index):
+            loc = MagicMock()
+            loc.input_value.side_effect = lambda: '' if index == 0 else state['labels'][index - 1]
+            loc.fill.side_effect = lambda value: state['labels'].__setitem__(index - 1, value)
+            return loc
+        labels.nth.side_effect = label_control
         scores, pickers = MagicMock(), MagicMock()
-        scores.count.return_value = pickers.count.return_value = 3
-        score_controls, picker_controls = [], []
-        for index in range(3):
+        scores.count.side_effect = pickers.count.side_effect = lambda: len(state['labels'])
+        def score_control(index):
             score = MagicMock()
-            score.is_enabled.side_effect = lambda i=index: state['categories'][i] is not None
-            score.input_value.side_effect = lambda i=index: state['scores'][i]
-            score.fill.side_effect = lambda value, i=index: state['scores'].__setitem__(i, value)
-            score_controls.append(score)
+            score.is_enabled.side_effect = lambda: state['categories'][index] is not None
+            score.input_value.side_effect = lambda: state['scores'][index]
+            score.fill.side_effect = lambda value: state['scores'].__setitem__(index, value)
+            return score
+        def picker_control(index):
             picker = MagicMock()
-            picker.click.side_effect = lambda i=index: state.__setitem__('selected', i)
-            picker.inner_text.side_effect = lambda i=index: state['categories'][i] or ''
+            picker.click.side_effect = lambda: state.__setitem__('selected', index)
+            picker.inner_text.side_effect = lambda: state['categories'][index] or ''
             row = MagicMock()
             row_label = MagicMock()
             row_label.count.return_value = 1
-            row_label.input_value.return_value = 'Wrong option' if row_drift else 'Option ' + str(index + 1)
+            row_label.input_value.side_effect = lambda: 'Wrong option' if row_drift else state['labels'][index]
             row.get_by_role.return_value = row_label
             picker.locator.return_value.locator.return_value.locator.return_value.locator.return_value = row
-            picker_controls.append(picker)
-        scores.nth.side_effect = lambda i: score_controls[i]
-        pickers.nth.side_effect = lambda i: picker_controls[i]
+            return picker
+        scores.nth.side_effect = score_control
+        pickers.nth.side_effect = picker_control
+        add, append_button = MagicMock(), MagicMock()
+        add.count.return_value = 2
+        add.nth.return_value = append_button
+        append_button.is_enabled.side_effect = lambda: all(state['labels'])
+        def append():
+            state['labels'].append('')
+            state['categories'].append(None)
+            state['scores'].append('')
+            state['appends'] += 1
+        append_button.click.side_effect = append
         menu = MagicMock()
         def choice(name, *, exact):
             option = MagicMock()
@@ -135,19 +177,19 @@ class NativeQuestionExecution(unittest.TestCase):
             if role == 'textbox':
                 return {'Form Name': title, 'Label': labels, 'Please Input': properties, '10': scores}[name]
             if role == 'button':
-                return {'Back': back, 'Open settings': open_settings, 'Save': save}.get(name, noop)
+                return {'Back': back, 'Open settings': open_settings, 'Save': save, 'Add option': add}.get(name, noop)
             return noop
         frame.get_by_role.side_effect = role
         page.frame_locator.return_value = frame
         return page, state
 
-    def run_surface(self, page):
+    def run_surface(self, page, data=None):
         with patch.object(runner, 'click', side_effect=lambda loc: loc.click()), \
              patch.object(runner, 'fill', side_effect=lambda loc, value: loc.fill(value)), \
              patch.object(runner, 'visible', return_value=False), \
              patch.object(runner, 'wait_until', side_effect=lambda predicate, message: self.assertTrue(predicate())), \
              patch.object(runner, 'exact_search', return_value=MagicMock()):
-            return quiz_ui.configure(page, configuration())
+            return quiz_ui.configure(page, configuration() if data is None else data)
 
     def test_native_categories_and_scores_survive_independent_reopen(self):
         page, state = self.surface()
@@ -156,6 +198,28 @@ class NativeQuestionExecution(unittest.TestCase):
         self.assertEqual(state['scores'], ['10', '-1.5', '20'])
         self.assertEqual(result['status'], 'QUIZ_CONFIGURATION_SAVED_AND_REOPENED')
         self.assertFalse(result['submission_verified'])
+
+    def test_authored_question_renamed_and_appended_choices_survive_reopen(self):
+        page, state = self.surface()
+        data = configuration()
+        q = data['questions'][0]
+        q.update(question='Choose your service', shared_field_change_ack=True,
+                 append_options=[{'label': 'Consulting', 'category': 'Overall Only', 'score': 5}])
+        q['options'][0]['new_label'] = 'Coaching'
+        result = self.run_surface(page, data)
+        self.assertEqual(result['status'], 'QUIZ_CONFIGURATION_SAVED_AND_REOPENED')
+        self.assertEqual(state['question'], 'Choose your service')
+        self.assertEqual(state['labels'], ['Coaching', 'Option 2', 'Option 3', 'Consulting'])
+        self.assertEqual(state['appends'], 1)
+        self.assertEqual(state['scores'], ['10', '-1.5', '20', '5'])
+
+    def test_authored_question_lost_on_save_is_not_accepted(self):
+        page, state = self.surface(persist=False)
+        data = configuration()
+        data['questions'][0].update(question='Choose your service', shared_field_change_ack=True)
+        with self.assertRaises(runner.Stop):
+            self.run_surface(page, data)
+        self.assertEqual(state['saves'], 1)
 
     def test_lost_save_is_not_a_success(self):
         page, state = self.surface(persist=False)

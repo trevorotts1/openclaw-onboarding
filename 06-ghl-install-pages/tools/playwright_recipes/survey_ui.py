@@ -18,6 +18,9 @@ OPERATORS = {'Is Equal To', 'Is Not Equal To', 'Contains', 'Does Not Contain',
 def validate(step):
     if not isinstance(step, dict):
         raise SurveyError('Survey rule must be an object')
+    if set(step) - {'id', 'action', 'expected_slide_count', 'source_slide', 'target_slide',
+                    'slide_labels', 'if_field', 'source_placeholder', 'operator', 'value'}:
+        raise SurveyError('Unsupported native survey configuration option')
     count = step.get('expected_slide_count')
     if type(count) is not int or count < 2:
         raise SurveyError('Expected native slide count must be at least two')

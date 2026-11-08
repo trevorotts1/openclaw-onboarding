@@ -2,8 +2,17 @@
 
 - Recover the shared Playwright recipe package and API-first operation router.
 - Add a continuation ledger, source-only Downloads checkpoints and integrity tests.
-- Coverage remains partial: 21 offline tests pass; host teardown timeout and live
-  profiles, payments and Mac/VPS execution remain unresolved. Draft, no rollout.
+- Add concrete native form fields/conditions/custom CSS, survey Jump To rules,
+  marketing quiz categories/answer authoring/scoring/tiers, checkout UI settings,
+  exact existing code targets, Meeting Room creation/update and API-first delivery.
+- Register canonical calendar update with default-deny scope/tenant/read-back checks;
+  distinguish permanent room links from native dynamic appointment integration.
+- Require recognized handler outcomes, per-run writer locks, uncertainty reconciliation,
+  bound provider receipts and independent read-back; preserve pending verification.
+- Add Mac/Linux Chromium fixture CI and verify source backups on the client Mac.
+  Coverage remains partial: advanced uncaptured controls, native split traffic,
+  portal settings, client VPS execution and payment journeys remain unverified.
+  This is a draft source change, without a rollout or merge.
 
 # Changelog - ghl-install-pages
 

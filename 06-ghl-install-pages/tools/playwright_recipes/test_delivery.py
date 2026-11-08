@@ -280,7 +280,7 @@ class CalendarProviderTests(unittest.TestCase):
                 return seams['TransportResponse'](status=status,headers={},body=json.dumps(self.last_body).encode())
         transport=Transport()
         dispatcher=RegisteredCalendarDispatcher('fixture',capability_gate=gate,transport=transport,client=api_client)
-        inputs={'location_id':'fixture','calendar_id':'cal',
+        inputs={'location_id':'fixture','calendar_id':'cal','integration_mode':'permanent_calendar_link',
             'room':{'location_id':'fixture','status':'PRESENT','room_id':'room','source':'fixture:room',
                     'url':'https://portal.example/meeting-room/room'},
             'api_capability':{**capability(),'scopes':['calendars.readonly','calendars.write']}}
@@ -337,6 +337,12 @@ class CalendarProviderTests(unittest.TestCase):
         with patch.object(client,'check_write',side_effect=Stop('gate')),patch.object(client.requests,'request') as request:
             with self.assertRaises(Stop):transport.request(method='PUT',url='/calendars/cal',version='v3',headers={},query={},body={'locationConfigurations':[]},timeout_s=30)
             request.assert_not_called()
+
+    def test_calendar_mode_must_be_explicit(self):
+        _,_,inputs,route=self.context()
+        for mode in (None,'dynamic_native','typo'):
+            with self.subTest(mode=mode),self.assertRaises(Stop):
+                validate_calendar_integration({**inputs,'integration_mode':mode},route)
 
     def test_default_deny_is_not_replaced_by_recipe_receipt(self):
         dispatcher,transport,inputs,route=self.context()

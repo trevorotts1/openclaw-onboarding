@@ -36,6 +36,10 @@ class SurveyRuleValidation(unittest.TestCase):
         del unary['value']
         self.assertEqual(survey_ui.validate(unary), unary)
 
+    def test_uncaptured_survey_options_are_not_ignored(self):
+        with self.assertRaises(survey_ui.SurveyError):
+            survey_ui.validate({**rule(), 'show_field': 'Last Name'})
+
 
 class NativeSurveyExecution(unittest.TestCase):
     def surface(self, *, existing=False, persist=True, source_matches=True, wrong_target=False):

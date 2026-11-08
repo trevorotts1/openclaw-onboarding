@@ -15,6 +15,8 @@ class QuizError(ValueError):
 def validate(step):
     if not isinstance(step, dict):
         raise QuizError('Quiz configuration must be an object')
+    if set(step) - {'id', 'action', 'categories', 'expected_question_count', 'questions', 'tiers', 'expected_tier_labels'}:
+        raise QuizError('Unsupported native quiz configuration option')
     categories = step.get('categories', [])
     if not isinstance(categories, list) or any(not isinstance(x, str) or not x.strip() for x in categories):
         raise QuizError('Category names must be explicit nonempty text')
@@ -30,6 +32,8 @@ def validate(step):
     for q in questions:
         if not isinstance(q, dict) or type(q.get('index')) is not int or not 0 <= q['index'] < count:
             raise QuizError('Question index is outside the captured canvas count')
+        if set(q) - {'index', 'expected_question', 'expected_query_key', 'options', 'question', 'append_options', 'shared_field_change_ack'}:
+            raise QuizError('Unsupported native question option; question creation/renaming needs its own capture')
         if q['index'] in indexes:
             raise QuizError('Duplicate question configuration')
         indexes.add(q['index'])
@@ -39,17 +43,34 @@ def validate(step):
         options = q.get('options')
         if not isinstance(options, list) or not options:
             raise QuizError('Supply every existing option in captured order')
+        appended = q.get('append_options', [])
+        if not isinstance(appended, list):
+            raise QuizError('Appended quiz options must be a list')
+        if 'question' in q and (not isinstance(q['question'], str) or not q['question'].strip()):
+            raise QuizError('Authored quiz question text must be nonempty')
+        authoring = 'question' in q or bool(appended) or any(isinstance(o, dict) and 'new_label' in o for o in options)
+        if authoring and q.get('shared_field_change_ack') is not True:
+            raise QuizError('Question/choice authoring requires shared_field_change_ack:true for the exact guarded field')
         labels = []
-        for option in options:
+        for index, option in enumerate(options + appended):
             if not isinstance(option, dict) or not isinstance(option.get('label'), str) or not option['label']:
                 raise QuizError('Each option needs its expected label')
-            labels.append(option['label'])
+            if set(option) - ({'label', 'category', 'score', 'new_label'} if index < len(options) else {'label', 'category', 'score'}):
+                raise QuizError('Unsupported native answer option; jump routing needs its own capture')
+            if 'new_label' in option and (not isinstance(option['new_label'], str) or not option['new_label'].strip()):
+                raise QuizError('Renamed quiz option label must be nonempty')
+            labels.append(option.get('new_label', option['label']))
             if not isinstance(option.get('category'), str) or not option['category'].strip():
                 raise QuizError('Each score needs an explicit category')
             if type(option.get('score')) not in (int, float) or not math.isfinite(option['score']):
                 raise QuizError('Quiz scores must be finite numbers, not booleans')
         if len(labels) != len(set(labels)):
             raise QuizError('Option labels must be unique within a question')
+        existing_labels = [o['label'] for o in options]
+        if len(existing_labels) != len(set(existing_labels)):
+            raise QuizError('Existing option identity labels are ambiguous')
+        if any(o.get('new_label', o['label']) != o['label'] and o.get('new_label') in existing_labels for o in options):
+            raise QuizError('Renaming into another existing label requires a separately reconciled edit')
     tiers = step.get('tiers')
     if tiers is not None:
         if not isinstance(tiers, list) or len(tiers) != 3:
@@ -62,6 +83,8 @@ def validate(step):
         for tier in tiers:
             if not isinstance(tier, dict) or not isinstance(tier.get('label'), str) or not tier['label'].strip():
                 raise QuizError('Tier labels are required')
+            if set(tier) - {'label', 'from', 'to'}:
+                raise QuizError('Uncaptured result tier option')
             labels.append(tier['label'])
             low, high = tier.get('from'), tier.get('to')
             if type(low) is not int or type(high) is not int or not 0 <= low <= high <= 100 or low != previous + 1:
@@ -131,7 +154,30 @@ def configure(page, step):
     if step.get('categories'):
         categories()
 
-    def open_question(question):
+    def desired_options(question):
+        return [{**option, 'label': option.get('new_label', option['label'])}
+                for option in question['options']] + question.get('append_options', [])
+
+    def controls(expected_options):
+        options = frame.get_by_role('textbox', name='Label', exact=True)
+        count = len(expected_options)
+        if options.count() != step['expected_question_count'] + count:
+            raise Stop('Quiz option count changed')
+        for index, option in enumerate(expected_options):
+            if options.nth(step['expected_question_count'] + index).input_value() != option['label']:
+                raise Stop('Quiz option identity/order changed')
+        pickers = frame.locator('[id="category-picker"]')
+        scores = frame.get_by_role('textbox', name='10', exact=True)
+        if pickers.count() != count or scores.count() != count:
+            raise Stop('Quiz category/score controls changed')
+        for index in range(count):
+            row = pickers.nth(index).locator('..').locator('..').locator('..').locator('..')
+            row_label = row.get_by_role('textbox', name='Label', exact=True)
+            if row_label.count() != 1 or row_label.input_value() != expected_options[index]['label']:
+                raise Stop('Quiz score controls no longer belong to the intended option')
+        return pickers, scores
+
+    def open_question(question, read_only=False):
         click(frame.get_by_role('tab', name='Edit', exact=True))
         labels = frame.get_by_role('textbox', name='Label', exact=True)
         if labels.count() != step['expected_question_count']:
@@ -144,26 +190,11 @@ def configure(page, step):
         for index, label in enumerate(('Question', 'Placeholder', 'Short Label', 'Query Key')):
             if label not in properties.nth(index).evaluate("el => el.closest('.form-group')?.textContent || ''"):
                 raise Stop('Quiz question property ordering changed')
-        if properties.nth(0).input_value() != question['expected_question'] or properties.nth(3).input_value() != question['expected_query_key']:
+        question_text = question.get('question', question['expected_question']) if read_only else question['expected_question']
+        if properties.nth(0).input_value() != question_text or properties.nth(3).input_value() != question['expected_query_key']:
             raise Stop('Selected quiz question identity mismatch')
-        options = frame.get_by_role('textbox', name='Label', exact=True)
-        count = len(question['options'])
-        if options.count() != step['expected_question_count'] + count:
-            raise Stop('Quiz option count changed')
-        for index, option in enumerate(question['options']):
-            if options.nth(step['expected_question_count'] + index).input_value() != option['label']:
-                raise Stop('Quiz option identity/order changed')
-        pickers = frame.locator('[id="category-picker"]')
-        scores = frame.get_by_role('textbox', name='10', exact=True)
-        if pickers.count() != count or scores.count() != count:
-            raise Stop('Quiz category/score controls changed')
-        # Bind each score to the observed option row as well as its position.
-        for index in range(count):
-            row = pickers.nth(index).locator('..').locator('..').locator('..').locator('..')
-            row_label = row.get_by_role('textbox', name='Label', exact=True)
-            if row_label.count() != 1 or row_label.input_value() != question['options'][index]['label']:
-                raise Stop('Quiz score controls no longer belong to the intended option')
-        return pickers, scores
+        pickers, scores = controls(desired_options(question) if read_only else question['options'])
+        return properties, pickers, scores
 
     def close_question():
         backs = frame.get_by_role('button', name='Back', exact=True)
@@ -173,8 +204,33 @@ def configure(page, step):
 
     def questions(read_only=False):
         for question in step.get('questions', []):
-            pickers, scores = open_question(question)
-            for index, option in enumerate(question['options']):
+            properties, pickers, scores = open_question(question, read_only)
+            desired = desired_options(question)
+            if not read_only:
+                append = question.get('append_options', [])
+                add = frame.get_by_role('button', name='Add option', exact=True)
+                if append and (add.count() != 2 or not add.nth(1).is_enabled()):
+                    raise Stop('Native append-option controls differ from the captured layout')
+                if 'question' in question:
+                    fill(properties.nth(0), question['question'])
+                labels = frame.get_by_role('textbox', name='Label', exact=True)
+                for index, option in enumerate(question['options']):
+                    if option.get('new_label', option['label']) != option['label']:
+                        fill(labels.nth(step['expected_question_count'] + index), option['new_label'])
+                for index, option in enumerate(append):
+                    before = len(question['options']) + index
+                    if add.count() != 2:
+                        raise Stop('Native Add option control count changed')
+                    wait_until(lambda: add.nth(1).is_enabled(), 'Blank quiz option prevents another append')
+                    click(add.nth(1))
+                    wait_until(lambda: labels.count() == step['expected_question_count'] + before + 1,
+                               'Native quiz option did not append exactly once')
+                    new_label = labels.nth(step['expected_question_count'] + before)
+                    if new_label.input_value():
+                        raise Stop('Appended quiz option is not the captured blank control')
+                    fill(new_label, option['label'])
+                pickers, scores = controls(desired)
+            for index, option in enumerate(desired):
                 picker, score = pickers.nth(index), scores.nth(index)
                 if read_only:
                     if picker.inner_text().strip() != option['category'] or not score.is_enabled():

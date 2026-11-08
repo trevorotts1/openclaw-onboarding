@@ -210,6 +210,13 @@
       "implemented": true,
       "proof": "CAPTURED",
       "use": "Native forward Jump To with slide/source identity guards and saved-card readback"
+    },
+    "checkout.configure_ui": {
+      "name": "30_configure_native_checkout_ui",
+      "action": "native_checkout_ui",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Exact native order-form mode, Products switches, Contact fields, Checkout options, 37 Content textboxes and Inputs appearance/labels; save/reopen/readback, payment verification separate"
     }
   }
 }
