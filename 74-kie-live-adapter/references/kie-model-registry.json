@@ -11375,7 +11375,7 @@
    "verbatim_fields": []
   },
   {
-   "id": "gpt-image-2-5-flare-image-to-image",
+   "id": "gpt-image-2-6/flare-image-to-image",
    "provider": "OpenAI",
    "title": "Gpt Image 2.5 Flare Image to Image ",
    "taskType": [
@@ -11388,7 +11388,7 @@
    ],
    "variant": "flare",
    "pricing": {
-    "raw": "GPT Image 2.5 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K.\nHigh-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates.",
+    "raw": "GPT Image 2.6 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K.\nHigh-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates.",
     "status": "ok",
     "credits_min": 6.0,
     "credits_max": 16.0,
@@ -11472,7 +11472,7 @@
    "verbatim_fields": []
   },
   {
-   "id": "gpt-image-2-5-flare-text-to-image",
+   "id": "gpt-image-2-6/flare-text-to-image",
    "provider": "OpenAI",
    "title": "Gpt Image 2.5 Flare Text to Image",
    "taskType": [
@@ -11485,7 +11485,7 @@
    ],
    "variant": "flare",
    "pricing": {
-    "raw": "GPT Image 2.5 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K.\nHigh-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates.",
+    "raw": "GPT Image 2.6 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K.\nHigh-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates.",
     "status": "ok",
     "credits_min": 6.0,
     "credits_max": 16.0,
@@ -11561,7 +11561,7 @@
    "verbatim_fields": []
   },
   {
-   "id": "gpt-image-2-5-sunburst-image-to-image",
+   "id": "gpt-image-2-6/sunburst-image-to-image",
    "provider": "OpenAI",
    "title": "Gpt Image 2.5 Sunburst Image to Image",
    "taskType": [
@@ -11574,7 +11574,7 @@
    ],
    "variant": "sunburst",
    "pricing": {
-    "raw": "GPT Image 2.5 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K.\nHigh-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates.",
+    "raw": "GPT Image 2.6 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K.\nHigh-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates.",
     "status": "ok",
     "credits_min": 6.0,
     "credits_max": 16.0,
@@ -11658,7 +11658,7 @@
    "verbatim_fields": []
   },
   {
-   "id": "gpt-image-2-5-sunburst-text-to-image",
+   "id": "gpt-image-2-6/sunburst-text-to-image",
    "provider": "OpenAI",
    "title": "Gpt Image 2.5 Sunburst Text to Image",
    "taskType": [
@@ -11671,7 +11671,7 @@
    ],
    "variant": "sunburst",
    "pricing": {
-    "raw": "GPT Image 2.5 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K.\nHigh-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates.",
+    "raw": "GPT Image 2.6 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K.\nHigh-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates.",
     "status": "ok",
     "credits_min": 6.0,
     "credits_max": 16.0,

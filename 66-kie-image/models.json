@@ -6,8 +6,8 @@
     "role": "CURATED POLICY and verified-override registry (routing defaults, owner-confirmed caps, per-family rules). Not the exhaustive KIE catalog and not the live source of limits or prices: Skill 74 (live schema, price) is, with its generated snapshot as fallback. A model missing here is DISCOVERED, never an automatic default.",
     "encoding_source": "First-party KIE.ai research dated 2026-08-26 (docs.kie.ai market pages + kie.ai playground pages, curl-verified). Every numeric limit is traceable to a quoted vendor value. NOT_EXPOSED/NOT_PUBLISHED is stored as null, never invented.",
     "house_band_chars": { "min": 5000, "target": 9000, "max": 19000 },
-    "owner_preferred_default": "GPT Image 2.5 when compatible",
-    "owner_preferred_default_note": "Operator ruling 2026-09-09 (Ruling 6): GPT Image 2.5 Sunburst is the new default for everything. GPT Image 2 (legacy) is RETAINED, not retired, and is the required route for aspect ratios 3:1, 1:3, and 9:21 only.",
+    "owner_preferred_default": "GPT Image 2.6 when compatible",
+    "owner_preferred_default_note": "Operator ruling 2026-09-09 (Ruling 6): GPT Image 2.6 Sunburst is the new default for everything. GPT Image 2 (legacy) is RETAINED, not retired, and is the required route for aspect ratios 3:1, 1:3, and 9:21 only.",
     "cap_status_legend": {
       "VERIFIED": "quoted from a vendor page verbatim; hard cap, hard-fail",
       "OWNER_OBSERVED": "owner-observed live behavior; no vendor figure; warn-only, never hard-fail",
@@ -49,14 +49,14 @@
       "sync": false,
       "active": true,
       "status": "legacy",
-      "status_note": "legacy - retained by operator ruling 2026-09-09 for 3:1, 1:3, 9:21 only. GPT Image 2.5 Sunburst (gpt-image-2-5-sunburst-text-to-image) is now the default; this entry's own constraints are UNCHANGED and still apply exactly as before for anything routed here.",
+      "status_note": "legacy - retained by operator ruling 2026-09-09 as the fallback route for 3:1, 1:3, 9:21. CAPABILITY CLAIM CORRECTED 2026-11-08: those ratios ARE now served natively by GPT Image 2.6 Sunburst (gpt-image-2-6/sunburst-text-to-image; live probe 2026-11-08 created a 3:1 task, HTTP 200), so this fallback is no longer mandatory. The router still sends 3:1, 1:3, 9:21 here; removing that routing needs Trevor's explicit go-ahead. This entry's own constraints are UNCHANGED and still apply exactly as before for anything routed here.",
       "last_verified_at": "2026-08-26",
       "source_url": "https://docs.kie.ai/market/gpt/gpt-image-2-text-to-image",
       "known_inconsistencies": [
-        "RESOLVED by operator confirmation 2026-08-27: prompt cap is 25,000 characters (owner-confirmed, authoritative). Docs page text (2026-08-26, verbatim): \"maximum 20,000 characters\", that figure is STALE. Quoted verbatim for provenance. cap_status OWNER_CONFIRMED; owner_observed_cap_chars 25000; vendor_hard_cap_chars stays null (vendor never published 25k). Warn-only, never hard-fail. This 25,000 owner-confirmation applies to GPT Image 2 ONLY and has NOT been retested on GPT Image 2.5 Sunburst (operator ruling 2026-09-09); see the gpt-image-2-5-sunburst-text-to-image entry for the separate 2.5 cap.",
+        "RESOLVED by operator confirmation 2026-08-27: prompt cap is 25,000 characters (owner-confirmed, authoritative). Docs page text (2026-08-26, verbatim): \"maximum 20,000 characters\", that figure is STALE. Quoted verbatim for provenance. cap_status OWNER_CONFIRMED; owner_observed_cap_chars 25000; vendor_hard_cap_chars stays null (vendor never published 25k). Warn-only, never hard-fail. This 25,000 owner-confirmation applies to GPT Image 2 ONLY and has NOT been retested on GPT Image 2.6 Sunburst (operator ruling 2026-09-09); see the gpt-image-2-6/sunburst-text-to-image entry for the separate 2.6 cap (32,000 chars, cap_status DOCS, no owner-confirmed figure).",
         "Quality tier is expressed as resolution enum (1K/2K/4K); no separate quality field."
       ],
-      "notes": "LEGACY ROUTE (operator ruling 2026-09-09): retained only for aspect ratios 3:1, 1:3, 9:21, which GPT Image 2.5 Sunburst does not serve. GPT Image 2.5 Sunburst is now the owner-preferred default. High-fidelity general generation, editing, product/brand images, detailed long-form creative instructions. Per-resolution exclusion (page verbatim): \"for 2K and 4K resolution, the following aspect ratios are not supported: 5:4, 4:5, 3:1, 1:3, and 9:21\"; \"Images with the aspect ratio set to auto or without a specified aspect ratio parameter will only be converted to 1K images\"; \"Images with a 1:1 aspect ratio cannot be converted to 4K images\". House band 5,000-19,000 is legal; hard-enforcement status PENDING_ACCEPTANCE_TEST, validators warn only."
+      "notes": "LEGACY ROUTE (operator ruling 2026-09-09; capability claim corrected 2026-11-08): retained as the fallback for aspect ratios 3:1, 1:3, 9:21. GPT Image 2.6 Sunburst NOW SERVES those three natively (vendor 2.6 aspect_ratio enum + live probe 2026-11-08, HTTP 200 on 3:1), so the fallback is no longer mandatory -- it is still wired, and rewiring needs Trevor's explicit go-ahead. GPT Image 2.6 Sunburst is now the owner-preferred default. High-fidelity general generation, editing, product/brand images, detailed long-form creative instructions. Per-resolution exclusion (page verbatim): \"for 2K and 4K resolution, the following aspect ratios are not supported: 5:4, 4:5, 3:1, 1:3, and 9:21\"; \"Images with the aspect ratio set to auto or without a specified aspect ratio parameter will only be converted to 1K images\"; \"Images with a 1:1 aspect ratio cannot be converted to 4K images\". House band 5,000-19,000 is legal; hard-enforcement status PENDING_ACCEPTANCE_TEST, validators warn only."
     },
     {
       "provider": "kie",
@@ -89,29 +89,29 @@
       "sync": false,
       "active": true,
       "status": "legacy",
-      "status_note": "legacy - retained by operator ruling 2026-09-09 for 3:1, 1:3, 9:21 only. GPT Image 2.5 Sunburst (gpt-image-2-5-sunburst-image-to-image) is now the default; this entry's own constraints are UNCHANGED and still apply exactly as before for anything routed here.",
+      "status_note": "legacy - retained by operator ruling 2026-09-09 as the fallback route for 3:1, 1:3, 9:21. CAPABILITY CLAIM CORRECTED 2026-11-08: those ratios ARE now served natively by GPT Image 2.6 Sunburst (gpt-image-2-6/sunburst-image-to-image; vendor 2.6 aspect_ratio enum), so this fallback is no longer mandatory. The router still sends 3:1, 1:3, 9:21 here; removing that routing needs Trevor's explicit go-ahead. This entry's own constraints are UNCHANGED and still apply exactly as before for anything routed here.",
       "last_verified_at": "2026-08-26",
       "source_url": "https://docs.kie.ai/market/gpt/gpt-image-2-image-to-image",
       "known_inconsistencies": [
         "Docs i2i page shows only maxItems: 16 for input_urls, NO MB limit and NO format list published in the docs schema. The 30MB / JPEG-PNG-WEBP-JPG values come from the kie.ai/gpt-image-2 playground page (curl 200, verbatim: \"Supported formats: JPEG, PNG, WEBP, JPG\" and \"Maximum file size: 30MB; Maximum files: 16\"). Two different first-party surfaces; both dated 2026-08-26.",
-        "RESOLVED by operator confirmation 2026-08-27: prompt cap is 25,000 characters (owner-confirmed, authoritative). Docs page text (verbatim): \"up to 20,000 characters\", that figure is STALE. Quoted verbatim for provenance. See GPT Image 2 (Text-to-Image) entry. This 25,000 owner-confirmation applies to GPT Image 2 ONLY and has NOT been retested on GPT Image 2.5 Sunburst (operator ruling 2026-09-09); see the gpt-image-2-5-sunburst-image-to-image entry for the separate 2.5 cap.",
+        "RESOLVED by operator confirmation 2026-08-27: prompt cap is 25,000 characters (owner-confirmed, authoritative). Docs page text (verbatim): \"up to 20,000 characters\", that figure is STALE. Quoted verbatim for provenance. See GPT Image 2 (Text-to-Image) entry. This 25,000 owner-confirmation applies to GPT Image 2 ONLY and has NOT been retested on GPT Image 2.6 Sunburst (operator ruling 2026-09-09); see the gpt-image-2-6/sunburst-image-to-image entry for the separate 2.6 cap (32,000 chars, cap_status DOCS, no owner-confirmed figure).",
         "Playground verbatim: \"5:4 and 4:5 aspect ratios only support 1K images\" (i2i route)."
       ],
-      "notes": "LEGACY ROUTE (operator ruling 2026-09-09): retained only for aspect ratios 3:1, 1:3, 9:21, which GPT Image 2.5 Sunburst does not serve. Logo/brand requests MUST use this route (reference the logo image, never text-to-image). up to 16 refs @ 30MB each. Live probe 2026-09-10: input_urls and image_input both accepted (tasks 975252ea + 8fcde518, success); input_urls preferred per vendor page."
+      "notes": "LEGACY ROUTE (operator ruling 2026-09-09; capability claim corrected 2026-11-08): retained as the fallback for aspect ratios 3:1, 1:3, 9:21. GPT Image 2.6 Sunburst NOW SERVES those three natively (vendor 2.6 aspect_ratio enum), so the fallback is no longer mandatory -- it is still wired, and rewiring needs Trevor's explicit go-ahead. Logo/brand requests MUST use this route (reference the logo image, never text-to-image). up to 16 refs @ 30MB each. Live probe 2026-09-10: input_urls and image_input both accepted (tasks 975252ea + 8fcde518, success); input_urls preferred per vendor page."
     },
     {
       "provider": "kie",
-      "display_name": "GPT Image 2.5 (Text-to-Image)",
-      "family": "gpt-image-2-5-sunburst",
-      "canonical_model_id": "gpt-image-2-5-sunburst-text-to-image",
-      "aliases": ["gpt image 2.5", "gpt-img2.5", "gpt-image 2.5", "gpt image 2.5 sunburst", "sunburst"],
+      "display_name": "GPT Image 2.6 (Text-to-Image)",
+      "family": "gpt-image-2-6/sunburst",
+      "canonical_model_id": "gpt-image-2-6/sunburst-text-to-image",
+      "aliases": ["gpt image 2.6", "gpt-img2.6", "gpt-image 2.5", "gpt image 2.6 sunburst", "sunburst"],
       "modality": "image",
       "tasks": ["text-to-image"],
       "api_family": "kie-market",
       "create_endpoint": "/api/v1/jobs/createTask",
       "query_endpoint": "/api/v1/jobs/recordInfo",
       "auth_env": "KIE_API_KEY",
-      "vendor_hard_cap_chars": 20000,
+      "vendor_hard_cap_chars": 32000,
       "vendor_hard_cap_tokens": null,
       "owner_observed_cap_chars": null,
       "cap_status": "DOCS",
@@ -122,7 +122,7 @@
       "reference_image_max_mb": null,
       "reference_image_formats": null,
       "resolutions": ["1K", "2K", "4K"],
-      "aspect_ratios": ["auto", "1:1", "3:2", "2:3", "16:9", "9:16", "4:3", "3:4", "21:9", "27:16", "16:27", "9:8", "8:9"],
+      "aspect_ratios": ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "2:1", "1:2", "21:9", "9:21", "3:1", "1:3", "27:16", "16:27", "9:8", "8:9"],
       "ratio_resolution_exclusions": ["27:16", "16:27", "9:8", "8:9"],
       "control_fields": ["aspect_ratio", "resolution"],
       "output_formats": null,
@@ -130,28 +130,35 @@
       "active": true,
       "status": "default",
       "status_note": "operator default (ruling 2026-09-09), supersedes GPT Image 2 as the owner-preferred general route. See gpt-image-2-text-to-image for the retained legacy route (3:1, 1:3, 9:21 only).",
-      "last_verified_at": "2026-09-09",
-      "source_url": "https://docs.kie.ai/market/gpt/gpt-image-2-5-sunburst-text-to-image",
-      "known_inconsistencies": [
-        "Prompt cap 20,000 characters is the KIE docs figure dated 2026-09-09 (cap_status DOCS, NOT owner-confirmed). This is NOT the same as GPT Image 2's 25,000 owner-confirmed figure -- that confirmation applied to GPT Image 2 only and has not been retested on 2.5. owner_observed_cap_chars stays null pending a live retest.",
-        "Aspect ratio set is new and does not carry over GPT Image 2's rules: the retired 'auto -> 1K only' and '1:1 cannot convert to 4K' rules are NOT restated in the 2.5 docs. 1K-only ratios (2K/4K rejected outright): 27:16, 16:27, 9:8, 8:9.",
-        "Operator ruling 2026-09-09 (Ruling 6, dual-route): 3:1, 1:3, and 9:21 are NOT served by this model -- those three ratios route to the retained legacy gpt-image-2-text-to-image entry instead. 5:4, 4:5, 2:1, and 1:2 ARE served here via operator-approved substitution (5:4->4:3, 4:5->3:4, 2:1->16:9, 1:2->9:16) rather than as literal ratios; the request is not silently rewritten to a different creative intent beyond this operator-blessed table."
+      "last_verified_at": "2026-11-08",
+      "source_url": "https://docs.kie.ai/market/gpt/gpt-image-2-6/sunburst-text-to-image",
+      "verified_notes": [
+        "2026-11-08 live KIE probe: createTask gpt-image-2-6/sunburst-text-to-image -> HTTP 200, task completed, state=success.",
+        "2026-11-08 live KIE probe: gpt-image-2-6-sunburst-text-to-image (hyphen form) -> HTTP 422 'The model name you specified is not supported'. The slash form is required.",
+        "2026-11-08 live KIE probe: slash form with aspect_ratio 3:1 -> HTTP 200 (task created).",
+        "2026-11-08 vendor 2.6 OpenAPI: resolution enum 1K, 2K, 4K; quality enum low, medium, high, xhigh, max, auto; prompt maxLength 32000; background transparent|opaque|auto; output_format png|jpeg|webp|gif|svg. quality/background/output_format are documented but NOT added to control_fields in this pass."
       ],
-      "notes": "Operator default general KIE image route (operator ruling 2026-09-09; supersedes GPT Image 2 as the preferred default). High-fidelity general generation, editing, product/brand images, detailed long-form creative instructions. House band 5,000-19,000 is legal; hard-enforcement status PENDING_ACCEPTANCE_TEST, validators warn only."
+      "known_inconsistencies": [
+        "PROMPT CAP corrected 2026-11-08: 32,000 characters is the KIE 2.6 OpenAPI maxLength checked 2026-11-08 (cap_status DOCS, NOT owner-confirmed). It supersedes the 20,000 figure carried in from the 2.5 Sunburst docs. It is NOT the 25,000 owner-confirmed figure recorded for GPT Image 2 (legacy) -- that confirmation was never retested on 2.6 and does not apply here. owner_observed_cap_chars stays null: no owner-confirmed character figure exists for 2.6.",
+        "MODEL ID FORM (live probe 2026-11-08): the slash form gpt-image-2-6/sunburst-text-to-image returns HTTP 200 and a finished task with state=success. The hyphen form gpt-image-2-6-sunburst-text-to-image returns HTTP 422 'The model name you specified is not supported'. Never send the hyphen form; the version and the task are separated by a slash.",
+        "CORRECTED 2026-11-08, supersedes the Ruling 6 capability claim: operator ruling 2026-09-09 stated that 3:1, 1:3, and 9:21 are NOT served by this model and route to the legacy gpt-image-2-text-to-image entry. They ARE served. Evidence: live probe 2026-11-08 with aspect_ratio 3:1 created a task (HTTP 200), and the vendor 2.6 OpenAPI aspect_ratio enum lists 3:1, 1:3, and 9:21. That enum also lists 5:4, 4:5, 2:1, and 1:2 as literal ratios, so the 5:4->4:3, 4:5->3:4, 2:1->16:9, 1:2->9:16 substitution table is no longer required for capability reasons either. The legacy fallback is therefore no longer mandatory. It is STILL WIRED in the router; removing it is a routing change and needs Trevor's explicit go-ahead.",
+        "Aspect ratio set, vendor 2.6 OpenAPI enum checked 2026-11-08: auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1, 1:2, 21:9, 9:21, 3:1, 1:3. The 2.5-era extras 27:16, 16:27, 9:8, and 8:9 do NOT appear in the 2026-11-08 enum. They are retained in aspect_ratios as 1K-only (2K/4K rejected) but are UNVERIFIED against 2.6 -- probe before use. The retired 'auto -> 1K only' and '1:1 cannot convert to 4K' rules from GPT Image 2 are not restated for 2.6."
+      ],
+      "notes": "Operator default general KIE image route (operator ruling 2026-09-09; supersedes GPT Image 2 as the preferred default). High-fidelity general generation, editing, product/brand images, detailed long-form creative instructions. Serves 3:1, 1:3, and 9:21 natively as of 2026-11-08 (vendor enum + live probe), so the legacy gpt-image-2 fallback is no longer required for those ratios; it is still wired and removing it needs Trevor's go-ahead. House band 5,000-19,000 is legal; hard-enforcement status PENDING_ACCEPTANCE_TEST, validators warn only."
     },
     {
       "provider": "kie",
-      "display_name": "GPT Image 2.5 (Image-to-Image)",
-      "family": "gpt-image-2-5-sunburst",
-      "canonical_model_id": "gpt-image-2-5-sunburst-image-to-image",
-      "aliases": ["gpt image 2.5", "gpt-img2.5", "gpt-image 2.5", "gpt image 2.5 sunburst", "sunburst"],
+      "display_name": "GPT Image 2.6 (Image-to-Image)",
+      "family": "gpt-image-2-6/sunburst",
+      "canonical_model_id": "gpt-image-2-6/sunburst-image-to-image",
+      "aliases": ["gpt image 2.6", "gpt-img2.6", "gpt-image 2.5", "gpt image 2.6 sunburst", "sunburst"],
       "modality": "image",
       "tasks": ["image-to-image", "edit", "reference-composition"],
       "api_family": "kie-market",
       "create_endpoint": "/api/v1/jobs/createTask",
       "query_endpoint": "/api/v1/jobs/recordInfo",
       "auth_env": "KIE_API_KEY",
-      "vendor_hard_cap_chars": 20000,
+      "vendor_hard_cap_chars": 32000,
       "vendor_hard_cap_tokens": null,
       "owner_observed_cap_chars": null,
       "cap_status": "DOCS",
@@ -162,7 +169,7 @@
       "reference_image_max_mb": 30,
       "reference_image_formats": ["JPEG", "PNG", "WEBP", "JPG"],
       "resolutions": ["1K", "2K", "4K"],
-      "aspect_ratios": ["auto", "1:1", "3:2", "2:3", "16:9", "9:16", "4:3", "3:4", "21:9", "27:16", "16:27", "9:8", "8:9"],
+      "aspect_ratios": ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "2:1", "1:2", "21:9", "9:21", "3:1", "1:3", "27:16", "16:27", "9:8", "8:9"],
       "ratio_resolution_exclusions": ["27:16", "16:27", "9:8", "8:9"],
       "control_fields": ["input_urls", "aspect_ratio", "resolution"],
       "output_formats": null,
@@ -170,15 +177,21 @@
       "active": true,
       "status": "default",
       "status_note": "operator default (ruling 2026-09-09), supersedes GPT Image 2 as the owner-preferred general route. See gpt-image-2-image-to-image for the retained legacy route (3:1, 1:3, 9:21 only).",
-      "last_verified_at": "2026-09-09",
-      "source_url": "https://docs.kie.ai/market/gpt/gpt-image-2-5-sunburst-image-to-image",
-      "known_inconsistencies": [
-        "Prompt cap 20,000 characters is the KIE docs figure dated 2026-09-09 (cap_status DOCS, NOT owner-confirmed). Not the same as GPT Image 2's 25,000 owner-confirmed figure -- that confirmation applied to GPT Image 2 only and has not been retested on 2.5. owner_observed_cap_chars stays null pending a live retest.",
-        "Reference-image count cap (16) and per-file size cap (30MB) are carried forward UNCHANGED from GPT Image 2 -- not ruled on by the operator in this pass.",
-        "Aspect ratio set is new and does not carry over GPT Image 2's rules: the retired 'auto -> 1K only' and '1:1 cannot convert to 4K' rules are NOT restated in the 2.5 docs. 1K-only ratios (2K/4K rejected outright): 27:16, 16:27, 9:8, 8:9.",
-        "Operator ruling 2026-09-09 (Ruling 6, dual-route): 3:1, 1:3, and 9:21 are NOT served by this model -- those three ratios route to the retained legacy gpt-image-2-image-to-image entry instead. 5:4, 4:5, 2:1, and 1:2 ARE served here via operator-approved substitution (5:4->4:3, 4:5->3:4, 2:1->16:9, 1:2->9:16) rather than as literal ratios."
+      "last_verified_at": "2026-11-08",
+      "source_url": "https://docs.kie.ai/market/gpt/gpt-image-2-6/sunburst-image-to-image",
+      "verified_notes": [
+        "2026-11-08 live KIE probe on the text-to-image sibling gpt-image-2-6/sunburst-text-to-image -> HTTP 200, task completed, state=success; hyphen form gpt-image-2-6-sunburst-text-to-image -> HTTP 422 'The model name you specified is not supported'. The slash form is required for both tasks.",
+        "2026-11-08 live KIE probe: slash form with aspect_ratio 3:1 -> HTTP 200 (task created), which is the same aspect_ratio enum shared by the image-to-image task.",
+        "2026-11-08 vendor 2.6 OpenAPI: input_urls maxItems 16; mask_url OR markup, MUTUALLY EXCLUSIVE; prompt maxLength 32000; resolution enum 1K, 2K, 4K; quality enum low, medium, high, xhigh, max, auto; background transparent|opaque|auto; output_format png|jpeg|webp|gif|svg. The 2.6 doc publishes no per-file MB limit and no format list."
       ],
-      "notes": "Operator default general KIE image route (operator ruling 2026-09-09; supersedes GPT Image 2 as the preferred default). Logo/brand requests MUST use this route (reference the logo image, never text-to-image). up to 16 refs @ 30MB each. Live probe 2026-09-10: input_urls and image_input both accepted (tasks 975252ea + 8fcde518, success); input_urls preferred per vendor page."
+      "known_inconsistencies": [
+        "PROMPT CAP corrected 2026-11-08: 32,000 characters is the KIE 2.6 OpenAPI maxLength checked 2026-11-08 (cap_status DOCS, NOT owner-confirmed). It supersedes the 20,000 figure carried in from the 2.5 docs. It is NOT the 25,000 owner-confirmed figure recorded for GPT Image 2 (legacy); that confirmation was never retested on 2.6 and does not apply. owner_observed_cap_chars stays null.",
+        "MODEL ID FORM: the slash form gpt-image-2-6/sunburst-image-to-image is the only accepted id. The hyphen form gpt-image-2-6-sunburst-image-to-image was rejected on the text-to-image sibling with HTTP 422 'The model name you specified is not supported' on 2026-11-08. Never send the hyphen form.",
+        "Reference images: vendor 2.6 OpenAPI states input_urls maxItems 16, plus mask_url OR markup for inpainting -- the two are MUTUALLY EXCLUSIVE. The 2.6 doc publishes NO per-file MB limit and NO format list; reference_image_max_mb 30 and the JPEG/PNG/WEBP/JPG list are carried forward UNCHANGED from the GPT Image 2 playground page (2026-08-26) and are not vendor-stated for 2.6.",
+        "CORRECTED 2026-11-08, supersedes the Ruling 6 capability claim: operator ruling 2026-09-09 stated that 3:1, 1:3, and 9:21 are NOT served by this model and route to the legacy gpt-image-2-image-to-image entry. They ARE served: the vendor 2.6 aspect_ratio enum lists 3:1, 1:3, and 9:21, and a 3:1 task was created HTTP 200 on the text-to-image sibling on 2026-11-08. The enum also lists 5:4, 4:5, 2:1, and 1:2 literally, so the 5:4->4:3, 4:5->3:4, 2:1->16:9, 1:2->9:16 substitution table is no longer required. The legacy fallback is no longer mandatory but is STILL WIRED; removing it is a routing change and needs Trevor's explicit go-ahead.",
+        "Aspect ratio set, vendor 2.6 OpenAPI enum checked 2026-11-08: auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1, 1:2, 21:9, 9:21, 3:1, 1:3. The 2.5-era extras 27:16, 16:27, 9:8, and 8:9 do NOT appear in that enum; retained as 1K-only, UNVERIFIED against 2.6."
+      ],
+      "notes": "Operator default general KIE image route (operator ruling 2026-09-09; supersedes GPT Image 2 as the preferred default). Logo/brand requests MUST use this route (reference the logo image, never text-to-image). Serves 3:1, 1:3, and 9:21 natively as of 2026-11-08 (vendor enum), so the legacy gpt-image-2 fallback is no longer required for those ratios; it is still wired and removing it needs Trevor's go-ahead. up to 16 refs @ 30MB each (30MB is carried forward, not 2.6 vendor-stated). Live probe 2026-09-10: input_urls and image_input both accepted (tasks 975252ea + 8fcde518, success); input_urls preferred per vendor page. Vendor 2.6 also exposes mask_url OR markup, mutually exclusive."
     },
     {
       "provider": "kie",
@@ -699,7 +712,7 @@
         "Prompt cap NOT EXPOSED.",
         "11-value ratio enum, NO 1:4 / 4:1 / 1:8 / 8:1 (those are NB2/NB2-Lite only)."
       ],
-      "notes": "Strong general/multi-reference alternative to GPT Image 2.5. Multi-turn editing: dialogue-style refinement instead of full regeneration; blends up to 8 reference images. KIE pricing on page: $0.09/image 1K-2K, $0.12/image 4K."
+      "notes": "Strong general/multi-reference alternative to GPT Image 2.6. Multi-turn editing: dialogue-style refinement instead of full regeneration; blends up to 8 reference images. KIE pricing on page: $0.09/image 1K-2K, $0.12/image 4K."
     },
     {
       "provider": "kie",

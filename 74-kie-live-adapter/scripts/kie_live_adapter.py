@@ -233,7 +233,7 @@ FLOOR_PCT, TARGET_PCT, PREFLIGHT_MULT = 95, 95, 1.30
 # Owner order 2026-10-05, strict production band (F18 2026-11-07): 95 to 100 percent of a
 # model's verified max passes; below 95 percent fails; below 80 percent is a hard failure.
 # The arithmetic itself lives in shared-utils/prompt_policy.py only.
-KNOWN_DEFAULTS = {"gpt-image": "gpt-image-2-5-sunburst-text-to-image"}  # last-resort default (N43 today)
+KNOWN_DEFAULTS = {"gpt-image": "gpt-image-2-6/sunburst-text-to-image"}  # last-resort default (N43 today)
 DEFAULT_CAPS = {"gpt-image": ["Text to Image", "Image to Image"]}
 LATEST_TTL = CATALOG_TTL
 REGISTRY_STALE_DAYS = 30

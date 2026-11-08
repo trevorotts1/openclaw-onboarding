@@ -91,7 +91,7 @@ run() {  # run <mode> [extra env as VAR=val ...]
 rc=$(run success KIE_BACKOFF_SCHEDULE="5")
 if [[ "$rc" == "0" ]]; then pass "success: exit 0"; else fail "success: exit $rc"; tail -5 "$WORK/stderr"; fi
 [[ "$(jq -r '.status' "$WORK/receipt.json" 2>/dev/null)" == "ok" ]] && pass "success: receipt status ok" || fail "success: receipt not ok"
-[[ "$(jq -r '.model' "$WORK/receipt.json" 2>/dev/null)" == "gpt-image-2-5-sunburst-text-to-image" ]] && pass "success: receipt names the sunburst model" || fail "success: model missing"
+[[ "$(jq -r '.model' "$WORK/receipt.json" 2>/dev/null)" == "gpt-image-2-6/sunburst-text-to-image" ]] && pass "success: receipt names the sunburst model" || fail "success: model missing"
 [[ "$(jq -r '.kie_task_id' "$WORK/receipt.json" 2>/dev/null)" == "cover-1" ]] && pass "success: receipt keeps the KIE task id" || fail "success: task id missing"
 [[ "$(jq -r '.kie_result_url' "$WORK/receipt.json" 2>/dev/null)" == http* ]] && pass "success: receipt keeps the result URL" || fail "success: result url missing"
 [[ "$(jq -r '.format + " " + (.width|tostring)' "$WORK/receipt.json" 2>/dev/null)" == "jpeg 1600" ]] && pass "success: finalized square JPEG at 1600" || fail "success: finalize result wrong ($(jq -c . "$WORK/receipt.json" 2>/dev/null))"

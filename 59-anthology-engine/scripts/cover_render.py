@@ -35,7 +35,7 @@
 # styles, the result-host allowlist, the render-state sidecar, the portrait read-back and the typed exit
 # codes. It carries no createTask, recordInfo or download HTTP code of its own (live shape of record:
 # W0.6.json; the contract itself now lives in Skill 74's references/adapter-contract.md).
-#   submit : model "gpt-image-2-5-sunburst-text-to-image", input {prompt, aspect_ratio "2:3", output_format "png"}
+#   submit : model "gpt-image-2-6/sunburst-text-to-image", input {prompt, aspect_ratio "2:3", output_format "png"}
 #   wait   : bounded poll (the ceiling below), result URLs from the finished job
 #   save   : downloads the result; the result CDN 403s the default urllib User-Agent, so this adapter passes
 #            the browser User-Agent below (--user-agent, W0.6) and only allowlisted hosts (--allow-host).
@@ -105,7 +105,7 @@ KIE_ADAPTER_SKILL = "74-kie-live-adapter"
 
 # Primary cover model (W0.6): the TEXT-TO-IMAGE portrait model, NOT the
 # image-to-image presentation recipe.
-COVER_MODEL = "gpt-image-2-5-sunburst-text-to-image"
+COVER_MODEL = "gpt-image-2-6/sunburst-text-to-image"
 
 # THE OVERRIDE. Skill 46's submitter defaults aspect_ratio to "16:9"; a cover is
 # portrait, so this adapter pins "2:3" (W0.6: 2:3 -> exactly 1024x1536).

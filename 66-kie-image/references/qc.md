@@ -29,7 +29,7 @@ Inspect the downloaded full-resolution asset:
      excluded — if the returned image is one of those ratios at 2K/4K, the
      route silently bent the request. Verify against the requested resolution
      enum (1K/2K/4K).
-   - GPT Image 2.5 (default, operator ruling 2026-09-09): a SEPARATE rule set,
+   - GPT Image 2.6 (default, operator ruling 2026-09-09): a SEPARATE rule set,
      never merged with the legacy one above — at 2K/4K the ratios **27:16,
      16:27, 9:8, 8:9** are excluded (1K only); the legacy auto/1:1 rules do
      NOT apply here.
@@ -78,7 +78,7 @@ Inspect the downloaded full-resolution asset:
    encoding (URL vs data URI), crop/normalize a ref to legal format, change
    aspect ratio to a supported enum value, or route i2i on the same family.
 3. **Another compatible model in the SAME provider** — only if model selection
-   was automatic or the user permits it. e.g. GPT Image 2.5 -> Nano Banana Pro;
+   was automatic or the user permits it. e.g. GPT Image 2.6 -> Nano Banana Pro;
    Seedream 5.0 Pro -> Seedream 5.0 Lite. Record the switch.
 4. **Another provider** — only when generic provider routing is allowed or the
    user approves.

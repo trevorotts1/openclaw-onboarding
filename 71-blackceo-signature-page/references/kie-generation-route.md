@@ -34,7 +34,7 @@ Skill 71 stage -> policy owner (Skill 66 image, Skill 67 video) -> transport (Sk
   An explicit client request for a model or a department pin wins over the default.
 - The GPT Image default is the newest GPT Image generation in KIE's live catalog (rule 13). Skill 66
   resolves it with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py latest-family --family gpt-image`.
-  Today that is GPT Image 2.5 Sunburst. If it changes, the adapter writes a receipt and the operator is told.
+  Today that is GPT Image 2.6 Sunburst. If it changes, the adapter writes a receipt and the operator is told.
 - Ratio rules from AGENTS.md N43 (rule 11), applied by Skill 66 before dispatch and recorded on the receipt:
   3:1, 1:3 and 9:21 go to the legacy `gpt-image-2-*` route only; on the default route 5:4 becomes 4:3,
   4:5 becomes 3:4, 2:1 becomes 16:9 and 1:2 becomes 9:16; every other ratio is used as asked.

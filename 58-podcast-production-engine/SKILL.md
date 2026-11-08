@@ -493,7 +493,7 @@ frozen research is reused), a hard stop at three failures with a founder notific
 the failing checks and the best draft. The QC persona is qc-specialist-podcast and MUST be a
 different persona from whichever persona drafted (independence rule).
 
-STEP 10, COVER ART. status `generating_art`. Kie.ai GPT-Image-2.5 (Skill 66 registry id `gpt-image-2-5-sunburst-text-to-image`, the AGENTS.md N43 pin; Skill 57 prompt 14 carries the same id and payload), 2K square (2048), prompt built
+STEP 10, COVER ART. status `generating_art`. Kie.ai GPT-Image 2.6 (Skill 66 registry id `gpt-image-2-6/sunburst-text-to-image`, the AGENTS.md N43 pin; Skill 57 prompt 14 carries the same id and payload), 2K square (2048), prompt built
 from the respondent's visual description anchored by the episode theme and title; poll with the
 bounded backoff schedule; then ffmpeg in-house: confirm square, resize into the 1500 to 3000
 range, JPEG, RGB, under 512 kilobytes, spec-valid filename. Never below 1500 square.

@@ -7,7 +7,7 @@ that goes into cycle-manifest.json under "media": the image model the cycle will
 use, the Skill 74 steps every paid job runs, and where Skill 67 (video) lives.
 
 Policy (owner order 2026-10-05, AGENTS.md N43, 07-kie-setup/references/kie-common-rules.md):
-  * Social images are KIE GPT Image 2.5 Sunburst. Rule 13 keeps that default at the newest
+  * Social images are KIE GPT Image 2.6 Sunburst. Rule 13 keeps that default at the newest
     GPT Image generation: the resolver is `kie_live_adapter.py latest-family --family gpt-image`
     (Skill 74). This script makes no network call; the cycle agent runs the resolver.
   * Nano Banana, Midjourney, Ideogram and any other non-GPT-Image id in image-model.json is
@@ -36,8 +36,8 @@ import re
 import sys
 from pathlib import Path
 
-DEFAULT_T2I = "gpt-image-2-5-sunburst-text-to-image"
-DEFAULT_I2I = "gpt-image-2-5-sunburst-image-to-image"
+DEFAULT_T2I = "gpt-image-2-6/sunburst-text-to-image"
+DEFAULT_I2I = "gpt-image-2-6/sunburst-image-to-image"
 DEFAULT_VIDEO_REQUEST = "veo3_lite"  # Skill 35 default request; the Skill 67 selector decides
 MODEL_KEYS = ("model", "image_model", "default_model", "default", "primary")
 VIDEO_MODEL_KEYS = ("model", "video_model", "provider_model", "engine", "default_model")
@@ -77,9 +77,9 @@ def judge_image_model(requested):
     if g:
         gen = (int(g.group(1)), int(g.group(2) or 0))
         if gen >= (2, 5):
-            return True, "GPT Image 2.5 or newer"
+            return True, "GPT Image 2.6 or newer"
         return False, "GPT Image generation below 2.5 (legacy gpt-image-2 is only for 3:1, 1:3 and 9:21, AGENTS.md N43); Skill 35 needs 2.5 or newer"
-    return False, "not a Skill 35 image route (owner order 2026-10-05: social images are GPT Image 2.5 Sunburst)"
+    return False, "not a Skill 35 image route (owner order 2026-10-05: social images are GPT Image 2.6 Sunburst)"
 
 
 def scan_banned(obj, fname, path=""):

@@ -105,7 +105,7 @@ above is used.
 
 Skill 66 (kie-image) owns image model selection for every Kie image job, including the hero
 visual. Hand the hero prompt and the 16:9 ratio to Skill 66; it applies the fleet image pin
-(AGENTS.md N43: the `gpt-image-2-5-sunburst-*` family, with the legacy `gpt-image-2-*` route
+(AGENTS.md N43: the `gpt-image-2-6/sunburst-*` family, with the legacy `gpt-image-2-*` route
 only for 3:1, 1:3, and 9:21) and validates the payload before dispatch. Do NOT pick a model,
 set a default, or fall back to another family in this skill, and never bake a model string into
 the script. RECORD the exact model id that Skill 66 returned in the run manifest, `visual.json`,

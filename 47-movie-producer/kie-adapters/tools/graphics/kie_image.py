@@ -1,8 +1,8 @@
 """KIE.ai image generation adapter for OpenMontage (Skill 47).
 
 Provides capability "image_generation" via the KIE.ai API using the
-gpt-image-2-5-sunburst-image-to-image model (for edit/reference jobs) or the
-gpt-image-2-5-sunburst-text-to-image model (for text-to-image jobs when no source
+gpt-image-2-6/sunburst-image-to-image model (for edit/reference jobs) or the
+gpt-image-2-6/sunburst-text-to-image model (for text-to-image jobs when no source
 image is supplied).
 
 ONE KIE PATH: this file is a thin BaseTool wrapper. Every KIE call (upload,
@@ -29,14 +29,14 @@ INSTALL NOTE (Skill 47 INSTALL.md):
 
 API references (do NOT modify without verifying against fleet receipts):
   - Model ids:       46-kie-callback-relay/kie-slide-submitter.js
-                       MODEL_TIMEOUTS gpt-image-2-5-sunburst-image-to-image /
-                       gpt-image-2-5-sunburst-text-to-image
+                       MODEL_TIMEOUTS gpt-image-2-6/sunburst-image-to-image /
+                       gpt-image-2-6/sunburst-text-to-image
   - createTask body: model, input.prompt, input.input_urls (image-to-image only),
                        input.aspect_ratio, input.resolution (plus optional
                        background); no output_format
   - Reference field: the documented sunburst image-to-image schema field is
                        `input_urls` (required, array, maxItems 16; docs.kie.ai
-                       /market/gpt/gpt-image-2-5-sunburst-image-to-image, read
+                       /market/gpt/gpt-image-2-6/sunburst-image-to-image, read
                        2026-10-05; AGENTS.md N43), not the Nano Banana
                        `image_input`.
   - Transport:       74-kie-live-adapter/references/adapter-contract.md
@@ -73,10 +73,10 @@ from tools.base_tool import (
 )
 
 # Model ids verified in 46-kie-callback-relay/kie-slide-submitter.js MODEL_TIMEOUTS.
-_MODEL_EDIT = "gpt-image-2-5-sunburst-image-to-image"   # when source image(s) provided
-_MODEL_TEXT = "gpt-image-2-5-sunburst-text-to-image"    # when no source image
+_MODEL_EDIT = "gpt-image-2-6/sunburst-image-to-image"   # when source image(s) provided
+_MODEL_TEXT = "gpt-image-2-6/sunburst-text-to-image"    # when no source image
 
-# Input fields each model's live schema DECLARES (docs.kie.ai/market/gpt/gpt-image-2-5-
+# Input fields each model's live schema DECLARES (docs.kie.ai/market/gpt/gpt-image-2-6-
 # sunburst-text-to-image and ...-image-to-image, read 2026-10-05). The createTask input is
 # built ONLY from these; undeclared fields (for example `output_format`, which neither
 # schema documents) are never sent.
@@ -193,8 +193,8 @@ class KieImage(BaseTool):
     this tool and prefers it when KIE_API_KEY is set and other paid providers
     are UNAVAILABLE (their keys are absent).
 
-    Supports both text-to-image (gpt-image-2-5-sunburst-text-to-image) and
-    image-edit/reference jobs (gpt-image-2-5-sunburst-image-to-image) with up to 8
+    Supports both text-to-image (gpt-image-2-6/sunburst-text-to-image) and
+    image-edit/reference jobs (gpt-image-2-6/sunburst-image-to-image) with up to 8
     source images at 2K resolution, 16:9 aspect ratio.
     """
 
@@ -260,7 +260,7 @@ class KieImage(BaseTool):
                 "items": {"type": "string"},
                 "description": (
                     "Up to 8 reference image URLs.  When provided, the adapter "
-                    "uses gpt-image-2-5-sunburst-image-to-image (edit/reference mode).  "
+                    "uses gpt-image-2-6/sunburst-image-to-image (edit/reference mode).  "
                     "Each URL must be publicly reachable by KIE servers; "
                     "upload local files first via the KIE base64-upload API."
                 ),
@@ -437,7 +437,7 @@ class KieImage(BaseTool):
         Request body shape handed to Skill 74 submit:
 
           {
-            "model": "gpt-image-2-5-sunburst-image-to-image" | "gpt-image-2-5-sunburst-text-to-image",
+            "model": "gpt-image-2-6/sunburst-image-to-image" | "gpt-image-2-6/sunburst-text-to-image",
             "input": {
               "prompt": <str>,
               "input_urls": [<url>, ...],    # only when source images provided (documented field)
@@ -458,7 +458,7 @@ class KieImage(BaseTool):
 
         start = time.time()
         prompt = inputs.get("prompt", "")
-        # gpt-image-2.5 has no dedicated negative-prompt field, so forward it in-prompt
+        # gpt-image-2-6 has no dedicated negative-prompt field, so forward it in-prompt
         # (the documented way to steer it away from unwanted content).
         negative_prompt = str(inputs.get("negative_prompt", "") or "").strip()
         if negative_prompt:
@@ -759,7 +759,7 @@ def extract_results(resp):
 # ------------------------------------------------- registry / limits helpers
 FLOOR_PCT, TARGET_PCT, PREFLIGHT_MULT = 80, 95, 1.30
 # Owner order 2026-10-05: prompts use 95-100% of a model's max, never below 80%.
-KNOWN_DEFAULTS = {"gpt-image": "gpt-image-2-5-sunburst-text-to-image"}  # last-resort default (N43 today)
+KNOWN_DEFAULTS = {"gpt-image": "gpt-image-2-6/sunburst-text-to-image"}  # last-resort default (N43 today)
 DEFAULT_CAPS = {"gpt-image": ["Text to Image", "Image to Image"]}
 LATEST_TTL = CATALOG_TTL
 REGISTRY_STALE_DAYS = 30

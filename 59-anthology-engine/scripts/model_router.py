@@ -984,7 +984,7 @@ def _synthetic_resolved_map() -> dict:
         "<CLIENT_LIGHT_FALLBACK1_MODEL>": "minimaxai/minimax-v3",
         "<CLIENT_JUDGE_PRIMARY_MODEL>": "minimax-v3",
         "<CLIENT_LONGCTX_MODEL>": "deepseek-v4.1-flash",
-        "<CLIENT_IMAGE_MODEL>": "gpt-image-2-5-sunburst-text-to-image",
+        "<CLIENT_IMAGE_MODEL>": "gpt-image-2-6/sunburst-text-to-image",
         "<CLIENT_OLLAMA_CLOUD_KEY_LABEL>": "OLLAMA_API_KEY",
         "<CLIENT_OPENROUTER_KEY_LABEL>": "OPENROUTER_API_KEY",
         "<CLIENT_GEMINI_KEY_LABEL>": "GOOGLE_API_KEY",

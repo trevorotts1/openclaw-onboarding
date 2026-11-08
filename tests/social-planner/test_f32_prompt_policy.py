@@ -5,7 +5,7 @@ test_f32_prompt_policy.py — F32 social-planner prompt structure + length polic
 
 Covers:
   - The count rule: len(unicodedata.normalize("NFC", final).strip()) with the
-    rule 12 boundaries for GPT Image 2.5 (maxLength 20,000, from the shared
+    rule 12 boundaries for GPT Image 2.6 (maxLength 20,000, from the shared
     enforcer): 15,999 and 20,001 fail; 16,000 (floor), 19,000 (95 percent) and
     20,000 (max) pass length but still require semantic QC);
   - Python/TS parity for the counting rule (TS mirror: Array.from(normalized
@@ -73,7 +73,7 @@ def sized(n: int) -> str:
 
 
 class TestCountRuleBoundaries(unittest.TestCase):
-    """Rule 12 for GPT Image 2.5 (max 20,000): 15,999 and 20,001 fail; 16,000 (floor),
+    """Rule 12 for GPT Image 2.6 (max 20,000): 15,999 and 20,001 fail; 16,000 (floor),
     19,000 and 20,000 pass length (semantic QC still required). Measured on
     NFC-normalized, stripped payloads."""
 
@@ -166,7 +166,7 @@ class TestPaddingRejected(unittest.TestCase):
         self.assertTrue(any("AF-PROMPT-PADDING" in p for p in problems), problems)
 
     def test_genuine_expansion_not_flagged(self):
-        r = spc.compile_prompt(dict(BRIEF_OK), "kie", "gpt-image-2-5-sunburst-text-to-image")
+        r = spc.compile_prompt(dict(BRIEF_OK), "kie", "gpt-image-2-6/sunburst-text-to-image")
         self.assertFalse(any("AF-PROMPT-PADDING" in p for p in r["problems"]),
                          r["problems"])
 
@@ -181,7 +181,7 @@ class TestPaddingRejected(unittest.TestCase):
 
     def test_kie_short_brief_is_rewritten_into_the_rule_12_band(self):
         r = spc.compile_prompt({"audience": "dental patients", "theme": "brighter smile"},
-                               "kie", "gpt-image-2-5-sunburst-text-to-image")
+                               "kie", "gpt-image-2-6/sunburst-text-to-image")
         self.assertTrue(r["ok"], r["problems"])
         self.assertTrue(19000 <= r["count"] <= 20000, r["count"])  # 95 to 100 percent of 20,000
         self.assertEqual(r["band"]["status"], "OK")
@@ -238,7 +238,7 @@ class TestPolicyAndReceipt(unittest.TestCase):
         self.assertEqual(pol["length_rule"]["enforcer"], "shared-utils/kie_prompt_enforcer.py")
         self.assertEqual(pol["length_rule"]["floor_percent_of_max"], 80)
         self.assertIn("SOCIAL PLANNER ONLY", pol["scope"])
-        kie = pol["providers"]["kie-gpt-image-2-5"]
+        kie = pol["providers"]["kie-gpt-image-2-6"]
         self.assertEqual(kie["vendor_cap_chars"], 20000)  # published schema cap
         agnes = pol["providers"]["agnes-image-2.1-flash"]
         self.assertIsNone(agnes["vendor_cap_chars"])
@@ -246,7 +246,7 @@ class TestPolicyAndReceipt(unittest.TestCase):
         self.assertIn("uncertainty", agnes["uncertainty_note"].lower())
 
     def test_compile_receipt_fields(self):
-        r = spc.compile_prompt(dict(BRIEF_OK), "kie", "gpt-image-2-5-sunburst-text-to-image")
+        r = spc.compile_prompt(dict(BRIEF_OK), "kie", "gpt-image-2-6/sunburst-text-to-image")
         self.assertTrue(r["ok"], r["problems"])
         for field in ("hash", "count", "policy_version", "provider", "model",
                       "capability_source", "token_estimate", "vendor_cap_chars",
@@ -306,17 +306,17 @@ class TestPregenGateF32(unittest.TestCase):
                 pass
 
     def test_gate_15999_fails_16000_passes(self):
-        proc = self._run_gate(sized(15999), "gpt-image-2-5-sunburst-text-to-image")
+        proc = self._run_gate(sized(15999), "gpt-image-2-6/sunburst-text-to-image")
         self.assertEqual(proc.returncode, 3, proc.stderr)
         self.assertIn("AF-PROMPT-LENGTH", proc.stderr)
         self.assertIn("ADD at least 1 chars", proc.stderr)
-        proc = self._run_gate(sized(16000), "gpt-image-2-5-sunburst-text-to-image")
+        proc = self._run_gate(sized(16000), "gpt-image-2-6/sunburst-text-to-image")
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
     def test_gate_20000_passes_20001_fails(self):
-        proc = self._run_gate(sized(20000), "gpt-image-2-5-sunburst-text-to-image")
+        proc = self._run_gate(sized(20000), "gpt-image-2-6/sunburst-text-to-image")
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        proc = self._run_gate(sized(20001), "gpt-image-2-5-sunburst-text-to-image")
+        proc = self._run_gate(sized(20001), "gpt-image-2-6/sunburst-text-to-image")
         self.assertEqual(proc.returncode, 3, proc.stderr)
         self.assertIn("CUT exactly 1 chars", proc.stderr)
 
@@ -326,7 +326,7 @@ class TestPregenGateF32(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr)
 
     def test_gate_capability_routing_admits_gpt_image25_and_agnes(self):
-        for model, n in (("gpt-image-2-5-sunburst-text-to-image", 19000), ("agnes-image-2.1-flash", 9000),
+        for model, n in (("gpt-image-2-6/sunburst-text-to-image", 19000), ("agnes-image-2.1-flash", 9000),
                          ("ideogram-v3-design", 4800)):
             proc = self._run_gate(sized(n), model)
             self.assertEqual(proc.returncode, 0,

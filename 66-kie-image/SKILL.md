@@ -2,7 +2,7 @@
 name: kie-image
 description: >
   KIE Image generation via the KIE.ai Market API. Owns model selection across
-  14 image families (GPT Image 2.5, Qwen Image 3.0/Pro, Seedream 5.0 Pro/Lite/4.5,
+  14 image families (GPT Image 2.6, Qwen Image 3.0/Pro, Seedream 5.0 Pro/Lite/4.5,
   Nano Banana 2/2 Lite/Pro/legacy, Wan 2.7 Image, FLUX.2, Z-Image, Ideogram V3,
   Imagen 4), payload validation against a machine-readable registry, prompt
   sizing against published limits, asynchronous task dispatch with callbacks or
@@ -30,7 +30,7 @@ wait (callback or poll), and visually QC the result.
    catalog** (owner order 2026-10-05: if a new GPT Image model comes out, the
    system moves to it automatically; resolved by Skill 74 `latest-family`, with
    the `models.json` default as the fallback when the adapter is absent or
-   unreachable; today that is GPT Image 2.5 Sunburst), preferred for high-fidelity general KIE
+   unreachable; today that is GPT Image 2.6 Sunburst), preferred for high-fidelity general KIE
    image generation/editing, product/brand images, and detailed long-form
    creative instructions (owner's preference, operator ruling 2026-09-09,
    supersedes GPT Image 2), when compatible (respecting its ratio/resolution
@@ -91,7 +91,7 @@ Key cap facts (full matrix: `references/models.md`):
   2026-08-27 — authoritative for GPT Image 2 only; docs page's "maximum
   20,000 characters" is stale; warn-only, never hard-fail; house band
   5,000–19,000 with ~9,000 target is legal).
-- GPT Image 2.5 (default today, operator ruling 2026-09-09): 20,000 chars per KIE
+- GPT Image 2.6 (default today, operator ruling 2026-09-09): 20,000 chars per KIE
   docs dated 2026-09-09 (`DOCS`, NOT owner-confirmed — the GPT Image 2 25,000
   confirmation does not carry forward and has not been retested on 2.5).
 - Qwen 3.0/Pro: 4.5K **tokens** advertised — token-aware validation only; never
@@ -138,7 +138,7 @@ chars to CUT), 80-95% warns. Unknown limit: UNKNOWN, no floor. Verbatim content
 6. **references/qc.md** — real visual QC checklist + retry ladder.
 7. **INSTRUCTIONS.md** — daily usage walkthrough.
 8. **INSTALL.md** — credential check + connect verification.
-9. **EXAMPLES.md** — copy-paste curl payloads (GPT Image 2.5 t2i/i2i, Wan bbox,
+9. **EXAMPLES.md** — copy-paste curl payloads (GPT Image 2.6 t2i/i2i, Wan bbox,
    Seedream i2i, NB2 i2i).
 10. **CORE_UPDATES.md** — core-file wiring (performed by `wire.sh`).
 11. **QC.md** — verification checklist.
@@ -153,11 +153,11 @@ chars to CUT), 80-95% warns. Unknown limit: UNKNOWN, no floor. Verbatim content
 - **Validators run before dispatch.** Never send too many refs, an illegal
   ratio/resolution for the model, an over-limit prompt, or an unsupported mode
   combination.
-- **GPT Image 2 / GPT Image 2.5 ratio rules are hard, and are SEPARATE rule
+- **GPT Image 2 / GPT Image 2.6 ratio rules are hard, and are SEPARATE rule
   sets (operator ruling 2026-09-09, never merged):**
   - GPT Image 2 (legacy, 3:1/1:3/9:21 route only): 2K/4K exclude 5:4, 4:5,
     3:1, 1:3, 9:21; `auto` yields 1K only; 1:1 cannot convert to 4K.
-  - GPT Image 2.5 (default): 2K/4K exclude 27:16, 16:27, 9:8, 8:9 (1K only).
+  - GPT Image 2.6 (default): 2K/4K exclude 27:16, 16:27, 9:8, 8:9 (1K only).
     The legacy `auto`-1K-only and `1:1`-never-4K rules are RETIRED here —
     not restated in the 2.5 docs. 5:4, 4:5, 2:1, 1:2 are served via an
     operator-approved substitution (5:4→4:3, 4:5→3:4, 2:1→16:9, 1:2→9:16);

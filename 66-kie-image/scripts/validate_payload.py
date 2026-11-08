@@ -318,7 +318,7 @@ def validate(payload, model_id_override=None):
     # aspect ratios 3:1, 1:3, 9:21 only) per-resolution exclusions -- rules
     # UNCHANGED from the original 2026-08-26 docs. Matched by EXACT id, not a
     # "gpt-image-2" prefix: that prefix also matches the new
-    # gpt-image-2-5-sunburst-* ids, which carry a different (see below), not
+    # gpt-image-2-6/sunburst-* ids, which carry a different (see below), not
     # merged, rule set (operator ruling 2026-09-09, Ruling 3/6).
     if model.get("canonical_model_id") in (
             "gpt-image-2-text-to-image", "gpt-image-2-image-to-image"):
@@ -332,16 +332,16 @@ def validate(payload, model_id_override=None):
         if ratio == "1:1" and res == "4K":
             errors.append("GPT Image 2 (legacy): 1:1 aspect ratio cannot be converted to 4K images")
 
-    # GPT Image 2.5 Sunburst (operator default, ruling 2026-09-09) per-resolution
+    # GPT Image 2.6 Sunburst (operator default, ruling 2026-09-09) per-resolution
     # exclusions -- a NEW, separate rule set. The legacy 'auto -> 1K only' and
     # '1:1 cannot convert to 4K' rules are RETIRED here; not restated in the
     # 2.5 docs (Ruling 3).
     if model.get("canonical_model_id") in (
-            "gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-5-sunburst-image-to-image"):
+            "gpt-image-2-6/sunburst-text-to-image", "gpt-image-2-6/sunburst-image-to-image"):
         excl = model.get("ratio_resolution_exclusions") or []
         if res in ("2K", "4K") and ratio in excl:
             errors.append(
-                "GPT Image 2.5: aspect ratio %s is 1K-only (2K/4K excluded: 27:16, 16:27, 9:8, "
+                "GPT Image 2.6: aspect ratio %s is 1K-only (2K/4K excluded: 27:16, 16:27, 9:8, "
                 "8:9); %s requested" % (ratio, res))
 
     # ---- Wan ---------------------------------------------------------------
@@ -489,34 +489,34 @@ def selftest():
          _base("gpt-image-2-text-to-image", {"aspect_ratio": "auto", "resolution": "2K"}), False,
          expect_err_contains="auto")
 
-    # GPT Image 2.5 Sunburst resolution/ratio rules (operator ruling 2026-09-09,
+    # GPT Image 2.6 Sunburst resolution/ratio rules (operator ruling 2026-09-09,
     # NEW rule set -- separate from and NOT merged with the legacy rules above)
-    case("gpt-image-2.5 4K with 9:8 FAIL",
-         _base("gpt-image-2-5-sunburst-text-to-image", {"aspect_ratio": "9:8", "resolution": "4K"}), False,
+    case("gpt-image-2-6 4K with 9:8 FAIL",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "9:8", "resolution": "4K"}), False,
          expect_err_contains="1K-only")
-    case("gpt-image-2.5 2K with 16:27 FAIL",
-         _base("gpt-image-2-5-sunburst-text-to-image", {"aspect_ratio": "16:27", "resolution": "2K"}), False,
+    case("gpt-image-2-6 2K with 16:27 FAIL",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "16:27", "resolution": "2K"}), False,
          expect_err_contains="1K-only")
-    case("gpt-image-2.5 1K with 9:8 OK",
-         _base("gpt-image-2-5-sunburst-text-to-image", {"aspect_ratio": "9:8", "resolution": "1K"}), True)
-    case("gpt-image-2.5 4K with 16:9 OK",
-         _base("gpt-image-2-5-sunburst-text-to-image", {"aspect_ratio": "16:9", "resolution": "4K"}), True)
+    case("gpt-image-2-6 1K with 9:8 OK",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "9:8", "resolution": "1K"}), True)
+    case("gpt-image-2-6 4K with 16:9 OK",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "16:9", "resolution": "4K"}), True)
     # Legacy-only rules are RETIRED on 2.5: auto at 2K, and 1:1 at 4K, are fine.
-    case("gpt-image-2.5 auto with 2K OK (legacy rule retired)",
-         _base("gpt-image-2-5-sunburst-text-to-image", {"aspect_ratio": "auto", "resolution": "2K"}), True)
-    case("gpt-image-2.5 1:1 to 4K OK (legacy rule retired)",
-         _base("gpt-image-2-5-sunburst-text-to-image", {"aspect_ratio": "1:1", "resolution": "4K"}), True)
-    # 3:1/1:3/9:21 are not in the 2.5 enum at all -- a payload built against the
-    # 2.5 model with one of these ratios is a misroute (those route to the
-    # retained legacy model upstream in the selector) and fails the plain enum
-    # check, not the 2.5-specific 1K-only rule.
-    case("gpt-image-2.5 with 3:1 FAIL (not in 2.5 enum; belongs on legacy route)",
-         _base("gpt-image-2-5-sunburst-text-to-image", {"aspect_ratio": "3:1"}), False,
-         expect_err_contains="not in exposed enum")
-    case("gpt-image-2.5 i2i 16 refs OK (carried forward unchanged from legacy)",
-         _base("gpt-image-2-5-sunburst-image-to-image", {"input_urls": _refs(16)}), True)
-    case("gpt-image-2.5 i2i 17 refs FAIL (carried forward unchanged from legacy)",
-         _base("gpt-image-2-5-sunburst-image-to-image", {"input_urls": _refs(17)}), False,
+    case("gpt-image-2-6 auto with 2K OK (legacy rule retired)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "auto", "resolution": "2K"}), True)
+    case("gpt-image-2-6 1:1 to 4K OK (legacy rule retired)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "1:1", "resolution": "4K"}), True)
+    # 3:1/1:3/9:21 ARE served by 2.6 natively (vendor 2.6 OpenAPI enum; live probe
+    # 2026-11-08 created a 3:1 task, HTTP 200). The legacy gpt-image-2 route is a
+    # fallback, not a requirement.
+    case("gpt-image-2-6 with 3:1 OK (served natively since 2026-11-08)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "3:1"}), True)
+    case("gpt-image-2-6 with 9:21 OK (served natively since 2026-11-08)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "9:21"}), True)
+    case("gpt-image-2-6 i2i 16 refs OK (carried forward unchanged from legacy)",
+         _base("gpt-image-2-6/sunburst-image-to-image", {"input_urls": _refs(16)}), True)
+    case("gpt-image-2-6 i2i 17 refs FAIL (carried forward unchanged from legacy)",
+         _base("gpt-image-2-6/sunburst-image-to-image", {"input_urls": _refs(17)}), False,
          expect_err_contains="exceeds published maximum 16")
 
     # Wan n / bbox

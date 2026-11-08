@@ -35,7 +35,7 @@ os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)
 
 import kie_prompt_enforcer as K  # noqa: E402
 
-M = "gpt-image-2-5-sunburst-text-to-image"  # maxLength 20,000 in the registry snapshot
+M = "gpt-image-2-6/sunburst-text-to-image"  # maxLength 20,000 in the registry snapshot
 MAX = 20000
 
 

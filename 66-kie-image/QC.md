@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 Enables the agent to generate images through the KIE.ai Market API across 14
-image families (GPT Image 2.5, Qwen Image 3.0/Pro, Seedream 5.0 Pro/Lite/4.5,
+image families (GPT Image 2.6, Qwen Image 3.0/Pro, Seedream 5.0 Pro/Lite/4.5,
 Nano Banana 2/2 Lite/Pro/legacy, Wan 2.7 Image, FLUX.2, Z-Image, Ideogram V3,
 Imagen 4), with machine-readable registry, model-aware prompt validation
 (spec 5 rules A-E), payload validation before dispatch, async createTask +
@@ -42,7 +42,7 @@ recordInfo/callback waiting, and MANDATORY real visual QC (spec 7.6).
 - [ ] Confirm the agent can explain: createTask 200 ≠ done; state enum
       waiting/queuing/generating/success/fail; 429 = rate limited (back off);
       callbacks are HMAC-SHA256 signed; retention (KIE documents 14 days for generated media but result URLs typically expire after 24 hours; persist immediately);
-      GPT Image 2.5 (default) ratio exclusions at 2K/4K (27:16, 16:27, 9:8,
+      GPT Image 2.6 (default) ratio exclusions at 2K/4K (27:16, 16:27, 9:8,
       8:9 — 1K only); GPT Image 2 (legacy, retained for 3:1/1:3/9:21 only)
       ratio exclusions at 2K/4K (5:4, 4:5, 3:1, 1:3, 9:21), "auto" → 1K only,
       1:1 never 4K — two separate rule sets, never merged.
@@ -60,7 +60,7 @@ recordInfo/callback waiting, and MANDATORY real visual QC (spec 7.6).
 - [ ] Visual asset inspection: download the full-resolution asset and inspect
       it — never QC from a filename or a 200 OK.
 - [ ] Dimensions vs requested: GPT Image 2 (legacy) auto→1K only, 1:1 never
-      4K; GPT Image 2.5 (default) 27:16/16:27/9:8/8:9 are 1K only — either
+      4K; GPT Image 2.6 (default) 27:16/16:27/9:8/8:9 are 1K only — either
       way, excluded ratios never silently returned at 2K/4K; Seedream tier
       maps to the expected resolution; refs respect Wan's min 240 px INPUT
       rule.

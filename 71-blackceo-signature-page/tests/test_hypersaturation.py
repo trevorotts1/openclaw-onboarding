@@ -40,7 +40,7 @@ CLIENT = {"primary": "#0B5FFF", "secondary": "#0A0A12", "accent": "#FFB400",
 EXAMPLE_COLORS = ("#BF031C", "#BB0102", "#B80000", "#1ED650", "#E4A967", "#C9A227", "#A64335")
 SECTION = {"section_id": "S01", "section_name": "Hero", "copy": "You are doing every job. CTA: SAVE MY SEAT.",
            "slots": [{"slot_id": "IMG-001", "aspect_ratio": "3:4", "art_direction": "Founder at a desk."}]}
-REQUEST = {"model": "gpt-image-2-5-sunburst-image-to-image", "style": "client colors",
+REQUEST = {"model": "gpt-image-2-6/sunburst-image-to-image", "style": "client colors",
            "stage_prompts": {"visual-mockup": "Mockup {section_number} {section_name} {width} {ratio} {copy} {slots}",
                              "desktop-wireframe": "Wireframe {section_number} {copy} {slots}"}}
 

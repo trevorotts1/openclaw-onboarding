@@ -105,7 +105,7 @@ Routing policy (spec 7.5), in order:
 1. Explicit user pick wins — capability match, never "fixed" into something else.
 2. Else the GPT Image default: the NEWEST GPT Image generation in KIE's live catalog
    (owner order 2026-10-05, resolved by Skill 74 `latest-family`; models.json default
-   when the adapter is absent or unreachable; today GPT Image 2.5 Sunburst) is the
+   when the adapter is absent or unreachable; today GPT Image 2.6 Sunburst) is the
    preferred default (operator ruling 2026-09-09,
    supersedes GPT Image 2; high-fidelity general generation/editing,
    product/brand, detailed long-form creative) when compatible — mind the
@@ -135,7 +135,7 @@ the exact number to CUT; 80-95% passes with a warning to expand. Unknown limit:
 UNKNOWN warning, no floor. Verbatim content (spoken text, lyrics) has no floor.
 Without the adapter the limit is the models.json cap. Per-model figures today:
 
-- GPT Image 2.5 (default): 20,000 (live schema). Legacy GPT Image 2: 20,000 in the live
+- GPT Image 2.6 (default): 20,000 (live schema). Legacy GPT Image 2: 20,000 in the live
   schema, which is the hard limit (KIE rejects longer prompts); the 25,000 that N43 recorded
   as owner-confirmed is superseded by KIE's live schema as of 2026-10-05, and the validator
   prints a warning saying so.
@@ -164,7 +164,7 @@ STEP 4: VALIDATE (BEFORE DISPATCH — NEVER AFTER)
   model, or a --strict warning); exit 2 above the max.
 - validate_payload: reference counts, MB/format, ratio/resolution enums,
   per-family rules (GPT Image 2 per-resolution exclusions and auto/1:1 rules
-  for the retained legacy route; GPT Image 2.5's own separate, NOT merged,
+  for the retained legacy route; GPT Image 2.6's own separate, NOT merged,
   1K-only exclusion list for the default route; Wan n 1–4 / gallery 1–12
   with enable_sequential, bbox <=2 per image, inputs min 240px and max 10MB;
   Qwen max 3 refs; legacy NB 10MB not 30MB; Z-Image T2I-only; Ideogram
@@ -243,7 +243,7 @@ PRACTICAL NUMBERS (from models.json, verified 2026-08-26)
 
 - Rate: 20 new generation requests / 10 seconds; 100+ concurrent per account.
 - Retention: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
-- GPT Image 2 / GPT Image 2.5 refs: max 16, 30MB, JPEG/PNG/WEBP/JPG (carried
+- GPT Image 2 / GPT Image 2.6 refs: max 16, 30MB, JPEG/PNG/WEBP/JPG (carried
   forward unchanged on 2.5); resolution 1K/2K/4K.
 - Qwen refs: max 3, 10MB each, six formats; resolution 1K/2K only.
 - Wan refs: max 9, 10MB, min 240px per side; resolution 1K/2K (Pro +4K, T2I only).

@@ -1045,7 +1045,7 @@ resolved from the registry at build time, never a name typed from memory.
       "height": 900,
       "generation": {
         "route": "kie-gpt-image",
-        "model_id": "gpt-image-2-5-sunburst-text-to-image",
+        "model_id": "gpt-image-2-6/sunburst-text-to-image",
         "model_source": "latest-family",
         "resolution": "4K",
         "layout_reference": "desktop-wireframe/section-01.png",
@@ -1069,7 +1069,7 @@ resolved from the registry at build time, never a name typed from memory.
       "height": 760,
       "generation": {
         "route": "kie-gpt-image",
-        "model_id": "gpt-image-2-5-sunburst-text-to-image",
+        "model_id": "gpt-image-2-6/sunburst-text-to-image",
         "model_source": "latest-family",
         "resolution": "4K",
         "layout_reference": "desktop-wireframe/section-02.png",

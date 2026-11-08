@@ -96,7 +96,7 @@ validation error (`recordInfo is null`), 429 rate limited, 433, 455 maintenance,
 ### 6.1 GPT Image 2 (Legacy)
 
 LEGACY route, retained by operator ruling 2026-09-09 for aspect ratios 3:1,
-1:3, 9:21 only — GPT Image 2.5 Sunburst (6.1b, below) is now the default.
+1:3, 9:21 only — GPT Image 2.6 Sunburst (6.1b, below) is now the default.
 This section's schema is UNCHANGED.
 
 t2i model `gpt-image-2-text-to-image`; i2i model `gpt-image-2-image-to-image`.
@@ -115,13 +115,13 @@ t2i model `gpt-image-2-text-to-image`; i2i model `gpt-image-2-image-to-image`.
   ratio parameter will only be converted to 1K images"; "Images with a 1:1
   aspect ratio cannot be converted to 4K images".
 
-### 6.1b GPT Image 2.5 Sunburst (Default, operator ruling 2026-09-09)
+### 6.1b GPT Image 2.6 Sunburst (Default, operator ruling 2026-09-09)
 
 OWNER-PREFERRED DEFAULT, supersedes GPT Image 2 above. Two-model system: this
 route does NOT serve 3:1, 1:3, 9:21 (those dispatch to 6.1 above instead).
 
-t2i model `gpt-image-2-5-sunburst-text-to-image`; i2i model
-`gpt-image-2-5-sunburst-image-to-image`.
+t2i model `gpt-image-2-6/sunburst-text-to-image`; i2i model
+`gpt-image-2-6/sunburst-image-to-image`.
 
 - `prompt` (required; max 20,000 chars per KIE docs dated 2026-09-09 — DOCS
   status, NOT owner-confirmed; the GPT Image 2 25K owner-confirmation does

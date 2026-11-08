@@ -151,8 +151,16 @@ def validate_prompt(prompt, model_id, strict=False):
 # ---------------------------------------------------------------------------
 
 # (name, prompt chars, model, expected_valid, expected_status, expected_hard_cap_flag)
-# Bridge off: limits come from models.json (gpt-2.5 20,000 DOCS; legacy gpt-image-2 20,000 live schema (N43 25,000 superseded);
+# Bridge off: limits come from models.json (gpt-2.6 32,000 DOCS as of 2026-11-08; legacy gpt-image-2 20,000 live schema (N43 25,000 superseded);
 # wan/ideogram/imagen 5,000 verified; seedream not published -> UNKNOWN).
+# Vendor 2.6 OpenAPI maxLength, checked 2026-11-08 (supersedes the 2.5 20,000 figure).
+# The gpt-2.6 fixtures derive from it, so a future cap correction is one line.
+CAP_26 = 32000
+_26_95 = int(CAP_26 * 0.95)
+_26_96 = int(CAP_26 * 0.96)
+_26_94 = int(CAP_26 * 0.94)
+_26_80 = int(CAP_26 * 0.80)
+
 STATIC_CASES = [
     ("wan 5000 = max ok", 5000, "wan/2-7-image", True, "PASS", False),
     ("wan 5001 above max", 5001, "wan/2-7-image", False, "ABOVE_MAX", True),
@@ -161,18 +169,19 @@ STATIC_CASES = [
      "BELOW_TARGET", False),
     ("wan 3999 below 80% hard floor rejected", 3999, "wan/2-7-image", False, "BELOW_FLOOR", False),
     ("wan 4000 = 80% floor now FAILS", 4000, "wan/2-7-image", False, "BELOW_TARGET", False),
-    ("gpt-2.5 20000 = max ok", 20000, "gpt-image-2-5-sunburst-text-to-image", True, "PASS", False),
-    ("gpt-2.5 19000 = 95% ok", 19000, "gpt-image-2-5-sunburst-text-to-image", True, "PASS", False),
-    ("gpt-2.5 19200 = 96% ok", 19200, "gpt-image-2-5-sunburst-text-to-image", True, "PASS", False),
-    ("gpt-2.5 18800 = 94% FAILS", 18800, "gpt-image-2-5-sunburst-text-to-image", False,
+    ("gpt-2.6 32000 = max ok", CAP_26, "gpt-image-2-6/sunburst-text-to-image", True, "PASS", False),
+    ("gpt-2.6 30400 = 95% ok", _26_95, "gpt-image-2-6/sunburst-text-to-image", True, "PASS", False),
+    ("gpt-2.6 30720 = 96% ok", _26_96, "gpt-image-2-6/sunburst-text-to-image", True, "PASS", False),
+    ("gpt-2.6 30080 = 94% FAILS", _26_94, "gpt-image-2-6/sunburst-text-to-image", False,
      "BELOW_TARGET", False),
-    ("gpt-2.5 20001 above max rejected", 20001, "gpt-image-2-5-sunburst-text-to-image", False, "ABOVE_MAX", True),
-    ("gpt-2.5 16000 = 80% floor now FAILS", 16000, "gpt-image-2-5-sunburst-text-to-image", False,
+    ("gpt-2.6 32001 above max rejected", CAP_26 + 1, "gpt-image-2-6/sunburst-text-to-image", False, "ABOVE_MAX", True),
+    ("gpt-2.6 25600 = 80% floor now FAILS", _26_80, "gpt-image-2-6/sunburst-text-to-image", False,
      "BELOW_TARGET", False),
-    ("gpt-2.5 15999 under 80% rejected", 15999, "gpt-image-2-5-sunburst-text-to-image", False, "BELOW_FLOOR", False),
-    ("gpt-2.5 9500 (old house target) now rejected", 9500, "gpt-image-2-5-sunburst-text-to-image", False,
+    ("gpt-2.6 25599 under 80% rejected", _26_80 - 1, "gpt-image-2-6/sunburst-text-to-image", False,
      "BELOW_FLOOR", False),
-    ("gpt-2.5 300 chars rejected", 300, "gpt-image-2-5-sunburst-text-to-image", False, "BELOW_FLOOR", False),
+    ("gpt-2.6 9500 (old house target) now rejected", 9500, "gpt-image-2-6/sunburst-text-to-image", False,
+     "BELOW_FLOOR", False),
+    ("gpt-2.6 300 chars rejected", 300, "gpt-image-2-6/sunburst-text-to-image", False, "BELOW_FLOOR", False),
     ("legacy gpt-image-2 20000 = live schema max ok", 20000, "gpt-image-2-text-to-image", True, "PASS", False),
     ("legacy gpt-image-2 15999 below its 16000 hard floor", 15999, "gpt-image-2-text-to-image", False,
      "BELOW_FLOOR", False),
@@ -209,7 +218,7 @@ ADAPTER_CASES = [
     ("new model 23999 under 80% rejected", 23999, "gpt-image-3-aurora-text-to-image", False, "BELOW_FLOOR", False),
     ("new model 28000 = 93% now FAILS", 28000, "gpt-image-3-aurora-text-to-image", False, "BELOW_TARGET", False),
     ("new model 30001 above max rejected", 30001, "gpt-image-3-aurora-text-to-image", False, "ABOVE_MAX", True),
-    ("adapter limit beats models.json (gpt-2.5 now 30000)", 20000, "gpt-image-2-5-sunburst-text-to-image", False,
+    ("adapter limit beats models.json (gpt-2.5 now 30000)", 20000, "gpt-image-2-6/sunburst-text-to-image", False,
      "BELOW_FLOOR", False),
 ]
 
@@ -247,8 +256,8 @@ def selftest():
         os.environ["KIE_LIVE_ADAPTER_PATH"] = script
         _run_cases(ADAPTER_CASES, failures)
         os.environ["KIE_LIVE_ADAPTER_PATH"] = os.path.join(d, "missing.py")  # unreachable adapter -> models.json
-        _run_cases([("adapter unreachable: models.json limit", 20000, "gpt-image-2-5-sunburst-text-to-image", True, "PASS",
-                     False)], failures)
+        _run_cases([("adapter unreachable: models.json limit (2.6 = 32000)", CAP_26,
+                     "gpt-image-2-6/sunburst-text-to-image", True, "PASS", False)], failures)
     if saved is None:
         os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)
     else:

@@ -21,7 +21,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 DECL = json.loads((REPO / "shared-utils" / "kie_prompt_gates.json").read_text(encoding="utf-8"))
-M = "gpt-image-2-5-sunburst-text-to-image"
+M = "gpt-image-2-6/sunburst-text-to-image"
 
 
 def load(rel):
