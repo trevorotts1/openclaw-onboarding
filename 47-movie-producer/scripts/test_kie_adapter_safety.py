@@ -8,9 +8,10 @@ no network, no real key):
      failure (KIE reported the task failed) still falls back, and a prompt refusal never falls back.
   2. THE KEY GATE WORKS IN A BARE CLONE. With an empty HOME and no shared-utils anywhere (the Docker image and a
      clone), a well-formed key is AVAILABLE, a placeholder is UNAVAILABLE.
-  3. THE PROMPT FLOOR (owner rule 12 as narrowed by prompt-policy/2.0.0, F18). A descriptive prompt below
-     the strict 95 percent band is a REJECT with the characters to add; below the 80 percent hard floor it is a
-     HARD REJECT worded as such; 95 percent passes; 101 percent is refused with the characters to cut (image and video).
+  3. THE PROMPT FLOOR (owner rule 12, 07-kie-setup/references/kie-common-rules.md section 12).
+     A descriptive prompt below 80 percent of the model maximum is a HARD REJECT with the characters to
+     add; 80 to below 95 percent PASSES with a warn-and-expand ADD; 95 percent passes; 101 percent is
+     refused with the characters to cut (image and video).
 
 Run:  python3 47-movie-producer/scripts/test_kie_adapter_safety.py      Exit: 0 = all pass.
 """
@@ -187,24 +188,22 @@ def main() -> int:
             else:
                 os.environ[k] = v
 
-    print("== 3. prompt policy 2.0.0 (F18): strict 95 percent band (79 hard-reject, 80 reject, 95 passes, 101 refused) ==")
+    print("== 3. owner rule 12: below 80 percent rejected, 80-95 percent warns and expands, 95 passes, 101 refused ==")
     for name, mod, cls, extra in (("image", img, "KieImage", {}), ("video gemini", vid, "KieVideo", {}),
                                   ("video seedance", vid, "KieVideo", {"model": "bytedance/seedance-1.5-pro"})):
         def run(n):
             ft = transport()
-            ft.prompt_max = 1000   # strict band floor/target 950, hard floor 800
+            ft.prompt_max = 1000   # hard floor 800, 95 percent target 950
             res = base.fresh_tool(mod, cls, ft).execute(dict({"prompt": "x" * n, "output_path": str(tmp / f"{name}{n}.out")}, **extra))
             return res, ft
         res, ft = run(790)
         check(f"{name}: 79 percent is refused with the characters to add and nothing is sent",
-              res.success is False and "below the 80% hard floor" in (res.error or "")
-              and "ADD at least 160" in (res.error or "")
+              res.success is False and "below the 80 percent floor" in (res.error or "")
+              and "ADD at least 10" in (res.error or "")
               and ft.create_calls == [] and ft.veo_calls == [], detail=res.error)
         res, ft = run(800)
-        check(f"{name}: exactly 80 percent is refused below the strict 95 percent band and nothing is sent",
-              res.success is False and "below the strict 95% band" in (res.error or "")
-              and "ADD 150" in (res.error or "")
-              and ft.create_calls == [] and ft.veo_calls == [], detail=str(getattr(res, "error", "")))
+        check(f"{name}: exactly 80 percent is accepted and submitted (owner rule 12 warn-and-expand band)",
+              res.success is True and len(ft.create_calls) == 1, detail=str(getattr(res, "error", "")))
         res, ft = run(950)
         check(f"{name}: 95 percent passes and is submitted", res.success is True and len(ft.create_calls) == 1, detail=str(getattr(res, "error", "")))
         res, ft = run(1010)
