@@ -29,6 +29,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import page_role  # noqa: E402  every page type's canonical copy spec (landing forms, thank-you)
+import sibling_skill  # noqa: E402  the ONE sibling-skill resolver (either directory convention)
 
 # PYDEPS-ACTIVATION:BEGIN (shared contract, byte-identical in every file that imports jsonschema; stdlib only)
 # jsonschema lives in <root>/pydeps/py<X.Y>/ when pip refuses the interpreter (PEP 668); put it on sys.path first.
@@ -1300,9 +1301,14 @@ def _kie74_file(run_dir, task_id):
 
 def _kie74_receipt_module():
     """Skill 49's kie74_receipt.py (the one checker of transport receipts), loaded the way
-    stage_executor._kie74_receipt() loads it; None when the sibling skill is absent."""
-    path = SKILL_ROOT.parent / "49-signature-funnel" / "scripts" / "kie74_receipt.py"
-    if not path.is_file():
+    stage_executor._kie74_receipt() loads it; None when the sibling skill is absent.
+
+    Resolved by SLUG (sibling_skill.skill_dir_for), so `49-signature-funnel/` in the
+    onboarding repository and `.claude/skills/signature-funnel/` in a 999 package both
+    resolve, and no number and no path under the operator's home is spelled."""
+    path = sibling_skill.skill_file("signature-funnel", "scripts", "kie74_receipt.py",
+                                    skill_root=SKILL_ROOT)
+    if path is None or not path.is_file():
         return None
     import importlib.util
     saved = list(sys.path)

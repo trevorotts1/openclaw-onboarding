@@ -1,7 +1,22 @@
 {
-  "schema": "blackceo.launcher.dependencies/1",
+  "schema": "blackceo.launcher.dependencies/2",
   "target": "999-setup",
-  "note": "The Launcher is enabled in 999 only while every required entry below is present. The preflight derives enabled_in_999 from registration.json plus this check; this manifest writes nothing outside this skill. A skill_tree entry carries min_version, read from that tree's skill-version.txt; dispatch and assemble run this check first and refuse on any required entry that is missing or below its minimum.",
+  "note": "The Launcher is enabled in 999 only while every entry REQUIRED for the launch mode being run is present. The preflight derives enabled_in_999 from registration.json plus this check; this manifest writes nothing outside this skill. A skill_tree entry carries min_version, read from that tree's skill-version.txt; dispatch and assemble run this check first and refuse on any required entry that is missing or below its minimum.",
+  "closure": {
+    "note": "The entries below are the TRANSITIVE closure the launcher really loads, not one row per skill: code, schemas, role/prompt templates, brand rules, shared packages, provider helpers and the Command Center contract. `class` says how an entry is selected: `required` blocks every mode; `selected_conditional` blocks only the modes it names in `modes` (an entry with no `modes` applies to all of them); `unselected_optional` is reported and never blocks. `required` stays for the v1 readers that only know that field.",
+    "modes": {
+      "plan": "intake -> route graph -> the plan hash a client approves (no page is built)",
+      "questions": "the shared guided interview; reads the question bank only",
+      "dispatch": "build every page with the stub image provider (a practice run spends nothing)",
+      "dispatch-kie": "build every page with the paid KIE transport (transport, receipts, image prompt helpers)",
+      "assemble": "package the built pages and validate the delivery"
+    },
+    "harnesses": {
+      "openclaw": "the onboarding repository layout: skills at the repository root",
+      "claude-nine": "the 999 package layout: skills under .claude/skills, named by slug or <number>-<slug>",
+      "claude-code": "a Claude Code skills root selected by CLAUDE_CONFIG_DIR"
+    }
+  },
   "entries": [
     {
       "id": "tree-49-signature-funnel",
@@ -148,6 +163,122 @@
       "ref": "jsonschema",
       "required": true,
       "why": "Skill 79's cross-field checkout validator imports jsonschema"
+    },
+    {
+      "id": "schema-checkout-79",
+      "kind": "schema",
+      "ref": "79-signature-order-form/references/checkout.schema.json",
+      "required": true,
+      "why": "the native checkout contract Skill 79's validator enforces; a page built against no schema is unvalidatable"
+    },
+    {
+      "id": "schema-receipt-launcher",
+      "kind": "schema",
+      "ref": "83-black-friday-launcher/receipt.schema.json",
+      "required": true,
+      "why": "the assembled receipt's own schema; assemble writes what it cannot validate otherwise"
+    },
+    {
+      "id": "template-prompt-policy-registry",
+      "kind": "shared_utils",
+      "ref": "shared-utils/signature_launch/domain/prompt-policy-registry.json",
+      "required": true,
+      "why": "every role's prompt-policy citation vocabulary; Skill 71's launch_context records a component a 1.1 page request cannot cite without it"
+    },
+    {
+      "id": "template-brand-law-71",
+      "kind": "shared_utils",
+      "ref": "71-blackceo-signature-page/references/BlackCEO-Page-Brand-Law.md",
+      "required": true,
+      "why": "the brand rules every page is drawn under (Skill 71's page brand law)"
+    },
+    {
+      "id": "brand-record-71",
+      "kind": "shared_utils",
+      "ref": "71-blackceo-signature-page/assets/brand/blackceo-brand.json",
+      "required": true,
+      "why": "the house brand record the page brand law is expressed against"
+    },
+    {
+      "id": "template-copy-spec-71",
+      "kind": "shared_utils",
+      "ref": "71-blackceo-signature-page/references/copy-specs/standard-v6.json",
+      "required": true,
+      "why": "the section sequence and copy template the landing page producer composes from"
+    },
+    {
+      "id": "shared-design-tokens",
+      "kind": "shared_utils",
+      "ref": "shared-utils/signature_launch/design/tokens/tokens.py",
+      "required": false,
+      "class": "selected_conditional",
+      "modes": ["dispatch", "dispatch-kie"],
+      "why": "emits the design-tokens component for the run's brand; every page the launcher dispatches is a token-driven import and Skill 71's launch_context.emit_design_tokens(token_driven=True) refuses without it (LaunchContextError: component_not_in_tree). Skill 71's preflight DEGRADED row covers only a lone install that never imports a launch request, which the launcher always does"
+    },
+    {
+      "id": "shared-image-slots",
+      "kind": "shared_utils",
+      "ref": "shared-utils/signature_launch/design/image_slots.py",
+      "required": false,
+      "class": "selected_conditional",
+      "modes": ["dispatch", "dispatch-kie", "assemble"],
+      "why": "checks every page image against the image map (slot id, URL, QC'd file hash) before a package closes"
+    },
+    {
+      "id": "shared-design-css",
+      "kind": "shared_utils",
+      "ref": "shared-utils/signature_launch/design/design.css",
+      "required": false,
+      "class": "selected_conditional",
+      "modes": ["dispatch", "dispatch-kie"],
+      "why": "Skill 71's launch_context.verify_design_css(token_driven=True) reads it on every dispatched page and refuses when it is absent; a token-driven page cannot be built without it. It is a recorded component reference only for a lone install that never imports a launch request"
+    },
+    {
+      "id": "provider-kie-transport-74",
+      "kind": "skill_tree",
+      "ref": "74-kie-live-adapter",
+      "min_version": "v1.1.9",
+      "required": false,
+      "class": "selected_conditional",
+      "modes": ["dispatch-kie"],
+      "why": "the ONE KIE paid transport (discovery, upload, submit, poll, credits) the paid image stage calls"
+    },
+    {
+      "id": "provider-kie-image-66",
+      "kind": "skill_tree",
+      "ref": "66-kie-image",
+      "min_version": "v2.2.2",
+      "required": false,
+      "class": "selected_conditional",
+      "modes": ["dispatch-kie"],
+      "why": "KIE image model selection, prompt constraints and domain QC for a paid image stage"
+    },
+    {
+      "id": "provider-kie-setup-07",
+      "kind": "skill_tree",
+      "ref": "07-kie-setup",
+      "min_version": "v7.2.3",
+      "required": false,
+      "class": "selected_conditional",
+      "modes": ["dispatch-kie"],
+      "why": "KIE credentials and the common rules 1 through 13 a paid call is made under"
+    },
+    {
+      "id": "receipt-writer-kie74-49",
+      "kind": "shared_utils",
+      "ref": "49-signature-funnel/scripts/kie74_receipt.py",
+      "required": false,
+      "class": "selected_conditional",
+      "modes": ["dispatch-kie"],
+      "why": "the ONE writer and checker of transport receipts; Skill 71's stage executor binds every paid image to a task through it"
+    },
+    {
+      "id": "contract-cc-version",
+      "kind": "shared_utils",
+      "ref": "cc-compat.json",
+      "required": false,
+      "class": "unselected_optional",
+      "why": "the Command Center contract version the release is bound to; the launch-event emitter never fails a launch, so its absence is reported and never blocks"
     }
   ]
 }

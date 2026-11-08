@@ -6,22 +6,32 @@ every unit from the approved launch plan (pages, email sequences, text sets,
 automations). A stopped run resumes from this file:
 
 - finished units are skipped (never re-dispatched, never re-charged),
-- an active unit whose artifact is already on disk is recovered as done by the
-  existence check, but only when the artifact is provably non-empty and no live
-  execution owner holds the unit (Skill 44 build already happened; no duplicate
-  build, no stolen work),
-- percentages count terminal units (done or dropped by the client),
+- a crashed run is recovered ONLY from current admission evidence for the exact
+  unit AND revision (shared-utils/signature_launch/admission.py): a nonempty
+  file, an exit code or a declared status never completes a unit, and evidence
+  for a superseded revision cannot resurrect work a targeted invalidation
+  retired,
+- percentages count DELIVERED work (verified done) against the approved plan's
+  units, recomputed from the evidence persisted on each unit; a client-dropped,
+  skipped, stale or superseded unit stays in the denominator and contributes
+  zero, and a ``done`` row whose evidence no longer validates is reported
+  unverified instead of being counted,
+- ``report`` is the one human/Command Center view derived from those facts:
+  draft created, design ready for review, approved, installed and live are
+  distinct stages,
 - a unit being executed right now is reported as running, never as ready: a
   concurrent resume never claims it as fresh work,
 - starting a unit requires execution ownership (a claim with a lease), so two
   resumes cannot both produce side effects for the same unit,
+- a completion/release names the attempt it owns, so a late worker cannot
+  complete or release a newer attempt,
 - a stall keeps its partial results and every causal blocker instead of being
   discarded.
 
 The unit expansion is not re-implemented here: ``scheduler/model.py`` is the one
 authority for the unit list and the result envelope (failed / blocked / awaiting
 facts / dropped / verified success).  A failure returned normally never
-satisfies a dependency.
+satisfies a dependency, and a normal return value never becomes success.
 
 Pure stdlib, no network, no credentials. The file is written atomically so a
 crash mid-save leaves the previous progress intact.
@@ -30,7 +40,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import hashlib
 import importlib.util
 import json
 import os
@@ -46,6 +55,7 @@ DEFAULT_LEASE_SECONDS = 900
 
 _HERE = Path(__file__).resolve().parent
 _MODEL = None
+_ADMISSION = None
 
 
 class ProgressError(ValueError):
@@ -65,6 +75,18 @@ def _model():
     return _MODEL
 
 
+def _admission():
+    """Load the one admission/completion service (admission.py)."""
+    global _ADMISSION
+    if _ADMISSION is None:
+        spec = importlib.util.spec_from_file_location(
+            "signature_launch_admission", _HERE / "admission.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _ADMISSION = module
+    return _ADMISSION
+
+
 def _now():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -74,7 +96,8 @@ def _canonical(value):
 
 
 def plan_hash(plan):
-    return "sha256:" + hashlib.sha256(_canonical(plan).encode("utf-8")).hexdigest()
+    """The one plan hash (admission.py owns the canonical definition)."""
+    return _admission().plan_hash(plan)
 
 
 def units_from_plan(plan):
@@ -101,6 +124,9 @@ def new_progress(plan, clock=_now):
         "schema_version": SCHEMA_VERSION,
         "launch_id": launch_id,
         "plan_hash": plan_hash(plan),
+        # The required unit set is persisted at init so the delivered
+        # denominator can never shrink by editing the ``units`` dict.
+        "required_units": [u["id"] for u in units],
         "created_at": stamp,
         "updated_at": stamp,
         "units": {
@@ -117,6 +143,15 @@ def new_progress(plan, clock=_now):
                 "owner": None,
                 "lease_expires_at": None,
                 "result": None,
+                "verified": False,
+                "stale": False,
+                "superseded": False,
+                "skipped": False,
+                "review_required": False,
+                "review": None,
+                "evidence_digest": None,
+                "content_checked": False,
+                "revision": 1,
                 "updated_at": stamp,
             }
             for u in units
@@ -129,7 +164,11 @@ def default_path(run_dir, launch_id):
 
 
 def _fill(unit):
-    """Backfill additive fields so an older progress file stays readable."""
+    """Backfill additive fields so an older progress file stays readable.
+
+    A legacy ``done`` row is backfilled ``verified: False``: an unsupported
+    completion claim is preserved and reported as unverified, never promoted.
+    """
     unit.setdefault("waits_for", [])
     unit.setdefault("attempts", 0)
     unit.setdefault("charged", False)
@@ -140,6 +179,15 @@ def _fill(unit):
     unit.setdefault("owner", None)
     unit.setdefault("lease_expires_at", None)
     unit.setdefault("result", None)
+    unit.setdefault("verified", False)
+    unit.setdefault("stale", False)
+    unit.setdefault("superseded", False)
+    unit.setdefault("skipped", False)
+    unit.setdefault("review_required", False)
+    unit.setdefault("review", None)
+    unit.setdefault("evidence_digest", None)
+    unit.setdefault("content_checked", False)
+    unit.setdefault("revision", 1)
     return unit
 
 
@@ -213,6 +261,7 @@ def counts(record):
     out = {state: 0 for state in STATES}
     for unit in record["units"].values():
         out[unit["state"]] += 1
+    view = trusted_delivered(record)
     out["total"] = len(record["units"])
     out["terminal"] = out["done"] + out["dropped"]
     out["retryable"] = out["failed"]
@@ -220,15 +269,168 @@ def counts(record):
         1 for unit in record["units"].values() if unit.get("missing_facts"))
     out["ready"] = len(ready(record))
     out["empty"] = 1 if not record["units"] else 0
+    # Delivered work and every excluded category (one denominator, one rule).
+    out["delivered"] = view["delivered"]
+    out["unverified_done"] = len(view["excluded"]["unverified_done"])
+    out["unverified_completion"] = len(view["excluded"]["unverified_completion"])
+    out["stale"] = len(view["excluded"]["stale"])
+    out["superseded"] = len(view["excluded"]["superseded"])
+    out["skipped"] = len(view["excluded"]["skipped"])
     return out
 
 
+def evidence_view(record):
+    """Re-validate every persisted completion against its CURRENT evidence.
+
+    Pure: no producer is called and the record is not modified.  A ``done`` row
+    with no persisted evidence, evidence for an older revision, or evidence the
+    canonical validator now refuses is reported untrusted and named.  Nothing
+    here promotes an unrecognised result; it only ever withholds credit.
+    """
+    admission = _admission()
+    out = {}
+    for uid, unit in record["units"].items():
+        result = unit.get("result") if isinstance(unit.get("result"), dict) else None
+        candidate = (result or {}).get("evidence")
+        if unit.get("state") != "done":
+            out[uid] = {"trusted": False,
+                        "reason": "state is %s, not done" % unit.get("state")}
+            continue
+        if unit.get("verified") is not True:
+            out[uid] = {"trusted": False, "reason": "unverified completion claim"}
+            continue
+        if not isinstance(candidate, dict):
+            out[uid] = {"trusted": False, "reason": "no persisted completion evidence"}
+            continue
+        refusal = _revision_refusal(candidate, unit)
+        if refusal:
+            out[uid] = {"trusted": False, "reason": refusal}
+            continue
+        checked = admission.verify_evidence(candidate, unit=uid,
+                                            plan_hash=record.get("plan_hash"))
+        out[uid] = {
+            "trusted": bool(checked["ok"]),
+            "reason": None if checked["ok"]
+            else ("; ".join(checked["reasons"]) or "evidence refused"),
+        }
+    return out
+
+
+def trusted_delivered(record):
+    """Delivered work recomputed from current evidence, one denominator.
+
+    The denominator and the drop/skip/stale/supersede exclusions come from the
+    existing admission service; this adds the one thing a stored flag cannot
+    provide -- a re-validation of the evidence that is still on the unit.
+    """
+    view = _admission().delivered(record)
+    checked = evidence_view(record)
+    trusted, untrusted = [], []
+    for uid in view["delivered_units"]:
+        if checked.get(uid, {}).get("trusted") is True:
+            trusted.append(uid)
+        else:
+            untrusted.append(uid)
+    excluded = {name: list(units) for name, units in view["excluded"].items()}
+    excluded["unverified_completion"] = untrusted
+    total = view["required"]
+    count = len(trusted)
+    return {
+        "schema": view["schema"],
+        "launch_id": view["launch_id"],
+        "plan_hash": view["plan_hash"],
+        "required": total,
+        "required_units": view["required_units"],
+        "drift": view["drift"],
+        "delivered": count,
+        "delivered_units": trusted,
+        "percent": round(100.0 * count / total, 2) if total else 0.0,
+        "excluded": excluded,
+        "skip_contributes": 0,
+        "evidence_checked": checked,
+    }
+
+
+# The five report stages F15.6 requires.  They are derived facts, never a
+# caller-supplied status and never collapsed into "complete".
+STAGES = ("not_started", "draft_created", "design_ready_for_review",
+          "approved", "installed", "live")
+
+
+def _stage(dims, trusted, unit):
+    """One stage label from the four dimensions plus the evidence verdict."""
+    if trusted:
+        if dims["deployment"] in ("published", "observed"):
+            return "live"
+        if dims["deployment"] == "draft_installed":
+            return "installed"
+        if dims["review"] == "required_pending":
+            return "design_ready_for_review"
+        return "approved"
+    if unit.get("review_required") and unit.get("artifact"):
+        return "design_ready_for_review"
+    if unit.get("artifact") and unit.get("state") in STATES:
+        return "draft_created"
+    return "not_started"
+
+
+def report(record):
+    """The one human/Command Center view, derived from current evidence.
+
+    Every consumer (text report, Command Center projection, Kanban) reads this
+    shape, so the percentage and the stage of every unit come from ONE fact set.
+    """
+    admission = _admission()
+    delivery = trusted_delivered(record)
+    checked = delivery["evidence_checked"]
+    units = []
+    stages = {name: [] for name in STAGES}
+    for uid, unit in record["units"].items():
+        dims = admission.dimension_status(record, uid)
+        trusted = checked.get(uid, {}).get("trusted") is True
+        stage = _stage(dims, trusted, unit)
+        reason = unit.get("reason") or {}
+        blocker = None if unit.get("state") == "done" else (
+            reason.get("detail") or reason.get("blocker"))
+        units.append({
+            "id": uid,
+            "kind": unit.get("kind"),
+            "state": unit.get("state"),
+            "stage": stage,
+            "production": dims["production"],
+            "review": dims["review"],
+            "deployment": dims["deployment"],
+            "availability": dims["availability"],
+            "trusted": trusted,
+            "evidence_reason": checked.get(uid, {}).get("reason"),
+            "blocker": blocker,
+            "missing_facts": list(unit.get("missing_facts") or []),
+        })
+        stages[stage].append(uid)
+    return {
+        "schema": "signature-launch-progress-report/v1",
+        "launch_id": record.get("launch_id"),
+        "plan_hash": record.get("plan_hash"),
+        "percent": delivery["percent"],
+        "delivered": delivery["delivered"],
+        "required": delivery["required"],
+        "excluded": delivery["excluded"],
+        "units": units,
+        "stages": stages,
+        "counts": counts(record),
+    }
+
+
 def percent(record):
-    """Percentage of planned units that are terminal (done or dropped)."""
-    c = counts(record)
-    if not c["total"]:
-        return 0.0
-    return round(100.0 * c["terminal"] / c["total"], 2)
+    """Percentage of the approved plan's units DELIVERED from current evidence.
+
+    Delivered means a verified completion whose persisted evidence still
+    validates for the unit's current revision.  A dropped/skipped/stale/
+    superseded unit stays in the denominator and contributes zero; a ``done``
+    row whose evidence is absent or no longer validates is reported unverified,
+    never counted.
+    """
+    return trusted_delivered(record)["percent"]
 
 
 def _parse_time(value):
@@ -248,7 +450,16 @@ def _lease_is_fresh(unit, now):
 
 
 def _resolved(record):
-    return {uid for uid, unit in record["units"].items() if unit["state"] in TERMINAL}
+    """Unit ids that unlock dependents: verified done, or client dropped.
+
+    A ``done`` row whose ``verified`` is not True is NOT resolved (D3).  It
+    used to unlock dependents and let ``claim`` start them, while
+    ``model.satisfies_dependency`` and ``admission.admit_entry`` both refused
+    the same row.
+    """
+    return {uid for uid, unit in record["units"].items()
+            if unit["state"] == "dropped"
+            or (unit["state"] == "done" and unit.get("verified") is True)}
 
 
 def _dependencies_met(unit, resolved):
@@ -312,10 +523,11 @@ def ready_to_start(record, now=None):
 
 
 def artifact_exists(record, uid, exists=None):
-    """True when the unit's recorded artifact is present and non-empty.
+    """Whether the unit's recorded artifact path is present and non-empty.
 
-    A zero-byte file is not evidence (L04 receipt rule): it never recovers a
-    unit to done.
+    This is a filesystem FACT, never completion evidence.  ``recover`` uses it
+    only to say "an artifact exists but nothing proves it"; it can no longer
+    complete a unit.
     """
     path = record["units"][uid].get("artifact")
     if not path:
@@ -327,16 +539,60 @@ def artifact_exists(record, uid, exists=None):
         return False
 
 
-def recover_report(record, exists=None, verify=None, now=None):
-    """Existence check: an active unit whose artifact is proven is already built.
+def _revision_refusal(evidence, unit):
+    """Why this evidence is not for the unit's CURRENT revision (None when it is).
 
-    ``verify(path, uid) -> (bool, detail)`` lets a receipt validator (L04) be
-    injected; the default is exists-and-non-empty.  A unit held by a fresh
-    execution lease is skipped, never stolen.  Marks done without dispatching,
-    so the run neither pays again nor creates a duplicate build.  A present but
-    empty/unverified artifact is recorded as a rejection, never as success.
+    ``admission.invalidate`` advances ``unit["revision"]`` and marks the unit
+    stale.  Evidence produced before that change describes a superseded
+    revision: replaying it used to re-complete invalidated work.
+    """
+    if not isinstance(evidence, dict):
+        return "evidence is not an object"
+    declared = str(evidence.get("revision") or "1")
+    current = str(unit.get("revision") or 1)
+    if declared != current:
+        return ("evidence describes revision %s, not the unit's current "
+                "revision %s" % (declared, current))
+    return None
+
+
+def _persist_verified(unit, evidence, checked):
+    """Keep the accepted evidence ON the unit so a report can re-validate it.
+
+    A stored ``verified: true`` flag is a cached judgement; the evidence is the
+    fact.  ``evidence_view`` re-runs the canonical validator over this object.
+    """
+    unit["result"] = {
+        "status": "verified_success",
+        "verified": True,
+        "evidence": evidence,
+        "evidence_checked": {
+            "outcome": checked.get("outcome"),
+            "artifact_set_hash": checked.get("artifact_set_hash"),
+            "inputs_hash": checked.get("inputs_hash"),
+            "content_checked": checked.get("content_checked"),
+            "reviewed": checked.get("reviewed"),
+        },
+    }
+
+
+def recover_report(record, exists=None, verify=None, evidence=None, now=None):
+    """Reconcile CURRENT admission evidence for the exact unit.
+
+    ``evidence`` is a mapping ``{unit_id: evidence}`` or a callable
+    ``(unit_id) -> evidence`` built with ``admission.evidence``.  Only a
+    verified evidence object with the current output hashes, the current input
+    hashes and (where required) a successful independent review completes a
+    unit.
+
+    A nonempty file no longer completes anything.  A legacy ``verify(path, uid)
+    -> (bool, detail)`` callback is still run for its detail, but a True return
+    alone is not completion: bytes on disk do not prove the unit's inputs,
+    attempt or review.  A unit held by a fresh execution lease is skipped,
+    never stolen.
     """
     now = now or _parse_time(_now())
+    admission = _admission()
     result = {"recovered": [], "skipped": [], "rejected": []}
     for uid, unit in record["units"].items():
         if unit["state"] in TERMINAL:
@@ -344,26 +600,58 @@ def recover_report(record, exists=None, verify=None, now=None):
         if unit["state"] == "running" and _lease_is_fresh(unit, now):
             result["skipped"].append({"unit": uid, "reason": "live execution lease"})
             continue
-        path = unit.get("artifact")
-        if not path:
-            continue
-        if verify is not None:
+        candidate = evidence(uid) if callable(evidence) else (evidence or {}).get(uid)
+        legacy_detail = None
+        if candidate is None and verify is not None and unit.get("artifact"):
             try:
-                ok, detail = verify(path, uid)
+                ok, legacy_detail = verify(unit["artifact"], uid)
             except (OSError, ValueError) as error:
-                ok, detail = False, str(error)
-        else:
-            ok = artifact_exists(record, uid, exists)
-            detail = "artifact exists and is non-empty" if ok else "artifact missing or empty"
-        if not ok:
-            if Path(path).exists():
-                kind = "artifact_unverified" if verify is not None else "empty_artifact"
-                unit["reason"] = {"kind": kind, "unit": uid, "detail": detail}
-                unit["updated_at"] = _now()
+                ok, legacy_detail = False, str(error)
+            if not ok:
+                _reject(unit, uid, "artifact_unverified", legacy_detail)
+                result["rejected"].append({"unit": uid, "detail": legacy_detail})
+                continue
+        if candidate is None:
+            if artifact_exists(record, uid, exists) or unit.get("artifact"):
+                detail = ("bytes exist but no current admission evidence completes "
+                          "this unit" if legacy_detail is None else
+                          "bytes verify but a byte check alone is not admission "
+                          "evidence (%s)" % legacy_detail)
+                _reject(unit, uid, "no_evidence", detail)
                 result["rejected"].append({"unit": uid, "detail": detail})
             continue
+        if not isinstance(candidate, dict) or candidate.get("unit") != uid:
+            detail = "evidence does not name unit %s" % uid
+            _reject(unit, uid, "evidence_refused", detail)
+            result["rejected"].append({"unit": uid, "detail": detail})
+            continue
+        checked = admission.verify_evidence(candidate, unit=uid,
+                                            plan_hash=record.get("plan_hash"))
+        if not checked["ok"]:
+            detail = "; ".join(checked["reasons"]) or "evidence refused"
+            _reject(unit, uid, "evidence_refused", detail)
+            result["rejected"].append({"unit": uid, "detail": detail})
+            continue
+        refusal = _revision_refusal(candidate, unit)
+        if refusal:
+            _reject(unit, uid, "evidence_refused", refusal)
+            result["rejected"].append({"unit": uid, "detail": refusal})
+            continue
         unit["state"] = "done"
-        unit["note"] = "recovered: %s" % detail
+        unit["verified"] = True
+        unit["stale"] = False
+        unit["superseded"] = False
+        unit["content_checked"] = bool(checked["content_checked"])
+        unit["evidence_digest"] = checked["artifact_set_hash"]
+        unit["review"] = ({"ok": True} if checked["reviewed"]
+                          else (candidate.get("review") or None))
+        _persist_verified(unit, candidate, checked)
+        unit["artifact"] = None
+        for entry in checked["artifacts"]:
+            if entry.get("path"):
+                unit["artifact"] = entry["path"]
+                break
+        unit["note"] = "recovered from admission evidence"
         unit["reason"] = None
         unit["owner"] = None
         unit["lease_expires_at"] = None
@@ -372,9 +660,14 @@ def recover_report(record, exists=None, verify=None, now=None):
     return result
 
 
-def recover(record, exists=None, verify=None, now=None):
+def _reject(unit, uid, kind, detail):
+    unit["reason"] = {"kind": kind, "unit": uid, "detail": detail}
+    unit["updated_at"] = _now()
+
+
+def recover(record, exists=None, verify=None, evidence=None, now=None):
     """Backwards-compatible view: the recovered unit ids."""
-    return recover_report(record, exists, verify, now)["recovered"]
+    return recover_report(record, exists, verify, evidence, now)["recovered"]
 
 
 def claim(record, uid, owner, ttl_seconds=DEFAULT_LEASE_SECONDS, now=None, clock=_now):
@@ -405,7 +698,8 @@ def claim(record, uid, owner, ttl_seconds=DEFAULT_LEASE_SECONDS, now=None, clock
             previous = unit.get("owner")
             _start_unit(unit, owner, ttl_seconds, now, clock)
             return {"claimed": True, "reclaimed": True, "unit": uid,
-                    "owner": owner, "previous_owner": previous}
+                    "owner": owner, "previous_owner": previous,
+                    "attempt": int(unit["attempts"])}
         return {"claimed": False, "reason": "held by %s" % unit.get("owner"),
                 "unit": uid}
     if unit.get("missing_facts"):
@@ -422,7 +716,8 @@ def claim(record, uid, owner, ttl_seconds=DEFAULT_LEASE_SECONDS, now=None, clock
                 % ((unit.get("reason") or {}).get("detail") or "cause not cleared"),
                 "unit": uid}
     _start_unit(unit, owner, ttl_seconds, now, clock)
-    return {"claimed": True, "unit": uid, "owner": owner}
+    return {"claimed": True, "unit": uid, "owner": owner,
+            "attempt": int(unit["attempts"])}
 
 
 def _start_unit(unit, owner, ttl_seconds, now, clock):
@@ -434,27 +729,39 @@ def _start_unit(unit, owner, ttl_seconds, now, clock):
     unit["updated_at"] = clock()
 
 
-def heartbeat(record, uid, owner, ttl_seconds=DEFAULT_LEASE_SECONDS, now=None, clock=_now):
-    """Extend a live execution lease. Refuses a different owner."""
+def heartbeat(record, uid, owner, ttl_seconds=DEFAULT_LEASE_SECONDS, now=None,
+              clock=_now, attempt=None):
+    """Extend a live execution lease. Refuses a different owner or attempt."""
     now = now or _parse_time(_now())
     unit = record["units"].get(uid)
     if unit is None:
         raise ProgressError("unknown unit: %s" % uid)
     if unit["state"] != "running" or unit.get("owner") != owner:
         return {"renewed": False, "reason": "not the execution owner", "unit": uid}
+    if attempt is not None and int(attempt) != int(unit.get("attempts") or 0):
+        return {"renewed": False, "unit": uid,
+                "reason": "attempt %s is not current (%s)"
+                          % (attempt, unit.get("attempts"))}
     unit["lease_expires_at"] = (now + timedelta(seconds=max(1, int(ttl_seconds)))).isoformat() \
         .replace("+00:00", "Z")
     unit["updated_at"] = clock()
     return {"renewed": True, "unit": uid, "lease_expires_at": unit["lease_expires_at"]}
 
 
-def release(record, uid, owner, note=None, clock=_now):
-    """Give up execution ownership; partial results stay on the unit."""
+def release(record, uid, owner, note=None, clock=_now, attempt=None):
+    """Give up execution ownership; partial results stay on the unit.
+
+    A late worker (an older attempt) cannot release a newer worker's unit.
+    """
     unit = record["units"].get(uid)
     if unit is None:
         raise ProgressError("unknown unit: %s" % uid)
     if unit["state"] != "running" or unit.get("owner") != owner:
         return {"released": False, "reason": "not the execution owner", "unit": uid}
+    if attempt is not None and int(attempt) != int(unit.get("attempts") or 0):
+        return {"released": False, "unit": uid,
+                "reason": "attempt %s is not current (%s)"
+                          % (attempt, unit.get("attempts"))}
     unit["state"] = "pending"
     unit["owner"] = None
     unit["lease_expires_at"] = None
@@ -464,23 +771,22 @@ def release(record, uid, owner, note=None, clock=_now):
     return {"released": True, "unit": uid}
 
 
-def complete(record, uid, result, owner=None, artifact=None, clock=_now):
+def complete(record, uid, result, owner=None, artifact=None, clock=_now, attempt=None):
     """Record one runner result envelope under execution ownership.
 
-    Success and drop are side-effect outcomes: they require the same owner that
-    claimed the unit.  A normally returned failure is recorded as failed and
-    never unlocks dependents.  A terminal unit is never charged again.
+    ``result`` is ALWAYS re-normalised through ``scheduler/model.py``, so a
+    declared ``{"status": "verified_success"}`` and every ordinary return value
+    (``None``, a truthy object, a completed subprocess) are recorded as failed
+    unless they carry admission evidence.  Success and drop are side-effect
+    outcomes: they require the same owner and attempt that claimed the unit,
+    so a late worker cannot complete a newer attempt.  A terminal unit is never
+    charged again.
     """
     model = _model()
+    admission = _admission()
     unit = record["units"].get(uid)
     if unit is None:
         raise ProgressError("unknown unit: %s" % uid)
-    envelope = result if isinstance(result, dict) and result.get("status") else \
-        model.normalize_result(result)
-    status = model.canonical_status(envelope.get("status"))
-    if status is None:
-        envelope = model.envelope(model.FAILED, detail="unknown result status")
-        status = model.FAILED
     if unit["state"] in TERMINAL:
         return False
     if unit["state"] != "running":
@@ -488,6 +794,32 @@ def complete(record, uid, result, owner=None, artifact=None, clock=_now):
     if not owner or unit.get("owner") != owner:
         raise ProgressError("unit %s is owned by %r, not %r"
                             % (uid, unit.get("owner"), owner))
+    if attempt is not None and int(attempt) != int(unit.get("attempts") or 0):
+        raise ProgressError("unit %s attempt %s is not current (%s); a late worker "
+                            "cannot complete a newer attempt"
+                            % (uid, attempt, unit.get("attempts")))
+    envelope = model.normalize_result(result)
+    status = model.canonical_status(envelope.get("status"))
+    if status is None:
+        envelope = model.envelope(model.FAILED, detail="unknown result status")
+        status = model.FAILED
+    # The evidence must belong to THIS unit under THIS plan's hash (D1/D2).
+    # normalize_result validated it structurally; this binds it to the record.
+    if status == model.VERIFIED_SUCCESS:
+        recheck = admission.verify_evidence(envelope.get("evidence"), unit=uid,
+                                            plan_hash=record.get("plan_hash"))
+        if not recheck["ok"]:
+            envelope = model.envelope(model.FAILED, detail=(
+                "completion evidence does not belong to unit %s under the "
+                "current plan: %s" % (uid, "; ".join(recheck["reasons"]) or "refused")))
+            status = model.FAILED
+        else:
+            refusal = _revision_refusal(envelope.get("evidence"), unit)
+            if refusal:
+                envelope = model.envelope(model.FAILED, detail=(
+                    "completion evidence is not for the current revision of unit "
+                    "%s: %s" % (uid, refusal)))
+                status = model.FAILED
     unit["state"] = model.PERSISTED_STATE[status]
     unit["owner"] = None
     unit["lease_expires_at"] = None
@@ -498,6 +830,17 @@ def complete(record, uid, result, owner=None, artifact=None, clock=_now):
         "detail": envelope.get("detail"),
         "blocker": envelope.get("blocker"),
     }
+    checked = envelope.get("evidence_checked") or {}
+    unit["verified"] = status == model.VERIFIED_SUCCESS and envelope.get("verified") is True
+    unit["content_checked"] = bool(checked.get("content_checked"))
+    unit["evidence_digest"] = checked.get("artifact_set_hash")
+    if status == model.VERIFIED_SUCCESS:
+        unit["stale"] = False
+        unit["superseded"] = False
+        unit["review"] = ((envelope.get("evidence") or {}).get("review")
+                          if isinstance(envelope.get("evidence"), dict) else None)
+    else:
+        unit["verified"] = False
     if artifact is not None:
         unit["artifact"] = str(artifact)
     elif envelope.get("artifacts"):
@@ -509,11 +852,13 @@ def complete(record, uid, result, owner=None, artifact=None, clock=_now):
 
 
 def mark(record, uid, state, artifact=None, charged=None, note=None, clock=_now,
-         owner=None):
+         owner=None, evidence=None, attempt=None):
     """Move one unit's state. A terminal unit is never re-marked.
 
     ``running`` is refused here: execution ownership comes from ``claim``.
-    ``done`` requires the owner that holds the claim.  A failed/blocked unit
+    ``done`` requires the owner and attempt that hold the claim AND a verified
+    admission evidence object; a declared state is not evidence, so
+    ``mark(..., "done")`` without evidence fails closed.  A failed/blocked unit
     stays retryable exactly as the envelope defines it.
     """
     if state not in STATES:
@@ -528,12 +873,34 @@ def mark(record, uid, state, artifact=None, charged=None, note=None, clock=_now,
     if unit["state"] == "running" and unit.get("owner") != owner:
         raise ProgressError("unit %s is owned by %r; wrong owner %r"
                             % (uid, unit.get("owner"), owner))
-    if state == "done" and unit["state"] != "running":
-        raise ProgressError("state done requires a claim and completion evidence")
+    if attempt is not None and unit["state"] == "running" \
+            and int(attempt) != int(unit.get("attempts") or 0):
+        raise ProgressError("unit %s attempt %s is not current (%s)"
+                            % (uid, attempt, unit.get("attempts")))
+    checked = None
+    if state == "done":
+        if unit["state"] != "running":
+            raise ProgressError("state done requires a claim and completion evidence")
+        checked = _admission().verify_evidence(evidence, unit=uid,
+                                               plan_hash=record.get("plan_hash"))
+        if not checked["ok"]:
+            raise ProgressError("state done requires verified admission evidence: %s"
+                                % ("; ".join(checked["reasons"]) or "none supplied"))
+        refusal = _revision_refusal(evidence, unit)
+        if refusal:
+            raise ProgressError("state done requires current-revision evidence: %s"
+                                % refusal)
     if state != "running":
         unit["owner"] = None
         unit["lease_expires_at"] = None
     unit["state"] = state
+    unit["verified"] = state == "done" and checked is not None and checked["ok"]
+    if unit["verified"]:
+        unit["stale"] = False
+        unit["superseded"] = False
+        unit["content_checked"] = bool(checked["content_checked"])
+        unit["evidence_digest"] = checked["artifact_set_hash"]
+        _persist_verified(unit, evidence, checked)
     if artifact is not None:
         unit["artifact"] = str(artifact)
     if charged is not None:
@@ -574,11 +941,15 @@ def stall_report(record):
 
 def summary(record):
     view = ready_to_start(record)
+    delivery = trusted_delivered(record)
     return {
         "launch_id": record["launch_id"],
         "empty": not record["units"],
-        "percent": percent(record),
+        "percent": delivery["percent"],
         "counts": counts(record),
+        "delivered": {key: delivery[key] for key in
+                      ("required", "delivered", "delivered_units", "percent",
+                       "excluded", "drift")},
         "ready": view["ready"],
         "fresh": view["fresh"],
         "retry": view["retry"],
@@ -634,22 +1005,87 @@ def claim_atomic(path, uid, owner, ttl_seconds=DEFAULT_LEASE_SECONDS):
         return decision
 
 
-def complete_atomic(path, uid, result, owner, artifact=None):
+def complete_atomic(path, uid, result, owner, artifact=None, attempt=None):
     with _locked(path):
         record = load(path)
-        changed = complete(record, uid, result, owner=owner, artifact=artifact)
+        changed = complete(record, uid, result, owner=owner, artifact=artifact,
+                           attempt=attempt)
         if changed:
             save(record, path)
         return changed
 
 
-def recover_atomic(path, exists=None, verify=None):
+def recover_atomic(path, exists=None, verify=None, evidence=None):
     with _locked(path):
         record = load(path)
-        report = recover_report(record, exists=exists, verify=verify)
+        report = recover_report(record, exists=exists, verify=verify,
+                                evidence=evidence)
         if report["recovered"] or report["rejected"]:
             save(record, path)
         return report
+
+
+def admit_atomic(path, uid, owner, ttl_seconds=DEFAULT_LEASE_SECONDS,
+                 clock=_now, revalidate_stale=True):
+    """Governed entry admission, atomic under the existing file lock."""
+    admission = _admission()
+    with _locked(path):
+        record = load(path)
+        decision = admission.admit_entry(record, uid, owner,
+                                         ttl_seconds=ttl_seconds, clock=clock,
+                                         revalidate_stale=revalidate_stale)
+        if decision.get("admitted"):
+            save(record, path)
+        return decision
+
+
+def invalidate_atomic(path, units, kind, detail=None):
+    """Targeted invalidation with downstream cascade, atomic under the lock."""
+    with _locked(path):
+        record = load(path)
+        report = _admission().invalidate(record, units, kind=kind, detail=detail)
+        if report["invalidated"]:
+            save(record, path)
+        return report
+
+
+def heartbeat_atomic(path, uid, owner, ttl_seconds=DEFAULT_LEASE_SECONDS, attempt=None):
+    """Extend a lease atomically: a concurrent writer never loses the beat."""
+    with _locked(path):
+        record = load(path)
+        decision = heartbeat(record, uid, owner, ttl_seconds, attempt=attempt)
+        if decision.get("renewed"):
+            save(record, path)
+        return decision
+
+
+def release_atomic(path, uid, owner, note=None, attempt=None):
+    """Release ownership atomically; a late worker cannot release a newer unit."""
+    with _locked(path):
+        record = load(path)
+        decision = release(record, uid, owner, note=note, attempt=attempt)
+        if decision.get("released"):
+            save(record, path)
+        return decision
+
+
+def mark_atomic(path, uid, state, artifact=None, charged=None, note=None,
+                owner=None, evidence=None, attempt=None):
+    """Mark one unit atomically; the state claim is serialised with the ledger."""
+    with _locked(path):
+        record = load(path)
+        changed = mark(record, uid, state, artifact=artifact, charged=charged,
+                       note=note, owner=owner, evidence=evidence, attempt=attempt)
+        if changed:
+            save(record, path)
+        return changed
+
+
+def _read_evidence(path):
+    """Optional evidence JSON for the CLI (never invented when absent)."""
+    if not path:
+        return None
+    return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
 def main(argv=None):
@@ -701,6 +1137,8 @@ def main(argv=None):
     p.add_argument("--detail")
     p.add_argument("--artifact")
     p.add_argument("--missing-fact", action="append", default=[])
+    p.add_argument("--evidence", help="admission evidence JSON file "
+                                      "(required by verified_success)")
 
     p = sub.add_parser("mark", help="set one unit's state")
     p.add_argument("--file", required=True)
@@ -710,8 +1148,28 @@ def main(argv=None):
     p.add_argument("--charged", action="store_true")
     p.add_argument("--note")
     p.add_argument("--owner")
+    p.add_argument("--evidence", help="admission evidence JSON file (required by done)")
 
-    p = sub.add_parser("recover", help="existence check: adopt artifacts already built")
+    p = sub.add_parser("recover", help="reconcile current admission evidence")
+    p.add_argument("--file", required=True)
+    p.add_argument("--evidence", help="{unit: evidence} JSON file")
+
+    p = sub.add_parser("admit", help="governed entry admission for one unit")
+    p.add_argument("--file", required=True)
+    p.add_argument("--unit", required=True)
+    p.add_argument("--owner", required=True)
+    p.add_argument("--ttl", type=int, default=DEFAULT_LEASE_SECONDS)
+
+    p = sub.add_parser("invalidate", help="invalidate a unit and its downstream work")
+    p.add_argument("--file", required=True)
+    p.add_argument("--unit", action="append", required=True)
+    p.add_argument("--kind", required=True)
+    p.add_argument("--detail")
+
+    p = sub.add_parser("done-standard", help="derived done export (not an authority)")
+    p.add_argument("--file", required=True)
+
+    p = sub.add_parser("report", help="evidence-derived stages and delivered work")
     p.add_argument("--file", required=True)
 
     args = ap.parse_args(argv)
@@ -732,17 +1190,51 @@ def main(argv=None):
             return 0
         if args.cmd == "complete":
             model = _model()
-            result = model.envelope(args.status, detail=args.detail,
-                                    missing_facts=args.missing_fact)
-            changed = complete_atomic(args.file, args.unit, result, args.owner,
+            envelope = model.envelope(args.status, detail=args.detail,
+                                      missing_facts=args.missing_fact,
+                                      evidence=_read_evidence(args.evidence))
+            changed = complete_atomic(args.file, args.unit, envelope, args.owner,
                                       artifact=args.artifact)
             print(json.dumps({"changed": changed, **summary(load(args.file))},
                              indent=2, sort_keys=True))
             return 0
         if args.cmd == "recover":
-            report = recover_atomic(args.file)
-            print(json.dumps({**report, **summary(load(args.file))},
+            recovered = recover_atomic(args.file,
+                                       evidence=_read_evidence(args.evidence))
+            print(json.dumps({**recovered, **summary(load(args.file))},
                              indent=2, sort_keys=True))
+            return 0
+        if args.cmd == "admit":
+            print(json.dumps(admit_atomic(args.file, args.unit, args.owner, args.ttl),
+                             indent=2, sort_keys=True))
+            return 0
+        if args.cmd == "invalidate":
+            print(json.dumps(invalidate_atomic(args.file, args.unit, args.kind,
+                                               args.detail),
+                             indent=2, sort_keys=True))
+            return 0
+        if args.cmd == "done-standard":
+            print(json.dumps(_admission().done_standard(load(args.file)),
+                             indent=2, sort_keys=True))
+            return 0
+        if args.cmd == "report":
+            print(json.dumps(report(load(args.file)), indent=2, sort_keys=True))
+            return 0
+        if args.cmd == "heartbeat":
+            print(json.dumps(heartbeat_atomic(args.file, args.unit, args.owner,
+                                              args.ttl),
+                             indent=2, sort_keys=True))
+            return 0
+        if args.cmd == "release":
+            print(json.dumps(release_atomic(args.file, args.unit, args.owner,
+                                            args.note),
+                             indent=2, sort_keys=True))
+            return 0
+        if args.cmd == "mark":
+            mark_atomic(args.file, args.unit, args.state, artifact=args.artifact,
+                        charged=True if args.charged else None, note=args.note,
+                        owner=args.owner, evidence=_read_evidence(args.evidence))
+            print(json.dumps(summary(load(args.file)), indent=2, sort_keys=True))
             return 0
         record = load(args.file)
         if args.cmd == "status":
@@ -756,23 +1248,6 @@ def main(argv=None):
             return 0
         if args.cmd == "stall":
             print(json.dumps(stall_report(record), indent=2, sort_keys=True))
-            return 0
-        if args.cmd == "heartbeat":
-            print(json.dumps(heartbeat(record, args.unit, args.owner, args.ttl),
-                             indent=2, sort_keys=True))
-            save(record, args.file)
-            return 0
-        if args.cmd == "release":
-            decision = release(record, args.unit, args.owner, args.note)
-            save(record, args.file)
-            print(json.dumps(decision, indent=2, sort_keys=True))
-            return 0
-        if args.cmd == "mark":
-            mark(record, args.unit, args.state, artifact=args.artifact,
-                 charged=True if args.charged else None, note=args.note,
-                 owner=args.owner)
-            save(record, args.file)
-            print(json.dumps(summary(record), indent=2, sort_keys=True))
             return 0
     except (OSError, ValueError, ProgressError) as exc:
         print("progress: %s" % exc, file=sys.stderr)
@@ -792,6 +1267,14 @@ def self_test():
         "automations": [{"id": "opt_in", "waits_for": ["pre_launch"]}],
     }
     model = _model()
+    admission = _admission()
+    ph = plan_hash(plan)
+
+    def ev(uid, target="artifact-%s.html" % "x"):
+        return admission.evidence(uid, ph, [admission.artifact(target,
+                                                               sha256="b" * 64)],
+                                  inputs={"plan": ph})
+
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "progress.json"
         record = new_progress(plan)
@@ -815,13 +1298,30 @@ def self_test():
         assert "landing" in ready(record)            # retry is allowed, deliberately
         assert "landing" in ready_to_start(record)["retry"]
 
-        # A verified success unlocks dependents and preserves the paid worker.
+        # A normal return (None) is not verified success.
         assert claim(record, "landing", "owner-a")["claimed"] is True
-        assert complete(record, "landing", model.envelope(
-            model.VERIFIED_SUCCESS, artifacts=[str(Path(tmp) / "landing.html")]),
-            owner="owner-a") is True
-        Path(tmp, "landing.html").write_text("built", encoding="utf-8")
-        assert record["units"]["landing"]["state"] == "done"
+        assert complete(record, "landing", None, owner="owner-a") is True
+        unit = record["units"]["landing"]
+        assert unit["state"] == "failed" and unit["verified"] is False, unit
+        assert "no admission evidence" in (unit["reason"]["detail"] or "")
+
+        # A declared status is not evidence either.
+        assert claim(record, "landing", "owner-a")["claimed"] is True
+        assert complete(record, "landing",
+                        {"status": "verified_success", "verified": True},
+                        owner="owner-a") is True
+        unit = record["units"]["landing"]
+        assert unit["state"] == "failed" and unit["verified"] is False, unit
+
+        # Real evidence completes and unlocks dependents.
+        assert claim(record, "landing", "owner-a")["claimed"] is True
+        assert complete(record, "landing",
+                        model.envelope(model.VERIFIED_SUCCESS,
+                                       evidence=ev("landing")),
+                        owner="owner-a") is True
+        unit = record["units"]["landing"]
+        assert unit["state"] == "done" and unit["verified"] is True
+        assert unit["evidence_digest"].startswith("sha256:")
         assert ready(record) == ["sales", "pre_launch", "doors_open"]
 
         # Re-marking a finished unit changes nothing and re-charges nothing.
@@ -831,33 +1331,57 @@ def self_test():
         assert (record["units"]["landing"]["state"],
                 record["units"]["landing"]["attempts"]) == before
 
-        # A crash left "sales" running after its artifact was written.
+        # A late worker (older attempt) cannot complete a newer worker's unit.
         assert claim(record, "sales", "owner-c")["claimed"] is True
-        mark(record, "sales", "failed", owner="owner-c")  # simulate an old failed row
-        record["units"]["sales"]["artifact"] = str(Path(tmp) / "sales.html")
-        record["units"]["sales"]["state"] = "running"
-        Path(tmp, "sales.html").write_text("built", encoding="utf-8")
-        report = recover_report(record)
-        assert report["recovered"] == ["sales"], report
-        assert record["units"]["sales"]["state"] == "done"
-        assert "sales" not in ready(record)
+        assert release(record, "sales", "owner-c")["released"] is True
+        assert claim(record, "sales", "owner-c")["attempt"] == 2
+        try:
+            complete(record, "sales", model.envelope(model.VERIFIED_SUCCESS,
+                                                     evidence=ev("sales")),
+                     owner="owner-c", attempt=1)
+            raise AssertionError("a late attempt completed a newer unit")
+        except ProgressError:
+            pass
+        assert complete(record, "sales",
+                        model.envelope(model.VERIFIED_SUCCESS, evidence=ev("sales")),
+                        owner="owner-c", attempt=2) is True
+        assert record["units"]["sales"]["verified"] is True
 
-        # A zero-byte artifact never recovers.
         assert claim(record, "doors_open", "owner-d")["claimed"] is True
-        mark(record, "doors_open", "failed", owner="owner-d")
-        record["units"]["doors_open"]["artifact"] = str(Path(tmp) / "empty.html")
-        Path(tmp, "empty.html").write_text("", encoding="utf-8")
-        assert recover_report(record)["rejected"][0]["unit"] == "doors_open"
-        assert record["units"]["doors_open"]["state"] == "failed"
-
+        assert complete(record, "doors_open",
+                        model.envelope(model.VERIFIED_SUCCESS, evidence=ev("doors_open")),
+                        owner="owner-d") is True
         mark(record, "pre_launch", "dropped", note="client dropped")
-        save(record, path)
+
+        # Delivered = verified done. A dropped unit stays in the denominator
+        # and contributes zero (the old rule counted it and reported 80.0).
         c = counts(record)
-        assert c["done"] == 2 and c["dropped"] == 1 and c["failed"] == 1
-        assert percent(record) == 60.0
+        assert c["done"] == 3 and c["dropped"] == 1 and c["delivered"] == 3
+        assert c["unverified_done"] == 0 and c["terminal"] == 4
+        assert percent(record) == 60.0, percent(record)
+
+        # --- recovery: a nonempty file alone never completes a unit ---------
+        rec2 = new_progress(plan)
+        assert claim(rec2, "landing", "owner-e")["claimed"] is True
+        assert release(rec2, "landing", "owner-e")["released"] is True
+        artifact = Path(tmp) / "landing.html"
+        artifact.write_text("built", encoding="utf-8")
+        rec2["units"]["landing"]["artifact"] = str(artifact)
+        report = recover_report(rec2)
+        assert report["recovered"] == [], report
+        assert report["rejected"][0]["unit"] == "landing"
+        assert rec2["units"]["landing"]["state"] == "pending"
+        assert rec2["units"]["landing"]["reason"]["kind"] == "no_evidence"
+
+        # The same bytes DO recover when current admission evidence names them.
+        report = recover_report(rec2, evidence={"landing": ev("landing")})
+        assert report["recovered"] == ["landing"], report
+        assert rec2["units"]["landing"]["state"] == "done"
+        assert rec2["units"]["landing"]["verified"] is True
+
+        save(record, path)
         assert load(path)["percent"] == 60.0
         assert "pre_launch" not in ready(load(path))
-        assert load(path)["stall"]["doors_open"]  # causal blocker persisted
 
         # init is resume-safe: it returns existing progress, never resets it.
         args = argparse.Namespace(plan=None, file=str(path), run_dir=tmp, force=False)
