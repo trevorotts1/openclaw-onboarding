@@ -11,11 +11,10 @@ real image: an HTML page, a type that is not an image, bytes that do not decode,
 contradicts the bytes, and a missing type (a null is honestly refused, never assumed to be
 ``image/png``).
 
-Ported onto main's lineage: the route evidence and ``remote_image_problems`` are branch B's; the
-admission gate here is main's own rule set (complete upload, live link, https URL) plus that
-evidence, and main's ``_hosted_urls`` — the map path — applies the same refusal. Cases that need
-branch B's ``write_hosting_binding``/``hosting-binding.json`` machinery and its
-``_hosting_binding_violations`` check rule are NOT ported.
+Merged (LND-002): main's port and the branch's binding are ONE implementation now. The route
+evidence and ``remote_image_problems`` are the ported form; ``hosted_admission`` is the branch's
+stricter binding-aware gate; main's ``_hosted_urls`` — the map path — delegates to it, so this
+file keeps BOTH main's asset-map refusal test and the branch's ``write_hosting_binding`` cases.
 
 Free and offline beyond a loopback HTTP server in this process. The GHL REST calls are the
 module's own documented mock seam.
@@ -38,6 +37,7 @@ from unittest import mock
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = SKILL_ROOT.parent
 PUSH_SCRIPT = REPO_ROOT / "45-design-intelligence-library" / "scripts" / "graphics_ghl_push.py"
+RULE_FILE = SKILL_ROOT / "launcher_core" / "check_rules" / "image_qc.py"
 
 sys.path.insert(0, str(SKILL_ROOT))
 
@@ -140,7 +140,9 @@ class HostingCase(unittest.TestCase):
         (run / "media_library.json").write_text(json.dumps({"ghl_folder_id": "fld_1", "uploaded": [row]}))
         return run
 
-    def decide(self, run: Path) -> dict:
+    def decide(self, run: Path, *, bind: bool = True) -> dict:
+        if bind:  # the branch's path: the binding is what admission consumes
+            image_stages.write_hosting_binding(self.root, run)
         return image_stages.hosted_admission(self.root, run)
 
     def problems(self, decision: dict) -> list:
@@ -284,30 +286,76 @@ class AdmissionTests(HostingCase):
         self.assertIn("the URL returned image/gif, not an image", self.problems(decision))
 
     def test_a_stale_local_artifact_is_still_refused(self):
+        """main's raw-route-ledger path: a file changed after the route recorded its hash is refused."""
         run = self.page(self.observe("/image.png"))
         (run / "image-generation-qc" / "Image-01.png").write_bytes(PNG + b"tampered")
         ledger = json.loads((run / "media_library.json").read_text())
         ledger["uploaded"][0]["sha256"] = hashlib.sha256(PNG).hexdigest()
         (run / "media_library.json").write_text(json.dumps(ledger))
-        decision = self.decide(run)
+        decision = self.decide(run, bind=False)  # no binding: the route's own row is what is read
         self.assertEqual(decision["state"], "refused")
         self.assertIn("is not the current artifact (the ledger's hash is stale)", self.problems(decision))
 
     def _https_row(self, run: Path, live: dict) -> None:
-        """The same row with a public https URL (what a real upload records) and this evidence."""
+        """The same row with a public https URL (what a real upload records), the hash the route
+        records for the bytes it sent, and this evidence."""
+        image = run / "image-generation-qc" / "Image-01.png"
         ledger = json.loads((run / "media_library.json").read_text())
-        ledger["uploaded"][0].update(public_url="https://host.test/image.png", liveness=live)
+        ledger["uploaded"][0].update(public_url="https://host.test/image.png", liveness=live,
+                                     sha256=hashlib.sha256(image.read_bytes()).hexdigest())
         (run / "media_library.json").write_text(json.dumps(ledger))
 
     def test_the_asset_map_path_refuses_the_html_page_too(self):
         """main's own map path (_hosted_urls) applies the same F17 evidence, so a page cannot
-        be rewritten to a login page's URL."""
+        be rewritten to a login page's URL. LND-002: that path now DELEGATES to the one
+        admission implementation, so the two can never disagree."""
         run = self.page(self.observe("/login"))
         self._https_row(run, self.observe("/login"))
         self.assertEqual(image_stages._hosted_urls(run), {})
         good = self.page(self.observe("/image.png"))
         self._https_row(good, self.observe("/image.png"))
         self.assertEqual(len(image_stages._hosted_urls(good)), 1)
+
+    def test_the_binding_hash_binding_still_refuses_a_changed_artifact(self):
+        run = self.page(self.observe("/image.png"))
+        self.decide(run)  # writes hosting-binding.json
+        (run / "image-generation-qc" / "Image-01.png").write_bytes(PNG + b"tampered")
+        decision = image_stages.hosted_admission(self.root, run)
+        self.assertEqual(decision["state"], "refused")
+        self.assertIn("is not the current artifact (the ledger's hash is stale)", self.problems(decision))
+
+    def test_the_binding_is_still_preferred_over_a_tampered_route_ledger(self):
+        run = self.page(self.observe("/image.png"))
+        self.assertEqual(self.decide(run)["state"], "pass")
+        ledger = json.loads((run / "media_library.json").read_text())
+        ledger["uploaded"][0].update(ghl_upload_status="failed", content_type="text/html")
+        (run / "media_library.json").write_text(json.dumps(ledger))
+        decision = image_stages.hosted_admission(self.root, run)  # reads the binding, not the row
+        self.assertEqual(decision["state"], "pass")
+
+    def test_the_binding_keeps_its_required_keys_and_the_local_hash(self):
+        run = self.page(self.observe("/image.png"))
+        path = image_stages.write_hosting_binding(self.root, run)
+        doc = json.loads(Path(path).read_text())
+        self.assertEqual(doc["schema"], image_stages.HOSTING_BINDING_SCHEMA)
+        self.assertEqual(doc["required_keys"], list(image_stages.BINDING_KEYS))
+        row = doc["uploads"][0]
+        self.assertEqual(row["sha256"], hashlib.sha256(PNG).hexdigest())
+        self.assertEqual(row["hash_source"], "admission")
+        self.assertEqual(row["content_type"], "image/png")
+        for key in image_stages.BINDING_KEYS:
+            self.assertIn(key, row, key)
+
+    def test_the_package_check_rule_names_the_html_refusal(self):
+        run = self.page(self.observe("/login"))
+        image_stages.write_hosting_binding(self.root, run)
+        spec = importlib.util.spec_from_file_location("bwx011_image_qc_rule", RULE_FILE)
+        rule = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rule)  # type: ignore[union-attr]
+        fails = rule._hosting_binding_violations({"pieces": [{"role": "landing"}]}, self.root)
+        self.assertEqual(len(fails), 1, fails)
+        self.assertTrue(fails[0].startswith("AF-LAUNCH-HOSTING-BINDING: page landing"), fails[0])
+        self.assertIn("text/html, which is a page, not a picture", fails[0])
 
 
 if __name__ == "__main__":
