@@ -24,16 +24,17 @@ of the image asset — using the system's visual capability, never a filename or
 Inspect the downloaded full-resolution asset:
 
 1. **Dimensions vs requested.**
-   - GPT Image 2 (legacy, retained but no longer required): 1:1 cannot convert to 4K; `auto`
+   - GPT Image 2 (legacy, own unchanged rules): 1:1 cannot convert to 4K; `auto`
      ratio yields 1K only; at 2K/4K the ratios **5:4, 4:5, 3:1, 1:3, 9:21** are
      excluded — if the returned image is one of those ratios at 2K/4K, the
      route silently bent the request. Verify against the requested resolution
      enum (1K/2K/4K).
    - GPT Image 2.6 (default, operator ruling 2026-09-09): a SEPARATE rule set,
-     never merged with the legacy one above — it has **NO per-resolution
-     exclusions**: one flat 16-member enum applies at 1K/2K/4K, and 27:16,
-     16:27, 9:8, 8:9 are not members at any resolution; the legacy auto/1:1
-     rules do NOT apply here.
+     never merged with the legacy one above. It has NO per-resolution
+     exclusions — every ratio in its enum is legal at 1K, 2K and 4K. Ratios
+     **27:16, 16:27, 9:8, 8:9** are not enum members at all, so a returned
+     image in one of those shapes means the wrong model answered or the route
+     bent the request.
    - Seedream: Basic/High/Ultra maps to resolution tiers (Pro Basic=1K,
      High=2K; Lite Basic=2K/High=3K/Ultra=4K; 4.5 Basic=2K/High=4K). Confirm
      the returned size matches the tier that was requested.

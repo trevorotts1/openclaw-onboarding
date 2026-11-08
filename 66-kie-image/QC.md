@@ -42,12 +42,10 @@ recordInfo/callback waiting, and MANDATORY real visual QC (spec 7.6).
 - [ ] Confirm the agent can explain: createTask 200 ≠ done; state enum
       waiting/queuing/generating/success/fail; 429 = rate limited (back off);
       callbacks are HMAC-SHA256 signed; retention (KIE documents 14 days for generated media but result URLs typically expire after 24 hours; persist immediately);
-      GPT Image 2.6 (default) has NO per-resolution exclusions — one flat
-      16-member enum (auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1,
-      1:2, 21:9, 9:21, 3:1, 1:3), and 27:16/16:27/9:8/8:9 are not members at any
-      resolution; GPT Image 2 (legacy, retained but no longer required)
-      ratio exclusions at 2K/4K (5:4, 4:5, 3:1, 1:3, 9:21), "auto" → 1K only,
-      1:1 never 4K — two separate rule sets, never merged.
+      GPT Image 2.6 (default) 16-value ratio enum, NO per-resolution
+      exclusions, prompt max 20,000 (owner ruling 2026-11-08), gif/svg text-to-image only; GPT Image 2
+      (legacy, retained) ratio exclusions at 2K/4K (5:4, 4:5, 3:1, 1:3, 9:21),
+      "auto" → 1K only, 1:1 never 4K — two separate rule sets, never merged.
 - [ ] Run validator test suites — every one must print PASS and exit 0:
       `python3 scripts/normalize_alias.py --self-test` (PASS)
       `python3 scripts/select_image_model.py --self-test` (PASS)
@@ -62,9 +60,10 @@ recordInfo/callback waiting, and MANDATORY real visual QC (spec 7.6).
 - [ ] Visual asset inspection: download the full-resolution asset and inspect
       it — never QC from a filename or a 200 OK.
 - [ ] Dimensions vs requested: GPT Image 2 (legacy) auto→1K only, 1:1 never
-      4K; GPT Image 2.6 (default) has no per-resolution exclusions and does not
-      accept 27:16/16:27/9:8/8:9 at any resolution — either
-      way, excluded ratios never silently returned at 2K/4K; Seedream tier
+      4K; GPT Image 2.6 (default) has no per-resolution exclusions, so any
+      returned ratio must be one of its 16 enum members (27:16/16:27/9:8/8:9
+      are not) — either way, an excluded or non-enum ratio never comes back
+      silently; Seedream tier
       maps to the expected resolution; refs respect Wan's min 240 px INPUT
       rule.
 - [ ] Reference & edit fidelity: subject identity/faces/product geometry/

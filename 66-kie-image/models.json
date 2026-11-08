@@ -1247,6 +1247,88 @@
         "Docs recommend callBackUrl; \"Get Task Details\" endpoint path NOT published on the page."
       ],
       "notes": "Ultra tier of Imagen 4 family; ratio-driven T2I."
+    },
+    {
+      "provider": "kie",
+      "display_name": "GPT Image 2.6 Flare (Text-to-Image)",
+      "family": "gpt-image-2-6/flare",
+      "canonical_model_id": "gpt-image-2-6/flare-text-to-image",
+      "aliases": ["gpt image 2.6 flare", "flare"],
+      "modality": "image",
+      "tasks": ["text-to-image"],
+      "api_family": "kie-market",
+      "create_endpoint": "/api/v1/jobs/createTask",
+      "query_endpoint": "/api/v1/jobs/recordInfo",
+      "auth_env": "KIE_API_KEY",
+      "vendor_hard_cap_chars": 32000,
+      "vendor_hard_cap_tokens": null,
+      "owner_observed_cap_chars": null,
+      "owner_prompt_cap_chars": 20000,
+      "cap_status": "DOCS",
+      "cap_ruling": "OWNER RULING 2026-11-08: the prompt cap is 20,000 characters. The captured KIE vendor schema reports maxLength 32,000; that published figure is retained verbatim for provenance and is NOT the governing limit. owner_prompt_cap_chars governs at limit resolution (limit_source owner-ruling:66-kie-image) and outranks the live vendor schema. The 32,000 figure is never rewritten.",
+      "house_prompt_min_chars": 16000,
+      "house_prompt_target_chars": 19000,
+      "house_prompt_max_chars": 20000,
+      "reference_images_max": null,
+      "reference_image_max_mb": null,
+      "reference_image_formats": null,
+      "resolutions": ["1K", "2K", "4K"],
+      "aspect_ratios": ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "2:1", "1:2", "21:9", "9:21", "3:1", "1:3"],
+      "ratio_resolution_exclusions": [],
+      "control_fields": ["aspect_ratio", "resolution"],
+      "output_formats": ["png", "jpeg", "webp", "gif", "svg"],
+      "sync": false,
+      "active": true,
+      "last_verified_at": "2026-11-08",
+      "source_url": "https://docs.kie.ai/market/gpt/gpt-image-2-6/flare-text-to-image",
+      "verified_notes": [
+        "2026-11-08: registered so the OWNER RULING cap of 20,000 chars covers the whole GPT Image 2.6 family. Capabilities mirror the sunburst sibling; this variant is not the routed default."
+      ],
+      "known_inconsistencies": [
+        "Vendor OpenAPI publishes prompt maxLength 32,000 for 2.6; the owner ruling sets 20,000 and governs. The 32,000 figure is retained for provenance and never rewritten."
+      ],
+      "notes": "Operator default general KIE image route (operator ruling 2026-09-09; supersedes GPT Image 2 as the preferred default). High-fidelity general generation, editing, product/brand images, detailed long-form creative instructions. Serves 3:1, 1:3, and 9:21 natively as of 2026-11-08 (vendor enum + live probe), so the legacy gpt-image-2 fallback is no longer required for those ratios; it is still wired and removing it needs Trevor's go-ahead. House band 5,000-19,000 is legal; hard-enforcement status PENDING_ACCEPTANCE_TEST, validators warn only."
+    },
+    {
+      "provider": "kie",
+      "display_name": "GPT Image 2.6 Flare (Image-to-Image)",
+      "family": "gpt-image-2-6/flare",
+      "canonical_model_id": "gpt-image-2-6/flare-image-to-image",
+      "aliases": ["gpt image 2.6 flare", "flare"],
+      "modality": "image",
+      "tasks": ["image-to-image", "edit", "reference-composition"],
+      "api_family": "kie-market",
+      "create_endpoint": "/api/v1/jobs/createTask",
+      "query_endpoint": "/api/v1/jobs/recordInfo",
+      "auth_env": "KIE_API_KEY",
+      "vendor_hard_cap_chars": 32000,
+      "vendor_hard_cap_tokens": null,
+      "owner_observed_cap_chars": null,
+      "owner_prompt_cap_chars": 20000,
+      "cap_status": "DOCS",
+      "cap_ruling": "OWNER RULING 2026-11-08: the prompt cap is 20,000 characters. The captured KIE vendor schema reports maxLength 32,000; that published figure is retained verbatim for provenance and is NOT the governing limit. owner_prompt_cap_chars governs at limit resolution (limit_source owner-ruling:66-kie-image) and outranks the live vendor schema. The 32,000 figure is never rewritten.",
+      "house_prompt_min_chars": 16000,
+      "house_prompt_target_chars": 19000,
+      "house_prompt_max_chars": 20000,
+      "reference_images_max": 16,
+      "reference_image_max_mb": 30,
+      "reference_image_formats": ["JPEG", "PNG", "WEBP", "JPG"],
+      "resolutions": ["1K", "2K", "4K"],
+      "aspect_ratios": ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "2:1", "1:2", "21:9", "9:21", "3:1", "1:3"],
+      "ratio_resolution_exclusions": [],
+      "control_fields": ["input_urls", "aspect_ratio", "resolution"],
+      "output_formats": ["png", "jpeg", "webp"],
+      "sync": false,
+      "active": true,
+      "last_verified_at": "2026-11-08",
+      "source_url": "https://docs.kie.ai/market/gpt/gpt-image-2-6/flare-image-to-image",
+      "verified_notes": [
+        "2026-11-08: registered so the OWNER RULING cap of 20,000 chars covers the whole GPT Image 2.6 family. Capabilities mirror the sunburst sibling; this variant is not the routed default."
+      ],
+      "known_inconsistencies": [
+        "Vendor OpenAPI publishes prompt maxLength 32,000 for 2.6; the owner ruling sets 20,000 and governs. The 32,000 figure is retained for provenance and never rewritten."
+      ],
+      "notes": "Operator default general KIE image route (operator ruling 2026-09-09; supersedes GPT Image 2 as the preferred default). Logo/brand requests MUST use this route (reference the logo image, never text-to-image). Serves 3:1, 1:3, and 9:21 natively as of 2026-11-08 (vendor enum), so the legacy gpt-image-2 fallback is no longer required for those ratios; it is still wired and removing it needs Trevor's go-ahead. up to 16 refs @ 30MB each (30MB is carried forward, not 2.6 vendor-stated). Live probe 2026-09-10: input_urls and image_input both accepted (tasks 975252ea + 8fcde518, success); input_urls preferred per vendor page. Vendor 2.6 also exposes mask_url OR markup, mutually exclusive."
     }
   ]
 }

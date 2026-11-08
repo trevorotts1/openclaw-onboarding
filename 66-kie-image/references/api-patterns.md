@@ -95,9 +95,9 @@ validation error (`recordInfo is null`), 429 rate limited, 433, 455 maintenance,
 
 ### 6.1 GPT Image 2 (Legacy)
 
-LEGACY route, retained by operator ruling 2026-09-09 for aspect ratios 3:1,
-1:3, 9:21 only — GPT Image 2.6 Sunburst (6.1b, below) is now the default.
-This section's schema is UNCHANGED.
+LEGACY route, retained with its own unchanged rules — GPT Image 2.6 (6.1b,
+below) is now the default and serves 3:1, 1:3, 9:21 natively, so this route
+is no longer required for any ratio. This section's schema is UNCHANGED.
 
 t2i model `gpt-image-2-text-to-image`; i2i model `gpt-image-2-image-to-image`.
 
@@ -115,33 +115,46 @@ t2i model `gpt-image-2-text-to-image`; i2i model `gpt-image-2-image-to-image`.
   ratio parameter will only be converted to 1K images"; "Images with a 1:1
   aspect ratio cannot be converted to 4K images".
 
-### 6.1b GPT Image 2.6 Sunburst (Default, operator ruling 2026-09-09)
+### 6.1b GPT Image 2.6 Sunburst and Flare (Default, operator ruling 2026-09-09)
 
-OWNER-PREFERRED DEFAULT, supersedes GPT Image 2 above. Two-model system: this
-route serves EVERY ratio in the vendor 2.6 enum natively, including 3:1, 1:3 and
-9:21, so no ratio dispatches to 6.1 by necessity (6.1 is retained, still wired).
+OWNER-PREFERRED DEFAULT, supersedes GPT Image 2 above. This route serves every
+ratio in its own enum, including 3:1, 1:3 and 9:21 — no ratio routes to 6.1
+any more. Model ids are SLASH form: a hyphenated `gpt-image-2-6-sunburst-*` is
+rejected with HTTP 422 "model name not supported" (measured 2026-11-08).
 
-t2i model `gpt-image-2-6/sunburst-text-to-image`; i2i model
-`gpt-image-2-6/sunburst-image-to-image`.
+t2i models `gpt-image-2-6/sunburst-text-to-image`,
+`gpt-image-2-6/flare-text-to-image`; i2i models
+`gpt-image-2-6/sunburst-image-to-image`,
+`gpt-image-2-6/flare-image-to-image`.
 
-- `prompt` (required; max 20,000 chars — owner ruling 2026-11-08, which governs
-  over the larger vendor docs figure; the GPT Image 2 25K owner-confirmation does
-  not carry forward, see prompt-policy.md).
-- `aspect_ratio`: `auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1,
-  1:2, 21:9, 9:21, 3:1, 1:3` (exactly 16 values, canonical order; 27:16 / 16:27 /
-  9:8 / 8:9 are NOT members at any resolution).
-- `resolution`: `1K`, `2K`, `4K`.
-- i2i refs: `input_urls` array, **maxItems: 16**, max 30MB, formats JPEG/PNG/
-  WEBP/JPG (carried forward unchanged from GPT Image 2 — not ruled on).
-  `mask_url` XOR `markup` (mutually exclusive) for inpainting.
-- Per-resolution exclusions: NONE. One flat enum applies at 1K, 2K and 4K. The
-  legacy "auto -> 1K only" and "1:1 cannot convert to 4K" rules are RETIRED
-  here — not restated in the 2.6 docs.
-- Routing: no substitution and no legacy dispatch. 5:4, 4:5, 2:1, 1:2, 3:1, 1:3
-  and 9:21 are all sent as asked. (The 2026-09-09 substitution table —
-  5:4→4:3, 4:5→3:4, 2:1→16:9, 1:2→9:16 — and the 3:1/1:3/9:21 legacy dispatch
-  are RETRACTED as of 2026-11-08: vendor enum plus a live 3:1 createTask probe,
-  both 2026-11-08.)
+- `prompt` (required; max 20,000 chars — OWNER RULING 2026-11-08, which
+  governs over the vendor OpenAPI's published 32,000 maxLength; the GPT Image
+  2 25K owner-confirmation does not carry forward, see prompt-policy.md).
+- `aspect_ratio` (16 values): `auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9,
+  9:16, 2:1, 1:2, 21:9, 9:21, 3:1, 1:3`.
+  27:16, 16:27, 9:8 and 8:9 are NOT members of this enum at all — they were
+  2.5-only 1K ratios and are now rejected as invalid enum members at every
+  resolution, not by any per-resolution exclusion.
+- `resolution`: `1K`, `2K`, `4K` (default `1K`). The vendor document states NO
+  per-resolution aspect-ratio exclusions: every ratio in the enum is legal at
+  every resolution. The legacy "auto -> 1K only" and "1:1 cannot convert to
+  4K" rules do NOT apply here.
+- `quality`: `low`, `medium`, `high`, `xhigh`, `max`, `auto` (default
+  `medium`). `background`: `transparent`, `opaque`, `auto`.
+- `complexity`: `low`, `medium`, `high`; `moderation`: `auto`, `low`.
+- `output_format`: t2i `png`, `jpeg`, `webp`, `gif`, `svg`; i2i `png`, `jpeg`,
+  `webp` ONLY — gif and svg are text-to-image only.
+- i2i refs: `input_urls` array, **maxItems: 16**, max 30MB, formats
+  JPEG/PNG/WEBP only, publicly reachable. `mask_url` OR `markup`, mutually
+  exclusive — never both.
+- Conditional fields (rejected when the output format does not match):
+  `output_compression` only with jpeg/webp; `size`, `frame_count` and
+  `frame_duration_ms` only with gif; the `svg` object only with svg.
+  `frame_count` integer 2-16 (default 9); `frame_duration_ms` integer 20-2000,
+  multiple of 10 (default 200); a gif `size` must be multiples of 16 and must
+  not be a ratio name.
+- Failure signal: KIE answers HTTP 200 with a failure `code` in the response
+  body — read `code` in the body, never the transport status alone.
 
 ### 6.2 Qwen Image 3.0 / Pro
 
