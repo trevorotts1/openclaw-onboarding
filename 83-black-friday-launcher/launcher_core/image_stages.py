@@ -43,7 +43,9 @@ and this driver owns the deterministic half of it:
 * the hosting ledger is admitted per asset: the current file's hash, the page/slot, the folder,
   the media id, a recognised completion status and a usable URL — a non-empty HTML response is
   never proof of a correct picture, and CDN transformation is expected (the LOCAL hash is the
-  identity; the remote bytes are never compared to it).
+  identity; the remote bytes are never compared to it). ``write_hosting_binding`` emits that
+  binding from the hosting route's own receipts (or the Skill 49 rail's ledger) and
+  ``hosted_admission`` reads it; a raw upload row is never admitted without the binding.
 
 The page SET comes from Skill 49's inventory (``page_types.json``) read against the run's launch
 record, never from a directory count: a planned page with no run folder is named missing.
@@ -78,7 +80,14 @@ FINAL_REQUEST = "production-request-final-mockups.json"
 PROMPT_AUTHOR_ENV = "SKILL83_PROMPT_AUTHOR"     # a registered prompt-author command, optional
 MAP_VALIDATOR = "validate_image_manifest.py"     # the stage contract's own map validator
 HOSTING_ROUTE = "45-design-intelligence-library/scripts/graphics_ghl_push.py"
-MEDIA_LIBRARY = "media_library.json"             # the ledger that hosting route writes
+MEDIA_LIBRARY = "media_library.json"             # the receipt ledger that hosting route writes
+MEDIA_LEDGER = "media_ledger.json"               # the Skill 49 hosting rail's declared ledger
+HOSTING_BINDING = "hosting-binding.json"         # the binding THIS launcher produces and consumes
+HOSTING_BINDING_SCHEMA = "launcher.hosting-binding/1"
+ROUTE_LEDGERS = (MEDIA_LIBRARY, MEDIA_LEDGER)
+RECOGNIZED_UPLOAD_STATUSES = ("complete",)
+BINDING_KEYS = ("local_path", "sha256", "location_id", "page", "slot",
+                "ghl_folder_id", "ghl_media_id", "ghl_upload_status", "public_url")
 DESIGN_ONLY_ROLES = ("checkout", "downsell_2")   # mockups are the deliverable; no live page is built
 _SKIP_DIRS = {"private", ".git", "node_modules", "__pycache__"}
 _MAX_DEPTH = 5
@@ -339,6 +348,7 @@ class _Page:
 
     def produce_map(self) -> None:
         if not (self.run / "image-map-upload" / "image-map.json").is_file():
+            write_hosting_binding(self.run_dir, self.run)  # refresh the binding before admitting it
             hosted = hosted_admission(self.run_dir, self.run)
             self.notes["hosting"] = hosted
             if write_image_map(self.run_dir, self.run) is None:
@@ -575,13 +585,182 @@ def author_command(run_dir: Path, page_run: Path, kind: str) -> Optional[List[st
     return None
 
 
+def _route_ledger(run_dir: Path, run: Path) -> Tuple[Optional[Dict[str, Any]], str]:
+    """The hosting route's OWN receipt ledger (page run first, then the launch root).
+
+    Two real producers are accepted: Skill 45's ``media_library.json`` (one row per uploaded
+    file) and the Skill 49 hosting rail's ``media_ledger.json`` (one row per planned image).
+    This is the input to ``write_hosting_binding``; it is never admitted directly.
+    """
+    for name in ROUTE_LEDGERS:
+        for path in (Path(run) / name, Path(run_dir) / name):
+            doc = _read(path)
+            if isinstance(doc, dict):
+                return doc, str(path)
+    return None, (f"no {MEDIA_LIBRARY} or {MEDIA_LEDGER}: hosting has not recorded an upload "
+                  "for this launch")
+
+
 def _hosting_ledger(run_dir: Path, run: Path) -> Tuple[Optional[Dict[str, Any]], str]:
-    """The media ledger the graphics hosting route writes (page run first, then the launch root)."""
-    for path in (Path(run) / MEDIA_LIBRARY, Path(run_dir) / MEDIA_LIBRARY):
+    """The binding the launcher consumes, else the route's raw receipt ledger.
+
+    ``hosting-binding.json`` is written by ``write_hosting_binding`` and is what
+    ``hosted_admission`` reads. The route ledger remains a read-only fallback so a launcher
+    that has not yet emitted its binding reports the route's refusal by name instead of
+    pretending no upload exists.
+    """
+    for path in (Path(run) / HOSTING_BINDING, Path(run_dir) / HOSTING_BINDING):
         doc = _read(path)
         if isinstance(doc, dict):
             return doc, str(path)
-    return None, f"no {MEDIA_LIBRARY}: hosting has not recorded an upload for this launch"
+    return _route_ledger(run_dir, run)
+
+
+def _binding_location(ledger: Dict[str, Any], run: Path) -> Optional[str]:
+    """The tenant/location an upload belongs to: the route ledger's own, else the run's record."""
+    for source in (ledger, _read(Path(run) / "intake.json") or {},
+                   _read(Path(run).parent / "launch.json") or {},
+                   _read(Path(run).parent.parent / "launch.json") or {}):
+        if not isinstance(source, dict):
+            continue
+        for key in ("location_id", "tenant_id"):
+            value = str(source.get(key) or "").strip()
+            if value:
+                return value
+    return None
+
+
+def _binding_revision(run_dir: Path, run: Path) -> Dict[str, Any]:
+    """The run identity a binding is scoped to, only from records the run already carries.
+
+    A binding is bound to the exact launch/revision it was admitted for; a value that no
+    record declares is left out rather than invented.
+    """
+    out: Dict[str, Any] = {}
+    for source in (_read(Path(run).parent / "launch.json") or {},
+                   _read(Path(run) / "intake.json") or {},
+                   _read(Path(run_dir) / "launch.json") or {}):
+        if not isinstance(source, dict):
+            continue
+        launch = source.get("launch") if isinstance(source.get("launch"), dict) else {}
+        for key in ("launch_id", "revision", "tenant_id", "location_id"):
+            if key not in out and source.get(key) not in (None, ""):
+                out[key] = source[key]
+            elif key not in out and launch.get(key) not in (None, ""):
+                out[key] = launch[key]
+    return out
+
+
+def _binding_entry(entry: Dict[str, Any], run: Path,
+                   location: Optional[str]) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+    """One route receipt bound to THIS run's current artifact, or the reasons it cannot be.
+
+    The local SHA-256 is computed here from the exact file the launcher is about to ship; the
+    route's own hash is verified when it recorded one. Folder, remote media id, recognised
+    completion status and the final URL come from the route. Nothing is invented: a missing
+    key is a named refusal, never a default.
+    """
+    local = str(entry.get("local_path") or entry.get("path") or entry.get("file") or "")
+    if not local:
+        return None, ["names no local artifact (no local_path)"]
+    target = Path(local) if Path(local).is_absolute() else Path(run) / local
+    if not target.is_file():
+        return None, ["the local artifact does not exist"]
+    problems: List[str] = []
+    digest = _sha(target)
+    recorded_hash = str(entry.get("sha256") or "").strip()
+    if recorded_hash and recorded_hash != digest:
+        problems.append("is not the artifact the route uploaded (the route's recorded hash is stale)")
+    folder = str(entry.get("ghl_folder_id") or "").strip()
+    if not folder:
+        problems.append("records no verified folder (ghl_folder_id)")
+    media_id = str(entry.get("ghl_media_id") or entry.get("file_id") or "").strip()
+    if not media_id:
+        problems.append("records no remote media id (ghl_media_id/file_id)")
+    status = str(entry.get("ghl_upload_status") or "").strip()
+    if status not in RECOGNIZED_UPLOAD_STATUSES:
+        problems.append(f"completion status is {status!r}, not one of {list(RECOGNIZED_UPLOAD_STATUSES)}")
+    url = str(entry.get("public_url") or entry.get("ghl_public_url")
+              or entry.get("media_url") or entry.get("url") or "")
+    if not url.lower().startswith(("http://", "https://")):
+        problems.append("records no usable hosted URL")
+    live = entry.get("liveness") if isinstance(entry.get("liveness"), dict) else None
+    if live is not None and live.get("live") is not True:
+        problems.append("the URL is not recorded as live")
+    if not location:
+        problems.append("records no tenant/location (neither the route ledger nor the run declares one)")
+    if problems:
+        return None, problems
+    slug = str(entry.get("asset_id") or Path(local).stem).strip()
+    return ({
+        "local_path": str(target.resolve()),
+        "sha256": digest,
+        "hash_source": "route" if recorded_hash else "admission",
+        "location_id": location,
+        "page": str(entry.get("page") or entry.get("page_key") or "").strip() or page_key_for_run(run),
+        "slot": str(entry.get("slot") or slug).strip(),
+        "asset_id": slug,
+        "name": str(entry.get("name") or Path(local).name),
+        "ghl_folder_id": folder,
+        "ghl_media_id": media_id,
+        "ghl_upload_status": status,
+        "public_url": url,
+        "content_type": entry.get("content_type") or entry.get("mime_type"),
+        "liveness": live or {},
+        "uploaded_at": entry.get("uploaded_at"),
+        "route": HOSTING_ROUTE,
+    }, [])
+
+
+def write_hosting_binding(run_dir: Path, run: Path,
+                          ledger_path: Optional[Path] = None) -> Optional[Path]:
+    """Emit ``<run>/hosting-binding.json`` — the hosting decision the launcher consumes (F17).
+
+    Reads the hosting route's own receipts and BINDS each one to the current local artifact:
+    the local SHA-256 computed here, the page/slot and run identity from the run's records,
+    the tenant/location the route ledger or the run declares, and the route's verified folder,
+    remote media id, recognised completion status and final URL. It never invents an upload
+    and never rewrites the route's ledger; an entry that cannot be bound is refused by name
+    in the binding. Returns the binding path (written even when every entry is refused, so
+    the launcher can say why), or None when no route ledger exists at all.
+    """
+    run, run_dir = Path(run).resolve(), Path(run_dir)
+    if ledger_path is not None:
+        ledger, source = _read(Path(ledger_path)), str(ledger_path)
+    else:
+        ledger, source = _route_ledger(run_dir, run)
+    if not isinstance(ledger, dict):
+        return None
+    location = _binding_location(ledger, run)
+    rows = ledger.get("uploads") if isinstance(ledger.get("uploads"), list) else (
+        ledger.get("uploaded") if isinstance(ledger.get("uploaded"), list) else
+        ledger.get("images") if isinstance(ledger.get("images"), list) else [])
+    bound: List[Dict[str, Any]] = []
+    refused: List[Dict[str, Any]] = []
+    for entry in rows:
+        if not isinstance(entry, dict):
+            continue
+        row, problems = _binding_entry(entry, run, location)
+        if row is not None:
+            bound.append(row)
+        else:
+            refused.append({"local_path": entry.get("local_path") or entry.get("path"),
+                            "problems": problems})
+    doc = {
+        "schema": HOSTING_BINDING_SCHEMA,
+        "required_keys": list(BINDING_KEYS),
+        "run": _binding_revision(run_dir, run),
+        "route": HOSTING_ROUTE,
+        "source_ledger": source,
+        "location_id": location,
+        "page": page_key_for_run(run),
+        "uploads": bound,
+        "refused": refused,
+        "state": "pass" if bound and not refused else ("partial" if bound else "refused"),
+    }
+    path = run / HOSTING_BINDING
+    _write_json(path, doc)
+    return path
 
 
 _HTML_TYPES = ("text/html", "application/xhtml+xml")
@@ -621,6 +800,7 @@ def hosted_admission(run_dir: Path, run: Path) -> Dict[str, Any]:
         out["state"] = "not_recorded"
         out["reason"] = source
         return out
+    out["binding_schema"] = ledger.get("schema")
     location = (str(ledger.get("location_id") or ledger.get("tenant_id") or "")).strip()
     run_intake = _read(Path(run) / "intake.json") or {}
     run_location = str((run_intake or {}).get("location_id") or "").strip() if isinstance(run_intake, dict) else ""
@@ -629,7 +809,10 @@ def hosted_admission(run_dir: Path, run: Path) -> Dict[str, Any]:
         out["state"] = "refused"
         out["refused"].append(f"the ledger belongs to location {location}, not this page's {run_location}")
         return out
-    for entry in ledger.get("uploaded") or []:
+    rows = ledger.get("uploads") if isinstance(ledger.get("uploads"), list) else (
+        ledger.get("uploaded") if isinstance(ledger.get("uploaded"), list) else
+        ledger.get("images") if isinstance(ledger.get("images"), list) else [])
+    for entry in rows:
         if not isinstance(entry, dict):
             continue
         local = str(entry.get("local_path") or "")
@@ -650,7 +833,8 @@ def hosted_admission(run_dir: Path, run: Path) -> Dict[str, Any]:
             problems.append("records no media id")
         if entry.get("ghl_upload_status") != "complete":
             problems.append(f"completion status is {entry.get('ghl_upload_status')!r}, not 'complete'")
-        url = str(entry.get("public_url") or entry.get("ghl_public_url") or "")
+        url = str(entry.get("public_url") or entry.get("ghl_public_url")
+                  or entry.get("media_url") or entry.get("url") or "")
         if not url.lower().startswith(("http://", "https://")):
             problems.append("records no usable hosted URL")
         live = entry.get("liveness") if isinstance(entry.get("liveness"), dict) else {}
@@ -667,6 +851,11 @@ def hosted_admission(run_dir: Path, run: Path) -> Dict[str, Any]:
             out["admitted"].append({"file": name, "public_url": url,
                                     "ghl_media_id": entry.get("ghl_media_id") or entry.get("file_id"),
                                     "sha256": entry.get("sha256")})
+    for refused in ledger.get("refused") or []:  # a binding that refused an asset is never a pass
+        if isinstance(refused, dict):
+            out["refused"].append({"file": Path(str(refused.get("local_path") or "?")).name,
+                                   "problems": list(refused.get("problems")
+                                                    or ["refused by the hosting binding"])})
     out["state"] = "pass" if out["admitted"] and not out["refused"] else (
         "partial" if out["admitted"] else "refused")
     return out
@@ -921,6 +1110,9 @@ def _page_entry(run: Path, run_dir: Path, approval: Optional[Dict[str, Any]], sc
             "counted_from": "desktop-wireframe/image-inventory.json through Skill 71's own "
                             "validate_image_manifest rule; the profile's allowance is Skill 49's page_types.json",
         }
+    binding = write_hosting_binding(run_dir, run)
+    if binding is not None:
+        entry["hosting_binding"] = {"path": str(binding), "schema": HOSTING_BINDING_SCHEMA}
     if approval is None:
         entry.update(status="awaiting_layout_proof_approval",
                      stages={s: "open" if not stage_closed(run, s) else "closed" for s in STAGES},

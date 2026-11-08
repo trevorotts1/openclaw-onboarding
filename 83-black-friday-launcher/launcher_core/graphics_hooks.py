@@ -36,6 +36,7 @@ QC_REPORT_REL = "qc/image_qc_report.json"
 QC_REQUEST_REL = "qc/image_qc_request.json"
 DELIVERY_REL = "delivery_record.json"
 LEDGER_REL = "media_library.json"
+HOSTING_BINDING_REL = "hosting-binding.json"   # the binding image_stages.write_hosting_binding emits
 GHL_MEDIA_REF = "06-ghl-install-pages/tools/ghl_media.py"
 STAGE_CONTRACT_REF = "71-blackceo-signature-page/references/stage-contract.json"
 QC_CODE = "AF-LAUNCH-IMAGE-QC"
@@ -161,6 +162,17 @@ def report_violations(manifest: Dict[str, Any], package_root: Path,
     return fails
 
 
+def _hosting_entries(job_dir: Path) -> List[Dict[str, Any]]:
+    """The launcher's hosting binding first, else the hosting route's raw receipt ledger."""
+    for name in (HOSTING_BINDING_REL, LEDGER_REL):
+        doc = _read(Path(job_dir) / name)
+        if isinstance(doc, dict):
+            rows = doc.get("uploads") if isinstance(doc.get("uploads"), list) else doc.get("uploaded")
+            if isinstance(rows, list):
+                return [e for e in rows if isinstance(e, dict)]
+    return []
+
+
 def ghl_media_present(repo_root: Optional[Path] = None) -> bool:
     try:
         return resolve_ref(GHL_MEDIA_REF, repo_root or REPO_ROOT).is_file()
@@ -175,8 +187,7 @@ def delivery_record(manifest: Dict[str, Any], package_root: Path, job_dir: Path,
     job_dir = Path(job_dir)
     report = _read(job_dir / QC_REPORT_REL) or {}
     qc = {str(a.get("local_path")): a for a in (report.get("assets") or []) if isinstance(a, dict)}
-    ledger = _read(job_dir / LEDGER_REL) or {}
-    hosted = {str(e.get("local_path")): e for e in (ledger.get("uploaded") or []) if isinstance(e, dict)}
+    hosted = {str(e.get("local_path")): e for e in _hosting_entries(job_dir)}
 
     assets: List[Dict[str, Any]] = []
     for img in collect_images(manifest, package_root):
