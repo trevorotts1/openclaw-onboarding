@@ -93,6 +93,7 @@ import design_style  # noqa: E402
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import sibling_skill  # noqa: E402  the ONE sibling-skill resolver (either directory convention)
 import reference_use  # noqa: E402  SPF022: reference images are structure only
 import brand_colors  # noqa: E402  SPF019: client brand colors gate
 import hypersaturation  # noqa: E402  SPF020: page color system + image grade, client colors
@@ -1812,10 +1813,21 @@ def _stage_record_edit(run_dir: Path, stage: str, edit):
 
 
 def _kie74_receipt():
-    """Skill 49's kie74_receipt.py, the one writer and checker of transport receipts (a sibling skill)."""
-    path = SKILL_ROOT.parent / "49-signature-funnel" / "scripts" / "kie74_receipt.py"
-    if not path.is_file():
-        raise ExecutorError(f"{path} not found: transport receipts cannot be written or checked without it")
+    """Skill 49's kie74_receipt.py, the one writer and checker of transport receipts (a sibling skill).
+
+    Resolved by SLUG through sibling_skill.skill_dir_for, so the same code runs in the
+    onboarding repository (`49-signature-funnel/`) and in a 999 package
+    (`.claude/skills/signature-funnel/`). Nothing spells the number and nothing looks in
+    the operator's home: an installation carries its own skills.
+    """
+    path = sibling_skill.skill_file("signature-funnel", "scripts", "kie74_receipt.py",
+                                    skill_root=SKILL_ROOT)
+    if path is None or not path.is_file():
+        raise ExecutorError(
+            "Skill 49's scripts/kie74_receipt.py was not found beside this skill "
+            f"(searched {', '.join(str(b) for b in sibling_skill.search_bases(SKILL_ROOT))} "
+            "for signature-funnel/SKILL.md): transport receipts cannot be written or "
+            "checked without it")
     saved = list(sys.path)
     try:
         spec = importlib.util.spec_from_file_location("kie74_receipt_skill49", path)
@@ -2157,16 +2169,25 @@ class KieProvider:
 
 
 def find_adapter(explicit: str | None) -> Path:
+    """The Skill 74 transport: an explicit path, the env override, then the sibling tree.
+
+    The sibling is resolved by SLUG (sibling_skill), so a 999 package named
+    `.claude/skills/kie-live-adapter` and an onboarding checkout named
+    `74-kie-live-adapter` both resolve. The old fallback to a second repository under
+    the operator's home is gone: an installation that needs Skill 74 carries it.
+    """
     candidates = [explicit, os.environ.get("SKILL71_KIE_ADAPTER")]
-    candidates += [
-        str(SKILL_ROOT.parent / "74-kie-live-adapter" / "scripts" / "kie_live_adapter.py"),
-        str(Path.home() / "openclaw-onboarding" / "74-kie-live-adapter" / "scripts" / "kie_live_adapter.py"),
-    ]
+    sibling = sibling_skill.skill_file("kie-live-adapter", "scripts", "kie_live_adapter.py",
+                                       skill_root=SKILL_ROOT)
+    if sibling is not None:
+        candidates.append(str(sibling))
     for c in candidates:
         if c and Path(c).is_file():
             return Path(c)
     raise ExecutorError(
-        "Skill 74 adapter not found; pass --kie-adapter PATH or set SKILL71_KIE_ADAPTER")
+        "Skill 74 adapter not found beside this skill; pass --kie-adapter PATH or set "
+        "SKILL71_KIE_ADAPTER (searched "
+        f"{', '.join(str(b) for b in sibling_skill.search_bases(SKILL_ROOT))})")
 
 
 def make_provider(args, run_dir: Path):
