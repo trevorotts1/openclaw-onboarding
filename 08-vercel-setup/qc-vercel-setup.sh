@@ -10,9 +10,14 @@ fi
 resolve_platform_paths
 # repo-fix-alert 2026-11-05T02:48:03Z(b): the installer runs QC under a minimal PATH;
 # resolve node/npm/jq through an absolute-path fallback so a healthy box does not FAIL.
+# The fallback covers the Homebrew prefixes only — the two places macOS actually
+# installs them and the two the installer's minimal PATH drops. It must NOT reach
+# into /usr/bin or /bin: macOS ships neither node nor jq there, so searching them
+# only masks a genuinely absent tool and defeats the "jq installed" assertion
+# (tests/unit/qc-sovereign-lock-forbidden-cli.test.sh T7).
 for _b in node npm jq; do
   if ! command -v "$_b" >/dev/null 2>&1; then
-    for _d in /opt/homebrew/bin /usr/local/bin /usr/bin /bin; do
+    for _d in /opt/homebrew/bin /usr/local/bin; do
       if [ -x "$_d/$_b" ]; then export PATH="$_d:$PATH"; break; fi
     done
   fi
