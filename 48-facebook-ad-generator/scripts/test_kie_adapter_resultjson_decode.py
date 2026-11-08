@@ -43,6 +43,12 @@ IMAGE_PY = ADAPTERS / "graphics" / "kie_image.py"
 
 RESULT_URL = "https://tempfile.aiquickdraw.com/s/fixture-result-12345.mp4"
 RESULT_IMG_URL = "https://tempfile.aiquickdraw.com/s/fixture-result-67890.png"
+
+# Inside the strict band for prompt_max = 1000 (floor 800, target 950-1000). The cases below prove
+# resultJson decoding, so the prompt must clear the length gate rather than be refused by it.
+BAND_PROMPT = ("a red barn at dusk beside a quiet lake with a long wooden fence, "
+               "tall grass and distant hills under a pale sky, rendered in warm light ") * 9
+BAND_PROMPT = (BAND_PROMPT + "detail")[:960].strip()
 # Synthetic high-entropy fixture key (never a real credential); the adapters reject placeholder-shaped keys.
 FIXTURE_KEY = "".join("ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"[(i * 37 + 11) % 57] for i in range(32))
 
@@ -235,14 +241,19 @@ def main() -> int:
     print("== resultJson as a JSON-ENCODED STRING: the saved file comes out of every route ==")
     t = FakeKieTransport()
     t.result_url = RESULT_IMG_URL
-    res = fresh_tool(img, "KieImage", t).execute({"prompt": "a red barn", "output_path": str(tmp / "img.png")})
+    # The policy root is off in this harness, so the fake schema is the only cap source. Publish a
+    # maxLength and use a prompt inside that band: an unknown maximum is refused fail-closed, and
+    # this case is about resultJson decoding, not about the length gate.
+    t.prompt_max = 1000
+    res = fresh_tool(img, "KieImage", t).execute({"prompt": BAND_PROMPT, "output_path": str(tmp / "img.png")})
     check("image createTask->recordInfo: success and the file is written", res.success and (tmp / "img.png").read_bytes() == b"FIXTURE-RESULT-BYTES",
           detail=str(getattr(res, "error", "")))
     check("image: kie_result_url is the URL decoded from the JSON string", res.data.get("kie_result_url") == RESULT_IMG_URL)
     check("image: the CDN download carried no API credentials (Skill 74 save)", t.downloads == [RESULT_IMG_URL])
 
     t = FakeKieTransport()
-    res = fresh_tool(vid, "KieVideo", t).execute({"prompt": "a calm lake", "output_path": str(tmp / "gem.mp4")})
+    t.prompt_max = 1000
+    res = fresh_tool(vid, "KieVideo", t).execute({"prompt": BAND_PROMPT, "output_path": str(tmp / "gem.mp4")})
     check("video gemini-omni-video createTask->recordInfo: success", res.success and res.data.get("model") == "gemini-omni-video",
           detail=str(getattr(res, "error", "")))
     check("video gemini-omni-video: kie_result_url decoded", res.data.get("kie_result_url") == RESULT_URL)
