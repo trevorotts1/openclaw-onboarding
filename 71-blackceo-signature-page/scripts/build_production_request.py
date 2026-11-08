@@ -92,13 +92,21 @@ LEADS = {
     "visual-mockup": "Styled desktop and mobile mockup, section {section_number} of "
                      "{section_total}, {section_name}, at {width}px.",
     "final-mockups": "Final production mockup, section {section_number} of {section_total}, "
-                     "{section_name}, at {width}px. Photographic editorial finish.",
+                     "{section_name}, at {width}px. Photographic editorial finish. The attached "
+                     "wireframe is a layout reference: its section chips, name tabs, type-spec "
+                     "labels and behaviour notes are annotations and are never drawn.",
 }
 BLOCKS = (("notes", "LAYOUT NOTES"), ("traits", "VISUAL STANDARD TRAITS"),
           ("rules_md", "DESIGN SYSTEM, MEASURED"), ("rules_json", "DESIGN TOKENS"))
 MD_BLOCKS = ("notes", "traits", "rules_md")
-SECTION_TAIL = ("SECTION {section_number} of {section_total}: {section_name} at {width}px\n"
-                "{layout}\nLAYOUT AND COPY:\n{copy}\nIMAGE SLOTS:\n{slots}")
+SECTION_HEAD = "SECTION {section_number} of {section_total}: {section_name} at {width}px\n"
+SECTION_BODY = "{layout}\nLAYOUT AND COPY:\n{copy}\nIMAGE SLOTS:\n{slots}"
+SECTION_TAIL = SECTION_HEAD + SECTION_BODY
+# A wireframe slice IS an annotated build spec, so its heading belongs in its prompt.
+# A mockup is the finished page: the numbered chip, the name tab and the annotation
+# blocks are production scaffolding and must never be drawn into it (see ROLE_NAMES,
+# and the comment above it). Only the body is sent to the mockup stages.
+MOCKUP_PROMPT_STAGES = ("visual-mockup", "final-mockups")
 
 
 # Neutral role names for the wireframe annotation. The guide's framework labels
@@ -690,7 +698,7 @@ def template_for(stage: str, blocks: dict) -> str:
             if key == "rules_json":  # literal braces survive the wire's str.format
                 body = body.replace("{", "{{").replace("}", "}}")
             parts += [heading, body]
-    parts.append(SECTION_TAIL)
+    parts.append(SECTION_BODY if stage in MOCKUP_PROMPT_STAGES else SECTION_TAIL)
     return "\n\n".join(parts)
 
 
