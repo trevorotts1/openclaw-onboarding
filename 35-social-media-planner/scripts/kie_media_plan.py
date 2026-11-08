@@ -68,11 +68,15 @@ def _first_str(obj, keys):
 
 def judge_image_model(requested):
     """-> (accepted: bool, reason). Only the GPT Image family at the 2.5 generation or newer."""
-    m = (requested or "").strip().lower().split("/")[-1]
-    if not m:
+    s = (requested or "").strip().lower()
+    if not s:
         return True, "none requested"
-    if "flare" in m:
+    if "flare" in s:
         return False, "flare variants are not registered; they need a new owner ruling"
+    # KIE ids are family/route (gpt-image-2-6/sunburst-text-to-image): the generation
+    # lives in the FIRST segment, so splitting on "/" and keeping the last one judged
+    # every correct id as a non-GPT route.
+    m = s.split("/")[0] if s.startswith("gpt-image-") else s.split("/")[-1]
     g = GPT_GEN.match(m)
     if g:
         gen = (int(g.group(1)), int(g.group(2) or 0))
@@ -114,7 +118,8 @@ def build_plan(image_cfg_path, video_cfg_path, skill_dir, openclaw_dir):
     accepted, why = judge_image_model(requested)
     violations += list(scan_banned(icfg, "image-model.json"))
     if requested and not accepted and not any(v["value"] == requested for v in violations):
-        violations.append({"file": "image-model.json", "value": requested, "action": "ignored, default used", "reason": why})
+        key = next((k for k in MODEL_KEYS if icfg.get(k) == requested), "model")
+        violations.append({"file": "image-model.json", "path": key, "value": requested, "action": "ignored, default used", "reason": why})
     image_model = requested if (requested and accepted) else DEFAULT_T2I
     i2i = image_model.replace("text-to-image", "image-to-image") if "text-to-image" in image_model else DEFAULT_I2I
 
