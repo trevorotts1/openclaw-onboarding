@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from .constants import REPO_ROOT, resolve_ref
+from . import section_structure
 
 CODE = "AF-LAUNCH-PAGE-DESIGNS"
 
@@ -514,6 +515,11 @@ def design_violations(manifest: Dict[str, Any], root: Path,
             if kind not in found:
                 fails.append(f"{CODE}: {key} is missing {kind.replace('_', ' ')}")
         fails.extend(_section_identity_violations(key, found))
+        if not test_only:
+            # F17 item 5: the sections a page must carry are ITS role's own structure, resolved from
+            # Skill 71's routing (page-structures.json, role_spec, copy_forms, page-kinds) — never the
+            # main sales-page skeleton applied to every role.
+            fails.extend(section_structure.section_problems(piece, key, found, section_identity))
         allowed = None if test_only else _section_rule(piece, rules)
         if allowed:
             counts = {k: len(v) for k, v in found.items() if k.endswith("_section")}
