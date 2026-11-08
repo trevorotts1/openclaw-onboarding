@@ -1,5 +1,6 @@
 """KIE prompt rule 12 before submit: the kieai provider refuses a prompt outside 95-100 percent of the model
-max (hard floor 80 percent) and names the exact characters to add or cut. Hermetic: the real Skill 74 adapter
+max (below 80 percent is the particularly clear hard failure; the only floor to clear is the 95 percent band
+floor, ceil(0.95 x max)) and names the exact characters to add or cut. Hermetic: the real Skill 74 adapter
 answers from its registry snapshot (no key, empty HOME); the Skill 74 call (kie74) is a trap that must not be reached out of band."""
 
 from __future__ import annotations
@@ -62,7 +63,7 @@ def go(ai, n, **kw):
 
 def test_79_percent_is_rejected_before_submit_with_chars_to_add(provider):
     ai, reached = provider
-    with pytest.raises(ValueError, match="ADD at least 200"):
+    with pytest.raises(ValueError, match="ADD at least 3200"):
         go(ai, MAX * 79 // 100)
     assert reached == []
 

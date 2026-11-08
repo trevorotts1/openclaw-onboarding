@@ -337,9 +337,12 @@ def evaluate(text, *, model=None, provider=None, max_chars=None, max_source=None
                    "%s of genuine specification (%s); a warning is not a pass" % (
                        n, unit, ratio, band["max"], band["floor"], kw["add"], unit, action))
         elif n < band["hard_floor"]:
+            # 80 percent is a SEVERITY note, never a target: the gap named must be the band floor's
+            # (ceil(0.95 x max), F18.4), not the 80 percent mark's.
             msg = ("prompt is %d %s (%.1f%% of max %d), below the %d%% hard floor; ADD at least %d "
-                   "%s of genuine specification (revise, never pad)" % (
-                       n, unit, ratio, band["max"], HARD_FLOOR_PERCENT, kw["add"], unit))
+                   "%s of genuine specification to reach the %d%% band floor of %d (revise, never pad)" % (
+                       n, unit, ratio, band["max"], HARD_FLOOR_PERCENT, kw["add"], unit,
+                       FLOOR_PERCENT, band["floor"]))
         else:
             msg = ("prompt is %d %s (%.1f%% of max %d), below the strict %d%% band; ADD %d %s of "
                    "genuine specification to reach %d (a warning is not a pass)" % (
