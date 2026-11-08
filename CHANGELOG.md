@@ -7,6 +7,17 @@
 - Skill 38's visual workflow protocol names the new family, so bumps Skill 38 to v2.0.225. The excluded-historical set stays untouched by the id migration: `evidence/`, `PROCESS-CERTIFICATE`, `provenance/calls.json`, and past CHANGELOG entries keep their original wording.
 - Migration: repository changes only; this draft has not been merged, deployed or rolled onto any client box.
 - Risk: MEDIUM. The cap tightens from the vendor's published 32,000 to the owner's 20,000, so prompts that were legal under the larger figure are now rejected on the ceiling. The gate names the exact characters to cut, and no floor or band was widened to accommodate them.
+- Leftovers the first pass missed are migrated too: Skill 71's stage-executor lifecycle self-check
+  fixture built its request with the retired hyphen id, and Skill 54's cover-prompt render-target
+  paragraph still named GPT-image-2.5. Both now name `gpt-image-2-6/sunburst-text-to-image`; the
+  cover prompt's own sha256 pin in `ANTHOLOGY-MANIFEST.json` is re-pinned to the edited bytes so
+  `prove_aw_fidelity.py` stays green. Kept as-is by design: the Skill 66 alias tables (compat shims
+  that resolve old phrases to 2.6), the Agnes-family files (a different vendor), run history,
+  `evidence/`, `examples/` and past CHANGELOG entries.
+- Versions: Skill 71 to v1.3.21 (all three carriers: `SKILL.md`, `skill-version.txt`, `VERSION`),
+  Skill 54 to v2.0.7 with its manifest `skill_version` reconciled from the stale v2.0.5, and
+  Skill 49 to v2.1.39 (registry-hash restamp: its two AGNES gate fixtures carry the updated
+  `KNOWN_ENTRY_HASH` and the SF prover pin is minted by the pin workflow, never hand-edited).
 
 ## [v27.1.71]  -  2026-11-05  -  Presentation intake asks one actual question at a time
 

@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 1.3.21 - 2026-11-08 - lifecycle self-check fixture names the current image model
+
+- `scripts/stage_executor.py`: the F21 lifecycle self-check's fixture request named the retired
+  `gpt-image-2-5-sunburst-text-to-image` id; it now builds the request with
+  `gpt-image-2-6/sunburst-text-to-image`, the slash form that is live (the hyphen form returns
+  HTTP 422). The check measures identity, reservation and resume behaviour, never the model, so
+  its assertions and the F18 prompt band are unchanged.
+- Version lockstep: `skill-version.txt`, `VERSION` and the `SKILL.md` frontmatter all move to
+  1.3.21 together.
+- Risk: LOW. One literal inside a self-check fixture.
+
 ## 1.3.12 - 2026-10-26 - oct-25 fix batch: l01-l08 install, preflight, handoff and intake hardening
 
 - `scripts/install_local.py` (l01): the installer no longer truncates a registry that resolves back to the same file it is writing, refuses symlinked registry leaves, honours dry-run failures, and applies the terminal-evidence rule to the executor exit. Tests: `tests/test_scripts.py`.
