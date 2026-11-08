@@ -1047,6 +1047,11 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
             allow_reentry = workflow.get("allow_multiple")
         allow_enrollment = build.get("allow_enrollment")
         if allow_enrollment not in ("single", "successive"):
+            # The launch reader also carries the declared decision under
+            # ``enrollment``; accept either shape so neither side's producer is
+            # silently dropped.
+            allow_enrollment = build.get("enrollment")
+        if allow_enrollment not in ("single", "successive"):
             allow_enrollment = None
         # F05: an UNDECLARED setting is recorded insufficient, never defaulted.
         # Applying a guessed reentry to a real workflow is the failure this
@@ -1071,6 +1076,11 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
             enrollment_record["reason"] = (
                 "recorded from the launch plan; this rail has no verified native "
                 "enrolment payload, so it is not applied here")
+        # The launch compiler carries the same declared enrolment decision
+        # through ``installable``.  It is recorded INSIDE the honest record and
+        # never promoted to ``applied``: there is still no verified native
+        # enrolment payload to apply or read back.
+        enrollment_record["carried"] = installable.get("enrollment")
         wf_key = "%s__%s" % (build.get("id"), workflow.get("key"))
         # The trigger is the automation's approved one.  A contact-tag trigger
         # carries the tag the builder creates; any other approved trigger has
@@ -1118,6 +1128,9 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
             "browser_steps": installable["browser_steps"],
             "channel_actions": installable["channel_actions"],
             "incomplete_actions": installable["incomplete_actions"],
+            # The plan's enrolment decision is carried above, inside the honest
+            # ``enrollment`` record (``carried``); it is not a second key here,
+            # because a duplicate would silently drop that record.
             "purchase_identity": installable["purchase_identity"],
             "compile_notes": installable["notes"],
         }
