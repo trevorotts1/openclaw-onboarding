@@ -174,6 +174,10 @@ _release_pin_require() {
   RELEASE_REF="main"
   if [ "$m" = "advisory" ]; then
     printf '[release-pin] %s (advisory: following moving main)\n' "$OC_RELEASE_PIN_REASON" >&2
+  else
+    # No pin requested at all: keep the legacy "follow latest" behaviour exactly,
+    # but never silently. An unpinned run is not reproducible; say so every pass.
+    printf '[release-pin] NO PIN REQUESTED (%s) -- following the MOVING default branch; this run is unpinned\n' "$OC_RELEASE_PIN_REASON" >&2
   fi
   return 0
 }
@@ -186,6 +190,45 @@ _release_clone_source() {
   else
     git clone --depth 1 --branch "$RELEASE_REF" "$url" "$dest" || return 1
   fi
+}
+# Resolve the platform bootstrap FROM THE APPROVED RELEASE and refuse to run an
+# unapproved one. Sets _PLATFORM_BOOTSTRAP (path) and _PLATFORM_BOOTSTRAP_TEMP
+# (non-empty only when we fetched into a temp file). Returns 0, or 78 with
+# OC_RELEASE_PIN_REASON set.
+#   no pin  -> legacy resolution (local bundle if present, else fetch at
+#              ONBOARDING_VERSION). LOUD: that is the moving default branch.
+#   pinned  -> the local bundle is used ONLY when its HEAD is provably the
+#              pinned commit; otherwise the file is fetched AT THE PIN. A fetch
+#              that fails REFUSES -- it never falls back to moving main.
+_release_bootstrap_resolve() {
+  local rel="platform/${OPENCLAW_PLATFORM}/bootstrap.sh"
+  local local_file="${_SCRIPT_DIR}/${rel}" want have
+  _PLATFORM_BOOTSTRAP=""
+  _PLATFORM_BOOTSTRAP_TEMP=""
+  if [ "$RELEASE_REF" = "main" ]; then
+    printf '[release-pin] platform bootstrap: UNPINNED (legacy resolution at %s)\n' "$ONBOARDING_VERSION" >&2
+    if [ -f "$local_file" ]; then _PLATFORM_BOOTSTRAP="$local_file"; return 0; fi
+    _PLATFORM_BOOTSTRAP_TEMP="$(mktemp)" || { OC_RELEASE_PIN_REASON="RELEASE_BOOTSTRAP_TEMP_UNAVAILABLE"; return 78; }
+    if ! curl -fsSL "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${ONBOARDING_VERSION}/${rel}" -o "$_PLATFORM_BOOTSTRAP_TEMP" 2>/dev/null; then
+      rm -f "$_PLATFORM_BOOTSTRAP_TEMP"; _PLATFORM_BOOTSTRAP_TEMP=""
+      OC_RELEASE_PIN_REASON="RELEASE_BOOTSTRAP_UNAVAILABLE"; return 78
+    fi
+    _PLATFORM_BOOTSTRAP="$_PLATFORM_BOOTSTRAP_TEMP"
+    return 0
+  fi
+  printf '[release-pin] platform bootstrap: pinned to %s\n' "$RELEASE_REF" >&2
+  if [ -f "$local_file" ] && command -v git >/dev/null 2>&1; then
+    want="$(git -C "$_SCRIPT_DIR" rev-parse --verify --quiet "${RELEASE_REF}^{commit}" 2>/dev/null || true)"
+    have="$(git -C "$_SCRIPT_DIR" rev-parse --verify --quiet "HEAD^{commit}" 2>/dev/null || true)"
+    if [ -n "$want" ] && [ "$want" = "$have" ]; then _PLATFORM_BOOTSTRAP="$local_file"; return 0; fi
+  fi
+  _PLATFORM_BOOTSTRAP_TEMP="$(mktemp)" || { OC_RELEASE_PIN_REASON="RELEASE_BOOTSTRAP_TEMP_UNAVAILABLE"; return 78; }
+  if ! curl -fsSL "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${RELEASE_REF}/${rel}" -o "$_PLATFORM_BOOTSTRAP_TEMP" 2>/dev/null; then
+    rm -f "$_PLATFORM_BOOTSTRAP_TEMP"; _PLATFORM_BOOTSTRAP_TEMP=""
+    OC_RELEASE_PIN_REASON="RELEASE_BOOTSTRAP_UNAVAILABLE"; return 78
+  fi
+  _PLATFORM_BOOTSTRAP="$_PLATFORM_BOOTSTRAP_TEMP"
+  return 0
 }
 # <<< RELEASE-PIN END <<<
 
@@ -245,12 +288,13 @@ export PLATFORM
 # re-exec below. (Mac power-resilience gate scoping.)
 export OPENCLAW_BOOTSTRAP_MODE=update
 
-_PLATFORM_BOOTSTRAP="${_SCRIPT_DIR}/platform/${OPENCLAW_PLATFORM}/bootstrap.sh"
+_PLATFORM_BOOTSTRAP=""
 _PLATFORM_BOOTSTRAP_TEMP=""
-if [ ! -f "$_PLATFORM_BOOTSTRAP" ]; then
-    _PLATFORM_BOOTSTRAP_TEMP="$(mktemp)" || exit 1
-    curl -fsSL "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${ONBOARDING_VERSION}/platform/${OPENCLAW_PLATFORM}/bootstrap.sh" -o "$_PLATFORM_BOOTSTRAP_TEMP" || { rm -f "$_PLATFORM_BOOTSTRAP_TEMP"; exit 1; }
-    _PLATFORM_BOOTSTRAP="$_PLATFORM_BOOTSTRAP_TEMP"
+_oc_bstrap_rc=0
+_release_bootstrap_resolve || _oc_bstrap_rc=$?
+if [ "$_oc_bstrap_rc" -ne 0 ] || [ -z "$_PLATFORM_BOOTSTRAP" ]; then
+    echo "update-skills.sh: REFUSED — ${OC_RELEASE_PIN_REASON:-RELEASE_BOOTSTRAP_UNAVAILABLE}: the ${OPENCLAW_PLATFORM} platform bootstrap could not be resolved from the approved release (${RELEASE_REF}). Nothing was changed." >&2
+    exit 78
 fi
 source "$_PLATFORM_BOOTSTRAP" || exit 1
 [ -z "$_PLATFORM_BOOTSTRAP_TEMP" ] || rm -f "$_PLATFORM_BOOTSTRAP_TEMP"
@@ -306,7 +350,16 @@ LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 #
 #  Escape hatches:
 #    FLEET_STANDING_GATE_BYPASS=1   skip the gate entirely (operator)
+#    FLEET_STANDING_GATE_BYPASS_ACK="<who>"  record WHO authorised that bypass
 #    FLEET_STANDING_GATE_SHADOW=1   report the verdict, never block
+#
+#  STRICT STATES (inside a roll, or FLEET_STANDING_GATE_STRICT=1):
+#  the weekly policy above is unchanged, but a roll must never skip the gate
+#  silently, so the states become explicit --
+#    allowed       -> proceed
+#    held          -> stop as FLEET-STANDING-HELD   (deliberate, not a failure)
+#    unknown/error -> stop as FLEET-STANDING-UNDETERMINED (blind HTTP error,
+#                     unresolvable slug, unmatched box, unreadable reply)
 #
 #  NEVER prints the header secret.
 # ============================================================
@@ -447,21 +500,62 @@ PYEOF
 
 fleet_standing_gate() {
     if [ "${FLEET_STANDING_GATE_BYPASS:-0}" = "1" ]; then
-        echo "  [standing-gate] bypassed (FLEET_STANDING_GATE_BYPASS=1)"
+        # Deliberate escape hatch -- never anonymous. Name who authorised it, or
+        # say plainly that nobody did. The bypass is a decision, not a default.
+        local _by="${FLEET_STANDING_GATE_BYPASS_ACK:-}"
+        if [ -z "$_by" ]; then
+            echo "  [standing-gate] BYPASSED via FLEET_STANDING_GATE_BYPASS=1 — authorisation UNATTRIBUTED (set FLEET_STANDING_GATE_BYPASS_ACK to record who authorised it)"
+        else
+            echo "  [standing-gate] BYPASSED via FLEET_STANDING_GATE_BYPASS=1 — authorised by: ${_by}"
+        fi
         return 0
     fi
+
+    # Inside a roll the gate must never silently skip: the roll owns the box and
+    # can be told the truth. Outside a roll (the Sunday cron, a client box) the
+    # documented FAIL-OPEN policy below is UNCHANGED -- see the block header.
+    # The roll signal is the same one scripts/self-update.sh exports for
+    # _oc_under_roll further down this file.
+    _fleet_standing_strict() {
+        [ "${FLEET_STANDING_GATE_STRICT:-0}" = "1" ] && return 0
+        [ -n "${SELF_UPDATE_ROLL_ID:-}" ] && return 0
+        case "${SELF_UPDATE_RUN_ID:-}" in ap-*) return 0 ;; esac
+        return 1
+    }
+    # Stop with an EXPLICIT state. HELD is a legitimate verdict, never a defect;
+    # UNDETERMINED means standing could not be established. Exit 0 is deliberate:
+    # it is the same documented "nothing changed" shape as PAUSED-PREFLIGHT, so a
+    # caller can never mistake a hold for a broken install. The state line is the
+    # machine-readable contract (FLEET-STANDING-HELD / FLEET-STANDING-UNDETERMINED).
+    _fleet_standing_stop() {
+        echo ""
+        echo "============================================================"
+        echo "  FLEET-STANDING-${1}: ${2}"
+        echo "  ${3}"
+        echo "  Nothing on this system has been changed and everything keeps"
+        echo "  running as it is. This is a deliberate stop -- NOT an installer"
+        echo "  failure, and NOT a fixable fault to retry blindly."
+        echo "============================================================"
+        echo ""
+        exit 0
+    }
 
     local url="${FLEET_STANDING_GATE_URL:-}"
     local hdr_name="${FLEET_STANDING_GATE_HEADER:-X-Fleet-Standing-Secret}"
     local hdr_val="${FLEET_STANDING_GATE_SECRET:-}"
 
     if [ -z "$url" ] || [ -z "$hdr_val" ]; then
+        # Gate not deployed on this box. That is a deployment fact, not an
+        # unknown standing: the block header promises such boxes are inert.
         echo "  [standing-gate] not configured on this box -- proceeding (fail open)"
         return 0
     fi
 
     local slug; slug="$(fleet_standing_resolve_slug)"
     if [ -z "$slug" ]; then
+        if _fleet_standing_strict; then
+            _fleet_standing_stop "UNDETERMINED" "BOX_SLUG_UNRESOLVED" "This box's slug could not be resolved, so the gate was never even asked."
+        fi
         echo "  [standing-gate] could not resolve box slug -- proceeding (fail open)"
         return 0
     fi
@@ -484,6 +578,9 @@ fleet_standing_gate() {
     done
 
     if [ "$code" != "200" ]; then
+        if _fleet_standing_strict; then
+            _fleet_standing_stop "UNDETERMINED" "GATE_UNREACHABLE" "The gate is configured but did not answer (HTTP ${code:-000}), so this box's standing is UNKNOWN."
+        fi
         echo "  [standing-gate] gate unreachable (HTTP ${code:-000}) -- proceeding (fail open)"
         return 0
     fi
@@ -512,10 +609,26 @@ fleet_standing_gate() {
             # allowed. Marker-fenced, so only this block is touched.
             fleet_standing_clear_held_notice
             return 0 ;;
-        unmatched|held)
+        unmatched)
+            # "not on the roster" / "lookup failed" is UNKNOWN standing, not good
+            # standing. Inside a roll that must stop; outside a roll the legacy
+            # fail-open policy is unchanged.
+            if _fleet_standing_strict; then
+                _fleet_standing_stop "UNDETERMINED" "GATE_VERDICT_UNMATCHED" "The gate answered 'unmatched': this box could not be found in the roster, so its standing is UNKNOWN."
+            fi
             echo "  [standing-gate] verdict '${verdict}' (box not on roster or lookup failed) -- proceeding (fail open)"
             return 0 ;;
+        held)
+            # A HELD verdict is a DELIBERATE hold, not a defect and not a failure.
+            if _fleet_standing_strict; then
+                _fleet_standing_stop "HELD" "GATE_VERDICT_HELD" "The gate answered 'held' -- a deliberate hold on this box."
+            fi
+            echo "  [standing-gate] verdict '${verdict}' (deliberate hold) -- proceeding (fail open; legacy policy outside a roll)"
+            return 0 ;;
         *)
+            if _fleet_standing_strict; then
+                _fleet_standing_stop "UNDETERMINED" "GATE_REPLY_UNRECOGNISED" "The gate's reply could not be understood, so this box's standing is UNKNOWN."
+            fi
             echo "  [standing-gate] unrecognised reply -- proceeding (fail open)"
             return 0 ;;
     esac
@@ -571,6 +684,8 @@ fleet_standing_gate() {
     echo "  date the latest version will install on the next check."
     echo "============================================================"
     echo ""
+    echo "FLEET-STANDING-HELD: ${slug}"
+    echo "  (deliberate hold -- NOT an installer failure; nothing was verified because nothing was installed)"
     exit 0
 }
 
@@ -619,6 +734,63 @@ fleet_preflight_checks() {
     return 0
 }
 fleet_preflight_checks
+
+#=== BEGIN BOUNDED-CHILD-V1 ===
+# ----------------------------------------------------------
+#  BOUND EVERY CHILD THE ROLL CAN HANG ON -- ONE MECHANISM.
+#
+#  scripts/run-with-deadline.py is the repo's ONLY deadline runner; the QC gate
+#  (scripts/onboarding-state.sh) already uses it for `skills-info` and
+#  `qc-script`. Three children in THIS updater were previously unbounded and are
+#  the per-pass time sink: the stamp-pin re-stamp, the post-copy verify.sh, and
+#  the general per-skill installer (the one that actually spun). One wrapper, so
+#  there is one mechanism, not three.
+#
+#  On timeout the helper SIGTERMs then SIGKILLs the whole process group, so the
+#  child AND its descendants die. The files already copied stay installed, the
+#  skill is recorded UNVERIFIED, and the roll CONTINUES. A timeout is NEVER
+#  converted into a success.
+#
+#  rc: 0 = passed | 124 = killed at the deadline | 125 = runner could not run
+#      anything else = the child's own exit status.
+# ----------------------------------------------------------
+oc_bounded_deadline_helper() {
+  local d
+  for d in "${ONBOARDING_DIR:-}" "${_SCRIPT_DIR:-}" "${OC_CONFIG:-}" "${OPENCLAW_ROOT:-}" "$HOME/.openclaw"; do
+    [ -n "$d" ] || continue
+    if [ -f "$d/scripts/run-with-deadline.py" ]; then printf '%s' "$d/scripts/run-with-deadline.py"; return 0; fi
+    if [ -f "$d/run-with-deadline.py" ]; then printf '%s' "$d/run-with-deadline.py"; return 0; fi
+  done
+  return 1
+}
+# Clamp an override into the helper's accepted 1..3600 range, so a bad value can
+# never turn into rc 125 (which would look like a failed child).
+oc_bounded_seconds() {
+  local v="${1:-}" d="${2:-180}"
+  case "$v" in ''|*[!0-9]*) v="$d" ;; esac
+  [ "$v" -ge 1 ] 2>/dev/null || v="$d"
+  [ "$v" -le 3600 ] || v=3600
+  printf '%s' "$v"
+}
+# oc_bounded_run <seconds> <kind> <command...>
+# `kind` names the diagnostics subfolder (stamp-pin | verify | installer).
+# The helper's --label vocabulary is fixed (skills-info|qc-script); the KIND is
+# carried by the diagnostics path instead, so no second runner is needed.
+oc_bounded_run() {
+  local secs="$1" kind="$2" helper diag
+  shift 2
+  helper="$(oc_bounded_deadline_helper 2>/dev/null || true)"
+  if [ -z "$helper" ] || ! command -v python3 >/dev/null 2>&1; then
+    # Never pretend this is bounded. Run it exactly as before, loudly, so the
+    # gap is visible in the log instead of silent.
+    echo "    [bounded] WARN: deadline helper unavailable (scripts/run-with-deadline.py or python3 missing) -- this child runs UNBOUNDED; install a full bundle" >&2
+    "$@"
+    return $?
+  fi
+  diag="${OC_CONFIG:-${OPENCLAW_ROOT:-$HOME/.openclaw}}/.onboarding-qc-diagnostics/bounded/$kind"
+  python3 "$helper" --seconds "$secs" --diagnostics "$diag" --label qc-script -- "$@"
+}
+#=== END BOUNDED-CHILD-V1 ===
 
 # A numbered skill folder is the repo's only when the bundle being installed ships a folder of
 # that name (or its -ARCHIVED tombstone). Anything else is the CLIENT's own (for example a
@@ -7503,8 +7675,15 @@ X11EOF
     # updater could not write must never take down the whole update.
     if [ -f "$SKILLS_DIR/$SKILL_NAME/verify.sh" ] \
        && [ -f "$SKILLS_DIR/$SKILL_NAME/ENGINE-PIN.sha256" ]; then
-      if ! bash "$SKILLS_DIR/$SKILL_NAME/verify.sh" stamp-pin >>"${LOG_FILE:-/dev/null}" 2>&1; then
-        echo "    [stamp-pin] WARN: $SKILL_NAME ENGINE-PIN.sha256 re-stamp FAILED -- continuing (the pin may be stale; run '$SKILLS_DIR/$SKILL_NAME/verify.sh stamp-pin' by hand)"
+      # BOUNDED (BOUNDED-CHILD-V1). This child used to be unbounded. A stamp that
+      # cannot finish is UNVERIFIED, never a pass, and never takes down the roll.
+      _sp_secs="$(oc_bounded_seconds "${OPENCLAW_STAMP_PIN_TIMEOUT_SECONDS:-120}" 120)"
+      _sp_rc=0
+      oc_bounded_run "$_sp_secs" stamp-pin bash "$SKILLS_DIR/$SKILL_NAME/verify.sh" stamp-pin >>"${LOG_FILE:-/dev/null}" 2>&1 || _sp_rc=$?
+      if [ "$_sp_rc" = "124" ]; then
+        echo "    [stamp-pin] UNVERIFIED: $SKILL_NAME ENGINE-PIN.sha256 re-stamp TIMED OUT after ${_sp_secs}s -- child and descendants killed, files kept, roll continues (pin may be stale; run '$SKILLS_DIR/$SKILL_NAME/verify.sh stamp-pin' by hand)"
+      elif [ "$_sp_rc" != "0" ]; then
+        echo "    [stamp-pin] WARN: $SKILL_NAME ENGINE-PIN.sha256 re-stamp FAILED (rc=$_sp_rc) -- continuing (the pin may be stale; run '$SKILLS_DIR/$SKILL_NAME/verify.sh stamp-pin' by hand)"
       fi
     fi
 
@@ -7513,8 +7692,16 @@ X11EOF
     # pin, not the stale one. FAIL-SAFE: warn and continue, matching the
     # stamp-pin rule above — one skill's check never takes down the roll.
     if [ -f "$SKILLS_DIR/$SKILL_NAME/verify.sh" ]; then
-      if ! bash "$SKILLS_DIR/$SKILL_NAME/verify.sh" >>"${LOG_FILE:-/dev/null}" 2>&1; then
-        echo "    [verify] WARN: $SKILL_NAME post-copy verify.sh FAILED -- continuing (run 'bash $SKILLS_DIR/$SKILL_NAME/verify.sh' by hand)"
+      # BOUNDED (BOUNDED-CHILD-V1). THIS is the child that actually spun: a
+      # verify.sh with no deadline hung the whole roll. It is killed at the
+      # deadline, the skill stays UNVERIFIED, and the next skill is attempted.
+      _vf_secs="$(oc_bounded_seconds "${OPENCLAW_VERIFY_TIMEOUT_SECONDS:-180}" 180)"
+      _vf_rc=0
+      oc_bounded_run "$_vf_secs" verify bash "$SKILLS_DIR/$SKILL_NAME/verify.sh" >>"${LOG_FILE:-/dev/null}" 2>&1 || _vf_rc=$?
+      if [ "$_vf_rc" = "124" ]; then
+        echo "    [verify] UNVERIFIED: $SKILL_NAME post-copy verify.sh TIMED OUT after ${_vf_secs}s -- child and descendants killed, files kept, roll continues (run 'bash $SKILLS_DIR/$SKILL_NAME/verify.sh' by hand)"
+      elif [ "$_vf_rc" != "0" ]; then
+        echo "    [verify] WARN: $SKILL_NAME post-copy verify.sh FAILED (rc=$_vf_rc) -- continuing (run 'bash $SKILLS_DIR/$SKILL_NAME/verify.sh' by hand)"
       fi
     fi
 
@@ -9574,10 +9761,17 @@ PYEOF
         perl -e 'alarm shift; exec @ARGV or exit 127' "${LOCAL_EMBEDDER_ROLL_TIMEOUT:-7200}" \
           bash "$SKILL_INSTALLER" --idempotent >> "$LOG_FILE" 2>&1 || _installer_rc=$?
       else
-        bash "$SKILL_INSTALLER" --idempotent >> "$LOG_FILE" 2>&1 || _installer_rc=$?
+        # BOUNDED (BOUNDED-CHILD-V1): the general per-skill installer used to be
+        # unbounded and is the biggest per-pass time sink in the roll. Skill 76
+        # keeps its own perl alarm above (it legitimately runs for hours).
+        _inst_secs="$(oc_bounded_seconds "${OPENCLAW_INSTALLER_TIMEOUT_SECONDS:-900}" 900)"
+        oc_bounded_run "$_inst_secs" installer bash "$SKILL_INSTALLER" --idempotent >> "$LOG_FILE" 2>&1 || _installer_rc=$?
       fi
       if [ "$_installer_rc" = "0" ]; then
         echo "    Installer OK: $SKILL_NAME"
+      elif [ "$_installer_rc" = "124" ]; then
+        _INSTALLER_FAILED=1
+        echo "    Installer TIMED OUT for $SKILL_NAME after ${_inst_secs:-?}s (rc=124) -- child and descendants killed, files kept, recorded UNVERIFIED, .wired sentinel withheld, will retry next roll"
       else
         _INSTALLER_FAILED=1
         echo "    Installer FAILED for $SKILL_NAME (rc=$_installer_rc; see $LOG_FILE) -- .wired sentinel withheld, will retry next roll"

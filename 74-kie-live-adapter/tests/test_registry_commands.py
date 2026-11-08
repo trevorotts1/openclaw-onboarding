@@ -154,8 +154,10 @@ class PromptBudget(Base):
         with open(f, "w") as fh:
             fh.write("a" * 820)
         r = self.cli(a, ["prompt-budget", "--model", MODEL, "--check", "--prompt-file", f])[1]
-        self.assertIn("ADD 130 chars", r["error"]["msg"])
-        self.assertIn("reach 950", r["error"]["msg"])
+        # 82 percent: owner rule 12 (2026-10-05) says warn and expand, so it passes with the ADD named
+        self.assertEqual(r["state"], "validated")
+        self.assertIsNone(r["error"])
+        self.assertTrue(any("ADD 130 chars" in w and "950 target" in w for w in r["warnings"]), r["warnings"])
         with open(f, "w") as fh:
             fh.write("a" * 1004)
         self.assertIn("CUT exactly 4 chars", self.cli(a, ["prompt-budget", "--model", MODEL, "--check", "--prompt-file", f])[1]["error"]["msg"])
