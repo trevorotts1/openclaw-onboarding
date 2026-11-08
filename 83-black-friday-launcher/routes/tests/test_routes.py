@@ -29,20 +29,9 @@ import adapters  # noqa: E402
 import build_time  # noqa: E402
 import route_law  # noqa: E402
 import substrate  # noqa: E402
-from launcher_core import checks, checkout as checkout_core, entitlement, intake  # noqa: E402
+from launcher_core import checks, checkout as checkout_core, intake  # noqa: E402
 from launcher_core.check_rules import checkout as checkout_rule  # noqa: E402
-import test_only_readback  # noqa: E402
 from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402
-
-
-def setUpModule():
-    """intake.validate verifies the TEST-ONLY entitlement references through the offline read-back
-    (fixtures/test_only_readback.py), the same one tests/conftest.py installs for the 83 suite."""
-    entitlement.set_transport(test_only_readback.test_only_transport())
-
-
-def tearDownModule():
-    entitlement.set_transport(None)
 
 
 def make_launch_record(**overrides):

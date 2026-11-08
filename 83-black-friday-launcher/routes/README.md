@@ -74,7 +74,7 @@ ever emitted as executable configuration.
 `launcher_core/constants.py:SEAM_IDS`; each choice has exactly one id.
 
 Every other choice is now DECIDED and carried by code, not by a seam:
-`entitlement_declaration_and_attestation` (`launcher_core/entitlement.py`),
+`no_client_entitlement_declaration` (`launcher_core/intake.py`),
 `council_included_in_launch_planning` (`launcher_core/council.py`),
 `native_converted_and_flow_checkout_mapping` (`launcher_core/checkout.py` plus
 this `adapters.py`), `verified_offer_facts_only` (`launcher_core/intake.py` and

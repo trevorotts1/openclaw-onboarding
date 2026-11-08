@@ -2,11 +2,14 @@
 
 Required inputs are limited to what the pages genuinely cannot be built without.
 Nothing commercial defaults. A missing price is an error, never a free offer and
-never zero. Prices, levels and entitlements must be SUPPLIED or explicitly
-marked UNKNOWN; a defaulted commercial fact fails the build by name.
+never zero. Prices and levels must be SUPPLIED or explicitly marked UNKNOWN; a
+defaulted commercial fact fails the build by name.
 
-The entitlement attestation is verified against the declaration the skill
-carries. Unknown or unqualified entitlement state fails closed.
+There is NO account-entitlement question. The client is never asked whether they
+are a member or bought a licence, and no page build is refused or deferred for
+want of an answer. If a consumer needs the value it is 'unknown' and nothing
+blocks on it. `entitlement_attestation` is still accepted from older callers so
+their intakes keep validating, but it is never read.
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 from urllib.parse import urlsplit
 
-from . import entitlement, image_plan
+from . import image_plan
 from .launch_plan import SCOPE_WAIVERS, launch_id_violation
 from .constants import (
     JOURNEY_MODES,
@@ -42,7 +45,6 @@ REQUIRED_FIELDS = {
     "copy_profile": "page-request requires it; copy cannot be generated without it",
     "approval": "contract section 9 approval reference + subject hash before any build",
     "offers": "checkout cannot bind a price it was never given; inventing one is forbidden",
-    "entitlement_attestation": "no build without an attested entitlement basis; unknown state fails closed",
     "checkout_terms": "the order form cannot show a guarantee, terms or consent line nobody approved",
     "answers_file": "the client's answers file (client-intake-answers/v1) is the sole price authority, DECISIONS-NEEDED[35]",
 }
@@ -66,6 +68,20 @@ PERMITTED_DEFAULTS = {
 # (the same transition Skill 49's approve() runs); without it the proposals stay proposals.
 OPTIONAL_FIELDS = ("image_plan", "client_choices", "promotion", "activation",
                    "proposal_acceptance")
+
+# Accepted from an older caller and NEVER read: the retirement of the account-entitlement
+# question must not break an intake that a saved run already carries. It changes nothing.
+LEGACY_IGNORED_FIELDS = ("entitlement_attestation",)
+
+# What the normalized record says about the account. Nobody declared it and nobody was
+# asked, so it is exactly this and no build consumes it as a permission.
+ENTITLEMENT_UNKNOWN = {
+    "state": "unknown",
+    "basis": None,
+    "qualifies": None,
+    "requires_purchase": False,
+    "billing": "none",
+}
 
 # F06: the four stages are separate facts. Local preparation is the default and is
 # always allowed; installation and publication each need recorded authority and are
@@ -104,7 +120,7 @@ LEVELED_ROLES = ("upsell_1", "downsell_1", "upsell_2")
 
 # Provenance prefixes that may NEVER be a default. A commercial fact is either
 # supplied or explicitly unknown.
-COMMERCIAL_ROOTS = ("offers", "entitlement_attestation", "level",
+COMMERCIAL_ROOTS = ("offers", "level",
                     "cross_sales", "relationships", "checkout_terms")
 # The shared answer-provenance vocabulary (shared-utils/client_intake/revision.py) applied
 # to a price's approval status, so a consumer of offer_facts() reads the same five kinds the
@@ -735,12 +751,8 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         _fail("AF-LAUNCH-INTAKE-ROUTE", "offers",
               "when upsell_1 is disabled, downsell_1 and upsell_2 cannot remain enabled")
 
-    try:
-        entitled = entitlement.gate(payload["entitlement_attestation"])
-    except entitlement.EntitlementError as exc:
-        raise IntakeError(exc.code, exc.field, exc.detail) from exc
-
-    known = set(REQUIRED_FIELDS) | set(PERMITTED_DEFAULTS) | set(OPTIONAL_FIELDS)
+    known = (set(REQUIRED_FIELDS) | set(PERMITTED_DEFAULTS) | set(OPTIONAL_FIELDS)
+             | set(LEGACY_IGNORED_FIELDS))
     unknown = set(payload) - known
     if unknown:
         _fail("AF-LAUNCH-INTAKE-UNKNOWN", "<root>",
@@ -758,7 +770,6 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         test_only=payload.get("test_only", True) is not False)
 
     provenance: Dict[str, str] = {k: "supplied" for k in payload}
-    provenance["entitlement_attestation"] = "attested"
     for i, offer in enumerate(clean_offers):
         provenance[f"offers[{i}].price"] = "supplied"
         provenance[f"offers[{i}].level"] = (
@@ -779,7 +790,7 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
                      "hash": payload["approval"]["hash"].strip()},
         "offers": clean_offers,
         "checkout_terms": checkout_terms,
-        "entitlement": entitled,
+        "entitlement": dict(ENTITLEMENT_UNKNOWN),
         "answers_file": str(answers_path),
         "activation": activation,
     }
@@ -824,9 +835,9 @@ def offer_facts(normalized: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "provenance": provenance.get(f"offers[{i}].level", "unknown"),
             },
             "entitlement": {
-                "state": "attested",
-                "basis": normalized["entitlement"]["basis"],
-                "provenance": provenance.get("entitlement_attestation", "unknown"),
+                "state": "unknown",
+                "basis": None,
+                "provenance": "unknown",
             },
         })
     return facts

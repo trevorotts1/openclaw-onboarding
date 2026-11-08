@@ -201,26 +201,12 @@ def _decided_requirement_violations(manifest: Dict[str, Any], root: Path,
             if level.get("provenance") not in ("supplied", "unknown"):
                 fails.append(f"AF-LAUNCH-OFFER-DEFAULTED: {label} level provenance "
                              f"is {level.get('provenance')!r}; supply it or mark it unknown")
-            entitlement = fact.get("entitlement") or {}
-            if entitlement.get("provenance") != "attested":
-                fails.append(f"AF-LAUNCH-OFFER-DEFAULTED: {label} entitlement "
-                             f"provenance is {entitlement.get('provenance')!r}")
 
-    # 1. Entitlement: attested, qualified, and nothing billed or created.
+    # 1. Nothing is billed or created by this build. There is no account-entitlement
+    # admission check: the client is never asked to declare a membership or a purchase.
     entitlement = manifest.get("entitlement") or {}
-    if entitlement.get("qualifies") is not True:
-        fails.append("AF-LAUNCH-ENTITLEMENT-NOT-QUALIFIED: the package carries "
-                     "no qualified entitlement attestation")
     if entitlement.get("billing") != "none":
         fails.append("AF-LAUNCH-ENTITLEMENT-BILLING: the build may not bill")
-    declaration = entitlement.get("declaration") or {}
-    path, digest = declaration.get("path"), declaration.get("sha256")
-    target = skill_root / str(path)
-    if not path or not target.is_file():
-        fails.append(f"AF-LAUNCH-ENTITLEMENT-DECLARATION: {path!r} does not resolve")
-    elif _sha256_file(target) != digest:
-        fails.append("AF-LAUNCH-ENTITLEMENT-DECLARATION: the carried declaration "
-                     "does not match the digest the package recorded")
 
     # 2. Council: recorded, and structurally incapable of blocking.
     council = manifest.get("council") or {}
