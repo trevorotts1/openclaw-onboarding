@@ -7,11 +7,18 @@ automations). A stopped run resumes from this file:
 
 - finished units are skipped (never re-dispatched, never re-charged),
 - a crashed run is recovered ONLY from current admission evidence for the exact
-  unit (shared-utils/signature_launch/admission.py): a nonempty file, an exit
-  code or a declared status never completes a unit,
+  unit AND revision (shared-utils/signature_launch/admission.py): a nonempty
+  file, an exit code or a declared status never completes a unit, and evidence
+  for a superseded revision cannot resurrect work a targeted invalidation
+  retired,
 - percentages count DELIVERED work (verified done) against the approved plan's
-  units; a client-dropped, skipped, stale or superseded unit stays in the
-  denominator and contributes zero,
+  units, recomputed from the evidence persisted on each unit; a client-dropped,
+  skipped, stale or superseded unit stays in the denominator and contributes
+  zero, and a ``done`` row whose evidence no longer validates is reported
+  unverified instead of being counted,
+- ``report`` is the one human/Command Center view derived from those facts:
+  draft created, design ready for review, approved, installed and live are
+  distinct stages,
 - a unit being executed right now is reported as running, never as ready: a
   concurrent resume never claims it as fresh work,
 - starting a unit requires execution ownership (a claim with a lease), so two
@@ -254,7 +261,7 @@ def counts(record):
     out = {state: 0 for state in STATES}
     for unit in record["units"].values():
         out[unit["state"]] += 1
-    view = _admission().delivered(record)
+    view = trusted_delivered(record)
     out["total"] = len(record["units"])
     out["terminal"] = out["done"] + out["dropped"]
     out["retryable"] = out["failed"]
@@ -265,20 +272,165 @@ def counts(record):
     # Delivered work and every excluded category (one denominator, one rule).
     out["delivered"] = view["delivered"]
     out["unverified_done"] = len(view["excluded"]["unverified_done"])
+    out["unverified_completion"] = len(view["excluded"]["unverified_completion"])
     out["stale"] = len(view["excluded"]["stale"])
     out["superseded"] = len(view["excluded"]["superseded"])
     out["skipped"] = len(view["excluded"]["skipped"])
     return out
 
 
-def percent(record):
-    """Percentage of the approved plan's units that are DELIVERED.
+def evidence_view(record):
+    """Re-validate every persisted completion against its CURRENT evidence.
 
-    Delivered means verified done.  A dropped/skipped/stale/superseded unit
-    stays in the denominator and contributes zero, and a legacy ``done`` claim
-    with no verified evidence counts as unverified, not as delivered.
+    Pure: no producer is called and the record is not modified.  A ``done`` row
+    with no persisted evidence, evidence for an older revision, or evidence the
+    canonical validator now refuses is reported untrusted and named.  Nothing
+    here promotes an unrecognised result; it only ever withholds credit.
     """
-    return _admission().delivered(record)["percent"]
+    admission = _admission()
+    out = {}
+    for uid, unit in record["units"].items():
+        result = unit.get("result") if isinstance(unit.get("result"), dict) else None
+        candidate = (result or {}).get("evidence")
+        if unit.get("state") != "done":
+            out[uid] = {"trusted": False,
+                        "reason": "state is %s, not done" % unit.get("state")}
+            continue
+        if unit.get("verified") is not True:
+            out[uid] = {"trusted": False, "reason": "unverified completion claim"}
+            continue
+        if not isinstance(candidate, dict):
+            out[uid] = {"trusted": False, "reason": "no persisted completion evidence"}
+            continue
+        refusal = _revision_refusal(candidate, unit)
+        if refusal:
+            out[uid] = {"trusted": False, "reason": refusal}
+            continue
+        checked = admission.verify_evidence(candidate, unit=uid,
+                                            plan_hash=record.get("plan_hash"))
+        out[uid] = {
+            "trusted": bool(checked["ok"]),
+            "reason": None if checked["ok"]
+            else ("; ".join(checked["reasons"]) or "evidence refused"),
+        }
+    return out
+
+
+def trusted_delivered(record):
+    """Delivered work recomputed from current evidence, one denominator.
+
+    The denominator and the drop/skip/stale/supersede exclusions come from the
+    existing admission service; this adds the one thing a stored flag cannot
+    provide -- a re-validation of the evidence that is still on the unit.
+    """
+    view = _admission().delivered(record)
+    checked = evidence_view(record)
+    trusted, untrusted = [], []
+    for uid in view["delivered_units"]:
+        if checked.get(uid, {}).get("trusted") is True:
+            trusted.append(uid)
+        else:
+            untrusted.append(uid)
+    excluded = {name: list(units) for name, units in view["excluded"].items()}
+    excluded["unverified_completion"] = untrusted
+    total = view["required"]
+    count = len(trusted)
+    return {
+        "schema": view["schema"],
+        "launch_id": view["launch_id"],
+        "plan_hash": view["plan_hash"],
+        "required": total,
+        "required_units": view["required_units"],
+        "drift": view["drift"],
+        "delivered": count,
+        "delivered_units": trusted,
+        "percent": round(100.0 * count / total, 2) if total else 0.0,
+        "excluded": excluded,
+        "skip_contributes": 0,
+        "evidence_checked": checked,
+    }
+
+
+# The five report stages F15.6 requires.  They are derived facts, never a
+# caller-supplied status and never collapsed into "complete".
+STAGES = ("not_started", "draft_created", "design_ready_for_review",
+          "approved", "installed", "live")
+
+
+def _stage(dims, trusted, unit):
+    """One stage label from the four dimensions plus the evidence verdict."""
+    if trusted:
+        if dims["deployment"] in ("published", "observed"):
+            return "live"
+        if dims["deployment"] == "draft_installed":
+            return "installed"
+        if dims["review"] == "required_pending":
+            return "design_ready_for_review"
+        return "approved"
+    if unit.get("review_required") and unit.get("artifact"):
+        return "design_ready_for_review"
+    if unit.get("artifact") and unit.get("state") in STATES:
+        return "draft_created"
+    return "not_started"
+
+
+def report(record):
+    """The one human/Command Center view, derived from current evidence.
+
+    Every consumer (text report, Command Center projection, Kanban) reads this
+    shape, so the percentage and the stage of every unit come from ONE fact set.
+    """
+    admission = _admission()
+    delivery = trusted_delivered(record)
+    checked = delivery["evidence_checked"]
+    units = []
+    stages = {name: [] for name in STAGES}
+    for uid, unit in record["units"].items():
+        dims = admission.dimension_status(record, uid)
+        trusted = checked.get(uid, {}).get("trusted") is True
+        stage = _stage(dims, trusted, unit)
+        reason = unit.get("reason") or {}
+        blocker = None if unit.get("state") == "done" else (
+            reason.get("detail") or reason.get("blocker"))
+        units.append({
+            "id": uid,
+            "kind": unit.get("kind"),
+            "state": unit.get("state"),
+            "stage": stage,
+            "production": dims["production"],
+            "review": dims["review"],
+            "deployment": dims["deployment"],
+            "availability": dims["availability"],
+            "trusted": trusted,
+            "evidence_reason": checked.get(uid, {}).get("reason"),
+            "blocker": blocker,
+            "missing_facts": list(unit.get("missing_facts") or []),
+        })
+        stages[stage].append(uid)
+    return {
+        "schema": "signature-launch-progress-report/v1",
+        "launch_id": record.get("launch_id"),
+        "plan_hash": record.get("plan_hash"),
+        "percent": delivery["percent"],
+        "delivered": delivery["delivered"],
+        "required": delivery["required"],
+        "excluded": delivery["excluded"],
+        "units": units,
+        "stages": stages,
+        "counts": counts(record),
+    }
+
+
+def percent(record):
+    """Percentage of the approved plan's units DELIVERED from current evidence.
+
+    Delivered means a verified completion whose persisted evidence still
+    validates for the unit's current revision.  A dropped/skipped/stale/
+    superseded unit stays in the denominator and contributes zero; a ``done``
+    row whose evidence is absent or no longer validates is reported unverified,
+    never counted.
+    """
+    return trusted_delivered(record)["percent"]
 
 
 def _parse_time(value):
@@ -387,6 +539,43 @@ def artifact_exists(record, uid, exists=None):
         return False
 
 
+def _revision_refusal(evidence, unit):
+    """Why this evidence is not for the unit's CURRENT revision (None when it is).
+
+    ``admission.invalidate`` advances ``unit["revision"]`` and marks the unit
+    stale.  Evidence produced before that change describes a superseded
+    revision: replaying it used to re-complete invalidated work.
+    """
+    if not isinstance(evidence, dict):
+        return "evidence is not an object"
+    declared = str(evidence.get("revision") or "1")
+    current = str(unit.get("revision") or 1)
+    if declared != current:
+        return ("evidence describes revision %s, not the unit's current "
+                "revision %s" % (declared, current))
+    return None
+
+
+def _persist_verified(unit, evidence, checked):
+    """Keep the accepted evidence ON the unit so a report can re-validate it.
+
+    A stored ``verified: true`` flag is a cached judgement; the evidence is the
+    fact.  ``evidence_view`` re-runs the canonical validator over this object.
+    """
+    unit["result"] = {
+        "status": "verified_success",
+        "verified": True,
+        "evidence": evidence,
+        "evidence_checked": {
+            "outcome": checked.get("outcome"),
+            "artifact_set_hash": checked.get("artifact_set_hash"),
+            "inputs_hash": checked.get("inputs_hash"),
+            "content_checked": checked.get("content_checked"),
+            "reviewed": checked.get("reviewed"),
+        },
+    }
+
+
 def recover_report(record, exists=None, verify=None, evidence=None, now=None):
     """Reconcile CURRENT admission evidence for the exact unit.
 
@@ -443,6 +632,11 @@ def recover_report(record, exists=None, verify=None, evidence=None, now=None):
             _reject(unit, uid, "evidence_refused", detail)
             result["rejected"].append({"unit": uid, "detail": detail})
             continue
+        refusal = _revision_refusal(candidate, unit)
+        if refusal:
+            _reject(unit, uid, "evidence_refused", refusal)
+            result["rejected"].append({"unit": uid, "detail": refusal})
+            continue
         unit["state"] = "done"
         unit["verified"] = True
         unit["stale"] = False
@@ -451,6 +645,7 @@ def recover_report(record, exists=None, verify=None, evidence=None, now=None):
         unit["evidence_digest"] = checked["artifact_set_hash"]
         unit["review"] = ({"ok": True} if checked["reviewed"]
                           else (candidate.get("review") or None))
+        _persist_verified(unit, candidate, checked)
         unit["artifact"] = None
         for entry in checked["artifacts"]:
             if entry.get("path"):
@@ -618,6 +813,13 @@ def complete(record, uid, result, owner=None, artifact=None, clock=_now, attempt
                 "completion evidence does not belong to unit %s under the "
                 "current plan: %s" % (uid, "; ".join(recheck["reasons"]) or "refused")))
             status = model.FAILED
+        else:
+            refusal = _revision_refusal(envelope.get("evidence"), unit)
+            if refusal:
+                envelope = model.envelope(model.FAILED, detail=(
+                    "completion evidence is not for the current revision of unit "
+                    "%s: %s" % (uid, refusal)))
+                status = model.FAILED
     unit["state"] = model.PERSISTED_STATE[status]
     unit["owner"] = None
     unit["lease_expires_at"] = None
@@ -684,6 +886,10 @@ def mark(record, uid, state, artifact=None, charged=None, note=None, clock=_now,
         if not checked["ok"]:
             raise ProgressError("state done requires verified admission evidence: %s"
                                 % ("; ".join(checked["reasons"]) or "none supplied"))
+        refusal = _revision_refusal(evidence, unit)
+        if refusal:
+            raise ProgressError("state done requires current-revision evidence: %s"
+                                % refusal)
     if state != "running":
         unit["owner"] = None
         unit["lease_expires_at"] = None
@@ -694,6 +900,7 @@ def mark(record, uid, state, artifact=None, charged=None, note=None, clock=_now,
         unit["superseded"] = False
         unit["content_checked"] = bool(checked["content_checked"])
         unit["evidence_digest"] = checked["artifact_set_hash"]
+        _persist_verified(unit, evidence, checked)
     if artifact is not None:
         unit["artifact"] = str(artifact)
     if charged is not None:
@@ -734,12 +941,15 @@ def stall_report(record):
 
 def summary(record):
     view = ready_to_start(record)
+    delivery = trusted_delivered(record)
     return {
         "launch_id": record["launch_id"],
         "empty": not record["units"],
-        "percent": percent(record),
+        "percent": delivery["percent"],
         "counts": counts(record),
-        "delivered": _admission().delivered(record),
+        "delivered": {key: delivery[key] for key in
+                      ("required", "delivered", "delivered_units", "percent",
+                       "excluded", "drift")},
         "ready": view["ready"],
         "fresh": view["fresh"],
         "retry": view["retry"],
@@ -839,6 +1049,38 @@ def invalidate_atomic(path, units, kind, detail=None):
         return report
 
 
+def heartbeat_atomic(path, uid, owner, ttl_seconds=DEFAULT_LEASE_SECONDS, attempt=None):
+    """Extend a lease atomically: a concurrent writer never loses the beat."""
+    with _locked(path):
+        record = load(path)
+        decision = heartbeat(record, uid, owner, ttl_seconds, attempt=attempt)
+        if decision.get("renewed"):
+            save(record, path)
+        return decision
+
+
+def release_atomic(path, uid, owner, note=None, attempt=None):
+    """Release ownership atomically; a late worker cannot release a newer unit."""
+    with _locked(path):
+        record = load(path)
+        decision = release(record, uid, owner, note=note, attempt=attempt)
+        if decision.get("released"):
+            save(record, path)
+        return decision
+
+
+def mark_atomic(path, uid, state, artifact=None, charged=None, note=None,
+                owner=None, evidence=None, attempt=None):
+    """Mark one unit atomically; the state claim is serialised with the ledger."""
+    with _locked(path):
+        record = load(path)
+        changed = mark(record, uid, state, artifact=artifact, charged=charged,
+                       note=note, owner=owner, evidence=evidence, attempt=attempt)
+        if changed:
+            save(record, path)
+        return changed
+
+
 def _read_evidence(path):
     """Optional evidence JSON for the CLI (never invented when absent)."""
     if not path:
@@ -927,6 +1169,9 @@ def main(argv=None):
     p = sub.add_parser("done-standard", help="derived done export (not an authority)")
     p.add_argument("--file", required=True)
 
+    p = sub.add_parser("report", help="evidence-derived stages and delivered work")
+    p.add_argument("--file", required=True)
+
     args = ap.parse_args(argv)
     if args.self_test:
         self_test()
@@ -954,8 +1199,9 @@ def main(argv=None):
                              indent=2, sort_keys=True))
             return 0
         if args.cmd == "recover":
-            report = recover_atomic(args.file, evidence=_read_evidence(args.evidence))
-            print(json.dumps({**report, **summary(load(args.file))},
+            recovered = recover_atomic(args.file,
+                                       evidence=_read_evidence(args.evidence))
+            print(json.dumps({**recovered, **summary(load(args.file))},
                              indent=2, sort_keys=True))
             return 0
         if args.cmd == "admit":
@@ -971,6 +1217,25 @@ def main(argv=None):
             print(json.dumps(_admission().done_standard(load(args.file)),
                              indent=2, sort_keys=True))
             return 0
+        if args.cmd == "report":
+            print(json.dumps(report(load(args.file)), indent=2, sort_keys=True))
+            return 0
+        if args.cmd == "heartbeat":
+            print(json.dumps(heartbeat_atomic(args.file, args.unit, args.owner,
+                                              args.ttl),
+                             indent=2, sort_keys=True))
+            return 0
+        if args.cmd == "release":
+            print(json.dumps(release_atomic(args.file, args.unit, args.owner,
+                                            args.note),
+                             indent=2, sort_keys=True))
+            return 0
+        if args.cmd == "mark":
+            mark_atomic(args.file, args.unit, args.state, artifact=args.artifact,
+                        charged=True if args.charged else None, note=args.note,
+                        owner=args.owner, evidence=_read_evidence(args.evidence))
+            print(json.dumps(summary(load(args.file)), indent=2, sort_keys=True))
+            return 0
         record = load(args.file)
         if args.cmd == "status":
             print(json.dumps(summary(record), indent=2, sort_keys=True))
@@ -983,23 +1248,6 @@ def main(argv=None):
             return 0
         if args.cmd == "stall":
             print(json.dumps(stall_report(record), indent=2, sort_keys=True))
-            return 0
-        if args.cmd == "heartbeat":
-            print(json.dumps(heartbeat(record, args.unit, args.owner, args.ttl),
-                             indent=2, sort_keys=True))
-            save(record, args.file)
-            return 0
-        if args.cmd == "release":
-            decision = release(record, args.unit, args.owner, args.note)
-            save(record, args.file)
-            print(json.dumps(decision, indent=2, sort_keys=True))
-            return 0
-        if args.cmd == "mark":
-            mark(record, args.unit, args.state, artifact=args.artifact,
-                 charged=True if args.charged else None, note=args.note,
-                 owner=args.owner, evidence=_read_evidence(args.evidence))
-            save(record, args.file)
-            print(json.dumps(summary(record), indent=2, sort_keys=True))
             return 0
     except (OSError, ValueError, ProgressError) as exc:
         print("progress: %s" % exc, file=sys.stderr)
