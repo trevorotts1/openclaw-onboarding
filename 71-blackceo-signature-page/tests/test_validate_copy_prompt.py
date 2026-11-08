@@ -227,13 +227,20 @@ Do not add any watermark, caption, or badge.
 
 
 class TestPartCBudget(unittest.TestCase):
-    """F18 (2026-11-07): the STRICT production band governs length through the one
-    canonical policy service. 95-100 percent PASSES; below 95 percent FAILS and must be
-    revised; below 80 percent is a particularly clear hard failure; above the maximum
-    FAILS; an UNKNOWN maximum refuses a pass. The old 80-to-below-95 warning-only path is
-    removed. Element completeness still governs acceptance; cap_status survives as
-    provenance only; the 2,000-character tripwire is retained as a recorded short-prompt
-    flag (it never turns a band failure into a pass)."""
+    """The ONE canonical policy (shared-utils/prompt_policy.py) governs length: 95-100
+    percent PASSES; 80 to below 95 percent PASSES with a warn-and-expand warning naming
+    the chars to ADD; below 80 percent FAILS (particularly clear hard failure); above the
+    maximum FAILS; an UNKNOWN maximum refuses a pass.
+
+    The 80-to-95 warning band is the OWNER RULE of 2026-10-05 (kie-common-rules section
+    12: "Hard floor: 80 percent. Hard ceiling: 100 percent. 80 to 95 percent: warn and
+    expand"), restored in the policy on 2026-11-08. The earlier F18 code that made 94
+    percent FAIL was superseded - but a warn is never a silent pass, so the validator
+    must still surface the warning and its exact ADD count.
+
+    Element completeness still governs acceptance; cap_status survives as provenance
+    only; the 2,000-character tripwire is retained as a recorded short-prompt flag (it
+    never turns a band failure into a pass)."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="partc-test-"))
@@ -265,20 +272,30 @@ class TestPartCBudget(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("in band, budget exit 0", proc.stdout)
 
-    def test_below_target_fails_not_warns(self):
-        # 85 percent: the removed warning-only path must now be a hard revision.
+    def test_below_target_warns_and_expands(self):
+        # 85 percent: the owner rule's warn-and-expand band. It passes, and the warning
+        # with the exact ADD count must reach the operator (never a silent pass).
         path = self._write("p85.txt", grow_to(self.base, 17000))
         proc = run(PROMPT_SCRIPT, path)
-        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
-        self.assertIn("below the strict 95% band", proc.stdout)
-        self.assertIn("budget exit 3", proc.stdout)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("in band, budget exit 0", proc.stdout)
+        self.assertIn("WARNING:", proc.stdout)
+        self.assertIn("ADD 2000 chars", proc.stdout)
+        self.assertIn("warn and expand", proc.stdout)
 
-    def test_94_percent_fails(self):
-        # 94 percent of 20,000 = 18,800: previously only warned, now FAILS.
+    def test_94_percent_warns_and_expands(self):
+        # 94 percent of 20,000 = 18,800: the warn band names the remaining 200 chars, and
+        # the telemetry records BELOW_TARGET at budget exit 0.
         path = self._write("p94.txt", grow_to(self.base, 18800))
-        proc = run(PROMPT_SCRIPT, path)
-        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
-        self.assertIn("budget exit 3", proc.stdout)
+        proc = run(PROMPT_SCRIPT, "--json", path)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        data = json.loads(proc.stdout)
+        self.assertTrue(any("ADD 200 chars" in w and "warn and expand" in w
+                            for w in data["warnings"]), data["warnings"])
+        budget = data["telemetry"]["budget"]
+        self.assertEqual(budget["status"], "BELOW_TARGET")
+        self.assertEqual(budget["budget_exit"], 0)
+        self.assertEqual(budget["add_chars"], 200)
 
     def test_verified_cap_fails_closed(self):
         policy = {"models": [{"match": "gpt-image-2-5", "max_chars": 5000,
