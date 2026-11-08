@@ -2,6 +2,7 @@
   "counts": {
     "awaiting_facts": 1,
     "blocked": 1,
+    "delivered": 0,
     "done": 0,
     "dropped": 0,
     "empty": 0,
@@ -10,14 +11,24 @@
     "ready": 1,
     "retryable": 1,
     "running": 0,
+    "skipped": 0,
+    "stale": 0,
+    "superseded": 0,
     "terminal": 0,
-    "total": 4
+    "total": 4,
+    "unverified_done": 0
   },
   "created_at": "2030-01-01T00:00:00Z",
   "empty": false,
   "launch_id": "l03-stall",
   "percent": 0.0,
   "plan_hash": "sha256:bd71d8227676171e771255736616c7c20a0a86d9d8205197243fe5eb4009e702",
+  "required_units": [
+    "page_landing",
+    "page_sales",
+    "text_doors",
+    "auto_opt_in"
+  ],
   "schema_version": "1.0",
   "stall": {
     "auto_opt_in": [
@@ -64,6 +75,8 @@
       "artifact": null,
       "attempts": 0,
       "charged": false,
+      "content_checked": false,
+      "evidence_digest": null,
       "kind": "automation",
       "lease_expires_at": null,
       "missing_facts": [],
@@ -71,8 +84,15 @@
       "owner": null,
       "reason": null,
       "result": null,
+      "review": null,
+      "review_required": false,
+      "revision": 1,
+      "skipped": false,
+      "stale": false,
       "state": "pending",
+      "superseded": false,
       "updated_at": "2030-01-01T00:00:00Z",
+      "verified": false,
       "waits_for": [
         "text_doors"
       ]
@@ -81,6 +101,8 @@
       "artifact": null,
       "attempts": 1,
       "charged": false,
+      "content_checked": false,
+      "evidence_digest": null,
       "kind": "page",
       "lease_expires_at": null,
       "missing_facts": [],
@@ -102,14 +124,23 @@
         "status": "failed",
         "verified": false
       },
+      "review": null,
+      "review_required": false,
+      "revision": 1,
+      "skipped": false,
+      "stale": false,
       "state": "failed",
+      "superseded": false,
       "updated_at": "2030-01-01T00:00:00Z",
+      "verified": false,
       "waits_for": []
     },
     "page_sales": {
       "artifact": null,
       "attempts": 0,
       "charged": false,
+      "content_checked": false,
+      "evidence_digest": null,
       "kind": "page",
       "lease_expires_at": null,
       "missing_facts": [],
@@ -117,8 +148,15 @@
       "owner": null,
       "reason": null,
       "result": null,
+      "review": null,
+      "review_required": false,
+      "revision": 1,
+      "skipped": false,
+      "stale": false,
       "state": "pending",
+      "superseded": false,
       "updated_at": "2030-01-01T00:00:00Z",
+      "verified": false,
       "waits_for": [
         "page_landing"
       ]
@@ -127,6 +165,8 @@
       "artifact": null,
       "attempts": 1,
       "charged": false,
+      "content_checked": false,
+      "evidence_digest": null,
       "kind": "text_set",
       "lease_expires_at": null,
       "missing_facts": [
@@ -154,8 +194,15 @@
         "status": "awaiting_facts",
         "verified": false
       },
+      "review": null,
+      "review_required": false,
+      "revision": 1,
+      "skipped": false,
+      "stale": false,
       "state": "blocked",
+      "superseded": false,
       "updated_at": "2030-01-01T00:00:00Z",
+      "verified": false,
       "waits_for": []
     }
   },
