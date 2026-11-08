@@ -1388,16 +1388,23 @@ class KieProvider:
         # A payload whose prompt is not the frozen one never reaches the paid call.
         pol = _prompt_policy()
         frozen = gate = None
-        if pol is not None:
-            budget = prompt_budget(model) or {}
-            frozen = pol.freeze(job["prompt"], model=model,
-                                max_chars=budget.get("max_chars"),
-                                max_source=budget.get("source"), job_id=slug)
-            gate = pol.assert_payload(req, frozen=frozen)
-            if not gate["ok"]:
-                raise ExecutorError(
-                    "prompt policy refused the payload before any paid call: %s"
-                    % "; ".join(gate["problems"]))
+        if pol is None:
+            raise ExecutorError(
+                "shared-utils/prompt_policy.py is missing: the paid prompt band cannot be "
+                "enforced, so the render is refused (no API call was made)")
+        budget = prompt_budget(model) or {}
+        frozen = pol.freeze(job["prompt"], model=model,
+                            max_chars=budget.get("max_chars"),
+                            max_source=budget.get("source"), job_id=slug)
+        gate = pol.assert_payload(req, frozen=frozen)
+        if not gate["ok"]:
+            raise ExecutorError(
+                "prompt policy refused the payload before any paid call: %s"
+                % "; ".join(gate["problems"]))
+        # FREEZE: what is written and sent is the counted, hashed string. Otherwise the
+        # provider received the raw text (fence, surrounding whitespace, NFD) while the
+        # receipt and the review named a hash of the normalized text.
+        req["input"]["prompt"] = gate["prompt"]
         req_path.write_text(json.dumps(req, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         if frozen is not None:
             (req_dir / f"{slug}.policy.json").write_text(

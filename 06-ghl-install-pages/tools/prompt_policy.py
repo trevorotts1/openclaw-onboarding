@@ -86,11 +86,16 @@ class PromptOverrideRejected(PromptPolicyError):
 
 # --------------------------------------------------------------------------- counting
 def strip_document_fence(text):
-    """Remove a byte-order mark, a surrounding Markdown fence, and leading front matter."""
+    """Remove a byte-order mark, a surrounding Markdown fence, and leading front matter.
+
+    Two passes: front matter may precede a fence, or sit INSIDE one. Stripping only in one
+    order left fenced metadata in the counted string and inflated the count.
+    """
     s = str(text).lstrip("﻿")
-    s = _FRONT_MATTER.sub("", s)
-    s = _FENCE_OPEN.sub("", s, count=1)
-    s = _FENCE_CLOSE.sub("", s, count=1)
+    for _ in range(2):
+        s = _FRONT_MATTER.sub("", s)
+        s = _FENCE_OPEN.sub("", s, count=1)
+        s = _FENCE_CLOSE.sub("", s, count=1)
     return s
 
 
@@ -235,7 +240,17 @@ def evaluate(text, *, model=None, provider=None, max_chars=None, max_source=None
     sha = text_sha256(counted)
 
     resolved = None
-    if limit is None and (max_chars is None or band_override is not None):
+    if isinstance(limit, dict) and max_chars is None:
+        # A caller's pre-resolved limit (the shared enforcer caches one per model). Honoured
+        # only when no explicit maximum was passed, so it can never override the caller.
+        max_chars = limit.get("max")
+        if max_source is None:
+            max_source = limit.get("source")
+        if schema_version is None:
+            schema_version = limit.get("schema_version")
+        if provider is None:
+            provider = limit.get("provider")
+    elif limit is None and (max_chars is None or band_override is not None):
         resolved = resolve_limit(model, adapter_path=adapter_path, fallback_max=fallback_max)
         if max_chars is None:
             max_chars = resolved.get("max")
@@ -745,6 +760,12 @@ def _self_check():
     counted = normalize_text("﻿  café\n interior  ")
     assert counted == "café\n interior", repr(counted)
     assert count_text("```json\nabc\n```") == 3
+    # metadata INSIDE a fence is still metadata: one pass in the wrong order counted it
+    assert normalize_text("```markdown\n---\ntitle: x\n---\nbody\n```") == "body"
+    assert normalize_text("---\ntitle: x\n---\n```\nabc\n```") == "abc"
+    # a caller's pre-resolved limit is honoured, not ignored
+    assert evaluate("x" * 19200, model="x",
+                    limit={"max": m, "source": "adapter"})["status"] == "PASS"
     override = apply_input_extra({"prompt": "x" * 19200}, {"prompt": "y" * 19200},
                                  model="self-check", max_chars=m)
     assert override["ok"] is False and override["status"] == "PROMPT_OVERRIDE_REJECTED", override

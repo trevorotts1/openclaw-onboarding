@@ -968,6 +968,20 @@ class Adapter:
                 data={"prompt_policy": {"ok": False, "status": "PROMPT_MISSING", "field": name}})
         gate = self.cmd_prompt_budget(model, check=True, prompt_text=text)
         data = dict(gate.get("data") or {}, ok=gate["state"] != "fail")
+        if data["ok"]:
+            # FREEZE: the counted, hashed string is the string that is sent. Without this the
+            # provider received the raw text (fence, surrounding whitespace, NFD) while the
+            # receipt named a hash of the normalized text.
+            pol = _policy()
+            if pol is None:
+                return self.result(state="fail", model_id=model, error={
+                    "code": "policy_unavailable",
+                    "msg": "the canonical prompt policy is unavailable; refusing to send an "
+                           "unmeasured prompt"},
+                    data={"prompt_policy": {"ok": False, "status": "POLICY_UNAVAILABLE",
+                                            "field": name}})
+            inp[name] = pol.normalize_text(text)
+            data["prompt_sha256"] = pol.text_sha256(inp[name])
         self.receipt("prompt_policy", model=model, status=data.get("status"),
                      chars=data.get("chars"), max=data.get("max"),
                      ratio=data.get("ratio"), prompt_sha256=data.get("prompt_sha256"),
