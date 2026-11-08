@@ -43,6 +43,7 @@ try:
     check("driver loader: real-shaped -> set", vbc.real_kie_key(REALISH) == REALISH)
 
     ft = base.FakeKieTransport()
+    ft.prompt_max = 1   # the fixture prompt "p" fills the cap it declares, so the band floor holds
     tool = base.fresh_tool(img, "KieImage", ft)
     res = tool.execute({"prompt": "p", "image_url": "https://example.invalid/ref.png",
                         "output_path": "/tmp/kie_i2i_test.png"})
@@ -57,6 +58,7 @@ try:
     check("i2i input holds only schema-declared fields", set(inp) <= declared)
     check("i2i does not send undeclared output_format", "output_format" not in inp)
     ft2 = base.FakeKieTransport()
+    ft2.prompt_max = 1
     tool = base.fresh_tool(img, "KieImage", ft2)
     tool.execute({"prompt": "p", "output_path": "/tmp/kie_t2i_test.png"})
     tin = (ft2.create_calls[0] if ft2.create_calls else {}).get("input", {})
@@ -64,6 +66,7 @@ try:
           set(tin) <= set(img._DECLARED_INPUT_FIELDS["gpt-image-2-5-sunburst-text-to-image"]))
     check("t2i does not send output_format or input_urls", "output_format" not in tin and "input_urls" not in tin)
     ft3 = base.FakeKieTransport()
+    ft3.prompt_max = 1
     tool = base.fresh_tool(img, "KieImage", ft3)
     local = Path("/tmp/kie_local_ref_test.png")
     local.write_bytes(b"\x89PNG\r\n\x1a\nfixture")

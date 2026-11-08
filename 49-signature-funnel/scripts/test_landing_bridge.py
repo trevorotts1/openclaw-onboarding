@@ -706,7 +706,7 @@ class TestImageModelResolvedThroughSkill66(RealTreeCase):
     def test_resolve_returns_the_skill66_default_and_the_bridge_source_holds_no_id(self):
         registry = json.loads((self.image_model.SKILL66_ROOT / "models.json").read_text(encoding="utf-8"))
         default = [m["canonical_model_id"] for m in registry["models"]
-                   if m["family"] == "gpt-image-2-5-sunburst" and "image-to-image" in m["tasks"]]
+                   if m["family"] == "gpt-image-2-6/sunburst" and "image-to-image" in m["tasks"]]
         with mock.patch.dict(os.environ, {"KIE_LIVE_ADAPTER_PATH": ""}):  # Skill 74 off: models.json default
             self.assertEqual([self.image_model.resolve()], default)
         self.assertNotIn(default[0], BRIDGE.read_text(encoding="utf-8"))
