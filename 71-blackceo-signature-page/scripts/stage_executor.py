@@ -107,6 +107,7 @@ COMBINE = SKILL_ROOT / "scripts" / "combine_review_pdf.py"
 DEFAULT_REQUEST = "production-request.json"
 RECORD = "stage-executor-record.json"
 BOARD_STAGE = "design-board"  # SPF021: one client-approved board per page, after the images, before final-mockups
+GATE = SKILL_ROOT / "scripts" / "stage_gate.py"  # the one authority for whether a stage may start
 
 STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup", "final-mockups")
 # per stage: list of (output template, width, height-hint)
@@ -553,7 +554,87 @@ def copy_contract(section: dict, closing: str = "") -> str:
         lines.append(f'CLOSING BUTTON LABEL — print exactly: "{closing}"')
     return "\n".join(lines)
 
-def negative_block(stage: str | None = None, steps: bool = True, page_spec: dict | None = None) -> str:
+def steps_in_spec(spec) -> dict | None:
+    """The numbered-steps band of a page spec, or None when the page carries no steps band.
+
+    Read from the governing spec's own metadata (references/copy-specs/**, the same files the
+    section-count check reads): a section marked `steps: true` or carrying `step_rules.step_count`.
+    The Standard's section 11 declares seven steps, the thank-you page's section 4 four to six,
+    and the checkout, upsell, downsell and product-selection specs declare none at all.
+    """
+    for entry in (spec or {}).get("sections") or []:
+        if not isinstance(entry, dict):
+            continue
+        rules = entry.get("step_rules") if isinstance(entry.get("step_rules"), dict) else {}
+        count = rules.get("step_count") if isinstance(rules.get("step_count"), dict) else {}
+        if entry.get("steps") or count:
+            return {"section_id": entry.get("id"), "name": entry.get("name"),
+                    "count": count.get("default"), "min": count.get("min"),
+                    "max": count.get("max"), "kind": count.get("kind")}
+    return None
+
+
+def _step_rule(band: dict | None, page_spec: dict | None) -> str:
+    """The negative block's steps sentence for THIS page, or '' when the page has no steps band.
+
+    A page type with its own wording (the thank-you page) keeps its band's range; every other page
+    reads its governing spec's count; a page whose structure has no steps band gets no steps rule.
+    The main sales skeleton's seven badges are never ordered onto a role that does not carry them
+    (a five-section checkout, an eight-band upsell, a thank-you page's four to six).
+    """
+    if page_spec:
+        band = band if band and band.get("max") else steps_in_spec(page_spec)
+        if band and band.get("min") and band.get("max"):
+            return (f"Do not mis-number the steps: the badges read 1, 2, 3 and on up to the last step "
+                    f"once each ({band['min']} to {band['max']} steps), with one step label per badge "
+                    "and no badge the copy does not carry. ")
+        return ("Do not mis-number the steps: the badges read 1, 2, 3 and on up to the last step once "
+                "each, with one step label per badge and no badge the copy does not carry. ")
+    try:
+        count = int((band or {}).get("count") or 0)
+    except (TypeError, ValueError):
+        count = 0
+    if count < 1:
+        return ""
+    return (f"Do not mis-number the {count} steps: exactly {count} badges reading "
+            + ", ".join(str(i) for i in range(1, count + 1))
+            + f" once each, and exactly {count} step labels. ")
+
+
+def role_structure_block(stage: str, section: dict, request: dict, width: int) -> str:
+    """The page type's ACTUAL section structure for one mockup slice.
+
+    The wireframe stages carry the page type's full build spec already (wireframe_spec reads the
+    same role files). The mockup stages were drawn from the landing skeleton: PAGE TYPE STRUCTURE
+    was composed only for page types whose spec carries a `layout` block, so a checkout, upsell or
+    downsell mockup was never told which page type's structure it draws. This reads the role spec
+    Skill 71 already routes to (references/copy-specs/roles/<role>.json, stamped into the request
+    by load_request) and names that section's own structure. It names identity and composition
+    only: the section's layout prose is the builder's job, and repeating it here would put the
+    same sentences in every slice (the padding rule refuses repeated n-gram blocks).
+    """
+    block = page_role.layout_block(stage, section, request, width)
+    if block:
+        return block
+    if stage not in hypersaturation.MOCKUP_STAGES:
+        return ""
+    spec = request.get("_role_spec")
+    if not isinstance(spec, dict):
+        return ""
+    sid = canon_section_id(section.get("section_id"))
+    entry = role_spec.section(spec, sid)
+    if not isinstance(entry, dict) or not entry:
+        return ""
+    page = str(spec.get("page_role") or "page").replace("_", " ")
+    # One short line, unique per section: the section id and its composition role are the only
+    # tokens that differ between slices, so no 8-word run can repeat across the page's prompts
+    # (the padding rule refuses repeated n-gram blocks).
+    return (f"PAGE TYPE STRUCTURE — {page} page, section {sid} "
+            f"({entry.get('composition_role') or 'page block'}); not a landing section.")
+
+
+def negative_block(stage: str | None = None, steps: bool = True, page_spec: dict | None = None,
+                   step_rule: str | None = None) -> str:
     """The skill's own defect-class negative block, applied at the wire.
 
     Stage aware: a wireframe stage prints annotations (section number and
@@ -570,12 +651,11 @@ def negative_block(stage: str | None = None, steps: bool = True, page_spec: dict
                 "(section number and name, type specs, slot labels with pixel size, "
                 "ratio and treatment, behavior notes); no placeholder tokens, no "
                 "agent notes, no lorem, no bracketed markers, no watermarks.")
-    if page_spec:  # a page type with its own steps rule (the thank-you page: four to six steps)
-        step_rule = ("Do not mis-number the steps: the badges read 1, 2, 3 and on up to the last step "
-                     "once each, with one step label per badge and no badge the copy does not carry. ")
-    else:
-        step_rule = ("Do not mis-number the 7 steps: exactly 7 badges reading 1, 2, 3, 4, 5, 6, 7 "
-                     "once each, and exactly 7 step labels. ") if steps else ""
+    if step_rule is None:
+        # No rule supplied by the caller: derive it from the page's own structure. A form with no
+        # numbered-steps shape (product selection) keeps no rule unless it is a page type whose
+        # spec names its own band.
+        step_rule = _step_rule(None, page_spec) if (page_spec or steps) else ""
     return (
         "NEGATIVE BLOCK — do not duplicate a section number, do not print the "
         "same number twice, do not skip a number. " + step_rule + "Do not garble any label, mug slogan, or caption: no "
@@ -595,6 +675,55 @@ def frame_contract(width: int, ratio: str) -> str:
 
 class ExecutorError(Exception):
     """A named failure; the message is printed and the run stops."""
+
+
+def stage_start_check(run_dir: Path, stage: str, item: str | None = None) -> tuple[int, str]:
+    """Skill 71's own start check for one stage, or for one item of an itemized stage.
+
+    The gate is the only authority for whether a stage may start: it verifies the stage's whole
+    transitive dependency chain is closed with matching artifact hashes, the stage's
+    requires_artifacts exist, the client's brand colours are resolved, and, for an item, that the
+    item's own dependency (its prompt, for image-generation-qc) is closed. This calls the gate;
+    it never re-implements or relaxes a rule. Before this, a direct run of this command began a
+    stage the run had not reached: final mockups before the page's images, generation before its
+    prompts, a mockup before the board the client approved.
+    """
+    verb = "check-item" if item else "check"
+    argv = [sys.executable, str(GATE), verb, str(run_dir), stage] + ([str(item)] if item else [])
+    proc = subprocess.run(argv, capture_output=True, text=True)
+    return proc.returncode, ((proc.stdout or "") + (proc.stderr or "")).strip()
+
+
+def require_stage_start(run_dir: Path, stage: str, provider: str, item: str | None = None) -> dict:
+    """The gate's verdict on this execution, and the refusal where one is owed.
+
+    A paid run always refuses: it would spend money on a stage the run has not reached. A stub run
+    on a gate-driven run (one that carries private/state.json) refuses too, because that run claims
+    to be a gated pipeline and is held to the gate. A stub run on a bare fixture with no gate state
+    still proves the wire end to end; it records the gate's own lines as status
+    "ungated_fixture" in every record it writes, so its placeholders can never be read as a gated
+    stage. Nothing here writes a receipt: the verdict travels in this command's own record.
+    """
+    rc, text = stage_start_check(run_dir, stage, item)
+    verdict = {"status": "pass", "stage": stage, "checked": "item" if item else "stage",
+               "gate_exit": rc, "detail": text}
+    if item:
+        verdict["item"] = item
+    if rc == 0:
+        return verdict
+    where = f"{stage} item {item}" if item else f"stage {stage}"
+    if provider == "kie" or (Path(run_dir) / "private" / "state.json").is_file():
+        first = next((line for line in text.splitlines() if line.startswith("- ")), text or "no output")
+        first = first.lstrip("- ").strip()
+        # the gate already names the stage ("stage X cannot start: ..."); keep its reason only
+        first = re.sub(rf"^(?:stage|item) .*? cannot start:\s*", "", first)
+        raise ExecutorError(f"{where} cannot start: {first} "
+                            "(stage_gate.py check refused it; no provider call was made)")
+    print(f"WARN start_check {where}: the run carries no gate state, so this is an ungated "
+          f"fixture; the gate's refusal is recorded, never hidden: "
+          f"{next((l for l in text.splitlines() if l.startswith('- ')), text)[:200]}", file=sys.stderr)
+    verdict["status"] = "ungated_fixture"
+    return verdict
 
 
 def require_brand_colors(run_dir: Path) -> str:
@@ -764,6 +893,9 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
             raise ExecutorError(f"page kind: {exc}")
         label = f"{version} copy"
     ids = [canon_section_id(s["section_id"]) for s in request["sections"]]
+    # The page's own numbered-steps band travels with the request, so every prompt stage orders
+    # exactly the steps this page's structure declares (and none at all on a page without one).
+    request["_step_band"] = steps_in_spec(spec)
     allowed = allowed_section_sequences(spec, request)
     if ids not in allowed:
         want = allowed[0]
@@ -1031,7 +1163,9 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     copy_block = copy_contract(section, closing or "")
     frame_block = frame_contract(width, ratio or "")
     neg_block = negative_block(stage, steps=request_form(request) not in copy_forms.NO_STEPS_FORMS,
-                               page_spec=page_role.request_spec(request))
+                               page_spec=page_role.request_spec(request),
+                               step_rule=_step_rule(request.get("_step_band"),
+                                                    page_role.request_spec(request)))
     ref_block = reference_use.reference_block(request.get("references"),
                                               request.get("reference_roles"))
     color_block = str(request.get("_brand_block") or "")
@@ -1053,7 +1187,7 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     style_blk = (design_style.style_block(request["design_style"], stage, slots)
                  if request.get("design_style") else "")
     comp_block = composition.block(stage, resolved, typed_refs)
-    role_block = page_role.layout_block(stage, section, request, width)
+    role_block = role_structure_block(stage, section, request, width)
     named = (("COPY", copy_block), ("BRAND COLORS", color_block), ("PAGE COLOR SYSTEM", page_color),
              ("IMAGE GRADE", image_grade), ("REFERENCE ROLES", ref_block), ("FRAME CONTRACT", frame_block),
              ("COMPOSITION", comp_block), ("PAGE TYPE STRUCTURE", role_block), ("NEGATIVE", neg_block),
@@ -1487,6 +1621,7 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
               request_name: str = DEFAULT_REQUEST) -> dict:
     if stage not in LAYOUT:
         raise ExecutorError(f"unknown stage {stage!r}; expected one of {list(STAGES)}")
+    start = require_stage_start(run_dir, stage, provider.name)  # the gate's verdict, before any call
     sections = request["sections"]
     targets = LAYOUT[stage]
     records = []
@@ -1556,6 +1691,7 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
         "mode": provider.mode,
         "model": request.get("model") or ("stub-model" if provider.name == "stub" else None),
         "generated_at": now_iso(),
+        "start_check": start,
         "note": "this record is not a gate receipt and cannot close a stage",
         "images": records,
         "composition": composition,
@@ -1698,6 +1834,7 @@ def with_photo_rules(prompt: str, item: str, request: dict) -> str:
 
 def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
              overwrite: bool) -> dict:
+    start = require_stage_start(run_dir, stage, provider.name, item)  # the item gate, before any read
     prompt_path = run_dir / "image-inventory-prompts" / f"{item}.txt"
     try:
         prompt = prompt_path.read_text(encoding="utf-8").strip()
@@ -1767,7 +1904,7 @@ def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
     entry = {"stage": stage, "item": item, "file": str(out.relative_to(run_dir)),
              "sha256": sha256(out), "provider": result.get("provider"),
              "mode": result.get("mode"), "model": result.get("model"),
-             "task_id": result.get("task_id"), "at": now_iso()}
+             "task_id": result.get("task_id"), "at": now_iso(), "start_check": start}
     record_bleed(entry, out, request, provider, stage)
     if circle_record:
         entry["circle"] = circle_record
