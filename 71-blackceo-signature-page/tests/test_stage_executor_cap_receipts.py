@@ -39,22 +39,48 @@ FAKE_ADAPTER = textwrap.dedent('''
     state = Path(os.environ["FAKE_STATE"])
     n = int(state.read_text()) if state.exists() else 0
     cmd = sys.argv[1]
+
+    def envelope(**kw):
+        base = {"provider": "kie", "adapter": "74-kie-live-adapter", "adapter_mode": "active",
+                "backend": "native-live", "model_id": "gpt-image-x", "result_urls": [],
+                "saved_paths": [], "fallback_used": False, "warnings": [], "data": {}}
+        base.update(kw)
+        return base
+
+    def out(obj, code=0):
+        print(json.dumps(obj, indent=2))
+        sys.exit(code)
+
     if cmd == "credits":
-        print(json.dumps({"state": "success", "data": {"credits": 1000 - 4 * n}}, indent=2))
-    elif cmd == "run":
+        out({"state": "success", "data": {"credits": 1000 - 4 * n}})
+    elif cmd == "submit":
         if os.environ.get("FAKE_FAIL"):
-            print(json.dumps({"state": "fail", "error": {"msg": "provider said no"}}, indent=2))
-            sys.exit(1)
+            out(envelope(state="fail", task_id=None,
+                         error={"code": os.environ.get("FAKE_FAIL_CODE", "provider_error"),
+                                "msg": "provider said no"}), 1)
+        n += 1
+        state.write_text(str(n))
+        out(envelope(state="queued", task_id="task-%03d" % n))
+    elif cmd == "wait":
+        out(envelope(state="success", task_id=sys.argv[3],
+                     result_urls=["https://example.invalid/a.png"]))
+    elif cmd == "save":
+        save = Path(sys.argv[sys.argv.index("--save-dir") + 1])
+        save.mkdir(parents=True, exist_ok=True)
+        png = save / "out.png"
+        png.write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + ("bytes-%d" % n).encode())
+        out(envelope(state="success", task_id=sys.argv[3],
+                     result_urls=["https://example.invalid/a.png"], saved_paths=[str(png)]))
+    elif cmd == "run":  # the pre-split command, kept so a legacy caller still works
+        if os.environ.get("FAKE_FAIL"):
+            out({"state": "fail", "error": {"msg": "provider said no"}}, 1)
         n += 1
         state.write_text(str(n))
         save = Path(sys.argv[sys.argv.index("--save-dir") + 1])
         png = save / f"out-{n}.png"
         png.write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + f"bytes-{n}".encode())
-        print(json.dumps({"provider": "kie", "adapter": "74-kie-live-adapter", "adapter_mode": "active",
-                          "backend": "native-live", "model_id": "gpt-image-x", "task_id": f"task-{n:03d}",
-                          "state": "success", "result_urls": ["https://example.invalid/a.png"],
-                          "saved_paths": [str(png)], "fallback_used": False, "warnings": [],
-                          "data": {}}, indent=2))
+        out(envelope(state="success", task_id="task-%03d" % n,
+                     result_urls=["https://example.invalid/a.png"], saved_paths=[str(png)]))
 ''')
 
 
@@ -83,12 +109,20 @@ class CapAndReceipts(unittest.TestCase):
 
     def render(self, n):
         provider = exe.KieProvider(self.adapter, self.run_dir)
+        # F21: the job carries its identity, so the ledger row is scoped to this target.
         # F18: the paid boundary freezes and re-checks the prompt; use an in-band prompt
-        # (97.5 percent of the recorded 20,000-char maximum) so this test measures the
-        # spend ledger, not the prompt band.
-        job = {"stage": "visual-mockup", "index": n, "out": self.run_dir / "visual-mockup" / f"part-{n:02d}.png",
-               "prompt": "x" * 19500, "references": []}
-        return provider.generate(job, {"model": "gpt-image-2-5-sunburst-text-to-image"}), job["out"]
+        # (97.5 percent of the recorded 20,000-char maximum) and a model with a recorded
+        # maximum, so this test measures the spend ledger, not the prompt band.
+        request = {"model": "gpt-image-2-5-sunburst-text-to-image", "sections": []}
+        slot = f"part-{n:02d}.png"
+        base = exe.base_identity(self.run_dir, request, stage="visual-mockup", slot=slot,
+                                 viewport="1440x760")
+        ident = exe.allocate_attempt(self.run_dir, base)
+        out = self.run_dir / "visual-mockup" / slot
+        job = {"stage": "visual-mockup", "index": n, "out": out, "final": out,
+               "run_dir": self.run_dir, "slot": slot, "identity": ident,
+               "width": 1440, "height": 760, "prompt": "x" * 19500, "references": []}
+        return provider.generate(job, request), out
 
     def adapter_calls(self):
         return int(self.state.read_text()) if self.state.exists() else 0
@@ -115,13 +149,30 @@ class CapAndReceipts(unittest.TestCase):
             self.render(1)
         self.assertEqual(self.adapter_calls(), 0)
 
-    def test_a_provider_failure_does_not_use_up_the_ceiling(self):
+    def test_a_rejection_before_acceptance_does_not_use_up_the_ceiling(self):
         os.environ["FAKE_FAIL"] = "1"
+        os.environ["FAKE_FAIL_CODE"] = "validation_failed"
+        self.addCleanup(os.environ.pop, "FAKE_FAIL", None)
+        self.addCleanup(os.environ.pop, "FAKE_FAIL_CODE", None)
+        with self.assertRaises(exe.ExecutorError):
+            self.render(1)
+        ledger = json.loads((self.run_dir / exe.LEDGER).read_text(encoding="utf-8"))["calls"]
+        self.assertEqual([c["state"] for c in ledger], ["released"])
+        self.assertFalse(exe.counts_against_cap(ledger[0]), "a released reservation counts against the cap")
+        os.environ.pop("FAKE_FAIL")
+        result, out = self.render(1)  # the ceiling is untouched: the next paid render is allowed
+        self.assertTrue(result["delivered"])
+        self.assertTrue(out.is_file())
+
+    def test_an_ambiguous_provider_failure_keeps_the_reservation_held(self):
+        os.environ["FAKE_FAIL"] = "1"  # no definitive rejection code: the charge is unknown
         self.addCleanup(os.environ.pop, "FAKE_FAIL", None)
         with self.assertRaises(exe.ExecutorError):
             self.render(1)
         ledger = json.loads((self.run_dir / exe.LEDGER).read_text(encoding="utf-8"))["calls"]
-        self.assertEqual(ledger, [])
+        self.assertEqual([c["state"] for c in ledger], ["uncertain"])
+        self.assertTrue(exe.counts_against_cap(ledger[0]),
+                        "an uncertain submission must stay reserved until it is reconciled")
 
     def test_clean_run_writes_a_bound_receipt_the_gate_accepts(self):
         result, out = self.render(1)
