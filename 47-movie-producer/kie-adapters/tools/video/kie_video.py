@@ -653,6 +653,11 @@ class KieVideo(BaseTool):
             return f"kie_video: {model} prompt exceeds the model limit: {err.get('msg')}", []
         if err.get("code") == "prompt_below_floor":
             return f"kie_video: {model} prompt is below the 80 percent floor: {err.get('msg')}", []
+        if err.get("code") == "prompt_out_of_band":
+            # Any other band refusal (above the target ceiling, a separate documented limit, an
+            # unverifiable unit) is a refusal here, before any spend. A run-level refusal would be
+            # classified as a DEFINITE failure and fall back to a second paid model.
+            return f"kie_video: {model} prompt is outside the prompt band: {err.get('msg')}", []
         return None, []
 
     @staticmethod
