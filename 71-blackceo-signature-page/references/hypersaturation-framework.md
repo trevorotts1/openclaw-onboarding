@@ -1,7 +1,7 @@
 # Hypersaturation framework: the page color system and the image grade
 
 Owner order (Trevor Otts, 2026-10-19): "we use hyper saturation in our images - the blacks are
-blacker, the reds are redder, the whites are whiter." GPT Image 2.5 through KIE rarely produces that
+blacker, the reds are redder, the whites are whiter." GPT Image 2.6 through KIE rarely produces that
 vibrancy unprompted, so it is prompted, on every mockup and every image, built in, and **always in
 the client's own brand colors**. This file is the rules and their evidence. The wording that reaches
 the model lives in one place, `scripts/hypersaturation.py`; the pixel check is
@@ -155,7 +155,7 @@ executor enforces it: a mockup or item prompt whose prose carries a `#hex` outsi
 that has no resolved client palette at all, is refused before any provider call (never sent without the
 blocks, never sent against them).
 Budget: about 1,800 characters for the page block and 600 for the grade, inside the model band
-(GPT Image 2.5: floor 16,000, target 19,000, maximum 20,000) like every other contract block.
+(GPT Image 2.6: floor 16,000, target 19,000, maximum 20,000) like every other contract block.
 
 ## Quality check: `scripts/validate_page_color.py`
 

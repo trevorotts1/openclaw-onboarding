@@ -104,7 +104,7 @@ def job_row(db, logical_key, attempt_id):
 
 
 def run_case(script, label, adapter_path=None, prompt=None, cost=100,
-             model="gpt-image-2-5-sunburst-text-to-image", request=None,
+             model="gpt-image-2-6/sunburst-text-to-image", request=None,
              lock_model="unset", no_card=False):
     """One dispatch against a fake Skill 74.
 

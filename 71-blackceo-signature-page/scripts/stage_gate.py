@@ -1282,6 +1282,9 @@ MODEL_SOURCES = ("latest-family", "explicit-request", "department-pin", "legacy-
 BAD_IDS = {"", "-", "none", "null", "nil", "n/a", "na", "tbd", "todo", "native", "placeholder",
            "fake", "dummy", "test", "unknown", "0"}
 # AGENTS.md N43 ratio rules (kie-common-rules.md rule 11). Ratios only; model ids come from Skill 66.
+# GPT Image 2.6 serves every one of these natively, so stage_gate no longer
+# substitutes or reroutes any ratio; both constants remain only because
+# scripts/check-skill71-parity.py reads them into the generated 999 policy.
 N43_SUBSTITUTIONS = {"5:4": "4:3", "4:5": "3:4", "2:1": "16:9", "1:2": "9:16"}
 N43_LEGACY_ONLY = ("3:1", "1:3", "9:21")
 
@@ -1783,20 +1786,20 @@ def _ratio_problem(who, task):
     req, gen, src = task.get("requested_ratio"), task.get("generated_ratio"), task.get("model_source")
     if not (isinstance(req, str) and isinstance(gen, str) and req and gen):
         return f"{who}: requested_ratio and generated_ratio are required"
-    if req in N43_LEGACY_ONLY:
-        if gen != req or src not in ("legacy-ratio-route", "explicit-request", "department-pin"):
-            return f"{who}: N43 sends {req} to the legacy route only (generated_ratio {gen!r}, model_source {src!r})"
-    elif src in ("explicit-request", "department-pin"):
-        # an explicit request or a pin overrides the default's ratio substitutions, with evidence
+    # GPT Image 2.6 serves every enum ratio natively, so a generated ratio that
+    # differs from the requested one is drift on any model_source; no source
+    # (legacy-ratio-route included) exempts it.
+    if gen != req:
+        return (f"{who}: generated ratio {gen!r} must equal requested ratio {req!r}; "
+                f"every enum ratio is served natively and no model_source exempts ratio drift")
+    if src in ("explicit-request", "department-pin"):
+        # an explicit request or a pin still names the request text or the pin id
         ev = task.get("evidence")
         e = ev.strip() if isinstance(ev, str) else ""
         if not (len(e) >= 12 and len(e.split()) >= 3 and len(set(e.replace(" ", ""))) > 1
                 and e.lower() not in BAD_IDS and e != task.get("model_id")):
             return (f"{who}: model_source {src!r} needs evidence naming the request text or the pin id "
                     f"(at least 12 characters and 3 words, not a placeholder or a repeated character)")
-    elif gen != N43_SUBSTITUTIONS.get(req, req):
-        return (f"{who}: N43 ratio rule violated: requested {req}, generated {gen}, "
-                f"expected {N43_SUBSTITUTIONS.get(req, req)}")
     return None
 
 

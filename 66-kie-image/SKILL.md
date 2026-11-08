@@ -2,12 +2,12 @@
 name: kie-image
 description: >
   KIE Image generation via the KIE.ai Market API. Owns model selection across
-  14 image families (GPT Image 2.5, Qwen Image 3.0/Pro, Seedream 5.0 Pro/Lite/4.5,
+  14 image families (GPT Image 2.6, Qwen Image 3.0/Pro, Seedream 5.0 Pro/Lite/4.5,
   Nano Banana 2/2 Lite/Pro/legacy, Wan 2.7 Image, FLUX.2, Z-Image, Ideogram V3,
   Imagen 4), payload validation against a machine-readable registry, prompt
   sizing against published limits, asynchronous task dispatch with callbacks or
   polling, and mandatory real visual QC.
-version: v2.2.4
+version: v2.2.5
 metadata:
   version: "2.2.2"
   priority: HIGH
@@ -30,13 +30,13 @@ wait (callback or poll), and visually QC the result.
    catalog** (owner order 2026-10-05: if a new GPT Image model comes out, the
    system moves to it automatically; resolved by Skill 74 `latest-family`, with
    the `models.json` default as the fallback when the adapter is absent or
-   unreachable; today that is GPT Image 2.5 Sunburst), preferred for high-fidelity general KIE
+   unreachable; today that is GPT Image 2.6 Sunburst), preferred for high-fidelity general KIE
    image generation/editing, product/brand images, and detailed long-form
    creative instructions (owner's preference, operator ruling 2026-09-09,
-   supersedes GPT Image 2), when compatible (respecting its ratio/resolution
-   exclusions). GPT Image 2 (legacy) is RETAINED, not retired, and is the
-   required route for aspect ratios 3:1, 1:3, 9:21 only — the selector routes
-   those three there automatically.
+   supersedes GPT Image 2), when compatible (no per-resolution ratio
+   exclusions on 2.6). GPT Image 2 (legacy) is RETAINED, not retired, with its
+   own unchanged rules; no aspect ratio requires it — 3:1, 1:3 and 9:21 are
+   native 2.6 enum members.
 3. Else by capability match:
    - Nano Banana Pro / Nano Banana 2 — strong general/multi-reference
      alternatives.
@@ -65,7 +65,7 @@ wait (callback or poll), and visually QC the result.
    (exit 2); owner-observed and NOT_PUBLISHED only warn.
 4. **Validate the payload** (`scripts/validate_payload.py`) — reference counts,
    MB/format, ratio/resolution enums, per-family rules (GPT Image 2 / GPT
-   Image 2.5 per-resolution exclusions — two separate rule sets, never
+   Image 2.6 ratio rules — two separate rule sets, never
    merged, Wan n/bbox, Ideogram strength, seedream output_format gaps).
    Validation happens BEFORE dispatching so bad payloads never burn credits.
 5. **Dispatch through Skill 74** — `kie_live_adapter.py validate` (live schema,
@@ -91,9 +91,9 @@ Key cap facts (full matrix: `references/models.md`):
   2026-08-27 — authoritative for GPT Image 2 only; docs page's "maximum
   20,000 characters" is stale; warn-only, never hard-fail; house band
   5,000–19,000 with ~9,000 target is legal).
-- GPT Image 2.5 (default today, operator ruling 2026-09-09): 20,000 chars per KIE
-  docs dated 2026-09-09 (`DOCS`, NOT owner-confirmed — the GPT Image 2 25,000
-  confirmation does not carry forward and has not been retested on 2.5).
+- GPT Image 2.6 (default today, operator ruling 2026-09-09): 20,000 chars by
+  owner ruling 2026-11-08, which governs over the vendor OpenAPI's published
+  32,000 (`DOCS`; the GPT Image 2 25,000 confirmation does not carry forward).
 - Qwen 3.0/Pro: 4.5K **tokens** advertised — token-aware validation only; never
   converted to a fake char cap (rule D). Docs schemas: maxLength 5000 chars.
 - Wan 2.7 Image: 5,000 chars VERIFIED — do NOT force 5,000 as a minimum;
@@ -138,7 +138,7 @@ chars to CUT), 80-95% warns. Unknown limit: UNKNOWN, no floor. Verbatim content
 6. **references/qc.md** — real visual QC checklist + retry ladder.
 7. **INSTRUCTIONS.md** — daily usage walkthrough.
 8. **INSTALL.md** — credential check + connect verification.
-9. **EXAMPLES.md** — copy-paste curl payloads (GPT Image 2.5 t2i/i2i, Wan bbox,
+9. **EXAMPLES.md** — copy-paste curl payloads (GPT Image 2.6 t2i/i2i, Wan bbox,
    Seedream i2i, NB2 i2i).
 10. **CORE_UPDATES.md** — core-file wiring (performed by `wire.sh`).
 11. **QC.md** — verification checklist.
@@ -153,15 +153,16 @@ chars to CUT), 80-95% warns. Unknown limit: UNKNOWN, no floor. Verbatim content
 - **Validators run before dispatch.** Never send too many refs, an illegal
   ratio/resolution for the model, an over-limit prompt, or an unsupported mode
   combination.
-- **GPT Image 2 / GPT Image 2.5 ratio rules are hard, and are SEPARATE rule
+- **GPT Image 2 / GPT Image 2.6 ratio rules are hard, and are SEPARATE rule
   sets (operator ruling 2026-09-09, never merged):**
-  - GPT Image 2 (legacy, 3:1/1:3/9:21 route only): 2K/4K exclude 5:4, 4:5,
+  - GPT Image 2 (legacy, retained): 2K/4K exclude 5:4, 4:5,
     3:1, 1:3, 9:21; `auto` yields 1K only; 1:1 cannot convert to 4K.
-  - GPT Image 2.5 (default): 2K/4K exclude 27:16, 16:27, 9:8, 8:9 (1K only).
-    The legacy `auto`-1K-only and `1:1`-never-4K rules are RETIRED here —
-    not restated in the 2.5 docs. 5:4, 4:5, 2:1, 1:2 are served via an
-    operator-approved substitution (5:4→4:3, 4:5→3:4, 2:1→16:9, 1:2→9:16);
-    3:1, 1:3, 9:21 are not served at all and route to the legacy model instead.
+  - GPT Image 2.6 (default): NO per-resolution exclusions — every enum member
+    is legal at 1K, 2K and 4K. The enum is `auto, 1:1, 3:2, 2:3, 4:3, 3:4,
+    5:4, 4:5, 16:9, 9:16, 2:1, 1:2, 21:9, 9:21, 3:1, 1:3` (16 values), so
+    3:1, 1:3, 9:21, 5:4, 4:5, 2:1 and 1:2 are served natively with no
+    substitution and no second model. 27:16, 16:27, 9:8 and 8:9 are NOT enum
+    members at any resolution.
   `validate_payload.py` enforces both rule sets, keyed by exact model id.
 - **Wan bbox/n rules:** each input image supports up to 2 boxes; `n` 1–4
   (1–12 with `enable_sequential`); input images min 240 px per side, max 10 MB.

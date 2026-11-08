@@ -55,7 +55,7 @@ This SOP is designed around the following stack. Each capability lists a **prima
 - **Likeness image creation or editing**
   - Primary: GPT Image 2 (`gpt-image-2`) in ChatGPT or the OpenAI API
   - Fallback 1: Agnes Image 2.1 Flash (`agnes-image-2.1-flash`) in image-to-image mode
-  - Fallback 2: Kie.ai image generation (Skill 66 `kie-image`, GPT Image 2.5, the client's own `KIE_API_KEY`)
+  - Fallback 2: Kie.ai image generation (Skill 66 `kie-image`, GPT Image 2.6, the client's own `KIE_API_KEY`)
   - Fallback 3: Another image model that supports high-fidelity image-to-image identity preservation
   - **Rule:** always image-to-image from an authorized reference photograph; never rebuild a face from text when a reference exists.
 
