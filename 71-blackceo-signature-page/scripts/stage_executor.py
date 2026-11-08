@@ -604,13 +604,16 @@ def steps_in_spec(spec) -> dict | None:
     return None
 
 
-def _step_rule(band: dict | None, page_spec: dict | None) -> str:
+def _step_rule(band: dict | None, page_spec: dict | None, default_count: int = 0) -> str:
     """The negative block's steps sentence for THIS page, or '' when the page has no steps band.
 
     A page type with its own wording (the thank-you page) keeps its band's range; every other page
     reads its governing spec's count; a page whose structure has no steps band gets no steps rule.
     The main sales skeleton's seven badges are never ordered onto a role that does not carry them
-    (a five-section checkout, an eight-band upsell, a thank-you page's four to six).
+    (a five-section checkout, an eight-band upsell, a thank-you page's four to six). `default_count`
+    is the count to use when the wire carries neither a band nor a spec: the Standard landing
+    skeleton has always carried seven, and dropping that default silently removed the step rule
+    from every landing prompt built without a role spec.
     """
     if page_spec:
         band = band if band and band.get("max") else steps_in_spec(page_spec)
@@ -624,6 +627,8 @@ def _step_rule(band: dict | None, page_spec: dict | None) -> str:
         count = int((band or {}).get("count") or 0)
     except (TypeError, ValueError):
         count = 0
+    if count < 1:
+        count = int(default_count or 0)
     if count < 1:
         return ""
     return (f"Do not mis-number the {count} steps: exactly {count} badges reading "
@@ -682,10 +687,9 @@ def negative_block(stage: str | None = None, steps: bool = True, page_spec: dict
                 "ratio and treatment, behavior notes); no placeholder tokens, no "
                 "agent notes, no lorem, no bracketed markers, no watermarks.")
     if step_rule is None:
-        # No rule supplied by the caller: derive it from the page's own structure. A form with no
-        # numbered-steps shape (product selection) keeps no rule unless it is a page type whose
-        # spec names its own band.
-        step_rule = _step_rule(None, page_spec) if (page_spec or steps) else ""
+        # No rule supplied by the caller: derive it from the page's own structure, keeping the
+        # legacy seven-step default when the wire carries no role spec at all.
+        step_rule = _step_rule(None, page_spec, default_count=7 if steps else 0)
     return (
         "NEGATIVE BLOCK — do not duplicate a section number, do not print the "
         "same number twice, do not skip a number. " + step_rule + "Do not garble any label, mug slogan, or caption: no "
@@ -1194,8 +1198,10 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     frame_block = frame_contract(width, ratio or "")
     neg_block = negative_block(stage, steps=request_form(request) not in copy_forms.NO_STEPS_FORMS,
                                page_spec=page_role.request_spec(request),
-                               step_rule=_step_rule(request.get("_step_band"),
-                                                    page_role.request_spec(request)))
+                               step_rule=_step_rule(
+                                   request.get("_step_band"), page_role.request_spec(request),
+                                   default_count=(7 if request_form(request)
+                                                  not in copy_forms.NO_STEPS_FORMS else 0)))
     ref_block = reference_use.reference_block(request.get("references"),
                                               request.get("reference_roles"))
     color_block = str(request.get("_brand_block") or "")
