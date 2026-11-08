@@ -58,6 +58,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -117,6 +118,61 @@ def _load_publish_approval():
     raise RuntimeError(
         "REFUSE push: Skill 6 ghl_publish_approval.py not found "
         "(<repo>/06-ghl-install-pages/tools/) - cannot verify the launcher approval record")
+
+
+# ---------------------------------------------------------------------------
+# F19: the ONE current-file review authority. A local pass:true flag, an empty
+# auto-fail list, or a same-named file is not a review. The uploader and the
+# delivery gate below consume the shared validator (shared-utils/
+# signature_launch_contract/review_record.py) over the asset's CURRENT bytes.
+# ---------------------------------------------------------------------------
+def _load_review_record():
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        cand = parent / "shared-utils" / "signature_launch_contract" / "review_record.py"
+        if cand.is_file():
+            spec = importlib.util.spec_from_file_location(
+                "_review_record_graphics", str(cand))
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules.setdefault("_review_record_graphics", mod)
+            spec.loader.exec_module(mod)  # type: ignore[union-attr]
+            return mod
+    raise RuntimeError(
+        "REFUSE delivery: shared review_record.py not found "
+        "(<repo>/shared-utils/signature_launch_contract/) - cannot verify "
+        "independent current-file review")
+
+
+_REVIEW_MODULE = None
+
+
+def review_module():
+    global _REVIEW_MODULE
+    if _REVIEW_MODULE is None:
+        _REVIEW_MODULE = _load_review_record()
+    return _REVIEW_MODULE
+
+
+def _load_approval_record():
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        cand = parent / "shared-utils" / "signature_launch_contract" / "approval_record.py"
+        if cand.is_file():
+            spec = importlib.util.spec_from_file_location(
+                "_approval_record_graphics", str(cand))
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules.setdefault("_approval_record_graphics", mod)
+            spec.loader.exec_module(mod)  # type: ignore[union-attr]
+            return mod
+    return None
+
+
+def _default_approval_verifier(approval_id, kind, plan_hash, scope):
+    """The real F20 authority: a live Command Center verification."""
+    mod = _load_approval_record()
+    if mod is None:
+        raise RuntimeError("REFUSE waiver: shared approval_record.py not found")
+    return mod.verify(approval_id, kind, plan_hash, list(scope))
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +260,217 @@ def collect_passed_assets(job_dir) -> list:
 
 def _asset_key(entry: dict) -> str:
     return str(entry.get("local_path") or entry.get("path") or entry.get("file") or "")
+
+
+def _sha256_file(path: Path) -> str | None:
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
+def _asset_abspath(job_dir: Path, asset: dict) -> Path:
+    rel = _asset_key(asset)
+    return Path(rel) if Path(rel).is_absolute() else (Path(job_dir) / rel)
+
+
+def _job_json(job_dir: Path) -> dict:
+    for name in ("job.json", "intake.json"):
+        data = _read_json(Path(job_dir) / name)
+        if isinstance(data, dict) and data:
+            return data
+    return {}
+
+
+def review_policy(job_dir) -> dict:
+    """The governing review policy for this job (fail closed).
+
+    Independent review is REQUIRED for production delivery. A policy may only
+    set it false when it also declares ``draft_only: true``; a draft job still
+    cannot pass the delivery gate (the gate requires production admission).
+    """
+    job_dir = Path(job_dir)
+    policy = _read_json(job_dir / "review_policy.json")
+    if not isinstance(policy, dict):
+        policy = {}
+    job = _job_json(job_dir)
+    for key in ("require_independent_review", "require_model_independence",
+                "author_session", "author_model", "attempt_id", "revision",
+                "plan_hash"):
+        if key not in policy and key in job:
+            policy[key] = job.get(key)
+    policy.setdefault("require_independent_review", True)
+    policy.setdefault("require_model_independence", False)
+    policy.setdefault("draft_only", False)
+    if policy.get("require_independent_review") is False and not policy.get("draft_only"):
+        policy["require_independent_review"] = True
+    policy.setdefault("revision", "r1")
+    return policy
+
+
+def _dispatch_ledger(job_dir: Path) -> dict:
+    data = _read_json(Path(job_dir) / "qc" / "dispatch_ledger.json")
+    return data if isinstance(data, (dict, list)) else {}
+
+
+def _review_records(job_dir: Path) -> list:
+    """Review records for this job: a bundle and/or one file per record."""
+    out = []
+    bundle = _read_json(Path(job_dir) / "qc" / "review_records.json")
+    if isinstance(bundle, dict):
+        out.extend(r for r in (bundle.get("records") or []) if isinstance(r, dict))
+    elif isinstance(bundle, list):
+        out.extend(r for r in bundle if isinstance(r, dict))
+    reviews = Path(job_dir) / "reviews"
+    if reviews.is_dir():
+        for path in sorted(reviews.glob("*.json")):
+            data = _read_json(path)
+            if isinstance(data, dict):
+                out.append(data)
+            elif isinstance(data, list):
+                out.extend(r for r in data if isinstance(r, dict))
+    return out
+
+
+def review_admission(job_dir, asset: dict, *, policy: dict | None = None):
+    """Return (ok, reasons, record) for ONE asset's CURRENT bytes.
+
+    The file's sha256 is computed now. A record that reviewed other bytes is
+    stale and cannot authorize this upload. A local pass:true flag is not a
+    review and never reaches this function as evidence.
+    """
+    job_dir = Path(job_dir)
+    policy = policy if isinstance(policy, dict) else review_policy(job_dir)
+    rel = _asset_key(asset)
+    path = _asset_abspath(job_dir, asset)
+    sha = _sha256_file(path)
+    if not sha:
+        return False, [f"{GHL_UPLOAD_GATE}: asset {rel!r} is missing or unreadable; "
+                       "there is no current-file review to consume"], None
+    try:
+        rr = review_module()
+    except RuntimeError as exc:
+        return False, [str(exc)], None
+    ledger = _dispatch_ledger(job_dir)
+    records = _review_records(job_dir)
+    if not records:
+        return False, [
+            f"{GHL_UPLOAD_GATE}: asset {rel!r} has no review record; a local "
+            "pass:true flag, an empty auto-fail list, or a same-named file is "
+            "not independent review"], None
+    closest = []
+    for record in records:
+        scope = str(record.get("scope") or "item").strip().lower()
+        fails = rr.validate_review_record(
+            record, ledger=ledger,
+            author_session=(record.get("author_session")
+                            or policy.get("author_session")),
+            artifacts=[{"path": rel, "sha256": sha}],
+            request_id=record.get("request_id"),
+            author_model=policy.get("author_model"),
+            require_independence=bool(policy.get("require_independent_review")),
+            require_model_independence=bool(policy.get("require_model_independence")),
+            exact_artifact_set=(scope in ("asset", "item")),
+            expected_scope=scope,
+            require_attempt_identity=True,
+            attempt_id=record.get("attempt_id"),
+            revision=policy.get("revision"))
+        if not fails:
+            return True, [], record
+        closest = fails
+    return False, [
+        f"{GHL_UPLOAD_GATE}: asset {rel!r} has no accepted current-file review "
+        f"record for sha256 {sha[:12]}...: " + "; ".join(closest[:4])], None
+
+
+_CLIENT_RULES_MODULE = None
+
+
+def client_rules_module():
+    """The shared client-rule sweep, loaded once (F19 items 7-10)."""
+    global _CLIENT_RULES_MODULE
+    if _CLIENT_RULES_MODULE is None:
+        here = Path(__file__).resolve()
+        for parent in here.parents:
+            cand = parent / "shared-utils" / "signature_launch_contract" / "client_rules.py"
+            if cand.is_file():
+                spec = importlib.util.spec_from_file_location(
+                    "_client_rules_graphics", str(cand))
+                mod = importlib.util.module_from_spec(spec)
+                sys.modules.setdefault("_client_rules_graphics", mod)
+                spec.loader.exec_module(mod)  # type: ignore[union-attr]
+                _CLIENT_RULES_MODULE = mod
+                break
+    return _CLIENT_RULES_MODULE
+
+
+def client_rule_admission(job_dir) -> tuple[bool, list, str]:
+    """Run the client's declared measurable rules over its output tree.
+
+    Absence of a rule document is not an error (no client rules declared).
+    A declared document is swept recursively BEFORE admission, including newly
+    added nested files and generated reports, and any finding or sweep error
+    refuses delivery. This never rewrites files (F19 item 8).
+    """
+    job_dir = Path(job_dir)
+    policy = review_policy(job_dir)
+    rel = (policy.get("client_rules_path")
+           or _job_json(job_dir).get("client_rules_path") or "client_rules.json")
+    rules_path = Path(rel) if Path(rel).is_absolute() else job_dir / rel
+    if not rules_path.is_file():
+        return True, [], "no client rules declared"
+    module = client_rules_module()
+    if module is None:
+        return False, [f"{GHL_UPLOAD_GATE}: client rules are declared but the "
+                       "shared client_rules.py sweep is unavailable (fail closed)"], \
+            "sweep unavailable"
+    try:
+        rules = module.load_client_rules(rules_path)
+    except Exception as exc:  # noqa: BLE001 - unusable rules fail closed
+        return False, [f"{GHL_UPLOAD_GATE}: client rules refused: {exc}"], "invalid rules"
+    reasons = []
+    for root_name in (rules.get("output_roots") or ["."]):
+        base = Path(root_name) if Path(root_name).is_absolute() else job_dir / root_name
+        report = module.sweep_tree(base, rules, exclude=[rules_path])
+        for reason in report.get("reasons") or []:
+            reasons.append(f"{GHL_UPLOAD_GATE}: client-rule sweep: {reason}")
+        for finding in report.get("findings") or []:
+            reasons.append(
+                f"{GHL_UPLOAD_GATE}: client rule {finding.get('rule_id')!r} "
+                f"({finding.get('kind')}) failed in {finding.get('file')}: "
+                f"{finding.get('detail')}")
+    return (not reasons), reasons, "swept" if not reasons else "violations"
+
+
+def _checkpoint_laundering(job_dir: Path) -> list:
+    """F19 item 5: a locally_verified copy checkpoint is not a designed page."""
+    reasons = []
+    for name in ("result.json", "page_result.json", "process_result.json"):
+        data = _read_json(Path(job_dir) / name)
+        if not isinstance(data, dict):
+            continue
+        claimed = str(data.get("completion") or data.get("stage") or "").lower()
+        if data.get("locally_verified") is True and claimed in (
+                "page", "design", "complete", "completed", "final", "published"):
+            reasons.append(
+                f"{GHL_UPLOAD_GATE}: {name} claims {claimed!r} from a "
+                "locally_verified copy checkpoint; a checkpoint is not a "
+                "completed designed page")
+    return reasons
+
+
+def _write_json_atomic(path: Path, data) -> None:
+    """Persist a receipt atomically: an interrupted write cannot leave a
+    half-ledger that a later attempt mistakes for accepted evidence."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(tmp, path)
 
 
 def _update_sidecar(job_dir: Path, asset: dict, ghl_media_id: str, ghl_public_url: str) -> None:
@@ -344,13 +611,18 @@ def _webp_dimensions(data: bytes):
 # ---------------------------------------------------------------------------
 def push_graphics_media(job_dir, *, folder_name: str | None = None, job_slug: str | None = None,
                         opener=None, liveness_opener=None, approval_ref=None,
-                        approval_store: str | None = None) -> dict:
-    """Create the per-job GHL folder and upload every QC-PASSED asset. Writes the gate-readable
-    ledger to <job>/media_library.json (MERGED with any prior seed) and returns the same dict.
-    Idempotent per file (a re-run never re-uploads an already-hosted asset).
+                        approval_store: str | None = None,
+                        attempt_id: str | None = None, revision: str | None = None) -> dict:
+    """Create the per-job GHL folder and upload every QC-PASSED, CURRENTLY REVIEWED asset.
 
-    REFUSES (PublishApprovalError, a RuntimeError) unless ``approval_ref`` resolves to a
-    launcher approval record for the client's location (see _load_publish_approval)."""
+    Writes the gate-readable ledger to <job>/media_library.json (MERGED with any prior seed)
+    atomically after every accepted upload. Idempotent per file AND per current bytes: the
+    absolute path plus the local sha256 is the ledger key, so a changed image is re-uploaded
+    and a prior attempt's record cannot stand in for the current attempt (F19 item 6).
+
+    REFUSES (RuntimeError) unless (1) ``approval_ref`` resolves to a launcher approval record
+    for the client's location, and (2) every QC-passed asset has an accepted current-file
+    review record under the shared review validator (F19 item 14)."""
     job_dir = Path(job_dir).resolve()
     # Approval first: nothing is read, created or uploaded without the record.
     _load_publish_approval().require_live_write(
@@ -363,6 +635,22 @@ def push_graphics_media(job_dir, *, folder_name: str | None = None, job_slug: st
         raise RuntimeError(
             f"{GHL_UPLOAD_GATE}: no QC-PASSED assets in {_qc_report_path(job_dir)} — nothing to "
             "host. Run SOP-GIP-02 image QC first (only pass:true + zero auto-fails are delivered).")
+
+    policy = review_policy(job_dir)
+    refusal = []
+    for asset in passed:
+        ok, reasons, _record = review_admission(job_dir, asset, policy=policy)
+        if not ok:
+            refusal.extend(reasons)
+    if refusal:
+        raise RuntimeError(
+            f"{GHL_UPLOAD_GATE}: upload REFUSED — no accepted current-file independent "
+            "review for every QC-passed asset. " + " ".join(refusal[:6]))
+    c_ok, c_reasons, _c_state = client_rule_admission(job_dir)
+    if not c_ok:
+        raise RuntimeError(
+            f"{GHL_UPLOAD_GATE}: upload REFUSED — the client-rule sweep failed before "
+            "admission. " + " ".join(c_reasons[:6]))
 
     pit = ghl_media.resolve_location_pit()         # client's LOCATION PIT (never operator's)
     location_id = ghl_media.resolve_location_id()   # client's location id
@@ -377,15 +665,31 @@ def push_graphics_media(job_dir, *, folder_name: str | None = None, job_slug: st
     ledger = _read_json(ledger_path) if ledger_path.exists() else {}
     if not isinstance(ledger, dict):
         ledger = {}
-    done = {e.get("local_path"): e for e in ledger.get("uploaded", [])
-            if isinstance(e, dict) and e.get("local_path")}
-    uploaded = list(ledger.get("uploaded", []))
+    current_attempt = (attempt_id or policy.get("attempt_id")
+                       or f"attempt-{_now_iso()}-{os.getpid()}")
+    current_revision = revision or policy.get("revision") or "r1"
+    uploaded = [e for e in ledger.get("uploaded", []) if isinstance(e, dict)]
+    # A prior attempt's result may be kept as history but must not be mistaken
+    # for the current attempt (F19 item 6).
+    for entry in uploaded:
+        if entry.get("attempt_id") not in (None, current_attempt) \
+                or entry.get("revision") not in (None, current_revision):
+            entry["stale"] = True
+    done = {
+        (e.get("local_path"), e.get("local_sha256")): e for e in uploaded
+        if e.get("local_path") and e.get("local_sha256")
+        and e.get("attempt_id") == current_attempt
+        and e.get("revision") == current_revision
+        and e.get("stale") is not True
+    }
 
     for asset in passed:
         rel = _asset_key(asset)
-        abspath = rel if Path(rel).is_absolute() else str(job_dir / rel)
-        if abspath in done:
-            continue  # idempotent: already hosted this file
+        abspath = str(_asset_abspath(job_dir, asset))
+        local_sha = _sha256_file(Path(abspath))
+        if (abspath, local_sha) in done:
+            continue  # idempotent: this exact file content is already hosted
+        _ok, _reasons, review = review_admission(job_dir, asset, policy=policy)
         name = f"{name_prefix}{Path(abspath).name}"
         res = ghl_media.upload_media(
             abspath, location_id, name, pit,
@@ -406,39 +710,70 @@ def push_graphics_media(job_dir, *, folder_name: str | None = None, job_slug: st
             "ghl_upload_status": "complete",
             "ghl_folder_id": ghl_folder_id,
             "liveness": live,
+            "local_sha256": local_sha,
+            "review_sha256": local_sha,
+            "review_record_id": (review or {}).get("record_id")
+                                or (review or {}).get("request_id"),
+            "reviewer_session": (review or {}).get("reviewer_session"),
+            "attempt_id": current_attempt,
+            "revision": current_revision,
+            "stale": False,
             "uploaded_at": _now_iso(),
         }
         uploaded.append(rec)
-        done[abspath] = rec
+        done[(abspath, local_sha)] = rec
+        # Persist each accepted upload receipt BEFORE advancing (F21 item 9 /
+        # F19 item 6): an interruption cannot repeat or lose an accepted upload.
+        ledger.update({
+            "job_slug": slug,
+            "ghl_folder_id": ghl_folder_id,
+            "ghl_folder_name": folder.get("name") or ledger.get("ghl_folder_name") or fname,
+            "ghl_folder_created_via_api": bool(folder.get("folderId")),
+            "attempt_id": current_attempt,
+            "revision": current_revision,
+            "uploaded": uploaded,
+            "upload_count": len(uploaded),
+            "passed_asset_count": len(passed),
+        })
+        _write_json_atomic(ledger_path, ledger)
 
     out = {
         "job_slug": slug,
         "ghl_folder_id": ghl_folder_id,
         "ghl_folder_name": folder.get("name") or ledger.get("ghl_folder_name") or fname,
         "ghl_folder_created_via_api": bool(folder.get("folderId")),
+        "attempt_id": current_attempt,
+        "revision": current_revision,
         "uploaded": uploaded,
         "upload_count": len(uploaded),
         "passed_asset_count": len(passed),
     }
     ledger.update(out)
-    ledger_path.parent.mkdir(parents=True, exist_ok=True)
-    ledger_path.write_text(json.dumps(ledger, indent=2))
+    _write_json_atomic(ledger_path, ledger)
     return out
 
 
 # ---------------------------------------------------------------------------
 # CLOSEOUT GATE — no delivery without the GHL upload.
 # ---------------------------------------------------------------------------
-def _valid_owner_skip(job_dir: Path):
-    """Return the owner-skip record authorizing a gate skip, or None. The ONLY legitimate
-    skip: a LOGGED token in <job>/checkpoints/process_manifest.json under owner_skip_approval
-    (owner_approved:true + non-empty approved_by + non-empty reason + a matching gate name).
-    An agent's own has_ghl:false is NOT a skip."""
+def _waiver_admission(job_dir: Path, *, approval_verifier=None):
+    """Return (ok, verified_waiver, reasons) for the ONLY legitimate skip.
+
+    F19 items 5/14: a local owner token is not authority. The token must name
+    an ``approval_ref`` and that ref must verify through F20's scoped authority
+    (approval_record.verify) for the ``graphics_upload_waiver`` scope. A local
+    ``waiver: true``, a has_ghl:false agent choice, or a test-only record is
+    refused for production delivery.
+    """
     pm = _read_json(Path(job_dir) / "checkpoints" / "process_manifest.json")
     raw = pm.get("owner_skip_approval") if isinstance(pm, dict) else None
     if raw is None:
-        return None
+        return False, None, []
+    reasons = []
     records = raw if isinstance(raw, list) else [raw]
+    verify = approval_verifier or _default_approval_verifier
+    policy = review_policy(job_dir)
+    plan_hash = str(policy.get("plan_hash") or _job_json(job_dir).get("plan_hash") or "")
     for rec in records:
         if not isinstance(rec, dict):
             continue
@@ -449,9 +784,36 @@ def _valid_owner_skip(job_dir: Path):
         if not str(rec.get("reason", "")).strip():
             continue
         gate = str(rec.get("gate") or rec.get("gate_id") or rec.get("phase_id") or "").strip()
-        if gate in _GATE_ALIASES:
-            return rec
-    return None
+        if gate not in _GATE_ALIASES:
+            continue
+        ref = str(rec.get("approval_ref") or "").strip()
+        if not ref:
+            reasons.append(
+                f"{GHL_UPLOAD_GATE}: owner_skip_approval is a local token with no "
+                "approval_ref; an upload waiver must be F20-scoped authority, not "
+                "a file the worker wrote")
+            continue
+        try:
+            verified = verify(ref, "page_publication", plan_hash,
+                              ["graphics_upload_waiver"])
+        except Exception as exc:  # noqa: BLE001 - unavailable authority fails closed
+            reasons.append(
+                f"{GHL_UPLOAD_GATE}: upload waiver {ref!r} could not be verified "
+                f"through F20 authority ({type(exc).__name__}); refusal, not a skip")
+            continue
+        try:
+            fails = review_module().validate_upload_waiver(
+                verified, required_scope="graphics_upload_waiver",
+                test_only=bool(rec.get("test_only")))
+        except RuntimeError as exc:
+            reasons.append(str(exc))
+            continue
+        if fails:
+            reasons.extend(f"{GHL_UPLOAD_GATE}: upload waiver {ref!r} refused: {f}"
+                           for f in fails)
+            continue
+        return True, verified, []
+    return False, None, reasons
 
 
 def _job_has_ghl(job_dir: Path):
@@ -470,26 +832,34 @@ def _upload_complete(entry: dict) -> bool:
     return bool(str(mid or "").strip())
 
 
-def gate_graphics_media_complete(job_dir):
+def gate_graphics_media_complete(job_dir, *, approval_verifier=None, policy=None):
     """HARD closeout gate. Returns (ok: bool, reasons: list[str]).
 
-    PASS only when <job>/media_library.json records a resolved ghl_folder_id AND every
-    QC-PASSED asset (from the SOP-GIP-02 report _qc_report_path resolves) is uploaded with a real ghl_media_id
-    + ghl_upload_status:"complete" — OR a logged owner_skip_approval authorizes the skip. There
-    is NO defer-to-pass."""
+    PASS only when the SAME current-file review authority the uploader consumes
+    has accepted every QC-PASSED asset's CURRENT bytes, and <job>/media_library.json
+    records the current attempt/revision, a resolved ghl_folder_id, a real
+    ghl_media_id + ghl_upload_status:"complete", the same local sha256, and
+    decoded image evidence for the hosted URL. A local pass:true flag, an empty
+    auto-fail list, a same-named file, a stale attempt or a nonempty HTML reply
+    is insufficient. The only skip is an F20-scoped verified upload waiver
+    (_waiver_admission). There is NO defer-to-pass."""
     job_dir = Path(job_dir)
+    policy = policy if isinstance(policy, dict) else review_policy(job_dir)
 
-    # The ONLY skip path: an explicit, logged owner/founder approval token.
-    if _valid_owner_skip(job_dir) is not None:
+    # The ONLY skip path: an F20-scoped, verified upload waiver.
+    waiver_ok, _waiver, waiver_reasons = _waiver_admission(
+        job_dir, approval_verifier=approval_verifier)
+    if waiver_ok:
         return True, []
 
-    # has_ghl:false WITHOUT an owner token is an agent choice, not an authorization.
+    # has_ghl:false WITHOUT a verified waiver is an agent choice, not authority.
     if _job_has_ghl(job_dir) is False:
-        return False, [
-            f"{GHL_UPLOAD_GATE}: job.json/intake.json has_ghl:false but no logged "
-            "owner_skip_approval in checkpoints/process_manifest.json. The GHL media-upload gate "
-            "may be skipped ONLY by an explicit owner/founder token (owner_approved:true + "
-            "approved_by + reason + gate). An agent cannot opt out of the upload on its own."]
+        return False, waiver_reasons + [
+            f"{GHL_UPLOAD_GATE}: job.json/intake.json has_ghl:false but no verified "
+            "approval_ref for a graphics_upload_waiver. The GHL media-upload gate "
+            "may be skipped ONLY through F20's scoped authority (authenticated "
+            "record, approved scope, unexpired, unrevoked). An agent cannot opt "
+            "out of the upload on its own."]
 
     passed = collect_passed_assets(job_dir)
     media = _read_json(_ledger_path(job_dir))
@@ -505,7 +875,11 @@ def gate_graphics_media_complete(job_dir):
             "at all (folder + per-asset uploads). No finished graphics asset ships without the GHL "
             "media upload."]
 
-    reasons = []
+    reasons = list(waiver_reasons)
+    reasons.extend(_checkpoint_laundering(job_dir))
+    c_ok, c_reasons, _c_state = client_rule_admission(job_dir)
+    if not c_ok:
+        reasons.extend(c_reasons)
 
     # (1) per-job folder resolved (a real id OR the 'root' fallback; null seed fails).
     folder = str(media.get("ghl_folder_id") or "").strip()
@@ -514,33 +888,84 @@ def gate_graphics_media_complete(job_dir):
             f"{GHL_UPLOAD_GATE}: ghl_folder_id is null/empty — the per-job GHL media folder was "
             "never resolved (create_media_folder, or the 'root' fallback).")
 
-    # (2) every QC-passed asset uploaded with a real ghl_media_id + status complete.
-    uploaded = {str(e.get("local_path") or ""): e for e in media.get("uploaded", [])
-                if isinstance(e, dict)}
-    # Also index by basename + asset_id so a job_dir-relative vs absolute path still matches.
-    by_base = {}
-    for e in media.get("uploaded", []):
-        if isinstance(e, dict):
-            lp = str(e.get("local_path") or "")
-            if lp:
-                by_base[Path(lp).name] = e
-            if e.get("asset_id"):
-                by_base[f"id:{e['asset_id']}"] = e
+    # (2) the ledger must name the CURRENT attempt/revision. A prior attempt's
+    # result file surviving a failure cannot be mistaken for this attempt.
+    attempt = str(media.get("attempt_id") or "").strip()
+    revision = str(media.get("revision") or "").strip()
+    if not attempt or not revision:
+        reasons.append(
+            f"{GHL_UPLOAD_GATE}: media_library.json carries no attempt_id/revision; "
+            "a prior attempt's result cannot certify the current attempt")
+    if revision and policy.get("revision") and revision != policy.get("revision"):
+        reasons.append(
+            f"{GHL_UPLOAD_GATE}: ledger revision {revision!r} is not the governing "
+            f"revision {policy.get('revision')!r}")
+    policy_attempt = str(policy.get("attempt_id") or "").strip()
+    if attempt and policy_attempt and attempt != policy_attempt:
+        reasons.append(
+            f"{GHL_UPLOAD_GATE}: ledger attempt {attempt!r} is not the current "
+            f"attempt {policy_attempt!r}; a prior attempt's result cannot certify "
+            "the current attempt")
+
+    uploaded = [e for e in media.get("uploaded", []) if isinstance(e, dict)]
+    by_path = {str(e.get("local_path") or ""): e for e in uploaded}
+    by_id = {str(e.get("asset_id")): e for e in uploaded if e.get("asset_id")}
 
     for a in passed:
         rel = _asset_key(a)
-        abspath = rel if Path(rel).is_absolute() else str(Path(job_dir).resolve() / rel)
-        rec = (uploaded.get(abspath) or uploaded.get(rel)
-               or by_base.get(Path(rel).name)
-               or (by_base.get(f"id:{a.get('asset_id')}") if a.get("asset_id") else None))
+        apath = _asset_abspath(job_dir, a)
+        abspath = str(apath.resolve()) if not Path(rel).is_absolute() else rel
+        current_sha = _sha256_file(apath)
+
+        # (3) F19 item 14: the SAME current-file review authority the uploader uses.
+        r_ok, r_reasons, _record = review_admission(job_dir, a, policy=policy)
+        if not r_ok:
+            reasons.extend(r_reasons)
+
+        rec = None
+        for candidate in (uploaded and by_path.get(abspath),
+                          uploaded and by_path.get(rel),
+                          by_id.get(str(a.get("asset_id"))) if a.get("asset_id") else None):
+            if candidate is not None:
+                rec = candidate
+                break
         if rec is None:
             reasons.append(
                 f"{GHL_UPLOAD_GATE}: QC-passed asset {rel!r} has NO upload record in "
                 "media_library.json — every passed asset must be hosted with a real ghl_media_id.")
-        elif not _upload_complete(rec):
+            continue
+        if rec.get("stale") is True:
+            reasons.append(
+                f"{GHL_UPLOAD_GATE}: upload record for {rel!r} is stale (a prior "
+                "attempt); it cannot certify the current attempt")
+            continue
+        if attempt and str(rec.get("attempt_id") or "") != attempt:
+            reasons.append(
+                f"{GHL_UPLOAD_GATE}: upload record for {rel!r} belongs to attempt "
+                f"{rec.get('attempt_id')!r}, not the current {attempt!r}")
+        if revision and str(rec.get("revision") or "") != revision:
+            reasons.append(
+                f"{GHL_UPLOAD_GATE}: upload record for {rel!r} is not bound to the "
+                f"current revision {revision!r}")
+        if not _upload_complete(rec):
             reasons.append(
                 f"{GHL_UPLOAD_GATE}: upload for {rel!r} is not complete (no ghl_media_id or status "
                 "failed/pending).")
+        if not str(rec.get("public_url") or rec.get("ghl_public_url") or "").strip():
+            reasons.append(
+                f"{GHL_UPLOAD_GATE}: upload record for {rel!r} carries no usable hosted URL")
+        if current_sha and rec.get("local_sha256") != current_sha:
+            reasons.append(
+                f"{GHL_UPLOAD_GATE}: upload record for {rel!r} hosted different bytes "
+                f"({str(rec.get('local_sha256'))[:12]}... != {current_sha[:12]}...); "
+                "a changed image cannot retain old hosting")
+        live = rec.get("liveness") if isinstance(rec.get("liveness"), dict) else {}
+        image = live.get("image") if isinstance(live.get("image"), dict) else {}
+        if image.get("decodes") is not True:
+            reasons.append(
+                f"{GHL_UPLOAD_GATE}: upload record for {rel!r} has no decoded image "
+                "evidence for the hosted URL (a nonempty HTML reply is not proof "
+                "of a picture)")
 
     return (len(reasons) == 0), reasons
 
@@ -585,7 +1010,6 @@ def main():
 # SELF-TEST — no network, stdlib only.
 # ---------------------------------------------------------------------------
 def _selftest() -> int:
-    import os
     import tempfile
     fails = []
 
@@ -593,10 +1017,21 @@ def _selftest() -> int:
     PNG_BYTES = (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f"
                  b"\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xf8\xff\xff?\x00\x05\xfe\x02\xfe\xa7\x9a\xa0\xa0\x00\x00"
                  b"\x00\x00IEND\xaeB`\x82")
+    SHA = hashlib.sha256(PNG_BYTES).hexdigest()
+    ATTEMPT, REVISION = "attempt-1", "r1"
+    PLAN_HASH = "a" * 64
 
-    def _setup(base, *, qc=None, media=None, pm=None, job=None):
+    def _setup(base, *, qc=None, media=None, pm=None, job=None, review=True,
+               review_author="author-1", review_reviewer="rev-1",
+               review_model="m-review", review_independent=True):
         (base / "qc").mkdir(parents=True, exist_ok=True)
         (base / "checkpoints").mkdir(parents=True, exist_ok=True)
+        (base / "renders").mkdir(parents=True, exist_ok=True)
+        assets = (qc or {}).get("assets") or []
+        for asset in assets:
+            rel = asset.get("local_path") or ""
+            if rel and asset.get("pass") is True:
+                (base / rel).write_bytes(PNG_BYTES)
         if qc is not None:
             (base / "qc" / "image_qc_report.json").write_text(json.dumps(qc))
         if media is not None:
@@ -605,85 +1040,152 @@ def _selftest() -> int:
             (base / "checkpoints" / "process_manifest.json").write_text(json.dumps(pm))
         if job is not None:
             (base / "job.json").write_text(json.dumps(job))
+        (base / "review_policy.json").write_text(json.dumps({
+            "require_independent_review": True,
+            "require_model_independence": False,
+            "author_session": review_author,
+            "author_model": "m-author",
+            "attempt_id": ATTEMPT,
+            "revision": REVISION,
+            "plan_hash": PLAN_HASH,
+        }))
+        if review:
+            records = []
+            for asset in assets:
+                if asset.get("pass") is not True:
+                    continue
+                rel = asset.get("local_path")
+                records.append({
+                    "schema": "signature-launch-review-record/v1",
+                    "reviewer_session": review_reviewer,
+                    "reviewer_model": review_model,
+                    "verdict": "pass",
+                    "independent_review": review_independent,
+                    "scope": "item",
+                    "attempt_id": ATTEMPT,
+                    "revision": REVISION,
+                    "reviewed_artifacts": [{"path": rel, "sha256": SHA}],
+                })
+            (base / "qc" / "review_records.json").write_text(json.dumps({"records": records}))
+            (base / "qc" / "dispatch_ledger.json").write_text(json.dumps({"sessions": [
+                {"session_id": review_reviewer, "model": review_model},
+                {"session_id": review_author, "model": "m-author"}]}))
 
     GOOD_QC = {"gate": "AF-G-IMAGE-QC", "pass": True, "assets": [
         {"local_path": "renders/ad-01.png", "asset_id": "ad-01", "pass": True, "triggered_autofails": []},
         {"local_path": "renders/ad-02.png", "asset_id": "ad-02", "pass": True, "triggered_autofails": []},
         {"local_path": "renders/ad-03.png", "asset_id": "ad-03", "pass": False, "triggered_autofails": ["AF-G1"]},
     ]}
-    GOOD_MEDIA = {"ghl_folder_id": "fld_1", "uploaded": [
-        {"local_path": "renders/ad-01.png", "asset_id": "ad-01", "ghl_media_id": "m1", "ghl_upload_status": "complete"},
-        {"local_path": "renders/ad-02.png", "asset_id": "ad-02", "ghl_media_id": "m2", "ghl_upload_status": "complete"},
-    ]}
 
-    # A — both passed assets uploaded (the failed one is NOT required) -> PASS.
+    def _media(base, *, attempt=ATTEMPT, revision=REVISION, folder="fld_1",
+               skip=(), status="complete", sha=SHA, decode=True, stale=False):
+        uploaded = []
+        for asset in GOOD_QC["assets"]:
+            if asset.get("pass") is not True or asset.get("local_path") in skip:
+                continue
+            uploaded.append({
+                "local_path": str((base / asset["local_path"]).resolve()),
+                "asset_id": asset.get("asset_id"),
+                "ghl_media_id": f"m-{asset.get('asset_id')}",
+                "ghl_upload_status": status,
+                "ghl_folder_id": folder or "root",
+                "public_url": "https://storage.googleapis.com/msgsndr/x.png",
+                "local_sha256": sha,
+                "attempt_id": attempt,
+                "revision": revision,
+                "stale": stale,
+                "liveness": {"live": True, "content_type": "image/png",
+                             "image": {"decodes": decode, "format": "png" if decode else None}},
+            })
+        return {"ghl_folder_id": folder, "attempt_id": attempt,
+                "revision": revision, "uploaded": uploaded}
+
+    def _verified_waiver(ref, kind, plan_hash, scope):
+        return {"ok": True, "approval_id": ref, "kind": "publish",
+                "plan_hash": plan_hash or PLAN_HASH, "scope": list(scope),
+                "verification_class": "authenticated_platform_record",
+                "revoked": False, "expires_at": "2999-01-01T00:00:00Z"}
+
+    def _gate(base, **kw):
+        return gate_graphics_media_complete(base, **kw)
+
+    # A — complete current-file review + uploads -> PASS.
     with tempfile.TemporaryDirectory() as t:
-        base = Path(t); _setup(base, qc=GOOD_QC, media=GOOD_MEDIA, job={"has_ghl": True})
-        ok, r = gate_graphics_media_complete(base)
+        base = Path(t); _setup(base, qc=GOOD_QC, media=_media(Path(t)), job={"has_ghl": True})
+        ok, r = _gate(base)
         if not ok:
             fails.append(f"A complete: expected PASS, got {r}")
 
     # B — empty ledger -> FAIL.
     with tempfile.TemporaryDirectory() as t:
         base = Path(t); _setup(base, qc=GOOD_QC, media={}, job={"has_ghl": True})
-        ok, r = gate_graphics_media_complete(base)
+        ok, r = _gate(base)
         if ok or not any("missing/empty" in x for x in r):
             fails.append(f"B empty: expected FAIL, got ok={ok} {r}")
 
     # C — one passed asset NOT uploaded -> FAIL.
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
-        m = {"ghl_folder_id": "root", "uploaded": [GOOD_MEDIA["uploaded"][0]]}
-        _setup(base, qc=GOOD_QC, media=m, job={"has_ghl": True})
-        ok, r = gate_graphics_media_complete(base)
+        _setup(base, qc=GOOD_QC, media=_media(Path(t), skip=("renders/ad-02.png",)),
+               job={"has_ghl": True})
+        ok, r = _gate(base)
         if ok or not any("NO upload record" in x for x in r):
             fails.append(f"C missing-upload: expected FAIL, got ok={ok} {r}")
 
     # D — null folder id -> FAIL.
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
-        m = dict(GOOD_MEDIA); m["ghl_folder_id"] = None
-        _setup(base, qc=GOOD_QC, media=m, job={"has_ghl": True})
-        ok, r = gate_graphics_media_complete(base)
+        _setup(base, qc=GOOD_QC, media=_media(Path(t), folder=None), job={"has_ghl": True})
+        ok, r = _gate(base)
         if ok or not any("ghl_folder_id" in x for x in r):
             fails.append(f"D null-folder: expected FAIL, got ok={ok} {r}")
 
     # E — an upload marked pending -> FAIL (incomplete).
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
-        m = {"ghl_folder_id": "root", "uploaded": [
-            GOOD_MEDIA["uploaded"][0],
-            {"local_path": "renders/ad-02.png", "asset_id": "ad-02", "ghl_upload_status": "pending"}]}
-        _setup(base, qc=GOOD_QC, media=m, job={"has_ghl": True})
-        ok, r = gate_graphics_media_complete(base)
+        _setup(base, qc=GOOD_QC, media=_media(Path(t), status="pending"), job={"has_ghl": True})
+        ok, r = _gate(base)
         if ok or not any("not complete" in x for x in r):
             fails.append(f"E incomplete: expected FAIL, got ok={ok} {r}")
 
-    # F — has_ghl:false with NO owner token -> FAIL (agent cannot opt out).
+    # F — has_ghl:false with NO waiver -> FAIL (agent cannot opt out).
     with tempfile.TemporaryDirectory() as t:
         base = Path(t); _setup(base, qc=GOOD_QC, media={}, job={"has_ghl": False})
-        ok, r = gate_graphics_media_complete(base)
-        if ok or not any("owner_skip_approval" in x for x in r):
-            fails.append(f"F agent-skip: expected owner-token FAIL, got ok={ok} {r}")
+        ok, r = _gate(base)
+        if ok or not any("owner_skip_approval" in x or "verified approval_ref" in x for x in r):
+            fails.append(f"F agent-skip: expected waiver FAIL, got ok={ok} {r}")
 
-    # G — has_ghl:false WITH a valid logged owner skip -> PASS (carve-out).
+    # G — has_ghl:false WITH a verified F20-scoped waiver -> PASS.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        _setup(base, qc=GOOD_QC, media={}, job={"has_ghl": False},
+               pm={"owner_skip_approval": {"owner_approved": True, "approved_by": "owner",
+                                           "reason": "client has no GHL account",
+                                           "approval_ref": "APPR-WAIVE",
+                                           "gate": "AF-DELIVERY-COMPLETE"}})
+        ok, r = _gate(base, approval_verifier=_verified_waiver)
+        if not ok:
+            fails.append(f"G verified-waiver: expected PASS, got {r}")
+
+    # G2 — the same local token WITHOUT a verified approval_ref -> FAIL.
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
         _setup(base, qc=GOOD_QC, media={}, job={"has_ghl": False},
                pm={"owner_skip_approval": {"owner_approved": True, "approved_by": "owner",
                                            "reason": "client has no GHL account",
                                            "gate": "AF-DELIVERY-COMPLETE"}})
-        ok, r = gate_graphics_media_complete(base)
-        if not ok:
-            fails.append(f"G owner-skip: expected PASS, got {r}")
+        ok, r = _gate(base, approval_verifier=_verified_waiver)
+        if ok or not any("local token" in x or "approval_ref" in x for x in r):
+            fails.append(f"G2 local-token: expected FAIL (no approval_ref), got ok={ok} {r}")
 
     # H — owner skip with owner_approved:false -> NOT a skip -> FAIL.
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
         _setup(base, qc=GOOD_QC, media={}, job={"has_ghl": True},
                pm={"owner_skip_approval": {"owner_approved": False, "approved_by": "x",
-                                           "reason": "y", "gate": "AF-DELIVERY-COMPLETE"}})
-        ok, r = gate_graphics_media_complete(base)
+                                           "reason": "y", "approval_ref": "APPR-WAIVE",
+                                           "gate": "AF-DELIVERY-COMPLETE"}})
+        ok, r = _gate(base, approval_verifier=_verified_waiver)
         if ok:
             fails.append(f"H false-token: expected FAIL, got ok={ok} {r}")
 
@@ -693,12 +1195,67 @@ def _selftest() -> int:
         _setup(base, qc={"pass": False, "assets": [
             {"local_path": "renders/x.png", "pass": False, "triggered_autofails": ["AF-G1"]}]},
                media={}, job={"has_ghl": True})
-        ok, r = gate_graphics_media_complete(base)
+        ok, r = _gate(base)
         if ok or not any("nothing that passed QC" in x or "no QC-PASSED" in x.lower() for x in r):
             fails.append(f"I no-passed: expected FAIL, got ok={ok} {r}")
 
-    # J — END-TO-END push_graphics_media over a mock HTTP opener HOSTS both passed assets and
-    #     the resulting ledger PASSES the gate; the QC-failed asset is NOT hosted.
+    # M — NEGATIVE CONTROL: a same-session review is REFUSED. A local pass:true
+    #     flag with no review record cannot authorize the upload or the gate.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        _setup(base, qc=GOOD_QC, media=_media(Path(t)), job={"has_ghl": True},
+               review_reviewer="author-1")
+        ok, r = _gate(base)
+        if ok or not any("reviewer session == author session" in x for x in r):
+            fails.append(f"M same-session: expected refusal, got ok={ok} {r}")
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        _setup(base, qc=GOOD_QC, media=_media(Path(t)), job={"has_ghl": True}, review=False)
+        ok, r = _gate(base)
+        if ok or not any("no review record" in x for x in r):
+            fails.append(f"M no-review: expected refusal, got ok={ok} {r}")
+
+    # N — stale prior attempt / changed bytes -> FAIL.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        _setup(base, qc=GOOD_QC, media=_media(Path(t), attempt="attempt-old"),
+               job={"has_ghl": True})
+        ok, r = _gate(base)
+        if ok or not any("attempt" in x for x in r):
+            fails.append(f"N prior-attempt: expected FAIL, got ok={ok} {r}")
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        _setup(base, qc=GOOD_QC, media=_media(Path(t), sha="b" * 64), job={"has_ghl": True})
+        ok, r = _gate(base)
+        if ok or not any("hosted different bytes" in x for x in r):
+            fails.append(f"N changed-bytes: expected FAIL, got ok={ok} {r}")
+
+    # L — liveness evidence, not merely a 200.
+    class _Resp:
+        def __init__(self, body, ctype):
+            self._body, self.headers = body, {"Content-Type": ctype}
+
+        def getcode(self):
+            return 200
+
+        def read(self):
+            return self._body
+
+    html = _url_live("https://host.test/a.png",
+                     opener=lambda u, t: _Resp(b"<!doctype html><body>Sign in to continue",
+                                               "text/html; charset=utf-8"))
+    if (not html["live"] or html.get("content_type") != "text/html; charset=utf-8"
+            or html["image"]["decodes"]):
+        fails.append(f"L html200: expected text/html and no image decode, got {html}")
+    png = _url_live("https://host.test/b.png", opener=lambda u, t: _Resp(PNG_BYTES, "image/png"))
+    if (png.get("content_type") != "image/png" or png["image"]["decodes"] is not True
+            or (png["image"]["width"], png["image"]["height"]) != (1, 1)):
+        fails.append(f"L png: expected image/png with decoded 1x1 evidence, got {png}")
+    missing = _url_live("https://host.test/c.png", opener=lambda u, t: _Resp(PNG_BYTES, ""))
+    if missing.get("content_type") is not None:
+        fails.append(f"L no-header: expected content_type None (never invented), got {missing}")
+
+    # J/K — end-to-end push over a mock transport + approval refusals.
     def _mock_opener(req, timeout):
         class _R:
             def getcode(self):
@@ -720,39 +1277,11 @@ def _selftest() -> int:
                 return PNG_BYTES
         return _R()
 
-    # L — the liveness record is EVIDENCE, not merely a 200. An HTML login page answers 200 with
-    #     text/html and its bytes decode as no image; a real PNG records image/png and its size.
-    class _Resp:
-        def __init__(self, body, ctype):
-            self._body, self.headers = body, {"Content-Type": ctype}
-
-        def getcode(self):
-            return 200
-
-        def read(self):
-            return self._body
-
-    html = _url_live("https://host.test/a.png",
-                     opener=lambda u, t: _Resp(b"<!doctype html><body>Sign in to continue", "text/html; charset=utf-8"))
-    if (not html["live"] or html.get("content_type") != "text/html; charset=utf-8"
-            or html["image"]["decodes"] or html["image"]["format"]):
-        fails.append(f"L html200: expected a live 200 recording text/html and no image decode, got {html}")
-    png = _url_live("https://host.test/b.png", opener=lambda u, t: _Resp(PNG_BYTES, "image/png"))
-    if (png.get("content_type") != "image/png" or png["image"]["decodes"] is not True
-            or (png["image"]["width"], png["image"]["height"]) != (1, 1)):
-        fails.append(f"L png: expected image/png with decoded 1x1 evidence, got {png}")
-    missing = _url_live("https://host.test/c.png", opener=lambda u, t: _Resp(PNG_BYTES, ""))
-    if missing.get("content_type") is not None:
-        fails.append(f"L no-header: expected content_type None (never invented), got {missing}")
-
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
-        (base / "renders").mkdir(parents=True, exist_ok=True)
-        for n in ("ad-01.png", "ad-02.png", "ad-03.png"):
-            (base / "renders" / n).write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64)
         _setup(base, qc=GOOD_QC, job={"has_ghl": True})
         saved = {k: os.environ.get(k) for k in ("GHL_API_KEY", "GHL_LOCATION_ID")}
-        os.environ["GHL_API_KEY"] = "pit-0f3a9c1e-7b2d-4e65-9a18-c4d2b6e8f0a1"  # real-shaped (the resolver skips placeholder-shaped values)
+        os.environ["GHL_API_KEY"] = "pit-0f3a9c1e-7b2d-4e65-9a18-c4d2b6e8f0a1"
         os.environ["GHL_LOCATION_ID"] = "loc-fixture"
         try:
             store = base / "approval-store"
@@ -764,8 +1293,6 @@ def _selftest() -> int:
                 rec.update(over)
                 (store / f"{ref}.json").write_text(json.dumps(rec))
 
-            # K — no record / free string / test_only record -> the push is REFUSED and nothing
-            #     is uploaded (S06-06: the same record Skill 6 needs to publish).
             _put("APPR-TEST", test_only=True, allowed_write_target="approved_test_location")
             for label, ref in (("none", None), ("free string", "yes"), ("bare bool", True),
                                ("test_only record", "APPR-TEST")):
@@ -784,13 +1311,38 @@ def _selftest() -> int:
             out = push_graphics_media(base, **kw)
             if out.get("upload_count") != 2:
                 fails.append(f"J push: expected 2 uploads (passed only), got {out.get('upload_count')}")
-            ok, r = gate_graphics_media_complete(base)
+            ok, r = _gate(base)
             if not ok:
                 fails.append(f"J push->gate: expected PASS after hosting, got {r}")
-            # idempotent re-run does not double-upload.
             out2 = push_graphics_media(base, **kw)
             if out2.get("upload_count") != 2:
                 fails.append(f"J idempotent: re-run changed upload_count to {out2.get('upload_count')}")
+            # A changed image has no current-file review: the push must refuse.
+            changed = PNG_BYTES + b"changed"
+            (base / "renders" / "ad-01.png").write_bytes(changed)
+            try:
+                push_graphics_media(base, **kw)
+                fails.append("J changed-bytes: push accepted bytes with no current review")
+            except RuntimeError as exc:
+                if "no accepted current-file review" not in str(exc):
+                    fails.append(f"J changed-bytes: wrong refusal {exc}")
+            # After a fresh review of the new bytes, the upload proceeds.
+            new_sha = hashlib.sha256(changed).hexdigest()
+            bundle = json.loads((base / "qc" / "review_records.json").read_text())
+            for record in bundle.get("records", []):
+                paths = [a.get("path") for a in record.get("reviewed_artifacts", [])]
+                if "renders/ad-01.png" in paths:
+                    record["reviewed_artifacts"] = [
+                        {"path": "renders/ad-01.png", "sha256": new_sha}]
+                    record["reviewer_session"] = "rev-2"
+            (base / "qc" / "review_records.json").write_text(json.dumps(bundle))
+            ledger = json.loads((base / "qc" / "dispatch_ledger.json").read_text())
+            ledger.setdefault("sessions", []).append(
+                {"session_id": "rev-2", "model": "m-review"})
+            (base / "qc" / "dispatch_ledger.json").write_text(json.dumps(ledger))
+            out3 = push_graphics_media(base, **kw)
+            if out3.get("upload_count") != 3:
+                fails.append(f"J changed-bytes: expected a re-upload after review, got {out3.get('upload_count')}")
         except Exception as exc:  # noqa: BLE001
             fails.append(f"J push raised {exc!r}")
         finally:
@@ -800,15 +1352,41 @@ def _selftest() -> int:
                 else:
                     os.environ[k] = v
 
+    # O — a declared client rule document is swept recursively before admission.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        _setup(base, qc=GOOD_QC, media=_media(Path(t)), job={"has_ghl": True})
+        (base / "deliverables" / "nested").mkdir(parents=True)
+        (base / "deliverables" / "nested" / "page.html").write_text(
+            "<p>a world-class world-class result</p>", encoding="utf-8")
+        (base / "client_rules.json").write_text(json.dumps({
+            "schema": "signature-launch-client-rules/v1", "client_id": "client-1",
+            "rules": [{"id": "phrase", "kind": "banned_phrase",
+                       "values": ["world-class"]}]}))
+        ok, r = _gate(base)
+        if ok or not any("client rule 'phrase'" in x for x in r):
+            fails.append(f"O client-rules: expected FAIL, got ok={ok} {r}")
+
+    after = []
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        _setup(base, qc=GOOD_QC, media=_media(Path(t)), job={"has_ghl": True})
+        ok, r = _gate(base)
+        if not ok:
+            after.append(f"post-change gate: {r}")
+    if after:
+        fails.extend(after)
+
     if fails:
         print("graphics_ghl_push gate selftest -> FAIL")
         for f in fails:
             print("  -", f)
         return 1
-    print("graphics_ghl_push gate selftest -> PASS (10 cases: complete/empty/missing-upload/"
-          "null-folder/incomplete/agent-skip/owner-skip/false-token/no-passed + end-to-end "
-          "push-hosts-passed-only/idempotent/gate-passes + approval-record refusals + "
-          "liveness-evidence html200/png/no-header)")
+    print("graphics_ghl_push gate selftest -> PASS (complete/empty/missing-upload/"
+          "null-folder/incomplete/agent-skip/verified-waiver/local-token/false-token/"
+          "no-passed + negative controls same-session/no-review + prior-attempt/"
+          "changed-bytes + end-to-end push-hosts-passed-only/idempotent/gate-passes + "
+          "approval-record refusals + liveness-evidence html200/png/no-header)")
     return 0
 
 
