@@ -35,8 +35,8 @@ os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)
 
 import kie_prompt_enforcer as K  # noqa: E402
 
-M = "gpt-image-2-6/sunburst-text-to-image"  # maxLength 32,000 in the registry snapshot
-MAX = 32000
+M = "gpt-image-2-6/sunburst-text-to-image"  # maxLength 20,000 in the registry snapshot (owner ruling 2026-11-08)
+MAX = 20000
 
 
 class TestEnforcer(unittest.TestCase):
@@ -140,7 +140,7 @@ class TestEnforcer(unittest.TestCase):
 
     def test_local_verdicts_equal_the_adapters_own_check(self):
         K.clear_cache()
-        for n in (100, 25599, 25600, 30399, 30400, 32000, 32001, 33000):
+        for n in (100, 15999, 16000, 18999, 19000, 20000, 20001, 21000):
             first = K.check(M, "x" * n)      # the first call is the adapter's own --check
             K.clear_cache()
             K.check(M, "x" * MAX)            # prime the numbers

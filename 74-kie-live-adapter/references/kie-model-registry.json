@@ -11416,7 +11416,7 @@
    "input_fields": {
     "prompt": {
      "type": "string",
-     "maxLength_described": 32000
+     "maxLength_described": 20000
     },
     "input_urls": {
      "type": "array",
@@ -11467,7 +11467,7 @@
    "branches": [],
    "prompt_field": {
     "name": "prompt",
-    "maxLength": 32000,
+    "maxLength": 20000,
     "verbatim": false,
     "max_source": "description",
     "limits_listed": []
@@ -11516,7 +11516,7 @@
     "prompt": {
      "type": "string",
      "minLength": 1,
-     "maxLength": 32000
+     "maxLength": 20000
     },
     "aspect_ratio": {
      "type": "string",
@@ -11559,7 +11559,7 @@
    "branches": [],
    "prompt_field": {
     "name": "prompt",
-    "maxLength": 32000,
+    "maxLength": 20000,
     "verbatim": false,
     "max_source": "schema",
     "limits_listed": []
@@ -11608,7 +11608,7 @@
    "input_fields": {
     "prompt": {
      "type": "string",
-     "maxLength_described": 32000
+     "maxLength_described": 20000
     },
     "input_urls": {
      "type": "array",
@@ -11659,7 +11659,7 @@
    "branches": [],
    "prompt_field": {
     "name": "prompt",
-    "maxLength": 32000,
+    "maxLength": 20000,
     "verbatim": false,
     "max_source": "description",
     "limits_listed": []
@@ -11708,7 +11708,7 @@
     "prompt": {
      "type": "string",
      "minLength": 1,
-     "maxLength": 32000
+     "maxLength": 20000
     },
     "aspect_ratio": {
      "type": "string",
@@ -11751,7 +11751,7 @@
    "branches": [],
    "prompt_field": {
     "name": "prompt",
-    "maxLength": 32000,
+    "maxLength": 20000,
     "verbatim": false,
     "max_source": "schema",
     "limits_listed": []

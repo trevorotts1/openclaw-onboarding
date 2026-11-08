@@ -82,7 +82,7 @@ output" is a context window on the legacy page, not a request-field maximum.
 | Family | Cap status | Legal band |
 |---|---|---|
 | GPT Image 2 (legacy, retained but no longer required) | OWNER_OBSERVED ~25K | house 5,000–19,000 legal; 19,000+ warns (never hard-fails on observed cap) |
-| GPT Image 2.6 (default, ruling 2026-09-09) | DOCS 32K (vendor 2.6 OpenAPI, checked 2026-11-08, NOT owner-confirmed) | house 5,000–19,000 legal; 19,000+ warns; hard-fails only past 32,000 |
+| GPT Image 2.6 (default, ruling 2026-09-09) | OWNER_RULED 20K (owner ruling 2026-11-08; governs over the larger vendor docs figure) | floor 16,000; target 19,000–20,000; hard-fails past 20,000 |
 | Qwen 3.0 / Pro | LIVE_PROBE_REQUIRED (4.5K tokens; docs 5000 chars) | token-estimate validation; docs char max 5,000 |
 | Seedream 5.0 Pro/Lite/4.5 | NOT_PUBLISHED | house band as TARGET only; no invented ceiling |
 | Nano Banana 2 / 2 Lite / Pro / legacy | NOT_PUBLISHED | house band as TARGET only |

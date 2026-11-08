@@ -71,9 +71,9 @@ One authority: the live schema, checked with
 `python3 74-kie-live-adapter/scripts/kie_live_adapter.py validate` (falls back to the generated
 snapshot `74-kie-live-adapter/references/kie-model-registry.json`). It covers prompt
 maxLength/minLength, enums and required fields per model. Requests outside the limits are
-blocked before dispatch. For the GPT Image 2.6 family the prompt cap is 32,000 characters
-(vendor 2.6 OpenAPI maxLength, checked 2026-11-08); the 20,000 figure carried in from the 2.5
-docs is stale for 2.6. (N43 records 25,000 as the owner-confirmed cap for retained legacy
+blocked before dispatch. For the GPT Image 2.6 family the prompt cap is 20,000 characters
+(owner ruling 2026-11-08; the ruling governs over the larger vendor docs figure). (N43 records
+25,000 as the owner-confirmed cap for retained legacy
 `gpt-image-2-*` entries only; never apply either number across generations.) The older house
 band of 9,000 to 19,000 is superseded by rule 12.
 
@@ -119,7 +119,7 @@ GPT Image 2.6 serves every ratio in the vendor enum natively (including 5:4, 4:5
 1:3 and 9:21), so no ratio is substituted and no ratio requires the legacy route. The retained
 legacy `gpt-image-2-*` route is still wired, but nothing dispatches to it by necessity.
 `flare` is not introduced without a new owner ruling (see the variant order in rule 13).
-Constraint sets are per generation and never merged (2.6 prompt cap 32,000; legacy 25,000).
+Constraint sets are per generation and never merged (2.6 prompt cap 20,000; legacy 25,000).
 
 ## 12. Prompt length budget (owner order 2026-10-05)
 
@@ -135,7 +135,7 @@ Prompt writers must know each model's character limit and write prompts close to
   Never from memory.
 - Target: 95 to 100 percent of maxLength. Hard floor: 80 percent (below it, reject and rewrite).
   Hard ceiling: 100 percent (above it, reject). 80 to 95 percent: warn and expand.
-- Example: GPT Image 2.6 (sunburst), maxLength 32,000: floor 25,600, target 30,400 to 32,000.
+- Example: GPT Image 2.6 (sunburst), maxLength 20,000: floor 16,000, target 19,000 to 20,000.
   Legacy `gpt-image-2-*` per N43, cap 25,000: floor 20,000, target 23,750 to 25,000.
 - This rule supersedes the older house band of 9,000 to 19,000 (its floor and ceiling). Any skill
   or SOP still stating that band is out of date and will be updated to point here.

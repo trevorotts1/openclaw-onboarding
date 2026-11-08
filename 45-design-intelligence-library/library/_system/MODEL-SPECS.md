@@ -1,5 +1,5 @@
 # MODEL SPECS — API Limits, Routing & Request Templates
-**Version:** 1.8 | **Last Updated:** 2026-11-08 | **Source:** Verified Kie.ai API documentation (not blog estimates)
+**Version:** 1.9 | **Last Updated:** 2026-11-08 | **Source:** Verified Kie.ai API documentation (not blog estimates)
 **Audience:** AI agents. Style cards never reference model versions directly - they reference tiers and capabilities defined here.
 
 > **DATED SNAPSHOT, NOT AN AUTHORITY (2026-10-05).** Every model id, limit, ratio and parameter table below is a snapshot of the Kie.ai docs as of the dates in the changelog. It is no longer "the only file that changes when models update". Authority, in order: (1) the Skill 66 policy and registry (`66-kie-image/models.json`, `66-kie-image/SKILL.md`) plus AGENTS.md N43 for which model the fleet dispatches; (2) the Skill 74 live catalog for what the account can actually run: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py validate` checks a payload against the live schema (character caps, ratios, reference counts), and `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` gives the price (live `pricingDesc`, snapshot fallback `74-kie-live-adapter/references/kie-model-registry.json`). This file states no prices. If this snapshot and those sources disagree, they win. The owner house rules kept here (the SHORT/MEDIUM/LONG tier budgets, the 19,000 house ceiling, the presentations model pin) are not vendor limits and stay in force. Canonical KIE rules: `07-kie-setup/references/kie-common-rules.md`.
@@ -10,8 +10,8 @@
 
 | # | Endpoint | Kie.ai model ID | Prompt limit | Negative prompt | Reference images | Resolutions | Notes |
 |---|---|---|---|---|---|---|---|
-| 1a | **GPT-Image 2.6 — Text-to-Image** | `gpt-image-2-6/sunburst-text-to-image` | **32,000 chars** | No (inline only) | None | 1K / 2K / 4K | Layout king, longest prompts |
-| 1b | **GPT-Image 2.6 — Image-to-Image** | `gpt-image-2-6/sunburst-image-to-image` | **32,000 chars** | No (inline only) | `input_urls`, optional, multiple, **30MB each** (jpeg/png/webp/jpg) | 1K / 2K / 4K | Long prompts + refs combined |
+| 1a | **GPT-Image 2.6 — Text-to-Image** | `gpt-image-2-6/sunburst-text-to-image` | **20,000 chars** | No (inline only) | None | 1K / 2K / 4K | Layout king, longest prompts |
+| 1b | **GPT-Image 2.6 — Image-to-Image** | `gpt-image-2-6/sunburst-image-to-image` | **20,000 chars** | No (inline only) | `input_urls`, optional, multiple, **30MB each** (jpeg/png/webp/jpg) | 1K / 2K / 4K | Long prompts + refs combined |
 | 1a-legacy | **GPT-Image 2 — Text-to-Image (LEGACY, retained)** | `gpt-image-2-text-to-image` | **25,000 chars** (`OWNER_CONFIRMED`, operator-confirmed 2026-08-27) | No (inline only) | None | 1K / 2K / 4K | Retained by operator ruling 2026-09-09 and still wired — but 2.6 now serves 3:1 / 1:3 / 9:21 natively, so no ratio requires this route |
 | 1b-legacy | **GPT-Image 2 — Image-to-Image (LEGACY, retained)** | `gpt-image-2-image-to-image` | **25,000 chars** (`OWNER_CONFIRMED`, operator-confirmed 2026-08-27) | No (inline only) | `input_urls`, optional, multiple, **30MB each** (jpeg/png/webp/jpg) | 1K / 2K / 4K | Retained by operator ruling 2026-09-09 and still wired — but 2.6 now serves 3:1 / 1:3 / 9:21 natively, so no ratio requires this route |
 | 2 | **Nano Banana 2** (Gemini 3.1 Flash Image) | `nano-banana-2` | **20,000 chars** | No (inline only) | `image_input`, optional, **up to 14**, 30MB each | 1K / 2K / 4K | jpg/png output; ultra-wide ratios |
@@ -95,7 +95,7 @@ Choose by task. Category `_RULES.md` files may override.
 |---|---|---|---|---|---|---|
 | SHORT | ≤500 | ✅ | ✅ | ✅ | ✅ | ✅ |
 | MEDIUM | ≤2,800 | ✅ | ✅ | ✅ (3,000 cap) | ✅ (5,000 cap) | ✅ (5,000 cap) |
-| LONG | ≤19,000 | ✅ (32,000 cap) | ✅ (20,000 cap) | ❌ | ❌ | ❌ |
+| LONG | ≤19,000 | ✅ (20,000 cap) | ✅ (20,000 cap) | ❌ | ❌ | ❌ |
 
 > **Legacy GPT-Image 2 cap (rows `1a-legacy` / `1b-legacy`):** **25,000**, `OWNER_CONFIRMED` (operator-confirmed 2026-08-27) — NOT 2.5's 20,000. The 19,000 house ceiling above still governs; the 25,000 is the endpoint's own cap. Applying 2.5's cap to the legacy route is a defect (it silently truncates prompts). See AGENTS.md N43.
 
@@ -155,7 +155,7 @@ All GENERATION endpoints (5.1–5.7) share the same task lifecycle:
 {
   "model": "gpt-image-2-6/sunburst-text-to-image",
   "input": {
-    "prompt": "{ASSEMBLED_PROMPT — up to 32000 chars}",
+    "prompt": "{ASSEMBLED_PROMPT — up to 20000 chars}",
     "aspect_ratio": "{ASPECT_RATIO}",
     "resolution": "2K"
   },
@@ -168,7 +168,7 @@ All GENERATION endpoints (5.1–5.7) share the same task lifecycle:
 {
   "model": "gpt-image-2-6/sunburst-image-to-image",
   "input": {
-    "prompt": "{ASSEMBLED_PROMPT — up to 32000 chars. If refs are for style, MUST include the style-reference-only directive.}",
+    "prompt": "{ASSEMBLED_PROMPT — up to 20000 chars. If refs are for style, MUST include the style-reference-only directive.}",
     "input_urls": ["{REF_URL_1}", "{REF_URL_2}"],
     "aspect_ratio": "{ASPECT_RATIO}",
     "resolution": "2K"
@@ -322,3 +322,4 @@ When a new model or endpoint becomes available (e.g., GPT-Image 3, Nano Banana 3
 | 2026-10-05 | v1.6 | Routing: GPT-Image 2.6 is first choice everywhere in Section 2 (and the category `_RULES.md` files and PHOTO-SHOOT-SOP); Nano Banana 2 is fallback only, except the labelled ultra-wide 4:1 / 8:1 specialty route (2.5 does not serve those ratios). Relabelled as a DATED SNAPSHOT with the authority order above (Skill 66 policy + Skill 74 live catalog); removed the "only file that changes" claim. Corrects the v1.4 row below, which is historical: the presentations primary is now `gpt-image-2-6/sunburst-*` (Section 2 and AGENTS.md N43), not `gpt-image-2-*`. No price figures are carried here. |
 | 2026-10-06 | v1.7 | Ideogram V3 is now labeled a deliberate NON-SOCIAL specialty route (roster row 4, routing row, Section 4, template 5.6). Social images and social/Facebook ads default to GPT Image 2.6 Sunburst with no Ideogram route, matching `social-media-designs/_RULES.md`. |
 | 2026-11-08 | v1.8 | GPT Image 2.6 capability values corrected against the vendor 2.6 OpenAPI doc, the live KIE schema endpoint and live createTask probes (all 2026-11-08). Prompt cap 20,000 → **32,000** (roster rows 1a/1b, tier table, templates 5.1/5.2). Aspect-ratio set corrected to the exact 16-member flat enum — `5:4`, `4:5`, `2:1`, `1:2` are native, never substituted; `3:1`, `1:3`, `9:21` are native, so no ratio requires the legacy route; `27:16`/`16:27`/`9:8`/`8:9` are not members at any resolution (the old "1K ONLY" list was a 2.5 artifact, retracted). The substitution-and-legacy routing paragraph under the ratio table is retracted. Legacy rows relabelled: still wired, no longer mandatory. No style cards touched. |
+| 2026-11-08 | v1.9 | **OWNER RULING 2026-11-08: the GPT Image 2.6 prompt cap is 20,000 characters.** It governs over the larger vendor-documented maxLength read the same day. Roster rows 1a/1b, the tier table and templates 5.1/5.2 are set to 20,000; the v1.8 row above is retained as history and its cap figure is void. Length target is 95–100 percent of 20,000 (19,000–20,000); the hard floor is 80 percent (16,000). No model ids and no aspect-ratio values changed. No style cards touched. |

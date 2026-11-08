@@ -124,9 +124,8 @@ route serves EVERY ratio in the vendor 2.6 enum natively, including 3:1, 1:3 and
 t2i model `gpt-image-2-6/sunburst-text-to-image`; i2i model
 `gpt-image-2-6/sunburst-image-to-image`.
 
-- `prompt` (required; max 32,000 chars — vendor 2.6 OpenAPI maxLength checked
-  2026-11-08, DOCS status, NOT owner-confirmed; the 20,000 figure from the 2.5
-  docs is STALE, and the GPT Image 2 25K owner-confirmation does
+- `prompt` (required; max 20,000 chars — owner ruling 2026-11-08, which governs
+  over the larger vendor docs figure; the GPT Image 2 25K owner-confirmation does
   not carry forward, see prompt-policy.md).
 - `aspect_ratio`: `auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1,
   1:2, 21:9, 9:21, 3:1, 1:3` (exactly 16 values, canonical order; 27:16 / 16:27 /

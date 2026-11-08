@@ -21,7 +21,7 @@ Encoding sources (research files, verbatim quotes):
 | Family | Canonical model IDs | Prompt limit (status) | Max refs | Output notes |
 |---|---|---|---|---|
 | GPT Image 2 (Legacy, retained and still wired — but NO ratio requires it, since 2.6 serves 3:1/1:3/9:21 natively) | `gpt-image-2-text-to-image`, `gpt-image-2-image-to-image` | **25,000 chars `OWNER_CONFIRMED`** (operator-confirmed 2026-08-27, authoritative for GPT Image 2 only; warn-only, never hard-fail), docs page text also says "maximum 20,000 characters" but that figure is STALE | 16 @ 30 MB, JPEG/PNG/WEBP/JPG | 1K/2K/4K; 2K/4K exclude 5:4, 4:5, 3:1, 1:3, 9:21; auto→1K only; 1:1 cannot convert to 4K |
-| GPT Image 2.6 (Default — ruling 2026-09-09) | `gpt-image-2-6/sunburst-text-to-image`, `gpt-image-2-6/sunburst-image-to-image` | **32,000 chars `DOCS`** (vendor 2.6 OpenAPI maxLength checked 2026-11-08, NOT owner-confirmed — the 20,000 2.5 figure and the GPT Image 2 25K confirmation both do not carry forward) | 16 @ 30 MB, JPEG/PNG/WEBP/JPG (carried forward unchanged) | 1K/2K/4K; ONE flat 16-member ratio enum with NO per-resolution exclusions: auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1, 1:2, 21:9, 9:21, 3:1, 1:3; auto/1:1 legacy rules RETIRED; 5:4/4:5/2:1/1:2 AND 3:1/1:3/9:21 are all native — nothing substituted, nothing routed to legacy; 27:16/16:27/9:8/8:9 are NOT members at any resolution |
+| GPT Image 2.6 (Default — ruling 2026-09-09) | `gpt-image-2-6/sunburst-text-to-image`, `gpt-image-2-6/sunburst-image-to-image` | **20,000 chars `OWNER_RULED`** (owner ruling 2026-11-08; the ruling governs over the larger vendor docs figure — the GPT Image 2 25K confirmation does not carry forward) | 16 @ 30 MB, JPEG/PNG/WEBP/JPG (carried forward unchanged) | 1K/2K/4K; ONE flat 16-member ratio enum with NO per-resolution exclusions: auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1, 1:2, 21:9, 9:21, 3:1, 1:3; auto/1:1 legacy rules RETIRED; 5:4/4:5/2:1/1:2 AND 3:1/1:3/9:21 are all native — nothing substituted, nothing routed to legacy; 27:16/16:27/9:8/8:9 are NOT members at any resolution |
 | Qwen Image 3.0 / Pro | `qwen3/text-to-image`, `qwen3-pro/text-to-image`, `qwen3/image-to-image`, `qwen3-pro/image-to-image` | 4.5K **tokens** advertised (marketing copy); docs schemas say maxLength 5000 chars. Token cap, NEVER converted to a fake char cap (spec rule D) | 3 @ 10 MB, JPEG/PNG/WEBP/BMP/GIF/TIFF | 1K/2K; ratios 1:1, 3:2, 2:3, 4:3, 3:4, 16:9, 9:16, 21:9 |
 | Seedream 5.0 Pro | `seedream/5-pro-text-to-image`, `seedream/5-pro-image-to-image`, `seedream/5-pro-layer-decomposition` | NOT PUBLISHED | 10 @ 30 MB, JPEG/PNG/WEBP | Basic=1K / High=2K; 21:9 in enum |
 | Seedream 5.0 Lite | `seedream/5-lite-text-to-image`, `seedream/5-lite-image-to-image` | NOT PUBLISHED | 14 @ 30 MB, JPEG/PNG/WEBP | Basic=2K / High=3K / Ultra=4K; 21:9 in enum |
@@ -43,9 +43,9 @@ Encoding sources (research files, verbatim quotes):
 ### GPT Image 2.6, preferred default when compatible (operator ruling 2026-09-09)
 Owner's preferred KIE image model, superseding GPT Image 2. Prefer for
 high-fidelity general generation, editing, product/brand images, and detailed
-long-form creative instructions. Prompt cap 32,000 chars (vendor 2.6 OpenAPI
-maxLength checked 2026-11-08, `DOCS`, NOT owner-confirmed — the 20,000 figure
-from the 2.5 docs is STALE, and the GPT Image 2 25K confirmation
+long-form creative instructions. Prompt cap 20,000 chars (owner ruling
+2026-11-08, which governs over the larger vendor docs figure — the GPT Image 2
+25K confirmation
 below does not carry forward and has not been retested on 2.6). House band
 5,000–19,000 chars is legal here (short prompts expanded, never rejected).
 Validators warn-only up to the docs cap.
@@ -119,7 +119,7 @@ do not invent multi-reference support.
   figure is stale); warn-only, never hard-failed upon. This confirmation is
   scoped to GPT Image 2 only.
 - GPT Image 2.6 (default, operator ruling 2026-09-09) sits in
-  `vendor_hard_cap_chars: 32000`, cap_status `DOCS` (vendor 2.6 OpenAPI
-  maxLength checked 2026-11-08, NOT owner-confirmed — the 2.5 20,000 figure
-  and the GPT Image 2 25K confirmation both do not carry forward).
+  `vendor_hard_cap_chars: 20000`, cap_status `DOCS` (owner ruling 2026-11-08,
+  which governs over the larger vendor docs figure — the GPT Image 2 25K
+  confirmation does not carry forward).
 - NOT_PUBLISHED families keep `null` caps; no invented numbers anywhere.

@@ -92,10 +92,10 @@ Key cap facts (full matrix: `references/models.md`):
   2026-08-27 — authoritative for GPT Image 2 only; docs page's "maximum
   20,000 characters" is stale; warn-only, never hard-fail; house band
   5,000–19,000 with ~9,000 target is legal).
-- GPT Image 2.6 (default today, operator ruling 2026-09-09): 32,000 chars
-  (vendor 2.6 OpenAPI maxLength checked 2026-11-08; `DOCS`, NOT owner-confirmed).
-  The 20,000 figure carried in from the 2.5 docs is STALE for 2.6 — it is not
-  the GPT Image 2 25,000 confirmation either, which was never retested on 2.6.
+- GPT Image 2.6 (default today, operator ruling 2026-09-09): 20,000 chars
+  (owner ruling 2026-11-08; the ruling governs over the larger vendor docs
+  figure). Legacy GPT Image 2 keeps its own 25,000 confirmation, which was
+  never retested on 2.6 and does not carry forward.
 - Qwen 3.0/Pro: 4.5K **tokens** advertised — token-aware validation only; never
   converted to a fake char cap (rule D). Docs schemas: maxLength 5000 chars.
 - Wan 2.7 Image: 5,000 chars VERIFIED — do NOT force 5,000 as a minimum;

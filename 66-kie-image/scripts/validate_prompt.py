@@ -151,10 +151,10 @@ def validate_prompt(prompt, model_id, strict=False):
 # ---------------------------------------------------------------------------
 
 # (name, prompt chars, model, expected_valid, expected_status, expected_hard_cap_flag)
-# Bridge off: limits come from models.json (gpt-2.6 32,000 DOCS as of 2026-11-08; legacy gpt-image-2 20,000 live schema (N43 25,000 superseded);
+# Bridge off: limits come from models.json (gpt-2.6 20,000 owner ruling 2026-11-08; legacy gpt-image-2 20,000 live schema (N43 25,000 superseded);
 # wan/ideogram/imagen 5,000 verified; seedream not published -> UNKNOWN).
-# Vendor 2.6 OpenAPI maxLength, checked 2026-11-08 (supersedes the 2.5 20,000 figure). Read from models.json,
-# never restated here: rule 12 forbids a gate keeping a character band of its own.
+# Owner ruling 2026-11-08 sets the 2.6 cap at 20,000 and governs over the larger vendor docs figure. Read from
+# models.json, never restated here: rule 12 forbids a gate keeping a character band of its own.
 def _registry_cap(model_id):
     ent = by_id_get(model_id) or {}
     return (ent.get("live_schema_cap_chars") or ent.get("vendor_hard_cap_chars")
@@ -173,15 +173,15 @@ STATIC_CASES = [
      "BELOW_TARGET", False),
     ("wan 3999 below 80% hard floor rejected", 3999, "wan/2-7-image", False, "BELOW_FLOOR", False),
     ("wan 4000 = 80% floor now FAILS", 4000, "wan/2-7-image", False, "BELOW_TARGET", False),
-    ("gpt-2.6 32000 = max ok", CAP_26, "gpt-image-2-6/sunburst-text-to-image", True, "PASS", False),
-    ("gpt-2.6 30400 = 95% ok", _26_95, "gpt-image-2-6/sunburst-text-to-image", True, "PASS", False),
-    ("gpt-2.6 30720 = 96% ok", _26_96, "gpt-image-2-6/sunburst-text-to-image", True, "PASS", False),
-    ("gpt-2.6 30080 = 94% FAILS", _26_94, "gpt-image-2-6/sunburst-text-to-image", False,
+    ("gpt-2.6 %d = max ok" % CAP_26, CAP_26, "gpt-image-2-6/sunburst-text-to-image", True, "PASS", False),
+    ("gpt-2.6 %d = 95%% ok" % _26_95, _26_95, "gpt-image-2-6/sunburst-text-to-image", True, "PASS", False),
+    ("gpt-2.6 %d = 96%% ok" % _26_96, _26_96, "gpt-image-2-6/sunburst-text-to-image", True, "PASS", False),
+    ("gpt-2.6 %d = 94%% FAILS" % _26_94, _26_94, "gpt-image-2-6/sunburst-text-to-image", False,
      "BELOW_TARGET", False),
-    ("gpt-2.6 32001 above max rejected", CAP_26 + 1, "gpt-image-2-6/sunburst-text-to-image", False, "ABOVE_MAX", True),
-    ("gpt-2.6 25600 = 80% floor now FAILS", _26_80, "gpt-image-2-6/sunburst-text-to-image", False,
+    ("gpt-2.6 %d above max rejected" % (CAP_26 + 1), CAP_26 + 1, "gpt-image-2-6/sunburst-text-to-image", False, "ABOVE_MAX", True),
+    ("gpt-2.6 %d = 80%% floor now FAILS" % _26_80, _26_80, "gpt-image-2-6/sunburst-text-to-image", False,
      "BELOW_TARGET", False),
-    ("gpt-2.6 25599 under 80% rejected", _26_80 - 1, "gpt-image-2-6/sunburst-text-to-image", False,
+    ("gpt-2.6 %d under 80%% rejected" % (_26_80 - 1), _26_80 - 1, "gpt-image-2-6/sunburst-text-to-image", False,
      "BELOW_FLOOR", False),
     ("gpt-2.6 9500 (old house target) now rejected", 9500, "gpt-image-2-6/sunburst-text-to-image", False,
      "BELOW_FLOOR", False),
@@ -260,7 +260,7 @@ def selftest():
         os.environ["KIE_LIVE_ADAPTER_PATH"] = script
         _run_cases(ADAPTER_CASES, failures)
         os.environ["KIE_LIVE_ADAPTER_PATH"] = os.path.join(d, "missing.py")  # unreachable adapter -> models.json
-        _run_cases([("adapter unreachable: models.json limit (2.6 = 32000)", CAP_26,
+        _run_cases([("adapter unreachable: models.json limit (2.6 = %d)" % CAP_26, CAP_26,
                      "gpt-image-2-6/sunburst-text-to-image", True, "PASS", False)], failures)
     if saved is None:
         os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)

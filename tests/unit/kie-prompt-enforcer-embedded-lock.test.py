@@ -54,7 +54,7 @@ class TestEmbeddedCopies(unittest.TestCase):
         for rel in DECL["enforcer_copies"]:
             k = load(rel)
             fb = k.last_known(M)
-            self.assertEqual(fb, 32000)
+            self.assertEqual(fb, 20000)
             low = k.check(M, "x" * (fb * 79 // 100), fallback_max=fb)
             self.assertFalse(low["ok"])
             self.assertIn("ADD at least %d" % (fb * 95 // 100 - fb * 79 // 100), low["message"])

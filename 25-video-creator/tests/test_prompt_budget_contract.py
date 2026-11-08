@@ -33,8 +33,8 @@ def _stub_requests(monkeypatch):
 
 
 SCRIPTS = Path(os.environ.get("SKILL25_ROOT", Path(__file__).resolve().parents[1])) / "scripts"
-MODEL = "gpt-image-2-6/sunburst-text-to-image"  # any KIE model with a maxLength; 32,000 in the registry snapshot
-MAX = 32000
+MODEL = "gpt-image-2-6/sunburst-text-to-image"  # any KIE model with a maxLength; 20,000 in the registry snapshot
+MAX = 20000
 
 
 @pytest.fixture

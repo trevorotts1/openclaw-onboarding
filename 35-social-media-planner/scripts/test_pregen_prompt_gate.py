@@ -71,9 +71,9 @@ _AVOID_LIST = (
 
 
 # Rule 12: the gate measures every prompt against the model maxLength (Skill 74 prompt-budget). The cases
-# below size their prompts as a percentage of that max (32,000 for GPT Image 2.6, 20,000 for Nano Banana 2,
+# below size their prompts as a percentage of that max (20,000 for GPT Image 2.6 and Nano Banana 2,
 # 5,000 for Ideogram V3). The test runs the real adapter against its registry snapshot (hermetic HOME, no key).
-MAX = {"nano-banana-2": 20000, "ideogram-v3-design": 5000, "gpt-image-2-6/sunburst-text-to-image": 32000}
+MAX = {"nano-banana-2": 20000, "ideogram-v3-design": 5000, "gpt-image-2-6/sunburst-text-to-image": 20000}
 _FILLER = ("Distinct visual decision number {i}: the focal element keeps clear hierarchy, quiet contrast "
            "behind any text zone, and a palette applied exactly as briefed. ")
 
@@ -244,8 +244,8 @@ def main() -> int:
             base = "A useful visual decision sentence for the scene. "
             return base + "x" * (n - len(base) - len(suffix)) + suffix
 
-        for size, expect_exit, label in ((25280, 3, "79 percent (25280) rejected"), (30400, 0, "95 percent (30400) passes"),
-                                         (32000, 0, "100 percent (32000) passes"), (32320, 3, "101 percent (32320) rejected")):
+        for size, expect_exit, label in ((15800, 3, "79 percent (15800) rejected"), (19000, 0, "95 percent (19000) passes"),
+                                         (20000, 0, "100 percent (20000) passes"), (20200, 3, "101 percent (20200) rejected")):
             pf = _write(tmp, f"band_{size}.txt", _sized(size))
             rr = run_gate(
                 "--prompt-file", str(pf), "--model", gpt,

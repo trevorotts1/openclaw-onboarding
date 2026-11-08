@@ -24,7 +24,7 @@ import build_deck as bd  # noqa: E402
 import prompt_gate as pg  # noqa: E402
 import prove_pres_prompt_floor as prover  # noqa: E402
 
-MAX = 32000
+MAX = 20000
 COPY = "Stop Guessing. Start Closing."
 
 
