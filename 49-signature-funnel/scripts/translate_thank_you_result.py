@@ -73,6 +73,15 @@ independent_review.record_sha256 and a reviewer present in the dispatch
 session registry; at least one artifact must exist. All problems are
 reported together. Refusals print to stderr.
 
+FULFILLMENT MAP (F22): the S44 map named by manifest.provenance.map_ref
+is bound BEFORE it is replayed: provenance.map_sha256 must equal the
+current bytes, the map must carry a version and this purchase's
+tenant/launch/revision, and every entitlement it names must be one the
+purchase paid for. Only then is its entitlement-keyed mapping handed to
+Skill 82's validators, restoring the exact paid+granted equality. A map
+supplied without a digest is recorded as unbound; a bound map that fails
+any check is refused by name.
+
 Deterministic, stdlib only. Exit 0 ok, 2 violation, 3 usage/fail-closed.
 """
 
@@ -352,6 +361,99 @@ def _s82_scripts() -> Optional[Path]:
     return None
 
 
+def _bind_fulfillment_map(man: Dict[str, Any], snapshot: Dict[str, Any],
+                          res_dir: Path, work_dir: Optional[Path]):
+    """F22: bind the S44/F03/F05 fulfillment map to THIS purchase before replaying it.
+
+    A formerly valid same-path map must not authorize changed delivery facts, so a map
+    is used only when the manifest names its CURRENT digest
+    (``provenance.map_sha256``), the referenced bytes hash to that digest, the map names
+    the same tenant/launch/revision as the verified snapshot and a version, and the
+    entitlements it names are entitlements this purchase actually paid for. The
+    entitlement-keyed mapping is then handed to Skill 82's own validators, which is the
+    replay the ponytail note used to skip.
+
+    Returns ``(mapping_or_None, meta)``. No ``map_sha256`` means no map is claimed
+    (the pre-existing behaviour, recorded as unbound); a claimed map that fails any
+    check is refused by name.
+    """
+    prov = man["provenance"]
+    ref = prov.get("map_ref")
+    want = prov.get("map_sha256")
+    if not isinstance(ref, str) or not ref:
+        return None, {"state": "absent"}
+    if want is None:
+        return None, {"state": "unbound",
+                      "reason": "the manifest supplies no provenance.map_sha256, so the map "
+                                "cannot be bound to its current bytes"}
+    if not isinstance(want, str) or not want:
+        raise TranslationError(
+            "fulfillment map: provenance.map_sha256 is not a non-empty digest")
+    path_ref, _, fragment = ref.partition("#")
+    found = _find_file(path_ref, res_dir, work_dir)
+    if found is None:
+        raise TranslationError(
+            f"fulfillment map: {path_ref!r} does not resolve to a file, but the manifest "
+            "binds its digest")
+    actual = _sha(found)
+    if actual != want:
+        raise TranslationError(
+            f"fulfillment map: {path_ref!r} is {actual}, not the recorded {want}; a changed "
+            "map is re-verified, never replayed under the old digest")
+    doc = _load(found, "fulfillment map")
+    selected = doc
+    if fragment:
+        if not isinstance(doc, dict) or fragment not in doc:
+            raise TranslationError(
+                f"fulfillment map: {ref!r} names the section {fragment!r}, which the map "
+                "does not carry")
+        selected = doc[fragment]
+    if not isinstance(selected, dict):
+        raise TranslationError("fulfillment map: the bound section is not an object")
+    version = (selected.get("version") or selected.get("map_version")
+               or selected.get("schema_version") or doc.get("version")
+               if isinstance(doc, dict) else None)
+    if not isinstance(version, str) or not version.strip():
+        raise TranslationError(
+            "fulfillment map: the bound map carries no version; a map without a version "
+            "is not evidence of current delivery facts")
+    for field in ("tenant_id", "launch_id", "revision"):
+        if field in selected and selected[field] != snapshot.get(field):
+            raise TranslationError(
+                f"fulfillment map: {field} is {selected[field]!r}, not this purchase's "
+                f"{snapshot.get(field)!r}")
+        if field in doc and doc[field] != snapshot.get(field):
+            raise TranslationError(
+                f"fulfillment map: {field} is {doc[field]!r}, not this purchase's "
+                f"{snapshot.get(field)!r}")
+    if not any(field in selected or (isinstance(doc, dict) and field in doc)
+               for field in ("tenant_id", "launch_id", "revision")):
+        raise TranslationError(
+            "fulfillment map: the bound map names neither tenant, launch nor revision, so it "
+            "cannot be shown to belong to this purchase")
+    mapping = selected.get("entitlements") or selected.get("entitlement_ids")
+    if not isinstance(mapping, dict):
+        mapping = selected.get("map")
+    if not isinstance(mapping, dict):
+        candidates = [k for k, v in selected.items() if isinstance(v, dict)]
+        mapping = (selected if candidates and all(
+            isinstance(v, dict) for v in selected.values()) else None)
+    if not isinstance(mapping, dict) or not mapping:
+        raise TranslationError(
+            "fulfillment map: the bound map carries no entitlement-keyed mapping, so the "
+            "paid+granted equality cannot be replayed")
+    paid = {ent for line in snapshot.get("line_items") or []
+            if isinstance(line, dict) and line.get("payment_status") == "succeeded"
+            for ent in line.get("entitlement_ids") or []}
+    extra = sorted(set(mapping) - paid)
+    if extra:
+        raise TranslationError(
+            f"fulfillment map: names entitlement(s) this purchase did not pay for: {extra}; "
+            "a stale map must not unlock delivery for products that were never sold")
+    return mapping, {"state": "bound", "map_sha256": actual, "version": version.strip(),
+                     "entitlements": sorted(mapping), "ref": ref}
+
+
 def _recompute_validation(req: Dict[str, Any], res: Dict[str, Any],
                           man: Dict[str, Any], res_dir: Path,
                           work_dir: Optional[Path]) -> None:
@@ -394,10 +496,11 @@ def _recompute_validation(req: Dict[str, Any], res: Dict[str, Any],
               f"{req[k]!r}" for k in
               ("tenant_id", "location_id", "launch_id", "test_only")
               if snapshot.get(k) != req[k]]
-    # ponytail: the S44 fulfillment map has no sha in the manifest, so it is
-    # not passed in; validate_thank_you then skips only its exact
-    # paid+granted equality. Add map_sha256 to the manifest to restore it.
-    errors += validate_thank_you(view, snapshot)
+    # F22: the S44 fulfillment map is bound to THIS purchase (current digest, version,
+    # tenant/launch/revision, paid entitlements) before its validator is replayed. The
+    # exact paid+granted equality runs whenever the map is bound.
+    fulfillment, _meta = _bind_fulfillment_map(man, snapshot, res_dir, work_dir)
+    errors += validate_thank_you(view, snapshot, fulfillment)
     if errors:
         raise TranslationError(
             "validation recomputed: the S82 validators fail over the "

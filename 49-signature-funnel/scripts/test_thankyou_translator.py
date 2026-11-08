@@ -810,6 +810,64 @@ def new_cases(req0) -> None:
         and mm["independent_review"]["record_sha256"] == "b" * 64,
         "run manifest emitter binds snapshot_sha256 and record_sha256")
 
+    # Case 25-27 (F22): the S44 fulfillment map is bound to CURRENT bytes, this
+    # launch's identity and the paid entitlements BEFORE it is replayed. The
+    # parent ignored the map entirely (the ponytail note), so a stale or foreign
+    # map passed and the paid+granted equality never ran.
+    def stage_bound_map(td, mapping, *, digest=None):
+        stage(td)
+        snap = json.loads((td / "purchase-snapshot.json").read_text(encoding="utf-8"))
+        doc = {"version": "1.0.0", "tenant_id": snap["tenant_id"],
+               "launch_id": snap["launch_id"], "revision": snap["revision"],
+               "entitlements": mapping}
+        (td / "fulfillment-map.json").write_text(json.dumps(doc), encoding="utf-8")
+        man = json.loads((td / "thank-you-run-manifest.json").read_text(encoding="utf-8"))
+        man["provenance"]["map_ref"] = "fulfillment-map.json"
+        man["provenance"]["map_sha256"] = (
+            _sha(td / "fulfillment-map.json") if digest is None else digest)
+        (td / "thank-you-run-manifest.json").write_text(json.dumps(man), encoding="utf-8")
+        return snap
+
+    def paid_entitlements(snap):
+        return sorted({e for line in snap.get("line_items") or []
+                       if line.get("payment_status") == "succeeded"
+                       for e in line.get("entitlement_ids") or []})
+
+    with tempfile.TemporaryDirectory() as tds:
+        td = Path(tds)
+        snap = json.loads((S82_ROOT / "fixtures" / "test-only-snapshot.json")
+                          .read_text(encoding="utf-8"))
+        first = paid_entitlements(snap)
+        stage_bound_map(td, {e: {"state": "granted"} for e in first} or {"x": {}},
+                        digest="0" * 64)
+        proc = run(td)
+        say(proc.returncode == 2 and "fulfillment map" in proc.stderr
+            and "not the recorded" in proc.stderr,
+            f"a bound map whose bytes are not the recorded digest is refused "
+            f"({proc.returncode}: {proc.stderr.strip()})")
+
+    with tempfile.TemporaryDirectory() as tds:
+        td = Path(tds)
+        snap = stage_bound_map(td, {"ghost-entitlement": {"state": "granted"}})
+        proc = run(td)
+        say(proc.returncode == 2 and "fulfillment map" in proc.stderr
+            and "did not pay for" in proc.stderr,
+            f"a bound map naming an entitlement this purchase never bought is "
+            f"refused ({proc.returncode}: {proc.stderr.strip()})")
+
+    with tempfile.TemporaryDirectory() as tds:
+        td = Path(tds)
+        # use one paid entitlement, but NOT granted, so the map reaches Skill 82's
+        # validator and the previously-skipped equality must now fail.
+        snap = stage_bound_map(td, {"placeholder": {}})
+        paid = paid_entitlements(snap)
+        stage_bound_map(td, {e: {"state": "pending"} for e in paid})
+        proc = run(td)
+        say(proc.returncode == 2 and "validation recomputed" in proc.stderr
+            and "access_entitlement_mismatch" in proc.stderr,
+            f"a bound map restores the paid+granted equality the parent skipped "
+            f"({proc.returncode}: {proc.stderr.strip()})")
+
 
 def test_thankyou_translator():
     """pytest entry: the whole case list is one test."""
