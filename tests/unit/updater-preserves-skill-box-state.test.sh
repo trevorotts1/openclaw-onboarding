@@ -100,6 +100,12 @@ LIB="$WORK/lib.sh"
   # The helpers exist only after the fix; absent on the old updater, which is
   # fine because its install step never calls them.
   awk '/^# >>> SKILL-BOX-STATE-BEGIN/{on=1} on{print} /^# <<< SKILL-BOX-STATE-END/{on=0}' "$TARGET"
+  # The carved install step now calls oc_bounded_run (BOUNDED-CHILD-V1). Stand it
+  # in with a passthrough: the call must RESOLVE, or the carve turns it into a
+  # 127 "command not found" that reads like a box-state failure. This suite tests
+  # box-state preservation, not deadlines, so it must not drag python deadlines in
+  # here; the real bound is covered by tests/unit/bounded-child-deadline.test.sh.
+  echo 'oc_bounded_run() { local _s="$1" _k="$2"; shift 2; "$@"; }'
   echo 'install_one_skill() {'
   awk '/^    # Remove old version if exists\./{on=1} on{print} on && /echo "    Updated: \$SKILL_NAME"/{exit}' "$TARGET"
   echo '}'
