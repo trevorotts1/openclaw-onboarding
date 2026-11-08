@@ -186,7 +186,7 @@ class TestCapabilityRouting(unittest.TestCase):
         self.assertFalse(r["routed"])
 
     def test_gpt_image25_and_agnes_eligible(self):
-        for model in ("gpt-image-2-5-sunburst-text-to-image", "agnes-image-2.1-flash"):
+        for model in ("gpt-image-2-6/sunburst-text-to-image", "agnes-image-2.1-flash"):
             r = ib.route_by_capability(model, needs_text=True)
             self.assertTrue(r["routed"], r)
 

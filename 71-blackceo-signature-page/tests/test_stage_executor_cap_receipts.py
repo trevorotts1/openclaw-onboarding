@@ -88,7 +88,7 @@ class CapAndReceipts(unittest.TestCase):
         # spend ledger, not the prompt band.
         job = {"stage": "visual-mockup", "index": n, "out": self.run_dir / "visual-mockup" / f"part-{n:02d}.png",
                "prompt": "x" * 19500, "references": []}
-        return provider.generate(job, {"model": "gpt-image-2-5-sunburst-text-to-image"}), job["out"]
+        return provider.generate(job, {"model": "gpt-image-2-6/sunburst-text-to-image"}), job["out"]
 
     def adapter_calls(self):
         return int(self.state.read_text()) if self.state.exists() else 0

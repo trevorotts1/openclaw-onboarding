@@ -35,7 +35,7 @@ os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)
 
 import kie_prompt_enforcer as K  # noqa: E402
 
-M = "gpt-image-2-5-sunburst-text-to-image"  # maxLength 20,000 in the registry snapshot
+M = "gpt-image-2-6/sunburst-text-to-image"  # maxLength 20,000 in the registry snapshot (owner ruling 2026-11-08)
 MAX = 20000
 
 
@@ -44,24 +44,26 @@ class TestEnforcer(unittest.TestCase):
         v = K.check(M, "x" * (MAX * 79 // 100))
         self.assertFalse(v["ok"])
         self.assertEqual(v["status"], "BELOW_FLOOR")
-        self.assertEqual(v["add"], 3200)  # to the strict 95 percent floor, not the old 80 percent
-        self.assertIn("ADD at least 3200", v["message"])
+        expect_add = (MAX * 95 // 100) - (MAX * 79 // 100)
+        self.assertEqual(v["add"], expect_add)  # to the strict 95 percent floor, not the old 80 percent
+        self.assertIn("ADD at least %d" % expect_add, v["message"])
 
     def test_floor_95_and_100_percent_pass(self):
-        self.assertFalse(K.check(M, "x" * 16000)["ok"])  # 80 percent is no longer a warning-only pass
-        self.assertEqual(K.check(M, "x" * 16000)["status"], "BELOW_TARGET")
-        self.assertEqual(K.check(M, "x" * 18800)["status"], "BELOW_TARGET")  # 94 percent FAILS
-        self.assertFalse(K.check(M, "x" * 18800)["ok"])
-        self.assertEqual(K.check(M, "x" * 19200)["status"], "PASS")  # 96 percent
-        self.assertEqual(K.check(M, "x" * 19000)["status"], "PASS")
-        self.assertEqual(K.check(M, "x" * 20000)["status"], "PASS")
+        self.assertFalse(K.check(M, "x" * (MAX * 80 // 100))["ok"])  # 80 percent is no longer a warning-only pass
+        self.assertEqual(K.check(M, "x" * (MAX * 80 // 100))["status"], "BELOW_TARGET")
+        self.assertEqual(K.check(M, "x" * (MAX * 94 // 100))["status"], "BELOW_TARGET")  # 94 percent FAILS
+        self.assertFalse(K.check(M, "x" * (MAX * 94 // 100))["ok"])
+        self.assertEqual(K.check(M, "x" * (MAX * 96 // 100))["status"], "PASS")  # 96 percent
+        self.assertEqual(K.check(M, "x" * (MAX * 95 // 100))["status"], "PASS")
+        self.assertEqual(K.check(M, "x" * MAX)["status"], "PASS")
 
     def test_101_percent_rejected_with_chars_to_cut(self):
         v = K.check(M, "x" * (MAX * 101 // 100))
         self.assertFalse(v["ok"])
         self.assertEqual(v["status"], "ABOVE_MAX")
-        self.assertEqual(v["cut"], 200)
-        self.assertIn("CUT exactly 200", v["message"])
+        expect_cut = (MAX * 101 // 100) - MAX
+        self.assertEqual(v["cut"], expect_cut)
+        self.assertIn("CUT exactly %d" % expect_cut, v["message"])
 
     def test_verbatim_is_exempt_from_the_floor_but_keeps_the_ceiling(self):
         self.assertTrue(K.check(M, "a short spoken script", "verbatim")["ok"])
@@ -75,7 +77,7 @@ class TestEnforcer(unittest.TestCase):
     def test_require_and_problems(self):
         with self.assertRaises(K.PromptBudgetError):
             K.require(M, "x" * 100)
-        self.assertEqual(K.problems(M, "x" * 19000), [])
+        self.assertEqual(K.problems(M, "x" * MAX), [])
         self.assertEqual(len(K.problems(M, "x" * 100)), 1)
 
     def test_rewrite_loop_succeeds_within_three_tries(self):
@@ -104,9 +106,9 @@ class TestEnforcer(unittest.TestCase):
         old = os.environ.get("KIE_LIVE_ADAPTER_PATH")
         os.environ["KIE_LIVE_ADAPTER_PATH"] = ""
         try:
-            self.assertEqual(K.check(M, "x" * 19000)["status"], "ADAPTER_UNAVAILABLE")
-            self.assertFalse(K.check(M, "x" * 19000)["ok"])
-            self.assertTrue(K.check(M, "x" * 19000, fallback_max=MAX)["ok"])
+            self.assertEqual(K.check(M, "x" * MAX)["status"], "ADAPTER_UNAVAILABLE")
+            self.assertFalse(K.check(M, "x" * MAX)["ok"])
+            self.assertTrue(K.check(M, "x" * MAX, fallback_max=MAX)["ok"])
             self.assertFalse(K.check(M, "x" * 100, fallback_max=MAX)["ok"])
         finally:
             if old is None:
@@ -140,10 +142,10 @@ class TestEnforcer(unittest.TestCase):
 
     def test_local_verdicts_equal_the_adapters_own_check(self):
         K.clear_cache()
-        for n in (100, 15999, 16000, 18999, 19000, 20000, 20001, 26000):
+        for n in (100, 15999, 16000, 18999, 19000, 20000, 20001, 21000):
             first = K.check(M, "x" * n)      # the first call is the adapter's own --check
             K.clear_cache()
-            K.check(M, "x" * 19000)           # prime the numbers
+            K.check(M, "x" * MAX)            # prime the numbers
             local = K.check(M, "x" * n)       # judged locally from the adapter's numbers
             for key in ("ok", "status", "chars", "max", "floor", "target_min", "add", "cut", "message"):
                 self.assertEqual(first[key], local[key], (n, key))

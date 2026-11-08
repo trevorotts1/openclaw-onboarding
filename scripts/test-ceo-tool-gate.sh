@@ -296,7 +296,11 @@ cat > "$HOME/.openclaw/openclaw.json" <<'JSON'
 JSON
 # apply-fleet-standards.sh validates via the stubbed `openclaw` (exit 0) and
 # writes AGENTS.md/SOUL.md into $HOME/.openclaw/workspace (already created).
-bash "$APPLY_STD" >/dev/null 2>&1 || true
+# F1/F2 exercise the LEGACY FORM A write (agents.defaults.tools.allow=["*"]),
+# which is only valid below 2026.6.8. Pin a legacy version explicitly: since
+# 2026-11-06 an UNKNOWN version takes the safe non-writing branch (a write onto
+# an unmeasured schema is what self-rolled the fleet back on 2026.10.8).
+FLEET_OC_VERSION_OVERRIDE="2026.6.1" bash "$APPLY_STD" >/dev/null 2>&1 || true
 if python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
 import json,sys
 cfg=json.load(open(sys.argv[1]))
@@ -320,8 +324,8 @@ then _ok "F1: ungate + surviving posture coexist — agents.defaults.tools.allow
 else _bad "F1: GOAL-4 D4 coordination broken — baseline absent OR retired production deny re-asserted OR GHL MCP deny lost OR wildcard leaked into main.allow"; fi
 
 # F2. Idempotent: a second apply-fleet-standards.sh run keeps both invariants
-#     and does not duplicate the CEO deny entries.
-bash "$APPLY_STD" >/dev/null 2>&1 || true
+#     and does not duplicate the CEO deny entries. Same legacy pin as F1.
+FLEET_OC_VERSION_OVERRIDE="2026.6.1" bash "$APPLY_STD" >/dev/null 2>&1 || true
 if python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
 import json,sys
 cfg=json.load(open(sys.argv[1]))

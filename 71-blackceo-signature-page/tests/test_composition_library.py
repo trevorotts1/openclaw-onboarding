@@ -247,7 +247,7 @@ def _roles():
 
 
 def _request(sections, stage_prompt_stage="final-mockups"):
-    return {"model": "gpt-image-2-5-sunburst-image-to-image", "style": "warm editorial",
+    return {"model": "gpt-image-2-6/sunburst-image-to-image", "style": "warm editorial",
             "sections": sections, "_hypersat": _roles(),
             "stage_prompts": {s: MOCKUP_TEMPLATE for s in exe.STAGES}}
 

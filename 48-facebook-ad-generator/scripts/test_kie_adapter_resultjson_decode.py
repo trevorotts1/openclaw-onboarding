@@ -9,7 +9,7 @@ THE ORIGINAL BUG (confirmed live against api.kie.ai during the v14.1.x render pr
   a saved file out of a recordInfo response whose resultJson is a JSON string, on all
   three poll shapes, with no network and no real key (tools.base_tool is stubbed):
 
-    1. image gpt-image-2.5     createTask -> /jobs/recordInfo         (Skill 74 run)
+    1. image gpt-image-2-6     createTask -> /jobs/recordInfo         (Skill 74 run)
     2. video gemini-omni-video createTask -> /jobs/recordInfo         (Skill 74 run)
     3. video veo3_fast         veo/generate -> /veo/record-info       (legacy Veo route over Skill 74's Adapter)
 

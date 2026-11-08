@@ -1,5 +1,13 @@
 # Changelog - kie-image
 
+## [2.2.4] - 2026-11-08 - feat: GPT Image 2.5 -> 2.6 Sunburst is the default image route
+
+- Every 2.5 reference in this skill now names `gpt-image-2-6/sunburst-text-to-image` (T2I) and
+  `gpt-image-2-6/sunburst-image-to-image` (I2I). Skill 88 explicitly calls models.json for
+  capability data, the adapter for dispatch.
+- `models.json` 2.6 rows carry the real 16-value `aspect_ratio` enum and the owner prompt cap.
+- No credential, endpoint or payload shape changed.
+
 ## [2.2.2] - 2026-10-09 - fix: key-variable sentence names KIE_API_KEY from the official docs
 
 - `SKILL.md` prerequisites: the sentence "KIE docs use the literal `YOUR_API_KEY` placeholder — nothing documents the env var" was wrong as of 2026-10-09. KIE's own overview page names the variable `KIE_API_KEY` (`export KIE_API_KEY=your_key`). The sentence now says so and cites docs.kie.ai/ai-agent/overview with the date.
