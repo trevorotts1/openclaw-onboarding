@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import re
 import secrets
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,6 +48,7 @@ from .result import (
     Status,
     canonical_json,
     redact_headers,
+    request_fingerprint_of,
     response_fingerprint,
 )
 from .transport import RequestsTransport, Transport, TransportResponse
@@ -67,6 +69,17 @@ _APPROVAL_RECORD = "approval_record"
 _APPROVAL_TOKEN = "gate_token"
 _PENDING_LIMIT = 1024
 _GATE_SKIPPED_ROUTES = frozenset({"skill44_private"})
+#: Route classes whose frozen contract declares NO API/MCP route: the managed
+#: browser is the only real route, so dispatch() may hand them over.
+_BROWSER_ROUTE_CLASSES = frozenset({"skill06_authoring", "capability_gap"})
+#: Frozen ``tenant_binding`` literals that mean "no API binding exists to carry
+#: this operation" (``n/a`` authoring rows, ``token-id`` Skill 6 rows whose
+#: identity travels in a Firebase token, ``unknown`` rows the freeze could not
+#: settle). They are refusals the HTTP path cannot resolve, NOT capability
+#: decisions; a browser-only row may therefore be handed to the browser route.
+#: ``tenant_mismatch`` / approval / idempotency refusals are absent here, so a
+#: real refusal is still never laundered into the UI.
+_NO_API_TENANT_BINDINGS = frozenset({"n/a", "token-id", "unknown"})
 
 
 @dataclass(frozen=True)
@@ -81,6 +94,39 @@ class ApprovalRef:
             raise ContractViolation("approval_kind_invalid")
         if not isinstance(self.ref, str) or not self.ref.strip():
             raise ContractViolation("approval_invalid", detail={"reason": "empty_ref"})
+
+
+@dataclass(frozen=True)
+class BrowserRouteRequest:
+    """One unsupported operation handed to the real managed-browser route.
+
+    Carries the logical run, the tenant, the native object ids and the exact
+    operation that is still owed, so a fallback hand-off cannot lose which
+    tenant/object the work belonged to (W3 connection 7).
+    """
+
+    operation_id: str
+    tenant: str
+    surface: str | None
+    run_id: str
+    native_object_ids: Mapping[str, str]
+    path_params: Mapping[str, str]
+    query: Mapping[str, object]
+    body: Mapping[str, object]
+    incomplete_operation: str
+
+    def as_mapping(self) -> dict[str, Any]:
+        return {
+            "operation_id": self.operation_id,
+            "tenant": self.tenant,
+            "surface": self.surface,
+            "run_id": self.run_id,
+            "native_object_ids": dict(self.native_object_ids),
+            "path_params": dict(self.path_params),
+            "query": dict(self.query),
+            "body": dict(self.body),
+            "incomplete_operation": self.incomplete_operation,
+        }
 
 
 @dataclass(frozen=True)
@@ -123,6 +169,7 @@ class PublicGhlAdapter:
         default_timeout_s: float = 30.0,
         max_attempts: int = 1,
         clock: Callable[[], datetime] | None = None,
+        browser_route: Callable[[BrowserRouteRequest], Mapping[str, Any]] | None = None,
     ) -> None:
         if auth is None:
             raise ContractViolation("auth_required")
@@ -148,6 +195,15 @@ class PublicGhlAdapter:
         self._ledger = IdempotencyLedger()
         self._pending: dict[str, _PendingWrite] = {}
         self._pending_by_key: dict[tuple[str, str], _PendingWrite] = {}
+        # W3 connection 7: the REAL managed-browser route for operations whose
+        # frozen contract declares no API/MCP route. Wired by the caller to
+        # Skill 6's managed-browser adapter; never guessed here.
+        self._browser_route = browser_route
+        # ONE active browser writer per process. The cross-process singleton is
+        # browser_manager.sh's box lock (ab.lock / ab.lock.d) on the lane that
+        # actually drives the browser; this guard stops two operations in this
+        # process from racing the same manager/session at once.
+        self._browser_writer_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # public surface
@@ -764,6 +820,363 @@ class PublicGhlAdapter:
         # No tenant and no single loaded record: the honest answer is deny.
         return CapabilityGate().get(operation_id)
 
+    # ------------------------------------------------------------------
+    # operation routing: API/MCP first, then the REAL managed browser
+    # ------------------------------------------------------------------
+
+    def dispatch(
+        self,
+        *,
+        operation_id: str,
+        tenant: TenantBinding,
+        path_params: Mapping[str, str] | None = None,
+        query: Mapping[str, object] | None = None,
+        body: Mapping[str, object] | None = None,
+        idempotency_key: str | None = None,
+        approval: ApprovalRef | Mapping[str, Any] | str | None = None,
+        readback: ReadbackSpec | None = None,
+        timeout_s: float | None = None,
+        attempt: int = 1,
+        run_id: str | None = None,
+        surface: str | None = None,
+        native_object_ids: Mapping[str, str] | None = None,
+    ) -> OperationResult:
+        """Route ONE operation to where it can actually run.
+
+        The frozen row's declared route (API / official MCP) is tried first.
+        When the row declares NO such route — a Skill 6 authoring operation or a
+        capability gap — the operation is handed to the REAL managed-browser
+        route wired at construction, instead of dead-ending at
+        ``capability_disabled``.
+
+        A capability DENIAL on an operation that DOES have a public API/MCP route
+        is returned unchanged: this method routes operations the contract does
+        not support over HTTP, it never bypasses the tenant capability gate.
+        """
+
+        first = self.call(
+            operation_id=operation_id,
+            tenant=tenant,
+            path_params=path_params,
+            query=query,
+            body=body,
+            idempotency_key=idempotency_key,
+            approval=approval,
+            readback=readback,
+            timeout_s=timeout_s,
+            attempt=attempt,
+        )
+        if first.status is Status.ok:
+            return first
+        row = self._resolve_row(operation_id)
+        if not _is_browser_route_class(_row_attr(row, "route_class")):
+            # The contract DOES declare an API/MCP route: a refusal here is real
+            # and is returned unchanged. Never launder a refusal into the UI.
+            return first
+        # Refusals that mean "the API/MCP contract cannot carry this operation":
+        #   capability_disabled      the tenant gate does not admit the row;
+        #   auth_kind_not_allowed    the authoring row deliberately declares NO
+        #                            public auth class, because no public route
+        #                            exists — the browser is the route;
+        #   unknown_tenant_binding   only when the frozen row records a binding
+        #                            literal with no API binding to carry it
+        #                            (n/a, token-id, unknown). Those rows are
+        #                            browser-only by contract, so the browser is
+        #                            the real route; the refusal is not a
+        #                            capability decision and no API route is
+        #                            bypassed.
+        # Any other refusal (tenant mismatch, approval, idempotency, readback)
+        # is returned unchanged; dispatch never launders a real refusal.
+        rule = (first.error or {}).get("rule")
+        binding = _row_attr(row, "tenant_binding")
+        allowed = rule in ("capability_disabled", "auth_kind_not_allowed") or (
+            rule == "unknown_tenant_binding"
+            and str(binding) in _NO_API_TENANT_BINDINGS
+        )
+        if not allowed:
+            return first
+        return self._dispatch_browser(
+            operation_id=operation_id,
+            tenant=tenant,
+            path_params=dict(path_params or {}),
+            query=dict(query or {}),
+            body=dict(body or {}),
+            run_id=run_id or secrets.token_hex(6),
+            surface=surface,
+            native_object_ids=dict(native_object_ids or {}),
+            timeout_s=timeout_s,
+            attempt=attempt,
+        )
+
+    def _dispatch_browser(
+        self,
+        *,
+        operation_id: str,
+        tenant: TenantBinding,
+        path_params: Mapping[str, str],
+        query: Mapping[str, object],
+        body: Mapping[str, object],
+        run_id: str,
+        surface: str | None,
+        native_object_ids: Mapping[str, str],
+        timeout_s: float | None,
+        attempt: int,
+    ) -> OperationResult:
+        """Hand the unresolved operation to the managed-browser route and record
+        exactly what it proved (completion) and what it did not (prerequisite)."""
+
+        started = self._clock()
+        receipt_id = "gxo_bres_" + secrets.token_hex(6)
+        request_fp = request_fingerprint_of({
+            "operation_id": operation_id,
+            "tenant": tenant.location_id,
+            "run_id": run_id,
+            "native_object_ids": dict(native_object_ids),
+            "path_params": dict(path_params),
+            "query": dict(query),
+            "body": dict(body),
+            "transport": "browser",
+        })
+        timeout = (
+            self._default_timeout_s if timeout_s is None else float(timeout_s)
+        )
+
+        def finish(
+            status: Status,
+            *,
+            error: Mapping[str, Any] | None,
+            extra: Mapping[str, Any] | None = None,
+        ) -> OperationResult:
+            evidence: dict[str, Any] = {
+                "operation_id": operation_id,
+                "request_fingerprint": request_fp,
+                "http_status": None,
+                "response_fingerprint": None,
+                "tenant": tenant.location_id,
+                "attempt": attempt,
+                "readback": None,
+                "receipt_id": receipt_id,
+                "version_header": None,
+                "timeout_s": timeout,
+                "adapter_version": ADAPTER_VERSION,
+                # Honest transport marker: this result did not travel over HTTP.
+                "transport": "browser",
+                "auth_kind": self._auth.kind.value,
+                "auth_source": self._auth.source,
+                "doc_url": None,
+                "doc_fetch_date": None,
+                "request_bytes": (
+                    len(canonical_json(dict(body)).encode("utf-8")) if body else 0
+                ),
+                "started_at": started.isoformat(),
+                "finished_at": self._clock().isoformat(),
+                "run_id": run_id,
+                "surface": surface,
+                "native_object_ids": dict(native_object_ids),
+                "incomplete_operation": (
+                    None if status is Status.ok else operation_id
+                ),
+            }
+            if extra:
+                evidence.update(dict(extra))
+            return OperationResult(
+                status=status,
+                operation_id=operation_id,
+                receipt_id=receipt_id,
+                request_fingerprint=request_fp,
+                http_status=None,
+                response_fingerprint=None,
+                tenant=tenant.location_id,
+                attempt=attempt,
+                version_header=None,
+                readback=None,
+                adapter_version=ADAPTER_VERSION,
+                transport="browser",  # type: ignore[arg-type]  # no HTTP leg
+                doc_url=None,
+                evidence=evidence,
+                error=error,
+            )
+
+        if self._browser_route is None:
+            return finish(
+                Status.unavailable,
+                error={
+                    "rule": "browser_route_unavailable",
+                    "operation_id": operation_id,
+                    "hint": (
+                        "the frozen contract declares no API/MCP route for this "
+                        "operation; wire browser_route=... (Skill 6 managed "
+                        "browser adapter) so it can reach a real browser route"
+                    ),
+                },
+                extra={"refused_before_transport": True},
+            )
+
+        route_request = BrowserRouteRequest(
+            operation_id=operation_id,
+            tenant=tenant.location_id,
+            surface=surface,
+            run_id=run_id,
+            native_object_ids=dict(native_object_ids),
+            path_params=dict(path_params),
+            query=dict(query),
+            body=dict(body),
+            incomplete_operation=operation_id,
+        )
+        try:
+            # Serialized: at most ONE active browser writer at a time (the
+            # cross-process singleton remains browser_manager.sh's box lock).
+            with self._browser_writer_lock:
+                outcome = self._browser_route(route_request)
+        except Exception as caught:  # noqa: BLE001 - never escape without a receipt
+            return finish(
+                Status.unavailable,
+                error={
+                    "rule": "browser_route_failed",
+                    "transport_exception": type(caught).__name__,
+                },
+            )
+
+        if not isinstance(outcome, Mapping):
+            return finish(
+                Status.unavailable,
+                error={
+                    "rule": "browser_route_contract_invalid",
+                    "detail": f"returned {type(outcome).__name__}, not a mapping",
+                },
+            )
+
+        cleanup_error = _browser_cleanup_error(outcome)
+        if cleanup_error is not None:
+            return finish(
+                Status.unavailable,
+                error={"rule": "browser_route_cleanup_invalid", "detail": cleanup_error},
+            )
+
+        ok = outcome.get("ok")
+        complete = outcome.get("operation_complete")
+        reported = outcome.get("operation")
+        lint = {
+            "operation_complete": complete is True,
+            "prerequisite_ready": outcome.get("prerequisite_ready") is True,
+            "cleanup": dict(outcome.get("cleanup") or {}),
+            "browser_lane": outcome.get("lane"),
+        }
+
+        if not isinstance(ok, bool):
+            # A truthy non-boolean is not a success, here or anywhere.
+            return finish(
+                Status.unavailable,
+                error={
+                    "rule": "browser_route_contract_invalid",
+                    "detail": (
+                        "'ok' must be the boolean true or false, got "
+                        f"{type(ok).__name__} {ok!r}"
+                    ),
+                },
+                extra=lint,
+            )
+
+        if outcome.get("references_reused") is True:
+            # DOM refs must be refreshed for this invocation, never inherited
+            # from a session the rung merely assumes is shared.
+            return finish(
+                Status.unavailable,
+                error={
+                    "rule": "browser_route_contract_invalid",
+                    "detail": (
+                        "references_reused=true — a browser rung must refresh "
+                        "DOM references for its own invocation"
+                    ),
+                },
+                extra=lint,
+            )
+
+        if complete is True and (
+            outcome.get("prerequisite_ready") is True
+            or outcome.get("partial") is True
+        ):
+            # prerequisite_ready / partial are distinct non-completion states;
+            # claiming completion at the same time is a contradiction, not a
+            # stronger proof.
+            return finish(
+                Status.unavailable,
+                error={
+                    "rule": "browser_route_contract_invalid",
+                    "detail": (
+                        "operation_complete=true cannot also be "
+                        "prerequisite_ready/partial"
+                    ),
+                },
+                extra=lint,
+            )
+
+        if (
+            ok is True
+            and complete is True
+            and outcome.get("references_fresh") is not True
+        ):
+            # Same rule the ladder applies: a browser completion without refs
+            # refreshed for THIS invocation is not proof.
+            return finish(
+                Status.unavailable,
+                error={
+                    "rule": "browser_route_contract_invalid",
+                    "detail": (
+                        "a browser completion must report references_fresh=true "
+                        "(DOM refs refreshed for this invocation)"
+                    ),
+                },
+                extra=lint,
+            )
+
+        if ok is True and complete is True and reported == operation_id:
+            return finish(Status.ok, error=None, extra=lint)
+
+        if ok is True and complete is True:
+            return finish(
+                Status.unavailable,
+                error={
+                    "rule": "browser_route_wrong_operation",
+                    "detail": (
+                        f"the browser rung reported completion of {reported!r}, "
+                        f"but the requested operation is {operation_id!r}"
+                    ),
+                },
+                extra=lint,
+            )
+
+        # Progress only — never a success, and never silently PARKED.
+        if ok is True and (
+            outcome.get("prerequisite_ready") is True
+            or outcome.get("partial") is True
+            or str(outcome.get("status", "")) in ("prerequisite_ready", "partial")
+        ):
+            return finish(
+                Status.denied,
+                error={
+                    "rule": "browser_route_prerequisite_only",
+                    "operation_id": operation_id,
+                    "detail": str(outcome.get("detail") or outcome.get("reason") or ""),
+                    "hint": (
+                        "the browser rung made progress but did not prove THIS "
+                        "operation complete; the operation is still owed"
+                    ),
+                },
+                extra=lint,
+            )
+
+        return finish(
+            Status.unavailable,
+            error={
+                "rule": "browser_route_incomplete",
+                "operation_id": operation_id,
+                "code": outcome.get("code"),
+                "detail": str(outcome.get("detail") or ""),
+            },
+            extra=lint,
+        )
+
     def _gate_for(self, tenant: str) -> CapabilityGate:
         """Explicit gate, else the checked-in record bound to this tenant."""
 
@@ -1022,9 +1435,49 @@ def _validate_query_contract(
             )
 
 
+def _is_browser_route_class(route_class: Any) -> bool:
+    text = route_class.value if hasattr(route_class, "value") else route_class
+    return str(text) in _BROWSER_ROUTE_CLASSES
+
+
 def _gate_skips(route_class: Any) -> bool:
     text = route_class.value if hasattr(route_class, "value") else route_class
     return str(text) in _GATE_SKIPPED_ROUTES
+
+
+def _browser_cleanup_error(outcome: Mapping[str, Any]) -> str | None:
+    """The browser rung may release only what it owned, and never everything.
+
+    Returns a human-readable defect string, or None when the cleanup record is
+    honest. ``closed_all`` is refused outright: it would close a user's
+    unrelated session.
+    """
+
+    cleanup = outcome.get("cleanup")
+    owned = [str(s) for s in (outcome.get("owned_sessions") or ())]
+    if cleanup is None:
+        if owned:
+            return (
+                f"reported owned_sessions {owned} without a cleanup record — "
+                "pages/contexts/sessions must be released on completion, "
+                "failure or cancellation"
+            )
+        return None
+    if not isinstance(cleanup, Mapping):
+        return "'cleanup' must be a mapping"
+    if cleanup.get("closed_all") is True:
+        return (
+            "'cleanup.closed_all' is forbidden — closing every session would "
+            "close a user's unrelated session"
+        )
+    released = [str(s) for s in (cleanup.get("released") or ())]
+    foreign = [s for s in released if s not in owned]
+    if foreign:
+        return (
+            f"cleanup released session(s) {foreign} this rung never owned "
+            f"(owned_sessions={owned})"
+        )
+    return None
 
 
 def _capability_evidence(capability: Capability) -> dict[str, Any]:

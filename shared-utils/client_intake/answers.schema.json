@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "client-intake-answers/v1",
   "title": "Client intake answers (one file per run)",
-  "description": "C1 contract. Written by shared-utils/client_intake/engine.py, read by Skill 49 launch and legacy intake, Skill 71 write_intake (--answers-file) and Skill 83. Harness-neutral: claude-nine, Claude Code and OpenClaw all write and resume this same file.",
+  "description": "C1 contract. Written by shared-utils/client_intake/engine.py, read by Skill 49 launch and legacy intake, Skill 71 write_intake (--answers-file) and Skill 83. Harness-neutral: claude-nine, Claude Code and OpenClaw all write and resume this same file. The F16 answer contract (answer_contract in engine.py) is derived from this file: design decision state, brand provenance, approved spend ceiling, plan revision and approval binding. answers.provenance.schema.json describes that block.",
   "type": "object",
   "required": ["schema", "answers", "to_confirm"],
   "additionalProperties": false,
@@ -14,9 +14,26 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "mode": {"type": "string", "enum": ["launch", "legacy", "bf"]},
+        "mode": {"type": "string", "enum": ["launch", "legacy", "bf", "page"]},
         "phase": {"type": "string", "enum": ["pre_build", "approval"]},
-        "estimate_of": {"type": "integer", "minimum": 0, "description": "last computed count of applicable questions; a changed estimate is explained to the client"}
+        "page_kind": {"type": "string", "enum": ["sales", "opt_in"], "description": "Skill 71 page runs: an opt-in landing page is long-form only."},
+        "estimate_of": {"type": "integer", "minimum": 0, "description": "last computed count of applicable questions; a changed estimate is explained to the client"},
+        "mode_source": {"type": "string", "description": "explicit_request when the client named the mode; routing otherwise"},
+        "mode_reason": {"type": "string"},
+        "brand_version": {"type": "integer", "minimum": 0, "description": "moves with every recorded brand answer; binds a producer's brand file to the answers it was made from"},
+        "plan_revision": {"type": "integer", "minimum": 1, "description": "the plan revision this file is currently bound to"},
+        "plan_hash": {"type": "string", "description": "the exact plan subject an approval binds to"},
+        "plan_approval_ref": {"type": ["string", "null"], "description": "the approval record that accepted this plan hash and revision"},
+        "approval_subject": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "what the approval was given for; plan_binding reports stale when it no longer matches plan_hash/plan_revision",
+          "properties": {
+            "plan_hash": {"type": "string"},
+            "revision": {"type": "integer", "minimum": 1},
+            "approval_ref": {"type": "string"}
+          }
+        }
       }
     },
     "answers": {
@@ -33,8 +50,38 @@
           "source_message_ref": {"type": "string", "minLength": 1, "description": "The client message (in the transcript store) a never-default commercial answer (price, packages, deliverables, funnel_shape, entitlement) was taken from. Required when such an answer is provided."},
           "confirmation_ref": {"type": "string", "minLength": 1, "description": "The client message that said yes to the echoed price."},
           "unknown_count": {"type": "integer", "minimum": 0},
-          "pending": {"type": "object", "description": "What the last help message offered (colors read, feel words, recommendation), so the next reply can finish it. Dropped when the answer is recorded."}
+          "pending": {"type": "object", "description": "What the last help message offered (colors read, feel words, recommendation), so the next reply can finish it. Dropped when the answer is recorded."},
+          "accepted_proposal": {"type": "boolean", "description": "true when the client accepted a suggestion we made; the decision state is accepted_recommendation, never a supplied fact"},
+          "proposal_artifact": {"description": "the artifact an accepted proposal produced, kept as its provenance"},
+          "unresolved_capability": {"type": "string", "description": "a capability the run does not have, so an accepted proposal stays unresolved by name"},
+          "accepted": {
+            "type": "object",
+            "description": "written by revision.py's one acceptance transition: the approval record, the prior state and provenance, and the hashes it binds",
+            "properties": {
+              "approval_ref": {"type": "string"},
+              "at": {"type": "string"},
+              "from_state": {"type": ["string", "null"]},
+              "from_provenance": {"type": "string"},
+              "plan_hash": {"type": "string"},
+              "subject_hash": {"type": "string"},
+              "hash": {"type": "string"}
+            }
+          },
+          "reconciled": {"type": "object", "description": "what a revision removed and why; the prior value, state and provenance are kept"}
         }
+      }
+    },
+    "proposals": {
+      "type": "object",
+      "description": "open proposals, keyed by question id: an artifact or action the client has not accepted yet. Never an answer.",
+      "additionalProperties": {"type": "object"}
+    },
+    "packages_partial": {
+      "type": "object",
+      "description": "packages accumulated one turn at a time before the answer is complete",
+      "properties": {
+        "packages": {"type": "array"},
+        "note": {"type": "string"}
       }
     },
     "to_confirm": {

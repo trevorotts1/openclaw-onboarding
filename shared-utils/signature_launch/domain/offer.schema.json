@@ -70,6 +70,23 @@
         "null"
       ]
     },
+    "production_state": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "authored",
+        "draft_delivered",
+        "locally_verified",
+        "installed_test_verified",
+        "ready_for_activation",
+        "live_verified",
+        "failed",
+        null
+      ],
+      "description": "Shared-semantics boundary: OFFER IDENTITY (BFL-001). How far this offer's own sellable artifacts (native product, native price, delivery artifact) have actually got. The values are the unit receipt's existing ladder in 83-black-friday-launcher/receipt.schema.json (definitions.unit_receipt.status) plus 'failed', so the package cannot hold two competing vocabularies; 'authored' means the offer is written down only. null or absence means nothing is recorded, and no lane may infer production from the offer being present, from a native id being planned, or from an artifact existing on disk. Only the receipt row that actually proves the state may set it."
+    },
     "prices": {
       "type": "array",
       "minItems": 1,

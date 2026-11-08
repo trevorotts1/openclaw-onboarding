@@ -149,11 +149,13 @@ def new_session(*, tenant_id: str, location_id: str, launch_id: str,
                 brand_hash: str = "", known: Optional[Dict[str, Any]] = None,
                 materials: Optional[List[Dict[str, Any]]] = None,
                 available_providers: Optional[List[str]] = None,
-                test_only: bool = False) -> Dict[str, Any]:
+                test_only: bool = False,
+                run_dir: Optional[str] = None) -> Dict[str, Any]:
     """Create a session. `known` pre-fills fields from supplied/verified
     material (S6 task-key style) — those fields are NEVER asked again.
     `materials` is the client's existing verified catalog, the only source a
-    recommendation may draw products from."""
+    recommendation may draw products from. `run_dir` is the run folder the
+    deliverable producer writes into (a saved session file is its own run)."""
     s: Dict[str, Any] = {
         "schema": "signature-launch-intake/v1",
         "session_id": uuid.uuid4().hex[:12],
@@ -165,7 +167,7 @@ def new_session(*, tenant_id: str, location_id: str, launch_id: str,
         "available_providers": available_providers or [],
         "plan_revision": 1, "plan": None, "plan_hash": None,
         "approval": None, "history": [{"at": _now(), "event": "created"}],
-        "test_only": test_only,
+        "test_only": test_only, "run_dir": run_dir,
     }
     for field_key, entry in (known or {}).items():
         if isinstance(entry, dict) and "value" in entry:
@@ -213,6 +215,53 @@ def _client_intake():
                 import engine  # noqa: E402
                 return engine
     raise IntakeError("shared-utils/client_intake not found; install or update the onboarding skills")
+
+
+def _intake_revision():
+    """shared-utils/client_intake/revision.py: the ONE proposal-acceptance transition and
+    the ONE revision reconciliation. Skill 83 (launcher_core/intake.py) loads the same file
+    by path, so the two skills cannot drift into two different rules."""
+    if "client_intake_revision" in sys.modules:
+        return sys.modules["client_intake_revision"]
+    import importlib.util
+    for root in _skill_roots():
+        for d in (root / "shared-utils" / "client_intake", root / "client_intake"):
+            f = d / "revision.py"
+            if f.is_file():
+                spec = importlib.util.spec_from_file_location("client_intake_revision", f)
+                mod = importlib.util.module_from_spec(spec)
+                sys.modules["client_intake_revision"] = mod
+                spec.loader.exec_module(mod)
+                return mod
+    raise IntakeError("shared-utils/client_intake/revision.py not found; install or update "
+                      "the onboarding skills")
+
+
+def _reconcile(session: Dict[str, Any], because: str) -> Dict[str, Any]:
+    """Reconsider the answers a disabled offer depended on (U1 -> D1, U2).
+
+    Runs the shared reconciliation over the session ledger. A revision that disables U1
+    turns the saved D1/U2 answers into `not_applicable` with their prior state, provenance
+    kind and value kept under `reconciled`, and clears the matching extras flags, so the
+    offers, pages, follow-up emails and route nodes derived from them are gone rather than
+    stale. Every other answer - brand, calendar, copy, price of the main offer - is only
+    read, and is named in the report as kept.
+    """
+    extras_entry = _get(session, "extras")
+    extras = extras_entry.get("value") if isinstance(extras_entry, dict) else None
+    report = _intake_revision().reconcile_launch(
+        session["answers"], revision=session["plan_revision"],
+        extras=extras if isinstance(extras, dict) else None,
+        answer_prefix="offers.", extras_key="extras")
+    session["reconciled"] = report["reconciled_answers"]
+    session["reconciled_kept"] = report["kept_answers"]
+    if report["reconciled_answers"]:
+        session["history"].append({
+            "at": _now(), "event": "answers_reconciled",
+            "revision": session["plan_revision"], "because": because,
+            "disabled": report["disabled"],
+            "reconciled": [row["key"] for row in report["reconciled_answers"]]})
+    return report
 
 
 def ingest_answers(session: Dict[str, Any], answers: Dict[str, Any],
@@ -263,6 +312,14 @@ def _persist(session: Dict[str, Any]) -> None:
         save_session(session, Path(session["_path"]))
 
 
+def _run_dir(session: Dict[str, Any]) -> Optional[str]:
+    """The run folder this session belongs to, from the ONE rule in launch_plan
+    (the launcher's run_dir, else the folder holding the saved session file).
+    None when neither is known: nothing is written then, and the deliverables
+    block names that gap instead of pretending an artifact exists."""
+    return lpl.session_run_dir(session)
+
+
 def _set(session: Dict[str, Any], field_key: str, value: Any, state: str,
          question_id: Optional[str], source_ref: str = "",
          provenance: Optional[Dict[str, Any]] = None) -> None:
@@ -285,14 +342,22 @@ def _answered(session: Dict[str, Any], field_key: str) -> bool:
 
 
 # The eight launch answers (calendar, channels, AI, access delivery, payment plans,
-# sender, reply-to, A2P readiness) as typed ledger keys. Published in the versioned
-# session contract and carried on the assembled launch plan for Skill 50 (L06).
+# sender, reply-to, A2P readiness) plus the after-purchase reentry and purchase-identity
+# answers, as typed ledger keys. Published in the versioned session contract and carried
+# on the assembled launch plan for Skill 50 (L06).
 LAUNCH_ANSWER_KEYS = (
     "launch.launch_at", "launch.doors_open_at", "launch.doors_close_at", "launch.timezone",
     "launch.channels", "launch.conversation_ai", "launch.access_delivery",
     "launch.payment_plans", "launch.sender_name", "launch.reply_to_email",
-    "launch.a2p_ready",
+    "launch.a2p_ready", "launch.automation_reentry", "launch.purchase_identity",
 )
+
+# The guided-answer records (shared-utils/client_intake/engine.py: to_launch_known)
+# that must land in the launch RECORD, not only in session["answers"]: a missing or
+# partial offer is a proposal (recommended_unapproved) and each deliverable keeps the
+# kind the intake classified. Both are carried beside the facts, never in place of
+# one, so the offer, price and journey mode the plan is built from are unchanged.
+GUIDED_RECORD_KEYS = ("proposed_offer", "deliverables_plan")
 
 
 def launch_answers_block(session: Dict[str, Any]) -> Dict[str, Any]:
@@ -499,6 +564,10 @@ def answer(session: Dict[str, Any], question_id: str, raw: str,
     # the client does not repeat the request at every step).
     if any(p in _norm(raw) for p in _THINK_FOR_ME) and session.get("mode") == "know":
         session["mode"] = "help"
+    # This answer may have disabled an offer another saved answer depended on (U1 -> D1/U2).
+    # Reconcile before anything is persisted or planned: a stale dependent offer must never
+    # survive into a record, a page set or a route graph.
+    _reconcile(session, f"answer changed ({question_id})")
     session["phase"] = q["phase"]
     session["history"].append({"at": _now(), "event": "answer",
                                "question_id": question_id})
@@ -894,6 +963,9 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
     if not journey:
         missing.append("journey_mode (one offer or a few packages)")
         journey = "single_simple"
+    # Reconcile before the record is built: a hand-edited or older ledger whose extras say
+    # U1 is off must not carry D1/U2 into the offers, the page set or the route graph.
+    _reconcile(session, "plan assembly")
     extras = dict((_get(session, "extras") or {}).get("value") or
                   {"upsell_1": False, "downsell_1": False, "upsell_2": False})
 
@@ -952,12 +1024,35 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
         "source_refs": [f"intake-session:{session['session_id']}"],
         "test_only": bool(session.get("test_only")),
     }
+    for carried in GUIDED_RECORD_KEYS:  # the proposal and the deliverable kinds
+        entry = _get(session, carried)
+        if entry is not None:
+            launch[carried] = {"value": entry["value"], "state": entry["state"],
+                               "source_ref": entry.get("source_ref", "")}
     if missing:
         session["state"] = "awaiting_missing_fact"
         session["missing_facts"] = missing
         session["plan"] = None
+        # A partial offer is still real work. The record that carries the proposal
+        # is kept apart from session["plan"] (it has no route graph and can never be
+        # approved), and the deliverable producer runs from it — so the free item is
+        # produced even while a price, a date or a package is still missing.
+        if "proposed_offer" in launch:
+            session["proposed_launch"] = launch
+            try:
+                built = lpl.build_launch_plan(launch, session.get("answers") or {},
+                                              run_dir=_run_dir(session))
+                session["deliverables"] = built.get("deliverables")
+            except (lpl.LaunchPlanError, ValueError) as exc:
+                session["deliverables"] = {
+                    "record_type": "signature-launch.deliverables.v1",
+                    "state": "not_produced", "items": [], "run_dir": _run_dir(session),
+                    "counts": {"produced": 0, "not_produced": 0}, "free_item": None,
+                    "files": [], "record": None,
+                    "missing_capability": [f"deliverable producer: {exc}"]}
         _persist(session)
-        return {"state": "awaiting_missing_fact", "missing": missing}
+        return {"state": "awaiting_missing_fact", "missing": missing,
+                "deliverables": session.get("deliverables")}
     graph = clr.compile_route(launch)
     launch["route_graph_ref"] = f"route-graph:{launch['launch_id']}:rev{launch['revision']}"
     launch["route_graph_hash"] = clr.graph_hash(graph)
@@ -981,9 +1076,12 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
     # missing calendar/AI fact never blocks the page plan; it is named, and the
     # page-level launch still proceeds to its own approval.
     try:
-        full = lpl.build_from_session(session)
+        full = lpl.build_from_session(session, run_dir=_run_dir(session))
         session["launch_plan"] = full.get("plan")
         session["launch_plan_missing"] = full.get("missing", [])
+        # The free item / every writable deliverable is produced by the same call,
+        # into this run's folder; what no producer here can write is recorded by name.
+        session["deliverables"] = full.get("deliverables")
         if session["launch_plan"] is not None:
             # The eight typed launch answers travel WITH the plan for the Skill 50
             # consumer (L06): sender, reply-to, access delivery and payment plans are
@@ -1010,7 +1108,8 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
     return {"state": session["state"], "plan": launch,
             "plan_hash": session["plan_hash"],
             "launch_plan": session.get("launch_plan"),
-            "launch_plan_missing": session.get("launch_plan_missing", [])}
+            "launch_plan_missing": session.get("launch_plan_missing", []),
+            "deliverables": session.get("deliverables")}
 
 
 def full_plan_digest(full_plan: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -1194,9 +1293,17 @@ def approve(session: Dict[str, Any], approval: Dict[str, Any],
     session["plan"]["plan_approval_ref"] = approval["approval_id"]
     session["approval"] = approval
     session["state"] = "approved"
-    for entry in session["answers"].values():
-        if entry["state"] == "recommended_unapproved":
-            entry["state"] = "approved_recommendation"
+    # The ONE shared proposal-acceptance transition (shared-utils/client_intake/revision.py),
+    # also consumed by Skill 83's intake. The client approving this exact plan hash is what
+    # accepts the recommendations inside it: each one records the approval ref plus the state
+    # and provenance kind it came from. Nothing else is touched.
+    accepted = _intake_revision().accept_proposals(session["answers"], approval)
+    session["proposal_acceptance"] = {
+        "approval_ref": accepted["approval_ref"],
+        "accepted": accepted["accepted"]}
+    session["history"].append({"at": _now(), "event": "proposals_accepted",
+                               "approval_ref": accepted["approval_ref"],
+                               "accepted": [row["key"] for row in accepted["accepted"]]})
     session["history"].append({"at": _now(), "event": "approved",
                                "approval_id": approval["approval_id"],
                                "verification_class": assertion["verification_class"]})
@@ -1232,6 +1339,10 @@ def request_revision(session: Dict[str, Any], note: str = "") -> Dict[str, Any]:
     session["state"] = "revision_requested"
     session["history"].append({"at": _now(), "event": "revision_requested",
                                "note": note, "revision": session["plan_revision"]})
+    # A revision reconsiders every saved answer a disabled offer depended on. Run it on the
+    # revision itself, not only when an answer happens to be recorded: a plan can be revised
+    # with U1 already off and D1/U2 still saved from revision 1.
+    _reconcile(session, f"revision {session['plan_revision']}")
     _persist(session)
     return session
 

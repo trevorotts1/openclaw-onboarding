@@ -480,8 +480,13 @@ _PAYMENTS_ALT: tuple[str, ...] = ("2021-07-28",)
 # (ISO-4217 exponent aware) plus the read-first / read-back / approval discipline,
 # and the Skill 44 CLI product/price commands route through it.
 _PAYMENTS: tuple[OperationRow, ...] = (
+    # F11 correction: products.list carried blocker ``B-COMMUNITY-RAIL``, a
+    # retired-community-transport code that serves no product route and that no
+    # other row in this family carries. The row is a public REST read with no
+    # recorded verification, so ``A-UNVERIFIED`` states what is actually known.
+    # No other field on the row changed.
     _R("products.list", "GET", "/products/", "v3", "D", PUB, PIT_OR_OAUTH,
-       "query.locationId", False, False, "B-COMMUNITY-RAIL",
+       "query.locationId", False, False, "A-UNVERIFIED",
        DOCS + "/2021-07-28/ghl/products/list-invoices",
        alternates=_PAYMENTS_ALT),
     _R("products.get", "GET", "/products/{productId}", "v3", "D", PUB,
@@ -756,9 +761,25 @@ _SOCIAL: tuple[OperationRow, ...] = (
 _PRIVATE_VERSION = "2021-07-28"  # internal rail header, recorded by GU-003
 
 _WORKFLOWS_MCP: tuple[OperationRow, ...] = (
+    # F11 version reconciliation (2026-11-07). Production contract re-read at
+    # https://marketplace.gohighlevel.com/docs/ghl/workflows/get-workflow/:
+    # GET /workflows/ documents Version v3, which is the literal this row
+    # already carries (the page is titled "Get Workflow (deprecated)" yet still
+    # publishes the operation at v3). The recorded live 200 for the same route
+    # used 2021-07-28 (GHL_UPDATES_live-ledger.md line 759), and GHL accepts
+    # more than one supported Version on several routes, so that literal is a
+    # permitted rollback for this row and is recorded as such rather than
+    # replacing the documented value. F6 / B-WORKFLOWS-LIST-VERSION stays open
+    # until one authorized v3 call is recorded (see
+    # evidence/W23/f6-workflows-list-version.md); this row still declares v3.
     _R("workflows.list", "GET", "/workflows/", "v3", "D", PUB, PIT_OR_OAUTH,
        "query.locationId", False, False, "A-UNVERIFIED",
-       DOCS + "/ghl/workflows/get-workflow/", scopes=("workflows.readonly",)),
+       DOCS + "/ghl/workflows/get-workflow/", scopes=("workflows.readonly",),
+       alternates=("2021-07-28",)),
+    # F11: production pages re-read 2026-11-07 — add-contact-to-workflow is
+    # POST /contacts/{contactId}/workflow/{workflowId} at Version v3 and
+    # delete-contact-from-workflow is the same path at Version v3. The rows
+    # below match both.
     _R("workflows.enroll", "POST",
        "/contacts/{contactId}/workflow/{workflowId}", "v3", "D", PUB,
        PIT_OR_OAUTH, "query.locationId", True, False, "A-UNVERIFIED",
@@ -767,6 +788,23 @@ _WORKFLOWS_MCP: tuple[OperationRow, ...] = (
        "/contacts/{contactId}/workflow/{workflowId}", "v3", "D", PUB,
        PIT_OR_OAUTH, "query.locationId", True, True, "A-UNVERIFIED",
        DOCS + "/ghl/contacts/delete-contact-from-workflow/"),
+    # F11 reconciliation (2026-11-07), recorded WITHOUT re-freezing the rows.
+    # Re-read against the production contract (all five pages fetched
+    # 2026-11-07; each documents Version v3):
+    #   get-workflow-definition    GET  /workflows/{workflowId}/definition  v3
+    #   create-workflow            POST /workflows                          v3
+    #   update-workflow-definition PUT  /workflows/{workflowId}/definition  v3
+    #   update-workflow-status     PUT  /workflows/{workflowId}/status      v3
+    #   delete-workflow            DELETE /workflows/{workflowId}           v3
+    # All five now publish on the PRODUCTION marketplace and each documents
+    # Version v3; the freeze below still records staging-only v4 (level S,
+    # B-V4-S). The literals are left exactly as frozen on purpose: re-freezing
+    # a contract row is a ledger decision, not a build-lane edit, and six
+    # pinned contract tests plus evidence/W18 assert the frozen values. What
+    # this comment fixes is the claim a caller reads: these operations are not
+    # "staging-only" any more, they are production-documented at v3 and remain
+    # default-deny through the capability gate. Named blocker B-V4-S covers the
+    # re-freeze; the capability gate still admits nothing from this comment.
     _R("workflows.definition.read", "GET",
        "/workflows/{workflowId}/definition", "v4", "S", PUB, PIT_OR_OAUTH,
        "query.locationId", False, False, "B-V4-S",
@@ -956,6 +994,96 @@ for _row in _ROWS:
 
 OPERATIONS: OperationRegistry = OperationRegistry(_ROWS)
 
+# ---------------------------------------------------------------------------
+# Operation -> declared transport capability (W3 connection 7)
+#
+# This is a DERIVATION, not new evidence: every value below is read off the
+# frozen ``route_class`` of the row above. It answers exactly one question —
+# which transport the frozen contract declares for one operation — so a
+# dispatcher never has to guess, and never makes a blanket claim about a whole
+# tenant or a whole module.
+#
+#   public_direct      -> api     (public REST)
+#   official_mcp       -> mcp     (official MCP tool, no Version header)
+#   skill44_private    -> api     (internal rail, never the public adapter)
+#   skill06_authoring  -> browser (the authoring surface IS the browser; the
+#                                  docstrings of the S06 builder rows say so)
+#   retired            -> none    (deprecated; no route to declare)
+#   capability_gap     -> none    (NO route is established; ``unresolved`` is
+#                                  true and the browser fallback is unproven,
+#                                  never declared as a working route)
+#   excluded           -> none    (deliberately out of scope)
+#
+# Nothing here carries enablement — that stays the capability gate's, per
+# ``(operation_id, tenant)`` (freeze section 3.2 rule 5).
+# ---------------------------------------------------------------------------
+
+TRANSPORT_BY_ROUTE: dict[str, str | None] = {
+    PUB: "api",
+    MCP: "mcp",
+    S44P: "api",
+    S06: "browser",
+    RET: None,
+    GAP: None,
+    EXCLUDED: None,
+}
+
+#: Rows whose ONLY declared route is the Skill 6 managed browser.
+BROWSER_ONLY_ROUTES: frozenset[str] = frozenset({S06})
+
+#: Rows for which the freeze records NO usable route at all.
+UNRESOLVED_ROUTES: frozenset[str] = frozenset({GAP})
+
+
+def declared_transports(operation_id: str) -> tuple[str, ...]:
+    """The transports the frozen row declares for ``operation_id``.
+
+    Empty means the row declares no usable route (retired / excluded /
+    capability gap). An unknown operation raises ``ContractViolation`` exactly
+    like ``OperationRegistry.require`` — never a silent empty answer.
+    """
+
+    row = OPERATIONS.require(operation_id)
+    transport = TRANSPORT_BY_ROUTE.get(row.route_class)
+    return () if transport is None else (transport,)
+
+
+def browser_route_required(operation_id: str) -> bool:
+    """True when the managed browser is the row's ONLY declared route."""
+
+    return OPERATIONS.require(operation_id).route_class in BROWSER_ONLY_ROUTES
+
+
+def operation_routes_unresolved(operation_id: str) -> bool:
+    """True when the freeze records no usable route (an honest gap)."""
+
+    return OPERATIONS.require(operation_id).route_class in UNRESOLVED_ROUTES
+
+
+def capability_map() -> dict[str, dict[str, object]]:
+    """The operation -> capability mapping for every frozen row.
+
+    Per operation, never per tenant and never a module-wide claim. A caller
+    that needs a real capability answer for one tenant still consults the
+    capability gate; this map only says what the contract DECLARES.
+    """
+
+    mapping: dict[str, dict[str, object]] = {}
+    for row in _ROWS:
+        mapping[row.operation_id] = {
+            "operation": row.operation_id,
+            "routeClass": row.route_class,
+            "transports": list(declared_transports(row.operation_id)),
+            "browserRouteRequired": row.route_class in BROWSER_ONLY_ROUTES,
+            "unresolved": row.route_class in UNRESOLVED_ROUTES,
+            "write": row.write,
+            "approvalRequired": row.approval_required,
+            "tenantBinding": row.tenant_binding,
+            "version": row.version,
+        }
+    return mapping
+
+
 __all__ = [
     "OperationRow",
     "OperationRegistry",
@@ -964,4 +1092,11 @@ __all__ = [
     "SUPPORTED_VERSIONS",
     "MEDIA_FILE_TYPES",
     "UNKNOWN",
+    "TRANSPORT_BY_ROUTE",
+    "BROWSER_ONLY_ROUTES",
+    "UNRESOLVED_ROUTES",
+    "declared_transports",
+    "browser_route_required",
+    "operation_routes_unresolved",
+    "capability_map",
 ]

@@ -6,6 +6,10 @@ Black Friday timing Skill 83 owns, lists every planned unit (pages, email
 sequences, text sets, automations and the optional Conversation AI) and fails when
 a planned unit was not delivered. It never restates the schema, never invents a
 date and never invents a unit.
+
+``record()`` also carries the shared-semantics boundaries this unit owns (brand/asset,
+page installation, automation, publication, execution stage, resume) exactly as the
+plan states them; a boundary the plan does not state is ABSENT, never defaulted.
 """
 
 from __future__ import annotations
@@ -481,6 +485,55 @@ def bind_violations(plan: Any, launch: Mapping[str, Any]) -> List[str]:
     return out
 
 
+# The six shared-semantics boundaries Skill 83 carries on the shared launch plan (BFL-000). Each is
+# copied from the plan unchanged. A boundary the plan does not state stays ABSENT: absence is the one
+# encoding of "not recorded yet", so no lane can read a default as a fact.
+BOUNDARY_PLAN_KEY = {
+    "brand_asset": "asset_map",
+    "publication": "publication",
+    "execution_stage": "execution_stage",
+    "resume": "resume",
+}
+_PAGE_BOUNDARY_KEYS = ("sections", "native_checkout_family", "native_purchase_bindings",
+                       "installation", "execution_stage")
+_AUTOMATION_BOUNDARY_KEYS = ("trigger", "filters", "actions", "settings", "browser_work",
+                             "execution", "execution_stage")
+
+
+def shared_semantics(plan: Mapping[str, Any]) -> Dict[str, Any]:
+    """The shared-semantics boundaries this launch actually states, and nothing else.
+
+    brand/asset, page installation, automation, publication, execution stage and resume. Brand/asset,
+    publication, execution stage and resume are top-level documents copied unchanged; page
+    installation and automation are read per unit so the record names which page or automation each
+    belongs to. A unit that states none of them is omitted rather than filled with defaults.
+    """
+    if not isinstance(plan, Mapping):
+        return {}
+    out: Dict[str, Any] = {}
+    for boundary, key in BOUNDARY_PLAN_KEY.items():
+        value = plan.get(key)
+        if isinstance(value, Mapping) and value:
+            out[boundary] = dict(value)
+
+    installed = [
+        {"id": page.get("id"), **{k: page[k] for k in _PAGE_BOUNDARY_KEYS if k in page}}
+        for page in plan.get("pages") or []
+        if isinstance(page, Mapping) and any(k in page for k in _PAGE_BOUNDARY_KEYS)
+    ]
+    if installed:
+        out["page_installation"] = installed
+
+    automations = [
+        {"id": unit.get("id"), **{k: unit[k] for k in _AUTOMATION_BOUNDARY_KEYS if k in unit}}
+        for unit in plan.get("automations") or []
+        if isinstance(unit, Mapping) and any(k in unit for k in _AUTOMATION_BOUNDARY_KEYS)
+    ]
+    if automations:
+        out["automation"] = automations
+    return out
+
+
 def record(plan: Mapping[str, Any],
            delivered: Optional[Mapping[str, Any]] = None,
            intake: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
@@ -508,4 +561,5 @@ def record(plan: Mapping[str, Any],
             "mode": (plan.get("conversation_ai") or {}).get("mode"),
             "state": result["conversation_ai"],
         },
+        "shared_semantics": shared_semantics(plan),
     }

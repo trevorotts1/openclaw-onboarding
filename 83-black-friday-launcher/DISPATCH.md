@@ -66,6 +66,36 @@ python3 -m launcher_core.cli check --manifest PACKAGE/package-manifest.json --ro
    until the live commerce capture on an approved test location is done (CHK-19, still owed). The decided build
    target is the funnel order-form step. Until that capture lands, a checkout design is not an installed checkout.
 
+## Activation stages (local preparation, drafts, install, publication)
+
+The intake carries an optional `activation` block: `desired_state` is one of
+`local_prepared`, `draft_constructed`, `installed` or `published`. Absent means
+`local_prepared`, which is the unchanged local/test default — nothing is installed and
+nothing is published.
+
+- `installed` and `published` each need a recorded `authority` (`ref`, `scope`
+  `installation`/`publication`, and this launch's own `location_id`), and they are
+  refused on a `test_only` run. The same recorded approval is carried forward, never
+  asked for twice, and it can never authorize another location.
+- `dispatch` and `assemble` only CONSTRUCT. The package's achieved stage is decided by
+  evidence: no dispatch run is `local_prepared`; a bound dispatch is
+  `draft_constructed`. A higher stage is recorded only from an observed read-back
+  passed as `assemble --activation-readback`: the read route as `source`, the page id,
+  the https page URL, `observed_at`, and — for `published` — the live `page_type` and
+  `page_version`; for `installed` — the observed native install facts. A save click, a
+  draft response or a local "published" field is refused.
+- Activation is recorded separately from construction: `activation.json` carries the
+  desired and achieved stage, the authority, the read-back and the construction
+  receipts it belongs to. `package-manifest.json` and `receipt.json` carry that record
+  and its digest. A desired install/publication with no read-back stays pending and
+  says so; a local/draft package is never relabelled installed or live.
+- `check` RE-PROVES the stage (`launcher_core/check_rules/activation.py`): the sealed
+  `activation.json` must resolve and match its digest, agree with the manifest and the
+  receipt, and an `installed`/`published` stage must still be proved by the read-back —
+  bound to this package's pages and this launch's location — under the same recorded
+  authority. A stage receipt carries no unit receipts of its own, so it is never
+  counted as the package being complete.
+
 ## Build order and parallel lanes
 
 Every page is independent: the look they share travels in the image inputs file, so no page waits for another.
@@ -131,12 +161,27 @@ The design board and the final mockups are recorded as `awaiting_client_approval
 
 ## Graphics department hooks
 
-`launcher_core/graphics_hooks.py` can write the SOP-GIP-02 image QC request and the SOP-GIP-03 delivery record.
-`dispatch`, `assemble` and `check` do not call it today, so a launch run produces neither file unless a caller
-invokes the module directly (tracked as IMG-12). It never uploads or publishes; with no live hosted link it
-records the missing capability. Skill 71 carries
-the AF-G1..AF-G8 list as data, the independent reviewer model rule, the text read-back and logo accuracy
-checks, and the text-capable model and PNG rule (see `71-blackceo-signature-page/references/qc-contract.md`).
+`launcher_core/graphics_hooks.py` is wired into the real handoff. After `package.assemble` seals the
+package, `assemble` writes the SOP-GIP-02 request (`qc/image_qc_request.json`), then
+`qc/image_qc_report.json` from the Review Receipt v2 files Skill 71's `write_review.py` wrote (never a
+score typed into the report: each record resolves to a receipt whose own hash and `artifact_sha256` are
+checked), then the SOP-GIP-03 record (`delivery_record.json`). `check` re-runs the same review check.
+`--run-image-stages` runs Skill 71's real image-stage driver before assembly; it stops at the client's
+layout-proof approval and never spends without `--allow-paid`.
+
+Hosting is the one approved upload: `--host-media <approval_ref>` runs the existing
+`45-design-intelligence-library/scripts/graphics_ghl_push.py` on every QC-passed image, records its real
+result in `media_library.json`, and then puts those real URLs into the artifact records and page HTML
+(that page's hash, and the receipt, are re-sealed for that file only). With no approval nothing is
+uploaded, the record names the missing hosting capability, and local references stay as they are.
+Nothing here publishes. Skill 71 carries the AF-G1..AF-G8 list as data, the independent reviewer model
+rule, the text read-back and logo accuracy checks, and the text-capable model and PNG rule (see
+`71-blackceo-signature-page/references/qc-contract.md`).
+
+The F09 brand path is `python3 -m launcher_core.cli brand`: the client's logo answer becomes a recorded
+logo or wordmark in the one brand file every page reads, and "create a new logo" writes a brief and runs
+the existing image capability only with the paid approval and a model id from the existing registry. A
+missing file, model or approval is named; no mark is invented.
 
 ## Tracked items (not built here)
 
@@ -146,7 +191,7 @@ The package ends at approved local files. Each item below is tracked, not forgot
 | --- | --- |
 | Skill 44, 50 and 06 install and build steps for the launch automations | SKILL.md "Launch mode (Skill 49/83)" routes the agent; S44-25 |
 | Native order form, bump and one-click steps installed by Skill 06 | S06-02, CHK-19 |
-| Live link checks and a hosted link for every image | IMG-12 (SOP-GIP-03 hosting is its own approval) |
+| Live link checks and a hosted link for every image | IMG-12 (SOP-GIP-03 hosting is its own approval; `assemble --host-media <approval_ref>` runs it) |
 | SOP-DIU-602, 607 and 610 wiring | follow-up, no defect id yet |
 | SOP-07 and Skill 06 registry registration of Skill 83 | follow-up, no defect id yet |
 | Command Center launch view | CON-21, CON-22 |

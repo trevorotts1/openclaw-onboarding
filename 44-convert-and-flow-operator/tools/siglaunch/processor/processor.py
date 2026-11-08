@@ -14,6 +14,9 @@ in-memory stand-ins replaced by the S44-05 durable store:
   outcome is unknown parks the action instead of completing it;
 - fulfillment is its own claimed action per granted line, created from
   the verified event — it never depends on a thank-you page visit (A20);
+  pending_fulfillments() is the worker's read-only queue for it. A line
+  whose grant is parked/unknown is withheld from that queue instead of
+  being delivered, and the unknown state is reported as unknown;
 - the verified-purchase tag application is a claimed action executed
   through the injected applier (the engine-side seam of DESIGN-S44-06
   section 1); with no applier configured the action stays claimed —
@@ -158,11 +161,23 @@ def validate_event(event: dict) -> dict:
     return event
 
 
+def purchase_identity(event: dict, line: dict) -> tuple:
+    """The native identity of one purchased line: its transaction and line.
+
+    Components: tenant_id, the selected native flow's transaction ref, and
+    the native purchased-line ref. The order ref stands in for the
+    transaction ONLY when the event carries no transaction ref, and even
+    then the identity stays line-scoped — the line ref and the action type
+    are always part of every derived key, so a bare order id is never an
+    identity and successive purchases of one order never collapse.
+    """
+    txn = event.get("native_transaction_ref") or event["native_order_ref"]
+    return (event["tenant_id"], txn, line["native_line_ref"])
+
+
 def _action_key(event: dict, line: dict, action_type: str,
                 version: str) -> tuple:
-    txn = event.get("native_transaction_ref") or event["native_order_ref"]
-    return (event["tenant_id"], txn, line["native_line_ref"],
-            action_type, version)
+    return (*purchase_identity(event, line), action_type, version)
 
 
 def _right_key(event: dict, line: dict, action_type: str,
@@ -170,9 +185,7 @@ def _right_key(event: dict, line: dict, action_type: str,
     """The durable per-entitlement right key. Entitlement identity is
     part of the key, so a line carrying several entitlements records one
     claim per entitlement instead of collapsing onto the line's first."""
-    txn = event.get("native_transaction_ref") or event["native_order_ref"]
-    return (event["tenant_id"], txn, line["native_line_ref"],
-            action_type, entitlement)
+    return (*purchase_identity(event, line), action_type, entitlement)
 
 
 def effect_resource_for_tag(txn_ref: str) -> str:
@@ -334,6 +347,7 @@ class DurableProcessor:
         reconciled = 0
         pending = 0
         unresolved_lines = set()
+        withheld_fulfillment = []
         for line in event["line_items"]:
             line_ref = line["native_line_ref"]
             expected = list(line["entitlement_ids"])
@@ -375,11 +389,17 @@ class DurableProcessor:
                 if current is not None and current["state"] == "claimed":
                     self.store.mark_action(
                         gkey, "done", evidence_ref=event["evidence_ref"])
-            fkey = _action_key(event, line, "initiate_fulfillment",
-                               self.version)
-            if self.store.claim_action(
-                    fkey, {"slot": line["slot"]}) is None:
-                created += 1  # stays 'claimed' for the fulfillment worker
+            if line_ref in unresolved_lines:
+                # A parked (unknown) grant must never become a delivery:
+                # withhold the fulfillment action and report the line as
+                # unknown instead of normalising it to granted or denied.
+                withheld_fulfillment.append(line_ref)
+            else:
+                fkey = _action_key(event, line, "initiate_fulfillment",
+                                   self.version)
+                if self.store.claim_action(
+                        fkey, {"slot": line["slot"]}) is None:
+                    created += 1  # stays 'claimed' for the fulfillment worker
             if contact_ref:
                 self.store.add_buyer(tenant, event["launch_id"],
                                      contact_ref, line_ref)
@@ -413,7 +433,64 @@ class DurableProcessor:
                                                     contact_ref)
         return {"result": "processed", "actions_created": created,
                 "rights_reconciled": reconciled, "pending_rights": pending,
+                "fulfillment_withheld": sorted(withheld_fulfillment),
                 "tag_state": tag_state}
+
+    def pending_fulfillments(self, tenant_id: str) -> dict:
+        """The fulfillment worker's read-only queue for one tenant.
+
+        Every claimed/unknown `initiate_fulfillment` action, rebuilt from
+        the stored verified events by the same identity its key uses
+        (tenant + transaction-or-order + purchased line + action +
+        version), so a main purchase and a later upsell each appear once
+        and a redelivery of one event adds nothing. A line whose grant is
+        not recorded active is withheld: its entry carries the observed
+        grant states, including None for a right never recorded, so an
+        unknown grant is handed back as unknown — never converted into a
+        delivery or a convenient boolean.
+
+        Returns {"pending": [...], "withheld": [...]}; each entry is
+        {"key", "state", "slot", "native_order_ref",
+        "native_transaction_ref", "grant_states"}. Read-only.
+        """
+        pending, withheld, seen = [], [], set()
+        for event in self.store.stored_events(tenant_id):
+            txn = (event.get("native_transaction_ref")
+                   or event["native_order_ref"])
+            for line in event.get("line_items") or []:
+                line_ref = line["native_line_ref"]
+                key = (tenant_id, txn, line_ref,
+                       "initiate_fulfillment", self.version)
+                if key in seen:
+                    continue
+                record = self.store.get_action(key)
+                if record is None or record["state"] not in ("claimed",
+                                                             "unknown"):
+                    continue
+                seen.add(key)
+                grant_states = {
+                    ent: self.store.entitlement_state(tenant_id, line_ref,
+                                                      ent)
+                    for ent in line.get("entitlement_ids") or []}
+                entry = {
+                    "key": key,
+                    "state": record["state"],
+                    "slot": line["slot"],
+                    "native_order_ref": event["native_order_ref"],
+                    "native_transaction_ref": event.get(
+                        "native_transaction_ref"),
+                    "grant_states": grant_states,
+                }
+                if grant_states and all(
+                        state == "active" for state in grant_states.values()):
+                    pending.append(entry)
+                else:
+                    withheld.append(entry)
+        def _order(entry):
+            return (entry["key"][1], entry["key"][2])
+
+        return {"pending": sorted(pending, key=_order),
+                "withheld": sorted(withheld, key=_order)}
 
     def _apply_refund(self, event: dict, tenant: str, txn: str) -> dict:
         """Line-scoped revocation. Only the entitlements named on the

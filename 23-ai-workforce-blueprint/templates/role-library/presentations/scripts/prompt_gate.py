@@ -966,7 +966,7 @@ def _self_test() -> int:
 
     # Rule 12 length through the shared enforcer (GPT Image 2.5 max 20,000): 79 percent rejected naming the
     # chars to add, 95 percent clears the length gate, 101 percent rejected naming the chars to cut.
-    for n, want in ((15800, "ADD at least 200"), (19000, None), (20200, "CUT exactly")):
+    for n, want in ((15800, "ADD at least 3200"), (19000, None), (20200, "CUT exactly")):
         lp = length_problems("x" * n)
         if want is None and lp:
             failures.append(f"{n}-char prompt must clear the rule 12 length gate, got {lp}")

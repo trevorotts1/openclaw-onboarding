@@ -73,12 +73,21 @@ verified facts onto the contract's field names, and calls the real
 `79-signature-order-form/scripts/validate_checkout.py:validate_request` as a
 live binding probe. `routes/adapters.py:NATIVE_SURFACES["checkout"]` carries the
 contract, the validator and `dispatch_adapter: False`. `adapter_for("checkout")`
-still refuses.
+still refuses. The per-offer realisation lives in
+`launcher_core/checkout_instances.py`: `build()` emits ONE S79
+`combined_single_offer` request per (main offer, price choice), and the real S78
+`emit_binding_plan` maps one native target to each instance.
 
-**Ceiling.** `folded_levels` has three main offers and no selection page; the
-S79 contract's two modes (`combined_single_offer`, `post_selection`) express
-neither, so that launch shape records `checkout_mode_state: contract_gap`
-instead of an invented mode. Fields a launch does not supply stay in `unknown`.
+**Ceiling.** `multiple_options` and `folded_levels` share one realisation,
+`per_offer_instances`: each main price choice gets its own native
+`combined_single_offer` order form with its own page id, its own bump
+applicability and its own S79 validator verdict, so `checkout_mode_state` is
+`resolved` rather than a contract gap. Only the page in front of the checkout
+differs (the selection page or the folded signature page), and `selection_ref`
+is always null. Missing native ids, terms, consent, capability/fulfillment
+references or bump component facts are recorded as a rejected instance
+(`AF-LAUNCH-CHECKOUT-REJECTED`), never defaulted. Fields a launch does not
+supply stay in `unknown`.
 
 ### 4. Verified offer facts only
 
@@ -110,8 +119,10 @@ selection page.
 `single_simple`, `multiple_options` and `free_entry` are unchanged, and the
 Elevation shape still compiles exactly as it did.
 
-**Ceiling.** The mode does not decide how the order form presents three levels;
-that is recorded in the checkout mapping as an open contract gap, not guessed.
+**Ceiling.** The mode does not decide the page copy in front of the checkout.
+The order form itself is decided: one native `combined_single_offer` instance
+per main price choice (§3), so each of the three levels reaches its own order
+form with no selection page.
 
 ---
 

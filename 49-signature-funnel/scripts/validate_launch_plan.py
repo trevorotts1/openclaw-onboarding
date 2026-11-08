@@ -16,6 +16,14 @@ the DOMAIN law a shape cannot express:
   * journey consistency: single_simple has exactly one main offer;
     multiple_options has at least two; folded_levels has at least two (levels
     folded into the signature page, no selection page); free_entry has at least one;
+  * free entry discipline (BFL-001): a free_entry record names its free offer in
+    `free_entry`, that offer's every price is zero, the opt-in path is stated and
+    `delivery_ref` is present (null while no real reference exists yet) — the free
+    item is given away, never routed through paid checkout — and no other journey
+    mode carries `free_entry`;
+  * production state (BFL-001): an offer's `production_state`, when present, is one
+    of the unit receipt's ladder states or `failed`; absence or null records
+    nothing, and no lane infers production from an offer merely being present;
   * U1 and D1 are mutually exclusive — when both are defined, each must list
     the other in `excludes`;
   * requires/excludes reference real offers, never self, and requires is
@@ -85,6 +93,11 @@ SOURCE_KINDS = ("owner", "existing_verified_catalog", "recommendation", "test_fi
 PRICE_STATUSES = ("provided", "recommended_unapproved", "approved", "unknown")
 BILLING_TYPES = ("one_time", "recurring", "installment", "trial")
 JOURNEY_MODES = ("single_simple", "multiple_options", "free_entry", "folded_levels")
+# The unit receipt's own ladder (83-black-friday-launcher/receipt.schema.json
+# definitions.unit_receipt.status) plus "failed" — one vocabulary, never a second.
+PRODUCTION_STATES = ("authored", "draft_delivered", "locally_verified",
+                     "installed_test_verified", "ready_for_activation",
+                     "live_verified", "failed")
 LAUNCH_STATUSES = ("collecting", "awaiting_plan_approval", "approved", "building",
                    "blocked")
 _CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
@@ -220,6 +233,11 @@ def validate_launch(launch: Any) -> List[str]:
             fail(f"offer {oid!r} test_only={o['test_only']} contradicts the "
                  f"record's test_only={launch['test_only']} — a live plan never "
                  "mixes fixture offers in")
+        state = o.get("production_state")
+        if state is not None and state not in PRODUCTION_STATES:
+            fail(f"offer {oid!r} production_state {state!r} is not a receipt "
+                 "state (" + " / ".join(PRODUCTION_STATES) + "); absence or null "
+                 "means nothing is recorded, and a lane never infers production")
         # Prices.
         prices = o.get("prices")
         if not isinstance(prices, list) or not prices:
@@ -301,6 +319,43 @@ def validate_launch(launch: Any) -> List[str]:
         fail(f"folded_levels requires at least two main offers (the levels "
              f"folded into the signature page, no selection page), "
              f"found {len(mains)}")
+
+    # Free entry (BFL-001). The free item is a real offer in this record, it is
+    # actually free, and it is given away by its delivery reference instead of
+    # being routed through paid checkout. A free_entry launch carries the
+    # object; no other mode may smuggle one in.
+    free = launch.get("free_entry")
+    if launch["journey_mode"] == "free_entry":
+        if not isinstance(free, dict):
+            fail("journey_mode free_entry requires a free_entry object naming the "
+                 "free product, its opt-in path and its delivery reference")
+        else:
+            fid = free.get("offer_id")
+            if fid not in by_id:
+                fail(f"free_entry.offer_id {fid!r} is not an offer in this record")
+            else:
+                amounts = [p.get("amount_minor") for p in by_id[fid].get("prices") or []]
+                if not amounts or any(a != 0 for a in amounts):
+                    fail(f"free_entry names offer {fid!r} but its price is not zero "
+                         "— a free entry is given away and is never sold through "
+                         "paid checkout")
+            if not isinstance(free.get("opt_in_path"), str) or not free["opt_in_path"].strip():
+                fail("free_entry.opt_in_path must be the non-empty opt-in the "
+                     "client actually runs")
+            if "delivery_ref" not in free:
+                fail("free_entry.delivery_ref is required (null when no real "
+                     "delivery reference exists yet; a missing key is not a "
+                     "recorded gap)")
+            if isinstance(free.get("delivery_ref"), str) and not free["delivery_ref"].strip():
+                fail("free_entry.delivery_ref, when a string, must be the real "
+                     "delivery reference; null is the recorded gap")
+            if "source_ref" in free and (not isinstance(free["source_ref"], str)
+                                         or not free["source_ref"].strip()):
+                fail("free_entry.source_ref, when present, must resolve back to the "
+                     "answers entry the free item came from")
+    elif free is not None:
+        fail(f"free_entry is present but journey_mode is {launch['journey_mode']!r} "
+             "— only a free_entry launch carries a free item")
 
     # U1/D1 mutual exclusion must be DECLARED when both exist.
     for a, b in (("upsell_1", "downsell_1"), ("downsell_1", "upsell_1")):

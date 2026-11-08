@@ -55,12 +55,19 @@ and dispatch are the proven live legs.
    Unknowns stay unknown; a standard-company placeholder is never
    presented as a confirmed fact.
 5. The supported front door resolves the calling agent's own configured
-   route. Run it from the calling agent's own workspace; never ask the
-   client to choose from the council runtime's routes, never present those
-   routes as the calling agent's models, and never invent or force a
-   provider. If the front door refuses with ROUTE_CHOICE_REQUIRED,
-   ROUTE_NOT_CONFIGURED, ROUTE_NOT_COMPOSABLE, or ROUTE_MODEL_NOT_OFFERED,
-   report that typed refusal and its recovery exactly.
+   route. Run it from the calling agent's own workspace. If the route
+   cannot be resolved — ROUTE_CHOICE_REQUIRED, ROUTE_NOT_CONFIGURED,
+   ROUTE_NOT_COMPOSABLE, ROUTE_MODEL_NOT_OFFERED, or OLLAMA_PLAN_REQUIRED —
+   **ask the client**, in one message, in this order, and never invent or
+   force a provider:
+   a. "Which Ollama plan do you pay for: the $20/month plan or the
+      $100+/month plan?"
+   b. If they have no Ollama plan, **recommend OpenRouter** and offer it as
+      the default, because its advisors run in parallel with no plan cap,
+      so a sitting completes far sooner.
+   Then convene on the answer (`--ollama-plan 20|100`, or their OpenRouter
+   route and model). Ask once; remember the answer for later sittings.
+   Never present the runtime's routes as the calling agent's own models.
 6. For a question that depends on current facts, research the web first
    with your own tools and pass the findings with `--fresh-facts FILE`, a
    JSON array of `{claim, url, title, retrieved_at}`. Keep "From the
@@ -85,17 +92,25 @@ and dispatch are the proven live legs.
    quick four, consult one). On the client's own Ollama
    pass `--ollama-plan 20` or `--ollama-plan 100`, and
    `--fallback-model ID` to name the OpenRouter model used when Ollama
-   fails. Convening is
+   fails. When the client has no Ollama plan, convene on their OpenRouter
+   route instead — `--route openrouter-configured` — because uncapped
+   parallelism finishes the sitting sooner. OpenRouter carries a standing
+   default so no model name is needed: DeepSeek Flash, preferring the pinned
+   1017 variant, otherwise the newest DeepSeek Flash the provider offers. Pass
+   `--model <their own configured OpenRouter model, namespace and all>` to
+   choose a different one; an explicit model always wins. Anyone who wants
+   OpenRouter gets OpenRouter. Convening is
    the approval: no grant, no approval prompt. Report the session id, the
    exact model
    label, whether it was the client's choice or the harness default, and
    the links the command prints. Send the client the `chamber_url`
-   exactly as printed, never a 127.0.0.1 link. If the output has no
-   `chamber_url`, do not invent, guess, or build a link: tell the client
-   the Council is running, the result will be shared here, and their
-   private Council link is still being set up (it is set up automatically:
-   ask the client for nothing, and never mention scripts, servers, fleet or
-   Cloudflare). Use `blackceo-council`, or
+   exactly as printed, never a 127.0.0.1 link. A sitting that did not open
+   must never be answered in chat: do not take up the client's question
+   yourself, and never describe a Council as running when no session
+   exists. If the output has no `chamber_url`, say plainly that the Council
+   did not open, give the typed code and its recovery in one line, and fix
+   that cause — do not invent, guess, or build a link (never mention
+   scripts, servers, fleet or Cloudflare to the client). Use `blackceo-council`, or
    `$OPENCLAW_ROOT/council-runtime/bin/blackceo-council` when it is not on
    PATH. If the box cannot convene, run `bash scripts/verify-council-box.sh`
    and report its `COUNCIL_BOX:` line and the matching fix from

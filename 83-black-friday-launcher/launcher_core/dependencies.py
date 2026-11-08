@@ -8,10 +8,18 @@ missing, so the flag is evidence-derived, never hard-coded.
 
 A missing entry is a finding, not a crash; `check()` exits 0 whenever the
 manifest itself is readable, so the report can be run at any time.
+
+`dependencies.json` is the ONLY executable source of truth for what the Launcher
+requires: `registration.json` and `skill.json` carry a pointer to it (plus a
+digest of the requirement set), never their own list. `metadata_spine()` checks
+that pointer and reports a metadata/manifest disagreement as a finding in the
+report, never as a crash and never as a blocker: those two files record nothing
+that runs.
 """
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import re
@@ -26,6 +34,11 @@ from .constants import (REPO_ROOT, SKILL_NAME, SKILL_ROOT, SkillResolutionError,
                         resolve_ref, resolve_skill_dir, skill_slug)
 
 MANIFEST = Path(__file__).resolve().parent / "dependencies.json"
+MANIFEST_REF = "launcher_core/dependencies.json"
+# The two human-readable metadata records. They point at MANIFEST and are never
+# a second list of requirements; metadata_spine() is what proves they cannot drift.
+METADATA_SPINES = ("registration.json", "skill.json")
+_SPINE_KINDS = ("skill_tree", "shared_utils")
 
 _NUMERIC_DIR = re.compile(r"^(\d+)-(.+)$")
 _FRONTMATTER_NAME = re.compile(r"^name:[ \t]*(.+?)[ \t]*$")
@@ -100,6 +113,113 @@ def load_manifest() -> Dict[str, Any]:
     if not isinstance(manifest, dict) or not isinstance(manifest.get("entries"), list):
         raise DependencyError("dependency manifest carries no entries array")
     return manifest
+
+
+def requirement_set(manifest: Dict[str, Any]) -> List[str]:
+    """One canonical line per entry: what a metadata spine's stamp is computed over."""
+    return sorted(
+        f"{e.get('id')}|{e.get('kind')}|{e.get('ref')}|{e.get('min_version', '')}|"
+        f"{int(bool(e.get('required')))}"
+        for e in manifest["entries"])
+
+
+def requirements_digest(manifest: Dict[str, Any]) -> str:
+    """sha256 over requirement_set: editing a `why` or the note does not move it.
+
+    A change to any id, kind, ref, minimum version or required flag does, which is
+    exactly the change a pointer stamp must catch.
+    """
+    return hashlib.sha256("\n".join(requirement_set(manifest)).encode("utf-8")).hexdigest()
+
+
+def _declared_refs(manifest: Dict[str, Any]) -> set:
+    """The required skill trees and shared modules, by the name a spine would spell."""
+    return {skill_slug(e["ref"]) if e["kind"] == "skill_tree" else e["ref"]
+            for e in manifest["entries"]
+            if e.get("kind") in _SPINE_KINDS and e.get("required")}
+
+
+def _legacy_named(spine: Any) -> set:
+    """The names in a free-text depends_on, normalised the way the manifest spells them."""
+    names = spine.keys() if isinstance(spine, dict) else (spine or ())
+    out = set()
+    for name in names:
+        text = str(name)
+        out.add(text if text.startswith("shared-utils/") else skill_slug(text.split("/", 1)[0]))
+    return out
+
+
+def _pointer_findings(name: str, spine: Dict[str, Any], manifest: Dict[str, Any]) -> List[str]:
+    """A pointer is checked for a stale target, digest, or count. Wording is never checked."""
+    findings: List[str] = []
+    target = str(spine.get("authoritative_manifest") or "").lstrip("./")
+    if not target.endswith(MANIFEST_REF):
+        findings.append(f"{name}: depends_on points at {target!r}, not {MANIFEST_REF!r}; "
+                        "the manifest is the only executable source of truth")
+    want = requirements_digest(manifest)
+    have = str(spine.get("requirements_digest") or "")
+    if have != want:
+        findings.append(f"{name}: requirements_digest is {have or 'absent'}, but {MANIFEST_REF} "
+                        f"now hashes to {want}; re-stamp the pointer")
+    for key, actual in (("manifest_entry_count", len(manifest["entries"])),
+                        ("required_entry_count",
+                         sum(1 for e in manifest["entries"] if e.get("required")))):
+        if key in spine and spine[key] != actual:
+            findings.append(f"{name}: {key} is {spine[key]!r}, but the manifest has {actual}")
+    return findings
+
+
+def metadata_spine(manifest: Dict[str, Any], base: Optional[Path] = None) -> Dict[str, Any]:
+    """Check registration.json and skill.json against the executable manifest.
+
+    A pointer is checked for a stale target, digest or count. A legacy free-text
+    list is compared name by name and reported as extra or omitted. A list that
+    still happens to agree is still reported, because a second list is the drift
+    this check exists to prevent. Nothing here raises and nothing blocks a build.
+    """
+    findings: List[str] = []
+    skill_dir: Optional[Path] = SKILL_ROOT
+    if base is not None:
+        try:
+            skill_dir = resolve_skill_dir(SKILL_NAME, base)
+        except SkillResolutionError as exc:
+            # Never fall back to this checkout's own tree: a caller asking about another
+            # root would then be reading the wrong files and still see no findings.
+            findings.append(f"{SKILL_NAME}: {exc}; neither metadata spine could be checked "
+                            f"against {MANIFEST_REF}")
+            skill_dir = None
+    for name in (METADATA_SPINES if skill_dir is not None else ()):
+        path = skill_dir / name
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            findings.append(f"{name}: unreadable ({type(exc).__name__}: {exc}); it cannot be "
+                            f"confirmed against {MANIFEST_REF}")
+            continue
+        spine = record.get("depends_on") if isinstance(record, dict) else None
+        if isinstance(spine, dict) and "authoritative_manifest" in spine:
+            findings.extend(_pointer_findings(name, spine, manifest))
+        elif isinstance(spine, (dict, list)):
+            named, declared = _legacy_named(spine), _declared_refs(manifest)
+            extra, absent = sorted(named - declared), sorted(declared - named)
+            if extra:
+                findings.append(f"{name}: depends_on names {extra}, which {MANIFEST_REF} does not "
+                                "require; the list contradicts the manifest")
+            if absent:
+                findings.append(f"{name}: depends_on omits {absent}, which {MANIFEST_REF} requires")
+            if not extra and not absent:
+                findings.append(f"{name}: depends_on still repeats the requirement list; replace it "
+                                f"with the pointer to {MANIFEST_REF} so it cannot drift")
+        else:
+            findings.append(f"{name}: has no depends_on pointer to {MANIFEST_REF}")
+    return {
+        "authoritative_manifest": MANIFEST_REF,
+        "manifest_schema": manifest.get("schema"),
+        "requirements_digest": requirements_digest(manifest),
+        "entry_count": len(manifest["entries"]),
+        "required_entry_count": sum(1 for e in manifest["entries"] if e.get("required")),
+        "findings": findings,
+    }
 
 
 def _resolve(ref: str, root: Path, kind: str = "") -> tuple[Optional[Path], Optional[str]]:
@@ -282,6 +402,9 @@ def check(root: Optional[Path] = None) -> Dict[str, Any]:
         "enabled_in_999": _registered_enabled(base) and not blockers,
         "would_enable": not blockers,
         "seen_from": str(base),
+        # The metadata spines carry no requirements of their own; a mismatch here is a
+        # finding in this report, never a blocker and never an exception.
+        "metadata": metadata_spine(manifest, base),
         "entries": entries,
         "present": present,
         "missing": missing,

@@ -293,7 +293,7 @@ test('W77S-D: an Ollama route with no known plan is the typed OLLAMA_PLAN_REQUIR
       assert.equal(error.http_status, 409);
       assert.equal(
         error.recovery,
-        'Ask the client: are you on the Ollama $20 a month plan or the $100 a month plan? Then convene again with --ollama-plan 20 or --ollama-plan 100.',
+        'Ask the client: are you on the Ollama $20 a month plan or the $100 a month plan? If they have no Ollama plan, recommend OpenRouter instead (uncapped parallelism). Then convene again with --ollama-plan 20 or --ollama-plan 100, or on their OpenRouter route.',
       );
       return true;
     },
