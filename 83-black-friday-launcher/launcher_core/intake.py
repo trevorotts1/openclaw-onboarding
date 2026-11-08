@@ -65,7 +65,13 @@ PERMITTED_DEFAULTS = {
 # proposal_acceptance names the approval record that accepted any AI proposal in the answers file
 # (the same transition Skill 49's approve() runs); without it the proposals stay proposals.
 OPTIONAL_FIELDS = ("image_plan", "client_choices", "promotion", "activation",
-                   "proposal_acceptance")
+                   "proposal_acceptance", "linked_destinations")
+
+# F22: every launch-dependent destination is declared with its ownership kind. The
+# keys are closed so an undeclared fact is refused, never carried silently.
+LINKED_FIELDS = ("key", "kind", "url", "page_key", "adapter", "requirements",
+                 "evidence", "purchase_route", "note")
+LINKED_ADAPTER_FIELDS = ("role", "document_ref")
 
 # F06: the four stages are separate facts. Local preparation is the default and is
 # always allowed; installation and publication each need recorded authority and are
@@ -587,6 +593,85 @@ def _bind_provenance(raw_offers: List[Any], offers: List[Dict[str, Any]], answer
         offer["canonical"] = canon
 
 
+def _validate_linked_destinations(raw: Any) -> List[Dict[str, Any]]:
+    """F22: the declared delivery/access destinations, shape-checked and fail-closed.
+
+    Completeness (a new page's five requirements, an external destination's six evidence
+    facts) is enforced by ``linked_delivery.resolve`` with plain-language blockers; here
+    the SHAPE is closed, so an unknown kind/key can never be carried as a fact.
+    """
+    if raw is None:
+        return []
+    from .linked_delivery import EXTERNAL_EVIDENCE, NEW_BUILD_REQUIREMENTS, RESOURCE_KINDS
+    if not isinstance(raw, list):
+        _fail("AF-LAUNCH-INTAKE-LINKED", "linked_destinations", "must be a list of destinations")
+    out: List[Dict[str, Any]] = []
+    seen = set()
+    for i, item in enumerate(raw):
+        field = f"linked_destinations[{i}]"
+        if not isinstance(item, dict):
+            _fail("AF-LAUNCH-INTAKE-LINKED", field, "must be an object")
+        extra = set(item) - set(LINKED_FIELDS)
+        if extra:
+            _fail("AF-LAUNCH-INTAKE-UNKNOWN", field, f"undeclared field(s) {sorted(extra)!r}")
+        key = item.get("key")
+        if not _nonempty_str(key):
+            _fail("AF-LAUNCH-INTAKE-LINKED", f"{field}.key", "must be a stable non-empty string")
+        if key in seen:
+            _fail("AF-LAUNCH-INTAKE-LINKED", f"{field}.key", f"duplicate destination key {key!r}")
+        seen.add(key)
+        kind = item.get("kind")
+        if kind not in RESOURCE_KINDS:
+            _fail("AF-LAUNCH-INTAKE-LINKED", f"{field}.kind", f"must be one of {list(RESOURCE_KINDS)}")
+        if not isinstance(item.get("purchase_route", False), bool):
+            _fail("AF-LAUNCH-INTAKE-LINKED", f"{field}.purchase_route", "must be true or false")
+        if "page_key" in item and not _nonempty_str(item["page_key"]):
+            _fail("AF-LAUNCH-INTAKE-LINKED", f"{field}.page_key", "must be a non-empty string")
+        adapter = item.get("adapter")
+        if adapter is not None:
+            if not isinstance(adapter, dict) or set(adapter) != set(LINKED_ADAPTER_FIELDS):
+                _fail("AF-LAUNCH-INTAKE-LINKED", f"{field}.adapter",
+                      f"must be an object with exactly {list(LINKED_ADAPTER_FIELDS)}")
+            for name in LINKED_ADAPTER_FIELDS:
+                if not _nonempty_str(adapter[name]):
+                    _fail("AF-LAUNCH-INTAKE-LINKED", f"{field}.adapter.{name}",
+                          "must be a non-empty string")
+        requirements = item.get("requirements")
+        if requirements is not None:
+            if not isinstance(requirements, dict):
+                _fail("AF-LAUNCH-INTAKE-LINKED", f"{field}.requirements", "must be an object")
+            extra = set(requirements) - set(NEW_BUILD_REQUIREMENTS)
+            if extra:
+                _fail("AF-LAUNCH-INTAKE-UNKNOWN", f"{field}.requirements",
+                      f"undeclared requirement(s) {sorted(extra)!r}")
+            for name, value in requirements.items():
+                if not _nonempty_str(value):
+                    _fail("AF-LAUNCH-INTAKE-LINKED", f"{field}.requirements.{name}",
+                          "must be a non-empty evidence reference")
+        evidence = item.get("evidence")
+        if evidence is not None:
+            if not isinstance(evidence, dict):
+                _fail("AF-LAUNCH-INTAKE-LINKED", f"{field}.evidence", "must be an object")
+            extra = set(evidence) - set(EXTERNAL_EVIDENCE)
+            if extra:
+                _fail("AF-LAUNCH-INTAKE-UNKNOWN", f"{field}.evidence",
+                      f"undeclared evidence(s) {sorted(extra)!r}")
+            for name, value in evidence.items():
+                if not _nonempty_str(value):
+                    _fail("AF-LAUNCH-INTAKE-LINKED", f"{field}.evidence.{name}",
+                          "must be a non-empty reference")
+        if kind in ("existing_client_owned", "third_party"):
+            url = item.get("url")
+            parts = urlsplit(url) if _nonempty_str(url) else None
+            if (parts is None or parts.scheme != "https" or not parts.hostname
+                    or parts.username or parts.password or any(c.isspace() for c in url.strip())):
+                _fail("AF-LAUNCH-INTAKE-LINKED", f"{field}.url",
+                      "an existing or third-party destination must be an https address "
+                      "(no credentials, no spaces)")
+        out.append(dict(item))
+    return out
+
+
 def validate(payload: Any) -> Dict[str, Any]:
     """Return a normalized launch intake or raise IntakeError. Fail-closed.
 
@@ -753,6 +838,7 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
               f"client_choices must be a list drawn from {sorted(SCOPE_WAIVERS)}; "
               "it records what the CLIENT chose to leave out of the launch")
     promotion = _validate_promotion(payload["promotion"]) if payload.get("promotion") is not None else None
+    linked_destinations = _validate_linked_destinations(payload.get("linked_destinations"))
     activation = _validate_activation(
         payload.get("activation"), location_id=payload["location_id"].strip(),
         test_only=payload.get("test_only", True) is not False)
@@ -797,6 +883,9 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     except image_plan.ImagePlanError as exc:
         raise IntakeError(exc.code, exc.field, exc.detail) from exc
     normalized["client_choices"] = list(choices)
+    normalized["linked_destinations"] = linked_destinations
+    if "linked_destinations" in payload:
+        provenance["linked_destinations"] = "supplied"
     if promotion is not None:
         normalized["promotion"] = promotion
     normalized["provenance"] = provenance
