@@ -43,6 +43,8 @@ def compile_recipe(operation, data):
         add('form_css',radius=data.get('radius',12))
     elif operation=='forms.style':
         add('form_css',radius=data.get('radius',12))
+    elif operation=='forms.settings':
+        add('form_settings',settings=data['settings'])
     elif operation in ('surveys.create','quizzes.create'):
         add('assessment',kind='survey' if operation=='surveys.create' else 'quiz',name=data['name'],allow_creation=data.get('allow_creation',False),standard_fields=data.get('standard_fields',[]))
         if operation=='quizzes.create' and not data.get('options') and not data.get('fixture'):

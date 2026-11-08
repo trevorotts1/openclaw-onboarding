@@ -88,7 +88,7 @@ def validate_job(job, base):
     if not isinstance(steps,list) or not steps:
         raise Stop("No executable steps")
     keys = set()
-    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "form", "form_css", "community", "assessment", "meeting", "options"}
+    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "form", "form_css", "form_settings", "community", "assessment", "meeting", "options"}
     prepared = json.loads(json.dumps(job))
     for s in prepared["steps"]:
         if not isinstance(s,dict):
@@ -161,6 +161,12 @@ def validate_job(job, base):
         if s["action"] == "form_css":
             if type(s.get("radius", 12)) is not int or not 0 <= s.get("radius",12) <= 32:
                 raise Stop("Form corner radius must be 0–32 px")
+        if s['action'] == 'form_settings':
+            settings = s.get('settings')
+            if not isinstance(settings, dict) or not settings:
+                raise Stop('Supply explicit form settings')
+            if any(key not in FORM_SETTINGS or type(value) is not bool for key, value in settings.items()):
+                raise Stop('Unknown setting or non-boolean setting value')
         if s["action"] == "meeting":
             if not isinstance(s.get('name'),str) or not s['name'].strip() or not isinstance(s.get('slug'),str) or not re.fullmatch(r"[a-z0-9-]+",s.get("slug", "")):
                 raise Stop("Room name and slug are required")
@@ -631,6 +637,68 @@ def assessment(page, step):
     return {'status':'ASSESSMENT_REUSED' if reused else 'ASSESSMENT_SAVE_SUBMITTED','kind':kind,'editor_url':page.url,'independent_readback':'REQUIRED','scoring_and_branches':'Use captured options recipe; no submission was made'}
 
 
+FORM_SETTINGS = {
+    'save_progress': (1, 'Save progress for forms'),
+    'submission_document': (2, 'Generate submission document'),
+    'recommendations': (3, 'Show form recommendations'),
+    'sticky_contact': (4, 'Sticky Contact'),
+    'conversation_on_submission': (5, 'Create Conversation on Submission'),
+    'capture_timezone': (6, 'Enable Timezone'),
+    'gdpr_font': (7, 'Use GDPR Compliant Font'),
+}
+
+
+def form_settings(page, step):
+    """Settings captured from the native form builder on 2026-11-08.
+
+    Require both the captured count and each row label before any click. Reopen
+    the editor to prove persisted settings; do not trust a successful save click.
+    Scheduling has additional dependent fields and is deliberately excluded.
+    """
+    frame = form_builder(page)
+    close = frame.get_by_role('dialog').get_by_role('button', name='Close', exact=True)
+    if visible(close):
+        click(close)
+    click(frame.get_by_role('tab', name='Settings', exact=True))
+
+    def controls():
+        switches = frame.get_by_role('switch')
+        wait_until(lambda: switches.count() == 8, 'Form settings control count changed')
+        for key in step['settings']:
+            index, label = FORM_SETTINGS[key]
+            frame.get_by_text(label, exact=True).wait_for(state='visible', timeout=45000)
+            # The directly containing row owns its switch and the visible label.
+            text = switches.nth(index).evaluate('el => el.parentElement.textContent')
+            if label not in text:
+                raise Stop('Form settings order changed; capture required')
+        return switches
+
+    switches = controls()
+    for key, value in step['settings'].items():
+        loc = switches.nth(FORM_SETTINGS[key][0])
+        expected = str(value).lower()
+        if loc.get_attribute('aria-checked') != expected:
+            click(loc)
+        wait_until(lambda: loc.get_attribute('aria-checked') == expected, 'Setting did not change')
+    save_page_url = page.url
+    click(frame.get_by_role('button', name='Save', exact=True))
+    # GHL Save stays mounted; wait for the visible save operation to finish.
+    wait_until(lambda: frame.get_by_role('button', name='Save', exact=True).is_enabled(), 'Form save still busy')
+    page.reload(wait_until='domcontentloaded', timeout=45000)
+    if page.url != save_page_url:
+        raise Stop('Form editor changed while reopening')
+    frame = form_builder(page)
+    close = frame.get_by_role('dialog').get_by_role('button', name='Close', exact=True)
+    if visible(close):
+        click(close)
+    click(frame.get_by_role('tab', name='Settings', exact=True))
+    switches = controls()
+    for key, value in step['settings'].items():
+        if switches.nth(FORM_SETTINGS[key][0]).get_attribute('aria-checked') != str(value).lower():
+            raise Stop('Form setting was not persisted: ' + key)
+    return {'status': 'FORM_SETTINGS_PERSISTED', 'settings': step['settings'], 'editor_url': page.url}
+
+
 def meeting(page, step):
     navigate(page,'Meeting Room')
     create=page.get_by_role('region',name='Meeting Room for meetings, webinars and more',exact=True).get_by_role('button',name='Create room',exact=True)
@@ -771,7 +839,7 @@ def run_on_page(page, job, evidence_root):
         raise Stop("An interrupted job exists: reconcile recorded objects before any replay")
     results = []
     state = {"fingerprint":fingerprint, "location_id":job["location_id"], "status":"RUNNING", "results":results}
-    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "form":make_form, "form_css":form_css, "community":community,"assessment":assessment,"meeting":meeting,"options":options}
+    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "form":make_form, "form_css":form_css, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"options":options}
     for step in job["steps"]:
         assert_tenant(page, job)
         state["current_step"] = step["id"]

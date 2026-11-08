@@ -25,7 +25,7 @@ copy. The separate skill6-playwright directory was a development copy.
   example inputs and source tests, plus the recipe guide and Skill 6 instructions.
 - Recovered Firebase bridge origin guard change for Convert & Flow.
 - Reran all 18 recovered offline tests: PASS. This proves offline behavior only.
-- 21 catalog routes: 20 executor entries and 1 API-first course handoff.
+- 22 catalog routes: 21 executor entries and 1 API-first course handoff.
 - Historical live-path observations are recorded in the catalog/guide; they were
   reported by the prior chat, not independently repeated in this recovery.
 - No final Python end-to-end Mac or VPS run was recovered.
@@ -101,3 +101,18 @@ claim PROFILE/CAPTURED entries are verified. API/MCP/Skill 44 first when the exa
 operation is supported; ready Playwright recipe next; current OpenClaw extension,
 Agent Browser, then computer control. Publish and payment actions retain their
 existing authorization requirements.
+
+## Continuation: native form settings
+
+Added forms.settings for seven explicit native settings: save progress, submission
+document, recommendations, sticky contact, create conversation, timezone and font.
+Captured the actual eight-switch order and each containing row label in the live
+form editor. The script checks both before clicks, saves and reloads the editor
+to compare persisted values. Scheduling is excluded because it requires dates
+and messages. Python end-to-end execution remains pending, not marked LIVE_PATH.
+
+The private handoff now links to the original owner attachment in full. The
+repository was verified public; the full conversation is not published there.
+
+Continuation validation: 23 recipe/checkpoint/settings tests passed. Native form
+settings controls captured live; no settings mutation performed in that capture.
