@@ -221,6 +221,17 @@ class BleedCheckTests(unittest.TestCase):
         prompts = self.dir / "image-inventory-prompts"
         prompts.mkdir()
         (prompts / "IMG-001.txt").write_text("A desk.", encoding="utf-8")
+        # F17 gates every direct execution: a paid item may start only once stage_gate's own item
+        # dependencies hold (the inventory names the item, the prompt item is closed, and the
+        # upstream manifest exists). The fixture supplies exactly those; the gate is untouched.
+        inventory = self.dir / "desktop-wireframe" / "image-inventory.json"
+        inventory.parent.mkdir()
+        inventory.write_text(json.dumps({"images": [{"id": "IMG-001"}]}), encoding="utf-8")
+        (prompts / "prompt-manifest.json").write_text(json.dumps({}), encoding="utf-8")
+        state = self.dir / "private" / "state.json"
+        state.parent.mkdir()
+        state.write_text(json.dumps({"stages": {}, "receipts": {}, "items": {
+            "image-inventory-prompts": {"IMG-001": {"status": "closed"}}}}), encoding="utf-8")
         req = {"references": [BOARD["url"]]}
         with contextlib.redirect_stdout(io.StringIO()):
             bad = exe.run_item(self.dir, "image-generation-qc", "IMG-001", req,
