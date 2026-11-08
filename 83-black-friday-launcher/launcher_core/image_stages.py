@@ -296,8 +296,8 @@ def _hosted_urls(root: Path) -> Dict[str, str]:
 def hosted_admission(run_dir: Path, run: Path) -> Dict[str, Any]:
     """Admit each hosted link for this run's current artifacts. Returns a report, never raises.
 
-    The same rules the asset map applies — a complete upload, a live link, an https URL and a
-    local file that still hashes to what the ledger recorded — plus the F17 remote evidence: the
+    The same rules the asset map applies — a complete upload, a live link, a usable http(s) URL
+    and a local file that still hashes to what the ledger recorded — plus the F17 remote evidence: the
     URL must have served a real content type and bytes that decode as an image with readable
     dimensions. Every refusal is named, so an HTTP 200 whose body is an HTML login page is refused
     as a page rather than admitted as a picture.
