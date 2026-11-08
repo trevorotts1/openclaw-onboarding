@@ -260,8 +260,13 @@ class TestLadderAggregation:
             {
                 "mcp": lambda: {"ok": False, "code": "SELECTOR-MISS",
                                 "detail": "fixture: mcp rung missed"},
-                "browser": lambda: {"ok": True, "detail": "fixture: built"},
+                "browser": lambda: {"ok": True, "operation": "forms.authoring",
+                                    "operation_complete": True,
+                                    "status": "operation_complete",
+                                    "references_fresh": True,
+                                    "detail": "fixture: built"},
             },
+            operation="forms.authoring",
             env={"GHL_FALLBACK_LADDER": "1"},
             receipt_path=receipt_path)
         assert result.ok and result.succeeded_rung == "browser"
@@ -289,9 +294,13 @@ class TestLadderAggregation:
         result = ladder.run_ladder(
             "workflow",
             {
-                "mcp": lambda: {"ok": True, "detail": "fixture: built"},
+                "mcp": lambda: {"ok": True, "operation": "workflows.private.create",
+                                "operation_complete": True,
+                                "status": "operation_complete",
+                                "detail": "fixture: built"},
                 "browser": lambda: {"ok": True, "detail": "unused"},
             },
+            operation="workflows.private.create",
             env={"GHL_FALLBACK_LADDER": "1"})
         entry = md.entry_from_ladder_result(result)
         assert entry["operationClass"] == "workflow_write"

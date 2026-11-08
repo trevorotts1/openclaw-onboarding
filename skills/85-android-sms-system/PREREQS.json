@@ -1,0 +1,43 @@
+{
+  "skill": "85-android-sms-system",
+  "displayName": "Android SMS System",
+  "version": "v1.0.0",
+  "prerequisites": [
+    {
+      "id": "docs-folder",
+      "type": "manual",
+      "label": "myCRMSIM offline documentation set (required for answers)",
+      "check": {
+        "note": "Verify: test -f \"$HOME/Downloads/openclaw-master-files/mycrmsim/00-INDEX.md\" && find \"$HOME/Downloads/openclaw-master-files/mycrmsim/articles\" -name '*.md' -type f | wc -l  -- expect 156. Declared manual because the PREREQS schema has no path-exists type; install succeeds without it, answering degrades to the shipped deep reference."
+      },
+      "severity": "optional",
+      "satisfy": "Place the offline set at $HOME/Downloads/openclaw-master-files/mycrmsim, at docs/ beside SKILL.md, or point $ASMS_DOCS_DIR at it. Re-fetch from https://support.mycrmsim.com if it is missing or holds fewer than 156 articles."
+    },
+    {
+      "id": "python3",
+      "type": "binary",
+      "label": "python3 (article index and manifest parsing)",
+      "check": { "binary": "python3" },
+      "severity": "required",
+      "satisfy": "Install Python 3.9 or newer. On macOS: `xcode-select --install` or `brew install python@3.12`. Verify with `python3 --version`."
+    },
+    {
+      "id": "bash",
+      "type": "binary",
+      "label": "bash (qc and maintenance scripts)",
+      "check": { "binary": "bash" },
+      "severity": "required",
+      "satisfy": "bash ships with macOS at /bin/bash. Verify with `bash --version`. The skill's qc script requires bash 3.2 or newer, which stock macOS provides."
+    },
+    {
+      "id": "support-url",
+      "type": "manual",
+      "label": "myCRMSIM support site (source of truth for re-fetching)",
+      "check": {
+        "note": "No credential needed; the support center is public. Browse https://support.mycrmsim.com only when the local set is missing, short of 156 articles, or older than the live site."
+      },
+      "severity": "optional",
+      "satisfy": "Use https://support.mycrmsim.com to re-download the article set when the local copy is absent or stale."
+    }
+  ]
+}

@@ -3,9 +3,10 @@
 #
 # Four controls, each asserting an EXACT exit code:
 #   a) a change that adds exactly one volume-root line     -> exit 1
-#   b) origin/main~1...origin/main on this repo          -> exit 0
-#      (main already carries the volume root in 42 files; added-lines-only
-#       must not fail on pre-existing text)
+#   b) a clean add on a history that already carries the volume root -> exit 0
+#      (added-lines-only must not fail on pre-existing text). This runs on the
+#      fixture, never on live main: main gains banned-path lines through
+#      unrelated merges, which made the control fail for every PR.
 #   c) missing repo / unreadable ref                     -> exit 2
 #   d) a change that adds only /home/ and /private/      -> exit 0
 #      (D-27: /home/ and /private/ are NOT banned)
@@ -84,16 +85,17 @@ bash "$GUARD" "$FX" "$HOME_ONLY_BASE" HEAD > "$TMP/d.out" 2>&1; rc_d=$?
 sed 's/^/    /' "$TMP/d.out"
 check "d) /home/ and /private/ not banned" 0 "$rc_d"
 
-# b) this repo's own merged main must be clean: pre-existing volume-root text is
-#    not in the added set for the tip commit.
-if git -C "$REPO_ROOT" rev-parse --verify --quiet origin/main~1 >/dev/null 2>&1; then
-  bash "$GUARD" "$REPO_ROOT" origin/main~1 origin/main > "$TMP/b.out" 2>&1; rc_b=$?
-  sed 's/^/    /' "$TMP/b.out"
-  check "b) origin/main~1...origin/main" 0 "$rc_b"
-else
-  echo "FAIL  b) origin/main~1 unresolvable — control cannot run"
-  FAILS=$((FAILS + 1))
-fi
+# b) pre-existing banned text in history must not fail an added-lines scan.
+#    Run against the fixture, not this repo's live main: main gains banned-path
+#    lines over time through unrelated merges, which made this control fail for
+#    every PR regardless of what the PR contained.
+CLEAN_BASE="$(git -C "$FX" rev-parse HEAD)"
+printf '%s\n' 'note=no host paths here' > "$FX/clean.txt"
+git -C "$FX" add -A
+git -C "$FX" commit -qm add-clean-line
+bash "$GUARD" "$FX" "$CLEAN_BASE" HEAD > "$TMP/b.out" 2>&1; rc_b=$?
+sed 's/^/    /' "$TMP/b.out"
+check "b) clean add over a history that already carries host roots" 0 "$rc_b"
 
 # c) instrument errors -> 2
 bash "$GUARD" "$TMP/does-not-exist" "$BASE" HEAD > "$TMP/c1.out" 2>&1; rc_c1=$?

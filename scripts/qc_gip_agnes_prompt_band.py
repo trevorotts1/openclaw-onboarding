@@ -234,8 +234,8 @@ def _self_test() -> int:
     expect("100-percent", mx, True)
     expect("101-percent", mx * 101 // 100, False)
     _, probs = gate_prompt(_rich_prompt(mx * 79 // 100))
-    if not any("ADD at least 200" in m for _, m in probs):
-        failures.append(f"[79-percent-message] must name the exact chars to add (200): {probs}")
+    if not any("ADD at least 3200" in m for _, m in probs):
+        failures.append(f"[79-percent-message] must name the exact chars to add (3200 = the gap to the 95% band floor 19000): {probs}")
     _, probs = gate_prompt(_rich_prompt(mx * 101 // 100))
     if not any("CUT exactly 200" in m for _, m in probs):
         failures.append(f"[101-percent-message] must name the exact chars to cut (200): {probs}")

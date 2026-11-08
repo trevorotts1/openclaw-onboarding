@@ -711,12 +711,22 @@ function referencesEntry(proposal: PlanProposalReference, entry: InstallationCap
  * Whole-phrase, case-insensitive presence: the capability's exact name or
  * id appears in the step text with a non-alphanumeric boundary on each
  * side. A stem, a partial word, or a shared adjective never counts.
+ *
+ * A slug separator is not part of the name: the snapshot records the skill
+ * `weekly-episode` and a plan step writes "weekly episode". The words must
+ * still be the same, adjacent and whole — only the hyphen, underscore or
+ * whitespace between them is interchangeable.
  */
 function containsExactPhrase(haystack: string, needle: string): boolean {
   const phrase = needle.trim().toLowerCase();
   if (phrase.length < MIN_NAMED_CAPABILITY_CHARS) return false;
-  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i').test(haystack);
+  const pattern = phrase
+    .split(/[\s_-]+/)
+    .filter((part) => part !== '')
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('[\\s_-]+');
+  if (pattern === '') return false;
+  return new RegExp(`(^|[^a-z0-9])${pattern}([^a-z0-9]|$)`, 'i').test(haystack);
 }
 
 /** The exact literal a step names, or null when it names nothing exact. */

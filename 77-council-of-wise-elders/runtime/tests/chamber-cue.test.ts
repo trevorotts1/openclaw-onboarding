@@ -26,6 +26,11 @@ function loadCue(): Record<string, any> {
   return sandbox.councilChamber.cue as Record<string, any>;
 }
 
+// Arrays built inside the vm realm carry that realm's Array.prototype, which
+// deepStrictEqual rejects as a prototype mismatch. Copying into this realm
+// keeps the comparison exact (length, order and contents still checked).
+const ids = (list: ArrayLike<string>) => Array.from(list);
+
 const shown = (id: string) => ({ id, hidden: false, offsetParent: {}, getClientRects: () => [{}] });
 const hidden = (id: string) => ({ id, hidden: true, offsetParent: null, getClientRects: () => [] });
 const docOf = (nodes: Record<string, unknown>) => ({
@@ -48,13 +53,13 @@ test('cue map: idle, active, paused, ready, stopped states', () => {
   const ready = cue.model({ status: 'complete', state: 'COMPLETED' });
   assert.equal(ready.kind, 'ready');
   assert.equal(ready.text, 'Your results are ready.');
-  assert.deepEqual(ready.targets, ['ch-advisory', 'ch-options']);
+  assert.deepEqual(ids(ready.targets), ['ch-advisory', 'ch-options']);
   assert.equal(ready.arrow, false);
   assert.equal(ready.linkText, 'Read your results');
   for (const status of ['blocked', 'failed', 'cancelled']) {
     const model = cue.model({ status });
     assert.equal(/\bready\b/i.test(model.text), false);
-    assert.deepEqual(model.targets, ['ch-room']);
+    assert.deepEqual(ids(model.targets), ['ch-room']);
     assert.ok(model.linkText);
   }
   assert.match(cue.model({ status: 'cancelled', state: 'CANCEL_REQUESTED' }).text, /will be produced/);
@@ -64,10 +69,10 @@ test('cue map: a hidden target is never chosen and no dead link is written', () 
   const cue = loadCue();
   assert.equal(cue.targetOf(['ch-advisory', 'ch-options'], docOf({ 'ch-advisory': hidden('x') })), null);
   assert.equal(
-    cue.targetOf(['ch-advisory', 'ch-options'], docOf({ 'ch-advisory': hidden('x'), 'ch-options': shown('o') })).id,
+    cue.targetOf(['ch-advisory', 'ch-options'], docOf({ 'ch-advisory': hidden('x'), 'ch-options': shown('ch-options') })).id,
     'ch-options',
   );
-  assert.equal(cue.targetOf(['ch-advisory'], docOf({ 'ch-advisory': shown('a') })).id, 'ch-advisory');
+  assert.equal(cue.targetOf(['ch-advisory'], docOf({ 'ch-advisory': shown('ch-advisory') })).id, 'ch-advisory');
   assert.equal(cue.isShown({ hidden: false, offsetParent: null, getClientRects: () => [] }), false);
 });
 

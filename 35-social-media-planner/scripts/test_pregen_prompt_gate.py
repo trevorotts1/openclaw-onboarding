@@ -260,7 +260,7 @@ def main() -> int:
                 check(f"band {size}: failure names AF-PROMPT-LENGTH", "AF-PROMPT-LENGTH" in rr.stderr, rr.stderr)
         r79 = run_gate("--prompt-file", str(tmp / "band_15800.txt"), "--model", gpt, "--ratio", "4:5",
                        "--pixels", "1080x1350", "--brand-colors", "#0B3D2E", "--avoid-list-file", str(avoid_file))
-        check("79 percent rejection names the exact chars to add (200)", "ADD at least 200" in r79.stderr, r79.stderr)
+        check("79 percent rejection names the exact chars to add (3200)", "ADD at least 3200" in r79.stderr, r79.stderr)
         r101 = run_gate("--prompt-file", str(tmp / "band_20200.txt"), "--model", gpt, "--ratio", "4:5",
                         "--pixels", "1080x1350", "--brand-colors", "#0B3D2E", "--avoid-list-file", str(avoid_file))
         check("101 percent rejection names the exact chars to cut (200)", "CUT exactly 200" in r101.stderr, r101.stderr)
@@ -269,8 +269,13 @@ def main() -> int:
                          "--avoid-list-file", str(avoid_file))
         check("the retired 9,000 floor no longer passes (exit 3)", r_old.returncode == 3, str(r_old.returncode))
 
-        print("\n=== 8. F32: GPT Image 2.5 + Agnes ELIGIBLE through verified adapters (capability routing) ===")
-        for model, size in (("gpt-image-2-5-sunburst-text-to-image", 19500), ("agnes-image-2.1-flash", 9000)):
+        print("\n=== 8. F32: GPT Image 2.5 is admitted; Agnes is ROUTED and refused on its UNKNOWN maximum ===")
+        # F18.4: an unknown model maximum cannot silently receive a production PASS. Agnes publishes no
+        # schema maxLength and no policy-owner character limit, so routing must ADMIT it (no
+        # AF-SM-MODEL-ROUTING) and the length gate must REFUSE it — and no F32 spend receipt may be
+        # written for a prompt that is never submitted.
+        for model, size, want_exit in (("gpt-image-2-5-sunburst-text-to-image", 19500, 0),
+                                       ("agnes-image-2.1-flash", 9000, 3)):
             pf = _write(tmp, f"cap_{model.replace('.', '_')}.txt", _sized(size))
             rr = run_gate(
                 "--prompt-file", str(pf), "--model", model,
@@ -278,9 +283,15 @@ def main() -> int:
                 "--brand-colors", "#0B3D2E,#F5EFE0",
                 "--avoid-list-file", str(avoid_file),
             )
-            check(f"capability routing admits {model} for a text-capable band prompt (exit 0)",
-                  rr.returncode == 0, f"got {rr.returncode}, stderr={rr.stderr[:200]!r}")
-            check(f"F32 spend receipt recorded for {model}", "F32 spend receipt" in rr.stdout, rr.stdout)
+            check(f"capability routing admits {model} (exit {want_exit})",
+                  rr.returncode == want_exit, f"got {rr.returncode}, stderr={rr.stderr[:200]!r}")
+            if want_exit == 0:
+                check(f"F32 spend receipt recorded for {model}", "F32 spend receipt" in rr.stdout, rr.stdout)
+            else:
+                check(f"an unknown maximum refuses {model} on LENGTH, never on routing",
+                      "AF-PROMPT-LENGTH" in rr.stderr and "AF-SM-MODEL-ROUTING" not in rr.stderr, rr.stderr)
+                check(f"no F32 spend receipt for an unsubmittable {model}",
+                      "F32 spend receipt" not in rr.stdout, rr.stdout)
 
         print("\n=== 9. F32: nano-banana-2 still refused for a text-overlay prompt (GK-20 preserved) ===")
         sized_overlay = fit("A useful visual decision sentence for the scene. On-image text reads exactly: "
@@ -320,7 +331,7 @@ def main() -> int:
               r11b.returncode == 6, f"got {r11b.returncode}")
         check("refusal names Sunburst as the default",
               "gpt-image-2-5-sunburst-text-to-image" in r11b.stderr, r11b.stderr)
-        pt = _write(t2, "pt.txt", _sized(18900).rstrip() + ' On-image text reads exactly: "Headline Here".')
+        pt = _write(t2, "pt.txt", _sized(19000).rstrip() + ' On-image text reads exactly: "Headline Here".')
         r11c = run_gate(
             "--prompt-file", str(pt), "--model", "nano-banana-2", "--fallback-label",
             "--ratio", "2:3", "--pixels", "1000x1500", "--brand-colors", "#0B3D2E,#F5EFE0",

@@ -1,7 +1,13 @@
 """CLI: compile a route, dispatch every page, assemble a package, check one, or report dependencies.
 
 Exit 0 pass, 2 fail. The Council planning step runs on route/assemble and is
-always recorded; a not-ready Council never changes the exit code.
+always recorded; a not-ready Council never changes the exit code. At the
+coherent-plan stage it runs ONLY the offline readiness probe
+(``scripts/doctor.mjs``: no network, no writes, no model call) and records it as
+a package check. It never calls a Council front door and never convenes a
+session. A Council session result that was already returned to the client can be
+supplied as a JSON file with ``--council-session`` and is recorded as data; with
+none, the record says no Council advice was obtained and the build continues.
 
 ``dispatch`` and ``assemble`` run the dependency preflight first and refuse on any
 required entry that is missing, so a green preflight means the launch can run.
@@ -15,6 +21,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, List
@@ -104,11 +111,32 @@ def _json_object(path: Path) -> dict:
     return doc if isinstance(doc, dict) else {}
 
 
+def _council_session(args: argparse.Namespace) -> "dict | None":
+    """A Council session result that was already returned, supplied as JSON data.
+
+    A path is read as data only: no Council front door is called and no session is
+    opened. A named file that cannot be read as a JSON object is refused by name,
+    so a mistyped path never reads as "no advice"."""
+    path = (getattr(args, "council_session", None) or "").strip()
+    if not path:
+        return None
+    try:
+        doc = _read_json(Path(path))
+    except (OSError, ValueError):
+        raise CliError("AF-LAUNCH-COUNCIL-SESSION",
+                       f"{path!r} is not a readable JSON Council session result")
+    if not isinstance(doc, dict):
+        raise CliError("AF-LAUNCH-COUNCIL-SESSION",
+                       f"{path!r} must hold one JSON object (the returned session result)")
+    return doc
+
+
 def cmd_route(args: argparse.Namespace) -> int:
     normalized = intake.validate(_read_json(args.intake))
-    advice = council.planning_step(normalized)
+    graph = route.compile_route(normalized)
+    advice = council.planning_step(normalized, graph=graph,
+                                   session=_council_session(args))
     record = route.launch_record(normalized, advice)
-    graph = route.compile_route(normalized, advice)
     _emit({"council": advice, "graph": graph, "launch_record": record})
     return 0
 
@@ -120,6 +148,20 @@ def cmd_assemble(args: argparse.Namespace) -> int:
     if pieces_dir is None:
         raise CliError("AF-LAUNCH-ASSEMBLE-ARGS", "give --run-dir (the dispatch run folder) or --pieces")
     source_root = run_dir or pieces_dir.parent
+    # F12: the real image producer runs at the asset handoff, before the pieces are read, so a page
+    # whose images were just finished is listed with them. It is Skill 71's own stage driver: it never
+    # draws before the client's layout approval and never spends without the paid approval.
+    stage_report = None
+    if args.run_image_stages:
+        if run_dir is None:
+            raise CliError("AF-LAUNCH-ASSEMBLE-ARGS", "--run-image-stages needs --run-dir (the dispatch run)")
+        from . import image_stages
+        if args.image_provider == "kie" and not args.allow_paid:
+            raise CliError("AF-LAUNCH-ASSEMBLE-ARGS", "--image-provider kie spends money and needs --allow-paid")
+        stage_report = image_stages.drive(Path(run_dir), provider=args.image_provider,
+                                          allow_paid=bool(args.allow_paid),
+                                          layout_approval_file=Path(args.layout_approval)
+                                          if args.layout_approval else None)
     normalized = intake.validate(_read_json(args.intake))
     launch = _json_object(source_root / "launch.json")
     if launch:  # the dispatch record: its plan hash and approval ref are what the receipt binds
@@ -128,8 +170,9 @@ def cmd_assemble(args: argparse.Namespace) -> int:
         raise CliError("AF-LAUNCH-APPROVAL-UNBOUND",
                             f"no dispatch record (launch.json) in {source_root}, so the approval cannot be "
                             "tied to a plan. Pass --run-dir of the dispatch run.")
-    advice = council.planning_step(normalized)
-    graph = route.compile_route(normalized, advice)
+    graph = route.compile_route(normalized)
+    advice = council.planning_step(normalized, graph=graph, run_dir=str(source_root),
+                                   session=_council_session(args))
     pieces = {role: _read_json(pieces_dir / f"{role}.json")
               for role in (n["role"] for n in graph["nodes"])}
     for slot in package.EXTRA_SLOTS:  # a second page of a role (downsell_2) rides beside its parent
@@ -149,19 +192,43 @@ def cmd_assemble(args: argparse.Namespace) -> int:
                                launch_plan=plan, deliveries=deliveries,
                                delivery_scope=scope,
                                checkout_readback=(_read_json(args.checkout_readback)
-                                                  if args.checkout_readback else None))
+                                                  if args.checkout_readback else None),
+                               activation_readback=(_read_json(args.activation_readback)
+                                                    if args.activation_readback else None))
     except package.PackageError as exc:
         _launch_event(normalized["launch_id"], {"event_type": "stage_blocked", "stage": "assemble",
                                                 "failures": [exc.code]})
         raise
+    # SOP-GIP-02/03 at the real handoff: the request, the report built from real Review Receipt v2
+    # files, the authorised upload only when an approval was named, the hosted URLs in the pages and
+    # the delivery record. A missing review, provider or hosting capability is recorded, never faked.
+    # The package is already sealed, so a failure here is reported, never raised over it; `check`
+    # still fails the package for the missing reviews.
+    from . import graphics_hooks
+    try:
+        graphics = graphics_hooks.handle_handoff(
+            out["manifest"], Path(args.out), job_dir=Path(args.out), dispatch_root=source_root,
+            review_roots_extra=[Path(p) for p in (args.review_root or [])],
+            host_approval_ref=args.host_media, folder_name=args.hosting_folder_name,
+            probe_env=os.environ if args.probe_hosting else None)
+    except Exception as exc:  # noqa: BLE001  (recorded for the operator; the sealed package stands)
+        graphics = {"state": "failed", "reason": f"{type(exc).__name__}: {str(exc)[:400]}"}
+        print(f"[graphics] handoff failed ({type(exc).__name__}); the package is sealed and `check` "
+              "will name the missing image reviews", file=sys.stderr)
     _launch_event(normalized["launch_id"], {"event_type": "stage_closed", "stage": "assemble"})
     _emit({"manifest": out["manifest_path"], "receipt": out["receipt_path"],
            "council": advice["status"], "designs_required": not args.allow_no_designs,
            "to_confirm": out["manifest"]["to_confirm"],
            "delivery_scope": out["manifest"]["delivery_scope"],
            "delivery_label": out["manifest"]["delivery_label"],
+           "activation": out["manifest"]["activation"],
+           "activation_label": out["manifest"]["activation_label"],
            "launch_plan_completeness":
-               (out["manifest"].get("launch_plan") or {}).get("completeness")})
+               (out["manifest"].get("launch_plan") or {}).get("completeness"),
+           "image_stages": ({"complete": stage_report.get("complete"),
+                             "report": str(Path(args.run_dir) / "qc/image_stages_report.json")}
+                            if stage_report else {"state": "not_invoked"}),
+           "graphics": graphics})
     return 0
 
 
@@ -372,6 +439,34 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_brand(args: argparse.Namespace) -> int:
+    """F09: carry the client's brand answer to the real asset producer.
+
+    Existing logo and wordmark are recorded in the brand file every page prompt reads (a logo this
+    run draws is recorded as a proposal, never as the client's own); creating a logo writes its
+    brief first and runs the image capability only with the paid approval and a model id supplied
+    from the existing registry. Nothing is invented and nothing is spent here without those.
+    `--json` (always) prints the producer's own record.
+    """
+    from . import graphics_hooks
+    result = graphics_hooks.brand_asset(
+        Path(args.answers), Path(args.out),
+        brand_file=Path(args.brand_file) if args.brand_file else None,
+        allow_paid=bool(args.allow_paid), approval_ref=args.approval_ref,
+        model_id=args.model_id, provider=args.provider)
+    _emit(result)
+    return 0 if result.get("state") in ("recorded", "created", "brief_ready") else 2
+
+
+def cmd_revise_image(args: argparse.Namespace) -> int:
+    """Correct ONE generated image in ONE page run, then stop. No other asset is reopened."""
+    from . import graphics_hooks
+    result = graphics_hooks.revise_asset(Path(args.run), args.item, args.defect,
+                                         provider=args.provider, allow_paid=bool(args.allow_paid))
+    _emit(result)
+    return 0 if result.get("state") == "regenerated" else 2
+
+
 def cmd_seams(_args: argparse.Namespace) -> int:
     _emit({"seams": list(SEAMS), "count": len(SEAMS),
            "decided": [d["id"] for d in DECIDED]})
@@ -393,6 +488,17 @@ def cmd_dependencies(args: argparse.Namespace) -> int:
           f"would_enable={report['would_enable']}")
     for entry in report["entries"]:
         print(f"  {entry['status'].upper():12s} {entry['id']}  ({entry['evidence']})")
+    # The metadata spines (registration.json, skill.json) are pointers, not a second
+    # requirement list. A disagreement is printed as a finding and never changes the
+    # exit code: those two files record nothing that runs.
+    meta = report.get("metadata") or {}
+    findings = meta.get("findings") or []
+    print(f"\nmetadata spine: {meta.get('authoritative_manifest')} "
+          f"digest={str(meta.get('requirements_digest'))[:12]} "
+          f"entries={meta.get('entry_count')} required={meta.get('required_entry_count')}; "
+          f"{len(findings)} finding(s)")
+    for finding in findings:
+        print(f"  METADATA   {finding}")
     return 2 if args.install and report["blockers"] else 0
 
 
@@ -409,6 +515,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     r = sub.add_parser("route", help="validate intake and compile the route graph")
     r.add_argument("--intake", required=True)
+    r.add_argument("--council-session", dest="council_session", default=None,
+                   help="a JSON file holding a Council session result that was already "
+                        "returned to the client; it is recorded as data, never asked for")
     r.set_defaults(fn=cmd_route)
 
     a = sub.add_parser("assemble", help="assemble package-manifest.json and receipt.json")
@@ -439,10 +548,41 @@ def build_parser() -> argparse.ArgumentParser:
                    help="the Skill 06 install read-back record (JSON): the native capability evidence, "
                         "fulfillment mapping and failed/pending copy the order form needs. Without it the "
                         "order-form mapping lists those facts as unknown and check refuses it")
+    a.add_argument("--activation-readback",
+                   help="the OBSERVED record of an installation or publication (JSON: stage "
+                        "'installed' or 'published', the read route as source, page_id, https "
+                        "page_url, observed_at and — for published — page_type and page_version; "
+                        "for installed — the native install facts). A save click or a local "
+                        "'published' field is refused")
+    a.add_argument("--council-session", dest="council_session", default=None,
+                   help="a JSON file holding a Council session result that was already returned "
+                        "to the client; it is recorded as data, never asked for")
     a.add_argument("--page-only", action="store_true",
                    help="assemble pages alone and label the package page-only: no shared launch "
                         "plan, so no Black Friday calendar and no planned email, text or automation "
                         "is delivered or checked. Never the default")
+    a.add_argument("--run-image-stages", action="store_true",
+                   help="before assembling, run Skill 71's real image-stage driver for every page run "
+                        "under --run-dir (it stops at the client's layout-proof approval; no paid render "
+                        "without --allow-paid)")
+    a.add_argument("--image-provider", choices=["stub", "kie"], default="stub",
+                   help="the provider the image-stage driver uses (default stub: placeholder pictures, no spend)")
+    a.add_argument("--allow-paid", action="store_true",
+                   help="allow the paid image provider; requires the client's recorded spend approval")
+    a.add_argument("--layout-approval",
+                   help="the client's recorded layout-proof approval record (default <run-dir>/layout-proof-approval.json)")
+    a.add_argument("--review-root", action="append",
+                   help="an extra root holding Skill 71 page runs (their private/reviews/*/*.review.json "
+                        "receipts are the only thing an image QC record may be built from); repeatable")
+    a.add_argument("--host-media",
+                   help="an approved hosting approval_ref: run the existing GHL media uploader on every "
+                        "QC-passed image, record its real result, and put the real URLs in the pages. "
+                        "Without it nothing is uploaded and the delivery record says so")
+    a.add_argument("--hosting-folder-name",
+                   help="the per-job GHL media folder name (default: the job folder's name)")
+    a.add_argument("--probe-hosting", action="store_true",
+                   help="probe the client's hosting credentials (presence only, never printed) for the "
+                        "delivery record's missing-capability list")
     a.set_defaults(fn=cmd_assemble)
 
     pl = sub.add_parser("plan", help="show the client the launch in plain words with the plan hash to approve "
@@ -482,6 +622,25 @@ def build_parser() -> argparse.ArgumentParser:
                                      "the run is created on first use and resumed after that")
     q.set_defaults(fn=cmd_questions)
 
+    b = sub.add_parser("brand", help="F09: carry the client's brand answer to the real asset producer")
+    b.add_argument("--answers", required=True, help="the shared client answers file (client-intake-answers/v1)")
+    b.add_argument("--out", required=True, help="the job/run folder: the brief and any created asset are written here")
+    b.add_argument("--brand-file", help="the client brand file every page prompt reads (default: the run's own brand file)")
+    b.add_argument("--allow-paid", action="store_true", help="allow a paid render for a created logo")
+    b.add_argument("--approval-ref", help="the client's approved paid-render reference")
+    b.add_argument("--model-id", help="an image model id from the existing registry (never invented here)")
+    b.add_argument("--provider", choices=["kie"], default="kie")
+    b.set_defaults(fn=cmd_brand)
+
+    rv = sub.add_parser("revise-image", help="correct ONE generated image after a concrete visual defect")
+    rv.add_argument("--run", required=True, help="the Skill 71 page run holding the image item")
+    rv.add_argument("--item", required=True, help="the inventory image id (IMG-NNN)")
+    rv.add_argument("--defect", action="append", required=True,
+                    help="one named concrete defect to correct; repeat for each")
+    rv.add_argument("--provider", choices=["stub", "kie"], default="kie")
+    rv.add_argument("--allow-paid", action="store_true")
+    rv.set_defaults(fn=cmd_revise_image)
+
     c = sub.add_parser("check", help="run package completeness checks")
     c.add_argument("--manifest", required=True)
     c.add_argument("--root", required=True)
@@ -505,7 +664,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 # These commands read data only and never import the runtime packages, so they must not start an install.
-_NO_RUNTIME_PACKAGES = ("seams", "dependencies", "questions")
+_NO_RUNTIME_PACKAGES = ("seams", "dependencies", "questions", "brand", "revise-image")
 
 
 def main(argv: List[str] | None = None) -> int:
