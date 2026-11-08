@@ -312,32 +312,47 @@ class Item10ConversationalTests(unittest.TestCase):
 
 
 class Item11WorkflowAuthorizationTests(unittest.TestCase):
+    # a workflow BUILD is being reported for this run, so item 11 is selected
+    BUILD = {"source_kind": "native_build", "post_build_verification_points": 12,
+             "dependency_readback": True}
+
     def test_item_11_workflow_authorization_fails_closed(self):
         cases = {
             "community_mcp": "community",
             "official_mcp_pit": "UNVERIFIED compatibility",
         }
         for mode, needle in cases.items():
-            doc = capability_check.run(normalized(), plan={"automations": [{"id": "a"}]},
-                                       observed={"auth_mode": mode})
+            doc = capability_check.run(normalized(),
+                                       plan={"automations": [{"id": "a"}]},
+                                       observed={"auth_mode": mode,
+                                                 "workflow_build": self.BUILD})
+            self.assertIn("workflow_authorization", doc["required"])
             row = doc["capabilities"]["workflow_authorization"]
             self.assertEqual(row["state"], "unproven")
             self.assertIn(needle, row["detail"])
 
-        switched = capability_check.run(normalized(), plan={"automations": [{"id": "a"}]},
+        switched = capability_check.run(normalized(),
+                                        plan={"automations": [{"id": "a"}]},
                                         observed={"auth_mode": "pit_rest",
-                                                  "transport_switching": True})
+                                                  "transport_switching": True,
+                                                  "workflow_build": self.BUILD})
         self.assertEqual(switched["capabilities"]["workflow_authorization"]["state"], "unproven")
 
-        diagram = capability_check.run(normalized(), plan={"automations": [{"id": "a"}]},
+        diagram = capability_check.run(normalized(),
+                                       plan={"automations": [{"id": "a"}]},
                                        observed={"auth_mode": "official_mcp_oauth",
-                                                 "publication_authority": "diagram_label"})
+                                                 "publication_authority": "diagram_label",
+                                                 "workflow_build": self.BUILD})
         self.assertEqual(diagram["capabilities"]["workflow_authorization"]["state"], "unproven")
 
         ok = capability_check.run(normalized(), plan={"automations": [{"id": "a"}]},
                                   observed={"auth_mode": "pit_rest",
-                                            "publication_authority": "approval-77"})
+                                            "publication_authority": "approval-77",
+                                            "workflow_build": self.BUILD})
         self.assertEqual(ok["capabilities"]["workflow_authorization"]["state"], "proven")
+        # a merely PLANNED automation is not a build here: not required at assembly
+        planned = capability_check.run(normalized(), plan={"automations": [{"id": "a"}]})
+        self.assertNotIn("workflow_authorization", planned["required"])
 
 
 class DeterminismTests(unittest.TestCase):

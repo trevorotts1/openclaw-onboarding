@@ -424,11 +424,48 @@ def _plan_requests_conversation(plan: Optional[Mapping[str, Any]]) -> bool:
     return isinstance(conversation, Mapping) and conversation.get("requested") is True
 
 
+def _conversation_selected(plan: Optional[Mapping[str, Any]],
+                           observed: Mapping[str, Any]) -> bool:
+    """F22 item 10: required when the conversational surface is being BUILT/CONNECTED.
+
+    A plan that requests Conversation AI records the client's selection; the runtime,
+    the single responder and the playbook contract become a required capability when the
+    surface is actually being built/connected in this run (the caller observes the
+    responder set / build), or when a live/installed readiness is claimed. Otherwise it
+    is recorded unproven-not-required, never silently satisfied.
+    """
+    observed_build = (isinstance(observed.get("conversational_build"), Mapping)
+                      or "responders" in observed
+                      or isinstance(observed.get("workflow_build"), Mapping)
+                      and observed.get("workflow_build", {}).get("conversational") is True)
+    if observed_build:
+        return True
+    return _plan_requests_conversation(plan) and observed.get("readiness") in (
+        "installed", "published", "live")
+
+
 def _plan_has_workflows(plan: Optional[Mapping[str, Any]]) -> bool:
     if not isinstance(plan, Mapping):
         return False
     automations = plan.get("automations")
     return isinstance(automations, list) and bool(automations)
+
+
+def _workflow_selected(normalized: Mapping[str, Any], plan: Optional[Mapping[str, Any]],
+                       observed: Mapping[str, Any]) -> bool:
+    """F22 item 11: required only when a workflow is BUILT/observed in this run.
+
+    A plan that merely PLANS automations hands them to Skill 44's build step; that step
+    observes the account's authorization mode. Requiring an observed auth mode at
+    assembly of an offline plan would refuse work whose authorization is not this
+    step's to hold, so the requirement follows the actual build, or a live/installed
+    readiness claim.
+    """
+    if isinstance(observed.get("workflow_build"), Mapping):
+        return True
+    if observed.get("readiness") in ("installed", "published", "live"):
+        return _plan_has_workflows(plan) or normalized.get("test_only") is False
+    return False
 
 
 def required_capabilities(normalized: Mapping[str, Any],
@@ -446,9 +483,9 @@ def required_capabilities(normalized: Mapping[str, Any],
     required += [name for name in require if name in CAPABILITIES]
     if live or observed.get("readiness") in ("installed", "published", "live"):
         required += ["billing_type", "native_checkout_family"]
-    if _plan_requests_conversation(plan):
+    if _conversation_selected(plan, observed):
         required.append("conversational_workflows")
-    if _plan_has_workflows(plan) or isinstance(observed.get("workflow_build"), Mapping):
+    if _workflow_selected(normalized, plan, observed):
         required.append("workflow_authorization")
     return [name for name in CAPABILITIES if name in set(required)]
 
