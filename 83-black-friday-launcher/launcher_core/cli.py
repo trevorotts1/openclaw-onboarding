@@ -76,11 +76,17 @@ def _launch_for(normalized: dict, inputs: dict, **choices: Any) -> dict:
 
 
 def _resolved_launch(payload: Any, **choices: Any) -> tuple:
-    """(normalized intake, launch record) exactly as launch_bridge.run would build them."""
+    """(normalized intake, launch record) exactly as launch_bridge.run would build them.
+
+    F20: a paid run's budget is verified against the plan hash of the record it produces, so the record
+    is built once from the plan-shape inputs and once from the resolved ones (launch_bridge.resolve_launch).
+    Resolving the paid image plan before any plan hash existed refused every paid dispatch with
+    AF-LAUNCH-IMAGE-PLAN-APPROVAL, and `plan` could not print the hash to approve at all.
+    """
     normalized = intake.validate(payload)
-    inputs, _ = image_plan.resolve(normalized.get("image_plan"),
-                                   test_only=bool(normalized.get("test_only", True)))
-    return normalized, _launch_for(normalized, inputs, **choices)
+    graph = route.compile_route(normalized)
+    _inputs, _to_confirm, launch = launch_bridge.resolve_launch(normalized, graph, **choices)
+    return normalized, launch
 
 
 def _bind(normalized: dict, real_hash: str, real_ref: str) -> dict:
@@ -142,7 +148,7 @@ def cmd_route(args: argparse.Namespace) -> int:
 
 
 def cmd_assemble(args: argparse.Namespace) -> int:
-    dependencies.require()
+    dependencies.require(mode="assemble")
     run_dir = Path(args.run_dir) if args.run_dir else None
     pieces_dir = Path(args.pieces) if args.pieces else (run_dir / "pieces" if run_dir else None)
     if pieces_dir is None:
@@ -273,11 +279,14 @@ def cmd_plan(args: argparse.Namespace) -> int:
         normalized = intake.validate(_read_json(args.intake))
         test_only = bool(normalized.get("test_only", True))
         try:
-            inputs, _ = image_plan.resolve(normalized.get("image_plan"), test_only=test_only)
+            # F20: the plan hash binds the design style (via structure_refs) and the provider, so `plan`
+            # resolves exactly those two from the same rules `dispatch` uses. A fallback that omitted
+            # design_style raised KeyError in structure_refs and printed no plan to approve.
+            inputs = image_plan.plan_shape(normalized.get("image_plan"), test_only=test_only)
         except image_plan.ImagePlanError:
-            # the picture details (brand file, cap) do not change the plan; only the provider is in the hash
-            raw = (normalized.get("image_plan") or {}).get("image_provider")
-            inputs = {"image_provider": raw if raw in image_plan.KNOWN_PROVIDERS else image_plan.DEFAULT_PROVIDER}
+            inputs = {"design_style": image_plan.DEFAULT_DESIGN_STYLE,
+                      "design_style_source": "default_to_confirm",
+                      "image_provider": image_plan.DEFAULT_PROVIDER}
         print(render_plan(normalized, _launch_for(normalized, inputs, **_page_choices(args))))
         return 0
     plan = _read_json(args.plan)
@@ -322,8 +331,11 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         except li.AnswersError as exc:
             print(f"FAIL {exc}", file=sys.stderr)
             return 2
-    dependencies.require()
     payload = _read_json(args.intake)
+    # The mode is read from the intake's own claim (paid KIE pictures or a stub
+    # practice run) before anything is built, so a paid run's transport helpers are
+    # checked and a practice run is not refused for helpers it never calls.
+    dependencies.require(mode=dependencies.mode_for_intake(payload))
     approval = _read_json(args.approval)
     launch_id = str(payload.get("launch_id") or "") if isinstance(payload, dict) else ""
     normalized, launch = _resolved_launch(payload, **_page_choices(args))
@@ -475,9 +487,11 @@ def cmd_seams(_args: argparse.Namespace) -> int:
 
 def cmd_dependencies(args: argparse.Namespace) -> int:
     root = Path(args.root) if args.root else None
+    mode = args.mode
     try:
         # --install is the sanctioned fix: a missing runtime package goes into the shared pydeps folder
-        report = dependencies.ensure_runtime_packages(root) if args.install else dependencies.check(root)
+        report = (dependencies.ensure_runtime_packages(root, mode=mode) if args.install
+                  else dependencies.check(root, mode))
     except dependencies.DependencyError as exc:
         print(f"FAIL {exc}", file=sys.stderr)
         return 2
@@ -499,6 +513,18 @@ def cmd_dependencies(args: argparse.Namespace) -> int:
           f"{len(findings)} finding(s)")
     for finding in findings:
         print(f"  METADATA   {finding}")
+    # F24: which closure this report is about. The same manifest reports a paid run's KIE
+    # helpers as selected-conditional and a practice run's as unselected-optional.
+    cl = report["closure"]
+    print(f"\nclosure mode={cl['mode']} harness={cl['harness']}: "
+          f"{cl['counts']['required']} required, "
+          f"{cl['counts']['selected_conditional']} selected-conditional, "
+          f"{cl['counts']['unselected_optional']} unselected-optional")
+    print("  REQUIRED: " + (", ".join(cl["required"]) or "none"))
+    print("  SELECTED-CONDITIONAL: " + (", ".join(cl["selected_conditional"]) or "none"))
+    print("  UNSELECTED-OPTIONAL: " + (", ".join(cl["unselected_optional"]) or "none"))
+    if cl["selected_missing"]:
+        print("  SELECTED BUT MISSING: " + ", ".join(cl["selected_missing"]))
     return 2 if args.install and report["blockers"] else 0
 
 
@@ -659,6 +685,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="first install any missing runtime package (jsonschema) into the shared pydeps "
                         "folder <root>/pydeps/py<X.Y>/ with pip --target, never --break-system-packages "
                         "and never a venv; exit 2 if one is still missing")
+    d.add_argument("--mode", default=dependencies.DEFAULT_MODE,
+                   choices=list(dependencies.LAUNCH_MODES),
+                   help="the launch mode whose transitive closure to report (default: plan). "
+                        "dispatch-kie selects the paid KIE transport, receipts and image helpers; "
+                        "dispatch selects the stub practice closure")
     d.set_defaults(fn=cmd_dependencies)
     return p
 
