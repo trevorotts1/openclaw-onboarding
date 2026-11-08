@@ -226,10 +226,12 @@ def main() -> int:
 
     print("== execute() through Skill 74: request body shape ==")
     ft = base.FakeKieTransport()
+    prompt = "A serene beach at sunset, waves crashing gently, palm trees swaying"
+    ft.prompt_max = len(prompt)   # this fixture fills the cap it declares, so the 95% band floor holds
     tool = base.fresh_tool(vid, "KieVideo", ft)
     tmp = Path(tempfile.mkdtemp(prefix="kie47-seedance-"))
     result_tool = tool.execute({
-        "prompt": "A serene beach at sunset, waves crashing gently, palm trees swaying",
+        "prompt": prompt,
         "model": "bytedance/seedance-1.5-pro",
         "input_urls": [FIRST_FRAME_URL, LAST_FRAME_URL],
         "aspect_ratio": "21:9",
@@ -261,16 +263,20 @@ def main() -> int:
 
     print("== text-to-video: input_urls key omitted entirely when no images given ==")
     ft = base.FakeKieTransport()
+    prompt = "A boy rides a bike at sunset"
+    ft.prompt_max = len(prompt)
     base.fresh_tool(vid, "KieVideo", ft).execute({
-        "prompt": "A boy rides a bike at sunset", "model": "bytedance/seedance-1.5-pro", "output_path": str(tmp / "t2v.mp4")})
+        "prompt": prompt, "model": "bytedance/seedance-1.5-pro", "output_path": str(tmp / "t2v.mp4")})
     check("input_urls key is ABSENT from the body for text-to-video (matches kie-setup-full.md)",
           ft.create_calls and "input_urls" not in ft.create_calls[0]["input"], detail=str(ft.create_calls))
 
     print("== a failed Seedance task is attributed to Seedance ==")
     ft = base.FakeKieTransport()
+    prompt = "A boy rides a bike at sunset"
+    ft.prompt_max = len(prompt)
     ft.record_queue = [{"code": 200, "msg": "ok", "data": {"taskId": "t", "state": "fail", "failMsg": "content policy violation"}}]
     res_fail = base.fresh_tool(vid, "KieVideo", ft).execute({
-        "prompt": "A boy rides a bike at sunset", "model": "bytedance/seedance-1.5-pro", "output_path": str(tmp / "f.mp4")})
+        "prompt": prompt, "model": "bytedance/seedance-1.5-pro", "output_path": str(tmp / "f.mp4")})
     err_text = res_fail.error or ""
     check("failed task -> success=False", res_fail.success is False)
     check("failure text attributes the model as Seedance, NOT 'gemini-omni-video'",
@@ -288,6 +294,7 @@ def main() -> int:
     check("no createTask was sent for the over-long prompt", ft.create_calls == [])
     ft = base.FakeKieTransport()
     ft.input_props = {"bytedance/seedance-1.5-pro": {}}
+    ft.prompt_max = 2   # "hi" fills the cap, so only minLength=3 can refuse it
     ft._schema_orig = ft._schema
 
     def _schema_min(model, _o=ft._schema):
@@ -301,10 +308,12 @@ def main() -> int:
 
     print("== execute() surfaces a submit-time exception as a failed ToolResult (no crash), createTask not resent ==")
     ft = base.FakeKieTransport()
+    prompt = "A valid prompt long enough to pass the floor"
+    ft.prompt_max = len(prompt)
     err_tool = base.fresh_tool(vid, "KieVideo", ft)
     ft.create_error = vid._kie_client()[0].KieError("network", "simulated network failure")
     res_err = err_tool.execute({
-        "prompt": "A valid prompt long enough to pass the floor", "model": "bytedance/seedance-1.5-pro"})
+        "prompt": prompt, "model": "bytedance/seedance-1.5-pro"})
     check("submit failure surfaces as success=False", res_err.success is False)
     check("submit failure error text attributes the Seedance model",
           "bytedance/seedance-1.5-pro" in (res_err.error or ""), detail=res_err.error)
@@ -312,12 +321,14 @@ def main() -> int:
 
     print("== gemini-omni-video: transient image-fetch -> one retry; other failure -> veo3_fast fallback ==")
     ft = base.FakeKieTransport()
+    ft.prompt_max = len("a calm lake")
     ft.record_queue = [{"code": 200, "data": {"taskId": "a", "state": "fail", "failMsg": "image fetch failed"}}]
     res_retry = base.fresh_tool(vid, "KieVideo", ft).execute({"prompt": "a calm lake", "output_path": str(tmp / "g1.mp4")})
     check("transient image-fetch failure is retried once and then succeeds on gemini-omni-video",
           res_retry.success and res_retry.data["model"] == "gemini-omni-video" and len(ft.create_calls) == 2 and not ft.veo_calls,
           detail=str(getattr(res_retry, "error", "")))
     ft = base.FakeKieTransport()
+    ft.prompt_max = len("a calm lake")
     ft.record_queue = [{"code": 200, "data": {"taskId": "a", "state": "fail", "failMsg": "content policy violation"}}]
     res_fb = base.fresh_tool(vid, "KieVideo", ft).execute({"prompt": "a calm lake", "output_path": str(tmp / "g2.mp4")})
     check("a non-transient gemini failure is NOT resubmitted (one createTask) and falls back to veo3_fast",
@@ -326,9 +337,11 @@ def main() -> int:
 
     print("== credit preflight: a real shortfall blocks before createTask ==")
     ft = base.FakeKieTransport()
+    prompt = "A boy rides a bike at sunset"
+    ft.prompt_max = len(prompt)
     ft.catalog = [{"model": "bytedance/seedance-1.5-pro", "taskType": ["Text to Video"], "pricingDesc": "A 5-second video costs 160 credits"}]
     ft.balance = 100
-    res_broke = base.fresh_tool(vid, "KieVideo", ft).execute({"prompt": "A boy rides a bike at sunset", "model": "bytedance/seedance-1.5-pro"})
+    res_broke = base.fresh_tool(vid, "KieVideo", ft).execute({"prompt": prompt, "model": "bytedance/seedance-1.5-pro"})
     check("insufficient credits -> refused, no createTask", res_broke.success is False and ft.create_calls == []
           and "insufficient_credits" in (res_broke.error or ""), detail=res_broke.error)
 
