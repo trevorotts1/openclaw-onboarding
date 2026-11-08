@@ -1405,6 +1405,14 @@ class KieProvider:
         # provider received the raw text (fence, surrounding whitespace, NFD) while the
         # receipt and the review named a hash of the normalized text.
         req["input"]["prompt"] = gate["prompt"]
+        # The gate above measured the COMPOSED payload, so its payload_sha256 names the
+        # pre-freeze request. The receipt must name the payload the transport receives, so
+        # the frozen payload is asserted again AFTER the freeze and THAT hash is recorded.
+        gate = pol.assert_payload(req, frozen=frozen)
+        if not gate["ok"]:
+            raise ExecutorError(
+                "prompt policy refused the frozen payload before any paid call: %s"
+                % "; ".join(gate["problems"]))
         req_path.write_text(json.dumps(req, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         if frozen is not None:
             (req_dir / f"{slug}.policy.json").write_text(
