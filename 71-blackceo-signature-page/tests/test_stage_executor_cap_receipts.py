@@ -83,9 +83,12 @@ class CapAndReceipts(unittest.TestCase):
 
     def render(self, n):
         provider = exe.KieProvider(self.adapter, self.run_dir)
+        # F18: the paid boundary freezes and re-checks the prompt; use an in-band prompt
+        # (97.5 percent of the recorded 20,000-char maximum) so this test measures the
+        # spend ledger, not the prompt band.
         job = {"stage": "visual-mockup", "index": n, "out": self.run_dir / "visual-mockup" / f"part-{n:02d}.png",
-               "prompt": "a prompt", "references": []}
-        return provider.generate(job, {"model": "gpt-image-x"}), job["out"]
+               "prompt": "x" * 19500, "references": []}
+        return provider.generate(job, {"model": "gpt-image-2-5-sunburst-text-to-image"}), job["out"]
 
     def adapter_calls(self):
         return int(self.state.read_text()) if self.state.exists() else 0

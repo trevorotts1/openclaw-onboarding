@@ -197,8 +197,11 @@ def test_skill74_prompt_budget_honours_the_owner_band():
          "--check", "--prompt-file", pf, "--mode", "active", "--json"],
         capture_output=True, text=True)
     out = rc.stdout or ""
+    # F18 renamed Skill 74's success status from "OK" to "PASS" (the shared prompt
+    # policy's verdict vocabulary) and updated 74's own tests in the same change;
+    # this consumer assertion had to follow the same rename.
     check("a 5,200-char H3 prompt passes skill 74 (exit 0, band floor 5000)",
-          rc.returncode == 0 and '"status": "OK"' in out
+          rc.returncode == 0 and '"status": "PASS"' in out
           and '"floor": 5000' in out and '"target_max": 6800' in out,
           (rc.returncode, out[-240:], (rc.stderr or "")[-160:]))
 

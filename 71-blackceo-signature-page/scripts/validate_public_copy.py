@@ -23,6 +23,7 @@ S71-03 addition (Signature Launch change order, packet doc 07 section 3):
   unchanged; see GATE.md at the skill root.
 """
 import argparse
+import os
 import re
 import sys
 import unicodedata
@@ -30,6 +31,31 @@ from pathlib import Path
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 LABEL_FILE = SKILL_ROOT / "references" / "private-label-list.txt"
+
+
+def _label_policy(surface):
+    """Resolve the label conflict mechanically (F18 item 10).
+
+    A REVIEW artifact may carry section/part labels; a PRODUCTION surface may not. The
+    canonical policy service owns the rule when installed; the same defaults are used
+    otherwise so this linter never contradicts the authoring templates.
+    """
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
+    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+        Path.home() / ".openclaw" / "skills" / "shared-utils",
+        Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "prompt_policy.py").is_file():
+            if str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+            try:
+                import prompt_policy
+                return prompt_policy.label_policy(surface)
+            except Exception:
+                break
+    review = str(surface or "production").lower() in ("review", "internal")
+    return {"section_labels": review, "part_labels": review, "surface": surface}
 
 PATTERNS = [
     ("private section label", re.compile(r"^\s*(?:#+\s*)?SECTION\s+\d+[A-Z]?\s*[:.\-]", re.I | re.M)),
@@ -307,10 +333,11 @@ def scan_offer_pricing(text):
     return findings
 
 
-def scan(text, private_labels, test_run=False, no_offer_pricing=False):
+def scan(text, private_labels, test_run=False, no_offer_pricing=False, surface="production"):
     """Return (errors, warnings). test_run downgrades bracket placeholders to WARN."""
     errors = []
     warnings = []
+    labels = _label_policy(surface)
 
     def add(kind, line, label, sample, warn=False):
         entry = (line, label, sample)
@@ -319,6 +346,11 @@ def scan(text, private_labels, test_run=False, no_offer_pricing=False):
     nfc = unicodedata.normalize("NFC", text)
 
     for label, pattern in PATTERNS:
+        # A review artifact may carry section/part labels; a production surface may not.
+        if label == "private section label" and labels.get("section_labels"):
+            continue
+        if label == "private part label" and labels.get("part_labels"):
+            continue
         for match in pattern.finditer(nfc):
             add("marker", line_number(nfc, match.start()), label, match.group(0).strip())
 
@@ -387,6 +419,11 @@ def main():
                         help="Enforce the signature_launch_landing profile rule (packet "
                              "doc 07 section 3): FAIL on any offer pricing on a public "
                              "surface. Off by default; legacy profiles are unchanged.")
+    parser.add_argument("--surface", choices=["production", "review", "internal"],
+                        default="production",
+                        help="production (default) forbids section/part labels and production "
+                             "markers; review artifacts MAY carry section/part labels. The "
+                             "label policy comes from shared-utils/prompt_policy.py.")
     args = parser.parse_args()
 
     private_labels = load_private_labels()
@@ -400,7 +437,7 @@ def main():
             print(f"FAIL: could not read {path}: {exc}")
             return 2
         errs, warns = scan(text, private_labels, test_run=args.test_run,
-                           no_offer_pricing=args.no_offer_pricing)
+                           no_offer_pricing=args.no_offer_pricing, surface=args.surface)
         for kind, (line, label, sample) in errs:
             all_errors.append((path, kind, line, label, sample))
         for kind, (line, label, sample) in warns:

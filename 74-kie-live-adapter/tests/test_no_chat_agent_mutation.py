@@ -102,7 +102,10 @@ class NoMutation(unittest.TestCase):
             save = os.path.join(home, "save")
             env = dict(os.environ, HOME=home, KIE_API_KEY=KEY, KIE_LIVE_ADAPTER_MODE="active",
                        KIE_LIVE_API_BASE=base, KIE_LIVE_UPLOAD_BASE=base, KIE_LIVE_MIN_SPACING="0",
-                       KIE_LIVE_POLL_INITIAL="0", ANTHROPIC_API_KEY="sentinel-anthropic", PYTHONDONTWRITEBYTECODE="1")
+                       KIE_LIVE_POLL_INITIAL="0", ANTHROPIC_API_KEY="sentinel-anthropic", PYTHONDONTWRITEBYTECODE="1",
+                       # this test pins the CLI surface, not prompt length; the strict band is
+                       # exercised by test_prompt_band_u15c and by the real run path
+                       KIE_PROMPT_POLICY_TEST_OFF="1")
             env.pop("OC_CONFIG", None)
             cmds = [["health"], ["credits"], ["discover", "--modality", "image"], ["schema", "--model", MODEL],
                     ["validate", "--model", MODEL, "--payload", pay], ["upload", "--file", img],

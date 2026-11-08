@@ -34,8 +34,10 @@ LEAKY = ("Styled mockup section {section_number} {section_name} at {width}px rat
          "SHA-256: deadbeef. Raster: 724 × 2172. {copy} {slots}")
 # Mockup prompts need a resolved client palette (hypersaturation is built in); a made-up client.
 PALETTE = {"hero": "#0B5FFF", "dark": "#0A0A12", "light": "#FFFFFF", "accent": "#FFB400"}
-REQUEST = {"model": "gpt-image-2-5-sunburst-image-to-image", "_hypersat": PALETTE,
+REQUEST = {"_hypersat": PALETTE,
            "style": "warm editorial", "stage_prompts": {"visual-mockup": LEAKY}}
+# No model on purpose: these pin the prompt SHAPE. A paid model carries the strict band
+# (95-100 percent), exercised by WireRepairRoundThreeTests below.
 
 
 class PromptContractTests(unittest.TestCase):
@@ -166,14 +168,20 @@ class WireRepairRoundThreeTests(unittest.TestCase):
         self.assertIn("BlackCEO gold hairline", prompt)
         self.assertIn("1440px frame", prompt)
 
-    def test_below_floor_warns_and_names_the_deficit(self):
+    def test_below_strict_floor_is_refused_on_the_paid_path(self):
+        # F18: on the PAID KIE path below 95 percent is a hard revision; a stub compose
+        # records the deficit and the last paid-submit boundary still refuses.
         request = {"model": "gpt-image-2-5-sunburst", "_hypersat": PALETTE,
                    "stage_prompts": {"visual-mockup": "{copy}"}}
+        with self.assertRaises(exe.ExecutorError) as ctx:
+            exe.stage_prompt("visual-mockup", SECTION, 1, 1440, request, "3:4",
+                             strict_floor=True)
+        self.assertIn("19000-char strict floor", str(ctx.exception))
+        self.assertIn("chars", str(ctx.exception))
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
             prompt = exe.stage_prompt("visual-mockup", SECTION, 1, 1440, request, "3:4")
-        self.assertIn("below the 16000-char floor", stderr.getvalue())
-        self.assertIn("chars", stderr.getvalue())
+        self.assertIn("19000-char strict floor", stderr.getvalue())
         self.assertTrue(prompt)
 
     def test_design_prose_section_budget_refuses(self):

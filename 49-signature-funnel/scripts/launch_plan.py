@@ -835,6 +835,13 @@ def _automation_settings(answers: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     be a guess, so an unanswered question emits NO key and the compiler records
     the setting as insufficient instead. The values are the contract's own
     vocabulary (reentry allow|block, enrollment single|successive).
+
+    DECLARATION ONLY. The emitted value says what the client asked for; it is
+    never proof that the provider applied it. Reentry has a verified native
+    payload (the compiler applies and reads it back). Enrollment does not: the
+    supported workflow surface exposes no enrolment setting, so the compiler
+    records the declared value with applied=null and the exact missing-capability
+    reason. A consumer must read that record, not this plan value.
     """
     value = fact(answers, "launch.automation_reentry")
     if not isinstance(value, str) or not value.strip():
@@ -1378,6 +1385,8 @@ def _self_test() -> int:
     ps = next(a for a in p4["automations"] if a["id"] == "auto_post_sale")
     say(ps.get("settings") == {"reentry": "allow", "enrollment": "successive"},
         "the client's reentry answer reaches the automation settings")
+    say("applied" not in ps["settings"] and set(ps["settings"]) == {"reentry", "enrollment"},
+        "the settings block is a declaration only: no applied flag is minted in the plan")
     say(ps.get("purchase_identity") == {"transaction_id": "ghl.transaction.id"},
         "the client's purchase identity reaches the plan as a native field reference")
 

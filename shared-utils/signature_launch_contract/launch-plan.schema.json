@@ -666,17 +666,17 @@
         },
         "settings": {
           "type": "object",
-          "description": "Shared-semantics boundary: AUTOMATION (BFL-000). Workflow settings that change behaviour, chiefly reentry and enrolment.",
+          "description": "Shared-semantics boundary: AUTOMATION (BFL-000). The workflow settings the plan REQUESTS. A value here is a declaration, never proof that the provider applied it: the launch compiler records the observed applied state separately and leaves it unknown until a native readback proves it.",
           "properties": {
             "reentry": {
               "type": ["string", "null"],
               "enum": ["allow", "block", "unknown", null],
-              "description": "unknown until the rail answers; never guessed."
+              "description": "The requested native Allow Reentry value. The compiler writes it into the workflow settings and reads it back; an absent provider value stays unknown and the record is not called applied. Never guessed."
             },
             "enrollment": {
               "type": ["string", "null"],
               "enum": ["single", "successive", "unknown", null],
-              "description": "successive keeps a second purchase's fulfilment, deduplicated by the native event/transaction/line identity."
+              "description": "The requested purchase-succession policy: successive means a later distinct purchase (for example an upsell or downsell line on the same order) must still be delivered, deduplicated by the native event/transaction/line identity rather than the order. This is a plan declaration only: no verified native enrolment payload exists yet, so the compiler records it as declared with applied=null and the exact reason, and no consumer may treat this value as an applied setting."
             },
             "stop_on_response": {
               "type": ["boolean", "null"]

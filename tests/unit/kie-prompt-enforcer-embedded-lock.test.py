@@ -4,9 +4,11 @@
   * every copy listed in shared-utils/kie_prompt_gates.json "enforcer_copies" is byte-identical to
     shared-utils/kie_prompt_enforcer.py, and the last-known limit table matches the registry
     (scripts/embed-kie-prompt-enforcer.py --check);
-  * a copy, loaded with NO shared-utils and NO Skill 74 adapter, still enforces the identical rule through
-    last_known(): 79 percent rejected naming the chars to add, 95 and 100 percent pass, 101 percent rejected naming
-    the chars to cut, verbatim exempt from the floor, and a model with no known limit FAILS CLOSED (never open).
+  * a copy, loaded with NO shared-utils and NO Skill 74 adapter, still enforces the strict band through
+    last_known(): 79 percent rejected naming the chars to add (to the 95 percent floor), 95 and 100 percent
+    pass, 101 percent rejected naming the chars to cut, verbatim exempt from the floor, and a model with no
+    known limit FAILS CLOSED (never open). Each copy's sibling prompt_policy.py is a byte-identical copy of
+    the one canonical policy, so no copy carries a band of its own.
 """
 import importlib.util
 import json
@@ -43,6 +45,10 @@ class TestEmbeddedCopies(unittest.TestCase):
         self.assertGreaterEqual(len(DECL["enforcer_copies"]), 2)
         for rel in DECL["enforcer_copies"]:
             self.assertEqual((REPO / rel).read_bytes(), src, rel)
+        pol = (REPO / "shared-utils" / "prompt_policy.py").read_bytes()
+        self.assertEqual(len(DECL["policy_copies"]), len(DECL["enforcer_copies"]))
+        for rel in DECL["policy_copies"]:
+            self.assertEqual((REPO / rel).read_bytes(), pol, rel)
 
     def test_a_copy_enforces_the_same_rule_without_the_adapter(self):
         for rel in DECL["enforcer_copies"]:
@@ -51,7 +57,7 @@ class TestEmbeddedCopies(unittest.TestCase):
             self.assertEqual(fb, 20000)
             low = k.check(M, "x" * (fb * 79 // 100), fallback_max=fb)
             self.assertFalse(low["ok"])
-            self.assertIn("ADD at least 200", low["message"])
+            self.assertIn("ADD at least 3200", low["message"])
             for pct in (95, 100):
                 self.assertTrue(k.check(M, "x" * (fb * pct // 100), fallback_max=fb)["ok"], (rel, pct))
             high = k.check(M, "x" * (fb * 101 // 100), fallback_max=fb)
