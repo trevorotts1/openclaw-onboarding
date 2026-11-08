@@ -106,17 +106,18 @@ class TestCountRuleBoundaries(unittest.TestCase):
         self.assertTrue(v["ok"], v["problems"])
         self.assertTrue(is_pass(v["band"]["status"]), v["band"]["status"])
 
-    def test_16000_floor_is_not_a_pass_because_below_95_percent_fails(self):
+    def test_16000_floor_warns_and_passes(self):
         v = spc.validate_final(sized(16000))
-        # documented rule: 95-100 percent passes; below 95 percent fails. 16,000 is the
-        # hard floor, not the target, so it is rejected with the chars needed to reach 19,000.
-        self.assertFalse(v["ok"], v["problems"])
+        # kie-common-rules.md section 12: 16,000 is exactly the 80 percent hard floor, and
+        # "80 to 95 percent: warn and expand" — so it PASSES and the receipt records the warning.
+        # Only below 80 percent rejects (15,999 still fails; see the 15,999 case below).
+        self.assertTrue(v["ok"], v["problems"])
         self.assertEqual(v["count"], 16000)
         # the receipt's floor is the 95 percent band floor (19,000); the 80 percent hard floor
-        # (16,000) is a severity boundary in the message, not a passing target
+        # (16,000) is the reject boundary, not a passing target, so the band still says BELOW_TARGET
         self.assertEqual((v["band"]["floor"], v["band"]["target_min"], v["band"]["max"]), (19000, 19000, 20000))
-        self.assertTrue(any("AF-PROMPT-LENGTH" in p and "ADD 3000 chars" in p for p in v["problems"]),
-                        v["problems"])
+        self.assertEqual(v["band"]["status"], "BELOW_TARGET")
+        self.assertEqual(v["problems"], [])
 
     def test_20000_passes_length(self):
         v = spc.validate_final(sized(20000))
@@ -325,15 +326,15 @@ class TestPregenGateF32(unittest.TestCase):
             except OSError:
                 pass
 
-    def test_gate_15999_and_the_80_percent_floor_both_fail(self):
+    def test_gate_15999_fails_and_16000_warns_and_passes(self):
         proc = self._run_gate(sized(15999), "gpt-image-2-6/sunburst-text-to-image")
         self.assertEqual(proc.returncode, 3, proc.stderr)
         self.assertIn("AF-PROMPT-LENGTH", proc.stderr)
         self.assertIn("ADD at least 3001 chars", proc.stderr)
-        # 16,000 is the hard floor, not the 95 percent target: below 95 percent fails.
+        # 16,000 is exactly the 80 percent hard floor: section 12 says warn and expand, so it
+        # passes the gate instead of being rejected.
         proc = self._run_gate(sized(16000), "gpt-image-2-6/sunburst-text-to-image")
-        self.assertEqual(proc.returncode, 3, proc.stderr)
-        self.assertIn("ADD 3000 chars", proc.stderr)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
         proc = self._run_gate(sized(19000), "gpt-image-2-6/sunburst-text-to-image")
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
