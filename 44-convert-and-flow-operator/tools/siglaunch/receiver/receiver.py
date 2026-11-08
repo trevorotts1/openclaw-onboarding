@@ -98,6 +98,24 @@ _REQUIRED = _ENVELOPE_FIELDS - {"notes", "handoff_sha256",
 
 _HEX = set("0123456789abcdef")
 
+# The launch document dispatches as ONE operation.  Its slug names the
+# document, never a workflow, so it can never collide with a plan slug.
+_DOCUMENT_SLUG = "<launch-document>"
+
+
+def is_automation_build_document(value) -> bool:
+    """True when ``value`` is a launch-c automation-build document.
+
+    Deliberately duplicated from caf_executor (five lines) rather than
+    imported: the receiver must stay executor-agnostic so a fake executor can
+    stand in, and importing the production adapter would make that fake
+    depend on the real one.
+    """
+    return (isinstance(value, dict)
+            and value.get("draft_only") is True
+            and isinstance(value.get("builds"), list))
+
+
 
 def _is_sha256_hex(value) -> bool:
     return (isinstance(value, str) and len(value) == 64
@@ -637,6 +655,27 @@ class Receiver:
         declared, exceptions = self._partition_workflows(request)
         for entry in declared.values():
             self._validate_trigger_contract(entry)
+        if is_automation_build_document(plan):
+            # The launch document is the ONLY carrier of the expanded
+            # compiler's evidence (guard conditions, schedule suppression,
+            # unit keys, browser ledger).  It compiles and builds as ONE
+            # document through --from-automation-build; a raw plan would drop
+            # all of that.
+            build_ids = [str(b.get("id")) for b in plan.get("builds") or []
+                         if isinstance(b, dict) and b.get("id")]
+            if not build_ids:
+                raise ValueError("automation-build document carries no builds")
+            undeclared = [b for b in build_ids if b not in declared]
+            if undeclared:
+                raise ValueError(
+                    "automation-build build(s) %s are not declared in the "
+                    "request's workflows[]; refusing" % undeclared)
+            extra = [slug for slug in declared if slug not in build_ids]
+            if extra:
+                raise ValueError(
+                    "request workflow(s) %s have no automation build in the "
+                    "document; refusing" % extra)
+            return [(_DOCUMENT_SLUG, plan)], exceptions
         out = []
         for slug, wf_def in plan.items():
             if slug in ("_meta", "folder"):
@@ -768,8 +807,101 @@ class Receiver:
         exp_trigger = declared.get("trigger", {})
         return exp_trigger.get("type") in observed_types
 
+    def _execute_document(self, request: dict, document: dict,
+                          probe: dict) -> dict:
+        """Dispatch a whole launch-c automation-build document as ONE unit.
+
+        The engine compiles it through ``--from-automation-build``, so the
+        guard conditions, schedule suppression, unit keys and browser ledger
+        reach the installed graph.  Per-unit results are read from the engine's
+        own ``workflow_ids`` map; a unit the compiler refused is carried
+        verbatim and drags the verdict, never hidden behind the units that
+        built.
+        """
+        launch_id = document.get("launch_id")
+        op = {"slug": _DOCUMENT_SLUG, "status_claimed": "failed",
+              "workflow_id": None, "workflow_ids": {},
+              "expect": [], "readback": None, "errors": [],
+              "name": "launch automation build %s" % (launch_id or "(unnamed)"),
+              "folder": None,
+              "build_method": self._build_method({}, probe),
+              "trigger": None,
+              "mechanism": None,
+              "launch_id": launch_id,
+              "builds": [str(b.get("id")) for b in document.get("builds") or []
+                         if isinstance(b, dict) and b.get("id")],
+              "refusals": [],
+              "qc": {"script": "qc-built-workflow.sh",
+                     "exit_code": None, "rubric": None,
+                     "checklist_instance": None,
+                     "checklist_complete": None, "wf_items": None},
+              "readback_summary": {"exists": False, "status": None}}
+        missing = []
+        for entry in request["workflows"]:
+            if not isinstance(entry, dict) or "no_workflow_reason" in entry:
+                continue
+            missing.extend(self.executor.dependencies_present(
+                request["location_id"], entry))
+        if missing:
+            op["errors"].append(f"missing dependencies: {missing}")
+            return self._attach_evidence(op)
+        if not self.executor.snapshot(request["location_id"], "launch-document"):
+            op["errors"].append(
+                "pre-write snapshot failed: state unreadable, build "
+                "aborted with no write sent")
+            return self._attach_evidence(op)
+        result = self.executor.build(document)
+        stats = result.get("stats") or {}
+        op["errors"] = list(result.get("errors", []))
+        op["build_stats"] = result.get("stats")
+        op["refusals"] = list(result.get("refusals") or [])
+        workflow_ids = result.get("workflow_ids")
+        if not isinstance(workflow_ids, dict):
+            workflow_ids = {}
+        op["workflow_ids"] = {str(k): str(v) for k, v in workflow_ids.items()
+                              if isinstance(v, str) and v}
+        units = result.get("unit_results") or {}
+        readbacks = {slug: unit.get("export")
+                     for slug, unit in units.items() if unit.get("export")}
+        op["readback"] = readbacks or None
+        if len(op["workflow_ids"]) == 1:
+            op["workflow_id"] = next(iter(op["workflow_ids"].values()))
+        qc_codes = [unit.get("qc_exit_code") for unit in units.values()]
+        op["qc"] = {
+            "script": "qc-built-workflow.sh",
+            "exit_code": (0 if qc_codes and all(c == 0 for c in qc_codes)
+                          else next((c for c in qc_codes if c not in (None, 0)),
+                                    qc_codes[0] if qc_codes else None)),
+            "rubric": next((unit.get("rubric") for unit in units.values()
+                            if unit.get("rubric") is not None), None),
+            "checklist_instance": None,
+            "checklist_complete": None,
+            "wf_items": next((unit.get("wf_items") for unit in units.values()
+                              if unit.get("wf_items")), None)}
+        every_unit_read = bool(op["workflow_ids"]) and all(
+            isinstance(readbacks.get(slug), dict) for slug in op["workflow_ids"])
+        checks = [
+            {"name": "document_compiled",
+             "ok": bool(op["workflow_ids"]) or bool(op["refusals"])},
+            {"name": "no_compile_refusals", "ok": not op["refusals"]},
+            {"name": "every_unit_readback", "ok": every_unit_read},
+            {"name": "channel_actions_complete",
+             "ok": not (stats.get("incomplete_actions") or [])},
+            {"name": "qc_exit_zero",
+             "ok": bool(qc_codes) and all(c == 0 for c in qc_codes)}]
+        op["expect"] = checks
+        op["readback_summary"] = {
+            "exists": every_unit_read and all(c["ok"] for c in checks),
+            "status": next((rb.get("status") for rb in readbacks.values()
+                            if isinstance(rb, dict)), None)}
+        if result.get("exit_code") == 0 and all(c["ok"] for c in checks):
+            op["status_claimed"] = "created"
+        return self._attach_evidence(op)
+
     def _execute_one(self, request: dict, slug: str,
                      builder_plan: dict, probe: dict) -> dict:
+        if slug == _DOCUMENT_SLUG or is_automation_build_document(builder_plan):
+            return self._execute_document(request, builder_plan, probe)
         declared = next(w for w in request["workflows"]
                         if w.get("slug") == slug)
         mechanism = self._effective_mechanism(declared, builder_plan, slug)
@@ -836,10 +968,18 @@ class Receiver:
         checks.append({
             "name": "draft_state_recorded",
             "ok": export.get("status") == "draft"})
+        # F05: an absent Allow Reentry value on the export is UNKNOWN, never
+        # False.  The setting is only proven when the provider reported a
+        # boolean and it matches what the dispatch requested.
+        observed_reentry = export.get("allowMultiple")
+        declared_reentry = declared.get("allow_multiple")
+        expected_reentry = declared_reentry if isinstance(declared_reentry, bool) else False
         checks.append({
             "name": "reentry_matches_contract",
-            "ok": export.get("allowMultiple") ==
-                  declared.get("allow_multiple", False)})
+            "ok": isinstance(observed_reentry, bool)
+                  and observed_reentry == expected_reentry,
+            "observed": observed_reentry,
+            "expected": expected_reentry})
         checks.append({
             "name": "qc_exit_zero",
             "ok": result.get("qc_exit_code") == 0})
@@ -879,6 +1019,25 @@ def judge_receipt(receipt: dict) -> dict:
         # is a judge failure by name, never silently verified.
         if (op.get("evidence") or {}).get("unmet_required_fields"):
             verdicts[op["slug"]] = "FAILED_CHECKS"
+            continue
+        if op.get("slug") == _DOCUMENT_SLUG:
+            # A launch document claims many workflows: every one it claims a
+            # remote id for must have a read-back carrying that same id, and
+            # every declared check must pass.  Anything less is unverified.
+            claimed = op.get("workflow_ids") or {}
+            readbacks = op.get("readback") or {}
+            if not claimed:
+                verdicts[op["slug"]] = "UNVERIFIED"
+                continue
+            if not all(isinstance(readbacks.get(slug), dict)
+                       and readbacks[slug].get("id") == workflow_id
+                       for slug, workflow_id in claimed.items()):
+                verdicts[op["slug"]] = "UNVERIFIED"
+                continue
+            if not all(c.get("ok") for c in op.get("expect", [])):
+                verdicts[op["slug"]] = "FAILED_CHECKS"
+                continue
+            verdicts[op["slug"]] = "VERIFIED"
             continue
         claimed_id = op.get("workflow_id")
         readback = op.get("readback") or {}
@@ -965,6 +1124,34 @@ def stage14_outcome(request: dict, exit_code: int, result: dict) -> dict:
         for i, op in enumerate(result.get("operations", [])):
             if op.get("status_claimed") == "skipped":
                 continue  # already recorded in form_exceptions
+            if op.get("slug") == _DOCUMENT_SLUG:
+                # A launch document built several workflows in one engine run;
+                # file one row per workflow, each with its own read-back, so no
+                # unit borrows another unit's evidence.
+                readbacks = op.get("readback") or {}
+                qc_in = op.get("qc") or {}
+                for slug, workflow_id in (op.get("workflow_ids") or {}).items():
+                    index = len(workflows)
+                    rb = readbacks.get(slug) or {}
+                    wf = {"workflow_id": workflow_id, "name": slug,
+                          "trigger": None, "mechanism": None,
+                          "build_method": op.get("build_method")}
+                    for field in ("trigger", "mechanism"):
+                        unproducible.append(f"workflows[{index}].{field}")
+                    wf["qc"] = {"script": qc_in.get("script"),
+                                "exit_code": qc_in.get("exit_code")}
+                    for key in ("checklist_instance", "checklist_complete",
+                                "wf_items"):
+                        wf["qc"][key] = qc_in.get(key)
+                        if qc_in.get(key) is None:
+                            unproducible.append(f"workflows[{index}].qc.{key}")
+                    wf["readback"] = ({"exists": bool(rb),
+                                       "status": rb.get("status")}
+                                      if rb else None)
+                    if wf["readback"] is None:
+                        unproducible.append(f"workflows[{index}].readback")
+                    workflows.append(wf)
+                continue
             trig = op.get("trigger") or {}
             origin = trig.get("origin") if isinstance(trig, dict) else None
             wf = {"workflow_id": op.get("workflow_id"),

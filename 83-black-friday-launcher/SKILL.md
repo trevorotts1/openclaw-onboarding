@@ -2,7 +2,7 @@
 name: black-friday-launcher
 description: "Helps a business owner get their whole Black Friday sale ready, step by step: the sales page, the order form, the special offers, the thank-you page, and the launch emails and text messages. Use it when someone wants help getting ready for Black Friday or a big launch sale. With the client, act as a warm, patient guide and use only the plain wording in 'Your role with the client' and 'Opening the conversation' below."
 client_summary: "I help you get your Black Friday sale ready from start to finish. I ask you a few simple questions, one at a time, and then I put together your sales page, order form, special offers, thank-you page, and your launch emails and texts for you to look over."
-version: 0.2.16
+version: 0.2.17
 priority: HIGH
 ---
 
@@ -235,6 +235,15 @@ a numbered directory, so the same code runs in both layouts.
    `requirements.txt` (jsonschema) on macOS and Windows, and the preflight
    reports `enabled_in_999=True` only while every required dependency is present.
 
+8. **Activation stages** (`launcher_core/intake.py`, `launcher_core/package.py`). The intake's
+   optional `activation` block names the desired end state: `local_prepared` (the default),
+   `draft_constructed`, `installed` or `published`. `installed`/`published` need a recorded
+   `authority` for this location and are refused on a `test_only` run. Construction and
+   activation are recorded apart: `activation.json` carries desired/achieved stage, authority,
+   read-back and the construction receipts; the manifest and receipt carry that record and its
+   digest. The achieved stage comes from evidence only, so a local/draft package is never
+   labelled installed or live, and a read-back past the authorized stage is refused.
+
 ## Read order
 
 Read in this order. Each step names the file, so nothing here depends on guessing a path.
@@ -247,8 +256,10 @@ Read in this order. Each step names the file, so nothing here depends on guessin
    build plans, then `44-convert-and-flow-operator/automation-templates/launch-c/plan_reader.py` reads them,
    and `44-convert-and-flow-operator/tools/siglaunch/` is the pipeline that builds and receipts them. See
    "Launch mode" below. Skill 83 depends on Skill 44 and Skill 50 for this reason.
-   The machine-readable record of that dependency is `skill.json` and `registration.json` `depends_on`
-   plus the `launcher_core/dependencies.json` preflight.
+   The executable requirement set is `launcher_core/dependencies.json` alone (read by
+   `launcher_core/dependencies.py`). `skill.json` and `registration.json` carry only a
+   NON-AUTHORITATIVE pointer to it (target, digest, counts); `dependencies.py:metadata_spine`
+   reports any disagreement as a finding in the `dependencies` report, never as a crash.
 
 ## Entry
 
@@ -280,11 +291,26 @@ python3 -m launcher_core.cli dispatch     --intake intake.json --out <run-dir> \
 python3 -m launcher_core.cli questions
 python3 -m launcher_core.cli assemble     --intake intake.json --pieces <run-dir>/pieces --out <package-dir> \
                  (--launch-plan <launch-plan.json> [--deliveries <deliveries.json>] | --page-only) \
-                 [--allow-no-designs]
+                 [--allow-no-designs] [--run-dir <run-dir>] [--activation-readback <readback.json>] \
+                 [--run-image-stages --image-provider stub|kie [--allow-paid]] \
+                 [--review-root <page-run>] [--host-media <approval-ref> [--hosting-folder-name NAME] [--probe-hosting]]
+python3 -m launcher_core.cli brand        --answers <answers.json> --out <job-dir> [--brand-file <brand.json>] \
+                 [--allow-paid --approval-ref <ref> --model-id <registry-id>]
+python3 -m launcher_core.cli revise-image --run <page-run> --item IMG-001 --defect "<named defect>" \
+                 [--provider kie --allow-paid]
 python3 -m launcher_core.cli check        --manifest <package-dir>/package-manifest.json --root <package-dir>
 python3 -m launcher_core.cli seams
 python3 -m launcher_core.cli dependencies [--root <repo>] [--install]
 ```
+
+`assemble` also produces the graphics handoff every time: the SOP-GIP-02 image QC request and report
+(built only from Skill 71 Review Receipt v2 files, never from typed scores) and the SOP-GIP-03
+delivery record. `--run-image-stages` runs Skill 71's real image-stage driver first (it stops at the
+client's layout-proof approval; `--allow-paid` is required with the paid provider). `--host-media` is
+the one approved upload: it runs the existing GHL media uploader, records its real result and puts the
+real URLs into the pages; without it nothing is uploaded and the record says so. `brand` carries the
+client's logo answer to the real asset producer (a created logo needs the approved spend and a
+registry model id). `revise-image` corrects one named defect on one image item and no other.
 
 `plan` validates a shared launch plan's calendar and completeness. `dispatch`
 turns an intake into a Skill 49 launch record and builds every page, recording
@@ -311,10 +337,16 @@ python3 -m launcher_core.cli assemble --intake fixtures/elevation/intake.json \
 - **Elevation** (no-price 12-section page -> separate three-level selection -> native order form) routes,
   assembles and passes the fixture runner's completeness checks offline.
 - **7FigurePreneur** (three levels folded into the signature page -> native order form, no selection page)
-  routes and assembles through the settled `folded_levels` mode with its three distinct offers intact, but it
-  is **delivery-blocked**: the Skill 79 contract names no checkout mode for `folded_levels`
-  (`checkout_mode_state: contract_gap`, `AF-LAUNCH-CHECKOUT-MODE`), so `check` fails the package until
-  Skill 79 names a mode. The fixture runner asserts that block; it is not a green build.
+  routes and assembles through the settled `folded_levels` mode with its three distinct offers intact, and
+  it is **not blocked**: `launcher_core/checkout_instances.py` realises the Skill 79
+  `combined_single_offer` mode once per main price choice (`realisation: per_offer_instances`,
+  `selection_ref` always null), so the mapping records `checkout_mode_state: resolved` and
+  `checkout.delivery_blocked: false`. Each level gets its own native order form, its own page id, its
+  own bump applicability and its own Skill 79 validator verdict, and the real S78 `emit_binding_plan`
+  maps one native target to each instance. Delivery still depends on the facts the launch must supply:
+  a missing native id, terms, consent, capability/fulfillment reference or bump component fact is
+  recorded as a rejected instance (`AF-LAUNCH-CHECKOUT-REJECTED`), never defaulted. The fixture runner
+  asserts the three accepted instances, not a block.
 
 `python3 fixtures/run_fixtures.py` proves both. These packages hold build plans, not page bytes.
 
@@ -327,11 +359,19 @@ steps, all DRAFT-ONLY (nothing is sent and nothing goes live):
    --launch-plan <plan.json> --build-plan <skill-50-build-plan.json> --out automation-builds.json` reads the
    launch plan and the Skill 50 build plans into one automation-build document. A missing page URL, text set,
    build plan or an email-count mismatch blocks the build.
-2. **Build command.** The `44-convert-and-flow-operator/tools/siglaunch/` receiver validates the request and
-   drives the governed build through Skill 44's engine, then reads the saved graph back.
+2. **Build command.** One command compiles and builds:
+   `caf --json --experimental workflows build --from-automation-build automation-builds.json
+   --journal <path>`. `--from-automation-build` runs `compile_launch_builds()` and then the campaign
+   build under the write lock; `--journal` is REQUIRED on that path and is the receipt file. The
+   `44-convert-and-flow-operator/tools/siglaunch/` receiver is **not** a production entry
+   (`PRODUCTION_ENTRY_ENABLED = False`): the declared Black Friday purchase path is the native GHL
+   post-sale workflows, and repairing a launch goes through this command, never by enabling that
+   runner.
 3. **QC.** `44-convert-and-flow-operator/qc-built-workflow.sh <workflow-id> --json` checks the built workflow;
    a build that fails QC is not delivered.
-4. **Receipt.** The `siglaunch` receiver issues the receipt for the build. Skill 83 reads delivery results
+4. **Receipt.** The build journal is that build's receipt (unit key, remote id, phase, expected and
+   read-back hash), so a re-run is safe; for a Skill 71 hand-off the `siglaunch` receiver issues its
+   own receipt. Skill 83 reads delivery results
    through `assemble --launch-plan <plan> --deliveries <deliveries.json>` and requires every planned email,
    text and automation to be delivered before the package counts as a full launch.
 
@@ -382,7 +422,7 @@ tracked are named.
 | Charge, create an entitlement or call a billing API | permanent boundary; membership and purchase truth is PRD-12 |
 | Start a live Council session; Council advice is a readiness record until then | CON-16 |
 | Install the native order form, bump and one-click steps (Skill 06 has the step, S06-02, but it refuses to write until the live commerce capture CHK-19 is done) | S06-02, CHK-19 |
-| Name a checkout mode for `folded_levels` (delivery stays blocked) | Skill 79 contract gap, `AF-LAUNCH-CHECKOUT-MODE` |
+| Supply the native checkout facts a per-offer instance still needs (native ids, terms, consent, capability/fulfillment refs, bump component facts) | recorded per instance: `AF-LAUNCH-CHECKOUT-REJECTED` |
 | Choose a distribution target | open seam `distribution_run_target` in `DECISIONS-PENDING.md` |
 | Cross-sale teaching content (the surface is present, the teaching is marked pending) | open seam `cross_sales_teaching_source` |
 | Build automations or workflows | Skill 44 and Skill 50 (see "Launch mode"); S44-25 |

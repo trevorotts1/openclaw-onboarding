@@ -336,6 +336,86 @@
         ]
       }
     },
+    "proposed_offer": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "OPTIONAL guided-answer record (S49 intake, W05/W10): the offer a MISSING or PARTIAL offer answer supports, carried beside the facts and never in place of one. An intake ledger envelope: state is recommended_unapproved, value.price is null, value.missing names every gap in plain words and value.deliverable_kinds carries each item's kind. Absence is the only encoding of 'no proposal exists'. Plan-approved content inside the plan document hash.",
+      "properties": {
+        "value": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "state": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_ref": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "state",
+        "source_ref"
+      ]
+    },
+    "deliverables_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "OPTIONAL guided-answer record (S49 intake, W05/W10): an intake ledger envelope whose value holds one entry per deliverable the client named, with the kind the intake classified and the phrase that decided it, so a generated file is never read as a human service and an unfinished course is never read as a finished product. Absence is the only encoding of 'no deliverable was named'. Plan-approved content inside the plan document hash.",
+      "properties": {
+        "value": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "title": "Deliverable kind",
+            "properties": {
+              "item": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "enum": [
+                  "generated_file",
+                  "human_service",
+                  "future_session",
+                  "unfinished_course",
+                  "unknown"
+                ]
+              },
+              "evidence": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "item",
+              "kind",
+              "evidence"
+            ]
+          }
+        },
+        "state": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_ref": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "state",
+        "source_ref"
+      ]
+    },
     "extras": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",

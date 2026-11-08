@@ -1,0 +1,184 @@
+{
+  "_comment": "Command Center launch contract, version 2. S1 Pair C (W12). This is the DATA half of the S1 handoff: the server-accepted event/schema changes, the immutable run identity and the current-revision requirements that W12 implements in blackceo-command-center at S3. It is a contract document, not a JSON Schema: the validator lives in the consuming code and the approval half lives in approval_record.py + approval-record.schema.json. Nothing here authorizes an effect; it names what the server must accept and must refuse.",
+  "contract": "command-center-launch",
+  "version": 2,
+  "owned_by": "W12-command-center",
+  "verified_by": "W11-runtime-governance",
+  "consumers": ["W05-guided-plan", "W08-graphics"],
+
+  "approval": {
+    "contract_file": "approval_record.py",
+    "schema_file": "approval-record.schema.json",
+    "version": "2.0",
+    "accepted_record_versions": ["2.0", "1.0", "cc-unversioned"],
+    "canonical_kinds": [
+      "launch_plan_build",
+      "paid_asset_budget",
+      "page_publication",
+      "automation_write",
+      "design_board",
+      "pin_rotation",
+      "test_location_use",
+      "live_payment_test",
+      "customer_send_activation",
+      "batch_merge",
+      "release_publication",
+      "fleet_rollout"
+    ],
+    "command_center_kind_aliases": {
+      "plan_build": "launch_plan_build",
+      "paid_asset_budget": "paid_asset_budget",
+      "publish": "page_publication",
+      "automation_write": "automation_write",
+      "pin_rotation": "pin_rotation",
+      "design_board": "design_board"
+    },
+    "identity": {
+      "consenting_actor_field": "client_identity_ref",
+      "consenting_actor_is": "the authenticated person whose reply minted the approval",
+      "routing_tenant_field": "tenant_id",
+      "routing_tenant_is": "the company/workspace used for routing and data scoping",
+      "interchangeable": false,
+      "wrong_mapping_refusal": "APPROVAL-IDENTITY-KIND",
+      "rule": "A tenant slug is never accepted where a consenting person is required, and a person is never accepted as the routing tenant unless the caller declares identity_kind='tenant'."
+    },
+    "implied_kinds": {},
+    "legacy_publish_does_not_authorize": [
+      "customer_send_activation",
+      "automation_write",
+      "release_publication",
+      "fleet_rollout",
+      "live_payment_test",
+      "test_location_use",
+      "paid_asset_budget",
+      "design_board",
+      "pin_rotation",
+      "launch_plan_build",
+      "batch_merge"
+    ],
+    "minting_rule": "Only the Command Center may mint a record, from the tenant's registered client identity and that client's own reply. An operator/worker bearer is never a client identity. A worker writing an approval-shaped JSON is not approval."
+  },
+
+  "run_identity": {
+    "run_id": { "format": "uuid-v4", "human_name_is_run_id": false },
+    "required_fields": [
+      "tenant_ref",
+      "installation_id",
+      "skill",
+      "launch_id",
+      "plan_revision",
+      "plan_hash"
+    ],
+    "immutable_fields": [
+      "tenant_ref",
+      "installation_id",
+      "skill",
+      "launch_id"
+    ],
+    "rebind_policy": "reject",
+    "rebind_rule": "Once a run_id is bound to a (tenant_ref, installation_id, skill, launch_id) tuple, any event claiming a different tuple is refused and nothing is written. The current Command Center check compares launch_id only; S3 adds the other three.",
+    "collision_cases_to_refuse": [
+      "two clients using the same launch slug",
+      "one client's second installation reusing an existing run_id",
+      "a later plan revision reusing the previous revision's run_id"
+    ]
+  },
+
+  "current_revision": {
+    "field": "plan_revision",
+    "type": "integer",
+    "minimum": 1,
+    "monotonic": true,
+    "rule": "A run advances to a higher plan_revision; it never moves back. Evidence produced at a lower revision is retained historically and may not close, complete or overwrite a unit at the current revision unless the dependency-invalidation logic proves that exact artifact unaffected.",
+    "stale_evidence_disposition": "historical-only",
+    "late_attempt_rule": "An older attempt finishing after a retry or revision is recorded with its own attempt identity; it cannot replace the current output, release another attempt's budget, close a new revision's stage, or overwrite another tenant's run."
+  },
+
+  "server_accepted_events": {
+    "schema_version": "1.0",
+    "transport": "authenticated per-client ingest token binding client_slug + host_shape + installation_id",
+    "contradiction_policy": "reject",
+    "absent_claim_policy": "fill from token",
+    "event_types": {
+      "run_initialized": { "required": ["host_shape"] },
+      "stage_closed": { "required": ["stage", "receipt_status", "closed_at"] },
+      "stage_blocked": { "required": ["stage", "failures", "blocked_at"] },
+      "item_closed": { "required": ["stage", "item_id", "closed_at"] },
+      "item_blocked": { "required": ["stage", "item_id", "failures", "blocked_at"] },
+      "report_generated": { "required": ["overall", "review_mode", "report_json_path"] },
+      "pin_drift": { "required": ["authority_id", "pinned_sha", "observed_sha"] }
+    },
+    "unknown_field_policy": "reject",
+    "unregistered_stage_policy": "reject-and-report",
+    "unregistered_stage_visibility": "A rejected or unknown stage is a visible delivery failure. It must not disappear into a successful synchronization count.",
+    "additive_changes_for_s3": [
+      "plan_revision on every event",
+      "plan_hash on every event",
+      "tenant_ref on every event",
+      "attempt_id on item and stage events"
+    ]
+  },
+
+  "stage_registry": {
+    "registration_before_emission": true,
+    "known_mismatch": {
+      "skill": 83,
+      "emitted_stage": "check",
+      "registered_stage": "checks",
+      "source": "83-black-friday-launcher/launcher_core/cli.py emits 'check'; launch-abilities.ts skill 83 stageOrder registers 'checks'",
+      "status": "accepted_with_normalization",
+      "fix_at_s3": "Register 'check' as an alias of 'checks' in the stage vocabulary, version the vocabulary, and only then enable any new emitter."
+    },
+    "version_field": "stage_vocabulary_version",
+    "version": 2
+  },
+
+  "projection": {
+    "overall_and_percentage": "projected from the canonical current unit evidence, never supplied by the agent",
+    "same_unit_inventory_as_producer": true,
+    "extra_units_forbidden": true,
+    "dropped_units": "contribute zero delivered work",
+    "stage_percentage_label": "separate from complete pages or complete launch units",
+    "invalidation_events_required": [
+      "artifact_superseded",
+      "evidence_invalidated",
+      "scoped_approval_revoked",
+      "plan_revision_advanced"
+    ],
+    "no_basis_or_data": "Current unit evidence only."
+  },
+
+  "card_granularity": {
+    "wireframe_task": "may complete as a wireframe",
+    "page_task": "requires that page's own requirements",
+    "launch_task": "requires the approved launch scope",
+    "subtask_closes_parent": false
+  },
+
+  "outbox": {
+    "durable_retry": true,
+    "idempotency_key": "event_id",
+    "ordering_key": "run_id + plan_revision",
+    "states": ["queued", "accepted", "retrying", "dead_lettered"],
+    "exhausted_counts_as_sent": false,
+    "outage_rule": "A Command Center outage may not stop independent permitted local work, but the report must show synchronization unavailable/stale and may not claim remote acceptance."
+  },
+
+  "server_refusals_required_at_s3": [
+    "an event whose tenant_ref/installation_id/skill/launch_id contradicts the stored run identity",
+    "an event at a plan_revision lower than the run's current revision",
+    "an event carrying a field the accepted event contract does not name",
+    "an event naming a stage that is not registered for its skill",
+    "a report/review/complete transition with no launch-specific evidence",
+    "a transition that would preserve an already-green status after governing proof changed or a scoped approval was revoked",
+    "an approval record that declares authenticated_platform_record on a local/test transport"
+  ],
+
+  "s3_coordinate_changes_in_command_center": [
+    "src/lib/launch-approvals.ts: record the canonical kind, keep tenant_id and client_identity_ref as separate fields, keep flat cap fields as the wire and document the normalization, and version the row",
+    "src/lib/launch-ability-runs.ts: extend the run re-bind check from launch_id to the full immutable tuple, add plan_revision and plan_hash, keep stale evidence historical",
+    "src/lib/launch-run-events.ts: accept the v2 fields and reject an unknown field or stage",
+    "src/lib/launch-abilities.ts: register 'check' as an alias of 'checks' and version the stage vocabulary",
+    "src/lib/launch-runs.ts: project overall/percentage from unit evidence only"
+  ]
+}

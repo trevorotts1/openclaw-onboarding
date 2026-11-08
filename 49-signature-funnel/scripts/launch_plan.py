@@ -18,8 +18,17 @@ conversation_ai{requested,mode} + launch_calendar + a2p_ready.
 
 LAW
 ---
-* Plans only. Nothing here sends, builds, spends or switches anything live.
-  every email, text and automation carries draft_only = true.
+* Plans only. Nothing here sends, builds, spends, hosts or switches anything
+  live. every email, text and automation carries draft_only = true.
+* GUIDED DELIVERABLES. A missing or partial offer is carried, not dropped: the
+  intake's `proposed_offer` and `deliverables_plan` entries reach this artifact
+  (offer.proposal, offer.packages[].deliverables_detail), so a consumer can tell
+  a generated file from a human service, a live session or an unfinished course.
+  The ONE item this run can genuinely write — a `generated_file` deliverable,
+  built only from the client's own words — is produced by `produce_deliverables`
+  into the run directory (`deliverables/` plus `delivery-record.json`). Every
+  other kind is recorded `not_produced` with the exact missing capability; no
+  placeholder file and no zero-byte stand-in ever stands in for a product.
 * Missing facts BLOCK the plan by name (state awaiting_missing_fact): a launch
   date, doors-open/close time, timezone or the Conversation AI mode is asked,
   never invented. A2P unknown is treated as not ready, the safe side: texts stay
@@ -55,6 +64,7 @@ Deterministic, stdlib only, no network, no model. Exit 0/2/3.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -73,6 +83,65 @@ EXIT_FAILCLOSED = 3
 SCHEMA_VERSION = "1.0.0"
 SEND_WINDOW_DEFAULT = {"start": "08:00", "end": "21:00", "timezone": "recipient_local"}
 PROMOTIONAL_CAP = 5
+
+# F04: the contact tag that marks WHICH purchased variant the post-sale handler
+# serves. It is derived from the plan's own purchased slot (the `slot` of the
+# main-slot package in `offer.packages`, i.e. the base purchase this handler
+# delivers access for) — the same slot vocabulary the access block and the
+# offer records already carry. It is never a second variant system and never a
+# tag the plan did not ask for: the buildable launch-b template n2 names the
+# placeholder "variant tag (main / upsell-N / downsell-N)" and the launch-c
+# reader carries this one value verbatim to the launch compiler.
+VARIANT_TAG_KEY = "variant_tag"
+PURCHASE_IDENTITY_KEY = "purchase_identity"
+SETTINGS_KEY = "settings"
+
+# F05: reentry/enrolment as the CLIENT answered them (intake d6_reentry). The
+# schema's own vocabulary is used (settings.reentry allow|block, settings
+# .enrollment single|successive). An unanswered question emits NO settings key,
+# so the compiler records the setting as insufficient instead of guessing.
+REENTRY_CHOICES = (
+    (("allow", "run it again", "run again", "each new purchase"), "allow", "successive"),
+    (("block", "once per contact", "run it once", "only once"), "block", "single"),
+)
+
+# F05: the purchase-event identity the handler deduplicates on. The client's
+# answer (intake d7_purchase_identity) names the native field the selected
+# checkout supplies; the plan carries the field REFERENCE, never a purchase
+# value it cannot know at plan time. An order id alone is grouping only, so it
+# is emitted (honestly) but the compiler records it insufficient.
+PURCHASE_IDENTITY_CHOICES = (
+    (("purchased line", "purchased_line"), "purchased_line_id", "ghl.purchased_line.id"),
+    (("transaction",), "transaction_id", "ghl.transaction.id"),
+)
+
+# The two guided-answer ledger entries the intake records for a missing or
+# partial offer (shared-utils/client_intake/engine.py: to_launch_known).
+GUIDED_PROPOSAL_KEY = "proposed_offer"
+GUIDED_DELIVERABLES_KEY = "deliverables_plan"
+
+# Where produce_deliverables writes, inside the run directory it is given.
+DELIVERABLES_DIR = "deliverables"
+DELIVERY_RECORD_NAME = "delivery-record.json"
+DELIVERY_RECORD_TYPE = "signature-launch.deliverables.v1"
+PRODUCED, NOT_PRODUCED = "produced", "not_produced"
+
+# The one deliverable kind this run can genuinely write. Every other kind is a
+# promise whose content no producer in this repository writes, and it is named.
+WRITABLE_KIND = "generated_file"
+MISSING_AUTHORING_PRODUCER = (
+    "no producer in this repository writes this item's own content (a live call, a "
+    "human-delivered service, a course module or an unidentified item); the promise is "
+    "kept and the gap is named instead of being filled with a placeholder file")
+MISSING_RUN_DIR = (
+    "no run directory is bound to this call, so nothing was written; the launcher passes "
+    "the run folder (run_dir) and the item is produced there")
+KIND_NOTE = {
+    "human_service": "a person delivers this; it is not a file",
+    "future_session": "a scheduled live happening; it is not a file",
+    "unfinished_course": "the client said this content is not made yet",
+    "unknown": "the client's words do not say what kind of thing this is",
+}
 
 # Approved product/event facts (normalised: lower case, '-' and spaces become '_').
 # A self-paced product may never carry a webinar, reminder, replay or no-show unit.
@@ -253,6 +322,12 @@ def _package_record(offer: Dict[str, Any], index: int) -> Dict[str, Any]:
         "offer_id": offer.get("offer_id"),
         "slot": offer.get("slot"),
         "display_name": offer.get("display_name"),
+        # What the buyer gets, verbatim: the delivery record and the kind list are
+        # read from here, so the artifact never has to guess what a package holds.
+        "deliverables": [i for i in (offer.get("deliverables") or [])
+                         if isinstance(i, str) and i.strip()],
+        "exclusions": [i for i in (offer.get("exclusions") or [])
+                       if isinstance(i, str) and i.strip()],
         "price_id": price.get("price_choice_id") or price.get("price_id"),
         "amount_minor": amount if known_amount else None,
         "amount_raw": amount,
@@ -359,6 +434,181 @@ def _offer_block(launch: Dict[str, Any], answers: Dict[str, Any],
                       "approved minor units, currency and schedule verbatim",
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Guided answers: the proposal, the deliverable kinds, and the one producer.
+# ---------------------------------------------------------------------------
+def _ledger_value(answers: Dict[str, Any], key: str) -> Any:
+    """(value, state) of one ledger entry, or (None, None). Accepts the intake's
+    {value, state, source_ref} entry and a plain value alike."""
+    entry = _entry(answers, key)
+    if entry is _MISSING:
+        return None, None
+    if isinstance(entry, dict) and "value" in entry and (
+            "state" in entry or "source_ref" in entry or "question_id" in entry):
+        return entry.get("value"), entry.get("state")
+    return entry, None
+
+
+def _deliverable_kinds(answers: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """item text -> {item, kind, evidence}, from the intake's own classification.
+
+    The kind comes from shared-utils/client_intake/engine.py's
+    `classify_deliverable` (recorded in `deliverables_plan`); this planner never
+    re-classifies and never guesses. An item with no recorded kind is `unknown`,
+    which is a real answer meaning "the words do not say".
+    """
+    value, _state = _ledger_value(answers, GUIDED_DELIVERABLES_KEY)
+    out: Dict[str, Dict[str, Any]] = {}
+    for record in value if isinstance(value, list) else []:
+        if isinstance(record, dict) and isinstance(record.get("item"), str):
+            out[record["item"]] = {"item": record["item"],
+                                   "kind": record.get("kind") or "unknown",
+                                   "evidence": record.get("evidence")}
+    return out
+
+
+def _package_deliverables(package: Dict[str, Any],
+                          kinds: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """One package's deliverables, each with its kind. Never re-ordered, never invented."""
+    return [kinds.get(str(item), {"item": str(item), "kind": "unknown", "evidence": None})
+            for item in package.get("deliverables") or []]
+
+
+def _slug(text: Any, limit: int = 60) -> str:
+    cleaned = re.sub(r"[^a-z0-9]+", "-", str(text or "").lower()).strip("-")
+    return cleaned[:limit].strip("-") or "item"
+
+
+def _free_item_markdown(package: Dict[str, Any], rows: Sequence[Dict[str, Any]],
+                        proposal: Any, answers: Dict[str, Any]) -> str:
+    """The free item's body, from the client's own answers only.
+
+    It lists what the client said the buyer gets and what happens next; it never
+    writes a promise, a price or a claim the client did not give.
+    """
+    name = package.get("display_name") or "Your free item"
+    description = fact(answers, "offers.main.description") or fact(answers, "offer_description")
+    audience = fact(answers, "audience")
+    outcome = fact(answers, "offers.main.transformation")
+    lines = [f"# {name}", ""]
+    if isinstance(description, str) and description.strip() and description.strip() != name:
+        lines += [description.strip(), ""]
+    lines += ["## Your checklist", ""]
+    for row in rows:
+        if row["kind"] == WRITABLE_KIND:
+            lines.append(f"- [ ] {row['item']}")
+        else:
+            lines.append(f"- {row['item']} — {KIND_NOTE.get(row['kind'], KIND_NOTE['unknown'])}")
+    if isinstance(outcome, str) and outcome.strip():
+        lines += ["", "## What this changes", "", outcome.strip()]
+    if isinstance(audience, str) and audience.strip():
+        lines += ["", "## Who this is for", "", audience.strip()]
+    if isinstance(proposal, dict) and proposal.get("missing"):
+        lines += ["", "## Still to confirm with you", ""]
+        lines += [f"- {gap}" for gap in proposal["missing"] if isinstance(gap, str)]
+    lines += ["", "---",
+              "Draft generated from your own answers. Nothing here is published, sent or hosted.",
+              ""]
+    return "\n".join(lines)
+
+
+def produce_deliverables(launch: Dict[str, Any], answers: Dict[str, Any],
+                         packages: Sequence[Dict[str, Any]],
+                         run_dir: Optional[str] = None) -> Dict[str, Any]:
+    """Produce the free item (and every `generated_file` deliverable), and record
+    honestly what could not be produced.
+
+    Writes into ``run_dir/deliverables``: one Markdown file per writable item,
+    built only from the client's own words, plus ``delivery-record.json`` at the
+    run root. Nothing is hosted, sent or published, and a promise no producer in
+    this repository can write is recorded ``not_produced`` with the exact missing
+    capability — never a placeholder file.
+
+    Returns the block the plan carries as ``deliverables``; it is returned even
+    when the plan itself is blocked, so a missing calendar cannot destroy the
+    produced work.
+    """
+    kinds = _deliverable_kinds(answers)
+    proposal, _state = _ledger_value(answers, GUIDED_PROPOSAL_KEY)
+    rows: List[Dict[str, Any]] = []
+    files: List[Dict[str, Any]] = []
+    base = Path(run_dir).resolve() if isinstance(run_dir, str) and run_dir.strip() else None
+    if base is not None:
+        base.mkdir(parents=True, exist_ok=True)  # the run folder, never a stray temp dir
+    for package in packages:
+        for row in _package_deliverables(package, kinds):
+            entry = dict(row, offer_id=package.get("offer_id"),
+                         offer_name=package.get("display_name"))
+            if row["kind"] == WRITABLE_KIND:
+                if base is None:  # nothing may be written without a run folder
+                    entry.update(state=NOT_PRODUCED, missing_capability=[MISSING_RUN_DIR])
+                else:
+                    rel = Path(DELIVERABLES_DIR) / f"{_slug(str(package.get('offer_id')))}-{_slug(row['item'])}.md"
+                    data = _free_item_markdown(
+                        package, [r for r in _package_deliverables(package, kinds)
+                                  if r["kind"] == WRITABLE_KIND], proposal, answers).encode("utf-8")
+                    target = base / rel
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(data)
+                    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+                    entry.update(state=PRODUCED, path=str(rel), sha256=digest,
+                                 size=target.stat().st_size)
+                    files.append({"path": str(rel), "sha256": digest})
+            else:
+                entry.update(state=NOT_PRODUCED, missing_capability=[MISSING_AUTHORING_PRODUCER],
+                             note=KIND_NOTE.get(row["kind"], KIND_NOTE["unknown"]))
+            rows.append(entry)
+    produced = [r for r in rows if r["state"] == PRODUCED]
+    state = ("produced" if rows and len(produced) == len(rows)
+             else "partial" if produced else "not_produced")
+    free_ids = {str(p.get("offer_id")) for p in packages
+                if p.get("amount_minor") == 0 or _norm(launch.get("journey_mode")) == "free_entry"}
+    block: Dict[str, Any] = {
+        "record_type": DELIVERY_RECORD_TYPE,
+        "state": state if rows else "not_produced",
+        "run_dir": str(base) if base is not None else None,
+        "items": rows,
+        "counts": {"produced": len(produced), "not_produced": len(rows) - len(produced)},
+        "free_item": next(({"offer_id": r["offer_id"], "item": r["item"], "state": r["state"],
+                            "path": r.get("path"), "sha256": r.get("sha256")}
+                           for r in rows if str(r["offer_id"]) in free_ids), None),
+        "missing_capability": sorted({cap for r in rows
+                                      for cap in r.get("missing_capability") or []}),
+        "files": files,
+        "record": None,
+    }
+    if base is None:
+        return block
+    record_doc = {k: block[k] for k in ("record_type", "state", "free_item", "items", "counts",
+                                        "missing_capability")}
+    record_doc["launch_id"] = str(launch.get("launch_id", "launch"))
+    target = base / DELIVERY_RECORD_NAME
+    target.write_text(json.dumps(record_doc, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    block["record"] = {"path": DELIVERY_RECORD_NAME,
+                       "sha256": hashlib.sha256(target.read_bytes()).hexdigest()}
+    return block
+
+
+def _persona_record(launch: Dict[str, Any], answers: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The persona task record the plan carries (launch_persona_adapter).
+
+    Same module the intake's offer recommendation already reads, so the record
+    names what actually governed the proposal; it renders its directive through
+    copy_persona_blend_seam and claims no quote and no endorsement. None when the
+    adapter is not installed: a missing adapter never blocks the plan.
+    """
+    try:
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import launch_persona_adapter as adapter  # noqa: PLC0415 - optional sibling module
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        return adapter.apply_launch_personas(launch=launch, answers=answers)
+    except Exception:  # noqa: BLE001 - a malformed blueprint never blocks the plan
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -578,11 +828,64 @@ def _text_sets(*, text_channel: bool, has_landing: bool,
     return sets
 
 
+def _automation_settings(answers: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The client's reentry/enrolment answer, as the contract's `settings` block.
+
+    None when the question was not answered: emitting an invented setting would
+    be a guess, so an unanswered question emits NO key and the compiler records
+    the setting as insufficient instead. The values are the contract's own
+    vocabulary (reentry allow|block, enrollment single|successive).
+    """
+    value = fact(answers, "launch.automation_reentry")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip().lower()
+    for tokens, reentry, enrollment in REENTRY_CHOICES:
+        if text.startswith(tokens) or any(token in text for token in tokens):
+            return {"reentry": reentry, "enrollment": enrollment}
+    return None
+
+
+def _purchase_identity(answers: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The client's purchase-event identity answer, as the contract's block.
+
+    The value is the native FIELD REFERENCE the selected checkout supplies
+    (e.g. ghl.transaction.id), never a purchase value this planner cannot know.
+    None when unanswered: no identity is invented.
+    """
+    value = fact(answers, "launch.purchase_identity")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip().lower()
+    for tokens, field, reference in PURCHASE_IDENTITY_CHOICES:
+        if any(token in text for token in tokens):
+            return {field: reference}
+    return None
+
+
+def _post_sale_variant_tag(packages: Sequence[Dict[str, Any]]) -> Optional[str]:
+    """The variant the post-sale handler marks, from the plan's main package slot.
+
+    The short handler delivers the BASE purchase's access (its waits and
+    entitlements are the main-slot ones), so its variant is that package's own
+    `slot` value — "main" for the single-offer launch. None when the plan has no
+    main package: no tag is invented and the compiler stays on the sequence.
+    """
+    for package in packages:
+        if package.get("slot") == "main":
+            slot = package.get("slot")
+            return slot if isinstance(slot, str) and slot.strip() else None
+    return None
+
+
 def _automations(*, has_upsells: bool, has_checkout: bool, has_thank_you: bool,
                  has_sales: bool, has_landing: bool, payment_plans: bool,
                  ai_requested: bool, text_ids: Sequence[str],
                  email_ids: Sequence[str], black_friday: bool,
-                 event_eligible: bool = False) -> List[Dict[str, Any]]:
+                 event_eligible: bool = False,
+                 variant_tag: Optional[str] = None,
+                 settings: Optional[Dict[str, Any]] = None,
+                 purchase_identity: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Spec §3.3, one unit per family, template per the spec table. Every unit is
     draft_only and builds through the Skill 44 engine (U-GHL-PROBE)."""
     text = set(text_ids)
@@ -591,11 +894,17 @@ def _automations(*, has_upsells: bool, has_checkout: bool, has_thank_you: bool,
         return [i for i in ids if i in text]
 
     def unit(uid: str, family: str, template: str, trigger_type: str, detail: str,
-             waits: Sequence[str]) -> Dict[str, Any]:
-        return {"id": uid, "family": family, "template": template,
-                "build_rail": BUILD_RAIL, "draft_only": True,
-                "trigger": {"type": trigger_type, "detail": detail},
-                "waits_for": list(waits)}
+             waits: Sequence[str], **extra: Any) -> Dict[str, Any]:
+        out = {"id": uid, "family": family, "template": template,
+               "build_rail": BUILD_RAIL, "draft_only": True,
+               "trigger": {"type": trigger_type, "detail": detail},
+               "waits_for": list(waits)}
+        # Declared fields only. An absent value stays absent (never null-filled
+        # with a guess), so a consumer can tell declared from undeclared.
+        for key, value in extra.items():
+            if value is not None:
+                out[key] = value
+        return out
 
     landing_wait = "page_landing" if has_landing else ("page_sales" if has_sales else "")
     out = [
@@ -620,7 +929,11 @@ def _automations(*, has_upsells: bool, has_checkout: bool, has_thank_you: bool,
         + tset("text_access_link")
     out.append(unit("auto_post_sale", "post_sale", TEMPLATE_BY_FAMILY["post_sale"], "payment_succeeded",
                     "access + welcome, promotional sends stop, next follow-up starts",
-                    post_sale_waits))
+                    post_sale_waits,
+                    # The three facts the launch-b purchase handler installs from:
+                    # which variant it marks, and how it reenters and deduplicates.
+                    variant_tag=variant_tag, settings=settings,
+                    purchase_identity=purchase_identity))
     if has_upsells:
         followups = [f"email_{k}" for k in ("upsell_1", "upsell_2", "downsell_1", "downsell_2")]
         out.append(unit("auto_upsell_branch", "upsell_downsell", TEMPLATE_BY_FAMILY["upsell_downsell"],
@@ -663,7 +976,8 @@ def _automations(*, has_upsells: bool, has_checkout: bool, has_thank_you: bool,
 # ---------------------------------------------------------------------------
 def build_launch_plan(launch: Dict[str, Any], answers: Dict[str, Any], *,
                       landing_pages: Optional[Iterable[str]] = None,
-                      extra_pages: Sequence[str] = ()) -> Dict[str, Any]:
+                      extra_pages: Sequence[str] = (),
+                      run_dir: Optional[str] = None) -> Dict[str, Any]:
     """Build the contract-shaped launch plan from the assembled launch record and
     the intake answer ledger.
 
@@ -710,8 +1024,23 @@ def build_launch_plan(launch: Dict[str, Any], answers: Dict[str, Any], *,
     offer = _offer_block(launch, answers, missing)
     access = _access_block(launch, answers, missing)
 
+    # GUIDED ANSWERS. A missing or partial offer rides in the artifact beside the
+    # facts (never in place of one), every deliverable keeps its recorded kind, and
+    # the one writable item is produced HERE — before the plan gate, so a missing
+    # calendar fact can never destroy work that was already produced.
+    proposal, proposal_state = _ledger_value(answers, GUIDED_PROPOSAL_KEY)
+    kinds = _deliverable_kinds(answers)
+    for package in offer["packages"]:
+        package["deliverables_detail"] = _package_deliverables(package, kinds)
+    if proposal is not None:
+        offer["proposal"] = {"record": proposal,
+                             "state": proposal_state or "recommended_unapproved"}
+    deliverables = produce_deliverables(launch, answers, offer["packages"], run_dir)
+    personas = _persona_record(launch, answers)
+
     if missing:
-        return {"state": "awaiting_missing_fact", "missing": missing, "plan": None}
+        return {"state": "awaiting_missing_fact", "missing": missing, "plan": None,
+                "deliverables": deliverables, "personas": personas}
 
     conversation_ai: Dict[str, Any] = {
         "requested": ai_requested, "mode": ai_mode if ai_requested else "none"}
@@ -776,7 +1105,13 @@ def build_launch_plan(launch: Dict[str, Any], answers: Dict[str, Any], *,
         payment_plans=offer["payment_plans"], ai_requested=ai_requested,
         text_ids=text_ids, email_ids=sorted(email_ids),
         black_friday="black_friday" in calendar,
-        event_eligible=event["eligible"])
+        event_eligible=event["eligible"],
+        # F04/F05: the purchase handler's own variant, reentry/enrolment and
+        # purchase-event identity, from the plan's own packages and the client's
+        # own answers. Undeclared stays undeclared (no key), never guessed.
+        variant_tag=_post_sale_variant_tag(offer["packages"]),
+        settings=_automation_settings(answers),
+        purchase_identity=_purchase_identity(answers))
 
     # Welcome/access units deliver the purchased BASE offer only: an optional
     # upsell right never lands in every buyer's welcome instructions. Upsell
@@ -820,9 +1155,13 @@ def build_launch_plan(launch: Dict[str, Any], answers: Dict[str, Any], *,
         "email_sequences": emails,
         "text_sets": texts,
         "automations": automations,
+        "deliverables": deliverables,
     }
+    if personas is not None:
+        plan["personas"] = personas
     _assert_waits_resolve(plan)
-    return {"state": "ready", "missing": [], "plan": plan}
+    return {"state": "ready", "missing": [], "plan": plan,
+            "deliverables": deliverables, "personas": personas}
 
 
 def _assert_waits_resolve(plan: Dict[str, Any]) -> None:
@@ -844,16 +1183,36 @@ def _assert_waits_resolve(plan: Dict[str, Any]) -> None:
                     raise LaunchPlanError(f"{unit['id']}: waits_for itself")
 
 
+def session_run_dir(session: Dict[str, Any]) -> Optional[str]:
+    """The run folder one launch session belongs to.
+
+    The launcher's own `run_dir` when it set one, else the folder holding the
+    saved session file (a saved session IS a run). None when neither is known:
+    nothing is written then, and the deliverables block names that gap by name.
+    """
+    run_dir = session.get("run_dir")
+    if isinstance(run_dir, str) and run_dir.strip():
+        return run_dir
+    path = session.get("_path")
+    if isinstance(path, str) and path.strip():
+        return str(Path(path).resolve().parent)
+    return None
+
+
 def build_from_session(session: Dict[str, Any], *,
                        landing_pages: Optional[Iterable[str]] = None,
-                       extra_pages: Sequence[str] = ()) -> Dict[str, Any]:
+                       extra_pages: Sequence[str] = (),
+                       run_dir: Optional[str] = None) -> Dict[str, Any]:
     """The plan for one launch_intake session. `session["plan"]` is the assembled
-    launch record; `session["answers"]` is the provenance ledger."""
+    launch record; `session["answers"]` is the provenance ledger. The deliverable
+    producer writes into `run_dir`, or into the folder the session was saved in."""
     launch = session.get("plan")
     if not launch:
         raise LaunchPlanError("session has no assembled launch record")
     return build_launch_plan(launch, session.get("answers") or {},
-                             landing_pages=landing_pages, extra_pages=extra_pages)
+                             landing_pages=landing_pages, extra_pages=extra_pages,
+                             run_dir=run_dir if run_dir is not None
+                             else session_run_dir(session))
 
 
 def buildable_keys(manifest: Path = BUILDABLE_MANIFEST) -> frozenset:
@@ -1004,6 +1363,23 @@ def _self_test() -> int:
         "base-a" in plan["access"]["entitlements"] and
         "upgrade-b" in plan["access"]["entitlements"],
         "the welcome/access actions resolve the approved destination and every entitlement")
+    post_sale = next(a for a in plan["automations"] if a["id"] == "auto_post_sale")
+    say(post_sale.get("variant_tag") == "main",
+        "the post-sale handler declares the plan's own main-slot variant tag")
+    say("settings" not in post_sale and "purchase_identity" not in post_sale,
+        "an unanswered reentry/identity question emits no guessed setting")
+    declared = dict(answers, **{
+        "launch.automation_reentry": {"value": "Run it again for each new purchase",
+                                      "state": "provided"},
+        "launch.purchase_identity": {"value": "Convert & Flow transaction ID (recommended)",
+                                     "state": "provided"},
+    })
+    p4 = build_launch_plan(launch, declared)["plan"]
+    ps = next(a for a in p4["automations"] if a["id"] == "auto_post_sale")
+    say(ps.get("settings") == {"reentry": "allow", "enrollment": "successive"},
+        "the client's reentry answer reaches the automation settings")
+    say(ps.get("purchase_identity") == {"transaction_id": "ghl.transaction.id"},
+        "the client's purchase identity reaches the plan as a native field reference")
 
     no_calendar = {k: v for k, v in answers.items() if not k.startswith("launch.launch")}
     blocked = build_launch_plan(launch, no_calendar)
@@ -1045,28 +1421,38 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--landing-pages")
     ap.add_argument("--extra", action="append", default=[])
     ap.add_argument("--out", help="write the plan JSON here instead of stdout")
+    ap.add_argument("--deliverables-out",
+                    help="run folder the deliverable producer writes into "
+                         "(default: the folder holding --out, else the session's own run folder)")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
     if args.self_test:
         return _self_test()
+    run_dir = args.deliverables_out or (str(Path(args.out).resolve().parent)
+                                        if args.out else None)
     try:
         if args.session:
             from launch_intake import load_session  # local import: no cycle at module load
             result = build_from_session(
                 load_session(Path(args.session)),
                 landing_pages=args.landing_pages.split(",") if args.landing_pages else None,
-                extra_pages=args.extra)
+                extra_pages=args.extra, run_dir=run_dir)
         elif args.launch and args.answers:
             result = build_launch_plan(
                 _load(args.launch), _load(args.answers),
                 landing_pages=args.landing_pages.split(",") if args.landing_pages else None,
-                extra_pages=args.extra)
+                extra_pages=args.extra, run_dir=run_dir)
         else:
             print("USAGE ERROR: pass --session, or --launch with --answers (or --self-test).")
             return EXIT_USAGE
     except (LaunchPlanError, ps.PageSetError, OSError, ValueError) as exc:
         print(f"FAIL: {exc}")
         return EXIT_FAILCLOSED
+    produced = result.get("deliverables") or {}
+    if produced.get("items"):
+        print("deliverables: %d produced, %d not produced (record: %s)"
+              % (produced["counts"]["produced"], produced["counts"]["not_produced"],
+                 (produced.get("record") or {}).get("path") or "not written (no run folder)"))
     if result["state"] != "ready":
         print("FAIL: the launch plan is missing facts: " + "; ".join(result["missing"]))
         return EXIT_FAILCLOSED

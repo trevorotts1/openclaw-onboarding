@@ -100,26 +100,27 @@ def test_fresh_install_tree_runs_every_module(tmp_path):
 RECORDED_FLOW = json.loads('''[
  [{"frame_id": "frame_1", "op": "list_components", "tab_id": "tab_1"}, {"ok": true, "result": [{"component_id": "chk_real_1", "kind": "checkout"}, {"component_id": "form_real_9", "kind": "order_form"}]}],
  [{"component_id": "chk_real_1", "frame_id": "frame_1", "op": "set_state", "patch": {"main_price": {"amount_minor": 4900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_1", "native_product_id": "prod_1", "recurring_interval": null, "trial_days": null}}, "tab_id": "tab_1"}, {"ok": true, "result": null}],
- [{"component_id": "chk_real_1", "frame_id": "frame_1", "op": "get_state", "tab_id": "tab_1"}, {"ok": true, "result": {"bumps": [], "main_price": {"amount_minor": 4900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_1", "native_product_id": "prod_1", "recurring_interval": null, "trial_days": null}, "native_totals": {"currency": "USD", "total_minor": 4900}}}],
+ [{"component_id": "chk_real_1", "frame_id": "frame_1", "op": "get_state", "tab_id": "tab_1"}, {"ok": true, "result": {"bumps": [], "main_price": {"amount_minor": 4900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_1", "native_product_id": "prod_1", "recurring_interval": null, "trial_days": null}, "native_totals": {"currency": "USD", "subtotal_minor": 4900, "discounts": [], "tax_minor": 0, "shipping_minor": 0, "total_minor": 4900}}}],
  [{"frame_id": "frame_1", "op": "list_components", "tab_id": "tab_1"}, {"ok": true, "result": [{"component_id": "chk_real_1", "kind": "checkout"}, {"component_id": "form_real_9", "kind": "order_form"}]}],
- [{"component_id": "chk_real_1", "frame_id": "frame_1", "op": "get_state", "tab_id": "tab_1"}, {"ok": true, "result": {"bumps": [], "main_price": {"amount_minor": 4900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_1", "native_product_id": "prod_1", "recurring_interval": null, "trial_days": null}, "native_totals": {"currency": "USD", "total_minor": 4900}}}],
- [{"component_id": "chk_real_1", "frame_id": "frame_1", "op": "get_state", "tab_id": "tab_1"}, {"ok": true, "result": {"bumps": [], "main_price": {"amount_minor": 4900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_1", "native_product_id": "prod_1", "recurring_interval": null, "trial_days": null}, "native_totals": {"currency": "USD", "total_minor": 4900}}}],
+ [{"component_id": "chk_real_1", "frame_id": "frame_1", "op": "get_state", "tab_id": "tab_1"}, {"ok": true, "result": {"bumps": [], "main_price": {"amount_minor": 4900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_1", "native_product_id": "prod_1", "recurring_interval": null, "trial_days": null}, "native_totals": {"currency": "USD", "subtotal_minor": 4900, "discounts": [], "tax_minor": 0, "shipping_minor": 0, "total_minor": 4900}}}],
+ [{"component_id": "chk_real_1", "frame_id": "frame_1", "op": "get_state", "tab_id": "tab_1"}, {"ok": true, "result": {"bumps": [], "main_price": {"amount_minor": 4900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_1", "native_product_id": "prod_1", "recurring_interval": null, "trial_days": null}, "native_totals": {"currency": "USD", "subtotal_minor": 4900, "discounts": [], "tax_minor": 0, "shipping_minor": 0, "total_minor": 4900}}}],
  [{"component_id": "chk_real_1", "frame_id": "frame_1", "op": "set_state", "patch": {"bumps": [{"benefit_explanation": "Because reasons", "disclosure_text": null, "headline": "Headline", "offer_id": "offer_a", "price": {"amount_minor": 900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_2", "native_product_id": "prod_2", "recurring_interval": null, "trial_days": null}, "selected": false}]}, "tab_id": "tab_1"}, {"ok": true, "result": null}],
- [{"component_id": "chk_real_1", "frame_id": "frame_1", "op": "get_state", "tab_id": "tab_1"}, {"ok": true, "result": {"bumps": [{"benefit_explanation": "Because reasons", "disclosure_text": null, "headline": "Headline", "offer_id": "offer_a", "price": {"amount_minor": 900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_2", "native_product_id": "prod_2", "recurring_interval": null, "trial_days": null}, "selected": false}], "main_price": {"amount_minor": 4900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_1", "native_product_id": "prod_1", "recurring_interval": null, "trial_days": null}, "native_totals": {"currency": "USD", "total_minor": 4900}}}],
+ [{"component_id": "chk_real_1", "frame_id": "frame_1", "op": "get_state", "tab_id": "tab_1"}, {"ok": true, "result": {"bumps": [{"benefit_explanation": "Because reasons", "disclosure_text": null, "headline": "Headline", "offer_id": "offer_a", "price": {"amount_minor": 900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_2", "native_product_id": "prod_2", "recurring_interval": null, "trial_days": null}, "selected": false}], "main_price": {"amount_minor": 4900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_1", "native_product_id": "prod_1", "recurring_interval": null, "trial_days": null}, "native_totals": {"currency": "USD", "subtotal_minor": 4900, "discounts": [], "tax_minor": 0, "shipping_minor": 0, "total_minor": 4900}}}],
  [{"frame_id": "frame_1", "op": "list_components", "tab_id": "tab_1"}, {"ok": true, "result": [{"component_id": "chk_real_1", "kind": "checkout"}, {"component_id": "form_real_9", "kind": "order_form"}]}],
- [{"component_id": "chk_real_1", "frame_id": "frame_1", "op": "get_state", "tab_id": "tab_1"}, {"ok": true, "result": {"bumps": [{"benefit_explanation": "Because reasons", "disclosure_text": null, "headline": "Headline", "offer_id": "offer_a", "price": {"amount_minor": 900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_2", "native_product_id": "prod_2", "recurring_interval": null, "trial_days": null}, "selected": false}], "main_price": {"amount_minor": 4900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_1", "native_product_id": "prod_1", "recurring_interval": null, "trial_days": null}, "native_totals": {"currency": "USD", "total_minor": 4900}}}],
+ [{"component_id": "chk_real_1", "frame_id": "frame_1", "op": "get_state", "tab_id": "tab_1"}, {"ok": true, "result": {"bumps": [{"benefit_explanation": "Because reasons", "disclosure_text": null, "headline": "Headline", "offer_id": "offer_a", "price": {"amount_minor": 900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_2", "native_product_id": "prod_2", "recurring_interval": null, "trial_days": null}, "selected": false}], "main_price": {"amount_minor": 4900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_1", "native_product_id": "prod_1", "recurring_interval": null, "trial_days": null}, "native_totals": {"currency": "USD", "subtotal_minor": 4900, "discounts": [], "tax_minor": 0, "shipping_minor": 0, "total_minor": 4900}}}],
  [{"component_id": "chk_real_1", "frame_id": "frame_1", "op": "set_state", "patch": {"bumps": [{"benefit_explanation": "Because reasons", "disclosure_text": null, "headline": "Headline", "offer_id": "offer_a", "price": {"amount_minor": 900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_2", "native_product_id": "prod_2", "recurring_interval": null, "trial_days": null}, "selected": true}]}, "tab_id": "tab_1"}, {"ok": true, "result": null}],
- [{"component_id": "chk_real_1", "frame_id": "frame_1", "op": "get_state", "tab_id": "tab_1"}, {"ok": true, "result": {"bumps": [{"benefit_explanation": "Because reasons", "disclosure_text": null, "headline": "Headline", "offer_id": "offer_a", "price": {"amount_minor": 900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_2", "native_product_id": "prod_2", "recurring_interval": null, "trial_days": null}, "selected": true}], "main_price": {"amount_minor": 4900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_1", "native_product_id": "prod_1", "recurring_interval": null, "trial_days": null}, "native_totals": {"currency": "USD", "total_minor": 5800}}}],
+ [{"component_id": "chk_real_1", "frame_id": "frame_1", "op": "get_state", "tab_id": "tab_1"}, {"ok": true, "result": {"bumps": [{"benefit_explanation": "Because reasons", "disclosure_text": null, "headline": "Headline", "offer_id": "offer_a", "price": {"amount_minor": 900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_2", "native_product_id": "prod_2", "recurring_interval": null, "trial_days": null}, "selected": true}], "main_price": {"amount_minor": 4900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_1", "native_product_id": "prod_1", "recurring_interval": null, "trial_days": null}, "native_totals": {"currency": "USD", "subtotal_minor": 5800, "discounts": [], "tax_minor": 0, "shipping_minor": 0, "total_minor": 5800}}}],
  [{"frame_id": "frame_1", "op": "list_components", "tab_id": "tab_1"}, {"ok": true, "result": [{"component_id": "chk_real_1", "kind": "checkout"}, {"component_id": "form_real_9", "kind": "order_form"}]}],
- [{"component_id": "chk_real_1", "frame_id": "frame_1", "op": "get_state", "tab_id": "tab_1"}, {"ok": true, "result": {"bumps": [{"benefit_explanation": "Because reasons", "disclosure_text": null, "headline": "Headline", "offer_id": "offer_a", "price": {"amount_minor": 900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_2", "native_product_id": "prod_2", "recurring_interval": null, "trial_days": null}, "selected": true}], "main_price": {"amount_minor": 4900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_1", "native_product_id": "prod_1", "recurring_interval": null, "trial_days": null}, "native_totals": {"currency": "USD", "total_minor": 5800}}}],
- [{"component_id": "chk_real_1", "frame_id": "frame_1", "op": "get_state", "tab_id": "tab_1"}, {"ok": true, "result": {"bumps": [{"benefit_explanation": "Because reasons", "disclosure_text": null, "headline": "Headline", "offer_id": "offer_a", "price": {"amount_minor": 900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_2", "native_product_id": "prod_2", "recurring_interval": null, "trial_days": null}, "selected": true}], "main_price": {"amount_minor": 4900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_1", "native_product_id": "prod_1", "recurring_interval": null, "trial_days": null}, "native_totals": {"currency": "USD", "total_minor": 5800}}}]
+ [{"component_id": "chk_real_1", "frame_id": "frame_1", "op": "get_state", "tab_id": "tab_1"}, {"ok": true, "result": {"bumps": [{"benefit_explanation": "Because reasons", "disclosure_text": null, "headline": "Headline", "offer_id": "offer_a", "price": {"amount_minor": 900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_2", "native_product_id": "prod_2", "recurring_interval": null, "trial_days": null}, "selected": true}], "main_price": {"amount_minor": 4900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_1", "native_product_id": "prod_1", "recurring_interval": null, "trial_days": null}, "native_totals": {"currency": "USD", "subtotal_minor": 5800, "discounts": [], "tax_minor": 0, "shipping_minor": 0, "total_minor": 5800}}}],
+ [{"component_id": "chk_real_1", "frame_id": "frame_1", "op": "get_state", "tab_id": "tab_1"}, {"ok": true, "result": {"bumps": [{"benefit_explanation": "Because reasons", "disclosure_text": null, "headline": "Headline", "offer_id": "offer_a", "price": {"amount_minor": 900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_2", "native_product_id": "prod_2", "recurring_interval": null, "trial_days": null}, "selected": true}], "main_price": {"amount_minor": 4900, "billing_type": "one_time", "currency": "USD", "native_price_id": "price_1", "native_product_id": "prod_1", "recurring_interval": null, "trial_days": null}, "native_totals": {"currency": "USD", "subtotal_minor": 5800, "discounts": [], "tax_minor": 0, "shipping_minor": 0, "total_minor": 5800}}}]
 ]''')
 
 
 def test_driver_replays_recorded_flow():
     replay = oc._ReplayRunner(RECORDED_FLOW)
     ex = oc.OrderComponentExecutor(
-        oc.BrowserManagerDriver(replay), oc.FrameScope("tab_1", "frame_1"),
+        oc.BrowserManagerDriver(replay, bridge=_adapter_bridge()),
+        oc.FrameScope("tab_1", "frame_1"),
         oc.ComponentFamily("checkout_v2", 2, False))
     assert ex.bind_main_price("chk_real_1", oc._price()).state == "bound-verified"
     bump = oc.BumpAttach("offer_a", "Headline", "Because reasons", oc._price("prod_2", "price_2", 900))
@@ -132,7 +133,9 @@ def test_driver_replays_recorded_flow():
 
 def test_driver_departure_from_recording_fails():
     ex = oc.OrderComponentExecutor(
-        oc.BrowserManagerDriver(oc._ReplayRunner(RECORDED_FLOW)), oc.FrameScope("tab_9", "frame_1"),
+        oc.BrowserManagerDriver(oc._ReplayRunner(RECORDED_FLOW),
+                                bridge=_adapter_bridge()),
+        oc.FrameScope("tab_9", "frame_1"),
         oc.ComponentFamily("checkout_v2", 2, False))
     with pytest.raises(AssertionError):
         ex.resolve_component("chk_real_1")
@@ -144,17 +147,24 @@ def _manager(tmp_path, body):
     return script
 
 
+def _adapter_bridge():
+    """The production driver needs a real managed-editor adapter bound; the
+    fixture element map is shape-only, the live capture is owner-open."""
+    return oc.ManagedEditorBridge(oc._FIXTURE_ADAPTER_CAPTURE,
+                                  location_id="LOC_TEST", page_id="page_1")
+
+
 def test_default_runner_goes_through_browser_manager_eval(tmp_path):
     reply = json.dumps(json.dumps({"ok": True, "result": []}))  # agent-browser quotes it
     script = _manager(tmp_path, '[ "$1" = eval ] && [ "$2" = -- ] || exit 64\n'
                                 "printf '%s\\n' '" + reply + "'\n")
-    drv = oc.BrowserManagerDriver(oc._manager_runner(script))
+    drv = oc.BrowserManagerDriver(oc._manager_runner(script), bridge=_adapter_bridge())
     assert drv.list_components(oc.FrameScope("t", "f")) == ()
 
 
 def test_manager_failure_is_raised_without_leaking_stderr(tmp_path):
     script = _manager(tmp_path, "echo SECRET-DETAIL >&2\nexit 75\n")
-    drv = oc.BrowserManagerDriver(oc._manager_runner(script))
+    drv = oc.BrowserManagerDriver(oc._manager_runner(script), bridge=_adapter_bridge())
     with pytest.raises(oc.OrderComponentError) as err:
         drv.list_components(oc.FrameScope("t", "f"))
     assert "75" in str(err.value) and "SECRET-DETAIL" not in str(err.value)

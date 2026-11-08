@@ -1,4 +1,4 @@
-# SOP-FUNNEL-01: LOCK THE BRIEF IN ONE BLOCK
+# SOP-FUNNEL-01: LOCK THE BRIEF, ONE QUESTION AT A TIME
 
 **Cluster:** Funnel-Craft Rules (`universal-sops/funnel-craft/`)
 **Master authority:** `FUNNEL-PIPELINE-MANIFEST.json` + `49-signature-funnel/FUNNEL-MANIFEST.json` + `MASTER-FUNNEL-QC-AUTOFAIL-RULESET.md`
@@ -13,15 +13,33 @@
 
 A funnel authored on a thin or split brief is the funnel that fabricates scarcity, assumes the
 audience's representation, or ships the wrong size. The brief is the precondition for everything
-downstream: it is asked as ONE block (the Q1–Q17 sequence), answered, and LOCKED before a single
-section of copy is written. A self-attested "brief complete" flag is never trusted — `prove_sf_intake.py`
-reads the actual fields.
+downstream: it is asked, answered, and LOCKED before a single section of copy is written. A
+self-attested "brief complete" flag is never trusted — `prove_sf_intake.py` reads the actual fields.
 
-## 1. THE ONE-BLOCK RULE
+## 1. ONE QUESTION AT A TIME, ONE SOURCE OF QUESTIONS
 
-Deliver the intake questions from `49-signature-funnel/intake/sf-intake-questions.json` in a SINGLE
-message, never one-question-per-turn. The checkpoint-gated per-offer questions (OTO1 → D1 → OTO2 → D2)
-are asked only for the offers the chosen funnel size actually contains.
+Ask ONE plain question per turn and wait for the answer. A wall of questions in a single message is
+no longer the rule: it pressures the client, repeats things they already told us, and hides which
+answer unlocked which next question.
+
+The canonical question source is `shared-utils/client_intake/question-bank.json` (the shared bank
+Skill 49, Skill 71 and Skill 83 all read). `49-signature-funnel/intake/sf-intake-questions.json` is
+the Mirror the prover loads and it declares the same rule (`one_question_per_turn: true`); it does not
+carry a second, competing set of questions. If a question is missing, add it to the bank — never
+start a parallel list.
+
+- Reuse what the client already confirmed instead of asking it again.
+- Collect only the decisions that materially change the work.
+- Ask about texting readiness only when text messages are part of the plan.
+- Keep page-count and picture-count jargon out of the client's question text; describe the choice in
+  plain words.
+- On "I don't know", give a recommendation with a short reason, or a draft answer they can confirm.
+  Never merely repeat the question and never say you cannot guess.
+- An answer the client did not give is never invented: it stays missing, or it is recorded as a
+  proposal (AI proposal / recommendation / unresolved capability) on the same launch record.
+
+The checkpoint-gated per-offer questions (OTO1 → D1 → OTO2 → D2) are asked only for the offers the
+chosen funnel size actually contains, still one at a time.
 
 ## 2. THE REQUIRED ANSWERS (size-gated)
 
