@@ -236,8 +236,10 @@ def validate(payload, model_id_override=None):
         checked["prompt_chars"] = len(str(inp["prompt"]).strip())
 
     # ---- prompt / negative_prompt char caps (registry-driven) --------------
-    # KIE's live schema (live_schema_cap_chars) supersedes the N43 owner-confirmed 25,000 as of 2026-10-05
-    vcap = model.get("live_schema_cap_chars") or model.get("vendor_hard_cap_chars")
+    # An owner-declared cap outranks the vendor schema (owner ruling 2026-11-08); otherwise KIE's
+    # live schema supersedes the N43 owner-confirmed 25,000 as of 2026-10-05.
+    vcap = (model.get("owner_prompt_cap_chars") or model.get("live_schema_cap_chars")
+            or model.get("vendor_hard_cap_chars"))
     if vcap is not None and "prompt" in inp:
         plen = len(str(inp["prompt"]).strip())
         if plen > vcap:
@@ -514,6 +516,30 @@ def selftest():
     case("gpt-image-2-6 i2i 17 refs FAIL (carried forward unchanged from legacy)",
          _base("gpt-image-2-6/sunburst-image-to-image", {"input_urls": _refs(17)}), False,
          expect_err_contains="exceeds published maximum 16")
+    # Native ratios at every resolution, the per-task format split, and the owner-ruled prompt cap.
+    _reg, _by_id_26 = load_registry()
+    cap26 = _by_id_26["gpt-image-2-6/sunburst-text-to-image"]["owner_prompt_cap_chars"]
+    case("gpt-image-2-6 27:16 FAIL (not an enum member)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "27:16"}), False,
+         expect_err_contains="not in exposed enum")
+    case("gpt-image-2-6 3:1 at 4K OK (no 1K-only rule remains)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "3:1", "resolution": "4K"}), True)
+    case("gpt-image-2-6 9:21 at 4K OK",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "9:21", "resolution": "4K"}), True)
+    case("gpt-image-2-6 1:3 OK",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "1:3"}), True)
+    case("gpt-image-2-6 t2i svg OK",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"output_format": "svg"}), True)
+    case("gpt-image-2-6 i2i webp OK",
+         _base("gpt-image-2-6/sunburst-image-to-image", {"input_urls": _refs(1), "output_format": "webp"}), True)
+    case("gpt-image-2-6 i2i gif FAIL",
+         _base("gpt-image-2-6/sunburst-image-to-image", {"input_urls": _refs(1), "output_format": "gif"}), False,
+         expect_err_contains="not in exposed enum")
+    case("gpt-image-2-6 prompt at owner cap %d OK" % cap26,
+         _base("gpt-image-2-6/sunburst-text-to-image", {"prompt": "x" * cap26}), True)
+    case("gpt-image-2-6 prompt %d above owner cap FAIL" % (cap26 + 1),
+         _base("gpt-image-2-6/sunburst-text-to-image", {"prompt": "x" * (cap26 + 1)}), False,
+         expect_err_contains="hard cap")
 
     # Wan n / bbox
     case("wan n=4 OK", _base("wan/2-7-image", {"n": 4}), True)
