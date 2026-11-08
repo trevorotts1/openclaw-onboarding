@@ -11,10 +11,22 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import scheduler
+sys.path.insert(0, str(HERE.parent))
+import admission  # noqa: E402
+import model  # noqa: E402
+import scheduler  # noqa: E402
 
 FIXTURES = HERE.parents[1] / "signature_launch_contract" / "fixtures"
 LOCAL = HERE / "fixtures"
+PH = "sha256:" + "e" * 64
+
+
+def ok(unit_id):
+    """An evidence-backed verified success (a plain return is not one)."""
+    return model.envelope(model.VERIFIED_SUCCESS, evidence=admission.evidence(
+        unit_id, PH,
+        [admission.artifact("artifacts/%s.html" % unit_id, sha256="e" * 64)],
+        inputs={"plan": PH}))
 
 
 def fixture(name):
@@ -83,7 +95,7 @@ class SchedulerTests(unittest.TestCase):
 
         def runner(unit_id, entry):
             barrier.wait(timeout=5)  # serial execution breaks the barrier
-            return unit_id
+            return ok(unit_id)
 
         started = scheduler.start(plan, set(), runner)
         self.assertEqual([entry["id"] for entry in started],
@@ -96,7 +108,7 @@ class SchedulerTests(unittest.TestCase):
         def runner(unit_id, entry):
             if unit_id == "page_1":
                 raise RuntimeError("boom")
-            return unit_id
+            return ok(unit_id)
 
         started = scheduler.start(plan, set(), runner)
         status = {entry["id"]: entry["ok"] for entry in started}
@@ -112,7 +124,7 @@ class SchedulerTests(unittest.TestCase):
             calls.append(unit_id)
             if unit_id == "page_1":
                 raise RuntimeError("boom")
-            return unit_id
+            return ok(unit_id)
 
         report = scheduler.run_all(plan, runner)
         self.assertEqual(calls.count("page_1"), 1)
@@ -161,7 +173,7 @@ class SchedulerTests(unittest.TestCase):
             calls.append(unit_id)
             if unit_id == "page_first":
                 return {"status": "failed", "detail": "provider refused"}
-            return {"status": "verified_success", "verified": True}
+            return ok(unit_id)
 
         report = scheduler.run_all(plan, runner)
         self.assertEqual(calls, ["page_first"], "dependent must never run")
@@ -222,14 +234,14 @@ class SchedulerTests(unittest.TestCase):
         plan = free_pages_plan(2)
         ready = scheduler.ready_units(plan, set(), running={"page_0"})
         self.assertEqual(ready, ["page_1"])
-        report = scheduler.run_all(plan, lambda uid, entry: uid, running={"page_0"})
+        report = scheduler.run_all(plan, lambda uid, entry: ok(uid), running={"page_0"})
         self.assertNotIn("page_0", report["resolved"])
 
     def test_empty_plan_is_explicitly_empty(self):
         plan = local("plan_empty.json")
         self.assertEqual(scheduler.unit_index(plan), {})
         self.assertEqual(scheduler.schedule_waves(plan), [])
-        report = scheduler.run_all(plan, lambda uid, entry: uid)
+        report = scheduler.run_all(plan, lambda uid, entry: ok(uid))
         self.assertTrue(report["complete"])
         self.assertTrue(report["empty"])
         self.assertEqual(report["completed"], [])

@@ -39,12 +39,38 @@ page run's own ``qc/`` folder is never mistaken for the launch's.
 ``python3 -m launcher_core.image_stages --run-dir <launch run folder>`` exits 0 only when every page
 has all five stages closed, and always writes ``qc/image_stages_report.json``. The package check
 (check_rules/image_qc.py) re-reads each page's own stage state, so the report is never trusted.
+
+WHAT IS OWNED, NOT LEFT AS A DEAD END (F17). The prompt files and the image map are authored work,
+and this driver owns the deterministic half of it:
+
+* the prompt manifest (``prompt-manifest.json``, the stage contract's second artifact) is written
+  here from the prompt files on disk, exactly as the swarm runner maintains it, so a page whose
+  prompts exist is closable;
+* a registered author command (``image_authoring.prompts`` in the run's ``launch.json`` or
+  ``intake.json``, or ``SKILL83_PROMPT_AUTHOR``) is invoked when prompts are missing, then the
+  driver re-reads them; an author that produces nothing leaves a named task in the report
+  (``owned_tasks``) with its owner, its stage and its acceptance gate — never a bare string;
+* the image map (``image-map.json``/``image-map.md``) is written from the inventory, the generated
+  files and the hosting ledger, and is only accepted when the stage contract's own validator
+  passes it;
+* the hosting ledger is admitted per asset: the current file's hash, the page/slot, the folder,
+  the media id, a recognised completion status, a usable URL, and the remote evidence the route
+  observed — its real content type and bytes that decode as an image with readable dimensions.
+  A non-empty HTML response is never proof of a correct picture (a login page answers 200), and
+  CDN transformation is expected (the LOCAL hash is the identity; the remote bytes are never
+  compared to it). ``write_hosting_binding`` emits that binding from the hosting route's own
+  receipts (or the Skill 49 rail's ledger) and ``hosted_admission`` reads it; a raw upload row is
+  never admitted without the binding.
+
+The page SET comes from Skill 49's inventory (``page_types.json``) read against the run's launch
+record, never from a directory count: a planned page with no run folder is named missing.
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -57,6 +83,11 @@ from .constants import REPO_ROOT, resolve_ref
 
 STAGES = ("image-inventory-prompts", "image-generation-qc", "image-map-upload",
           "design-board", "final-mockups")
+# The two stages whose work is one file per image slot; their quantity comes from the page profile.
+ITEMIZED = ("image-inventory-prompts", "image-generation-qc")
+# The chain that must be closed BEFORE the image chain, and the stage that follows the mockups.
+LAYOUT_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup")
+IMPLEMENTATION_STAGE = "responsive-html"
 REPORT_REL = "qc/image_stages_report.json"
 LAYOUT_APPROVAL_REL = "layout-proof-approval.json"
 SCHEMA = "launcher.image-stages/1"
@@ -71,6 +102,18 @@ IMAGE_SLOTS_REF = "shared-utils/signature_launch/design/image_slots.py"
 HOSTED_LEDGER_REL = "media_library.json"
 PAGE_HTML_DIR = "responsive-html"
 BRAND_LOGO_SLOT = "BRAND-LOGO"
+PROMPT_AUTHOR_ENV = "SKILL83_PROMPT_AUTHOR"     # a registered prompt-author command, optional
+MAP_VALIDATOR = "validate_image_manifest.py"     # the stage contract's own map validator
+HOSTING_ROUTE = "45-design-intelligence-library/scripts/graphics_ghl_push.py"
+MEDIA_LIBRARY = "media_library.json"             # the receipt ledger that hosting route writes
+MEDIA_LEDGER = "media_ledger.json"               # the Skill 49 hosting rail's declared ledger
+HOSTING_BINDING = "hosting-binding.json"         # the binding THIS launcher produces and consumes
+HOSTING_BINDING_SCHEMA = "launcher.hosting-binding/1"
+ROUTE_LEDGERS = (MEDIA_LIBRARY, MEDIA_LEDGER)
+RECOGNIZED_UPLOAD_STATUSES = ("complete",)
+BINDING_KEYS = ("local_path", "sha256", "location_id", "page", "slot",
+                "ghl_folder_id", "ghl_media_id", "ghl_upload_status", "public_url")
+DESIGN_ONLY_ROLES = ("checkout", "downsell_2")   # mockups are the deliverable; no live page is built
 _SKIP_DIRS = {"private", ".git", "node_modules", "__pycache__"}
 _MAX_DEPTH = 5
 
@@ -158,6 +201,98 @@ def inventory_ids(run: Path) -> List[str]:
         (doc or {}).get("images") or (doc or {}).get("items") or (doc or {}).get("inventory") or []
         if isinstance(doc, dict) else [])
     return [str(i["id"]) for i in items if isinstance(i, dict) and i.get("id")]
+
+
+def _skill71_module(filename: str):
+    """One Skill 71 script by path (the module that already owns the rule being reused)."""
+    path = scripts_dir() / filename
+    if not path.is_file():
+        raise Stop("blocked", f"{SKILL71_SCRIPTS}/{filename} is not installed; the driver reuses that "
+                              "module's own rule instead of re-typing it")
+    spec = importlib.util.spec_from_file_location(f"launcher_skill71_{Path(filename).stem}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
+
+
+def inventory_doc(run: Path):
+    return _read(Path(run) / "desktop-wireframe" / "image-inventory.json")
+
+
+def _slot_is_supplied(module: Any, item: Dict[str, Any]) -> bool:
+    """Skill 71's OWN test for a slot the client supplies (so nothing is generated for it).
+
+    `requires_generation: false`, a supplied-* or stock source (the validator's
+    `is_supplied_or_stock`), or a source/asset_kind in its NON_GENERATED_SOURCES set — the same
+    three tests `inventory_generation_count` applies. Loaded from that module, never retyped, so
+    the driver and the map validator can never disagree about how many images a page buys.
+    """
+    if item.get("requires_generation") is False:
+        return True
+    is_supplied = getattr(module, "is_supplied_or_stock", None)
+    if callable(is_supplied) and is_supplied(item):
+        return True
+    source = str(item.get("source") or item.get("asset_kind") or "").strip().lower()
+    return source in (getattr(module, "NON_GENERATED_SOURCES", None) or frozenset())
+
+
+def generation_items(run: Path) -> List[str]:
+    """The inventory slots this page must GENERATE, from the inventory's own declarations.
+
+    A slot the client already supplies is not generated (``_slot_is_supplied``). Retyping that
+    rule here would let the driver demand a picture for a slot the map already accepts as supplied.
+    """
+    doc = inventory_doc(run)
+    if doc is None:
+        return []
+    module = _skill71_module(MAP_VALIDATOR)
+    try:
+        items = module.inventory_items(doc)
+    except (ValueError, AttributeError) as exc:
+        raise Stop("blocked", f"desktop-wireframe/image-inventory.json: {exc}")
+    return [str(item["id"]) for item in items
+            if isinstance(item, dict) and item.get("id") and not _slot_is_supplied(module, item)]
+
+
+def supplied_items(run: Path) -> List[Dict[str, str]]:
+    """The slots the client already supplied: named in the report, never generated, never waived."""
+    doc = inventory_doc(run)
+    if doc is None:
+        return []
+    module = _skill71_module(MAP_VALIDATOR)
+    try:
+        items = module.inventory_items(doc)
+    except (ValueError, AttributeError):
+        return []
+    out = []
+    for item in items:
+        if not isinstance(item, dict) or not item.get("id") or not _slot_is_supplied(module, item):
+            continue
+        source = str(item.get("source") or item.get("asset_kind") or "").strip().lower()
+        out.append({"id": str(item["id"]), "source": source or "supplied",
+                    "file": str(item.get("file") or item.get("asset_file") or "")})
+    return out
+
+
+_PAGE_SET_MODULE: Any = None
+
+
+def _page_set():
+    """Skill 49's page_set (the one list of a page's design files), loaded through the substrate.
+
+    Loaded once per process: every ``substrate.load`` runs Skill 49's front-door gates, whose
+    hash-pin walks the whole launcher tree, and this driver asks for the page inventory once per
+    page. Caching the module changes no gate — the load itself still ran the gates.
+    """
+    global _PAGE_SET_MODULE
+    if _PAGE_SET_MODULE is not None:
+        return _PAGE_SET_MODULE
+    if str(_ROUTES_DIR) not in sys.path:
+        sys.path.insert(0, str(_ROUTES_DIR))
+    import substrate
+    _PAGE_SET_MODULE = substrate.load("49-signature-funnel/scripts/page_set.py", "launcher_page_set",
+                                      "49-signature-funnel/scripts")
+    return _PAGE_SET_MODULE
 
 
 def _number(name: str) -> Optional[int]:
@@ -280,69 +415,21 @@ def remote_image_problems(entry: Dict[str, Any]) -> List[str]:
 
 
 def _hosted_urls(root: Path) -> Dict[str, str]:
-    """The public URL each asset really got: complete upload AND a live link, https only, and —
-    F17 — remote evidence that the URL really served a picture, never a 200 that is a login page."""
-    doc = _read(Path(root) / HOSTED_LEDGER_REL) or {}
-    out: Dict[str, str] = {}
-    for rec in (doc.get("uploaded") or []) if isinstance(doc, dict) else []:
-        url = str(rec.get("public_url") or "")
-        if rec.get("ghl_upload_status") == "complete" and (rec.get("liveness") or {}).get("live") is True \
-                and url.startswith("https://") and rec.get("local_path") \
-                and not remote_image_problems(rec):
-            out[str(Path(str(rec["local_path"])).resolve())] = url
-    return out
+    """The public URL each asset really got, https only — the map's view of hosting.
 
-
-def hosted_admission(run_dir: Path, run: Path) -> Dict[str, Any]:
-    """Admit each hosted link for this run's current artifacts. Returns a report, never raises.
-
-    The same rules the asset map applies — a complete upload, a live link, a usable http(s) URL
-    and a local file that still hashes to what the ledger recorded — plus the F17 remote evidence: the
-    URL must have served a real content type and bytes that decode as an image with readable
-    dimensions. Every refusal is named, so an HTTP 200 whose body is an HTML login page is refused
-    as a page rather than admitted as a picture.
+    LND-002: this is a VIEW, not a second rule. It delegates to the module's one admission
+    implementation (``hosted_admission``), so the map and the package check can never disagree
+    about whether a link is a real picture. https is kept from main's map rule: a page may not be
+    rewritten to an insecure URL.
     """
-    run, run_dir = Path(run), Path(run_dir)
-    doc, source = None, ""
-    for path in (run / HOSTED_LEDGER_REL, run_dir / HOSTED_LEDGER_REL):
-        loaded = _read(path)
-        if isinstance(loaded, dict):
-            doc, source = loaded, str(path)
-            break
-    out: Dict[str, Any] = {"ledger": source or None, "admitted": [], "refused": []}
-    if doc is None:
-        out["state"] = "not_recorded"
-        out["reason"] = f"no {HOSTED_LEDGER_REL}: hosting has not recorded an upload for this run"
-        return out
-    rows = doc.get("uploaded") if isinstance(doc.get("uploaded"), list) else []
-    for entry in rows:
-        if not isinstance(entry, dict):
-            continue
+    root = Path(root)
+    decision = hosted_admission(root.parent, root)
+    out: Dict[str, str] = {}
+    for entry in decision.get("admitted") or []:
         local = str(entry.get("local_path") or "")
-        name = Path(local).name or str(entry.get("asset_id") or "?")
         url = str(entry.get("public_url") or "")
-        problems: List[str] = []
-        target = Path(local) if Path(local).is_absolute() else run / local
-        if not local or not target.is_file():
-            problems.append("the local artifact does not exist")
-        elif entry.get("sha256") and _sha(target) != entry["sha256"]:
-            problems.append("is not the current artifact (the ledger's hash is stale)")
-        if entry.get("ghl_upload_status") != "complete":
-            problems.append(f"completion status is {entry.get('ghl_upload_status')!r}, not 'complete'")
-        if not url.lower().startswith(("http://", "https://")):
-            problems.append("records no usable hosted URL")
-        live = entry.get("liveness") if isinstance(entry.get("liveness"), dict) else {}
-        if live.get("live") is not True:
-            problems.append("the URL is not recorded as live")
-        problems.extend(remote_image_problems(entry))
-        if problems:
-            out["refused"].append({"file": name, "problems": problems})
-        else:
-            out["admitted"].append({"file": name, "local_path": local, "public_url": url,
-                                    "ghl_media_id": entry.get("ghl_media_id") or entry.get("file_id"),
-                                    "sha256": entry.get("sha256")})
-    out["state"] = "pass" if out["admitted"] and not out["refused"] else (
-        "partial" if out["admitted"] else "refused")
+        if local and url.startswith("https://"):
+            out[str(Path(local).resolve())] = url
     return out
 
 
@@ -487,10 +574,14 @@ def rewrite_page_assets(run: Path) -> Dict[str, int]:
 class _Page:
     """One page run and the commands that move it."""
 
-    def __init__(self, run: Path, scripts: Path, runner: Runner, provider: str, allow_paid: bool) -> None:
+    def __init__(self, run: Path, scripts: Path, runner: Runner, provider: str, allow_paid: bool,
+                 run_dir: Optional[Path] = None) -> None:
         self.run, self.scripts, self.runner = Path(run), Path(scripts), runner
         self.provider, self.allow_paid = provider, allow_paid
+        self.run_dir = Path(run_dir) if run_dir else Path(run).parent
         self.log: List[str] = []
+        self.tasks: List[Dict[str, Any]] = []   # authored work this page still needs, with its owner
+        self.notes: Dict[str, Any] = {}
 
     def call(self, script: str, *args: Any) -> Tuple[int, str]:
         rc, out = self.runner([sys.executable, str(self.scripts / script), *map(str, args)])
@@ -506,21 +597,47 @@ class _Page:
         if rc:
             raise Stop("blocked", f"{stage}: {what} failed: {out.splitlines()[-1] if out else 'no output'}")
 
+    def task(self, stage: str, owner: str, missing: List[str], how: str, gate: str) -> None:
+        """Record authored work as an OWNED task: who owes it, what is missing and what closes it."""
+        self.tasks.append({"stage": stage, "owner": owner, "missing": missing, "how": how, "gate": gate,
+                           "page": page_key_for_run(self.run)})
+
     # -- one producer per stage; each returns when the stage is ready to be closed, or raises Stop
 
     def produce_prompts(self) -> None:
-        ids = inventory_ids(self.run)
-        missing = [i for i in ids if not (self.run / "image-inventory-prompts" / f"{i}.txt").is_file()]
-        if not ids or missing:
-            what = ", ".join(missing) if ids else "one per image slot (desktop-wireframe/image-inventory.json lists none)"
+        items = generation_items(self.run)
+        if not items:
+            if inventory_doc(self.run) is not None and supplied_items(self.run):
+                return  # every slot is supplied: nothing to author (the stage is not applicable)
+            # main's refusal is kept: a page with no generation slot at all cannot be closed on an
+            # empty inventory, because no prompt could ever have been authored for it.
+            what = "one per image slot (desktop-wireframe/image-inventory.json lists none)"
             raise Stop("needs_authoring", f"image-inventory-prompts: the prompts are authored, never generated here; "
                        f"write {what} (BlackCEO Signature Image Intelligence and Prompt Creation Guide v5), "
                        "then run this again")
+        folder = self.run / "image-inventory-prompts"
+        missing = [i for i in items if not (folder / f"{i}.txt").is_file()]
+        if missing:
+            command = author_command(self.run_dir, self.run, "prompts")
+            if command:
+                done = subprocess.run(command, cwd=str(self.run), capture_output=True, text=True, timeout=3600)
+                self.log.append(f"prompt-author {' '.join(Path(c).name for c in command)} -> {done.returncode}")
+                missing = [i for i in items if not (folder / f"{i}.txt").is_file()]
+            if missing:
+                self.task("image-inventory-prompts", "graphics", missing,
+                          "write each prompt from the slot's inventory entry, the composition treatment and "
+                          "the BlackCEO Signature Image Intelligence and Prompt Creation Guide v5",
+                          "python3 scripts/validate_prompt.py <file> <sauce> --model <model> --max-chars <max>")
+                raise Stop("needs_authoring",
+                           f"image-inventory-prompts: {len(missing)} of {len(items)} prompt(s) are not authored: "
+                           f"{', '.join(missing)}. The work is owned (see owned_tasks) and a registered author "
+                           f"command ({PROMPT_AUTHOR_ENV} or image_authoring.prompts) runs here when one is set")
+        write_prompt_manifest(self.run)  # the stage's second artifact, from the prompts on disk
 
     def produce_images(self) -> None:
         out_dir = self.run / "image-generation-qc"
         have = {_number(p.stem) for p in out_dir.glob("Image-*.png")} if out_dir.is_dir() else set()
-        for item in inventory_ids(self.run):
+        for item in generation_items(self.run):
             if _number(item) not in have:
                 rc, out = self.executor("--stage", "image-generation-qc", "--item", item)
                 self.need(rc, out, "image-generation-qc", f"drawing {item}")
@@ -531,7 +648,24 @@ class _Page:
 
         The map is written even when it is incomplete, so the pages can be pointed at whatever
         is hosted; the stage then stops by name on what is genuinely missing rather than
-        closing on an empty or invented link."""
+        closing on an empty or invented link.
+
+        F17/BWX-005: the hosting BINDING is refreshed from the route's own receipts before it is
+        admitted, and the admission decision travels in the report with the page's owned tasks.
+        A page whose inventory is missing cannot author a map from its own slots, so it names that
+        as owned work instead of inventing entries."""
+        write_hosting_binding(self.run_dir, self.run)  # refresh the binding before admitting it
+        hosted = hosted_admission(self.run_dir, self.run)
+        self.notes["hosting"] = hosted
+        if inventory_doc(self.run) is None:
+            self.task("image-map-upload", "graphics",
+                      [str(i["id"]) for i in supplied_items(self.run)] or ["inventory"],
+                      "the map is authored from the page's inventory and its generated files; the inventory "
+                      "is missing or unreadable",
+                      "python3 scripts/validate_image_manifest.py <map> --inventory <inventory> --measure")
+            raise Stop("needs_authoring",
+                       "image-map-upload: desktop-wireframe/image-inventory.json is missing or unreadable, so "
+                       "image-map.json cannot be authored from the page's own slots")
         doc = write_image_map(self.run)
         if doc["qc_state"] != "covered":
             from . import graphics_hooks
@@ -579,13 +713,30 @@ class _Page:
             self.need(rc, out, "final-mockups", "drawing the mockup")
 
     def advance(self) -> Dict[str, str]:
-        """Close every stage the page can; returns {stage: closed|open}. Records why it stopped."""
+        """Close every stage the page can; returns {stage: closed|open|not_applicable}.
+
+        A page whose inventory declares every slot as supplied has nothing to author or draw: the
+        two itemized stages are recorded not applicable (with the reason and the supplied slots),
+        never forced through an empty generation and never silently skipped.
+        """
         producers = {"image-inventory-prompts": self.produce_prompts, "image-generation-qc": self.produce_images,
                      "image-map-upload": self.produce_map, "design-board": self.produce_board,
                      "final-mockups": self.produce_mockups}
         self.stop: Optional[Stop] = None
+        try:  # the inventory is read through Skill 71's own rule; an unreadable one stops the page, never the report
+            inventory = inventory_doc(self.run)
+            supplied = supplied_items(self.run)
+            nothing_to_generate = inventory is not None and bool(supplied) and not generation_items(self.run)
+        except Stop:
+            supplied, nothing_to_generate = [], False
         for stage in STAGES:
             if stage_closed(self.run, stage):
+                continue
+            if nothing_to_generate and stage in ITEMIZED:
+                self.notes.setdefault("not_applicable", []).append(
+                    {"stage": stage, "reason": "every image slot on this page is supplied by the client, so "
+                                               "nothing is generated for it",
+                     "slots": [s["id"] for s in supplied]})
                 continue
             try:
                 rc, out = self.call("stage_gate.py", "check", self.run, stage)
@@ -596,16 +747,446 @@ class _Page:
             except Stop as stop:
                 self.stop = stop
                 break
-        return {s: "closed" if stage_closed(self.run, s) else "open" for s in STAGES}
+        na = {entry["stage"] for entry in self.notes.get("not_applicable") or []}
+        return {s: ("closed" if stage_closed(self.run, s) else
+                    "not_applicable" if s in na else "open") for s in STAGES}
 
 
-def _page_set():
-    """Skill 49's page_set (the one list of a page's design files), loaded through the substrate."""
-    if str(_ROUTES_DIR) not in sys.path:
-        sys.path.insert(0, str(_ROUTES_DIR))
-    import substrate
-    return substrate.load("49-signature-funnel/scripts/page_set.py", "launcher_page_set",
-                          "49-signature-funnel/scripts")
+def layout_chain(run: Path) -> Dict[str, Any]:
+    """The stages BEFORE the image chain, read from the run's own gate state, plus what comes after.
+
+    The defect this closes: dispatch draws the layout proof (desktop and mobile wireframes plus a
+    mockup with solid image blocks) and a package read that as the finished design chain. The
+    driver now names the earlier chain explicitly — the three layout stages closed by the gate and
+    their review PDFs on disk — and names the implementation stage that follows the mockups
+    instead of letting a page look finished at the image chain's end.
+    """
+    stages = {s: ("closed" if stage_closed(run, s) else "open") for s in LAYOUT_STAGES}
+    review_dir = Path(run) / "review-pdfs"
+    pdfs = sorted(p.name for p in review_dir.glob("*.pdf")) if review_dir.is_dir() else []
+    implementation = IMPLEMENTATION_STAGE
+    state = _read(Path(run) / "private" / "state.json") or {}
+    recorded = ((state.get("stages") or {}).get(implementation) or {}) if isinstance(state, dict) else {}
+    return {
+        "stages": stages,
+        "review_pdfs": pdfs,
+        "layout_proof": (Path(run) / "visual-mockup").is_dir(),
+        "complete": all(v == "closed" for v in stages.values()) and bool(pdfs),
+        "implementation": {"stage": implementation,
+                           "state": "closed" if stage_closed(run, implementation) else
+                                    (str(recorded.get("status")) if recorded else "not_run"),
+                           "owned_by": "the implementation unit (F01-F03); a design chain never claims it"},
+    }
+
+
+def page_key_for_run(run: Path) -> str:
+    """The page identity a run folder IS: role + page kind + role instance, never its folder name.
+
+    Two runs of one role are two different pages (downsell_1 and its role-instance downsell_2), and
+    a landing run's page kind (opt_in or sales) is what tells the two landing pages apart. The key
+    is built from the run's own intake so a renamed folder can never stand in for another page.
+    """
+    intake = _read(Path(run) / "intake.json")
+    intake = intake if isinstance(intake, dict) else {}
+    launch = intake.get("launch") if isinstance(intake.get("launch"), dict) else {}
+    role = str(intake.get("page_role") or launch.get("page_role") or Path(run).name)
+    kind = intake.get("page_kind") or launch.get("page_kind")
+    instance = intake.get("role_instance") or launch.get("role_instance")
+    parts = [role] + ([str(kind)] if kind and str(kind) != role else []) + \
+            ([str(instance)] if instance else [])
+    return ":".join(parts)
+
+
+def expected_pages(run_dir: Path) -> Tuple[Optional[List[Dict[str, Any]]], str]:
+    """(the pages this launch planned, why-not) from Skill 49's inventory and the run's launch record.
+
+    A directory walk answers "how many folders are there"; a launch answers "which pages exist".
+    The launch record the dispatch writes (``launch.json``, with its chosen ``landing_pages`` from
+    ``dispatch-report.json``) is read through Skill 49's own page_set, so page identity, order and
+    the design-only pages are the inventory's, never a hard-coded list here.
+    """
+    launch = _read(Path(run_dir) / "launch.json")
+    if not isinstance(launch, dict) or not launch.get("journey_mode"):
+        return None, "the run has no launch.json with a journey_mode, so the planned page set is unknown"
+    report = _read(Path(run_dir) / "dispatch" / "dispatch-report.json") or _read(Path(run_dir) / "dispatch-report.json")
+    landing = None
+    if isinstance(report, dict) and isinstance(report.get("landing_pages"), list):
+        landing = [str(x) for x in report["landing_pages"]]
+    try:
+        page_set = _page_set()
+    except Exception as exc:  # noqa: BLE001 — Skill 49 absent is a named refusal, never a guess
+        return None, f"Skill 49's page_set could not be loaded ({exc.__class__.__name__})"
+    try:
+        planned = page_set.build_page_set(launch, landing_pages=landing)
+    except Exception as exc:  # noqa: BLE001
+        return None, f"Skill 49 refused the launch record: {exc}"
+    pages = []
+    for entry in planned["pages"]:
+        key = entry["role"]
+        if entry.get("page_kind") and entry["page_kind"] != entry["role"]:
+            key += f":{entry['page_kind']}"
+        if entry.get("role_instance"):
+            key += f":{entry['role_instance']}"
+        pages.append({"page_key": key, "label": entry.get("label"), "role": entry["role"],
+                      "page_kind": entry.get("page_kind"), "role_instance": entry.get("role_instance"),
+                      "design_only": bool(entry.get("design_only")),
+                      "image_estimate": entry.get("image_estimate")})
+    return pages, f"49-signature-funnel/structure/page_types.json ({len(pages)} planned page(s))"
+
+
+def image_profile(run: Path) -> Optional[Dict[str, Any]]:
+    """The governing page profile's image allowance for this page, from Skill 49's inventory."""
+    try:
+        page_set = _page_set()
+        key = page_key_for_run(run)
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        pages = page_set.page_types()["pages"]
+    except Exception:  # noqa: BLE001
+        return None
+    bare = key.split(":")[0]
+    match = next((k for k, v in pages.items()
+                  if k == key or (v.get("role") == bare and not v.get("role_instance"))), None)
+    if match is None:
+        return None
+    profile = pages[match]
+    return {"page_key": match, "sections": profile.get("sections"),
+            "long_form_sections": profile.get("long_form_sections"),
+            "image_estimate": page_set.image_estimate(match),
+            "design_only": bool(profile.get("design_only"))}
+
+
+def write_prompt_manifest(run: Path) -> Optional[Path]:
+    """Rewrite ``image-inventory-prompts/prompt-manifest.json`` from the prompt files on disk.
+
+    The stage contract requires this file beside the per-image prompts, and the swarm runner
+    maintains it exactly this way (`{"prompts": [{id, file, sha256}]}`, deterministic order). The
+    driver writes the same shape, so a run driven here and a run driven by the runner agree.
+    """
+    folder = Path(run) / "image-inventory-prompts"
+    if not folder.is_dir():
+        return None
+    entries = [{"id": f.stem, "file": f"image-inventory-prompts/{f.name}", "sha256": _sha(f)}
+               for f in sorted(folder.glob("IMG-*.txt")) if f.is_file()]
+    if not entries:
+        return None
+    path = folder / "prompt-manifest.json"
+    _write_json(path, {"prompts": entries})
+    return path
+
+
+def author_command(run_dir: Path, page_run: Path, kind: str) -> Optional[List[str]]:
+    """A registered author command for this page, or None.
+
+    `image_authoring.prompts` in the launch's ``launch.json`` or the page run's ``intake.json``,
+    else the ``SKILL83_PROMPT_AUTHOR`` environment variable. A command is a list of words;
+    ``{run_dir}`` is replaced with the page's run folder. Nothing is executed that the run did not
+    declare, and an absent command is reported, never invented.
+    """
+    if kind != "prompts":
+        return None
+    env = os.environ.get(PROMPT_AUTHOR_ENV)
+    if env:
+        return [part.replace("{run_dir}", str(page_run)) for part in env.split()]
+    for doc in (_read(Path(run_dir) / "launch.json"), _read(Path(page_run) / "intake.json")):
+        authoring = (doc or {}).get("image_authoring") if isinstance(doc, dict) else None
+        command = (authoring or {}).get(kind) if isinstance(authoring, dict) else None
+        if isinstance(command, list) and command:
+            return [str(part).replace("{run_dir}", str(page_run)) for part in command]
+    return None
+
+
+def _route_ledger(run_dir: Path, run: Path) -> Tuple[Optional[Dict[str, Any]], str]:
+    """The hosting route's OWN receipt ledger (page run first, then the launch root).
+
+    Two real producers are accepted: Skill 45's ``media_library.json`` (one row per uploaded
+    file) and the Skill 49 hosting rail's ``media_ledger.json`` (one row per planned image).
+    This is the input to ``write_hosting_binding``; it is never admitted directly.
+    """
+    for name in ROUTE_LEDGERS:
+        for path in (Path(run) / name, Path(run_dir) / name):
+            doc = _read(path)
+            if isinstance(doc, dict):
+                return doc, str(path)
+    return None, (f"no {MEDIA_LIBRARY} or {MEDIA_LEDGER}: hosting has not recorded an upload "
+                  "for this launch")
+
+
+def _hosting_ledger(run_dir: Path, run: Path) -> Tuple[Optional[Dict[str, Any]], str]:
+    """The binding the launcher consumes, else the route's raw receipt ledger.
+
+    ``hosting-binding.json`` is written by ``write_hosting_binding`` and is what
+    ``hosted_admission`` reads. The route ledger remains a read-only fallback so a launcher
+    that has not yet emitted its binding reports the route's refusal by name instead of
+    pretending no upload exists.
+    """
+    for path in (Path(run) / HOSTING_BINDING, Path(run_dir) / HOSTING_BINDING):
+        doc = _read(path)
+        if isinstance(doc, dict):
+            return doc, str(path)
+    return _route_ledger(run_dir, run)
+
+
+def _binding_location(ledger: Dict[str, Any], run: Path) -> Optional[str]:
+    """The tenant/location an upload belongs to: the route ledger's own, else the run's record."""
+    for source in (ledger, _read(Path(run) / "intake.json") or {},
+                   _read(Path(run).parent / "launch.json") or {},
+                   _read(Path(run).parent.parent / "launch.json") or {}):
+        if not isinstance(source, dict):
+            continue
+        for key in ("location_id", "tenant_id"):
+            value = str(source.get(key) or "").strip()
+            if value:
+                return value
+    return None
+
+
+def _binding_revision(run_dir: Path, run: Path) -> Dict[str, Any]:
+    """The run identity a binding is scoped to, only from records the run already carries.
+
+    A binding is bound to the exact launch/revision it was admitted for; a value that no
+    record declares is left out rather than invented.
+    """
+    out: Dict[str, Any] = {}
+    for source in (_read(Path(run).parent / "launch.json") or {},
+                   _read(Path(run) / "intake.json") or {},
+                   _read(Path(run_dir) / "launch.json") or {}):
+        if not isinstance(source, dict):
+            continue
+        launch = source.get("launch") if isinstance(source.get("launch"), dict) else {}
+        for key in ("launch_id", "revision", "tenant_id", "location_id"):
+            if key not in out and source.get(key) not in (None, ""):
+                out[key] = source[key]
+            elif key not in out and launch.get(key) not in (None, ""):
+                out[key] = launch[key]
+    return out
+
+
+def _binding_entry(entry: Dict[str, Any], run: Path,
+                   location: Optional[str]) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+    """One route receipt bound to THIS run's current artifact, or the reasons it cannot be.
+
+    The local SHA-256 is computed here from the exact file the launcher is about to ship; the
+    route's own hash is verified when it recorded one. Folder, remote media id, recognised
+    completion status and the final URL come from the route. Nothing is invented: a missing
+    key is a named refusal, never a default.
+    """
+    local = str(entry.get("local_path") or entry.get("path") or entry.get("file") or "")
+    if not local:
+        return None, ["names no local artifact (no local_path)"]
+    target = Path(local) if Path(local).is_absolute() else Path(run) / local
+    if not target.is_file():
+        return None, ["the local artifact does not exist"]
+    problems: List[str] = []
+    digest = _sha(target)
+    recorded_hash = str(entry.get("sha256") or "").strip()
+    if recorded_hash and recorded_hash != digest:
+        problems.append("is not the artifact the route uploaded (the route's recorded hash is stale)")
+    folder = str(entry.get("ghl_folder_id") or "").strip()
+    if not folder:
+        problems.append("records no verified folder (ghl_folder_id)")
+    media_id = str(entry.get("ghl_media_id") or entry.get("file_id") or "").strip()
+    if not media_id:
+        problems.append("records no remote media id (ghl_media_id/file_id)")
+    status = str(entry.get("ghl_upload_status") or "").strip()
+    if status not in RECOGNIZED_UPLOAD_STATUSES:
+        problems.append(f"completion status is {status!r}, not one of {list(RECOGNIZED_UPLOAD_STATUSES)}")
+    url = str(entry.get("public_url") or entry.get("ghl_public_url")
+              or entry.get("media_url") or entry.get("url") or "")
+    if not url.lower().startswith(("http://", "https://")):
+        problems.append("records no usable hosted URL")
+    live = entry.get("liveness") if isinstance(entry.get("liveness"), dict) else None
+    if live is not None and live.get("live") is not True:
+        problems.append("the URL is not recorded as live")
+    if not location:
+        problems.append("records no tenant/location (neither the route ledger nor the run declares one)")
+    if problems:
+        return None, problems
+    slug = str(entry.get("asset_id") or Path(local).stem).strip()
+    return ({
+        "local_path": str(target.resolve()),
+        "sha256": digest,
+        "hash_source": "route" if recorded_hash else "admission",
+        "location_id": location,
+        "page": str(entry.get("page") or entry.get("page_key") or "").strip() or page_key_for_run(run),
+        "slot": str(entry.get("slot") or slug).strip(),
+        "asset_id": slug,
+        "name": str(entry.get("name") or Path(local).name),
+        "ghl_folder_id": folder,
+        "ghl_media_id": media_id,
+        "ghl_upload_status": status,
+        "public_url": url,
+        "content_type": entry.get("content_type") or entry.get("mime_type"),
+        "liveness": live or {},
+        "uploaded_at": entry.get("uploaded_at"),
+        "route": HOSTING_ROUTE,
+    }, [])
+
+
+def write_hosting_binding(run_dir: Path, run: Path,
+                          ledger_path: Optional[Path] = None) -> Optional[Path]:
+    """Emit ``<run>/hosting-binding.json`` — the hosting decision the launcher consumes (F17).
+
+    Reads the hosting route's own receipts and BINDS each one to the current local artifact:
+    the local SHA-256 computed here, the page/slot and run identity from the run's records,
+    the tenant/location the route ledger or the run declares, and the route's verified folder,
+    remote media id, recognised completion status and final URL. It never invents an upload
+    and never rewrites the route's ledger; an entry that cannot be bound is refused by name
+    in the binding. Returns the binding path (written even when every entry is refused, so
+    the launcher can say why), or None when no route ledger exists at all.
+    """
+    run, run_dir = Path(run).resolve(), Path(run_dir)
+    if ledger_path is not None:
+        ledger, source = _read(Path(ledger_path)), str(ledger_path)
+    else:
+        ledger, source = _route_ledger(run_dir, run)
+    if not isinstance(ledger, dict):
+        return None
+    location = _binding_location(ledger, run)
+    rows = ledger.get("uploads") if isinstance(ledger.get("uploads"), list) else (
+        ledger.get("uploaded") if isinstance(ledger.get("uploaded"), list) else
+        ledger.get("images") if isinstance(ledger.get("images"), list) else [])
+    bound: List[Dict[str, Any]] = []
+    refused: List[Dict[str, Any]] = []
+    for entry in rows:
+        if not isinstance(entry, dict):
+            continue
+        row, problems = _binding_entry(entry, run, location)
+        if row is not None:
+            bound.append(row)
+        else:
+            refused.append({"local_path": entry.get("local_path") or entry.get("path"),
+                            "problems": problems})
+    doc = {
+        "schema": HOSTING_BINDING_SCHEMA,
+        "required_keys": list(BINDING_KEYS),
+        "run": _binding_revision(run_dir, run),
+        "route": HOSTING_ROUTE,
+        "source_ledger": source,
+        "location_id": location,
+        "page": page_key_for_run(run),
+        "uploads": bound,
+        "refused": refused,
+        "state": "pass" if bound and not refused else ("partial" if bound else "refused"),
+    }
+    path = run / HOSTING_BINDING
+    _write_json(path, doc)
+    return path
+
+
+# NOTE (LND-002): the F17 content-type tables and ``remote_image_problems`` live ONCE, in the
+# asset-map section above (the ported form). The binding path below reuses them, so there is one
+# hosting-admission implementation and one content-type rule in this module.
+
+
+def _inside_run(local: str, run: Path) -> bool:
+    """True when a ledger path sits inside this page's run folder (the ledger records absolute paths)."""
+    try:
+        target = Path(local)
+        target = target.resolve() if target.is_absolute() else (Path(run) / target).resolve()
+        return target.is_relative_to(Path(run).resolve())
+    except (OSError, ValueError):
+        return False
+
+
+def hosted_admission(run_dir: Path, run: Path) -> Dict[str, Any]:
+    """Admit each hosted link for THIS launch's current artifacts. Returns a report, never raises.
+
+    A hosted link is admitted only when all of these hold, and each refusal is named:
+
+    * the local file is the CURRENT artifact — it exists and its bytes hash to the hash the ledger
+      recorded (the local hash is the identity; a CDN may legitimately re-encode, so the remote
+      bytes are never compared to it);
+    * the ledger entry names the page/slot it serves (``asset_id`` or a ``local_path`` inside this
+      page's run folder), so one upload cannot stand in for another page's slot;
+    * a folder (``ghl_folder_id`` — a real id, or the route's documented "root" fallback) and a
+      media id (``ghl_media_id`` or ``file_id``) are recorded;
+    * the completion status is the route's recognised one (``ghl_upload_status == "complete"``);
+    * the URL is a usable HTTP(S) URL that the route recorded as live, and the remote evidence it
+      recorded is of a REAL image: a real content type (``content_type``; a null one is refused,
+      never assumed) that is an image or a generic octet-stream, and bytes that decode as an image
+      with readable dimensions. ``text/html`` — what a failed or login-intercepted fetch returns —
+      JSON or an image type whose bytes decode as something else is refused by name.
+    """
+    ledger, source = _hosting_ledger(run_dir, run)
+    out: Dict[str, Any] = {"route": HOSTING_ROUTE, "ledger": source, "admitted": [], "refused": []}
+    if ledger is None:
+        out["state"] = "not_recorded"
+        out["reason"] = source
+        return out
+    out["binding_schema"] = ledger.get("schema")
+    location = (str(ledger.get("location_id") or ledger.get("tenant_id") or "")).strip()
+    run_intake = _read(Path(run) / "intake.json") or {}
+    run_location = str((run_intake or {}).get("location_id") or "").strip() if isinstance(run_intake, dict) else ""
+    out["location_id"] = location or None
+    if location and run_location and location != run_location:
+        out["state"] = "refused"
+        out["refused"].append(f"the ledger belongs to location {location}, not this page's {run_location}")
+        return out
+    rows = ledger.get("uploads") if isinstance(ledger.get("uploads"), list) else (
+        ledger.get("uploaded") if isinstance(ledger.get("uploaded"), list) else
+        ledger.get("images") if isinstance(ledger.get("images"), list) else [])
+    for entry in rows:
+        if not isinstance(entry, dict):
+            continue
+        local = str(entry.get("local_path") or "")
+        name = Path(local).name or str(entry.get("asset_id") or "?")
+        problems: List[str] = []
+        target = Path(local) if Path(local).is_absolute() else Path(run) / local
+        if not str(entry.get("asset_id") or "").strip() and not _inside_run(local, run):
+            problems.append("names no page/slot (no asset_id, and its file is outside this page's run)")
+        if not target.is_file():
+            problems.append("the local artifact does not exist")
+        elif entry.get("sha256") and _sha(target) != entry["sha256"]:
+            problems.append("is not the current artifact (the ledger's hash is stale)")
+        elif not entry.get("sha256"):
+            problems.append("records no local content hash, so it cannot be bound to the current file")
+        if not str(entry.get("ghl_folder_id") or "").strip():
+            problems.append("records no folder")
+        if not str(entry.get("ghl_media_id") or entry.get("file_id") or "").strip():
+            problems.append("records no media id")
+        if entry.get("ghl_upload_status") != "complete":
+            problems.append(f"completion status is {entry.get('ghl_upload_status')!r}, not 'complete'")
+        url = str(entry.get("public_url") or entry.get("ghl_public_url")
+                  or entry.get("media_url") or entry.get("url") or "")
+        if not url.lower().startswith(("http://", "https://")):
+            problems.append("records no usable hosted URL")
+        live = entry.get("liveness") if isinstance(entry.get("liveness"), dict) else {}
+        if live.get("live") is not True:
+            problems.append("the URL is not recorded as live")
+        problems.extend(remote_image_problems(entry))
+        if problems:
+            out["refused"].append({"file": name, "problems": problems})
+        else:
+            # `local_path` is carried so the asset map can key the admitted URL to the exact file
+            # it was uploaded from (main's map rule); `file` is the report's display name.
+            out["admitted"].append({"file": name, "local_path": str(target.resolve()),
+                                    "public_url": url,
+                                    "ghl_media_id": entry.get("ghl_media_id") or entry.get("file_id"),
+                                    "sha256": entry.get("sha256")})
+    for refused in ledger.get("refused") or []:  # a binding that refused an asset is never a pass
+        if isinstance(refused, dict):
+            out["refused"].append({"file": Path(str(refused.get("local_path") or "?")).name,
+                                   "problems": list(refused.get("problems")
+                                                    or ["refused by the hosting binding"])})
+    out["state"] = "pass" if out["admitted"] and not out["refused"] else (
+        "partial" if out["admitted"] else "refused")
+    return out
+
+
+# NOTE (LND-002): the branch's ``qc_passed`` (gate item-record + bare run-level report) is NOT
+# kept as a second pass authority. main's ``_map_entry`` binds each verdict to a review of those
+# exact bytes by two named models (``graphics_hooks.asset_review_problems``), which strictly
+# contains it; admitting a bare ``pass:true`` record as well would weaken the map rule main owns.
+
+
+# NOTE (LND-002): ``write_image_map(run: Path)`` and ``_png_size`` live ONCE, in the asset-map
+# section above. main's signatures are the driver's contract (``_Page.produce_map`` and the report
+# both read the returned document), so the branch's two-argument authoring form is not kept: its
+# behaviours — inventory-driven slots, supplied slots, the stage's own map validator, and the
+# binding-first admission — are carried by the retained form and by ``generation_items`` /
+# ``supplied_items`` / ``write_hosting_binding``.
 
 
 def _upsert(result: Dict[str, Any], fresh: List[Dict[str, Any]], old: set) -> bool:
@@ -724,50 +1305,129 @@ def _write_qc_request(run_dir: Path) -> Optional[str]:
     return graphics_hooks.QC_REQUEST_REL
 
 
+def _page_entry(run: Path, run_dir: Path, approval: Optional[Dict[str, Any]], scripts: Path,
+                runner: Runner, provider: str, allow_paid: bool) -> Dict[str, Any]:
+    """One page's report entry: its identity, its own chain, its authored work and its hosting."""
+    entry: Dict[str, Any] = {"page": run.name, "page_key": page_key_for_run(run), "role": page_role(run),
+                             "run_dir": str(run.resolve())}
+    profile = image_profile(run)
+    if profile:
+        entry["image_profile"] = profile
+    try:
+        supplied = supplied_items(run)
+        generated = generation_items(run)
+    except Stop as stop:  # Skill 71's own inventory rule is unavailable: say so, never guess a count
+        entry["asset_quantity"] = {"state": "unknown", "reason": stop.reason}
+        supplied, generated = [], []
+    else:
+        if supplied:
+            entry["supplied_slots"] = supplied
+        entry["asset_quantity"] = {
+            "inventory_generation_items": len(generated),
+            "inventory_supplied_items": len(supplied),
+            "profile_image_estimate": (profile or {}).get("image_estimate"),
+            "counted_from": "desktop-wireframe/image-inventory.json through Skill 71's own "
+                            "validate_image_manifest rule; the profile's allowance is Skill 49's page_types.json",
+        }
+    binding = write_hosting_binding(run_dir, run)
+    if binding is not None:
+        entry["hosting_binding"] = {"path": str(binding), "schema": HOSTING_BINDING_SCHEMA}
+    if approval is None:
+        entry.update(status="awaiting_layout_proof_approval",
+                     stages={s: "open" if not stage_closed(run, s) else "closed" for s in STAGES},
+                     reason="the layout proofs are the first approval checkpoint; nothing is drawn until the "
+                            f"client's approval is recorded in {LAYOUT_APPROVAL_REL}")
+        return entry
+    page = _Page(run, scripts, runner, provider, allow_paid, run_dir=run_dir)
+    stages = page.advance()
+    if stages.get("final-mockups") == "closed":  # the labeled final files exist now: list them in the piece
+        entry["pieces_refreshed"] = refresh_pieces(run_dir, run)
+    # The asset map carries the hosted URLs; an authored page still pointing at a local
+    # file is rewritten to them here, before responsive-html closes.
+    entry["pages_rewritten"] = rewrite_page_assets(run)
+    asset_map = _read(run / IMAGE_MAP_REL)
+    if isinstance(asset_map, dict):
+        entry["image_map"] = {"qc_state": asset_map.get("qc_state"),
+                              "hosting_state": asset_map.get("hosting_state"),
+                              "missing": list(asset_map.get("missing") or []),
+                              "entries": len(asset_map.get("images") or [])}
+    done = all(v in ("closed", "not_applicable") for v in stages.values())
+    chain = layout_chain(run)
+    entry["layout_chain"] = chain
+    entry["design_chain_complete"] = bool(done and chain["complete"])
+    entry.update(status="complete" if done else (page.stop.status if page.stop else "blocked"),
+                 stages=stages,
+                 reason=None if done else (page.stop.reason if page.stop else "a stage is still open"),
+                 commands=page.log)
+    if not chain["complete"]:
+        # The image chain's stages depend on the layout stages, so a real run cannot reach here
+        # without them; a run that does is named rather than reported as the finished design chain.
+        entry["layout_chain_gap"] = [s for s, v in chain["stages"].items() if v != "closed"] or \
+                                    ["no review PDFs on disk"]
+    if page.tasks:
+        entry["owned_tasks"] = page.tasks
+    if page.notes.get("not_applicable"):
+        entry["not_applicable"] = page.notes["not_applicable"]
+    entry["hosting"] = page.notes.get("hosting") or hosted_admission(run_dir, run)
+    return entry
+
+
 def drive(run_dir: Path, *, runner: Runner = default_runner, provider: str = "stub",
           allow_paid: bool = False, layout_approval_file: Optional[Path] = None,
           repo_root: Optional[Path] = None) -> Dict[str, Any]:
-    """Drive every page run under ``run_dir``. Writes and returns the report."""
+    """Drive every planned page of the launch. Writes and returns the report.
+
+    The page set is the launch's, not the folder walk's: Skill 49's inventory read against this
+    run's launch record. A planned page with no run folder is named missing (and carries the path
+    it should have been found at), so a missing page can never be read as a count that adds up.
+    A discovered run the launch did not plan is named `unexpected_run`, never counted as a page.
+    """
     run_dir = Path(run_dir)
     scripts = scripts_dir(repo_root)
     runs = discover_page_runs(run_dir)
     # Written before the pages move, so the SOP-GIP-02 reviewer has the request in hand when
     # the map stage stops for a missing review (it lists the logo too, once the brand file exists).
     qc_request = _write_qc_request(run_dir) if runs else None
+    planned, planned_source = expected_pages(run_dir)
+    by_key = {page_key_for_run(run): run for run in runs}
     approval = layout_approval(run_dir, layout_approval_file)
     pages: List[Dict[str, Any]] = []
-    for run in runs:
-        entry: Dict[str, Any] = {"page": run.name, "role": page_role(run), "run_dir": str(run.resolve())}
-        if approval is None:
-            entry.update(status="awaiting_layout_proof_approval", stages={s: "open" if not stage_closed(run, s) else "closed" for s in STAGES},
-                         reason="the layout proofs are the first approval checkpoint; nothing is drawn until the "
-                                f"client's approval is recorded in {LAYOUT_APPROVAL_REL}")
-        else:
-            page = _Page(run, scripts, runner, provider, allow_paid)
-            stages = page.advance()
-            if stages.get("final-mockups") == "closed":  # the labeled final files exist now: list them in the piece
-                entry["pieces_refreshed"] = refresh_pieces(run_dir, run)
-            # The asset map carries the hosted URLs; an authored page still pointing at a local
-            # file is rewritten to them here, before responsive-html closes.
-            entry["pages_rewritten"] = rewrite_page_assets(run)
-            asset_map = _read(run / IMAGE_MAP_REL)
-            if isinstance(asset_map, dict):
-                entry["image_map"] = {"qc_state": asset_map.get("qc_state"),
-                                      "hosting_state": asset_map.get("hosting_state"),
-                                      "missing": list(asset_map.get("missing") or []),
-                                      "entries": len(asset_map.get("images") or [])}
-            done = all(v == "closed" for v in stages.values())
-            entry.update(status="complete" if done else (page.stop.status if page.stop else "blocked"),
-                         stages=stages, reason=None if done else (page.stop.reason if page.stop else "a stage is still open"),
-                         commands=page.log)
+    if planned:
+        for want in planned:
+            run = by_key.pop(want["page_key"], None)
+            if run is None:
+                pages.append({"page": want["page_key"].replace(":", "-"), "page_key": want["page_key"],
+                              "role": want["role"], "label": want.get("label"),
+                              "status": "missing_page",
+                              "run_dir": str((run_dir / "dispatch" / want["page_key"].replace(":", "-")).resolve()),
+                              "stages": {s: "open" for s in STAGES},
+                              "reason": "the launch plans this page and no Skill 71 run folder for it was found"})
+                continue
+            pages.append(_page_entry(run, run_dir, approval, scripts, runner, provider, allow_paid))
+    else:
+        pages = [_page_entry(run, run_dir, approval, scripts, runner, provider, allow_paid) for run in runs]
+        by_key = {}
+    for extra_key, run in sorted(by_key.items()):
+        entry = _page_entry(run, run_dir, approval, scripts, runner, provider, allow_paid)
+        entry.update(status="unexpected_run",
+                     reason=f"this run is not a page {planned_source or 'the launch'} plans")
         pages.append(entry)
-    complete = bool(pages) and all(p["status"] == "complete" for p in pages)
+    missing = [p["page_key"] for p in pages if p.get("status") == "missing_page"]
+    complete = bool(pages) and all(p["status"] == "complete" for p in pages) and not missing
     report = {"schema": SCHEMA, "run_dir": str(run_dir.resolve()), "stages": list(STAGES),
               "first_checkpoint": "layout proofs", "layout_proof_approval": (approval or {}).get("approval_ref"),
               "provider": provider, "pages": pages, "complete": complete,
+              "expected_pages_source": planned_source if planned else None,
+              "expected_pages_state": "known" if planned else "unknown",
+              "missing_pages": missing,
               "qc_request": qc_request}
+    if not planned:
+        report["reason"] = (planned_source or "the planned page set is unknown") + \
+            "; the pages listed are the run folders that were discovered, never a proven complete set"
     if not runs:
-        report["reason"] = "no Skill 71 page run folder (intake.json beside private/) was found under this run"
+        # Both refusals are kept: an unknown page set AND no run folder are separate facts.
+        no_runs = "no Skill 71 page run folder (intake.json beside private/) was found under this run"
+        report["reason"] = no_runs if not planned else report["reason"] + "; " + no_runs
     path = run_dir / REPORT_REL
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -778,8 +1438,17 @@ def summary_lines(report: Dict[str, Any]) -> List[str]:
     lines = []
     for p in report["pages"]:
         closed = sum(1 for v in p["stages"].values() if v == "closed")
-        lines.append(f"{p['page']} ({p['role']}): {p['status']}, {closed} of {len(STAGES)} image stages closed"
+        na = sum(1 for v in p["stages"].values() if v == "not_applicable")
+        note = (f", {na} not applicable" if na else "")
+        lines.append(f"{p['page']} ({p['role']}): {p['status']}, {closed} of {len(STAGES)} image stages closed{note}"
                      + (f". {p['reason']}" if p.get("reason") else ""))
+        for task in p.get("owned_tasks") or []:
+            lines.append(f"  owned task: {task['stage']} -> {task['owner']} owes {', '.join(task['missing'][:6])}")
+        if p.get("layout_chain_gap"):
+            lines.append(f"  layout chain gap: {', '.join(p['layout_chain_gap'])}; "
+                         "the image chain is not the whole design chain")
+    if report.get("missing_pages"):
+        lines.append("MISSING PAGES (planned, no run): " + ", ".join(report["missing_pages"]))
     lines.append("Every page has finished images." if report["complete"] else
                  "Not finished: the package check refuses this launch until every page closes all five image stages.")
     return lines
