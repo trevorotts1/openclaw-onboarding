@@ -31,8 +31,9 @@ house_prompt_max_chars: 19000
 
 ## 2. Rule A — verified cap >= 20,000
 
-Use 5,000–19,000 chars; target ~9,000. No KIE image family currently qualifies
-with a vendor-verified cap at/above 20,000.
+Use 5,000–19,000 chars; target ~9,000. GPT Image 2.6 publishes 32,000 chars
+(vendor OpenAPI maxLength, cap_status `DOCS`, not VERIFIED); no other KIE
+image family currently qualifies with a vendor-verified cap at/above 20,000.
 
 ## 3. Rule B — verified cap between 5,000 and 19,999
 
@@ -81,8 +82,8 @@ output" is a context window on the legacy page, not a request-field maximum.
 
 | Family | Cap status | Legal band |
 |---|---|---|
-| GPT Image 2 (legacy, 3:1/1:3/9:21 only) | OWNER_OBSERVED ~25K | house 5,000–19,000 legal; 19,000+ warns (never hard-fails on observed cap) |
-| GPT Image 2.5 (default, ruling 2026-09-09) | DOCS 20K (2026-09-09, NOT owner-confirmed) | house 5,000–19,000 legal; 19,000+ warns; hard-fails only past 20,000 |
+| GPT Image 2 (legacy, retained) | OWNER_OBSERVED ~25K | house 5,000–19,000 legal; 19,000+ warns (never hard-fails on observed cap) |
+| GPT Image 2.6 (default, ruling 2026-09-09) | DOCS 32K (vendor OpenAPI maxLength, NOT owner-confirmed) | house 5,000–19,000 legal; 19,000+ warns; hard-fails only past 32,000 |
 | Qwen 3.0 / Pro | LIVE_PROBE_REQUIRED (4.5K tokens; docs 5000 chars) | token-estimate validation; docs char max 5,000 |
 | Seedream 5.0 Pro/Lite/4.5 | NOT_PUBLISHED | house band as TARGET only; no invented ceiling |
 | Nano Banana 2 / 2 Lite / Pro / legacy | NOT_PUBLISHED | house band as TARGET only |
