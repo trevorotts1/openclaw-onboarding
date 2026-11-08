@@ -99,9 +99,10 @@ def _from_verdict(model_id, cap_status, chars, v, warnings):
 def validate_body(prompt, model_id, strict):
     chars = char_count(prompt)
     entry = by_id_get(model_id)
-    # the policy owner's recorded limit: KIE's live schema supersedes the N43 owner-confirmed 25,000 as of 2026-10-05
-    fb = ((entry or {}).get("live_schema_cap_chars") or (entry or {}).get("vendor_hard_cap_chars")
-          or (entry or {}).get("owner_observed_cap_chars"))
+    # the policy owner's recorded limit: an owner-declared cap outranks the vendor schema (owner
+    # ruling 2026-11-08); otherwise the live schema supersedes the N43 owner-confirmed 25,000.
+    fb = ((entry or {}).get("owner_prompt_cap_chars") or (entry or {}).get("live_schema_cap_chars")
+          or (entry or {}).get("vendor_hard_cap_chars") or (entry or {}).get("owner_observed_cap_chars"))
     v = KPE.check(model_id, prompt, fallback_max=fb)  # Skill 74 prompt-budget --check: live schema, registry, policy owner
     cap = (entry or {}).get("cap_status", "SKILL-74")
     if v["status"] == "ADAPTER_UNAVAILABLE":
@@ -151,14 +152,14 @@ def validate_prompt(prompt, model_id, strict=False):
 # ---------------------------------------------------------------------------
 
 # (name, prompt chars, model, expected_valid, expected_status, expected_hard_cap_flag)
-# Bridge off: limits come from models.json (gpt-2.6 20,000 owner ruling 2026-11-08; legacy gpt-image-2 20,000 live schema (N43 25,000 superseded);
-# wan/ideogram/imagen 5,000 verified; seedream not published -> UNKNOWN).
-# Owner ruling 2026-11-08 sets the 2.6 cap at 20,000 and governs over the larger vendor docs figure. Read from
-# models.json, never restated here: rule 12 forbids a gate keeping a character band of its own.
+# Bridge off: limits come from models.json (gpt-2.6 owner cap 20,000 as of the 2026-11-08 owner ruling; the
+# captured vendor schema says 32,000 and is retained for provenance only; legacy gpt-image-2 20,000 live schema
+# (N43 25,000 superseded); wan/ideogram/imagen 5,000 verified; seedream not published -> UNKNOWN).
+# Read from models.json, never restated here: rule 12 forbids a gate keeping a character band of its own.
 def _registry_cap(model_id):
     ent = by_id_get(model_id) or {}
-    return (ent.get("live_schema_cap_chars") or ent.get("vendor_hard_cap_chars")
-            or ent.get("owner_observed_cap_chars"))
+    return (ent.get("owner_prompt_cap_chars") or ent.get("live_schema_cap_chars")
+            or ent.get("vendor_hard_cap_chars") or ent.get("owner_observed_cap_chars"))
 CAP_26 = _registry_cap("gpt-image-2-6/sunburst-text-to-image")
 _26_95 = int(CAP_26 * 0.95)
 _26_96 = int(CAP_26 * 0.96)
