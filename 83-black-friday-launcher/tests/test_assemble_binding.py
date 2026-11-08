@@ -236,9 +236,9 @@ class BoundToDispatchTests(DispatchedRun):
         ok = self.assemble(name="same", run=run)
         self.assertEqual(ok["manifest"]["dispatch_binding"]["intake_snapshot"], "verified")
         other = copy.deepcopy(self.doc)
-        other["copy_profile"] = "long_form"
+        other["locale"] = "en-GB"
         err = self.refused("AF-LAUNCH-PKG-INTAKE-DRIFT", name="basis", doc=other, run=run)
-        self.assertIn("copy_profile", err.detail)
+        self.assertIn("locale", err.detail)
         # a practice run found beside the pieces (no named dispatch run) is held to the same snapshot
         other = copy.deepcopy(self.doc)
         other["approval"]["hash"] = "e" * 64
@@ -257,7 +257,7 @@ class BoundToDispatchTests(DispatchedRun):
         if not self.bridge_wrote_snapshot:  # exercise exactly what dispatch left behind
             (run / package.INTAKE_SNAPSHOT_REL).unlink()
         other = copy.deepcopy(self.doc)
-        other["copy_profile"] = "long_form"
+        other["locale"] = "en-GB"
         with self.assertRaises(package.PackageError) as ctx:
             self.assemble(name="real-pkg", doc=other, run=run)
         self.assertIn(ctx.exception.code, {"AF-LAUNCH-PKG-INTAKE-MISSING", "AF-LAUNCH-PKG-INTAKE-DRIFT"})
