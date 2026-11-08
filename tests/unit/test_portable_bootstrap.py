@@ -26,10 +26,20 @@ class PortableBootstrapTests(unittest.TestCase):
         self.env.update(HOME=str(self.home), PATH=str(self.bin) + ':/usr/bin:/bin',
                         FIXTURE_OS='Linux', FIXTURE_CONTAINER='0', FIXTURE_DOCKER_NAMES='',
                         FIXTURE_DOCKER_ALL='', FIXTURE_DOCKER_USER='node',
-                        FIXTURE_DOCKER_CALLS=str(self.root / 'docker-calls'))
+                        FIXTURE_DOCKER_CALLS=str(self.root / 'docker-calls'),
+                        PR_FDESETUP=str(self.bin / 'fdesetup'),
+                        PR_DEFAULTS=str(self.bin / 'defaults'),
+                        FIXTURE_AUTOLOGIN_USER='fixture-user')
         self.stub('uname', 'printf "%s\\n" "$FIXTURE_OS"')
         self.stub('df', "printf 'Filesystem Blocks Used Available Capacity Mounted\\nfixture 99999999 0 99999999 0%% /\\n'")
         self.stub('brew', 'exit 0')
+        # macOS power-resilience seams (the library's injectable PR_FDESETUP /
+        # PR_DEFAULTS, the same pair tests/unit/power-resilience-gate.test.sh
+        # fakes). A simulated Mac on a Linux runner has no /usr/bin/fdesetup or
+        # /usr/bin/defaults, so without these the provisioning gate correctly
+        # reads Unknown/unset and refuses with EX_CONFIG 78.
+        self.stub('fdesetup', 'echo "FileVault is ${FIXTURE_FV_STATE:-Off}."')
+        self.stub('defaults', 'if [ -n "${FIXTURE_AUTOLOGIN_USER:-}" ]; then printf "%s\\n" "$FIXTURE_AUTOLOGIN_USER"; else echo "does not exist" >&2; exit 1; fi')
         self.stub('curl', 'if [ -n "${FIXTURE_CURL_SCRIPT:-}" ]; then cat "$FIXTURE_CURL_SCRIPT"; else echo "Unexpected network access" >&2; exit 97; fi')
         # inspect/ps are isolated inventory; exec only records argv + forwarded env.
         self.stub('docker', '''
@@ -60,8 +70,11 @@ esac''')
         values = dict(self.env, **env)
         script = ('set -e\nsource ' + shlex.quote(str(COMMON)) + '\n'
                   'oc_container_marked() { [[ "$FIXTURE_CONTAINER" == 1 ]]; }\n'
-                  # Suppress Mac-only power-policy discovery by pointing at an
-                  # empty fixture tree, never the repository's actual live helper.
+                  # _SCRIPT_DIR points at an empty fixture tree, but the
+                  # bootstrap ALSO resolves the power-resilience library from
+                  # the repo root it derives from BASH_SOURCE — so the real gate
+                  # runs here. It gets its macOS posture from the fdesetup /
+                  # defaults seams set up in setUp.
                   '_SCRIPT_DIR=' + shlex.quote(str(self.root)) + '\n' + body)
         return subprocess.run(['/bin/bash', '-c', script], env=values, capture_output=True, text=True, timeout=15)
 
@@ -282,6 +295,20 @@ PY
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(str(own) + '|' + str(own / 'custom'), result.stdout)
         self.assertFalse((self.root / 'docker-calls').exists())
+
+    def test_mac_bootstrap_still_refuses_a_filevault_locked_box(self):
+        # Guard for the fixtures above. A simulated Mac reporting FileVault ON
+        # cannot boot to a GUI session unattended, so provisioning MUST abort
+        # with EX_CONFIG 78. Without this, "FileVault Off + auto-login" as a
+        # fixture would be indistinguishable from a disabled gate.
+        result = self.run_shell(
+            'source ' + shlex.quote(str(REPO / 'platform/mac/bootstrap.sh')) + '\n' + self.fields(),
+            FIXTURE_OS='Darwin', FIXTURE_FV_STATE='On')
+        self.assertEqual(result.returncode, 78, result.stdout + result.stderr)
+        # bootstrap.sh line 65 merges stderr into stdout through `tee`, so the
+        # gate's refusal text lands on stdout, not stderr.
+        self.assertIn('PROVISIONING REFUSED', result.stdout)
+        self.assertIn('undead Macs', result.stdout)
 
 
 if __name__ == '__main__':

@@ -17,6 +17,19 @@ A client delivery (``test_only`` false) also needs real files: a PNG or PDF by i
 nonzero dimensions, found in a closed Skill 71 ``stage_gate`` run (the piece's ``stage_state``: the
 run's ``private/state.json`` copied into the package, hash recorded), and an ``approved`` design
 approval that resolves to a Skill 71 Design Board production record whose hash is checked.
+
+WHAT MAKES A SET COMPLETE (F17). Completeness is proved per INSTANCE, never by a role or a count:
+
+* the page set is the launch's (``route-graph.json``), so a page the launch plans and the package
+  does not carry is named missing, and a piece the launch did not plan is named unexpected;
+* every section image is bound by its own path AND hash to the closed stage that produced it, so a
+  duplicate reference cannot stand in for a missing section and a layout proof cannot be retitled
+  as the final mockup (or the reverse) — the two are different stages' artifacts;
+* each section image's own label carries its page slug, its device and its ``sNN-of-MM`` section
+  identity; the devices and section numbers are checked against the page type, and the same section
+  number twice is refused;
+* one page's ``stage_state`` receipt is one page instance's receipt: two pieces cannot share it,
+  and two pieces cannot claim one planned instance.
 """
 
 from __future__ import annotations
@@ -51,8 +64,9 @@ _FOLDER_KIND = {  # wireframes only: both mockup stages share one folder, so a f
     "mobile-wireframes": "wireframe_mobile_section",
 }
 _PDF = re.compile(r"_(DESKTOP|MOBILE)_(WIREFRAMES|MOCKUPS-FINAL)\.pdf$")
-_IMAGE = re.compile(r"_(desktop|mobile)_(wireframe|mockup(?:-visual|-final)?)_s\d+-of-\d+_", re.I)
+_IMAGE = re.compile(r"_(desktop|mobile)_(wireframe|mockup(?:-visual|-final)?)_s(\d+)-of-(\d+)_", re.I)
 _BOARD = re.compile(r"-BOARD\.(?:png|pdf)$", re.I)
+ROUTE_GRAPH_REL = "route-graph.json"
 
 
 def classify(path: str, declared: Optional[str] = None) -> Optional[str]:
@@ -183,6 +197,43 @@ def load_page_rules(root: Optional[Path] = None) -> Dict[str, Dict[str, Any]]:
     return rules
 
 
+def declared_page_keys(root: Optional[Path] = None) -> Dict[str, Dict[str, Any]]:
+    """{page key: page type entry} from the contract file: every page identity the funnel can build."""
+    doc, _ = _page_types_doc(root)
+    return {str(k): v for k, v in ((doc or {}).get("pages") or {}).items() if isinstance(v, dict)}
+
+
+def _read_json(path: Path) -> Any:
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def planned_instances(root: Path) -> Tuple[Optional[List[Dict[str, Any]]], str]:
+    """(the page instances the LAUNCH planned, why-not) from the package's own route graph.
+
+    A directory of pieces answers "what was delivered"; the route graph answers "what was planned".
+    The two are different questions, and only the second can name a page missing.
+    """
+    doc = _read_json(Path(root) / ROUTE_GRAPH_REL)
+    if not isinstance(doc, dict) or not isinstance(doc.get("nodes"), list) or not doc["nodes"]:
+        return None, f"the package carries no {ROUTE_GRAPH_REL}, so the planned page set is unknown"
+    out: List[Dict[str, Any]] = []
+    for node in doc["nodes"]:
+        if not isinstance(node, dict) or not node.get("role"):
+            continue
+        role = str(node["role"])
+        key = role
+        if node.get("page_kind") and str(node["page_kind"]) != role:
+            key += f":{node['page_kind']}"
+        if node.get("role_instance"):
+            key += f":{node['role_instance']}"
+        out.append({"key": key, "role": role, "page_kind": node.get("page_kind"),
+                    "role_instance": node.get("role_instance"), "page_id": node.get("page_id")})
+    return (out, f"{ROUTE_GRAPH_REL} ({len(out)} planned page(s))") if out else (None, f"{ROUTE_GRAPH_REL} plans no page")
+
+
 def required_kinds(piece: Dict[str, Any], spec: Dict[str, List[str]]) -> List[str]:
     for key in (page_key(piece), piece.get("role_instance"), piece.get("role"), DEFAULT_KEY):
         if key and key in spec:
@@ -256,11 +307,27 @@ def _inside(root: Path, rel: Any) -> Optional[Path]:
     return target if target.is_relative_to(root.resolve()) else None
 
 
-def load_stage_state(piece: Dict[str, Any], root: Path) -> Tuple[Optional[Dict[str, Set[str]]], str]:
-    """({closed stage: {sha256 of every file that stage's close recorded}}, "") or (None, why).
+def section_identity(path: str) -> Optional[Dict[str, Any]]:
+    """A section image's own identity from its label: device, kind, section number and total.
+
+    ``upsell-1_desktop_wireframe_s03-of-08_offer.png`` is section 3 of 8, desktop, wireframe. The
+    label Skill 71 writes is the only place a section states its identity, so this reads it rather
+    than trusting a position in a list or a count.
+    """
+    match = _IMAGE.search(Path(path).name)
+    if not match:
+        return None
+    return {"device": match.group(1).lower(), "kind": match.group(2).lower(),
+            "section": int(match.group(3)), "of": int(match.group(4))}
+
+
+def load_stage_state(piece: Dict[str, Any], root: Path) -> Tuple[Optional[Dict[str, Dict[str, str]]], str]:
+    """({closed stage: {artifact path: sha256 recorded at close}}, "") or (None, why).
 
     The piece's ``stage_state`` is {"path", "sha256"}: the run's private/state.json copied into the
-    package. Only a stage with status closed and receipt_status pass counts as closed.
+    package. Only a stage with status closed and receipt_status pass counts as closed. The map is
+    PATH -> HASH (never a bare hash set): a file is bound to the stage that produced it by its own
+    path, so two files that happen to share bytes cannot vouch for each other.
     """
     ref = piece.get("stage_state")
     if not isinstance(ref, dict):
@@ -276,22 +343,29 @@ def load_stage_state(piece: Dict[str, Any], root: Path) -> Tuple[Optional[Dict[s
         return None, "stage_state is not readable JSON"
     if not isinstance(stages, dict):
         return None, "stage_state has no stages"
-    closed: Dict[str, Set[str]] = {}
+    closed: Dict[str, Dict[str, str]] = {}
     for name, entry in stages.items():
         if isinstance(entry, dict) and entry.get("status") == "closed" and entry.get("receipt_status") == "pass":
             hashes = entry.get("artifact_hashes")
-            closed[name] = {str(h) for h in hashes.values()} if isinstance(hashes, dict) else set()
+            closed[name] = {str(rel): str(digest) for rel, digest in hashes.items()
+                            } if isinstance(hashes, dict) else {}
     return closed, ""
 
 
-def _evidence_problem(kind: str, digest: str, closed: Dict[str, Set[str]]) -> Optional[str]:
+def _evidence_problem(kind: str, path: str, digest: str,
+                      closed: Dict[str, Dict[str, str]]) -> Optional[str]:
     stages = _STAGES_FOR.get(kind.rsplit("_", 1)[0], _STAGES_FOR["board"])
     live = [s for s in stages if s in closed]
     if not live:
         return f"comes from no closed {' or '.join(stages)} stage"
-    # the stage contract hashes section PNGs; the review PDFs and boards are proven by their stage closing
-    if kind.endswith("_section") and not any(digest in closed[s] for s in live):
-        return f"is not among the files the closed {live[0]} stage recorded"
+    # The stage contract hashes section PNGs by path; the review PDFs and boards are proven by
+    # their stage closing. A section file is among ITS stage's recorded files only when the file's
+    # own path carries the hash recorded at close: a look-alike path, or another stage's file with
+    # the same bytes (a layout proof retitled as the final mockup), is not evidence.
+    if kind.endswith("_section"):
+        recorded = [closed.get(s, {}).get(path) for s in live]
+        if digest not in [d for d in recorded if d]:
+            return f"is not among the files the closed {live[0]} stage recorded"
     return None
 
 
@@ -384,25 +458,43 @@ def design_violations(manifest: Dict[str, Any], root: Path,
         rules = {}
     fails: List[str] = []
     test_only = bool(manifest.get("test_only"))
-    for piece in manifest.get("pieces") or []:
+    pieces = [p for p in (manifest.get("pieces") or []) if isinstance(p, dict)]
+    planned, planned_why = planned_instances(root)
+    if planned is not None:
+        fails.extend(_instance_violations(pieces, planned))
+    receipts: Dict[Tuple[str, str], List[str]] = {}   # (path, sha) -> the page keys claiming it
+    for piece in pieces:
         key = page_key(piece)
         slug = label_slug(piece)
         found: Dict[str, List[str]] = {}
-        closed: Optional[Dict[str, Set[str]]] = None
+        closed: Optional[Dict[str, Dict[str, str]]] = None
         if not test_only:
             closed, why = load_stage_state(piece, root)
             if closed is None:
                 fails.append(f"{CODE}: {key} {why}; a client delivery needs a closed stage_gate run")
+            else:
+                ref = piece["stage_state"]
+                receipts.setdefault((str(ref.get("path")), str(ref.get("sha256"))), []).append(key)
+        seen: Set[str] = set()
         for art in piece.get("artifacts") or []:
             path = str(art.get("path") or "")
             kind = classify(path)
             if kind is None:
                 continue
+            if path in seen:  # the same reference twice cannot be two sections or two kinds
+                fails.append(f"{CODE}: {key} lists {Path(path).name!r} twice; a duplicate reference "
+                             "cannot stand in for another section")
+                continue
+            seen.add(path)
             found.setdefault(kind, []).append(path)
             name = Path(path).name
             if not name.lower().startswith(slug + "_"):
                 fails.append(f"{CODE}: {key} file {name!r} is not labeled for this page "
                              f"(a client-facing design file starts with {slug + '_'!r}, then the device and kind)")
+            identity = section_identity(path)
+            if identity and kind.endswith("_section") and identity["device"] != kind.split("_")[1]:
+                fails.append(f"{CODE}: {key} {kind} {name!r} is drawn at {identity['device']} but labeled as a "
+                             f"{kind.split('_')[1]} section; viewport identity is part of the deliverable")
             target = root / path
             if not target.is_file():
                 fails.append(f"{CODE}: {key} {kind} {path!r} does not resolve")
@@ -412,7 +504,7 @@ def design_violations(manifest: Dict[str, Any], root: Path,
                 if art.get("sha256") and art["sha256"] != digest:
                     problem = "does not match its recorded hash"
                 if problem is None and closed is not None:
-                    problem = _evidence_problem(kind, digest, closed)
+                    problem = _evidence_problem(kind, path, digest, closed)
                 if problem:
                     fails.append(f"{CODE}: {key} {kind} {name!r} {problem}")
             if (_provider_of(piece, art) == "stub" and kind != "board" and not test_only):
@@ -421,6 +513,7 @@ def design_violations(manifest: Dict[str, Any], root: Path,
         for kind in required_kinds(piece, spec):
             if kind not in found:
                 fails.append(f"{CODE}: {key} is missing {kind.replace('_', ' ')}")
+        fails.extend(_section_identity_violations(key, found))
         allowed = None if test_only else _section_rule(piece, rules)
         if allowed:
             counts = {k: len(v) for k, v in found.items() if k.endswith("_section")}
@@ -428,7 +521,71 @@ def design_violations(manifest: Dict[str, Any], root: Path,
                 if n not in allowed or len(set(counts.values())) > 1:
                     fails.append(f"{CODE}: {key} has {n} {kind.replace('_', ' ')} images; "
                                  f"its page type has {sorted(allowed)} sections")
+    for (path, digest), holders in sorted(receipts.items()):
+        if len(set(holders)) > 1:
+            fails.append(f"{CODE}: {' and '.join(sorted(set(holders)))} cite the same stage_gate receipt "
+                         f"({Path(path).name}, attempt/input revision {digest[:12]}); one page's run receipt "
+                         "is one page instance's receipt")
     fails.extend(approval_violations(manifest.get("design_approvals"), root))
+    return fails
+
+
+def _section_identity_violations(key: str, found: Dict[str, List[str]]) -> List[str]:
+    """Each section image's own section number, once, per kind: a count is never a section identity."""
+    fails: List[str] = []
+    for kind, paths in sorted(found.items()):
+        if not kind.endswith("_section"):
+            continue
+        numbers: List[int] = []
+        for path in paths:
+            identity = section_identity(path)
+            if identity is None:
+                fails.append(f"{CODE}: {key} {kind} {Path(path).name!r} carries no sNN-of-MM section identity; "
+                             "the label is how a section states which section it is")
+                continue
+            numbers.append(identity["section"])
+        repeated = sorted({n for n in numbers if numbers.count(n) > 1})
+        if repeated:
+            fails.append(f"{CODE}: {key} {kind.replace('_', ' ')} carries section {repeated[0]} more than once; "
+                         "a duplicate section cannot stand in for a missing one")
+    return fails
+
+
+def _instance_violations(pieces: List[Dict[str, Any]],
+                         planned: List[Dict[str, Any]]) -> List[str]:
+    """Every planned page instance has exactly one piece, and no piece is a page never planned.
+
+    Instances are matched by their own key first (landing:opt_in and landing:sales are two pages,
+    and each needs its own piece). A planned key that names only a role — a route node with no
+    page kind — is satisfied by any piece of that role, because the launch has not split the role.
+    One piece can therefore never stand in for two planned instances of one role.
+    """
+    fails: List[str] = []
+    declared = declared_page_keys()
+    planned_keys = [p["key"] for p in planned]
+    planned_roles = {p["role"] for p in planned}
+    piece_keys = [page_key(piece) for piece in pieces]
+    keys: Dict[str, int] = {}
+    for key in piece_keys:
+        keys[key] = keys.get(key, 0) + 1
+    for piece, key in zip(pieces, piece_keys):
+        role = str(piece.get("role") or "")
+        if role not in planned_roles:
+            fails.append(f"{CODE}: {key} is not a page the launch plans "
+                         f"(planned roles: {', '.join(sorted(planned_roles))})")
+            continue
+        if declared and key not in declared and role not in declared:
+            fails.append(f"{CODE}: {key} is not a page type Skill 49's inventory declares")
+    for want in planned_keys:
+        if want in keys:
+            continue
+        role = want.split(":")[0]
+        if want == role and role in {k.split(":")[0] for k in keys}:
+            continue  # a role-level plan node, satisfied by that role's piece(s)
+        fails.append(f"{CODE}: {want} is planned and has no piece (no design set is recorded for it)")
+    for key, n in sorted(keys.items()):
+        if n > 1:
+            fails.append(f"{CODE}: {n} pieces claim the page instance {key}; each planned page gets its own chain")
     return fails
 
 

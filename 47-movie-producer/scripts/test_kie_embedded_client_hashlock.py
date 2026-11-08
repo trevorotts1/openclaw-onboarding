@@ -125,9 +125,11 @@ def main() -> int:
     sent = {}
     for label, skill74_dir in (("skill74", None), ("embedded", "")):
         ft = base.FakeKieTransport()
+        ft.prompt_max = len("a red barn")   # the fixture fills the cap it declares, so the band floor holds
         r1 = base.fresh_tool(img, "KieImage", ft, skill74_dir).execute({"prompt": "a red barn", "output_path": str(tmp / f"{label}.png")})
         path_img = img._kie_client()[1]
         ft2 = base.FakeKieTransport()
+        ft2.prompt_max = len("a calm lake")
         r2 = base.fresh_tool(vid, "KieVideo", ft2, skill74_dir).execute({
             "prompt": "a calm lake", "model": "bytedance/seedance-1.5-pro", "output_path": str(tmp / f"{label}.mp4")})
         path_vid = vid._kie_client()[1]
@@ -146,8 +148,11 @@ def main() -> int:
     cimg = base._load_module(clone / "tools" / "graphics" / "kie_image.py", "clone_kie_image")
     cvid = base._load_module(clone / "tools" / "video" / "kie_video.py", "clone_kie_video")
     ft = base.FakeKieTransport()
+    ft.prompt_max = len("a red barn")
     ri = base.fresh_tool(cimg, "KieImage", ft, "").execute({"prompt": "a red barn", "output_path": str(clone / "i.png")})
-    rv = base.fresh_tool(cvid, "KieVideo", base.FakeKieTransport(), "").execute({"prompt": "a calm lake", "output_path": str(clone / "v.mp4")})
+    ft_v = base.FakeKieTransport()
+    ft_v.prompt_max = len("a calm lake")
+    rv = base.fresh_tool(cvid, "KieVideo", ft_v, "").execute({"prompt": "a calm lake", "output_path": str(clone / "v.mp4")})
     check("the copied kie_image.py runs on the embedded client alone (%s)" % getattr(ri, "error", ""), ri.success and ri.data["kie_client_path"] == "embedded")
     check("the copied kie_video.py finds the embedded client in its sibling kie_image.py (%s)" % getattr(rv, "error", ""),
           rv.success and rv.data["kie_client_path"] == "embedded")
