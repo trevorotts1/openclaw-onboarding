@@ -61,9 +61,31 @@
       "id": "P4-MEDIA",
       "order": 4,
       "name": "GHL media folder + upload (DELEGATED to Skill 6)",
-      "produces_artifact": "media_ledger.json (GHL media URLs)",
+      "produces_artifact": "media_ledger.json (GHL media URLs) + the hosting binding the launcher admits",
       "delegate": "06-ghl-install-pages :: ghl_media.py (ensure_funnel_media_folders + upload_media)",
-      "gate": "GHL-host assertion enforced at P9"
+      "gate": "GHL-host assertion enforced at P9",
+      "hosting_binding": {
+        "consumer": "83-black-friday-launcher/launcher_core/image_stages.py::hosted_admission",
+        "producer": "83-black-friday-launcher/launcher_core/image_stages.py::write_hosting_binding",
+        "sources": [
+          "media_ledger.json (this rail's declared output)",
+          "45-design-intelligence-library/scripts/graphics_ghl_push.py -> media_library.json (the graphics route's receipt ledger)"
+        ],
+        "binding_file": "hosting-binding.json",
+        "schema": "launcher.hosting-binding/1",
+        "required_keys": [
+          "local_path",
+          "sha256",
+          "location_id",
+          "page",
+          "slot",
+          "ghl_folder_id",
+          "ghl_media_id",
+          "ghl_upload_status",
+          "public_url"
+        ],
+        "rule": "A hosted URL alone is not an upload. The binding binds the CURRENT local artifact's SHA-256 to the exact run/page/revision, tenant/location, verified folder, remote media id and final URL. CDN transformations are expected: the local hash is the identity, the remote bytes are never compared to it. No record with a missing key is admitted."
+      }
     },
     {
       "id": "P5-HTML",

@@ -22,16 +22,18 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import os
 import re
 import subprocess
 import sys
 from importlib import metadata
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import pydeps
 from .constants import (REPO_ROOT, SKILL_NAME, SKILL_ROOT, SkillResolutionError,
                         resolve_ref, resolve_skill_dir, skill_slug)
+from .image_plan import DEFAULT_PROVIDER
 
 MANIFEST = Path(__file__).resolve().parent / "dependencies.json"
 MANIFEST_REF = "launcher_core/dependencies.json"
@@ -39,6 +41,100 @@ MANIFEST_REF = "launcher_core/dependencies.json"
 # a second list of requirements; metadata_spine() is what proves they cannot drift.
 METADATA_SPINES = ("registration.json", "skill.json")
 _SPINE_KINDS = ("skill_tree", "shared_utils")
+
+# The launch modes a preflight can be asked about. Each maps to the steps in
+# cli.py that really run: `plan`/`route` compile the graph, `questions` reads the
+# shared interview, `dispatch` builds pages (stub or paid), `assemble` packages
+# them. A mode is not a label: it decides which SELECTED-CONDITIONAL entries are
+# part of the closure and therefore which of them can block.
+LAUNCH_MODES = ("plan", "questions", "dispatch", "dispatch-kie", "assemble")
+DEFAULT_MODE = "plan"
+
+CLASS_REQUIRED = "required"
+CLASS_SELECTED = "selected_conditional"
+CLASS_OPTIONAL = "unselected_optional"
+_CLASSES = (CLASS_REQUIRED, CLASS_SELECTED, CLASS_OPTIONAL)
+
+# File-shaped entries: a path that must exist, never a tree digest or a version.
+_FILE_KINDS = ("shared_utils", "department_map_entry", "installer_registration",
+               "schema", "template")
+
+
+def entry_class(entry: Dict[str, Any]) -> str:
+    """The entry's closure class. The v1 `required` boolean is the fallback, so an
+    older manifest cannot silently read as all-required."""
+    declared = entry.get("class")
+    if declared in _CLASSES:
+        return declared
+    return CLASS_REQUIRED if entry.get("required") else CLASS_OPTIONAL
+
+
+def entry_modes(entry: Dict[str, Any]) -> Tuple[str, ...]:
+    """The modes this entry is part of. No `modes` key means every mode, which is
+    the only honest default for code the launcher always loads."""
+    declared = entry.get("modes")
+    if isinstance(declared, list) and declared:
+        return tuple(str(m) for m in declared)
+    return LAUNCH_MODES
+
+
+def selected(entry: Dict[str, Any], mode: str) -> bool:
+    """True when this entry belongs to `mode`'s closure."""
+    return mode in entry_modes(entry)
+
+
+def blocking(entry: Dict[str, Any], mode: str, status: str) -> bool:
+    """True when a non-present entry must refuse this mode.
+
+    A REQUIRED entry blocks every mode it belongs to. A SELECTED-CONDITIONAL entry
+    blocks only the modes it names — and only while it is selected, which is why
+    the same manifest can report the KIE helpers for a paid run and stay green for
+    a stub one. An UNSELECTED-OPTIONAL entry never blocks.
+    """
+    if status == "present" or not selected(entry, mode):
+        return False
+    cls = entry_class(entry)
+    if cls == CLASS_REQUIRED:
+        return True
+    return cls == CLASS_SELECTED  # `selected` above already proved the mode names it
+
+
+def detect_harness(root: Optional[Path] = None) -> str:
+    """Which supported layout this skill is running from, from the filesystem.
+
+    The closure is the same graph in every harness; what changes is where a skill
+    tree resolves, and that is constants.resolve_skill_dir's job. This names the
+    layout so a report says which one was measured, never a guess.
+    """
+    base = Path(root) if root is not None else REPO_ROOT
+    try:
+        inside = SKILL_ROOT.resolve().relative_to(base.resolve()).parts
+    except ValueError:
+        inside = ()
+    if inside[:2] == (".claude", "skills") or inside[:1] == ("skills",):
+        return "claude-nine"
+    if len(inside) == 1:
+        # The skill is a direct child of the checkout: the onboarding repository.
+        return "openclaw"
+    if os.environ.get("CLAUDE_CONFIG_DIR"):
+        return "claude-code"
+    return "openclaw"
+
+
+def mode_for_intake(payload: Any) -> str:
+    """The dispatch mode an intake selects: paid KIE images, or the stub practice run.
+
+    A paid run's pictures are drawn by the KIE transport, so its closure carries the
+    provider helpers; a practice run draws placeholders and does not. This reads the
+    CLAIM (test_only and the provider), never a plan hash, so it can run before the
+    approval is verified — it only decides which dependencies are checked.
+    """
+    doc = payload if isinstance(payload, dict) else {}
+    paid = doc.get("test_only") is False
+    provider = (doc.get("image_plan") or {}).get("image_provider") \
+        if isinstance(doc.get("image_plan"), dict) else None
+    provider = provider or DEFAULT_PROVIDER
+    return "dispatch-kie" if paid and provider == "kie" else "dispatch"
 
 _NUMERIC_DIR = re.compile(r"^(\d+)-(.+)$")
 _FRONTMATTER_NAME = re.compile(r"^name:[ \t]*(.+?)[ \t]*$")
@@ -296,8 +392,7 @@ def _floor_unmet(ref: str) -> Optional[str]:
 def _present(entry: Dict[str, Any], root: Path) -> Dict[str, Any]:
     kind = entry["kind"]
     ref = entry["ref"]
-    if kind in ("skill_tree", "shared_utils", "department_map_entry",
-                "installer_registration"):
+    if kind in ("skill_tree",) + _FILE_KINDS:
         target, error = _resolve(ref, root, kind)
         if target is None:
             return {"status": "missing", "evidence": error}
@@ -376,18 +471,32 @@ def _registered_enabled(base: Path) -> bool:
     return (record.get("enablement") or {}).get("enabled_in_999") is True
 
 
-def check(root: Optional[Path] = None) -> Dict[str, Any]:
-    """Report what is present and what is missing before a 999 enablement."""
+def check(root: Optional[Path] = None, mode: Optional[str] = None) -> Dict[str, Any]:
+    """Report what is present and what is missing before a 999 enablement.
+
+    With `mode`, every entry is also classified for that launch mode: REQUIRED
+    (blocks), SELECTED-CONDITIONAL (blocks only when this mode selects it) or
+    UNSELECTED-OPTIONAL (reported, never blocks). Without `mode` the report is the
+    v1 all-modes view, so an existing caller keeps its meaning.
+    """
     manifest = load_manifest()
     base = Path(root) if root else _repo_root()
+    active = mode or DEFAULT_MODE
+    if active not in LAUNCH_MODES:
+        raise DependencyError(f"unknown launch mode {active!r}; supported: {list(LAUNCH_MODES)}")
     entries: List[Dict[str, Any]] = []
     for entry in manifest["entries"]:
         result = _present(entry, base)
+        cls = entry_class(entry)
         entries.append({
             "id": entry["id"],
             "kind": entry["kind"],
             "ref": entry["ref"],
             "required": bool(entry.get("required")),
+            "class": cls,
+            "modes": list(entry_modes(entry)),
+            "selected": selected(entry, active),
+            "blocking": blocking(entry, active, result["status"]),
             "why": entry.get("why", ""),
             "status": result["status"],
             "evidence": result["evidence"],
@@ -395,10 +504,12 @@ def check(root: Optional[Path] = None) -> Dict[str, Any]:
     present = [e["id"] for e in entries if e["status"] == "present"]
     missing = [e["id"] for e in entries if e["status"] == "missing"]
     unverifiable = [e["id"] for e in entries if e["status"] == "unverifiable"]
-    blockers = [e["id"] for e in entries
-                if e["status"] != "present" and e["required"]]
+    blockers = [e["id"] for e in entries if e["blocking"]]
+    closure = closure_from(entries, manifest, active, base)
     return {
         "target": manifest.get("target"),
+        "mode": active,
+        "harness": detect_harness(base),
         "enabled_in_999": _registered_enabled(base) and not blockers,
         "would_enable": not blockers,
         "seen_from": str(base),
@@ -410,6 +521,45 @@ def check(root: Optional[Path] = None) -> Dict[str, Any]:
         "missing": missing,
         "unverifiable": unverifiable,
         "blockers": blockers,
+        "closure": closure,
+    }
+
+
+def closure_from(entries: List[Dict[str, Any]], manifest: Dict[str, Any],
+                 mode: str, base: Path) -> Dict[str, Any]:
+    """The mode's installed closure: what this mode really loads, by class.
+
+    This is the answer to "the 19 checks are not 19 skills". Each row is one
+    resolution the mode performs — code, schema, role/prompt template, brand rule,
+    shared package or provider helper — with the status of that resolution. The
+    three lists are never mixed: a selected entry that is missing is a refusal,
+    an unselected optional one is information.
+    """
+    required = [e["id"] for e in entries if e["selected"] and e["class"] == CLASS_REQUIRED]
+    selected_cond = [e["id"] for e in entries
+                     if e["selected"] and e["class"] == CLASS_SELECTED]
+    optional = [e["id"] for e in entries if e["class"] == CLASS_OPTIONAL]
+    unselected = [e["id"] for e in entries
+                  if not e["selected"] and e["class"] != CLASS_OPTIONAL]
+    return {
+        "mode": mode,
+        "harness": detect_harness(base),
+        "declared_modes": sorted((manifest.get("closure") or {}).get("modes") or {}),
+        "rows": [{"id": e["id"], "kind": e["kind"], "ref": e["ref"],
+                  "class": e["class"], "status": e["status"]} for e in entries],
+        "required": required,
+        "selected_conditional": selected_cond,
+        "unselected_optional": optional,
+        "not_in_this_mode": unselected,
+        "required_missing": [e["id"] for e in entries
+                             if e["selected"] and e["class"] == CLASS_REQUIRED
+                             and e["status"] != "present"],
+        "selected_missing": [e["id"] for e in entries
+                             if e["selected"] and e["class"] == CLASS_SELECTED
+                             and e["status"] != "present"],
+        "counts": {"entries": len(entries), "required": len(required),
+                   "selected_conditional": len(selected_cond),
+                   "unselected_optional": len(optional)},
     }
 
 
@@ -433,7 +583,8 @@ def _pip_install(spec: str) -> bool:
 
 
 def ensure_runtime_packages(root: Optional[Path] = None,
-                            install: Callable[[str], bool] = _pip_install) -> Dict[str, Any]:
+                            install: Callable[[str], bool] = _pip_install,
+                            mode: Optional[str] = None) -> Dict[str, Any]:
     """Install any missing required runtime package itself, then return the re-checked report.
 
     The client is never asked to install software: a package that is not importable (or is
@@ -442,7 +593,7 @@ def ensure_runtime_packages(root: Optional[Path] = None,
     (a new versioned folder): the next launch repairs itself before anything is built. A package that
     still fails stays a blocker for `require`, which tells the operator, not the client.
     """
-    report = check(root)
+    report = check(root, mode)
     todo = [e for e in report["entries"]
             if e["kind"] == "runtime_package" and e["required"] and e["status"] != "present"]
     if not todo:
@@ -451,7 +602,7 @@ def ensure_runtime_packages(root: Optional[Path] = None,
         install(_requirement(entry["ref"]))
     importlib.invalidate_caches()
     pydeps.activate()  # the folder may have just been created
-    report = check(root)
+    report = check(root, mode)
     # The operator note is judged on the re-check (the same real import), never on install()'s return alone:
     # a pip that ran but left the package unimportable, or no pip at all, must not read as success.
     still = [e["ref"] for e in report["entries"]
@@ -466,15 +617,19 @@ def ensure_runtime_packages(root: Optional[Path] = None,
     return report
 
 
-def require(root: Optional[Path] = None) -> Dict[str, Any]:
+def require(root: Optional[Path] = None, mode: Optional[str] = None) -> Dict[str, Any]:
     """The preflight a build runs first: return the report, or refuse naming every blocker.
 
     A green preflight must mean the launch can run, so dispatch and assemble call this
     before they touch a page. A missing runtime package is installed first
-    (ensure_runtime_packages); any other required entry that is missing, below its minimum
-    version, or unverifiable blocks. Nothing has been built or spent when it raises.
+    (ensure_runtime_packages); any other entry that blocks THIS launch mode — required
+    for every mode, or selected by a mode that names it — blocks when it is missing,
+    below its minimum version, or unverifiable. Nothing has been built or spent when it
+    raises.
     """
     report = ensure_runtime_packages(root)
+    if mode and mode != report.get("mode"):
+        report = check(root, mode)
     if report["blockers"]:
         detail = {e["id"]: e for e in report["entries"]}
         message = ("AF-LAUNCH-DEPENDENCY: required dependency not satisfied: "
