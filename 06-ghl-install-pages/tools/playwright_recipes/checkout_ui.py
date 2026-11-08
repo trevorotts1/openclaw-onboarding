@@ -9,6 +9,7 @@ infer native product IDs from display names or execute payment actions.
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 
 if __package__:
@@ -64,6 +65,14 @@ CONTACT_FIELDS = {
 MANDATORY_CONTACT_FIELDS = {'fullName', 'email'}
 
 
+
+def _legal_plaintext(value, key):
+    _text(value, 'Approved legal_copy.' + key)
+    if re.search(r'<\s*[!/A-Za-z][^>]*>', value) or re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', value):
+        raise CheckoutRefused('Legal copy must be authored plaintext, not HTML or control characters')
+    return value.replace('\r\n','\n').replace('\r','\n')
+
+
 def validate_checkout_ui(data):
     if not isinstance(data, dict):
         raise CheckoutRefused('Native checkout UI inputs must be an object')
@@ -81,8 +90,15 @@ def validate_checkout_ui(data):
     if (not isinstance(options, dict) or set(options) - set(CHECKOUT_SWITCHES)
             or any(type(value) is not bool for value in options.values())):
         raise CheckoutRefused('Native Checkout options require explicit supported booleans')
-    if any(options.get(key) is True for key in ('terms_and_conditions','terms_and_conditions_step_2')):
-        raise CheckoutRefused('Enabling native Terms requires approved legal-copy editing; that editor is not captured')
+    legal = data.get('legal_copy', {})
+    if not isinstance(legal, dict) or set(legal) - {'terms_text','terms_step2_text'}:
+        raise CheckoutRefused('Legal copy requires explicit first-step/second-step plaintext keys')
+    legal_keys = {'terms_and_conditions':'terms_text', 'terms_and_conditions_step_2':'terms_step2_text'}
+    for option, key in legal_keys.items():
+        if options.get(option) is True:
+            _legal_plaintext(legal.get(key), key)
+        elif key in legal:
+            raise CheckoutRefused('Terms text requires the corresponding explicit true switch')
     content = data.get('content', {})
     if not isinstance(content, dict) or set(content) - set(CONTENT_FIELDS):
         raise CheckoutRefused('Use captured native Content field keys')
@@ -195,7 +211,32 @@ def _contact_fields(dialog, requested, *, write):
 
 
 
-def _checkout_options(dialog, requested, *, write):
+
+def _terms_editor(dialog, label):
+    editors = dialog.locator('.of-terms-content .tiptap.ProseMirror')
+    if editors.count() == 0:
+        try:
+            editors.first.wait_for(state='visible', timeout=45000)
+        except Exception:
+            raise CheckoutRefused('Enabling native Terms did not expose its captured editor') from None
+    if editors.count() not in (1, 2):
+        raise CheckoutRefused('Native Terms editor count changed')
+    matches = []
+    for index in range(editors.count()):
+        editor = editors.nth(index)
+        row = editor.locator('xpath=../../..')
+        switch = row.get_by_role('switch', name=label, exact=True)
+        if switch.count() == 1:
+            if not row.inner_text().lstrip().startswith(label) or switch.get_attribute('aria-checked') != 'true':
+                raise CheckoutRefused('Native Terms row identity or enabled state changed')
+            matches.append(editor)
+    if len(matches) != 1:
+        raise CheckoutRefused('Native Terms editor is not uniquely bound to its named switch')
+    matches[0].wait_for(state='visible', timeout=45000)
+    return matches[0]
+
+
+def _checkout_options(dialog, requested, *, write, legal_copy=None):
     panel = dialog.get_by_role('button', name='Checkout options', exact=True)
     if panel.count() != 1:
         raise CheckoutRefused('Native Checkout options navigation changed')
@@ -213,6 +254,19 @@ def _checkout_options(dialog, requested, *, write):
             control.click()
         if control.get_attribute('aria-checked') != expected:
             raise CheckoutRefused('Native Checkout option does not match: ' + key)
+    legal_copy = legal_copy or {}
+    for key, legal_key in (('terms_and_conditions','terms_text'),
+                           ('terms_and_conditions_step_2','terms_step2_text')):
+        if requested.get(key) is not True:
+            continue
+        expected_text = _legal_plaintext(legal_copy.get(legal_key), legal_key)
+        editor = _terms_editor(dialog, CHECKOUT_SWITCHES[key])
+        if write:
+            editor.fill(expected_text)
+        if editor.inner_text().replace('\r\n','\n').replace('\r','\n') != expected_text:
+            raise CheckoutRefused('Native Terms text does not match authored plaintext: ' + legal_key)
+        if editor.locator('a').count() != 0:
+            raise CheckoutRefused('Native Terms plaintext still contains an unapproved link')
 
 
 def _content_fields(dialog, requested, *, write):
@@ -304,7 +358,7 @@ def apply_checkout_ui(frame, data):
     if data.get('contact_fields'):
         _contact_fields(dialog, data['contact_fields'], write=True)
     if data.get('checkout_options'):
-        _checkout_options(dialog, data['checkout_options'], write=True)
+        _checkout_options(dialog, data['checkout_options'], write=True, legal_copy=data.get('legal_copy'))
     if data.get('content'):
         _content_fields(dialog, data['content'], write=True)
     if data.get('theme_inputs'):
@@ -334,13 +388,16 @@ def verify_checkout_ui(frame, data):
     if data.get('contact_fields'):
         _contact_fields(dialog, data['contact_fields'], write=False)
     if data.get('checkout_options'):
-        _checkout_options(dialog, data['checkout_options'], write=False)
+        _checkout_options(dialog, data['checkout_options'], write=False, legal_copy=data.get('legal_copy'))
     if data.get('content'):
         _content_fields(dialog, data['content'], write=False)
     if data.get('theme_inputs'):
         _theme_input_controls(dialog, data['theme_inputs'], write=False)
+    legal_digests = {key:hashlib.sha256(_legal_plaintext(value,key).encode()).hexdigest()
+                     for key,value in data.get('legal_copy', {}).items()}
     return {'status':'NATIVE_CHECKOUT_UI_READBACK_VERIFIED',
         'element_id':data['element_id'], 'mode':data.get('mode'),
+        'legal_copy_saved':bool(legal_digests), 'legal_text_sha256':legal_digests, 'legal_acceptance':False,
         'products':data.get('products', {}),
         'theme_inputs':data.get('theme_inputs', {}),
         'checkout_options':data.get('checkout_options', {}), 'content':data.get('content', {}),

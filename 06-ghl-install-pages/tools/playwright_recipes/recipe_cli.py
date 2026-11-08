@@ -51,6 +51,15 @@ def compile_recipe(operation, data):
             add('form_css',radius=data.get('radius',12))
     elif operation=='forms.settings':
         add('form_settings',settings=data['settings'])
+    elif operation=='forms.notifications':
+        config = data.get('notifications')
+        if not isinstance(config, dict) or set(config).intersection({'id','action','_context'}):
+            raise Stop('Native form notifications require a configuration object without runner metadata')
+        add('form_notifications', **config)
+    elif operation=='forms.submission':
+        if not isinstance(data.get('submission'), dict) or 'action' in data['submission']:
+            raise Stop('Native form submission must be a configuration object without an executor action override')
+        add('form_submission', **data['submission'])
     elif operation=='forms.configure' and data.get('fields'):
         add('native_fields', fields=data['fields'])
     elif operation=='forms.conditions':
@@ -61,11 +70,11 @@ def compile_recipe(operation, data):
         # condition action before add() so it cannot collide with that argument.
         if 'action' in condition:
             effect = condition.pop('action')
-            if effect != 'Hide Field' or condition.get('effect', effect) != effect:
+            if effect not in ('Hide Field', 'Show Field') or condition.get('effect', effect) != effect:
                 raise Stop('Conflicting or uncaptured native condition effect')
             condition['effect'] = effect
-        if condition.get('effect', 'Hide Field') != 'Hide Field':
-            raise Stop('Only the captured Hide Field condition effect is implemented')
+        if condition.get('effect', 'Hide Field') not in ('Hide Field', 'Show Field'):
+            raise Stop('Only the captured Hide Field/Show Field condition effects are implemented')
         add('native_condition', **condition)
     elif operation=='quizzes.configure':
         add('quiz_configuration', **data['configuration'])

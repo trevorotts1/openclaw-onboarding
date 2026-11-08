@@ -11,9 +11,10 @@ The recipe configures the captured native order-form controls:
 - Products display: images, quantity, product description, price description,
   multiple-product selection and coupon codes.
 - Checkout options: Sticky contact, create a new contact per purchase, disposable
-  email validation, and postal code on the payment form. The two Terms switches
-  accept explicit `false` only; enabling them is refused until the approved legal
-  copy editor is supported. No legal copy is generated.
+  email validation, and postal code on the payment form. Both Terms switches may be enabled only with their matching authored
+  plaintext in `legal_copy`: `terms_text` for the first step, `terms_step2_text`
+  for the payment step. Existing placeholder links are replaced by that plaintext.
+  No legal copy is generated and no agreement is accepted.
 - Inputs theme: `appearance` is `Box` or `Line`; `labels` is `Above`, `Floating`
   or `Hidden`. Numeric borders/radii are not part of this operation.
 - Content: 37 exact native textboxes across the six captured accordion groups;
@@ -70,5 +71,31 @@ offline tests and must be receipted on the target host before rollout.
 
 Checkout option keys are `sticky_contact`, `new_contact_every_purchase`,
 `validate_disposable_email`, `postal_code_on_payment_form`,
-`terms_and_conditions`, and `terms_and_conditions_step_2`. The last two may only
-be explicitly disabled by this script. All values must be actual JSON booleans.
+`terms_and_conditions`, and `terms_and_conditions_step_2`. The two Terms switches require matching nonempty plaintext when set to `true`.
+All switch values must be actual JSON booleans.
+
+## Native browser persistence observation
+
+On November 8, 2026, the authorized native order-form fixture was edited through
+its visible controls, saved, and reopened at its exact editor URL. The selected
+Inputs appearance remained `Box` (`aria-pressed="true"`), and the Step 1 headline
+remained `ZHC Checkout Probe`. This is browser-path persistence evidence for those
+two settings. It is not a final Python process run, product-binding verification,
+or payment/funnel QC proof. Private fixture IDs are omitted here.
+
+## Authored Terms text
+
+To enable the first-step checkbox, provide
+`checkout_options.terms_and_conditions: true` and `legal_copy.terms_text`.
+To enable the payment-step checkbox, provide
+`checkout_options.terms_and_conditions_step_2: true` and
+`legal_copy.terms_step2_text`. Each string must be approved plaintext, not HTML.
+The script refuses missing or blank copy before changing the first UI control.
+
+Each native rich-text editor is located by its containing row's exact named
+switch, rather than its position when both checkboxes are enabled. Filling the
+authored plaintext intentionally replaces the editor's existing placeholder
+text and links. After saving and reopening, the script checks exact text and
+absence of leftover links, then records legal-text hashes. The receipt can mark
+`legal_copy_saved: true`; `legal_acceptance` and `payment_verified` remain false.
+Do not use the example's REPLACE placeholders in a real client build.

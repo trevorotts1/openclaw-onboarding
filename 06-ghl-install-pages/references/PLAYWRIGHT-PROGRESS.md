@@ -221,3 +221,49 @@ remains pending its separately recorded guarded run. An alternate documented
 host-API attempt left intent recorded and must be reconciled before any retry.
 All native client receipts and diagnostic scripts remain private and outside
 source checkpoints. Do not reset or overwrite uncertain client state.
+
+
+## Additional native coverage and real-DOM correction
+
+Added forms.submission (message/HTTPS redirect, conditional-precedence guard)
+and forms.notifications (authored recipient/settings, inner+outer Save and
+reopened native values). Catalog now has 32 named operations. Notification
+receipts hash addresses/content; no submission or email delivery was triggered.
+Native checkout Terms can use explicit caller-approved plaintext for both steps;
+no legal text is invented and no legal agreement is accepted by this script.
+
+A live inspection caught a condition-selector bug masked by an earlier fake:
+the native search input stays blank while selected text is rendered in an
+adjacent overlay. The script now checks the captured label/title and overlay.
+Single Show Field and Hide Field use independently reopened exact rule cards.
+A new clearly named advanced-condition fixture was created after exact-name
+absence was verified; its Show Field rule and hidden Last Name were persisted.
+Preview behavior was exercised without submission: First Name empty showed Last
+Name, entering synthetic text hid it, clearing the text showed it again.
+This is browser UI behavior proof, distinct from the final native Python process.
+
+The dae5006 checkpoint completed all 230 tests on BOTH Mac and Linux CI; the
+actual client Mac also completed all 230 with seven real Chromium fixtures and
+READY_FOR_HOST_PROBE. Its updated 50-entry Downloads archive passed integrity.
+Live auth stopped after a P4 identity refusal and retained uncertain form intent;
+no further token/login/bootstrap attempt was made. Exact client receipts remain
+private. Further source additions above need their own saved checkpoint/checks.
+
+
+## Integrated 32-operation review
+
+Whole recipe suite: 262 discovered, 255 passed, seven actual-browser fixtures
+skipped only because this workspace has no Chromium executable. New submission
+and notification result statuses are registered centrally; explicit false
+functional/submission/behavior/payment proof keeps the run NEEDS_VERIFICATION.
+Ten acceptance-boundary tests pass, including these two new saved outcomes.
+Both new recipes validate through the actual CLI, and invalid inputs produce
+structured refusals without a traceback. Independent review checked the
+notification two-save flow, recipient inventory handshake and hash-only receipts.
+The guide lists all 32 operation names and their remaining limits.
+
+The prior dae5006 CI checkpoint is green on all completed guards; QC static was
+still running at the last observation. The newly integrated source must receive
+its own Mac/Linux mandatory-browser CI and Downloads checkpoint. Native scope
+identity remains unconfirmed; this is not evidence that a key is absent/invalid.
+Do not bypass the canonical authentication check or clear uncertain client intent.

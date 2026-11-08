@@ -90,7 +90,7 @@ class FieldConfiguration(unittest.TestCase):
     def test_condition_never_silently_ignores_value_or_action(self):
         valid = {'if_field': 'Last Name', 'operator': 'Is Filled', 'target': 'First Name'}
         self.assertEqual(a.validate_condition(valid), valid)
-        cases = [{**valid, 'value': 'ignored'}, {**valid, 'action': 'Show Field'},
+        cases = [{**valid, 'value': 'ignored'}, {**valid, 'action': 'Show Fields'},
                  {**valid, 'operator': 'Is Equal To'}, {**valid, 'target': 'Unknown Field'}]
         for case in cases:
             with self.subTest(case=case), self.assertRaises(a.AssessmentError):
@@ -109,8 +109,9 @@ class FieldConfiguration(unittest.TestCase):
         step = {'id': 'native_condition1', 'action': 'native_condition', 'effect': 'Hide Field',
                 'if_field': 'Last Name', 'operator': 'Is Filled', 'target': 'First Name'}
         self.assertEqual(a.validate_condition(step), step)
+        self.assertEqual(a.validate_condition({**step,'effect':'Show Field'})['effect'],'Show Field')
         with self.assertRaises(a.AssessmentError):
-            a.validate_condition({**step, 'effect': 'Show Field'})
+            a.validate_condition({**step, 'effect': 'Show Fields'})
 
     def test_uncaptured_field_and_condition_requests_are_not_silently_ignored(self):
         with self.assertRaises(a.AssessmentError):
@@ -126,7 +127,9 @@ class FieldConfiguration(unittest.TestCase):
         self.assertEqual(job['steps'][0]['action'], 'native_condition')
         self.assertEqual(job['steps'][0]['effect'], 'Hide Field')
         runner.validate_job(job, Path('.'))
-        for invalid in ([], {**condition, 'effect': 'Show Field'}, {**condition, 'action': 'Show Field'}):
+        show=recipe_cli.compile_recipe('forms.conditions',{**base,'condition':{**condition,'action':'Show Field'}})
+        self.assertEqual(show['steps'][0]['effect'],'Show Field')
+        for invalid in ([], {**condition, 'effect': 'Show Field'}, {**condition, 'action': 'Show Fields'}):
             with self.subTest(invalid=invalid), self.assertRaises(runner.Stop):
                 recipe_cli.compile_recipe('forms.conditions', {**base, 'condition': invalid})
 
@@ -248,16 +251,20 @@ class NativeFieldExecution(unittest.TestCase):
 
 
 class NativeConditionExecution(unittest.TestCase):
-    def surface(self, *, existing=False, enabled=True, persist=True):
+    def surface(self, *, existing=False, enabled=True, persist=True, selected='Hide Field', existing_effect='Hide Field', target_match=True):
         page, frame, dialog = MagicMock(), MagicMock(), MagicMock()
         page.url = 'https://app.convertandflow.com/v2/location/fixture/form-builder-v2/form'
-        state = {'count': 5, 'saves': 0, 'reopened': False}
+        state = {'count': 5, 'saves': 0, 'reopened': False,'selected_effect':selected,'target_clicks':0}
         page.goto.side_effect = lambda *args, **kw: state.__setitem__('reopened', True)
         inputs, save = MagicMock(), MagicMock()
         inputs.count.side_effect = lambda: state['count']
         def entry(index):
             control = MagicMock()
-            control.input_value.return_value = 'Hide Field' if index == state['count'] - 2 else ''
+            # Real native n-select search inputs are blank, including the action.
+            control.input_value.return_value = ''
+            control.evaluate.side_effect=lambda *args:{'labels':1,'overlays':1,'title':state['selected_effect'],'text':state['selected_effect']}
+            if index == state['count']-1:
+                control.click.side_effect=lambda:state.__setitem__('target_clicks',state['target_clicks']+1)
             return control
         inputs.nth.side_effect = entry
         save.count.return_value = 1
@@ -266,9 +273,17 @@ class NativeConditionExecution(unittest.TestCase):
         card = MagicMock()
         def card_text(value, **kw):
             loc = MagicMock()
-            loc.count.return_value = 2 if value == 'Hide Field' else 1
+            card_effect=existing_effect if existing else state['selected_effect']
+            loc.count.return_value = (2 if value==card_effect else 0) if value in ('Hide Field','Show Field') else int(target_match)
             return loc
         card.get_by_text.side_effect = card_text
+        rows=MagicMock()
+        rows.count.side_effect=lambda:int((existing or state['saves']>0) and (persist or not state['reopened']))
+        row=MagicMock()
+        row.text_content.return_value='IfLast NameIs Filled'
+        row.locator.return_value.locator.return_value=card
+        rows.nth.return_value=row
+        dialog.locator.return_value=rows
         def text(value, *, exact):
             loc = MagicMock()
             if value == 'No existing conditions yet':
@@ -276,8 +291,8 @@ class NativeConditionExecution(unittest.TestCase):
             elif value == 'IfLast NameIs Filled':
                 loc.count.return_value = int((existing or state['saves'] > 0) and (persist or not state['reopened']))
                 loc.nth.return_value.locator.return_value.locator.return_value.locator.return_value = card
-            elif value == 'Hide Field':
-                loc.count.return_value = 2 if state['saves'] else 0
+            elif value in ('Hide Field','Show Field'):
+                loc.count.return_value = 2 if state['saves'] and value==state['selected_effect'] else 0
             else:
                 loc.count.return_value = 1
             if value in ('Is Empty', 'Is Filled'):
@@ -294,14 +309,20 @@ class NativeConditionExecution(unittest.TestCase):
                 return title
             return save if kw.get('name') == 'Save' else MagicMock()
         frame.get_by_role.side_effect = role
+        def effect_option(value, **kw):
+            option=MagicMock()
+            option.count.return_value=1
+            option.click.side_effect=lambda:state.__setitem__('selected_effect',value)
+            return option
+        frame.locator.return_value.get_by_text.side_effect=effect_option
         return page, frame, state
 
-    def run_surface(self, page, frame):
+    def run_surface(self, page, frame, step=None):
         with patch.object(runner, 'form_builder', return_value=frame), \
              patch.object(runner, 'click', side_effect=lambda loc: loc.click()), \
              patch.object(runner, 'wait_until', side_effect=lambda predicate, message: self.assertTrue(predicate())), \
              patch.object(runner, 'visible', return_value=False):
-            return a.configure_condition(page, {'if_field': 'Last Name', 'operator': 'Is Filled', 'target': 'First Name'})
+            return a.configure_condition(page, step or {'if_field': 'Last Name', 'operator': 'Is Filled', 'target': 'First Name'})
 
     def test_native_condition_requires_all_three_saves_and_reopen(self):
         page, frame, state = self.surface()
@@ -317,6 +338,48 @@ class NativeConditionExecution(unittest.TestCase):
         result = self.run_surface(page, frame)
         self.assertEqual(result['status'], 'CONDITION_ALREADY_PRESENT')
         self.assertEqual(state['saves'], 0)
+
+    def test_blank_search_values_use_captured_selected_label_and_overlay(self):
+        page,frame,state=self.surface()
+        self.assertEqual(self.run_surface(page,frame)['independent_readback'],'VERIFIED')
+        self.assertEqual(state['saves'],3)
+
+    def test_plural_or_wrong_selected_effect_stops_before_target_and_save(self):
+        for selected in ('Hide Fields','Show Fields','Unexpected'):
+            with self.subTest(selected=selected):
+                page,frame,state=self.surface(selected=selected)
+                with self.assertRaises(runner.Stop):self.run_surface(page,frame)
+                self.assertEqual(state['target_clicks'],0)
+                self.assertEqual(state['saves'],0)
+
+    def test_show_selection_saves_and_verifies_captured_reopened_card(self):
+        page,frame,state=self.surface()
+        result=self.run_surface(page,frame,{'if_field':'Last Name','operator':'Is Filled','target':'First Name','effect':'Show Field'})
+        self.assertEqual(state['selected_effect'],'Show Field')
+        self.assertEqual(state['saves'],3)
+        self.assertEqual(result['independent_readback'],'VERIFIED')
+        self.assertFalse(result['behavior_verified'])
+
+    def test_reopened_show_rule_with_wrong_target_is_not_success(self):
+        page,frame,state=self.surface(target_match=False)
+        with self.assertRaises(runner.Stop):self.run_surface(page,frame,{'if_field':'Last Name','operator':'Is Filled','target':'First Name','effect':'Show Field'})
+        self.assertEqual(state['saves'],3)
+
+    def test_lost_show_save_is_not_verified(self):
+        page,frame,state=self.surface(persist=False)
+        with self.assertRaises(runner.Stop):self.run_surface(page,frame,{'if_field':'Last Name','operator':'Is Filled','target':'First Name','effect':'Show Field'})
+        self.assertEqual(state['saves'],3)
+
+    def test_existing_show_rule_is_not_duplicated(self):
+        page,frame,state=self.surface(existing=True,existing_effect='Show Field')
+        result=self.run_surface(page,frame,{'if_field':'Last Name','operator':'Is Filled','target':'First Name','effect':'Show Field'})
+        self.assertEqual(result['status'],'CONDITION_ALREADY_PRESENT')
+        self.assertEqual(state['saves'],0)
+
+    def test_existing_opposite_effect_is_not_silently_overwritten(self):
+        page,frame,state=self.surface(existing=True,existing_effect='Hide Field')
+        with self.assertRaises(runner.Stop):self.run_surface(page,frame,{'if_field':'Last Name','operator':'Is Filled','target':'First Name','effect':'Show Field'})
+        self.assertEqual(state['saves'],0)
 
     def test_disabled_save_does_not_create(self):
         page, frame, state = self.surface(enabled=False)

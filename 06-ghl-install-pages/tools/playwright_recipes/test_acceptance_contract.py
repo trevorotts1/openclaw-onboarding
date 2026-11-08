@@ -28,6 +28,56 @@ def two_steps():
 
 
 class AcceptanceBoundaryTests(unittest.TestCase):
+    def test_saved_form_submission_and_notification_handlers_are_recognized_but_pending(self):
+        cases = (
+            ('form_submission', 'FORM_SUBMISSION_SAVED_AND_REOPENED',
+             {'behavior_verified': False, 'submission_verified': False}),
+            ('form_notifications', 'NOTIFICATION_SETTINGS_SAVED_AND_REOPENED',
+             {'behavior_verification': 'REQUIRED'}),
+        )
+        for action, status, flags in cases:
+            with self.subTest(action=action), tempfile.TemporaryDirectory() as directory:
+                job = two_steps()
+                job['steps'] = [{'id': 'saved', 'action': action}]
+                with patch.object(runner, 'assert_tenant'), patch.object(
+                    runner, action, return_value={'status': status,
+                                                 'independent_readback': 'VERIFIED', **flags}
+                ) as handler:
+                    result = runner.run_on_page(object(), job, directory)
+                self.assertEqual(handler.call_count, 1)
+                self.assertEqual(result['status'], 'NEEDS_VERIFICATION')
+                self.assertEqual(result['verification_required'], ['saved'])
+
+    def test_every_explicit_false_verification_flag_is_preserved_globally(self):
+        for flag in ('behavior_verified', 'submission_verified', 'payment_verified',
+                     'functional_verified'):
+            with self.subTest(flag=flag), tempfile.TemporaryDirectory() as directory:
+                job = two_steps()
+                job['steps'] = job['steps'][:1]
+                with patch.object(runner, 'assert_tenant'), patch.object(
+                    runner, 'options', return_value={
+                        'status': 'RECORDED_OPTIONS_EXECUTED',
+                        'independent_readback': 'VERIFIED', flag: False,
+                    }
+                ):
+                    result = runner.run_on_page(object(), job, directory)
+                self.assertEqual(result['status'], 'NEEDS_VERIFICATION')
+                self.assertEqual(result['verification_required'], ['one'])
+
+    def test_non_verification_false_values_do_not_create_fake_pending_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            job = two_steps()
+            job['steps'] = job['steps'][:1]
+            with patch.object(runner, 'assert_tenant'), patch.object(
+                runner, 'options', return_value={
+                    'status': 'RECORDED_OPTIONS_EXECUTED', 'meeting_started': False,
+                    'discovery': False,
+                }
+            ):
+                result = runner.run_on_page(object(), job, directory)
+            self.assertEqual(result['status'], 'EDITOR_STEPS_COMPLETE')
+            self.assertEqual(result['verification_required'], [])
+
     def test_direct_cli_normalizes_native_helper_refusal_without_traceback(self):
         inputs = {
             'location_id': 'FIXTURE', 'location_name': 'Acceptance fixture',

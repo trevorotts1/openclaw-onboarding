@@ -3,7 +3,8 @@
 - Recover the shared Playwright recipe package and API-first operation router.
 - Add a continuation ledger, source-only Downloads checkpoints and integrity tests.
 - Add concrete native form fields/conditions/custom CSS, survey Jump To rules,
-  marketing quiz categories/answer authoring/scoring/tiers, checkout UI settings,
+  marketing quiz categories/answer authoring/scoring/tiers, authored submission
+  messages/redirects and notification settings, checkout UI settings/approved terms,
   exact existing code targets, Meeting Room creation/update and API-first delivery.
 - Register canonical calendar update with default-deny scope/tenant/read-back checks;
   distinguish permanent room links from native dynamic appointment integration.

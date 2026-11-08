@@ -44,6 +44,9 @@ class Locator:
             return ThemeButton(self.frame,self.name,kwargs.get('name'))
         return Locator(self.frame,role,kwargs.get('name'))
     def get_by_text(self, text, **kwargs):return Locator(self.frame,'accordion',text)
+    def locator(self, selector):
+        if selector=='.of-terms-content .tiptap.ProseMirror':return TermsCollection(self.frame)
+        raise AssertionError('Uncaptured dialog locator '+selector)
     def evaluate(self, _):return self.frame.section
     def input_value(self):return self.frame.name if self.name=='Element name' else self.frame.content.get(self.name,'Original '+str(self.name))
     def fill(self,value):
@@ -71,6 +74,8 @@ class Frame:
         self.section='section-fixture';self.name='Order Form';self.order_count=1
         self.mode='One-step';self.switches={};self.dialog=False;self.clicks=[]
         self.content={};self.expanded={'Headlines'};self.theme={'Appearance':'Line','Labels':'Above'}
+        self.terms_order=['Terms & conditions','Terms & conditions (step 2)']
+        self.terms={label:{'text':'I agree to the terms and conditions','links':1} for label in self.terms_order}
         self.fields={key:{'required':False,'visible':True,'label':label} for key,label in ui.CONTACT_FIELDS.items()}
     def locator(self, selector):return Locator(self,'order')
     def get_by_role(self,role,**kwargs):return Locator(self,role,kwargs.get('name'))
@@ -109,6 +114,39 @@ class ThemeButton:
     def click(self):
         self.frame.clicks.append(('theme',self.group+'.'+self.value))
         self.frame.theme[self.group]=self.value
+
+
+class FixedCount:
+    def __init__(self,n):self.n=n
+    def count(self):return self.n
+
+
+class TermsCollection:
+    def __init__(self,frame):self.frame=frame
+    def labels(self):return [label for label in self.frame.terms_order if self.frame.switches.get(label,False)]
+    def count(self):return len(self.labels())
+    def nth(self,index):return TermsEditor(self.frame,self.labels()[index])
+
+
+class TermsEditor:
+    def __init__(self,frame,label):self.frame,self.label=frame,label
+    def locator(self,selector):
+        if selector=='xpath=../../..':return TermsRow(self.frame,self.label)
+        if selector=='a':return FixedCount(self.frame.terms[self.label]['links'])
+        raise AssertionError('Uncaptured Terms editor locator')
+    def wait_for(self,**kwargs):return None
+    def inner_text(self):return self.frame.terms[self.label]['text']
+    def fill(self,value):
+        self.frame.terms[self.label]={'text':value,'links':0}
+        self.frame.clicks.append(('terms_text',self.label))
+
+
+class TermsRow:
+    def __init__(self,frame,label):self.frame,self.label=frame,label
+    def inner_text(self):return self.label+' Shows a checkbox with your terms.'
+    def get_by_role(self,role,**kwargs):
+        if kwargs.get('name')!=self.label:return FixedCount(0)
+        return Locator(self.frame,'switch',self.label)
 
 
 class CheckoutUITests(unittest.TestCase):
@@ -236,6 +274,46 @@ class CheckoutUITests(unittest.TestCase):
         for theme in ({'appearance':'Circle'},{'labels':'Invented'},{'radius':12}):
             with self.subTest(theme=theme),self.assertRaises(CheckoutRefused):
                 ui.apply_checkout_ui(object(),{**inputs(),'theme_inputs':theme})
+
+    def test_authored_plaintext_terms_replace_placeholder_links_and_reopen(self):
+        frame=Frame();data={**inputs(),'checkout_options':{'terms_and_conditions':True},
+            'legal_copy':{'terms_text':'Approved fixture terms. No acceptance recorded.'}}
+        ui.apply_checkout_ui(frame,data)
+        self.assertEqual(frame.terms['Terms & conditions']['text'],data['legal_copy']['terms_text'])
+        self.assertEqual(frame.terms['Terms & conditions']['links'],0)
+        result=ui.verify_checkout_ui(frame,data)
+        self.assertTrue(result['legal_copy_saved'])
+        self.assertFalse(result['legal_acceptance'])
+        self.assertFalse(result['payment_verified'])
+        self.assertEqual(set(result['legal_text_sha256']),{'terms_text'})
+        frame.terms['Terms & conditions']['text']='Unapproved drift'
+        with self.assertRaises(CheckoutRefused):ui.verify_checkout_ui(frame,data)
+
+    def test_both_terms_editors_bound_by_named_row_not_dom_index(self):
+        frame=Frame();frame.terms_order.reverse()
+        data={**inputs(),'checkout_options':{'terms_and_conditions':True,'terms_and_conditions_step_2':True},
+            'legal_copy':{'terms_text':'Approved first-step terms.','terms_step2_text':'Approved payment-step terms.'}}
+        ui.apply_checkout_ui(frame,data)
+        self.assertEqual(frame.terms['Terms & conditions']['text'],'Approved first-step terms.')
+        self.assertEqual(frame.terms['Terms & conditions (step 2)']['text'],'Approved payment-step terms.')
+        self.assertTrue(ui.verify_checkout_ui(frame,data)['legal_copy_saved'])
+
+    def test_terms_missing_plaintext_or_unbound_extra_copy_fails_before_first_write(self):
+        changes=[{'checkout_options':{'terms_and_conditions':True}},
+                 {'checkout_options':{'terms_and_conditions_step_2':True},'legal_copy':{'terms_step2_text':'<p>HTML</p>'}},
+                 {'checkout_options':{'terms_and_conditions':True},'legal_copy':{'terms_text':' '}},
+                 {'checkout_options':{'terms_and_conditions':False},'legal_copy':{'terms_text':'Unused copy'}},
+                 {'checkout_options':{'terms_and_conditions':True},'legal_copy':{'terms_text':'Text','unknown':'Other'}}]
+        for change in changes:
+            with self.subTest(change=change),self.assertRaises(CheckoutRefused):
+                ui.apply_checkout_ui(object(),{**inputs(),**change})
+
+    def test_terms_links_remaining_after_readback_are_never_claimed_plaintext(self):
+        frame=Frame();data={**inputs(),'checkout_options':{'terms_and_conditions':True},
+            'legal_copy':{'terms_text':'Approved terms'}}
+        ui.apply_checkout_ui(frame,data)
+        frame.terms['Terms & conditions']['links']=1
+        with self.assertRaises(CheckoutRefused):ui.verify_checkout_ui(frame,data)
 
     def test_save_reopen_then_verify_and_close(self):
         frame=Frame();events=[]

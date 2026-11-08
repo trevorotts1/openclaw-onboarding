@@ -313,10 +313,10 @@ def configure_fields(page, step):
 
 
 def validate_condition(step):
-    """Current capture supports one explicit Hide Field condition per run."""
+    """Single-target Hide/Show Field effects; plural effects remain uncaptured."""
     if not isinstance(step, dict) or set(step) - {'id', 'action', 'effect', 'if_field', 'operator', 'value', 'target'}:
         raise AssessmentError('Unsupported native condition configuration option')
-    if 'action' in step and step['action'] not in ('native_condition', 'Hide Field'):
+    if 'action' in step and step['action'] not in ('native_condition', 'Hide Field', 'Show Field'):
         raise AssessmentError('Uncaptured condition action')
     allowed = {'First Name', 'Last Name', 'Phone', 'Email', 'TnC1', 'TnC2'}
     if step.get('if_field') not in allowed or step.get('target') not in allowed | {'Privacy Policy | Terms of Service'}:
@@ -325,8 +325,10 @@ def validate_condition(step):
                  'Starts With', 'Ends With', 'Is Empty', 'Is Filled'}
     if step.get('operator') not in operators:
         raise AssessmentError('Uncaptured condition operator')
-    if step.get('effect', 'Hide Field') != 'Hide Field':
-        raise AssessmentError('Only the captured Hide Field action is implemented')
+    legacy = step.get('action') if step.get('action') in ('Hide Field', 'Show Field') else None
+    effect = step.get('effect', legacy or 'Hide Field')
+    if effect not in ('Hide Field','Show Field') or (legacy is not None and legacy != effect):
+        raise AssessmentError('Conflicting or uncaptured single-field condition effect')
     unary = step['operator'] in {'Is Empty', 'Is Filled'}
     if not unary and (not isinstance(step.get('value'), str) or not step['value']):
         raise AssessmentError('This condition operator requires an explicit text value')
@@ -357,16 +359,25 @@ def configure_condition(page, step):
     click(frame.get_by_role('button', name='Open Conditional Logic', exact=True))
     dialog = frame.get_by_role('dialog')
     unary = step['operator'] in {'Is Empty', 'Is Filled'}
+    effect = step.get('effect',step.get('action') if step.get('action') in ('Hide Field','Show Field') else 'Hide Field')
+    # Both single-field effects were saved and independently reopened in the
+    # native editor on 2026-11-08. This verifies configuration, not submissions.
+    verified_card_effect = effect in ('Hide Field','Show Field')
 
     def persisted_match():
         if not unary:
             return False  # Binary condition card text needs its own capture.
-        anchors = dialog.get_by_text('If' + step['if_field'] + step['operator'], exact=True)
+        rows = dialog.locator('.condition-summary-row')
+        expected = ''.join(('If' + step['if_field'] + step['operator']).split())
         matches = 0
-        for index in range(anchors.count()):
-            # Three ancestors are the independently reopened native rule card.
-            card = anchors.nth(index).locator('..').locator('..').locator('..')
-            if card.get_by_text(step['target'], exact=True).count() == 1 and card.get_by_text('Hide Field', exact=True).count() == 2:
+        for index in range(rows.count()):
+            row = rows.nth(index)
+            if ''.join((row.text_content() or '').split()) != expected:
+                continue
+            # Fresh Hide/Show capture: the source summary row's second ancestor
+            # is this rule's card, not the whole drawer/list of unrelated rules.
+            card = row.locator('..').locator('..')
+            if card.get_by_text(step['target'], exact=True).count() == 1 and card.get_by_text(effect, exact=True).count() == 2:
                 matches += 1
         if matches > 1:
             raise Stop('Duplicate persisted conditions require reconciliation')
@@ -374,8 +385,8 @@ def configure_condition(page, step):
 
     if persisted_match():
         return {'status': 'CONDITION_ALREADY_PRESENT', 'kind': 'form_condition',
-                'independent_readback': 'VERIFIED', 'submission_verified': False,
-                'if_field': step['if_field'], 'operator': step['operator'], 'target': step['target']}
+                'independent_readback': 'VERIFIED' if verified_card_effect else 'REQUIRED', 'submission_verified': False, 'behavior_verified':False,
+                'effect':effect, 'if_field': step['if_field'], 'operator': step['operator'], 'target': step['target']}
     if dialog.get_by_text('No existing conditions yet', exact=True).count() != 1:
         raise Stop('Existing conditions require inventory before another create')
     click(dialog.get_by_text('Show/Hide Fields', exact=True))
@@ -399,16 +410,43 @@ def configure_condition(page, step):
         raise Stop('Native condition operator shape changed')
     if not unary:
         fill(dialog.get_by_placeholder('Please Type a value here', exact=True), step['value'])
-    # The action is explicitly Hide Field, the only action captured live.
-    if inputs.nth(2 if unary else 3).input_value() != 'Hide Field':
-        raise Stop('Native condition action differs from captured Hide Field')
+    # Naive UI's searchable INPUT value is blank even when an effect is selected.
+    # Read the captured visible selected label and overlay, never hidden state.
+    action_input = inputs.nth(2 if unary else 3)
+    def selected_effect():
+        observed = action_input.evaluate('''el => {
+            const selection = el.closest('.n-base-selection');
+            if (!selection) return null;
+            const labels = selection.querySelectorAll('.n-base-selection-label');
+            const overlays = selection.querySelectorAll('.n-base-selection-overlay__wrapper');
+            return {labels: labels.length, overlays: overlays.length,
+                    title: labels.length === 1 ? labels[0].getAttribute('title') : null,
+                    text: overlays.length === 1 ? overlays[0].textContent.trim() : null};
+        }''')
+        if not isinstance(observed,dict) or observed.get('labels') != 1 or observed.get('overlays') != 1 or observed.get('title') != observed.get('text'):
+            raise Stop('Native condition selected-effect structure changed')
+        current = observed.get('title')
+        if current not in ('Hide Field','Show Field'):
+            raise Stop('Native condition selected effect is not a captured single-field effect')
+        return current
+    current = selected_effect()
+    if current != effect:
+        # Only the default Hide -> explicitly requested Show transition was captured.
+        if current != 'Hide Field' or effect != 'Show Field':
+            raise Stop('Native condition effect differs from the captured default')
+        click(action_input)
+        option = frame.locator('.n-base-select-option').get_by_text(effect,exact=True)
+        if option.count() != 1:
+            raise Stop('Native condition effect option absent or ambiguous')
+        click(option)
+        wait_until(lambda:selected_effect()==effect,'Native condition effect did not change')
     click(inputs.nth(3 if unary else 4))
     choose(step['target'])
     save = dialog.get_by_role('button', name='Save', exact=True)
     if not save.is_enabled():
         raise Stop('Native condition remains invalid; no save attempted')
     click(save)
-    wait_until(lambda: dialog.get_by_text('Hide Field', exact=True).count() >= 2,
+    wait_until(lambda: dialog.get_by_text(effect, exact=True).count() >= 2,
                'Saved native condition card did not appear')
     # The first Save stores the rule card; the drawer Save stores its list.
     click(dialog.get_by_role('button', name='Save', exact=True))
@@ -426,9 +464,9 @@ def configure_condition(page, step):
     click(frame.get_by_role('button', name='Open Conditional Logic', exact=True))
     if unary and not persisted_match():
         raise Stop('Saved native condition absent from independent editor read-back')
-    return {'status': 'CONDITION_SAVED_AND_REOPENED' if unary else 'CONDITION_SAVE_SUBMITTED', 'kind': 'form_condition',
-            'independent_readback': 'VERIFIED' if unary else 'REQUIRED', 'submission_verified': False,
-            'if_field': step['if_field'], 'operator': step['operator'], 'target': step['target']}
+    return {'status': 'CONDITION_SAVED_AND_REOPENED' if unary and verified_card_effect else 'CONDITION_SAVE_SUBMITTED', 'kind': 'form_condition',
+            'independent_readback': 'VERIFIED' if unary and verified_card_effect else 'REQUIRED', 'submission_verified': False, 'behavior_verified':False,
+            'effect':effect, 'if_field': step['if_field'], 'operator': step['operator'], 'target': step['target']}
 
 
 def validate_model(model):

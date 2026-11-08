@@ -114,13 +114,13 @@ later sibling changes before they are integrated and rerun:
 ## Verification during parallel continuation
 
 - Central result validation now accepts recognized outcomes rather than a
-  blacklist. Seven acceptance-boundary tests pass: nine incomplete/no-op status
+  blacklist. Ten acceptance-boundary tests pass: nine incomplete/no-op status
   cases, missing outcomes, pending read-back, meeting-update creation refusal
   named HTML updates preserving their native element/section identity, direct CLI helper refusals and shared direct/package exception identity.
 - At the latest independently reviewed snapshot, `python3 -m unittest discover
   -s 06-ghl-install-pages/tools/playwright_recipes -p 'test_*.py'` discovered
-  224 tests: 217 passed and the seven opt-in real-browser tests were explicitly
-  skipped. Exit 0. This is an offline result, not 224 browser passes. Re-run
+  262 tests: 255 passed and the seven opt-in real-browser tests were explicitly
+  skipped. Exit 0. This is an offline result, not 262 browser passes. Re-run
   after any later integration changes; it is not a final native release verdict.
 - Course execution, assessment models, native checkout adapter and Meeting Room
   components now have offline tests. Required host callbacks, captured adapters,
@@ -210,3 +210,39 @@ refusal and lost-save read-back. They require the next CI run. Direct CLI native
 checkout validator errors are normalized into the canonical Stop class, with no
 traceback or second package-specific exception class. The unchanged lifecycle
 guard passes all five sections after these edits.
+
+## Final 32-operation integration check
+
+The catalog now contains 32 named operations. This is an operation count, not a
+count of final native Python passes. The newest independent package run discovered
+262 tests: 255 passed, seven opt-in Chromium fixtures skipped, exit 0. The workflow
+still targets the actual package directory and requires those browser fixtures
+on both Mac and Linux. The newest source needs its corresponding CI results.
+
+- `forms.submission` compiles into the validated `form_submission` action and
+  registered handler. Message/HTTPS redirect values are authored, mode/value
+  and conditional precedence are independently reopened, and receipt content is
+  hashed. Order Confirmation remains on the native payment-contract rail.
+- `forms.notifications` compiles into `form_notifications` with canonical tenant
+  context. Enabled cards require complete authored settings; recipient replacement
+  uses a complete expected-recipient inventory handshake, inner card Save, outer
+  form Save and reopened exact values. Receipts contain only configuration hash,
+  recipient count, enabled flags and verification status, not addresses or copy.
+- Native checkout Terms require explicit caller-approved plain text for each
+  enabled first/second-step Terms switch. The actual editor content is read back;
+  unsupported markup/links or missing legal content are refused. This is not a
+  generated legal document or payment verification.
+- Native Hide/Show condition persistence checks scope the effect and target to
+  the correct condition card. Selected-effect validation uses captured visible
+  rendered labels, not hidden component state. Functional submissions remain
+  separate proof.
+
+Final review found and fixed two missing recognized statuses: saved submission
+and notification results previously would have been misreported as recovery
+after their successful save/read-back. The central executor now recognizes both
+and preserves `behavior_verified: false`, `submission_verified: false`,
+`payment_verified: false`, `functional_verified: false` or explicit required
+behavior/read-back as NEEDS_VERIFICATION. Ordinary false settings such as
+meeting-not-started and discovery-disabled do not create fake pending proofs.
+Ten acceptance-boundary tests cover these outcomes. Direct CLI malformed-input
+checks for both new operations return structured exit 2 without a traceback.

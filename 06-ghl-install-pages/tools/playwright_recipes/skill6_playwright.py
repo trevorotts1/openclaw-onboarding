@@ -95,7 +95,7 @@ def validate_job(job, base):
     if not isinstance(steps,list) or not steps:
         raise Stop("No executable steps")
     keys = set()
-    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_fields", "native_condition", "quiz_configuration", "survey_configuration", "form", "form_css", "native_form_css", "form_settings", "community", "assessment", "meeting", "options"}
+    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_fields", "native_condition", "quiz_configuration", "survey_configuration", "form", "form_css", "native_form_css", "form_submission", "form_notifications", "form_settings", "community", "assessment", "meeting", "options"}
     prepared = json.loads(json.dumps(job))
     for s in prepared["steps"]:
         if not isinstance(s,dict):
@@ -108,6 +108,13 @@ def validate_job(job, base):
         if s['action'] in ('native_fields','native_condition'):
             from playwright_recipes.assessments import validate_fields, validate_condition
             (validate_fields if s['action']=='native_fields' else validate_condition)(s)
+        if s['action']=='form_submission':
+            from playwright_recipes.form_submission import validate
+            validate(s)
+        if s['action']=='form_notifications':
+            from playwright_recipes.form_notifications import validate_notifications
+            s['_context'] = {k:job[k] for k in ('location_id','location_name','start_url')}
+            validate_notifications(s)
         if s['action']=='native_form_css':
             from playwright_recipes.assessments import validate_css
             validate_css(s)
@@ -770,6 +777,11 @@ FORM_SETTINGS = {
 }
 
 
+def form_notifications(page, step):
+    from playwright_recipes.form_notifications import configure_notifications
+    return configure_notifications(page, step)
+
+
 def form_settings(page, step):
     """Settings captured from the native form builder on 2026-11-08.
 
@@ -861,6 +873,11 @@ def meeting(page, step):
     if step.get('expected_room_id'):
         return update_room(page, inputs, expected_room_id=step['expected_room_id'])
     return create_room(page, inputs)
+
+
+def form_submission(page, step):
+    from playwright_recipes.form_submission import configure
+    return configure(page, step)
 
 
 def native_form_css(page, step):
@@ -1037,7 +1054,7 @@ def _run_on_page(page, job, evidence_root):
         raise Stop("An interrupted job exists: reconcile recorded objects before any replay")
     results = []
     state = {"fingerprint":fingerprint, "location_id":job["location_id"], "status":"RUNNING", "results":results}
-    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_checkout_ui":native_checkout_ui, "native_fields":native_fields, "native_condition":native_condition, "quiz_configuration":quiz_configuration, "survey_configuration":survey_configuration, "form":make_form, "form_css":form_css, "native_form_css":native_form_css, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"options":options}
+    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_checkout_ui":native_checkout_ui, "native_fields":native_fields, "native_condition":native_condition, "quiz_configuration":quiz_configuration, "survey_configuration":survey_configuration, "form":make_form, "form_css":form_css, "native_form_css":native_form_css, "form_submission":form_submission, "form_notifications":form_notifications, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"options":options}
     for step in job["steps"]:
         assert_tenant(page, job)
         state["current_step"] = step["id"]
@@ -1059,6 +1076,7 @@ def _run_on_page(page, job, evidence_root):
                 'RECORDED_OPTIONS_EXECUTED', 'GROUP_RETAINED_INACTIVE', 'GROUP_CREATED',
                 'FIELD_PROPERTIES_SAVED_AND_REOPENED', 'CONDITION_SAVE_SUBMITTED', 'CONDITION_SAVED_AND_REOPENED',
                 'QUIZ_CONFIGURATION_SAVED_AND_REOPENED', 'CONDITION_ALREADY_PRESENT',
+                'FORM_SUBMISSION_SAVED_AND_REOPENED', 'NOTIFICATION_SETTINGS_SAVED_AND_REOPENED',
                 'SURVEY_RULE_SAVED_AND_REOPENED', 'SURVEY_RULE_ALREADY_PRESENT',
                 'NATIVE_CONFIGURATION_READBACK_VERIFIED', 'NATIVE_CHECKOUT_UI_READBACK_VERIFIED', 'ROOM_PERSISTED',
                 'ROOM_CREATED_AND_VERIFIED', 'ROOM_REUSED_AND_VERIFIED',
@@ -1078,7 +1096,14 @@ def _run_on_page(page, job, evidence_root):
             state.update(status="NEEDS_BROWSER_RECOVERY", error_type=type(exc).__name__, failed_step=step["id"])
             secure_json(state_path, state)
             raise Stop("Step " + step["id"] + " needs browser recovery; no mutation was retried") from None
-    pending=[r['id'] for r in results if r['result'].get('checkout_ready') is False or r['result'].get('independent_readback')=='REQUIRED' or r['result'].get('kind')=='quiz']
+    pending=[r['id'] for r in results if
+             r['result'].get('checkout_ready') is False
+             or any(r['result'].get(key) is False for key in (
+                 'behavior_verified', 'submission_verified', 'payment_verified',
+                 'functional_verified'))
+             or r['result'].get('independent_readback')=='REQUIRED'
+             or r['result'].get('behavior_verification')=='REQUIRED'
+             or r['result'].get('kind')=='quiz']
     state["status"] = "NEEDS_VERIFICATION" if pending else "EDITOR_STEPS_COMPLETE"
     state['verification_required']=pending
     state["meaning"] = "Requested editor steps completed; this is not a full-funnel QC or payment PASS"

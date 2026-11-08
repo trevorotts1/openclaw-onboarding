@@ -217,6 +217,20 @@
       "implemented": true,
       "proof": "CAPTURED",
       "use": "Exact native order-form mode, Products switches, Contact fields, Checkout options, 37 Content textboxes and Inputs appearance/labels; save/reopen/readback, payment verification separate"
+    },
+    "forms.submission": {
+      "name": "31_configure_form_submission",
+      "action": "form_submission",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Caller-approved plain submit message or HTTPS redirect; native mode/value save and exact editor readback; conditional precedence acknowledgment required; Order Confirmation stays on payment rail"
+    },
+    "forms.notifications": {
+      "name": "32_configure_form_notifications",
+      "action": "form_notifications",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Configure native email notification and auto responder, replace recipients only after inventory handshake, independently reopen settings; event/mail delivery remains unverified"
     }
   }
 }

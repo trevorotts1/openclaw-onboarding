@@ -53,7 +53,7 @@ The code lives in `tools/playwright_recipes/`:
 | `test_*.py` | Validation, routing, recovery, provider and opt-in Chromium contracts |
 
 There is one maintained executor, with multiple named recipes. Names below are
-30 named entry points in the catalog. Shared handlers avoid copying browser programs.
+32 named entry points in the catalog. Shared handlers avoid copying browser programs.
 
 | Recipe | Best use | Current coverage |
 | --- | --- | --- |
@@ -81,12 +81,14 @@ There is one maintained executor, with multiple named recipes. Names below are
 | `22_configure_form_settings` / `forms.settings` | Seven ordinary native form switches | Concrete save/reopen path; scheduling values remain unsupported |
 | `23_update_course` / `courses.update` | Existing course content and styling | Concrete API update and read-back; live client proof pending |
 | `24_create_lesson_quiz` / `courses.lesson_quiz.create` | Course lesson quiz and questions | Courses API, separate from marketing quiz; live attempt proof pending |
-| `25_configure_form_condition` / `forms.conditions` | Native Hide Field conditions | Three-level save and exact persisted card check; other effects require capture |
+| `25_configure_form_condition` / `forms.conditions` | Native Hide/Show Field conditions | Three-level save and exact persisted card check; other effects require capture |
 | `26_configure_native_checkout` / `checkout.configure_native` | Native product/price/bump/action binding | Location/page-bound component capture and payment dependencies required; payment behavior pending |
 | `27_update_meeting_room` / `meetings.update` | Update exact existing room | Existing room identity mandatory; cannot create on a missing target |
 | `28_configure_quiz_scores_and_tiers` / `quizzes.configure` | Categories, existing question/answer authoring, appended answers, scores and three tiers | Concrete native read-back; shared-field edit acknowledgment required for text changes |
 | `29_configure_survey_branch` / `surveys.configure` | Forward native Jump To condition | Concrete three-level save/read-back; separate live true/false preview exercise passed |
 | `30_configure_native_checkout_ui` / `checkout.configure_ui` | Layout, contact fields, display switches, 37 text fields and input style | Concrete save/reopen path; stays pending payment verification |
+| `31_configure_form_submission` / `forms.submission` | Native On Submit plain message or HTTPS redirect | Exact saved-mode/value read-back; conditional precedence requires acknowledgment; behavior remains unverified |
+| `32_configure_form_notifications` / `forms.notifications` | Native email notifications and auto responder | Authored subjects/sender/recipients, recipient replacement handshake, inner/outer save and list-reopen checks; actual mail delivery remains unverified |
 
 **Evidence limit:** LIVE_PATH means the control sequence was exercised through
 the connected browser. The package and four actual Chromium fixtures passed on Mac and Linux CI.

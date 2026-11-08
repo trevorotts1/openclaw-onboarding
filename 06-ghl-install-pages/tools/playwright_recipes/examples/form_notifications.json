@@ -1,0 +1,21 @@
+{
+  "location_id": "FIXTURE_LOCATION_ID",
+  "location_name": "Fixture account",
+  "start_url": "https://app.convertandflow.com/v2/location/FIXTURE_LOCATION_ID/form-builder-v2/FIXTURE_FORM_ID",
+  "notifications": {
+    "email_notification": {
+      "enabled": true,
+      "subject": "New response to {form_title}",
+      "reply_to": "reply@example.com",
+      "sender_name": "Fixture team",
+      "attach_pdf": false,
+      "recipients": [
+        "ops@example.com"
+      ],
+      "expected_recipients": []
+    },
+    "auto_responder": {
+      "enabled": false
+    }
+  }
+}

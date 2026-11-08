@@ -33,7 +33,8 @@
     "sticky_contact": false,
     "new_contact_every_purchase": false,
     "validate_disposable_email": true,
-    "postal_code_on_payment_form": true
+    "postal_code_on_payment_form": true,
+    "terms_and_conditions": true
   },
   "content": {
     "step_1_headline": "REPLACE_APPROVED_STEP_1_HEADLINE",
@@ -46,5 +47,8 @@
   "theme_inputs": {
     "appearance": "Box",
     "labels": "Above"
+  },
+  "legal_copy": {
+    "terms_text": "REPLACE_WITH_APPROVED_FIRST_STEP_TERMS_PLAINTEXT"
   }
 }
