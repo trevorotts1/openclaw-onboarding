@@ -9,12 +9,14 @@ WHAT GOVERNS NOW:
   are present and fully expressed. A missing element is an automatic
   failure. (Counting convention, per the guide: NFC-normalized, trimmed,
   Unicode code points; the prompt's SHA-256 is recorded in telemetry.)
-- Length is governed by the STRICT production band through the ONE canonical policy
-  service (shared-utils/prompt_policy.py, F18 2026-11-07): author each prompt to 95 to
-  100 percent of the model's verified prompt-field maximum. Below 95 percent FAILS and
-  must be revised; below 80 percent is a particularly clear hard failure; above the
-  maximum FAILS; an UNKNOWN maximum REFUSES a pass. The 80-to-below-95 warning-only path
-  is removed. This validator freezes the final prompt, runs the anatomy rules against
+- Length is governed by the owner rule 12 band through the ONE canonical policy
+  service (shared-utils/prompt_policy.py): author each prompt to 95 to 100 percent of the
+  model's verified prompt-field maximum. 80 to below 95 percent PASSES with a
+  warn-and-expand message naming the characters to add; below 80 percent is the hard
+  reject; above the maximum FAILS; an UNKNOWN maximum REFUSES a pass. Owner Decision 1
+  (2026-10-15) adopted the rule 12 band as this skill's native authoring target, and Q1
+  (2026-10-17) confirmed it governs in every context; the strict 95 percent reading that
+  F18 (2026-11-07) introduced is withdrawn here. This validator freezes the final prompt, runs the anatomy rules against
   that same string, records the final prompt hash and the provider payload hash, and
   binds an optional review reference to the same hash. Characters, percent of the
   maximum, and the full budget block land in the prompt's telemetry, and the prompt
@@ -1346,13 +1348,19 @@ def inspect(text, model=IMAGE_MODEL_DEFAULT, sauce_only=False, ctx=None,
             kind="descriptive", anatomy=_anatomy, review_ref=review_ref)
         status = receipt["verdict"]["status"]
         band_status = receipt["verdict"].get("band_status") or status
-        exit_code = 4 if status == "ABOVE_MAX" else 3 if status in ("BELOW_FLOOR", "BELOW_TARGET") else 5
-        band_failed = status in ("ABOVE_MAX", "BELOW_FLOOR", "BELOW_TARGET", "ABOVE_TARGET",
+        # Owner rule 12 / Decision 1: below the 80 percent floor is exit 3, above the maximum
+        # exit 4, and the 80-to-below-95 band PASSES (warn and expand), so it is neither a
+        # band failure nor a non-zero exit.
+        exit_code = 4 if status == "ABOVE_MAX" else 3 if status == "BELOW_FLOOR" else 5
+        band_failed = status in ("ABOVE_MAX", "BELOW_FLOOR", "ABOVE_TARGET",
                                  "UNKNOWN_MAX", "UNITS_UNVERIFIABLE", "SEPARATE_LIMIT_FAIL")
         problems = list(receipt["verdict"]["problems"])
         if receipt["verdict"]["ok"]:
             notes.append("prompt is %d chars (%.1f%% of max %s); in band, budget exit 0."
                          % (receipt["count"], receipt["ratio"] or 0.0, receipt["max"]))
+            # A 80-to-below-95 percent prompt PASSES but never silently: the policy's
+            # warn-and-expand message names the characters to add.
+            notes.extend(receipt["verdict"]["warnings"])
         elif status == "REVIEW_STALE":
             for item in problems:
                 errors.append(item.rstrip(".") + ".")

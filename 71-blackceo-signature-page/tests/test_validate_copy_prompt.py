@@ -265,19 +265,29 @@ class TestPartCBudget(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("in band, budget exit 0", proc.stdout)
 
-    def test_below_target_fails_not_warns(self):
-        # 85 percent: the removed warning-only path must now be a hard revision.
+    def test_85_percent_passes_with_warn_and_expand(self):
+        # Owner rule 12 / Decision 1: 80 to below 95 percent PASSES, naming the chars to ADD.
         path = self._write("p85.txt", grow_to(self.base, 17000))
         proc = run(PROMPT_SCRIPT, path)
-        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
-        self.assertIn("below the strict 95% band", proc.stdout)
-        self.assertIn("budget exit 3", proc.stdout)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("in band, budget exit 0", proc.stdout)
+        self.assertIn("warn and expand", proc.stdout)
+        self.assertIn("ADD 2000 chars", proc.stdout)
 
-    def test_94_percent_fails(self):
-        # 94 percent of 20,000 = 18,800: previously only warned, now FAILS.
+    def test_94_percent_passes_with_warn_and_expand(self):
+        # 94 percent of 20,000 = 18,800: the owner band warns and expands, it does not fail.
         path = self._write("p94.txt", grow_to(self.base, 18800))
         proc = run(PROMPT_SCRIPT, path)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("warn and expand", proc.stdout)
+        self.assertIn("ADD 200 chars", proc.stdout)
+
+    def test_79_percent_still_fails_hard_below_the_floor(self):
+        # The discriminating negative: one percent under the 80 percent floor is exit 3.
+        path = self._write("p79.txt", grow_to(self.base, 15800))
+        proc = run(PROMPT_SCRIPT, path)
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("below the 80 percent floor", proc.stdout)
         self.assertIn("budget exit 3", proc.stdout)
 
     def test_verified_cap_fails_closed(self):

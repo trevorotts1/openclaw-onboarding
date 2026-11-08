@@ -44,7 +44,7 @@ class TestEnforcer(unittest.TestCase):
         v = K.check(M, "x" * (MAX * 79 // 100))
         self.assertFalse(v["ok"])
         self.assertEqual(v["status"], "BELOW_FLOOR")
-        self.assertEqual(v["add"], 3200)  # to the strict 95 percent floor, not the old 80 percent
+        self.assertEqual(v["add"], 3200)  # to the 95 percent target above the 80 percent floor
         self.assertIn("ADD at least 3200", v["message"])
 
     def test_owner_rule_12_80_to_95_percent_warns_and_expands(self):
