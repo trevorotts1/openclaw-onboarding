@@ -249,8 +249,8 @@ def _self_test() -> int:
     # The exact-chars contract: the length message names the characters to add or cut.
     band = _band("text_bearing_long")
     low = dv.band_length_problems("x" * (GPT_MAX * 79 // 100), band, "text_bearing_long")
-    if not any("ADD at least 200" in m for _, m in low):
-        failures.append(f"79 percent rejection must name the exact chars to add (200): {low}")
+    if not any("ADD at least 3200" in m for _, m in low):
+        failures.append(f"79 percent rejection must name the exact chars to add (3200 = the gap to the 95% band floor 19000): {low}")
     high = dv.band_length_problems("x" * (GPT_MAX * 101 // 100), band, "text_bearing_long")
     if not any(c == "AF-DIU-PROMPT-CAP" and "CUT exactly 200" in m for c, m in high):
         failures.append(f"101 percent rejection must name the exact chars to cut (200): {high}")
