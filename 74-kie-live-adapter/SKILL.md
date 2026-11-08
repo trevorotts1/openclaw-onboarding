@@ -12,7 +12,7 @@ description: >
   it observes and records drift but never dispatches a paid job. Submit never
   chooses or changes a model. Infrastructure skill for skills 66, 67 and 68;
   not a client-facing feature.
-version: v1.1.10
+version: v1.1.11
 priority: MEDIUM
 ---
 
@@ -77,6 +77,15 @@ Set `KIE_LIVE_ADAPTER_MODE` to `off`, `shadow` or `active`. If the variable is u
 4. Check the `code` in the response body. HTTP 200 can carry 401, 402, 404, 422, 429, 433 or 455.
 5. createTask is never retried after a network error (that could charge twice).
 6. Never copy `scripts/kie_live_adapter.py` into a Presentations deck run directory. The deck render guard blocks scripts there that mention the KIE API. Run it from this skill folder only.
-7. Nothing writes inside the skill folder at run time. The cache and receipts live in `~/.openclaw/cache/kie-live-adapter`.
+7. Nothing writes inside the skill folder at run time. Run data lives outside every replaceable
+   skill tree, at ONE root resolved by `shared-utils/durable-data-root.sh` (Skill 46 executes the
+   same file, so both modules of the callback route agree):
+   - receipts are EVIDENCE: `<root>/data/kie-jobs/kie-live-adapter/receipts/YYYYMMDD.jsonl`;
+   - the catalog/schema cache is re-fetchable: `<root>/cache/kie-live-adapter/`.
+   Root precedence: `$OPENCLAW_DATA_ROOT`, else `$OPENCLAW_ROOT`/`$OC_ROOT`, else
+   `/data/.openclaw`, else `$HOME/.openclaw`. A root that cannot be resolved is reported by
+   `health` (`data_root_warning`) instead of being guessed; receipts that already exist at the
+   old `~/.openclaw/cache/kie-live-adapter/receipts` path are NOT moved (that preserving
+   migration is F24's) and `health` reports it as `data_migration_note`.
 
 See INSTRUCTIONS.md for usage and references/ for the contract, trust policy, research receipt and decision log.

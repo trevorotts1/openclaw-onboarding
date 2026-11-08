@@ -21,6 +21,7 @@ import math
 import mimetypes
 import os
 import re
+import subprocess
 import sys
 import time
 import urllib.error
@@ -31,7 +32,11 @@ import uuid
 ADAPTER = "74-kie-live-adapter"
 API = "https://api.kie.ai"
 UPLOAD = "https://kieai.redpandaai.co"
-DATA_OC_ROOT = "/data/.openclaw"  # Docker/VPS OpenClaw home; wire.sh resolves it the same way (M8)
+# F21 item 11: the durable data root is NOT computed here. It comes from the ONE
+# shared resolver below, which Skill 46's data-root.js executes too, so both
+# modules of the callback route see the same root.
+DURABLE_ROOT_SCRIPT = "durable-data-root.sh"
+DURABLE_SCOPE = "kie-live-adapter"
 CATALOG_TTL = 6 * 3600
 SCHEMA_TTL = 24 * 3600
 B64_LIMIT = 10 * 1024 * 1024
@@ -554,6 +559,58 @@ def ceiling_only_field(model_id, field):
 
 
 # ------------------------------------------------------------------ adapter
+def _locate_durable_root_script(env):
+    """Locate shared-utils/durable-data-root.sh (repo checkout or installed skills tree).
+
+    Same lookup shape as _repo_resolver(): a skill may be read from the repository
+    checkout or from an installed skills tree, so both are tried by name.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    home = env.get("HOME") or os.path.expanduser("~")
+    cands = [os.path.join(here, "..", "..", "shared-utils", DURABLE_ROOT_SCRIPT)]
+    skills = env.get("OPENCLAW_SKILLS_DIR")
+    if skills:
+        cands.append(os.path.join(skills, "shared-utils", DURABLE_ROOT_SCRIPT))
+    cands.append(os.path.join(home, ".openclaw", "skills", "shared-utils", DURABLE_ROOT_SCRIPT))
+    cands.append(os.path.join("/data/.openclaw/skills/shared-utils", DURABLE_ROOT_SCRIPT))
+    for c in cands:
+        if os.path.isfile(c):
+            return os.path.abspath(c)
+    return None
+
+def resolve_durable_layout(env=None, scope=DURABLE_SCOPE):
+    """The ONE durable layout for run data, resolved by shared-utils/durable-data-root.sh.
+
+    Returns {root, scope, state_dir, registry, index, done, receipts, cache, resolver}.
+    Raises KieError("data_root_unresolved") when the resolver cannot answer: a guessed
+    path is how evidence lands in a transient directory, so there is no silent default.
+    """
+    env = dict(os.environ if env is None else env)
+    script = _locate_durable_root_script(env)
+    if not script:
+        raise KieError("data_root_unresolved",
+                       "%s was not found (looked in the repo checkout, $OPENCLAW_SKILLS_DIR, "
+                       "~/.openclaw/skills/shared-utils and /data/.openclaw/skills/shared-utils)"
+                       % DURABLE_ROOT_SCRIPT)
+    try:
+        out = subprocess.run(["bash", script, "--json", "--scope", scope],
+                             env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             universal_newlines=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as e:
+        raise KieError("data_root_unresolved", "%s could not run: %s" % (DURABLE_ROOT_SCRIPT, e))
+    if out.returncode != 0:
+        raise KieError("data_root_unresolved", "%s: %s"
+                       % (DURABLE_ROOT_SCRIPT, (out.stderr or "").strip()[:300]))
+    try:
+        layout = json.loads((out.stdout or "").strip())
+    except ValueError:
+        raise KieError("data_root_unresolved", "%s printed no JSON layout" % DURABLE_ROOT_SCRIPT)
+    for key in ("root", "state_dir", "registry", "index", "done", "receipts", "cache"):
+        if not isinstance(layout.get(key), str) or not layout[key]:
+            raise KieError("data_root_unresolved", "resolver layout is missing %r" % key)
+    layout["resolver"] = script
+    return layout
+
 def _repo_resolver():
     """Locate shared-utils/key_resolver.py (repo checkout or installed skills tree)."""
     here = os.path.dirname(os.path.abspath(__file__))
@@ -578,6 +635,27 @@ class Adapter:
         self.sleep, self.now = sleep, now
         self.warnings = []
         home = self.env.get("HOME") or os.path.expanduser("~")
+        # F21 item 11 -- ONE durable root, resolved once here, before anything else needs a
+        # durable path (the mode file is looked up in it too). Before this, the cache and
+        # receipts were built from `$HOME/.openclaw` while a separate DATA_OC_ROOT constant
+        # named /data/.openclaw: two computations that disagree on a Docker/VPS box, where
+        # HOME is the image's temporary layer and the real root is /data/.openclaw.
+        self.layout, self.layout_error, self.data_root_warning = None, None, None
+        try:
+            self.layout = resolve_durable_layout(self.env)
+        except KieError as e:
+            self.layout_error = e
+        if self.layout:
+            self.data_root = self.layout["root"]
+        else:
+            # No resolvable root: a hermetic test HOME, or a box without the shared resolver.
+            # Named once on the instance and reported by `health`; NOT injected into every
+            # result's warnings, which would make an unrelated command's answer look wrong.
+            self.data_root = None
+            self.data_root_warning = (
+                "durable data root unresolved (%s); receipts fall back to %s"
+                % (getattr(self.layout_error, "code", "unknown"),
+                   os.path.join(home, ".openclaw", "cache", "kie-live-adapter", "receipts")))
         # Key: the live environment first, then the repo's shared resolver (secret_names.json canon,
         # placeholder rejection). Aliases are never restated here. Injected env dicts (tests) skip it.
         self.key = self.env.get("KIE_API_KEY", "")
@@ -604,8 +682,21 @@ class Adapter:
             self.warnings.append("unknown adapter mode %r; using shadow" % m)
             m = "shadow"
         self.mode = m
-        self.cache = self.env.get("KIE_LIVE_CACHE_DIR") or os.path.join(home, ".openclaw", "cache", "kie-live-adapter")
-        self.rdir = self.env.get("KIE_LIVE_RECEIPT_DIR") or os.path.join(self.cache, "receipts")
+        # F21 item 11: the cache (re-fetchable) and receipts (evidence) both derive from the
+        # ONE resolved root. With no resolvable root, each keeps its previous default and the
+        # condition is named by `health`, not silently absorbed.
+        default_cache = (self.layout["cache"] if self.layout
+                         else os.path.join(home, ".openclaw", "cache", "kie-live-adapter"))
+        self.cache = self.env.get("KIE_LIVE_CACHE_DIR") or default_cache
+        self.rdir = (self.env.get("KIE_LIVE_RECEIPT_DIR")
+                     or (self.layout["receipts"] if self.layout else os.path.join(self.cache, "receipts")))
+        if self.layout and self._legacy_receipts_present(home):
+            # A migration is OWNED BY F24 and is NOT performed here: existing receipts
+            # stay exactly where they are, and this line is the only trace of it.
+            self.migration_note = (
+                "legacy receipts remain at %s; new receipts go to %s. Existing data was "
+                "NOT moved (preserving migration is F24's)"
+                % (self._legacy_receipts_dir(home), self.rdir))
         self.spacing = float(self.env.get("KIE_LIVE_MIN_SPACING", "1.1"))
         self.poll0 = float(self.env.get("KIE_LIVE_POLL_INITIAL", "3"))
         self.api = self._base("KIE_LIVE_API_BASE", API)
@@ -619,8 +710,9 @@ class Adapter:
         """Ordered candidate directories for kie-live-adapter-mode.conf (first existing file wins).
 
         1. $OC_CONFIG when set (its parent when it names openclaw.json).
-        2. /data/.openclaw when it exists -- Docker/VPS boxes keep OpenClaw there while the
-           agent process's HOME is elsewhere (M8).
+        2. the resolved durable root when it exists -- Docker/VPS boxes keep OpenClaw
+           at /data/.openclaw while the agent process's HOME is elsewhere (M8). The
+           root comes from shared-utils/durable-data-root.sh, never a second constant.
         3. ${CLAUDE_CONFIG_DIR:-~/.claude} -- the Claude Code place to switch the adapter on (H7).
         4. ~/.openclaw, the plain OpenClaw default.
         """
@@ -628,8 +720,8 @@ class Adapter:
         oc = self.env.get("OC_CONFIG")
         if oc:
             dirs.append(os.path.dirname(oc) if oc.endswith(".json") else oc)
-        if os.path.isdir(DATA_OC_ROOT):
-            dirs.append(DATA_OC_ROOT)
+        if self.layout and os.path.isdir(self.layout["root"]):
+            dirs.append(self.layout["root"])
         dirs.append(self.env.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude"))
         dirs.append(os.path.join(home, ".openclaw"))
         seen, out = set(), []
@@ -649,6 +741,15 @@ class Adapter:
         return v.rstrip("/")
 
     # -- redaction / results
+    def _legacy_receipts_dir(self, home):
+        """Where receipts were written before F21 item 11 (a cache dir under $HOME)."""
+        return os.path.join(home, ".openclaw", "cache", "kie-live-adapter", "receipts")
+
+    def _legacy_receipts_present(self, home):
+        """True when earlier receipts exist at the old path. Never moved, never read twice."""
+        legacy = self._legacy_receipts_dir(home)
+        return legacy != self.rdir and os.path.isdir(legacy)
+
     def redact(self, s):
         s = s if isinstance(s, str) else str(s)
         if self.key:
@@ -1609,7 +1710,13 @@ class Adapter:
         return self.result(data={"credits": j.get("data")})
 
     def cmd_health(self):
-        d = {"key": "SET" if self.key else "NOT-SET", "mode": self.mode, "cache_dir": self.cache}
+        d = {"key": "SET" if self.key else "NOT-SET", "mode": self.mode, "cache_dir": self.cache,
+             # F21 item 11: the durable root and the evidence directory this adapter writes,
+             # printed so an operator can see WHICH root answered (path only, never a secret).
+             "data_root": self.data_root, "receipts_dir": self.rdir,
+             "data_root_resolver": (self.layout or {}).get("resolver"),
+             "data_root_warning": self.data_root_warning,
+             "data_migration_note": getattr(self, "migration_note", None)}
         if not self.key:
             return self.result(state="fail", error={"code": "no_key", "msg": "KIE_API_KEY is not set"}, data=d)
         try:
