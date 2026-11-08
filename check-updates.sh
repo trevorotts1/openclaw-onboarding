@@ -175,6 +175,14 @@ fi
 # ----------------------------------------------------------
 LATEST_VERSION=$(fetch_remote version | tr -d '[:space:]')
 LATEST_CHANGELOG=$(fetch_remote CHANGELOG.md)
+# The selector is honoured for EVERY fetch in this file (the raw base and the
+# tree API both use _OC_REL_REF), so a pinned cohort is never swapped for
+# whatever main holds at refresh time. A target that cannot be resolved is a
+# named absence: `require` refuses the run, `prefer` states it and continues.
+if [ -z "$LATEST_VERSION" ] && [ "$_OC_REL_MODE" != "off" ]; then
+  echo "RELEASE_TARGET_MISSING: approved target '$_OC_REL_REF' could not be fetched (version came back empty)" >&2
+  [ "$_OC_REL_MODE" = "require" ] && exit 78
+fi
 
 # Pull just the most recent changelog entry (top section until next heading).
 # Matches BOTH heading formats used historically:
@@ -261,7 +269,17 @@ fi
 # whether the on-box installed content matches the recorded manifest for the
 # stamped version. If it does not, force has_skill_updates=true even when
 # the version strings match (the half-applied-box symptom: stamp matches, content drifted).
+#
+# F24: an EMPTY or INCOMPLETE recorded skill map is never "verified". The old
+# check was self-consistent with whatever entries happened to be recorded, so a
+# manifest carrying `"skills": {}` reported content_verified=true and the box was
+# called updated with nothing proven. The check now needs the EXPECTED closure
+# (every installed numbered skill recorded) plus a per-skill digest; a digest
+# mismatch, a recorded-but-absent tree, an installed-but-unrecorded tree, a
+# missing recorded version or an unreadable manifest is a named finding and
+# content_verified stays false.
 CONTENT_VERIFIED="false"
+CONTENT_VERIFY_REASON=""
 CONTENT_DRIFT_SKILLS_JSON=""
 _MANIFEST_FILE="$SKILLS_DIR/.onboarding-content-manifest.json"
 if [ -f "$_MANIFEST_FILE" ] && command -v python3 >/dev/null 2>&1; then
@@ -275,11 +293,49 @@ skills_dir = sys.argv[2]
 try:
     manifest = json.load(open(manifest_path))
 except Exception as e:
-    print(f"manifest_error:{e}")
+    print(f"incomplete:manifest_unreadable:{type(e).__name__}")
+    sys.exit(0)
+
+if not isinstance(manifest, dict):
+    print("incomplete:manifest_not_an_object")
     sys.exit(0)
 
 recorded_version = manifest.get("version", "")
 recorded_skills = manifest.get("skills", {})
+
+# An empty/absent map is a stated absence, never a pass: nothing is proven about
+# the installed content, so this box cannot be called verified or updated.
+if not isinstance(recorded_skills, dict) or not recorded_skills:
+    print("incomplete:empty_skill_record")
+    sys.exit(0)
+if not isinstance(recorded_version, str) or not recorded_version.strip():
+    print("incomplete:no_recorded_version")
+    sys.exit(0)
+
+unrecorded_digests = sorted(
+    name for name, digest in recorded_skills.items()
+    if not isinstance(digest, str) or not digest.strip())
+if unrecorded_digests:
+    print("incomplete:no_recorded_digest:" + ",".join(unrecorded_digests))
+    sys.exit(0)
+
+# The expected closure: every installed numbered skill (ARCHIVED excluded) must
+# be recorded, or the record describes a different box than the one on disk.
+installed = set()
+try:
+    for entry in Path(skills_dir).iterdir():
+        if entry.is_dir() and entry.name[:1].isdigit() and "ARCHIVED" not in entry.name:
+            installed.add(entry.name)
+except OSError as e:
+    print(f"incomplete:skills_dir_unreadable:{type(e).__name__}")
+    sys.exit(0)
+if not installed:
+    print("incomplete:no_installed_skills")
+    sys.exit(0)
+unrecorded_installed = sorted(installed - set(recorded_skills))
+if unrecorded_installed:
+    print("incomplete:skills_not_recorded:" + ",".join(unrecorded_installed))
+    sys.exit(0)
 
 # Check SHA tool
 import subprocess
@@ -344,9 +400,25 @@ PYEOF
 
   if [ "$_CONTENT_CHECK" = "ok" ]; then
     CONTENT_VERIFIED="true"
+    CONTENT_VERIFY_REASON="closure_recorded_and_matched"
+  elif [[ "$_CONTENT_CHECK" == incomplete:* ]]; then
+    # The record cannot prove the installed content: an empty/incomplete skill
+    # map, an absent digest, an unrecorded installed tree. That is NOT a verified
+    # installation and NOT an updated one, so it drives the update flag.
+    CONTENT_VERIFIED="false"
+    CONTENT_VERIFY_REASON="${_CONTENT_CHECK#incomplete:}"
+    _UNRECORDED_LIST="${CONTENT_VERIFY_REASON##*:}"
+    case "$CONTENT_VERIFY_REASON" in
+      skills_not_recorded:*) CONTENT_DRIFT_SKILLS_JSON=$(printf '%s' "$_UNRECORDED_LIST" | awk -F, '{printf "["; for(i=1;i<=NF;i++){printf "%s\"%s:not_recorded\"", (i>1?",":""), $i} print "]"}') ;;
+      *) CONTENT_DRIFT_SKILLS_JSON="[]" ;;
+    esac
+    [ -z "$CONTENT_DRIFT_SKILLS_JSON" ] && CONTENT_DRIFT_SKILLS_JSON="[]"
+    HAS_SKILL_UPDATES="true"
+    HAS_REPO_UPDATE="true"
   elif [[ "$_CONTENT_CHECK" == drift:* ]]; then
     # Content drifted — force has_skill_updates even if version string matches
     CONTENT_VERIFIED="false"
+    CONTENT_VERIFY_REASON="digest_mismatch_or_missing_tree"
     _DRIFT_LIST="${_CONTENT_CHECK#drift:}"
     # Build JSON array of drifted skills
     CONTENT_DRIFT_SKILLS_JSON=$(python3 -c "
@@ -358,12 +430,96 @@ print(json.dumps(items))
     HAS_REPO_UPDATE="true"  # treat content drift as needing an update
   else
     CONTENT_VERIFIED="false"  # check failed/unavailable — conservative
+    CONTENT_VERIFY_REASON="check_unavailable_or_failed:${_CONTENT_CHECK}"
   fi
 else
-  # No manifest yet (first install) or python3 unavailable — not an error
+  # No manifest yet (first install) or python3 unavailable — a stated absence,
+  # never a verified installation.
   CONTENT_VERIFIED="false"
+  CONTENT_VERIFY_REASON="no_content_manifest"
 fi
 [ -z "$CONTENT_DRIFT_SKILLS_JSON" ] && CONTENT_DRIFT_SKILLS_JSON="[]"
+[ -z "$CONTENT_VERIFY_REASON" ] && CONTENT_VERIFY_REASON="not_checked"
+
+# ----------------------------------------------------------
+# F24: the install report. Every installed skill is classified explicitly —
+# PRESERVED (on disk, not in this release: kept, never replaced, and never
+# called updated), CONFLICTING (installed at another version), MISSING (in the
+# release, not installed), BLOCKED (installed but unreadable/unprovable) or
+# UPDATED (same version AND content verified). "Fully updated" is only true when
+# every one of those lists is empty and the content record proved the closure.
+# An unresolved remote fetch is stated, never read as "nothing to do".
+# ----------------------------------------------------------
+INSTALL_REPORT_JSON='{"available":false}'
+FULLY_UPDATED="false"
+_REMOTE_FETCH_STATUS="resolved"
+[ -s "${REMOTE_SKILLS_TMP:-/dev/null}" ] || _REMOTE_FETCH_STATUS="unresolved"
+if command -v python3 >/dev/null 2>&1; then
+  INSTALL_REPORT_JSON=$(python3 - "$LOCAL_SKILLS_TMP" "$REMOTE_SKILLS_TMP" \
+      "$CONTENT_VERIFIED" "$_REMOTE_FETCH_STATUS" <<'PYEOF'
+import json, sys
+from pathlib import Path
+
+local_path, remote_path, content_verified, fetch_status = sys.argv[1:5]
+
+def load(path):
+    out = {}
+    try:
+        for line in Path(path).read_text(encoding="utf-8").splitlines():
+            if "|" in line:
+                name, _, version = line.partition("|")
+                if name:
+                    out[name] = version
+    except OSError:
+        pass
+    return out
+
+local, remote = load(local_path), load(remote_path)
+report = {"available": True, "fetch_status": fetch_status,
+          "preserved": [], "conflicting": [], "missing": [], "blocked": [],
+          "updated": []}
+if fetch_status != "resolved":
+    # With no release list there is nothing to compare against: the installed set
+    # is stated, and none of it is classified as updated, preserved or missing.
+    report["unresolved_local"] = sorted(local)
+for name, version in sorted(remote.items()):
+    if name not in local:
+        report["missing"].append(name)
+        continue
+    if not local[name]:
+        report["blocked"].append(f"{name}:installed_version_unreadable")
+    elif version and local[name] != version:
+        report["conflicting"].append(name)
+    elif not version:
+        report["blocked"].append(f"{name}:remote_version_unreadable")
+    else:
+        report["updated"].append(name)
+# A skill on disk that this release does not carry is PRESERVED: a client-only
+# or locally added tree. It is reported, never deleted, and never called updated.
+if fetch_status == "resolved":
+    for name in sorted(set(local) - set(remote)):
+        report["preserved"].append(name)
+if content_verified != "true":
+    # The version strings alone never prove an installation: without the recorded
+    # closure the "updated" list is a version comparison, so nothing may claim it.
+    report["updated_version_only"] = list(report["updated"])
+    report["updated"] = []
+report["fully_updated"] = bool(
+    content_verified == "true" and fetch_status == "resolved"
+    and not (report["preserved"] or report["conflicting"] or report["missing"]
+             or report["blocked"]))
+print(json.dumps(report))
+PYEOF
+  2>/dev/null || echo '{"available":false}')
+fi
+[ -z "$INSTALL_REPORT_JSON" ] && INSTALL_REPORT_JSON='{"available":false}'
+FULLY_UPDATED=$(printf '%s' "$INSTALL_REPORT_JSON" | python3 -c \
+  "import json,sys;print('true' if json.load(sys.stdin).get('fully_updated') else 'false')" \
+  2>/dev/null || echo "false")
+# A pending repo or skill update is never "fully updated", whatever the record says.
+if [ "$HAS_REPO_UPDATE" = "true" ] || [ "$HAS_SKILL_UPDATES" = "true" ]; then
+  FULLY_UPDATED="false"
+fi
 
 # ----------------------------------------------------------
 # v12.27.0: PER-ARTIFACT staleness probe (role / dept / SOP). READ-ONLY.
@@ -431,9 +587,14 @@ cat <<JSON
   "has_skill_updates": ${HAS_SKILL_UPDATES},
   "risk_hint": "${RISK_HINT}",
   "changelog_excerpt": ${LATEST_ENTRY_JSON},
+  "release_target": "${_OC_REL_REF}",
+  "release_pin_mode": "${_OC_REL_MODE}",
   "skill_changes": [${SKILL_CHANGES_JSON}],
   "content_verified": ${CONTENT_VERIFIED},
+  "content_verify_reason": "${CONTENT_VERIFY_REASON}",
   "content_drift_skills": ${CONTENT_DRIFT_SKILLS_JSON},
+  "install_report": ${INSTALL_REPORT_JSON},
+  "fully_updated": ${FULLY_UPDATED},
   "artifact_staleness": ${ARTIFACT_STALENESS_JSON}
 }
 JSON
