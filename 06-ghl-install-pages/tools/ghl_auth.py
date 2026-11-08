@@ -654,7 +654,7 @@ def _page_url(page):
         return ""
 
 
-def _require_ghl_origin(page) -> None:
+def _require_ghl_origin(page, app_origin=None) -> None:
     """B4 — REFUSE to seed a page that is not on the GHL app origin.
 
     Reads the page's own URL (no navigation, no network): a page on about:blank
@@ -664,7 +664,13 @@ def _require_ghl_origin(page) -> None:
     url = _page_url(page)
     if url is None:
         return  # DI double with no url attribute — not a real page
-    if url.startswith(GHL_APP_ORIGIN):
+    from urllib.parse import urlsplit
+    expected_origin = app_origin or GHL_APP_ORIGIN
+    approved_origins = {GHL_APP_ORIGIN, "https://app.convertandflow.com"}
+    if expected_origin not in approved_origins:
+        raise AuthBridgeError("REFUSE (P4 precondition): unapproved app origin.")
+    parsed_url = urlsplit(url)
+    if (parsed_url.scheme + "://" + parsed_url.netloc) == expected_origin:
         return
     if url.startswith(_OPAQUE_ORIGIN_PREFIXES) or not url:
         raise AuthBridgeError(
@@ -700,7 +706,8 @@ class BridgeReceipt(dict):
 def bridge_seed_into_context(context, seed, *,
                              expected_location_id=None,
                              expected_company_id=None,
-                             identity_fetcher=None) -> dict:
+                             identity_fetcher=None,
+                             app_origin=None) -> dict:
     """The MINIMUM Playwright-context bridge for a seed minted by
     seed-ghl-auth.py (plan §9.4 — no new password/2FA implementation, no copied
     Firebase semantics, no parallel secret store).
@@ -733,7 +740,7 @@ def bridge_seed_into_context(context, seed, *,
     # about:blank, where IndexedDB/cookies/localStorage are all unusable, and
     # seeding there fails with an opaque SecurityError. Refusing here names the
     # one-line fix (navigate first) instead of surfacing that opaque error.
-    _require_ghl_origin(page)
+    _require_ghl_origin(page, app_origin=app_origin)
     try:
         if identity_fetcher is not None:
             raw_identity = identity_fetcher(context)
@@ -776,7 +783,8 @@ def mint_and_bridge(context, session, out, *,
                     expected_location_id=None,
                     expected_company_id=None,
                     seed_runner=None,
-                    identity_fetcher=None) -> dict:
+                    identity_fetcher=None,
+                    app_origin=None) -> dict:
     """resolve -> mint (the EXISTING seed-ghl-auth.py Tier-1 chain) -> bridge
     into the owned Playwright context -> validate identity. Exactly ONE
     expired-auth re-seed is permitted (the re-mint reuses the same token-only
@@ -830,7 +838,7 @@ def mint_and_bridge(context, session, out, *,
             context, seed,
             expected_location_id=expected_location_id,
             expected_company_id=expected_company_id,
-            identity_fetcher=identity_fetcher)
+            identity_fetcher=identity_fetcher, app_origin=app_origin)
 
     reseed_state = {"count": 0}
 

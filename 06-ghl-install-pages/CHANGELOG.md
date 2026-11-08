@@ -1,3 +1,10 @@
+## [v27.1.85] - 2026-11-08
+
+- Recover the shared Playwright recipe package and API-first operation router.
+- Add a continuation ledger, source-only Downloads checkpoints and integrity tests.
+- Coverage remains partial: 21 offline tests pass; host teardown timeout and live
+  profiles, payments and Mac/VPS execution remain unresolved. Draft, no rollout.
+
 # Changelog - ghl-install-pages
 
 All notable changes to this skill wrapper are documented here.
