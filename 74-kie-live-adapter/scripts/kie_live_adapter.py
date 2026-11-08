@@ -230,9 +230,10 @@ def extract_results(resp):
 
 # ------------------------------------------------- registry / limits helpers
 FLOOR_PCT, TARGET_PCT, PREFLIGHT_MULT = 95, 95, 1.30
-# Owner order 2026-10-05, strict production band (F18 2026-11-07): 95 to 100 percent of a
-# model's verified max passes; below 95 percent fails; below 80 percent is a hard failure.
-# The arithmetic itself lives in shared-utils/prompt_policy.py only.
+# Owner order 2026-10-05, section 12 of 07-kie-setup/references/kie-common-rules.md: 95 to 100
+# percent of a model's verified max passes; 80 to below 95 percent warns and expands (it PASSES
+# and names the characters to add); below 80 percent is the hard reject; above the max is the
+# ceiling reject. The arithmetic itself lives in shared-utils/prompt_policy.py only.
 KNOWN_DEFAULTS = {"gpt-image": "gpt-image-2-6/sunburst-text-to-image"}  # last-resort default (N43 today)
 DEFAULT_CAPS = {"gpt-image": ["Text to Image", "Image to Image"]}
 LATEST_TTL = CATALOG_TTL
@@ -1409,9 +1410,10 @@ class Adapter:
     def cmd_prompt_budget(self, model, check=False, prompt_text=None):
         """Prompt band for one model. The policy owns the band, the count and the hash.
 
-        Exit codes (CLI): 0 pass; 3 below the strict floor (ADD named); 4 above the
-        documented maximum (CUT named); 5 out of band otherwise (below the 95 percent
-        strict band, above the target ceiling, or an UNKNOWN maximum, which never passes).
+        Exit codes (CLI): 0 pass; 3 below the 80 percent hard floor (ADD named); 4 above the
+        documented maximum (CUT named); 5 in the 80-to-below-95 percent band, which PASSES with
+        a warn-and-expand ADD, or out of band otherwise (above the target ceiling, or an UNKNOWN
+        maximum, which never passes).
         """
         lim = self._limits(model)
         p = _policy()
@@ -1756,7 +1758,7 @@ def main(argv=None, adapter=None, out=sys.stdout):
     except (KieError, OSError, ValueError) as e:
         r = ad.result(state="fail", error={"code": getattr(e, "code", "error"), "msg": ad.redact(getattr(e, "msg", str(e)))})
     out.write(ad.redact(json.dumps(r, indent=2)) + "\n")
-    if exit_code:  # prompt-budget --check: 3 below the strict floor, 4 above the max, 5 out of band
+    if exit_code:  # prompt-budget --check: 3 below the 80 percent floor, 4 above the max, 5 warn-and-expand or out of band
         return exit_code
     return 1 if r["state"] == "fail" else 0
 
