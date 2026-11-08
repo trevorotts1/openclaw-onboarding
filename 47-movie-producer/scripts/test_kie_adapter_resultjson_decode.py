@@ -106,7 +106,9 @@ class FakeKieTransport:
         self.create_queue = []          # createTask bodies, consumed in order (then the default)
         self.veo_record = None          # body for /veo/record-info (default: success)
         self.input_props = {}           # model -> extra input properties for the schema
-        self.prompt_max = None
+        # A real KIE schema declares a prompt cap; Skill 74 refuses a prompt with no verified
+        # maximum, so the default must be explicit. Set None to serve a schema without maxLength.
+        self.prompt_max = 20000
         self.balance = 100000
         self.catalog = []
         self.create_error = None        # an exception instance raised on createTask
@@ -231,21 +233,26 @@ def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="kie47-decode-"))
 
     print("== resultJson as a JSON-ENCODED STRING: the saved file comes out of every route ==")
+    prompt = "a red barn"
     t = FakeKieTransport()
     t.result_url = RESULT_IMG_URL
-    res = fresh_tool(img, "KieImage", t).execute({"prompt": "a red barn", "output_path": str(tmp / "img.png")})
+    t.prompt_max = len(prompt)   # this fixture fills the cap it declares, so the 95% band floor holds
+    res = fresh_tool(img, "KieImage", t).execute({"prompt": prompt, "output_path": str(tmp / "img.png")})
     check("image createTask->recordInfo: success and the file is written", res.success and (tmp / "img.png").read_bytes() == b"FIXTURE-RESULT-BYTES",
           detail=str(getattr(res, "error", "")))
     check("image: kie_result_url is the URL decoded from the JSON string", res.data.get("kie_result_url") == RESULT_IMG_URL)
     check("image: the CDN download carried no API credentials (Skill 74 save)", t.downloads == [RESULT_IMG_URL])
 
+    prompt = "a calm lake"
     t = FakeKieTransport()
-    res = fresh_tool(vid, "KieVideo", t).execute({"prompt": "a calm lake", "output_path": str(tmp / "gem.mp4")})
+    t.prompt_max = len(prompt)
+    res = fresh_tool(vid, "KieVideo", t).execute({"prompt": prompt, "output_path": str(tmp / "gem.mp4")})
     check("video gemini-omni-video createTask->recordInfo: success", res.success and res.data.get("model") == "gemini-omni-video",
           detail=str(getattr(res, "error", "")))
     check("video gemini-omni-video: kie_result_url decoded", res.data.get("kie_result_url") == RESULT_URL)
 
     t = FakeKieTransport()
+    t.prompt_max = len("a calm lake")
     t.veo_record = {"code": 200, "data": {"successFlag": 1, "response": {}, "resultJson": json.dumps({"resultUrls": [RESULT_URL]})}}
     res = fresh_tool(vid, "KieVideo", t).execute({"prompt": "a calm lake", "model": "veo3_fast", "duration": "8",
                                                   "output_path": str(tmp / "veo.mp4")})
@@ -258,6 +265,8 @@ def main() -> int:
     print("== malformed / empty resultJson degrades to a failed ToolResult, never a crash ==")
     for label, rj in (("malformed", "{not json"), ("empty", ""), ("non-dict", "[1,2,3]")):
         t = FakeKieTransport()
+        # the prompt must pass the band, or "no file" would prove a prompt refusal instead of a decode failure
+        t.prompt_max = len("a red barn")
         t.record_queue = [{"code": 200, "data": {"taskId": "x", "state": "success", "resultJson": rj}}]
         res = fresh_tool(img, "KieImage", t).execute({"prompt": "a red barn", "output_path": str(tmp / ("bad-%s.png" % label))})
         check(f"image: {label} resultJson -> success=False, no file", res.success is False and not (tmp / ("bad-%s.png" % label)).exists(),
