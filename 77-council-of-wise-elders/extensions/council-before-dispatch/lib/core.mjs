@@ -305,7 +305,9 @@ function hasPhraseBoundary(raw, end) {
 }
 
 function trimQuestion(value) {
-  return value.replace(/^[\s:,\-–—]+/, "").trim();
+  // Sentence punctuation too: "ask the council. What should..." used to keep the
+  // leading "." and hand the Council a question that began mid-sentence.
+  return value.replace(/^[\s:;,\-–—.!?]+/, "").trim();
 }
 
 function isControlRequest(question) {

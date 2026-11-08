@@ -9,25 +9,20 @@ WHAT GOVERNS NOW:
   are present and fully expressed. A missing element is an automatic
   failure. (Counting convention, per the guide: NFC-normalized, trimmed,
   Unicode code points; the prompt's SHA-256 is recorded in telemetry.)
-- Length is governed by the KIE rule 12 band, adopted as this skill's
-  native authoring target by owner Decision 1 (2026-10-15): author each
-  prompt to 95 to 100 percent of the model's live prompt field maximum,
-  never below the 80 percent floor, by genuine specification only.
-  This validator renders the band verdict per prompt at the prompt
-  stage; the numbers come from band_numbers(), which calls the shared
-  enforcer's budget() (shared-utils/kie_prompt_enforcer.py) so this
-  skill and the transport can never drift apart. Below the floor FAILS
-  (budget exit 3, naming the exact characters to ADD and the count to
-  the 95 percent target); above the maximum FAILS (budget exit 4,
-  naming the exact characters to CUT); floor-to-target passes with a
-  below-target warning; in band passes. Characters, percent of the
-  maximum, and the full budget block land in the prompt's telemetry,
-  and the prompt stage gate records the budget block on the item close
-  entry. The policy layer (references/prompt-budget-policy.json)
-  records each model's maximum; cap_status survives there as
-  provenance only and no longer carries overflow semantics. Verbatim
-  fields (text a model speaks or sings exactly) are exempt from the
-  floor; this validator only ever receives the descriptive field.
+- Length is governed by the STRICT production band through the ONE canonical policy
+  service (shared-utils/prompt_policy.py, F18 2026-11-07): author each prompt to 95 to
+  100 percent of the model's verified prompt-field maximum. Below 95 percent FAILS and
+  must be revised; below 80 percent is a particularly clear hard failure; above the
+  maximum FAILS; an UNKNOWN maximum REFUSES a pass. The 80-to-below-95 warning-only path
+  is removed. This validator freezes the final prompt, runs the anatomy rules against
+  that same string, records the final prompt hash and the provider payload hash, and
+  binds an optional review reference to the same hash. Characters, percent of the
+  maximum, and the full budget block land in the prompt's telemetry, and the prompt
+  stage gate records the budget block on the item close entry. The policy layer
+  (references/prompt-budget-policy.json) records each model's maximum; cap_status
+  survives there as provenance only and no longer carries overflow semantics. Verbatim
+  fields (text a model speaks or sings exactly) are exempt from the floor; this
+  validator only ever receives the descriptive field.
 - The requested aspect ratio is confirmed at validate time against
   the model's aspect-ratio enum in Skill 74's registry snapshot
   (74-kie-live-adapter/references/kie-model-registry.json) and the
@@ -104,14 +99,8 @@ import unicodedata
 from pathlib import Path
 
 
-def _load_kie_prompt_enforcer():
-    """Best-effort import of shared-utils/kie_prompt_enforcer.py.
-
-    Since owner Decision 1 (2026-10-15) the enforcer DOES render the
-    length verdict inside Skill 71: band_numbers() calls its budget()
-    for the band math. Absence is not an error: band_numbers() then
-    falls back to identical arithmetic.
-    """
+def _load_prompt_policy():
+    """The ONE canonical prompt policy (shared-utils/prompt_policy.py)."""
     try:
         envd = os.environ.get("OPENCLAW_SKILLS_DIR")
         dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
@@ -119,17 +108,17 @@ def _load_kie_prompt_enforcer():
             Path.home() / ".openclaw" / "skills" / "shared-utils",
             Path("/data/.openclaw/skills/shared-utils")]
         for d in dirs:
-            if (d / "kie_prompt_enforcer.py").is_file():
+            if (d / "prompt_policy.py").is_file():
                 if str(d) not in sys.path:
                     sys.path.insert(0, str(d))
-                import kie_prompt_enforcer
-                return kie_prompt_enforcer
+                import prompt_policy
+                return prompt_policy
     except Exception:
         return None
     return None
 
 
-KPE = _load_kie_prompt_enforcer()
+POLICY = _load_prompt_policy()
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 GRADE_BLOCK_FILE = SKILL_ROOT / "assets" / "brand" / "signature-grade-block.txt"
@@ -351,30 +340,24 @@ def cap_for_model(model, policy):
                                    "unit": "chars"})
 
 
-# ------------------------------------------------------- rule 12 band
-
-FLOOR_PCT, TARGET_PCT = 80, 95  # KIE rule 12, adopted by Decision 1
-
+# ------------------------------------------------------- strict band (policy)
 
 def band_numbers(max_chars):
-    """The rule 12 band for a recorded maximum:
-    {"max", "floor", "target_min", "target_max"}.
+    """The strict band for a recorded maximum: floor = ceil(0.95 * max).
 
-    Calls the shared enforcer's budget() so this skill and the
-    transport compute one set of numbers from one implementation.
-    The fallback repeats the enforcer's integer math exactly (ceiling
-    of 80 and 95 percent) for the case where the enforcer cannot be
-    imported; it is character-identical arithmetic, not a second
-    implementation that can drift.
+    Calls the canonical policy service so this skill and the transport can
+    never compute different numbers. The fallback repeats the same integer
+    arithmetic for the case where shared-utils is not installed.
     """
     m = int(max_chars)
-    if KPE is not None:
+    if POLICY is not None:
         try:
-            return KPE.budget(m)
+            return POLICY.band_numbers(m)
         except Exception:
             pass
-    return {"max": m, "floor": -(-m * FLOOR_PCT // 100),
-            "target_min": -(-m * TARGET_PCT // 100), "target_max": m}
+    floor = -(-m * 95 // 100)
+    return {"max": m, "floor": floor, "target_min": floor, "target_max": m,
+            "hard_floor": -(-m * 80 // 100), "floor_pct": 95, "ceiling_pct": 100}
 
 
 def _registry_path():
@@ -1288,7 +1271,7 @@ def verbatim_checks(text, sections, ctx, errors, notes):
 # ------------------------------------------------------- inspect / main
 
 def inspect(text, model=IMAGE_MODEL_DEFAULT, sauce_only=False, ctx=None,
-            policy=None, max_chars=None):
+            policy=None, max_chars=None, review_ref=None):
     text = unicodedata.normalize("NFC", text)
     stripped = text.strip()
     chars = len(stripped)  # guide convention: NFC, trimmed, code points (N3)
@@ -1304,9 +1287,95 @@ def inspect(text, model=IMAGE_MODEL_DEFAULT, sauce_only=False, ctx=None,
         # (IMG-14). It can only tighten the policy maximum, never loosen it.
         recorded = cap.get("max_chars") if cap.get("unit") == "chars" else None
         cap = dict(cap, unit="chars", max_chars=min(max_chars, recorded or max_chars))
+    grade_block = load_grade_block()
+    masked = [grade_block] if grade_block else []
+
+    def _anatomy(body):
+        """The anatomy/quality rules, run against the SAME frozen string that is submitted."""
+        found = []
+        for pattern in PLACEHOLDER_PATTERNS:
+            match = pattern.search(body)
+            if match:
+                found.append(f"Unresolved placeholder detected: {match.group(0)!r}.")
+        secs = split_elements(body)
+        missing = [name for name, _p in CANONICAL_ELEMENTS if name not in secs]
+        if missing:
+            found.append(
+                "Missing canonical element heading(s) from the ten-element prompt anatomy: "
+                + ", ".join(missing) + ". A missing element is an automatic failure under "
+                "element completeness (Part C-rule 1(a)).")
+        for name, sec_body in secs.items():
+            if len(norm_ws(sec_body)) < 10:
+                found.append(
+                    f"Element '{name}' is present but empty of descriptive content; an element "
+                    "that carries none of the substance its job requires fails element "
+                    "completeness (Part C-rule 1(b)).")
+        neg_body = secs.get("Negative block")
+        if neg_body is not None:
+            covered, _prohibitions = negative_block_coverage(neg_body)
+            if len(covered) < 6:
+                found.append(
+                    "Negative block defect-class coverage too low: the negative block covers "
+                    f"{len(covered)} of the repository's 8 defect classes "
+                    f"({', '.join(sorted(covered)) or 'none'}); at least 6 are required, written "
+                    "as specific Do not statements naming the actual risk (Image Guide v5 "
+                    "section 11).")
+        found.extend(padding_errors(body, re.findall(r"\S+", body), masked))
+        return found
+
+    max_for_policy = cap.get("max_chars") if cap.get("unit") == "chars" else None
+    if cap.get("unit") == "tokens":
+        notes.append("Token-limited model: the provider limit is denominated in tokens and this "
+                     "validator has no tokenizer, so no character maximum can be verified and no "
+                     "prompt can PASS on this route (fail closed).")
+    receipt = None
     percent = None
-    if cap.get("unit") == "chars" and cap.get("max_chars"):
-        percent = round(100.0 * chars / cap["max_chars"], 2)
+    if POLICY is None:
+        errors.append("shared-utils/prompt_policy.py is missing: the canonical prompt policy is "
+                      "unavailable (fail closed).")
+        budget = {"status": "POLICY_UNAVAILABLE", "budget_exit": 5, "max": None, "floor": None,
+                  "target_min": None, "target_max": None, "add_chars": 0,
+                  "add_to_target_chars": 0, "cut_chars": 0,
+                  "cap_status": cap.get("cap_status", "UNKNOWN"), "prompt_sha256": None}
+    else:
+        # Freeze the FINAL prompt, run the anatomy rules against that exact string, and bind
+        # the review (when supplied) to the same hash.
+        receipt = POLICY.freeze(
+            stripped, model=model, max_chars=max_for_policy,
+            max_source="skill71-prompt-budget-policy (%s)" % cap.get("cap_status", "UNKNOWN"),
+            kind="descriptive", anatomy=_anatomy, review_ref=review_ref)
+        status = receipt["verdict"]["status"]
+        band_status = receipt["verdict"].get("band_status") or status
+        exit_code = 4 if status == "ABOVE_MAX" else 3 if status in ("BELOW_FLOOR", "BELOW_TARGET") else 5
+        band_failed = status in ("ABOVE_MAX", "BELOW_FLOOR", "BELOW_TARGET", "ABOVE_TARGET",
+                                 "UNKNOWN_MAX", "UNITS_UNVERIFIABLE", "SEPARATE_LIMIT_FAIL")
+        problems = list(receipt["verdict"]["problems"])
+        if receipt["verdict"]["ok"]:
+            notes.append("prompt is %d chars (%.1f%% of max %s); in band, budget exit 0."
+                         % (receipt["count"], receipt["ratio"] or 0.0, receipt["max"]))
+        elif status == "REVIEW_STALE":
+            for item in problems:
+                errors.append(item.rstrip(".") + ".")
+        else:
+            for i, item in enumerate(problems):
+                suffix = " (budget exit %d)." % exit_code if (i == 0 and band_failed) else "."
+                errors.append(item.rstrip(".") + suffix)
+        percent = receipt["ratio"]
+        budget = {
+            # the length band's own verdict; anatomy failures are recorded separately in
+            # telemetry["prompt_policy"]["anatomy"] and still fail the prompt overall
+            "status": "OK" if band_status == "PASS" else band_status,
+            "budget_exit": 0 if receipt["verdict"]["ok"] else exit_code,
+            "max": receipt["max"], "floor": receipt["min"],
+            "target_min": receipt["target_min"], "target_max": receipt["target_max"],
+            "add_chars": max(0, (receipt["min"] or 0) - receipt["count"]) if receipt["min"] else 0,
+            "add_to_target_chars": (max(0, (receipt["target_min"] or 0) - receipt["count"])
+                                    if receipt["target_min"] else 0),
+            "cut_chars": max(0, receipt["count"] - (receipt["max"] or receipt["count"])),
+            "cap_status": cap.get("cap_status", "UNKNOWN"),
+            "policy_version": receipt["policy_version"],
+            "prompt_sha256": receipt["final_prompt_sha256"],
+        }
     telemetry = {
         "characters": chars,
         "sha256": hashlib.sha256(stripped.encode("utf-8")).hexdigest(),
@@ -1315,54 +1384,13 @@ def inspect(text, model=IMAGE_MODEL_DEFAULT, sauce_only=False, ctx=None,
         "cap_unit": cap.get("unit", "chars"),
         "model_max_chars": cap.get("max_chars"),
         "percent_of_max": percent,
+        "prompt_policy": receipt,
+        "payload_sha256": None,
     }
-    budget = {"status": "UNKNOWN", "budget_exit": 0, "max": None,
-              "floor": None, "target_min": None, "target_max": None,
-              "add_chars": 0, "add_to_target_chars": 0, "cut_chars": 0,
-              "cap_status": cap.get("cap_status", "UNKNOWN")}
-    if cap.get("unit") == "tokens":
-        notes.append("Token-limited model: the ceiling is denominated in tokens and is "
-                     "not converted to a character cap; character telemetry is recorded "
-                     "and no character band verdict is rendered by this validator.")
-    elif cap.get("max_chars"):
-        band = band_numbers(cap["max_chars"])
-        budget.update(band)
-        pct = 100.0 * chars / band["max"]
-        if chars > band["max"]:
-            budget["status"] = "ABOVE_MAX"
-            budget["budget_exit"] = 4
-            budget["cut_chars"] = chars - band["max"]
-            errors.append(
-                f"prompt is {chars} chars; max is {band['max']}; CUT exactly "
-                f"{budget['cut_chars']} chars (cap status "
-                f"{cap.get('cap_status', 'UNKNOWN')}; budget exit 4).")
-        elif chars < band["floor"]:
-            budget["status"] = "BELOW_FLOOR"
-            budget["budget_exit"] = 3
-            budget["add_chars"] = band["floor"] - chars
-            budget["add_to_target_chars"] = band["target_min"] - chars
-            errors.append(
-                f"prompt is {chars} chars ({pct:.1f}% of max {band['max']}); floor is "
-                f"{band['floor']}: ADD at least {budget['add_chars']} chars "
-                f"({budget['add_to_target_chars']} to reach the 95 percent target of "
-                f"{band['target_min']}) of genuine specification (budget exit 3).")
-        elif chars < band["target_min"]:
-            budget["status"] = "BELOW_TARGET"
-            budget["add_to_target_chars"] = band["target_min"] - chars
-            warnings.append(
-                f"prompt is {chars} chars ({pct:.1f}% of max {band['max']}); in the "
-                f"band but below the 95 percent target of {band['target_min']}: ADD "
-                f"{budget['add_to_target_chars']} chars of genuine specification to "
-                "reach the target (budget exit 0).")
-        else:
-            budget["status"] = "OK"
-            notes.append(f"prompt is {chars} chars ({pct:.1f}% of max {band['max']}); "
-                         "in band, budget exit 0.")
-    else:
-        notes.append("Model cap UNKNOWN: percent_of_max is null and no band verdict is "
-                     "rendered; the tripwire below is the operative short-prompt flag "
-                     "for this model.")
     telemetry["budget"] = budget
+    if receipt is not None:
+        telemetry["payload_sha256"] = POLICY.payload_sha256(
+            {"model": model, "input": {"prompt": receipt["prompt"]}})
 
     # --- ratio confirmation (Item 4 part 3)
     ratio_entry = ctx.get("inventory_entry") if isinstance(ctx, dict) else None
@@ -1378,41 +1406,8 @@ def inspect(text, model=IMAGE_MODEL_DEFAULT, sauce_only=False, ctx=None,
                         "automatic failure (the tripwire is retained for models with "
                         "no recorded maximum; Decision 1).")
 
-    # --- placeholders (unchanged legacy screen)
-    for pattern in PLACEHOLDER_PATTERNS:
-        match = pattern.search(stripped)
-        if match:
-            errors.append(f"Unresolved placeholder detected: {match.group(0)!r}.")
-
-    # --- element completeness (Part C-rule 1(a)/(b))
-    missing_elements = [name for name, _p in CANONICAL_ELEMENTS if name not in sections]
-    if missing_elements:
-        errors.append(
-            "Missing canonical element heading(s) from the ten-element prompt anatomy: "
-            + ", ".join(missing_elements) + ". A missing element is an automatic "
-            "failure under element completeness (Part C-rule 1(a)).")
-    for name, body in sections.items():
-        if len(norm_ws(body)) < 10:
-            errors.append(f"Element '{name}' is present but empty of descriptive "
-                          "content; an element that carries none of the substance its "
-                          "job requires fails element completeness (Part C-rule 1(b)).")
-
-    # --- negative block: defect-class coverage (guide section 11)
-    neg_body = sections.get("Negative block")
-    if neg_body is not None:
-        covered, _prohibitions = negative_block_coverage(neg_body)
-        if len(covered) < 6:
-            errors.append(
-                "Negative block defect-class coverage too low: the negative block "
-                f"covers {len(covered)} of the repository's 8 defect classes "
-                f"({', '.join(sorted(covered)) or 'none'}); at least 6 are required, "
-                "written as specific Do not statements naming the actual risk "
-                "(Image Guide v5 section 11).")
-
-    # --- padding (Part C-rule 4)
-    grade_block = load_grade_block()
-    masked = [grade_block] if grade_block else []
-    errors.extend(padding_errors(stripped, words, masked))
+    # --- placeholders, element completeness, negative block and padding ran inside the
+    # --- policy anatomy call above, against the frozen string. No second copy here.
 
     # --- run context: selection record + style checks (Part B)
     if ctx:
@@ -1576,6 +1571,10 @@ def main():
                              "denylist files.")
     parser.add_argument("--require-selection", action="store_true",
                         help="Fail when no selection record governs this prompt.")
+    parser.add_argument("--review-sha256", default=None,
+                        help="The prompt sha256 the review artifact was performed against. The "
+                             "prompt must hash to the same value or the review is stale and the "
+                             "prompt fails (F18: a review never authorizes a different request).")
     parser.add_argument("--json", action="store_true", help="Emit JSON result.")
     args = parser.parse_args()
     if args.model.startswith("{"):  # an unresolved {model} placeholder: no model was declared
@@ -1614,7 +1613,8 @@ def main():
                   "validation performed.")
         return 1 if errors else 0
     result = inspect(text, args.model, sauce_only=args.sauce_only, ctx=ctx,
-                     policy=policy, max_chars=args.max_chars)
+                     policy=policy, max_chars=args.max_chars,
+                     review_ref=args.review_sha256)
     result["errors"] = ctx_errors + result["errors"]
     if args.strict_runtime and result["warnings"]:
         result["errors"].extend(result["warnings"])

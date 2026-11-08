@@ -66,9 +66,31 @@ def close_image_stages(root, manifest):
         pages.append({"page": run.name, "role": piece["role"], "run_dir": str(run)})
     (root / "qc").mkdir(exist_ok=True)
     (root / "qc" / "image_stages_report.json").write_text(json.dumps({"pages": pages}), encoding="utf-8")
-    assets = [{"local_path": i["local_path"], "asset_id": i["asset_id"], "average": 9.0, "pass": True,
-               "triggered_autofails": []} for i in graphics_hooks.collect_images(manifest, root)]
-    (root / "qc" / "image_qc_report.json").write_text(json.dumps({"assets": assets}), encoding="utf-8")
+    write_bound_qc(root, graphics_hooks.collect_images(manifest, root))
+
+
+def write_bound_qc(root, assets):
+    """SOP-GIP-02 records bound to a real review of the same bytes by two named, different models:
+    the shape write_review.py produces (artifact_sha256, verdict, models, criterion scores) and the
+    record shape qc_request lists (report_record_shape: review_ref AND review_sha256)."""
+    (root / "qc" / "reviews").mkdir(parents=True, exist_ok=True)
+    records = []
+    for n, asset in enumerate(assets):
+        review = root / "qc" / "reviews" / f"{n}.review.json"
+        review.write_text(json.dumps({
+            "artifact_sha256": asset["sha256"], "verdict": "pass", "automatic_failures": [],
+            "independent_review": True, "performed_check": "read every image at delivery size",
+            "author_session": "author-session-1", "reviewer_session": "review-session-1",
+            "author_model": "prompt-model", "reviewer_model": "review-model",
+            "criteria": {"image_quality": {"score": 9.0, "note": "clean and on brand"}}}),
+            encoding="utf-8")
+        records.append({"local_path": asset["local_path"], "asset_id": asset["asset_id"],
+                        "sha256": asset["sha256"], "average": 9.0, "pass": True,
+                        "triggered_autofails": [], "prompt_author_model": "prompt-model",
+                        "reviewer_model": "review-model",
+                        "review_ref": str(review.relative_to(root)),
+                        "review_sha256": hashlib.sha256(review.read_bytes()).hexdigest()})
+    (root / "qc" / "image_qc_report.json").write_text(json.dumps({"assets": records}), encoding="utf-8")
 
 
 def store(ok=True, detail="verified"):

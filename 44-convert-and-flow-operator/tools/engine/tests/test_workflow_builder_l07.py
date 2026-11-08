@@ -241,13 +241,19 @@ class CompileTests(unittest.TestCase):
         access = next(wf for key, wf in campaign.items() if "welcome" in key)
         self.assertTrue(pre["promotional"])
         self.assertFalse(access["promotional"])
+        # Date-anchored sends now carry an installed wait-until-date step, so
+        # the guard assertions apply to the email actions, not to every node.
         for step in pre["templates"]:
+            if step.get("type") != "email":
+                continue
             ids = {condition["id"] for condition in step["attributes"]["conditions"]}
             self.assertIn(wb.GUARD_UNSUBSCRIBED, ids)
             self.assertIn(wb.GUARD_PURCHASE, ids)
             self.assertIn(wb.GUARD_CLOSE, ids)
             self.assertTrue(step["attributes"]["marketing"])
         for step in access["templates"]:
+            if step.get("type") != "email":
+                continue
             ids = {condition["id"] for condition in step["attributes"]["conditions"]}
             self.assertIn(wb.GUARD_UNSUBSCRIBED, ids)
             self.assertNotIn(wb.GUARD_PURCHASE, ids,

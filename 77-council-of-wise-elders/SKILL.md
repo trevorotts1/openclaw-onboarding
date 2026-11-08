@@ -1,5 +1,5 @@
 ---
-version: 1.0.81
+version: 1.0.84
 name: council-of-wise-elders
 description: Convene a source-grounded Council of Wise Elders for business or
   personal decisions, test alternatives, explain disagreements, produce one
@@ -113,9 +113,11 @@ convene, right after `blackceo-council convene` returns:
    and still prints the link.
 4. If the line is a 127.0.0.1 address (local-only): the box's own screen
    shows the visual, and a remote client cannot open it. Never send a
-   127.0.0.1 link to a client - tell them the Council is running, the
-   result will be shared here, and their private Council link is still
-   being set up. It arrives by itself with a later council.
+   127.0.0.1 link to a client. The public chamber URL is the deliverable:
+   resolve it (runtime configuration, then the box's service.json) and send
+   that. If no public URL can be resolved, say plainly that the Council did
+   not open and why - and never answer the client's decision yourself in
+   chat as a substitute for a sitting that never ran.
 
 The same applies to existing-session reads that surface the chamber ("What
 did they decide?" and the like): include the `Chamber link:` line so the

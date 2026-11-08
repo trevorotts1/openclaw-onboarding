@@ -1,5 +1,9 @@
 # Changelog — video-creator (Skill 25)
 
+## [7.1.3] - 2026-11-07 - chore: version stamp for the November 7 batch (test-only change)
+
+- `tests/test_prompt_budget_contract.py` came in with the hard-floor message fix (#2847): the prompt-floor refusal now names the real 95 percent gap instead of a generic band. No skill code changed in this batch; the stamp exists so G3 (`version-consistency.yml` -> `check-skill-version-bump`) can pass.
+
 ## [7.1.2] - 2026-10-06 - QC reads every credential store
 
 - `qc-video-creator.sh` finds KIE_API_KEY in secrets/.env, .env and openclaw.json env.vars.

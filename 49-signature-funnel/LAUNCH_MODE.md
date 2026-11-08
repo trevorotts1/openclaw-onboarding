@@ -64,7 +64,9 @@ files (section images, review PDFs, overview boards), not only the copy. The che
 only: the real order form stays the native Convert and Flow form installed by Skill 06 (CR-S49-003).
 A funnel with levels folded into its signature page (`folded_levels`, for example the three levels of
 7FigurePreneur) has no selection page; its sales page closes on a levels panel with one card per level,
-each leading to the native order form. Skill 71's request builder reads the level count from the run's
+each leading to its OWN native order form — Skill 83's `launcher_core/checkout_instances.py` realises
+one `combined_single_offer` instance per main price choice, so the levels never share one checkout.
+Skill 71's request builder reads the level count from the run's
 `launch.json` (the main offers of a `folded_levels` launch) and stamps it into the production request, so
 the wireframes close on that panel in a real run, not only in a hand-built request.
 

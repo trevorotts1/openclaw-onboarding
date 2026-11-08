@@ -89,8 +89,8 @@ def main() -> int:
     r1 = run_prompt_band("medium", stub)
     check("exit code is 3 (AF-GIP-PROMPT-FLOOR)", r1.returncode == 3, f"got {r1.returncode}, stderr={r1.stderr!r}")
     check("stderr names AF-GIP-PROMPT-FLOOR", "AF-GIP-PROMPT-FLOOR" in r1.stderr, r1.stderr)
-    check("stderr names the exact characters to ADD (3000-char Seedream max, floor 2400)",
-          f"ADD at least {2400 - len(stub.strip())}" in r1.stderr, r1.stderr)
+    check("stderr names the exact characters to ADD (3000-char Seedream max, 95% floor 2850)",
+          f"ADD at least {2850 - len(stub.strip())}" in r1.stderr, r1.stderr)
     check("stub is NOT submitted (stdout carries no OK:)", "OK:" not in r1.stdout, r1.stdout)
 
     print("\n=== 2. under-density: in-band length, <150 distinct words -> exit 6 ===")
@@ -136,7 +136,7 @@ def main() -> int:
     r5l = run_prompt_band("text_bearing_long", low, copy=["Stop Guessing. Start Closing."], style_ref=True)
     check("79 percent: exit 3 AF-GIP-PROMPT-FLOOR", r5l.returncode == 3 and "AF-GIP-PROMPT-FLOOR" in r5l.stderr,
           f"got {r5l.returncode}, stderr={r5l.stderr[:300]!r}")
-    check("79 percent: names the exact characters to ADD (200)", "ADD at least 200" in r5l.stderr, r5l.stderr)
+    check("79 percent: names the exact characters to ADD (3200)", "ADD at least 3200" in r5l.stderr, r5l.stderr)
     check("101 percent: names the exact characters to CUT (200) and AF-DIU-PROMPT-CAP",
           "CUT exactly 200" in r4o.stderr and "AF-DIU-PROMPT-CAP" in r4o.stderr, r4o.stderr)
     for pct in (95, 100):

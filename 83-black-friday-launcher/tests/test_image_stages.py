@@ -24,7 +24,7 @@ sys.path.insert(0, str(SKILL_ROOT / "routes"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from launcher_core import checks, cli, graphics_hooks, image_stages  # noqa: E402
-from launcher_core.image_stages import STAGES  # noqa: E402
+from launcher_core.image_stages import STAGES, page_role  # noqa: E402
 from test_lane83_designs import Base  # noqa: E402  (a real stub-provider package, no tests of its own)
 
 RULE_FILE = SKILL_ROOT / "launcher_core" / "check_rules" / "image_qc.py"
@@ -68,9 +68,12 @@ def close_stage(run: Path, stage: str):
     write(run / "private" / "receipts" / f"{stage}.json", json.dumps({"status": "pass"}))
 
 
-def make_run(root: Path, name: str, role: str, closed=()) -> Path:
+def make_run(root: Path, name: str, role: str, closed=(), test_run=False) -> Path:
     run = root / "dispatch" / name
-    write(run / "intake.json", json.dumps({"page_role": role, "copy_version": "standard"}))
+    intake_doc = {"page_role": role, "copy_version": "standard"}
+    if test_run:  # a practice run ships no hosted URLs; a production run must (image_stages.produce_map)
+        intake_doc["test_run"] = True
+    write(run / "intake.json", json.dumps(intake_doc))
     write(run / "desktop-wireframe" / "image-inventory.json", json.dumps({"images": [{"id": "IMG-001"}, {"id": "IMG-002"}]}))
     write(run / "copy" / "internal-manuscript.md", "# copy")
     write(run / "private" / "state.json", json.dumps({"stages": {}, "receipts": {}}))
@@ -128,6 +131,48 @@ def author(run: Path):
     write(run / "image-map-upload" / "image-map.json", "{}")
 
 
+def inhouse_qc(run: Path):
+    """The SOP-GIP-02 record for the images this run drew, written the way write_review.py writes it.
+
+    ``image_stages.produce_map`` refuses to close image-map-upload unless every generated file
+    carries a passing review of its own bytes (module docstring: "An entry with no passing review
+    ... stops the stage by name"), so the driver cannot reach the Design Board checkpoint of this
+    test without one. The review names two different sessions and models, as the producer stamps.
+    """
+    reviews = run / "private" / "reviews" / "image-generation-qc"
+    reviews.mkdir(parents=True, exist_ok=True)
+    records = []
+    for png in sorted((run / "image-generation-qc").glob("Image-*.png")):
+        number = "".join(c for c in png.stem if c.isdigit())
+        item = f"IMG-{int(number):03d}"
+        digest = hashlib.sha256(png.read_bytes()).hexdigest()
+        review = reviews / f"{item}.review.json"
+        review.write_text(json.dumps({
+            "artifact_sha256": digest, "verdict": "pass", "automatic_failures": [],
+            "independent_review": True, "performed_check": "read the image at delivery size",
+            "author_session": "author-session-1", "reviewer_session": "review-session-1",
+            "author_model": "prompt-model", "reviewer_model": "review-model",
+            "criteria": {"image_quality": {"score": 9.0, "note": "clean and on brand"}}}),
+            encoding="utf-8")
+        records.append({"local_path": str(png.resolve()), "asset_id": item, "page": page_role(run),
+                        "sha256": digest, "average": 9.0, "pass": True, "triggered_autofails": [],
+                        "prompt_author_model": "prompt-model", "reviewer_model": "review-model",
+                        "review_ref": str(review.relative_to(run)),
+                        "review_sha256": hashlib.sha256(review.read_bytes()).hexdigest()})
+    write(run / graphics_hooks.QC_REPORT_REL, json.dumps({"assets": records}))
+
+
+class ReviewedSkill71(FakeSkill71):
+    """The same fake gate, plus the reviewer's SOP-GIP-02 record for every image it draws."""
+
+    def __call__(self, argv):
+        result = super().__call__(argv)
+        args = [str(a) for a in argv[2:]]  # [2:] skips the interpreter and the script, as FakeSkill71 does
+        if args and Path(argv[1]).name == "stage_executor.py" and "--item" in args:
+            inhouse_qc(Path(next(a for a in args if "/" in a)))
+        return result
+
+
 class DriverTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -157,9 +202,9 @@ class DriverTests(unittest.TestCase):
 
     def test_stages_run_in_order_stop_at_the_design_board_and_final_mockups_waits_for_the_client(self):
         approve_layout(self.root)
-        run = make_run(self.root, "landing", "landing")
+        run = make_run(self.root, "landing", "landing", test_run=True)
         author(run)
-        fake = FakeSkill71()
+        fake = ReviewedSkill71()
         report = self.drive(fake)
         page = report["pages"][0]
         self.assertEqual(page["stages"], {"image-inventory-prompts": "closed", "image-generation-qc": "closed",
@@ -236,8 +281,21 @@ class ReportViolationTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def report(self, **rec):
-        record = {"local_path": str(self.image), "asset_id": self.image.stem, "average": 9.1, "pass": True,
-                  "triggered_autofails": []}
+        digest = hashlib.sha256(self.image.read_bytes()).hexdigest()
+        review = self.root / "qc" / "reviews" / "hero.review.json"
+        review.parent.mkdir(parents=True, exist_ok=True)
+        review.write_text(json.dumps({
+            "artifact_sha256": digest, "verdict": "pass", "automatic_failures": [],
+            "independent_review": True, "performed_check": "read the image at delivery size",
+            "author_session": "author-session-1", "reviewer_session": "review-session-1",
+            "author_model": "prompt-model", "reviewer_model": "review-model",
+            "criteria": {"image_quality": {"score": 9.1, "note": "clean and on brand"}}}),
+            encoding="utf-8")
+        record = {"local_path": str(self.image), "asset_id": self.image.stem, "sha256": digest,
+                  "average": 9.1, "pass": True, "triggered_autofails": [],
+                  "prompt_author_model": "prompt-model", "reviewer_model": "review-model",
+                  "review_ref": str(review.relative_to(self.root)),
+                  "review_sha256": hashlib.sha256(review.read_bytes()).hexdigest()}
         record.update(rec)
         write(self.root / graphics_hooks.QC_REPORT_REL, json.dumps({"assets": [record]}))
 
@@ -265,7 +323,9 @@ class ReportViolationTests(unittest.TestCase):
             self.assertTrue(any("no numeric average" in f for f in self.fails()), bad)
 
     def test_an_image_the_report_leaves_out_fails_full_coverage(self):
-        self.report(local_path=str(self.root / "elsewhere.png"))
+        # the record names a different file AND a different asset id: a record that resolves to another
+        # image (by path or by id fallback) is not a record for this one
+        self.report(local_path=str(self.root / "elsewhere.png"), asset_id="not-this-image")
         self.assertTrue(any("has no record" in f for f in self.fails()), self.fails())
 
     def test_an_image_changed_after_review_fails(self):
@@ -295,9 +355,38 @@ class PackageCheckTests(Base):
         write(root / image_stages.REPORT_REL, json.dumps({"pages": pages}))
 
     def write_clean_qc(self, manifest, root):
-        assets = [{"local_path": i["local_path"], "asset_id": i["asset_id"], "average": 9.0, "pass": True,
-                   "triggered_autofails": []} for i in graphics_hooks.collect_images(manifest, root)]
-        write(root / graphics_hooks.QC_REPORT_REL, json.dumps({"assets": assets}))
+        """A passing SOP-GIP-02 report whose every record is bound to a real review of its bytes."""
+        assets, records = graphics_hooks.collect_images(manifest, root), []
+        (root / "qc" / "reviews").mkdir(parents=True, exist_ok=True)
+        for n, asset in enumerate(assets):
+            review = root / "qc" / "reviews" / f"{n}.review.json"
+            review.write_text(json.dumps({
+                "artifact_sha256": asset["sha256"], "verdict": "pass", "automatic_failures": [],
+                "independent_review": True, "performed_check": "read every image at delivery size",
+                "author_session": "author-session-1", "reviewer_session": "review-session-1",
+                "author_model": "prompt-model", "reviewer_model": "review-model",
+                "criteria": {"image_quality": {"score": 9.0, "note": "clean and on brand"}}}),
+                encoding="utf-8")
+            records.append({"local_path": asset["local_path"], "asset_id": asset["asset_id"],
+                            "sha256": asset["sha256"], "average": 9.0, "pass": True,
+                            "triggered_autofails": [], "prompt_author_model": "prompt-model",
+                            "reviewer_model": "review-model",
+                            "review_ref": str(review.relative_to(root)),
+                            "review_sha256": hashlib.sha256(review.read_bytes()).hexdigest()})
+        write(root / graphics_hooks.QC_REPORT_REL, json.dumps({"assets": records}))
+
+    def edit_review(self, root, index, **changes):
+        """Change the REVIEW the record cites, the way a reviewer who really scored it that way would,
+        and re-bind the record's review_sha256 (the gate refuses a receipt edited after the report)."""
+        report = json.loads((root / graphics_hooks.QC_REPORT_REL).read_text(encoding="utf-8"))
+        record = report["assets"][index]
+        review_path = root / record["review_ref"]
+        review = json.loads(review_path.read_text(encoding="utf-8"))
+        review.update(changes)
+        review_path.write_text(json.dumps(review), encoding="utf-8")
+        record["review_sha256"] = hashlib.sha256(review_path.read_bytes()).hexdigest()
+        write(root / graphics_hooks.QC_REPORT_REL, json.dumps(report))
+        return report
 
     def launched(self, root):
         """The mark a launch dispatch leaves in the package root."""
@@ -347,8 +436,16 @@ class PackageCheckTests(Base):
         report["assets"][0]["average"] = 8.49
         report["assets"][1]["triggered_autofails"] = ["AF-G2"]
         write(root / graphics_hooks.QC_REPORT_REL, json.dumps(report))
+        # the two verdicts are the REVIEWS' own: a record edited without its receipt is a second,
+        # separate drift the gate names, so the receipt is rewritten here as the reviewer would
+        self.edit_review(root, 0, criteria={"image_quality": {"score": 8.49, "note": "below the bar"}})
+        report = self.edit_review(root, 1, automatic_failures=["AF-G2"])
         fails = self.rule()(manifest, root, SKILL_ROOT)
-        self.assertEqual(len(fails), 2, fails)
+        self.assertTrue(any("averages 8.49, under the 8.5 bar" in f for f in fails), fails)
+        self.assertTrue(any("automatic failure(s) AF-G2" in f for f in fails), fails)
+        # and no THIRD asset is implicated by either verdict
+        named = {Path(a["local_path"]).name for a in report["assets"][:2]}
+        self.assertEqual([f for f in fails if not any(n in f for n in named)], [], fails)
 
     def test_a_page_left_out_of_the_stage_report_fails(self):
         manifest, root, _ = self.package()

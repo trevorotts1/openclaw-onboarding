@@ -57,6 +57,28 @@ run owns its implementation.
 | 19 | **SEO / AI-search "Content" panel** | After saving, the left side shows **SEO and AI search optimization**. Expand the **Content** box and fill it out (see §2). (~09:05–10:16) | transcript | false |
 | 20 | **Back → next step** | Hit **Back**; step 1 is added. For a multi-step funnel, **Add new step** again and number it **`ZHC part 2`** … `ZHC part N`. Repeat the whole recipe per step. (~10:16–10:45) | transcript | false |
 
+> **IMPLEMENTED NOTE (F01, 2026-11-07) — the toggle is not the whole step.** A live probe (2026-06)
+> showed `allowRowMaxWidth` ALONE produces no observable width change, because the hosting section's
+> CSS cap (`#section-…>.inner{max-width:1170px}`, carried in the section styles) is the real width
+> driver. The implemented policy moves both together: `ghl_rest_canvas.apply_section_full_width`
+> sets the native flag and lifts the `.inner` px width lock — on the create path
+> (`new_page_blob`) and on the edit path (`edit_element_customcode`, repair on by default) — and
+> leaves card widths, text measures and responsive padding untouched.
+> `ghl_rest_canvas.assert_section_is_full_width(section)` proves one section. So "full width" means
+> the step-13 end state AND no `.inner` px cap; the toggle on its own is not that end state.
+>
+> **MERGE-ORDER PREREQUISITE (2026-11-07) — F01 requires the BFL-002 full-width API, and must not
+> ship before BFL-002 is integrated into this repository.** At the integration base before that
+> merge, `06-ghl-install-pages/tools/ghl_rest_canvas.py` has
+> `edit_element_customcode(page_data, locator, new_value)` with **no** `full_width` parameter,
+> `new_page_blob` defaults `allow_row_max_width=False`, and none of the functions named above
+> exists. The required symbols are `FULL_WIDTH_POLICY`, `apply_section_full_width(section)`,
+> `lift_inner_width_caps(css)`, `assert_section_is_full_width(section)`,
+> `edit_element_customcode(..., full_width=True)` and
+> `new_page_blob(..., allow_row_max_width=True)`. Check for them before treating F01 as executable;
+> if any is missing, stop and report the missing dependency instead of inventing a partial
+> full-width repair.
+
 ---
 
 ## 2. SEO / AI-search "Content" panel — REQUIRED (transcript, ~09:05–10:16)
@@ -136,8 +158,8 @@ The reason an agent gets into the page easily is the seeded **Firebase refresh t
 explicit instruction:
 - **Never assume** a client lacks a **private integration token**, a **location ID**, or a **Firebase
   refresh token.** `source=transcript`.
-- **Search ALL environments** before concluding you lack a credential: OpenClaw secrets, the box's
-  `.env`, and — on a VPS — the **Docker** environment area AND the **OpenClaw** environment area. Do a
+- **Search ALL environments** before concluding you lack a credential: the install's secrets env
+  (the file `$SECRETS_ENV` designates), the exported process environment, and the box's `.env`. Do a
   thorough search; only then state clearly that the info is missing. `source=transcript`.
 
 > The harden run owns the **3 auth-seed fixes**; this run only records the transcript instruction.

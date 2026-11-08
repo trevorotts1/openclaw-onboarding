@@ -268,11 +268,18 @@ class TestEvidenceNoSecretSweep:
                 run_id="sweep-run"),
             secret_values=values)
 
-        # 3) A ladder receipt whose rung detail carries a secret.
+        # 3) A ladder receipt whose rung detail carries a secret. The rung is a
+        # REAL completion (boolean ok + operation_complete for the SAME named
+        # operation): the ladder refuses to certify an unnamed operation.
         ladder_result = ladder.run_ladder(
             "survey",
-            {"browser": lambda: {"ok": True, "location_id": LOC,
+            {"browser": lambda: {"ok": True, "operation": "surveys.authoring",
+                                 "operation_complete": True,
+                                 "status": "operation_complete",
+                                 "references_fresh": True,
+                                 "location_id": LOC,
                                  "detail": f"browser ok; password={self._PASSWORD}"}},
+            operation="surveys.authoring",
             expected_location_id=LOC, secret_values=values)
         ladder_path = str(base / "ladder-receipt.json")
         ladder.write_ladder_receipt(ladder_result, ladder_path,
