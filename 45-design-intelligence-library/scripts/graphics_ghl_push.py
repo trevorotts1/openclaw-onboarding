@@ -922,13 +922,10 @@ def gate_graphics_media_complete(job_dir, *, approval_verifier=None, policy=None
         if not r_ok:
             reasons.extend(r_reasons)
 
-        rec = None
-        for candidate in (uploaded and by_path.get(abspath),
-                          uploaded and by_path.get(rel),
-                          by_id.get(str(a.get("asset_id"))) if a.get("asset_id") else None):
-            if candidate is not None:
-                rec = candidate
-                break
+        candidates = [by_path.get(abspath), by_path.get(rel)]
+        if a.get("asset_id"):
+            candidates.append(by_id.get(str(a.get("asset_id"))))
+        rec = next((candidate for candidate in candidates if candidate is not None), None)
         if rec is None:
             reasons.append(
                 f"{GHL_UPLOAD_GATE}: QC-passed asset {rel!r} has NO upload record in "
@@ -1122,6 +1119,16 @@ def _selftest() -> int:
         ok, r = _gate(base)
         if ok or not any("missing/empty" in x for x in r):
             fails.append(f"B empty: expected FAIL, got ok={ok} {r}")
+
+    # B2 — a ledger with a folder but zero uploaded rows -> FAIL, never a crash.
+    with tempfile.TemporaryDirectory() as t:
+        base = Path(t)
+        _setup(base, qc=GOOD_QC, job={"has_ghl": True},
+               media={"ghl_folder_id": "fld_1", "attempt_id": ATTEMPT,
+                      "revision": REVISION, "uploaded": []})
+        ok, r = _gate(base)
+        if ok or not any("NO upload record" in x for x in r):
+            fails.append(f"B2 empty-uploaded: expected FAIL, got ok={ok} {r}")
 
     # C — one passed asset NOT uploaded -> FAIL.
     with tempfile.TemporaryDirectory() as t:
