@@ -246,7 +246,7 @@ def main() -> int:
 
         for size, expect_exit, label, want_msg in (
                 (15800, 3, "79 percent (15800) rejected", "ADD at least 3200"),
-                (16000, 3, "80 percent floor (16000) rejected", "ADD 3000 chars"),
+                (15999, 3, "just below the 80 percent floor (15999) rejected", "ADD at least 3001"),
                 (19000, 0, "95 percent (19000) passes", None),
                 (20000, 0, "100 percent (20000) passes", None),
                 (20200, 3, "101 percent (20200) rejected", "CUT exactly 200")):
@@ -264,6 +264,25 @@ def main() -> int:
                 check(f"band {size}: failure names AF-PROMPT-LENGTH", "AF-PROMPT-LENGTH" in rr.stderr, rr.stderr)
             if want_msg:
                 check(f"band {size}: names the exact chars ({want_msg})", want_msg in rr.stderr, rr.stderr)
+        # 16000 is exactly 80 percent of the 20000 owner cap, and kie-common-rules.md section 12
+        # says "80 to 95 percent: warn and expand" — so this is the boundary that PASSES. The gate
+        # emits no ADD text here; it clears and writes the F32 spend receipt. Asserted separately
+        # from the reject table above because the success path prints to stdout, not stderr.
+        pf_80 = _write(tmp, "band_16000.txt", _sized(16000))
+        r_80 = run_gate(
+            "--prompt-file", str(pf_80), "--model", gpt,
+            "--ratio", "4:5", "--pixels", "1080x1350",
+            "--brand-colors", "#0B3D2E,#F5EFE0",
+            "--avoid-list-file", str(avoid_file),
+        )
+        check("band 80 percent (16000) warns and expands (exit 0)", r_80.returncode == 0,
+              f"got {r_80.returncode}, stderr={r_80.stderr[:200]!r}")
+        check("band 16000: clears the Skill 35 pre-generation gate",
+              "clears the Skill 35 pre-generation gate" in r_80.stdout, r_80.stdout)
+        check("band 16000: carries the F32 spend receipt",
+              "F32 spend receipt" in r_80.stdout, r_80.stdout)
+        check("band 16000: no AF-PROMPT-LENGTH refusal",
+              "AF-PROMPT-LENGTH" not in r_80.stderr, r_80.stderr)
         r_old = run_gate("--prompt-file", str(_write(tmp, "old9000.txt", _sized(9000))), "--model", gpt,
                          "--ratio", "4:5", "--pixels", "1080x1350", "--brand-colors", "#0B3D2E",
                          "--avoid-list-file", str(avoid_file))
