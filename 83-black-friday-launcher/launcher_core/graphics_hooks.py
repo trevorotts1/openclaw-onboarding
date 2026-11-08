@@ -66,6 +66,7 @@ QC_REPORT_REL = "qc/image_qc_report.json"
 QC_REQUEST_REL = "qc/image_qc_request.json"
 DELIVERY_REL = "delivery_record.json"
 LEDGER_REL = "media_library.json"
+HOSTING_BINDING_REL = "hosting-binding.json"   # the hosting decision a launcher emits and this reads
 PIPELINE_REL = "qc/graphics_pipeline.json"
 # The module the uploader itself loads (45-design-intelligence-library/scripts/graphics_ghl_push.py
 # resolves 48's canonical GHL media module and Skill 6's publish-approval check). The capability
@@ -897,6 +898,21 @@ def graphics_push_module(repo_root: Optional[Path] = None):
     return module
 
 
+def _hosting_entries(job_dir: Path) -> List[Dict[str, Any]]:
+    """The launcher's hosting binding first, else the hosting route's raw receipt ledger.
+
+    ``hosting-binding.json`` is the decision the launcher emits (bound rows under ``uploads``);
+    the route's ``media_library.json`` rows (``uploaded``) are the read-only fallback, so a job
+    driven before a binding existed still reports the upload it recorded."""
+    for name in (HOSTING_BINDING_REL, LEDGER_REL):
+        doc = _read(Path(job_dir) / name)
+        if isinstance(doc, dict):
+            rows = doc.get("uploads") if isinstance(doc.get("uploads"), list) else doc.get("uploaded")
+            if isinstance(rows, list):
+                return [e for e in rows if isinstance(e, dict)]
+    return []
+
+
 def delivery_record(manifest: Dict[str, Any], package_root: Path, job_dir: Path,
                     probe_env: Optional[Dict[str, str]] = None,
                     repo_root: Optional[Path] = None,
@@ -909,8 +925,7 @@ def delivery_record(manifest: Dict[str, Any], package_root: Path, job_dir: Path,
     job_dir = Path(job_dir)
     report = _read(qc_report_root(job_dir) / QC_REPORT_REL) or {}
     qc = {str(a.get("local_path")): a for a in (report.get("assets") or []) if isinstance(a, dict)}
-    ledger = _read(job_dir / LEDGER_REL) or {}
-    hosted = {str(e.get("local_path")): e for e in (ledger.get("uploaded") or []) if isinstance(e, dict)}
+    hosted = {str(e.get("local_path")): e for e in _hosting_entries(job_dir)}
 
     assets: List[Dict[str, Any]] = []
     for img in collect_images(manifest, package_root):

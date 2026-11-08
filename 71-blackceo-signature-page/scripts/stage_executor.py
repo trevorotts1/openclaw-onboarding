@@ -390,26 +390,54 @@ def sanitize_prompt(text: str) -> str:
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
 
-def prompt_budget(model: str | None):
-    """The model's recorded band: hard maximum, 80% floor, 95% target.
+def _prompt_policy():
+    """The ONE canonical prompt policy (shared-utils/prompt_policy.py)."""
+    global _POLICY
+    try:
+        return _POLICY
+    except NameError:
+        pass
+    _POLICY = None
+    roots = [SKILL_ROOT.parent / "shared-utils"]
+    if os.environ.get("OPENCLAW_SKILLS_DIR"):
+        roots.append(Path(os.environ["OPENCLAW_SKILLS_DIR"]) / "shared-utils")
+    roots += [Path.home() / ".openclaw" / "skills" / "shared-utils",
+              Path("/data/.openclaw/skills/shared-utils")]
+    for d in roots:
+        if (d / "prompt_policy.py").is_file():
+            if str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+            try:
+                import prompt_policy
+                _POLICY = prompt_policy
+            except Exception:
+                _POLICY = None
+            break
+    return _POLICY
 
-    The policy file is the authority; a model with no recorded maximum has
-    no band (None), exactly like the skill's validator.
+
+def policy_band_numbers(max_chars):
+    """The strict band (floor = ceil(0.95 x max)) from the one policy service."""
+    m = int(max_chars)
+    pol = _prompt_policy()
+    if pol is not None:
+        return pol.band_numbers(m)
+    floor = -(-m * 95 // 100)
+    return {"max": m, "floor": floor, "target_min": floor, "target_max": m}
+
+
+def prompt_budget(model: str | None):
+    """The model's strict recorded band: hard maximum, 95 percent floor, 95 percent target.
+
+    The policy file records WHICH maximum governs this route; the band arithmetic comes
+    from the one policy service. A model with no recorded maximum has no band (None), and
+    the paid boundary then refuses a pass rather than inventing one.
     """
     try:
         policy = json.loads((SKILL_ROOT / "references" / "prompt-budget-policy.json")
                             .read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    band = policy.get("band") or {}
-    try:
-        floor_pct = int(band.get("floor_pct") or 80)
-    except (TypeError, ValueError):
-        floor_pct = 80
-    target_pct = 95
-    match = re.match(r"\s*(\d+)", str(band.get("target_pct") or ""))
-    if match:
-        target_pct = int(match.group(1))
     for entry in policy.get("models") or []:
         match = entry.get("match")
         if not (model and match and str(match) in model and entry.get("unit") == "chars"):
@@ -418,9 +446,10 @@ def prompt_budget(model: str | None):
             cap = int(entry.get("max_chars"))
         except (TypeError, ValueError):
             return None
-        return {"max_chars": cap,
-                "floor_chars": cap * floor_pct // 100,
-                "target_chars": cap * target_pct // 100}
+        band = policy_band_numbers(cap)
+        return {"max_chars": cap, "floor_chars": band["floor"],
+                "target_chars": band["target_min"],
+                "source": "prompt-budget-policy:%s" % entry.get("cap_status", "UNKNOWN")}
     return None
 
 def prompt_cap(model: str | None):
@@ -1101,10 +1130,14 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
                 "the verbatim copy")
         if deficit > 0:
             message = (f"{stage} section {index}: {len(prompt)} chars, {deficit} below the "
-                       f"{budget['floor_chars']}-char floor ({budget['target_chars']}-char "
-                       "target); add genuine specification")
-            if strict_floor:  # owner Decision 1: under the floor fails the prompt stage
+                       f"{budget['floor_chars']}-char strict floor ({budget['target_chars']}-char "
+                       "target); add genuine specification, never repetition or whitespace")
+            if strict_floor:
+                # The PAID KIE path authors strictly: below 95 percent is a hard revision.
                 raise ExecutorError(f"prompt budget: {message}")
+            # A stub/local compose (no paid call) records the deficit. The last paid-submit
+            # boundary still refuses: KieProvider.generate freezes and re-checks the payload,
+            # and the Skill 74 adapter gates createTask (F18 item 5).
             print(f"WARN prompt_budget {message}", file=sys.stderr)
     return (prompt, sizes) if with_sizes else prompt
 
@@ -1120,7 +1153,31 @@ def build_input(job: dict, request: dict) -> dict:
         base["aspect_ratio"] = job["ratio"]
     extra = request.get("input_extra")
     if isinstance(extra, dict):
-        base.update(extra)
+        if "prompt" in extra:
+            # F18: a later override may not silently replace the measured prompt. It is
+            # REJECTED unless the caller asks for full revalidation, and then it must pass
+            # the band before it is used.
+            pol = _prompt_policy()
+            if pol is None:
+                raise ExecutorError(
+                    "input_extra carries a prompt and shared-utils/prompt_policy.py is "
+                    "missing; the override cannot be revalidated, so the render is refused "
+                    "(no API call was made)")
+            budget = prompt_budget(request.get("model")) or {}
+            gate = pol.apply_input_extra(
+                {"prompt": base["prompt"]}, extra, prompt_key="prompt",
+                model=request.get("model"), max_chars=budget.get("max_chars"),
+                max_source=budget.get("source"),
+                revalidate=bool(request.get("input_extra_revalidate")))
+            if not gate["ok"]:
+                raise ExecutorError(
+                    "input_extra would replace the prompt after composition and measurement, "
+                    "so the request sent would not be the one reviewed or counted: %s"
+                    % "; ".join(gate["problems"]))
+            base.update(gate["params"])
+            base.update({k: v for k, v in extra.items() if k != "prompt"})
+        else:
+            base.update(extra)
     if exact:  # a request-level extra can never add a picture to the board either
         base["input_urls"] = refs
     return base
@@ -1327,7 +1384,42 @@ class KieProvider:
         out_dir = req_dir / "saved" / slug
         out_dir.mkdir(parents=True, exist_ok=True)
         req = {"model": model, "input": build_input(job, request)}
+        # F18: freeze the FINAL prompt and bind the payload that will actually be sent.
+        # A payload whose prompt is not the frozen one never reaches the paid call.
+        pol = _prompt_policy()
+        frozen = gate = None
+        if pol is None:
+            raise ExecutorError(
+                "shared-utils/prompt_policy.py is missing: the paid prompt band cannot be "
+                "enforced, so the render is refused (no API call was made)")
+        budget = prompt_budget(model) or {}
+        frozen = pol.freeze(job["prompt"], model=model,
+                            max_chars=budget.get("max_chars"),
+                            max_source=budget.get("source"), job_id=slug)
+        gate = pol.assert_payload(req, frozen=frozen)
+        if not gate["ok"]:
+            raise ExecutorError(
+                "prompt policy refused the payload before any paid call: %s"
+                % "; ".join(gate["problems"]))
+        # FREEZE: what is written and sent is the counted, hashed string. Otherwise the
+        # provider received the raw text (fence, surrounding whitespace, NFD) while the
+        # receipt and the review named a hash of the normalized text.
+        req["input"]["prompt"] = gate["prompt"]
+        # The gate above measured the COMPOSED payload, so its payload_sha256 names the
+        # pre-freeze request. The receipt must name the payload the transport receives, so
+        # the frozen payload is asserted again AFTER the freeze and THAT hash is recorded.
+        gate = pol.assert_payload(req, frozen=frozen)
+        if not gate["ok"]:
+            raise ExecutorError(
+                "prompt policy refused the frozen payload before any paid call: %s"
+                % "; ".join(gate["problems"]))
         req_path.write_text(json.dumps(req, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        if frozen is not None:
+            (req_dir / f"{slug}.policy.json").write_text(
+                json.dumps({"prompt_policy": frozen,
+                            "payload": {"status": gate["status"],
+                                        "payload_sha256": gate["payload_sha256"]}},
+                           indent=2, sort_keys=True) + "\n", encoding="utf-8")
         before = self.credits()
         rid = reserve_render(self.run_dir, cap, str(job["out"].relative_to(self.run_dir)))
         spent = False

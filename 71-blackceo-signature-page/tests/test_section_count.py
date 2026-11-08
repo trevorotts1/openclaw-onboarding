@@ -172,7 +172,7 @@ class SectionCountTests(unittest.TestCase):
         section = {"section_id": "1", "copy": "A finished sentence."}
         with self.assertRaises(exe.ExecutorError) as ctx:
             exe.stage_prompt("visual-mockup", section, 1, 1440, request, "3:4", strict_floor=True)
-        self.assertIn("below the 16000-char floor", str(ctx.exception))
+        self.assertIn("below the 19000-char strict floor", str(ctx.exception))
         self.assertTrue(exe.stage_prompt("visual-mockup", section, 1, 1440, request, "3:4"))
 
     def test_preflight_exits_1_on_a_prompt_under_the_floor(self):
@@ -282,7 +282,7 @@ class BandTests(unittest.TestCase):
     def test_no_design_prose_means_a_named_refusal_not_a_short_prompt(self):
         with self.assertRaises(builder.BuildError) as ctx:
             self.build("standard", {})
-        self.assertIn("below the 16000-char floor", str(ctx.exception))
+        self.assertIn("below the 19000-char strict floor", str(ctx.exception))
         self.assertIn("--design-prose", str(ctx.exception))
 
     def test_private_framework_labels_never_reach_a_prompt(self):
