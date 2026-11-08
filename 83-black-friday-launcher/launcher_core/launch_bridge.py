@@ -386,6 +386,14 @@ def _landing_bridge_config(adapter_inputs: Dict[str, Any], dispatch_dir: Path, i
                           f"the landing bridge config {adapter_inputs['bridge_config']} has no \"landing\" section, "
                           "so the landing and sales pages have nothing to build from. "
                           "Nothing was dispatched and nothing was spent.")
+    # The plan's own path below is canonical (``Path.resolve()``). A config spells its paths the way the
+    # operator's shell handed them over, which on macOS TMPDIR is the ``/var/folders`` symlink rather than the
+    # ``/private/var`` it resolves to, so the same file would read as two different files. Canonicalise the
+    # supplied path values ONCE here, at the binding, so every comparison below is canonical to canonical and
+    # the rewritten config records one spelling of each path.
+    for holder in (landing, landing.get("image_plan")):
+        if isinstance(holder, dict) and isinstance(holder.get("image_inputs"), str):
+            holder["image_inputs"] = str(Path(holder["image_inputs"]).resolve())
     written = image_plan.image_inputs_file(inputs)
     abs_inputs = str(Path(inputs_path).resolve())
     want = {"image_inputs": abs_inputs,

@@ -488,7 +488,11 @@ class _Page:
     """One page run and the commands that move it."""
 
     def __init__(self, run: Path, scripts: Path, runner: Runner, provider: str, allow_paid: bool) -> None:
-        self.run, self.scripts, self.runner = Path(run), Path(scripts), runner
+        # One canonical spelling of the page run for every Skill 71 command this driver starts. design_board.py
+        # resolves its own run_dir at binding (``run_dir = a.run_dir.resolve()``), so the approval a client's
+        # recorded board carries is keyed to the canonical path; the gate and the executor must be handed the
+        # same spelling or a path that names one folder reads as two.
+        self.run, self.scripts, self.runner = Path(run).resolve(), Path(scripts), runner
         self.provider, self.allow_paid = provider, allow_paid
         self.log: List[str] = []
 
@@ -624,9 +628,14 @@ def _own_form(page_run: Path, artifacts: Sequence[Any]) -> Optional[str]:
     the form landing_bridge gives an opt-in run's files, resolved from the run's parent exactly as
     package._artifact_source does), "absolute", or "relative" (from the run). A file counts only when it sits
     inside the run AND carries the hash listed for it. The prefix form is tried first: it names the run, while
-    a bare name can match another run's identical file (two runs share generic names and some bytes)."""
+    a bare name can match another run's identical file (two runs share generic names and some bytes). The
+    containment test is the compare boundary: the run is canonicalised ONCE here and the candidate is
+    compared in its canonical form too, so neither side depends on how the caller spelled the run's path."""
+    run_root = page_run.resolve()  # the compare boundary: canonical to canonical, never /var against /private/var
+
     def mine(digest: Any, target: Path) -> bool:
-        return target.is_file() and target.resolve().is_relative_to(page_run) and (not digest or _sha(target) == digest)
+        return (target.is_file() and Path(target).resolve().is_relative_to(run_root)
+                and (not digest or _sha(target) == digest))
 
     listed = [(a.get("path"), a.get("sha256")) for a in artifacts if isinstance(a, dict) and isinstance(a.get("path"), str)]
     if any(p.startswith(page_run.name + "/") and mine(d, page_run.parent / p) for p, d in listed):
@@ -651,11 +660,13 @@ def refresh_pieces(run_dir: Path, page_run: Path) -> List[str]:
     ``page_set.design_artifacts``, for the page key the PIECE names (a landing-lane piece's page_kind: the
     sales-only slot "landing" is the "sales" page), in the form the piece already uses (absolute, relative to
     the run, or prefixed with the run folder name as the opt-in run's files are; with the provider when the
-    piece names one) and merged by path. The piece must stay one of the
+    piece names one) and merged by path. The run's path is used exactly as the caller spelled it — only the
+    containment test canonicalises, in ``_own_form`` — so the files are re-listed in the spelling the piece
+    already records, never in a second (resolved) spelling of the same folder. The piece must stay one of the
     dispatch's own artifacts (``package._bind_piece``), so every stored dispatch result that lists the
     piece's files, and the dispatch manifest's copy of it, takes the same files.
     """
-    run_dir, page_run = Path(run_dir), Path(page_run).resolve()
+    run_dir, page_run = Path(run_dir), Path(page_run)
     page_set = _page_set()
     pages = page_set.page_types()["pages"]
     by_kind = {v["page_kind"]: k for k, v in pages.items() if v.get("page_kind")}  # opt_in -> landing, sales -> sales
