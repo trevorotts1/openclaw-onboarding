@@ -153,9 +153,13 @@ def validate_prompt(prompt, model_id, strict=False):
 # (name, prompt chars, model, expected_valid, expected_status, expected_hard_cap_flag)
 # Bridge off: limits come from models.json (gpt-2.6 32,000 DOCS as of 2026-11-08; legacy gpt-image-2 20,000 live schema (N43 25,000 superseded);
 # wan/ideogram/imagen 5,000 verified; seedream not published -> UNKNOWN).
-# Vendor 2.6 OpenAPI maxLength, checked 2026-11-08 (supersedes the 2.5 20,000 figure).
-# The gpt-2.6 fixtures derive from it, so a future cap correction is one line.
-CAP_26 = 32000
+# Vendor 2.6 OpenAPI maxLength, checked 2026-11-08 (supersedes the 2.5 20,000 figure). Read from models.json,
+# never restated here: rule 12 forbids a gate keeping a character band of its own.
+def _registry_cap(model_id):
+    ent = by_id_get(model_id) or {}
+    return (ent.get("live_schema_cap_chars") or ent.get("vendor_hard_cap_chars")
+            or ent.get("owner_observed_cap_chars"))
+CAP_26 = _registry_cap("gpt-image-2-6/sunburst-text-to-image")
 _26_95 = int(CAP_26 * 0.95)
 _26_96 = int(CAP_26 * 0.96)
 _26_94 = int(CAP_26 * 0.94)

@@ -71,9 +71,9 @@ _AVOID_LIST = (
 
 
 # Rule 12: the gate measures every prompt against the model maxLength (Skill 74 prompt-budget). The cases
-# below size their prompts as a percentage of that max (20,000 for GPT Image 2.6 and Nano Banana 2, 5,000
-# for Ideogram V3). The test runs the real adapter against its registry snapshot (hermetic HOME, no key).
-MAX = {"nano-banana-2": 20000, "ideogram-v3-design": 5000, "gpt-image-2-6/sunburst-text-to-image": 20000}
+# below size their prompts as a percentage of that max (32,000 for GPT Image 2.6, 20,000 for Nano Banana 2,
+# 5,000 for Ideogram V3). The test runs the real adapter against its registry snapshot (hermetic HOME, no key).
+MAX = {"nano-banana-2": 20000, "ideogram-v3-design": 5000, "gpt-image-2-6/sunburst-text-to-image": 32000}
 _FILLER = ("Distinct visual decision number {i}: the focal element keeps clear hierarchy, quiet contrast "
            "behind any text zone, and a palette applied exactly as briefed. ")
 
@@ -244,8 +244,8 @@ def main() -> int:
             base = "A useful visual decision sentence for the scene. "
             return base + "x" * (n - len(base) - len(suffix)) + suffix
 
-        for size, expect_exit, label in ((15800, 3, "79 percent (15800) rejected"), (19000, 0, "95 percent (19000) passes"),
-                                         (20000, 0, "100 percent (20000) passes"), (20200, 3, "101 percent (20200) rejected")):
+        for size, expect_exit, label in ((25280, 3, "79 percent (25280) rejected"), (30400, 0, "95 percent (30400) passes"),
+                                         (32000, 0, "100 percent (32000) passes"), (32320, 3, "101 percent (32320) rejected")):
             pf = _write(tmp, f"band_{size}.txt", _sized(size))
             rr = run_gate(
                 "--prompt-file", str(pf), "--model", gpt,
@@ -258,12 +258,12 @@ def main() -> int:
                   f"got {rr.returncode}, stderr={rr.stderr[:200]!r}")
             if expect_exit == 3:
                 check(f"band {size}: failure names AF-PROMPT-LENGTH", "AF-PROMPT-LENGTH" in rr.stderr, rr.stderr)
-        r79 = run_gate("--prompt-file", str(tmp / "band_15800.txt"), "--model", gpt, "--ratio", "4:5",
+        r79 = run_gate("--prompt-file", str(tmp / "band_25280.txt"), "--model", gpt, "--ratio", "4:5",
                        "--pixels", "1080x1350", "--brand-colors", "#0B3D2E", "--avoid-list-file", str(avoid_file))
-        check("79 percent rejection names the exact chars to add (3200)", "ADD at least 3200" in r79.stderr, r79.stderr)
-        r101 = run_gate("--prompt-file", str(tmp / "band_20200.txt"), "--model", gpt, "--ratio", "4:5",
+        check("79 percent rejection names the exact chars to add (5120)", "ADD at least 5120" in r79.stderr, r79.stderr)
+        r101 = run_gate("--prompt-file", str(tmp / "band_32320.txt"), "--model", gpt, "--ratio", "4:5",
                         "--pixels", "1080x1350", "--brand-colors", "#0B3D2E", "--avoid-list-file", str(avoid_file))
-        check("101 percent rejection names the exact chars to cut (200)", "CUT exactly 200" in r101.stderr, r101.stderr)
+        check("101 percent rejection names the exact chars to cut (320)", "CUT exactly 320" in r101.stderr, r101.stderr)
         r_old = run_gate("--prompt-file", str(_write(tmp, "old9000.txt", _sized(9000))), "--model", gpt,
                          "--ratio", "4:5", "--pixels", "1080x1350", "--brand-colors", "#0B3D2E",
                          "--avoid-list-file", str(avoid_file))
@@ -274,9 +274,9 @@ def main() -> int:
         # schema maxLength and no policy-owner character limit, so routing must ADMIT it (no
         # AF-SM-MODEL-ROUTING) and the length gate must REFUSE it — and no F32 spend receipt may be
         # written for a prompt that is never submitted.
-        for model, size, want_exit in (("gpt-image-2-6/sunburst-text-to-image", 19500, 0),
+        for model, size, want_exit in (("gpt-image-2-6/sunburst-text-to-image", 30720, 0),
                                        ("agnes-image-2.1-flash", 9000, 3)):
-            pf = _write(tmp, f"cap_{model.replace('.', '_')}.txt", _sized(size))
+            pf = _write(tmp, "cap_%s.txt" % model.replace(".", "_").replace("/", "_"), _sized(size))
             rr = run_gate(
                 "--prompt-file", str(pf), "--model", model,
                 "--ratio", "4:5", "--pixels", "1080x1350",
@@ -313,7 +313,8 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as td2:
         t2 = Path(td2)
         av = _write(t2, "av.txt", _AVOID_LIST)
-        pp = _write(t2, "pp.txt", _sized(19000))
+        pp = _write(t2, "pp.txt", _sized(30720))
+        ppn = _write(t2, "ppn.txt", _sized(19000))
         r11 = run_gate(  # NO --model: the default must be Sunburst text-to-image
             "--prompt-file", str(pp), "--ratio", "2:3", "--pixels", "1000x1500",
             "--brand-colors", "#0B3D2E,#F5EFE0", "--avoid-list-file", str(av),
@@ -323,7 +324,7 @@ def main() -> int:
         check("default model is gpt-image-2-6/sunburst-text-to-image",
               "model=gpt-image-2-6/sunburst-text-to-image" in r11.stdout, r11.stdout)
         r11b = run_gate(
-            "--prompt-file", str(pp), "--model", "nano-banana-2", "--ratio", "2:3",
+            "--prompt-file", str(ppn), "--model", "nano-banana-2", "--ratio", "2:3",
             "--pixels", "1000x1500", "--brand-colors", "#0B3D2E,#F5EFE0",
             "--avoid-list-file", str(av),
         )
@@ -352,12 +353,13 @@ def main() -> int:
         t3 = Path(td3)
         av3 = _write(t3, "av.txt", _AVOID_LIST)
         pp3 = _write(t3, "pp.txt", _sized(19000))
+        pp3b = _write(t3, "pp26.txt", _sized(30720))
         rl = run_gate("--prompt-file", str(pp3), "--model", "gpt-image-2-text-to-image",
                       "--ratio", "2:3", "--pixels", "1000x1500", "--brand-colors", "#0B3D2E",
                       "--avoid-list-file", str(av3))
         check("legacy gpt-image-2 on 2:3 is refused (exit 6)", rl.returncode == 6, f"got {rl.returncode}")
         check("refusal cites N43", "N43" in rl.stderr, rl.stderr)
-        rs = run_gate("--prompt-file", str(pp3), "--model", "gpt-image-2-6/sunburst-text-to-image",
+        rs = run_gate("--prompt-file", str(pp3b), "--model", "gpt-image-2-6/sunburst-text-to-image",
                       "--ratio", "2:3", "--pixels", "1000x1500", "--brand-colors", "#0B3D2E",
                       "--avoid-list-file", str(av3))
         check("control: Sunburst on the same ratio passes (exit 0)", rs.returncode == 0, f"got {rs.returncode}")

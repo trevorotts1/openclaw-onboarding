@@ -516,7 +516,7 @@ def choose_answer(family, request, explicit_model_id, dynamic=False):
                        "substitution, ruling 2026-09-09)" % (ratio, sub)],
             )
         return _ok(routes[key]["canonical_model_id"], "GPT Image default %s (%s)" % (
-            task_label, ("auto-latest via %s" % dflt["source"]) if dflt else "2.5 sunburst pinned"))
+            task_label, ("auto-latest via %s" % dflt["source"]) if dflt else "2.6 sunburst pinned"))
 
     # --- gpt-image-2 (legacy, retained by operator ruling 2026-09-09) -------
     if family == "gpt-image-2":
@@ -622,8 +622,8 @@ def capability_conflict(model_id, request, res, ratio_override=None):
 
     # Per-ratio resolution exclusion, registry-driven and per-generation: GPT
     # Image 2 (legacy) carries its own old 5-item list (5:4, 4:5, 3:1, 1:3,
-    # 9:21); GPT Image 2.6 Sunburst carries its own new 4-item 1K-only list
-    # (27:16, 16:27, 9:8, 8:9). Never merged -- each entry's own list governs.
+    # 9:21); GPT Image 2.6 Sunburst has NO per-resolution exclusions (empty
+    # list) -- its 16-member enum is flat across 1K/2K/4K. Never merged.
     excluded = entry.get("ratio_resolution_exclusions")
     if ratio and excluded and req_res and ratio in [str(x) for x in excluded]:
         wanted_res = {"4k": "4K", "2k": "2K", "1k": "1K"}.get(req_res, req_res)
@@ -742,19 +742,21 @@ SELFTEST_CASES = [
     # Explicit canonical legacy model id mention always resolves to legacy,
     # regardless of the default having moved to 2.5.
     ("dispatch with gpt-image-2-text-to-image explicitly", "gpt-image-2-text-to-image", True, None),
-    # 3:1 / 1:3 / 9:21 are NOT served by 2.5; they route to the retained
-    # legacy GPT Image 2 route (Ruling 6, supersedes Ruling 5's hard-fail).
+    # 3:1 / 1:3 / 9:21 ARE served by 2.6 natively (vendor 2.6 enum, checked
+    # 2026-11-08). The router still sends them to the retained legacy GPT Image 2
+    # route: pre-existing wiring, no longer required, awaiting the operator's go-ahead.
     ("banner in 3:1 ratio", "gpt-image-2-text-to-image", True, None),
     ("edit this in 1:3 ratio", "gpt-image-2-image-to-image", True, None),
     ("poster in 9:21 ratio", "gpt-image-2-text-to-image", True, None),
-    # 5:4 / 4:5 / 2:1 / 1:2 are served ON 2.5 via an operator-approved
-    # substitution (Ruling 5); the request stays on the 2.5 sunburst route.
+    # 5:4 / 4:5 / 2:1 / 1:2 are NATIVE on 2.6 as of 2026-11-08; the router still
+    # applies the 2026-09-09 substitution table (pre-existing wiring, awaiting go-ahead).
     ("product shot in 4:5 aspect ratio", "gpt-image-2-6/sunburst-text-to-image", True, None),
     ("banner in 2:1 aspect ratio", "gpt-image-2-6/sunburst-text-to-image", True, None),
-    # A 1K-only 2.5 ratio (9:8, 16:27, 27:16, 8:9) requested at 2K/4K hard-fails.
+    # A 27:16 / 16:27 / 9:8 / 8:9 request hard-fails: none of them is a 2.6 enum
+    # member at ANY resolution (registry ratio_resolution_exclusions is empty).
     ("photo at 9:8 aspect ratio in 4K", None, False, None),
-    # Same 1K-only ratio at 1K (implicit default resolution) is fine.
-    ("photo at 9:8 aspect ratio", "gpt-image-2-6/sunburst-text-to-image", True, None),
+    # ... and no resolution helps. The old "1K-only" allowance is retracted.
+    ("photo at 9:8 aspect ratio", None, False, None),
 ]
 
 

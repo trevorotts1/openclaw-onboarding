@@ -109,10 +109,12 @@ Routing policy (spec 7.5), in order:
    preferred default (operator ruling 2026-09-09,
    supersedes GPT Image 2; high-fidelity general generation/editing,
    product/brand, detailed long-form creative) when compatible — mind the
-   ratio/resolution exclusions (2K/4K exclude 27:16, 16:27, 9:8, 8:9 — 1K
-   only). GPT Image 2 (legacy) is RETAINED, not retired: the selector routes
-   aspect ratios 3:1, 1:3, 9:21 to it automatically (it does not serve those
-   on 2.5), and applies its OWN separate, unchanged exclusion rules (2K/4K
+   ratio/resolution exclusions (NONE on 2.6: one flat 16-member enum applies at
+   1K/2K/4K, and 27:16/16:27/9:8/8:9 are not members at any resolution).
+   GPT Image 2 (legacy) is RETAINED and still wired, not retired: the selector
+   still routes aspect ratios 3:1, 1:3, 9:21 to it, but 2.6 serves those
+   natively now, so no ratio requires that route. The legacy route keeps its
+   OWN separate, unchanged exclusion rules (2K/4K
    exclude 5:4, 4:5, 3:1, 1:3, 9:21; "auto" -> 1K only; 1:1 cannot convert to
    4K) whenever that legacy route is used.
 3. Else by capability: Nano Banana Pro / 2 (general, multi-ref), Seedream 5.0 Pro
@@ -164,8 +166,8 @@ STEP 4: VALIDATE (BEFORE DISPATCH — NEVER AFTER)
   model, or a --strict warning); exit 2 above the max.
 - validate_payload: reference counts, MB/format, ratio/resolution enums,
   per-family rules (GPT Image 2 per-resolution exclusions and auto/1:1 rules
-  for the retained legacy route; GPT Image 2.6's own separate, NOT merged,
-  1K-only exclusion list for the default route; Wan n 1–4 / gallery 1–12
+  for the retained legacy route; GPT Image 2.6's flat 16-member enum with NO
+  per-resolution exclusions for the default route; Wan n 1–4 / gallery 1–12
   with enable_sequential, bbox <=2 per image, inputs min 240px and max 10MB;
   Qwen max 3 refs; legacy NB 10MB not 30MB; Z-Image T2I-only; Ideogram
   strength 0.01–1; Seedream 4.5 has no output_format).
@@ -221,7 +223,8 @@ STEP 6: QC — LOOK AT THE IMAGE
 state == "success" is proof the provider returned bytes, nothing more. Download
 resultUrls and INSPECT: dimensions match requested enum (on the retained
 legacy GPT Image 2 route: auto->1K only, 1:1 cannot be 4K; on the GPT Image
-2.5 default route: 27:16/16:27/9:8/8:9 are 1K only — either way, excluded
+2.6 default route there are NO per-resolution exclusions and 27:16/16:27/9:8/8:9
+are never valid — either way, excluded
 ratios never silently returned); reference
 fidelity (faces, product geometry, logo exactness); edit preservation; colors/
 lighting/typography; anatomy and subject count; ratio per family enum.

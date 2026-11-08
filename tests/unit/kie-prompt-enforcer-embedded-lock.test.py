@@ -54,15 +54,15 @@ class TestEmbeddedCopies(unittest.TestCase):
         for rel in DECL["enforcer_copies"]:
             k = load(rel)
             fb = k.last_known(M)
-            self.assertEqual(fb, 20000)
+            self.assertEqual(fb, 32000)
             low = k.check(M, "x" * (fb * 79 // 100), fallback_max=fb)
             self.assertFalse(low["ok"])
-            self.assertIn("ADD at least 3200", low["message"])
+            self.assertIn("ADD at least %d" % (fb * 95 // 100 - fb * 79 // 100), low["message"])
             for pct in (95, 100):
                 self.assertTrue(k.check(M, "x" * (fb * pct // 100), fallback_max=fb)["ok"], (rel, pct))
             high = k.check(M, "x" * (fb * 101 // 100), fallback_max=fb)
             self.assertFalse(high["ok"])
-            self.assertIn("CUT exactly 200", high["message"])
+            self.assertIn("CUT exactly %d" % (fb * 101 // 100 - fb), high["message"])
             self.assertTrue(k.check(M, "short spoken line", "verbatim", fallback_max=fb)["ok"])
 
     def test_an_unlisted_model_fails_closed_without_the_adapter(self):

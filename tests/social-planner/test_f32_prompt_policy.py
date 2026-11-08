@@ -101,17 +101,17 @@ class TestCountRuleBoundaries(unittest.TestCase):
         self.assertEqual(v["count"], 16000)
         self.assertEqual((v["band"]["floor"], v["band"]["target_min"], v["band"]["max"]), (16000, 19000, 20000))
 
-    def test_20000_passes_length(self):
-        v = spc.validate_final(sized(20000))
+    def test_32000_passes_length(self):
+        v = spc.validate_final(sized(32000))
         self.assertTrue(v["ok"], v["problems"])
-        self.assertEqual(v["count"], 20000)
+        self.assertEqual(v["count"], 32000)
 
-    def test_20001_fails_validate_final_and_names_chars_to_cut(self):
-        v = spc.validate_final(sized(20001))
+    def test_32001_fails_validate_final_and_names_chars_to_cut(self):
+        v = spc.validate_final(sized(32001))
         self.assertFalse(v["ok"])
         self.assertTrue(any("AF-PROMPT-LENGTH" in p and "CUT exactly 1 chars" in p for p in v["problems"]),
                         v["problems"])
-        self.assertEqual(v["count"], 20001)
+        self.assertEqual(v["count"], 32001)
 
     def test_old_9000_house_floor_is_retired(self):
         self.assertFalse(spc.validate_final(sized(9000))["ok"])
@@ -239,7 +239,7 @@ class TestPolicyAndReceipt(unittest.TestCase):
         self.assertEqual(pol["length_rule"]["floor_percent_of_max"], 80)
         self.assertIn("SOCIAL PLANNER ONLY", pol["scope"])
         kie = pol["providers"]["kie-gpt-image-2-6"]
-        self.assertEqual(kie["vendor_cap_chars"], 20000)  # published schema cap
+        self.assertEqual(kie["vendor_cap_chars"], 32000)  # vendor 2.6 OpenAPI maxLength
         agnes = pol["providers"]["agnes-image-2.1-flash"]
         self.assertIsNone(agnes["vendor_cap_chars"])
         self.assertEqual(agnes["cap_status"], "NOT_PUBLISHED")
@@ -253,8 +253,8 @@ class TestPolicyAndReceipt(unittest.TestCase):
                       "vendor_cap_source"):
             self.assertIn(field, r, field)
         self.assertEqual(r["count"], count(r["final_prompt"]))
-        self.assertEqual(r["vendor_cap_chars"], 20000)
-        self.assertEqual(r["band"]["max"], 20000)
+        self.assertEqual(r["vendor_cap_chars"], 32000)
+        self.assertEqual(r["band"]["max"], 32000)
         self.assertGreater(len(r["hash"]), 0)
 
     def test_hash_is_stable_and_payload_exact(self):
@@ -313,10 +313,10 @@ class TestPregenGateF32(unittest.TestCase):
         proc = self._run_gate(sized(16000), "gpt-image-2-6/sunburst-text-to-image")
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
-    def test_gate_20000_passes_20001_fails(self):
-        proc = self._run_gate(sized(20000), "gpt-image-2-6/sunburst-text-to-image")
+    def test_gate_32000_passes_32001_fails(self):
+        proc = self._run_gate(sized(32000), "gpt-image-2-6/sunburst-text-to-image")
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        proc = self._run_gate(sized(20001), "gpt-image-2-6/sunburst-text-to-image")
+        proc = self._run_gate(sized(32001), "gpt-image-2-6/sunburst-text-to-image")
         self.assertEqual(proc.returncode, 3, proc.stderr)
         self.assertIn("CUT exactly 1 chars", proc.stderr)
 

@@ -33,8 +33,8 @@ def _stub_requests(monkeypatch):
 
 
 SCRIPTS = Path(os.environ.get("SKILL25_ROOT", Path(__file__).resolve().parents[1])) / "scripts"
-MODEL = "gpt-image-2-6/sunburst-text-to-image"  # any KIE model with a maxLength; 20,000 in the registry snapshot
-MAX = 20000
+MODEL = "gpt-image-2-6/sunburst-text-to-image"  # any KIE model with a maxLength; 32,000 in the registry snapshot
+MAX = 32000
 
 
 @pytest.fixture
@@ -63,14 +63,14 @@ def go(ai, n, **kw):
 
 def test_79_percent_is_rejected_before_submit_with_chars_to_add(provider):
     ai, reached = provider
-    with pytest.raises(ValueError, match="ADD at least 3200"):
+    with pytest.raises(ValueError, match="ADD at least %d" % (MAX * 95 // 100 - MAX * 79 // 100)):
         go(ai, MAX * 79 // 100)
     assert reached == []
 
 
 def test_101_percent_is_rejected_before_submit_with_chars_to_cut(provider):
     ai, reached = provider
-    with pytest.raises(ValueError, match="CUT exactly 200"):
+    with pytest.raises(ValueError, match="CUT exactly %d" % (MAX * 101 // 100 - MAX)):
         go(ai, MAX * 101 // 100)
     assert reached == []
 

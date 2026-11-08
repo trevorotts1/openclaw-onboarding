@@ -34,9 +34,9 @@ wait (callback or poll), and visually QC the result.
    image generation/editing, product/brand images, and detailed long-form
    creative instructions (owner's preference, operator ruling 2026-09-09,
    supersedes GPT Image 2), when compatible (respecting its ratio/resolution
-   exclusions). GPT Image 2 (legacy) is RETAINED, not retired, and is the
-   required route for aspect ratios 3:1, 1:3, 9:21 only — the selector routes
-   those three there automatically.
+   exclusions). GPT Image 2 (legacy) is RETAINED and still wired, not retired,
+   but 2.6 now serves 3:1, 1:3 and 9:21 natively, so no ratio requires the
+   legacy route.
 3. Else by capability match:
    - Nano Banana Pro / Nano Banana 2 — strong general/multi-reference
      alternatives.
@@ -64,9 +64,10 @@ wait (callback or poll), and visually QC the result.
    check against the registry cap (rules A–E). Verified caps hard-fail
    (exit 2); owner-observed and NOT_PUBLISHED only warn.
 4. **Validate the payload** (`scripts/validate_payload.py`) — reference counts,
-   MB/format, ratio/resolution enums, per-family rules (GPT Image 2 / GPT
-   Image 2.5 per-resolution exclusions — two separate rule sets, never
-   merged, Wan n/bbox, Ideogram strength, seedream output_format gaps).
+   MB/format, ratio/resolution enums, per-family rules (GPT Image 2 legacy
+   per-resolution exclusions vs GPT Image 2.6's flat 16-member enum with NO
+   exclusions — two separate rule sets, never merged, Wan n/bbox, Ideogram
+   strength, seedream output_format gaps).
    Validation happens BEFORE dispatching so bad payloads never burn credits.
 5. **Dispatch through Skill 74** — `kie_live_adapter.py validate` (live schema,
    registry fallback), then `preflight` (balance must cover price x 1.30), then
@@ -91,9 +92,10 @@ Key cap facts (full matrix: `references/models.md`):
   2026-08-27 — authoritative for GPT Image 2 only; docs page's "maximum
   20,000 characters" is stale; warn-only, never hard-fail; house band
   5,000–19,000 with ~9,000 target is legal).
-- GPT Image 2.6 (default today, operator ruling 2026-09-09): 20,000 chars per KIE
-  docs dated 2026-09-09 (`DOCS`, NOT owner-confirmed — the GPT Image 2 25,000
-  confirmation does not carry forward and has not been retested on 2.5).
+- GPT Image 2.6 (default today, operator ruling 2026-09-09): 32,000 chars
+  (vendor 2.6 OpenAPI maxLength checked 2026-11-08; `DOCS`, NOT owner-confirmed).
+  The 20,000 figure carried in from the 2.5 docs is STALE for 2.6 — it is not
+  the GPT Image 2 25,000 confirmation either, which was never retested on 2.6.
 - Qwen 3.0/Pro: 4.5K **tokens** advertised — token-aware validation only; never
   converted to a fake char cap (rule D). Docs schemas: maxLength 5000 chars.
 - Wan 2.7 Image: 5,000 chars VERIFIED — do NOT force 5,000 as a minimum;
@@ -155,13 +157,15 @@ chars to CUT), 80-95% warns. Unknown limit: UNKNOWN, no floor. Verbatim content
   combination.
 - **GPT Image 2 / GPT Image 2.6 ratio rules are hard, and are SEPARATE rule
   sets (operator ruling 2026-09-09, never merged):**
-  - GPT Image 2 (legacy, 3:1/1:3/9:21 route only): 2K/4K exclude 5:4, 4:5,
+  - GPT Image 2 (legacy, retained but no longer required): 2K/4K exclude 5:4, 4:5,
     3:1, 1:3, 9:21; `auto` yields 1K only; 1:1 cannot convert to 4K.
-  - GPT Image 2.6 (default): 2K/4K exclude 27:16, 16:27, 9:8, 8:9 (1K only).
-    The legacy `auto`-1K-only and `1:1`-never-4K rules are RETIRED here —
-    not restated in the 2.5 docs. 5:4, 4:5, 2:1, 1:2 are served via an
-    operator-approved substitution (5:4→4:3, 4:5→3:4, 2:1→16:9, 1:2→9:16);
-    3:1, 1:3, 9:21 are not served at all and route to the legacy model instead.
+  - GPT Image 2.6 (default): the vendor 2.6 `aspect_ratio` enum is ONE flat list of
+    exactly 16 values — auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1,
+    1:2, 21:9, 9:21, 3:1, 1:3. There are NO per-resolution exclusions, nothing is
+    substituted (5:4, 4:5, 2:1, 1:2 are native), and 3:1/1:3/9:21 are native too,
+    so no ratio routes to the legacy model. 27:16, 16:27, 9:8 and 8:9 are NOT enum
+    members at any resolution (the old "1K only" list was a 2.5 artifact, retracted).
+    Checked 2026-11-08 against the vendor 2.6 OpenAPI doc and a live probe.
   `validate_payload.py` enforces both rule sets, keyed by exact model id.
 - **Wan bbox/n rules:** each input image supports up to 2 boxes; `n` 1–4
   (1–12 with `enable_sequential`); input images min 240 px per side, max 10 MB.

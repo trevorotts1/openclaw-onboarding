@@ -25,7 +25,7 @@ Contract:
   - token budget so limits cannot silently truncate: over-budget compiles are
     condensed to fit, never truncated mid-content, never silently sent.
   - the band is rule 12 (percentages of the model maxLength), not a fixed house number
-    (Kie GPT Image 2.6 maxLength 20000; Agnes publishes no cap, NOT_PUBLISHED).
+    (Kie GPT Image 2.6 maxLength 32000; Agnes publishes no cap, NOT_PUBLISHED).
 
 Scoped override: social planner ONLY. Unrelated skills keep their own bands.
 Policy data lives in social_prompt_policy.json (same directory).
@@ -837,8 +837,8 @@ if __name__ == "__main__":  # pragma: no cover — small CLI for manual runs
     if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
         ok = 0
         r = compile_prompt({"audience": "test"}, "kie", _DEFAULT_MODEL)
-        ok += 0 if r["ok"] and 19000 <= r["count"] <= 20000 else 1
-        for n, want in ((15800, False), (19000, True), (20000, True), (20200, False)):
+        ok += 0 if r["ok"] and 30400 <= r["count"] <= 32000 else 1
+        for n, want in ((25280, False), (30400, True), (32000, True), (32001, False)):
             ok += 0 if validate_final("x" * n)["ok"] == want else 1
         print("self-test:", "PASS" if ok == 0 else f"FAIL({ok})")
         sys.exit(0 if ok == 0 else 2)

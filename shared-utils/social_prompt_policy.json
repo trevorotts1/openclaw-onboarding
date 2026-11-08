@@ -33,8 +33,8 @@
     "kie-gpt-image-2-6": {
       "provider_id": "kie",
       "model_id": "gpt-image-2-6/sunburst-text-to-image",
-      "vendor_cap_chars": 20000,
-      "vendor_cap_source": "published text-to-image schema maxLength 20000 (verified 2026-09-08); recorded here only as the policy-owner fallback when the Skill 74 adapter is unreachable",
+      "vendor_cap_chars": 32000,
+      "vendor_cap_source": "vendor 2.6 OpenAPI maxLength 32000 (checked 2026-11-08; supersedes the 20000 carried in from the 2.5 docs); recorded here only as the policy-owner fallback when the Skill 74 adapter is unreachable",
       "uncertainty_note": "Check the selected endpoint independently for image-to-image and future GPT models; a verified provider cap that cannot hold a rule 12 prompt requires a visible compatible-model choice, never truncation.",
       "adapter_verified": true
     },

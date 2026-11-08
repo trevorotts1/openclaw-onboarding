@@ -332,17 +332,11 @@ def validate(payload, model_id_override=None):
         if ratio == "1:1" and res == "4K":
             errors.append("GPT Image 2 (legacy): 1:1 aspect ratio cannot be converted to 4K images")
 
-    # GPT Image 2.6 Sunburst (operator default, ruling 2026-09-09) per-resolution
-    # exclusions -- a NEW, separate rule set. The legacy 'auto -> 1K only' and
-    # '1:1 cannot convert to 4K' rules are RETIRED here; not restated in the
-    # 2.5 docs (Ruling 3).
-    if model.get("canonical_model_id") in (
-            "gpt-image-2-6/sunburst-text-to-image", "gpt-image-2-6/sunburst-image-to-image"):
-        excl = model.get("ratio_resolution_exclusions") or []
-        if res in ("2K", "4K") and ratio in excl:
-            errors.append(
-                "GPT Image 2.6: aspect ratio %s is 1K-only (2K/4K excluded: 27:16, 16:27, 9:8, "
-                "8:9); %s requested" % (ratio, res))
+    # GPT Image 2.6 Sunburst (operator default, ruling 2026-09-09) has NO per-resolution
+    # exclusions: the vendor 2.6 aspect_ratio enum is one flat list (checked 2026-11-08), and
+    # the legacy 'auto -> 1K only' and '1:1 cannot convert to 4K' rules are RETIRED here.
+    # 27:16, 16:27, 9:8 and 8:9 are not enum members at any resolution; the enum check above
+    # rejects them on every resolution.
 
     # ---- Wan ---------------------------------------------------------------
     if model.get("canonical_model_id", "").startswith("wan/"):
@@ -489,16 +483,18 @@ def selftest():
          _base("gpt-image-2-text-to-image", {"aspect_ratio": "auto", "resolution": "2K"}), False,
          expect_err_contains="auto")
 
-    # GPT Image 2.6 Sunburst resolution/ratio rules (operator ruling 2026-09-09,
-    # NEW rule set -- separate from and NOT merged with the legacy rules above)
-    case("gpt-image-2-6 4K with 9:8 FAIL",
+    # GPT Image 2.6 Sunburst aspect-ratio MEMBERSHIP (vendor 2.6 OpenAPI enum, checked 2026-11-08).
+    # 27:16, 16:27, 9:8 and 8:9 are not enum members at ANY resolution -- the 2.5 1K-only list was
+    # never a 2.6 membership claim. 2.6 has no per-resolution exclusions.
+    case("gpt-image-2-6 4K with 9:8 FAIL (not an enum member)",
          _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "9:8", "resolution": "4K"}), False,
-         expect_err_contains="1K-only")
-    case("gpt-image-2-6 2K with 16:27 FAIL",
+         expect_err_contains="not in exposed enum")
+    case("gpt-image-2-6 2K with 16:27 FAIL (not an enum member)",
          _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "16:27", "resolution": "2K"}), False,
-         expect_err_contains="1K-only")
-    case("gpt-image-2-6 1K with 9:8 OK",
-         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "9:8", "resolution": "1K"}), True)
+         expect_err_contains="not in exposed enum")
+    case("gpt-image-2-6 1K with 9:8 FAIL (not a member at any resolution)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "9:8", "resolution": "1K"}), False,
+         expect_err_contains="not in exposed enum")
     case("gpt-image-2-6 4K with 16:9 OK",
          _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "16:9", "resolution": "4K"}), True)
     # Legacy-only rules are RETIRED on 2.5: auto at 2K, and 1:1 at 4K, are fine.

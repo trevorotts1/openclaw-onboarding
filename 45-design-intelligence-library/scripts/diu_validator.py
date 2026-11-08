@@ -823,8 +823,8 @@ def cmd_self_test(_args) -> int:
             failures.append(f"{bid}: nano-banana-2 in endpoints on text-bearing band (GK-20).")
     print("SELF-TEST OK: no text-bearing band routes to nano-banana-2 (GK-20 reconciled).")
 
-    # (c) Rule 12 on GPT Image 2.6 (max 20,000): 79 percent rejected (add), 101 percent rejected (cut), 95 percent passes.
-    for n, want in ((15800, 3), (20200, 3), (19000, 0), (20000, 0)):
+    # (c) Rule 12 on GPT Image 2.6 (max 32,000): 79 percent rejected (add), 101 percent rejected (cut), 95 percent passes.
+    for n, want in ((25280, 3), (32320, 3), (30400, 0), (32000, 0)):
         pb = cmd_prompt_band(_FakeArgs(band="text_bearing_long", prompt="x" * n))
         # length passes -> the filler has no negative block, so the exit is 6 (quality), never 3
         got = 3 if pb == 3 else 0
@@ -833,10 +833,10 @@ def cmd_self_test(_args) -> int:
     print("SELF-TEST OK: prompt-band enforces rule 12 (79 percent and 101 percent rejected, 95 and 100 percent length-clear).")
 
     # (d) prompt-caps: over the model max exits 3; at the max exits 0.
-    if cmd_prompt_caps(_FakeArgs(prompt="x" * 20001, model=DEFAULT_MODEL)) != 3:
-        failures.append("prompt-caps: 20,001 chars on GPT Image 2.6 should exit 3")
-    if cmd_prompt_caps(_FakeArgs(prompt="x" * 20000, model=DEFAULT_MODEL)) != 0:
-        failures.append("prompt-caps: 20,000 chars on GPT Image 2.6 should exit 0")
+    if cmd_prompt_caps(_FakeArgs(prompt="x" * 32001, model=DEFAULT_MODEL)) != 3:
+        failures.append("prompt-caps: 32,001 chars on GPT Image 2.6 should exit 3")
+    if cmd_prompt_caps(_FakeArgs(prompt="x" * 32000, model=DEFAULT_MODEL)) != 0:
+        failures.append("prompt-caps: 32,000 chars on GPT Image 2.6 should exit 0")
     print("SELF-TEST OK: prompt-caps enforces the model max (exit 3 above, exit 0 at the max).")
 
     # (f) route-check: a webinar deck must be rejected.

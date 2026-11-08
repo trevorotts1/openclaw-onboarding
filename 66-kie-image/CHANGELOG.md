@@ -1,17 +1,5 @@
 # Changelog - kie-image
 
-## [2.2.4] - 2026-11-08 - feat: GPT Image 2.6 Sunburst slash-form model ids + 2.6 capability truth pass
-
-- Model ids are the SLASH form: `gpt-image-2-6/sunburst-text-to-image` and `gpt-image-2-6/sunburst-image-to-image`. Live probe 2026-11-08: slash form -> HTTP 200, task completed `state=success`; hyphen form `gpt-image-2-6-sunburst-text-to-image` -> HTTP 422 "The model name you specified is not supported". The hyphen form is never valid.
-- `models.json`, both 2.6 entries: `last_verified_at` -> 2026-11-08; prompt cap -> 32,000 characters (vendor 2.6 OpenAPI `maxLength`, `vendor_hard_cap_chars` 32000, `cap_status` DOCS, `owner_observed_cap_chars` null -- no owner-confirmed figure exists for 2.6). The 20,000 figure was the 2.5 docs value and is superseded.
-- CAPABILITY CORRECTION: the Ruling 6 statement that 3:1, 1:3, and 9:21 are not served by 2.6 is wrong. 2.6 serves them natively -- vendor 2.6 aspect_ratio enum lists all three, and a 3:1 task was created (HTTP 200) on 2026-11-08. The same enum lists 5:4, 4:5, 2:1, and 1:2 literally, so the 5:4->4:3 / 4:5->3:4 / 2:1->16:9 / 1:2->9:16 substitution table is no longer required for capability reasons. Both legacy GPT Image 2 entries are RETAINED with their constraints unchanged; their status/notes now say the fallback is no longer mandatory.
-- DELIBERATELY NOT DONE: the router is NOT rewired. It still falls back to legacy `gpt-image-2` for 3:1, 1:3, 9:21. Removing that fallback changes routing and needs Trevor's explicit go-ahead.
-- Vendor params recorded in `verified_notes`, not wired into `control_fields`: quality (low, medium, high, xhigh, max, auto), background (transparent|opaque|auto), output_format (png|jpeg|webp|gif|svg); i2i `input_urls` maxItems 16 and `mask_url` OR `markup`, mutually exclusive. The 2.6 doc publishes no per-file MB limit and no format list, so 30MB and the format list stay carried forward from GPT Image 2.
-- Ratio enum: adds 5:4, 4:5, 2:1, 1:2, 3:1, 1:3, 9:21 to both 2.6 `aspect_ratios`. The 2.5-era extras 27:16, 16:27, 9:8, and 8:9 are kept (1K-only) but do not appear in the 2026-11-08 enum and are marked UNVERIFIED against 2.6.
-- `scripts/validate_payload.py`: the self-test case that asserted 3:1 on 2.6 fails the enum check encoded the same false Ruling 6 claim; it now expects OK for 3:1 and 9:21. Self-test 49 -> 50 passes. No validation LOGIC changed -- only the stale expectation.
-- `scripts/validate_prompt.py`: the gpt-2.6 self-test fixtures were scaled to the corrected 32,000 cap (`CAP_26`, with 95/96/94/80 percent values derived from it), because rule 12 bands from the model maxLength -- a 20,000-char fixture is now 62.5 percent of max and correctly fails the floor. No rule logic changed. Self-test 33/33.
-- Version roll to v2.2.4 (`skill-version.txt`). `SKILL.md` frontmatter still reads v2.2.3 -- not touched by this pass.
-
 ## [2.2.2] - 2026-10-09 - fix: key-variable sentence names KIE_API_KEY from the official docs
 
 - `SKILL.md` prerequisites: the sentence "KIE docs use the literal `YOUR_API_KEY` placeholder — nothing documents the env var" was wrong as of 2026-10-09. KIE's own overview page names the variable `KIE_API_KEY` (`export KIE_API_KEY=your_key`). The sentence now says so and cites docs.kie.ai/ai-agent/overview with the date.
