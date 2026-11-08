@@ -30,8 +30,28 @@ Stdlib only. No network, no credentials, no execution.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
+
+_HERE = Path(__file__).resolve().parent
+_ADMISSION = None
+
+
+def _admission():
+    """The one admission/completion service (shared-utils/signature_launch/admission.py).
+
+    Loaded by path so this module stays importable standalone, exactly as
+    progress.py loads this one.
+    """
+    global _ADMISSION
+    if _ADMISSION is None:
+        path = _HERE.parent / "admission.py"
+        spec = importlib.util.spec_from_file_location("signature_launch_model_admission", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _ADMISSION = module
+    return _ADMISSION
 
 # array in the launch plan -> (progress kind, scheduler lane)
 LANES = (
@@ -39,6 +59,10 @@ LANES = (
     ("email_sequences", "email_sequence", "email"),
     ("text_sets", "text_set", "text"),
     ("automations", "automation", "automation"),
+    # Optional commerce units are units of the SAME approved plan
+    # (launch-plan.schema.json); leaving them out made the denominator under-
+    # count work a later stage can wait on.
+    ("commerce_units", "commerce_unit", "commerce"),
 )
 ARRAYS = tuple(array for array, _kind, _lane in LANES)
 KIND_BY_ARRAY = {array: kind for array, kind, _lane in LANES}
@@ -249,18 +273,40 @@ def expand_plan(plan):
 
 def envelope(status, *, verified=None, detail=None, artifacts=None,
              missing_facts=None, blocker=None, retryable=None, payload=None,
-             owner=None):
-    """Build one result envelope. Unknown statuses fail closed as ``failed``."""
+             owner=None, evidence=None):
+    """Build one result envelope. Unknown statuses fail closed as ``failed``.
+
+    ``verified_success`` is not a declaration: it is only valid with an
+    admission evidence object the one admission service accepts (see
+    shared-utils/signature_launch/admission.py).  Without it the result is
+    explicitly failed - never silently promoted.
+    """
     canonical = canonical_status(status)
     note = detail
     if canonical is None:
         note = "unknown result status %r; treated as failed" % (status,)
         canonical = FAILED
-    if canonical == VERIFIED_SUCCESS and verified is False:
-        canonical = FAILED
-        note = note or "runner declared success without verification"
-    if verified is None:
-        verified = canonical == VERIFIED_SUCCESS
+    checked = None
+    if canonical == VERIFIED_SUCCESS:
+        if verified is False:
+            canonical = FAILED
+            note = note or "runner declared success without verification"
+        else:
+            checked = _admission().verify_evidence(evidence) \
+                if evidence is not None else None
+            if checked is None or not checked["ok"]:
+                reasons = "no admission evidence" if checked is None else \
+                    "; ".join(checked["reasons"][:3])
+                canonical = FAILED
+                note = note or ("success is not verified: " + reasons)
+            else:
+                verified = True
+                artifacts = [entry.get("path") or entry.get("resource_id")
+                             for entry in checked["artifacts"]]
+    # Only a verified success may report ``verified``.  Every other canonical
+    # status reports False, so a consumer that reads ``verified`` without also
+    # reading ``status`` is never told a failed/blocked/dropped unit verified.
+    verified = bool(verified) and canonical == VERIFIED_SUCCESS
     if retryable is None:
         retryable = canonical in (FAILED, AWAITING_FACTS)
     facts = [str(item) for item in (missing_facts or []) if str(item).strip()]
@@ -276,6 +322,15 @@ def envelope(status, *, verified=None, detail=None, artifacts=None,
         "payload": payload,
         "owner": str(owner) if owner else None,
     }
+    if checked is not None and canonical == VERIFIED_SUCCESS:
+        out["evidence"] = evidence
+        out["evidence_checked"] = {
+            "outcome": checked["outcome"],
+            "artifact_set_hash": checked["artifact_set_hash"],
+            "inputs_hash": checked["inputs_hash"],
+            "content_checked": checked["content_checked"],
+            "reviewed": checked["reviewed"],
+        }
     if canonical == AWAITING_FACTS and not facts and not out["detail"]:
         out["detail"] = "awaiting facts"
     if canonical == BLOCKED and not out["blocker"] and not out["detail"]:
@@ -283,16 +338,25 @@ def envelope(status, *, verified=None, detail=None, artifacts=None,
     return out
 
 
-def normalize_result(value):
-    """Turn any runner return value into one envelope.
+def _looks_like_evidence(value):
+    return isinstance(value, dict) and "artifacts" in value and "unit" in value \
+        and "plan_hash" in value
+
+
+def normalize_result(value, *, evidence=None):
+    """Turn any runner return value into one envelope, or an explicit failure.
 
     Accepted shapes:
-      * an envelope (``status`` in the vocabulary, optionally unverified);
+      * a declared status -> that envelope; ``verified_success`` is re-checked
+        through the admission service (a declared status is not evidence);
+      * an evidence object -> verified success only when it validates;
       * a legacy mapping with ``ok=False`` or a truthy ``error`` -> failed;
-      * any other normal return -> verified_success with the value as payload.
+      * any other normal return, including ``None``, a truthy object or a
+        completed subprocess -> FAILED.  A function returning normally is not
+        a finished unit.
 
-    The last rule is what the old scheduler did for every return; it is kept
-    only for plain values.  A declared failure is never upgraded to success.
+    The last rule used to promote every return to ``verified_success``; that is
+    the manufactured-completion path this closes.
     """
     if isinstance(value, dict) and value.get("status") is not None:
         return envelope(
@@ -305,23 +369,39 @@ def normalize_result(value):
             retryable=value.get("retryable"),
             payload=value.get("payload", value.get("result")),
             owner=value.get("owner"),
+            evidence=value.get("evidence", evidence),
         )
     if isinstance(value, dict):
         if value.get("ok") is False:
             return envelope(FAILED, detail=value.get("error") or "runner returned ok=False")
         if value.get("error"):
             return envelope(FAILED, detail=value.get("error"))
-    return envelope(VERIFIED_SUCCESS, payload=value)
+        if _looks_like_evidence(value):
+            return envelope(VERIFIED_SUCCESS, evidence=value,
+                            payload=value.get("payload"))
+    return envelope(FAILED, detail=(
+        "runner returned a value with no admission evidence; a return value, "
+        "None, a truthy object or a completed subprocess is not verified success"))
 
 
 def satisfies_dependency(value):
-    """True only for a verified success or an explicit client drop."""
+    """True only for a verified success or an explicit client drop.
+
+    A verified success must carry the admission evidence that verified it: a
+    hand-written ``{"status": "verified_success", "verified": true}`` unlocks
+    nothing.
+    """
     result = value if isinstance(value, dict) and "status" in value else normalize_result(value)
     status = canonical_status(result.get("status"))
     if status == DROPPED:
         return True
     if status == VERIFIED_SUCCESS:
-        return result.get("verified") is True
+        if result.get("verified") is not True:
+            return False
+        evidence = result.get("evidence")
+        if evidence is None:
+            return False
+        return _admission().verify_evidence(evidence)["ok"]
     return False
 
 
