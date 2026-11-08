@@ -105,6 +105,7 @@ LIB="$WORK/lib.sh"
   # 127 "command not found" that reads like a box-state failure. This suite tests
   # box-state preservation, not deadlines, so it must not drag python deadlines in
   # here; the real bound is covered by tests/unit/bounded-child-deadline.test.sh.
+  echo 'oc_bounded_seconds() { printf "%s\n" "$1"; }'
   echo 'oc_bounded_run() { local _s="$1" _k="$2"; shift 2; "$@"; }'
   echo 'install_one_skill() {'
   awk '/^    # Remove old version if exists\./{on=1} on{print} on && /echo "    Updated: \$SKILL_NAME"/{exit}' "$TARGET"
