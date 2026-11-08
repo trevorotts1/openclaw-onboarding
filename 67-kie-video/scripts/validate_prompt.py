@@ -188,7 +188,7 @@ def selftest():
         ("wan 3.0 20000 = max ok", "x" * 20000, "wan/3-0-video", True, "PASS", None, False),
         ("wan 3.0 20001 above max", "x" * 20001, "wan/3-0-video", False, "ABOVE_MAX", "CUT exactly 1 chars", True),
         ("wan 3.0 15999 = 79.99% below floor", "x" * 15999, "wan/3-0-video", False, "BELOW_FLOOR", "ADD at least 3001 chars", False),
-        ("wan 3.0 16000 = 80% below the 95% band floor", "x" * 16000, "wan/3-0-video", False, "BELOW_TARGET", "ADD 3000 chars", False),
+        ("wan 3.0 16000 = 80% warns and expands to the 95% target", "x" * 16000, "wan/3-0-video", True, "BELOW_TARGET", None, False),
         ("wan 3.0 9000 (old house target) now rejected", "x" * 9000, "wan/3-0-video", False, "BELOW_FLOOR", None, False),
         ("kling omni 3072 = max ok", "x" * 3072, "kling-3.0-omni/text-to-video", True, "PASS", None, False),
         ("kling omni 3073 above max", "x" * 3073, "kling-3.0-omni/text-to-video", False, "ABOVE_MAX", "CUT exactly 1 chars", True),
@@ -207,7 +207,7 @@ def selftest():
         ("unknown model fails", "test prompt", "not/a-real-video-model", False, "UNKNOWN", "not in registry", False),
         ("happyhorse 4000 CJK exceeds Chinese cap", "好" * 4000, "happyhorse-1-1/text-to-video", False, None,
          "2,500 Chinese characters", True),
-        ("happyhorse 4000 latin = 80% below the 95% band floor", "x" * 4000, "happyhorse-1-1/text-to-video", False, "BELOW_TARGET", None, False),
+        ("happyhorse 4000 latin = 80% warns and expands", "x" * 4000, "happyhorse-1-1/text-to-video", True, "BELOW_TARGET", None, False),
     ]
     failures = []
     for name, prompt, model, exp_valid, exp_status, exp_err, exp_exit2 in cases:

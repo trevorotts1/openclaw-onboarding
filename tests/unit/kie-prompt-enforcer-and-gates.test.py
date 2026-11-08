@@ -47,11 +47,15 @@ class TestEnforcer(unittest.TestCase):
         self.assertEqual(v["add"], 3200)  # to the strict 95 percent floor, not the old 80 percent
         self.assertIn("ADD at least 3200", v["message"])
 
-    def test_floor_95_and_100_percent_pass(self):
-        self.assertFalse(K.check(M, "x" * 16000)["ok"])  # 80 percent is no longer a warning-only pass
-        self.assertEqual(K.check(M, "x" * 16000)["status"], "BELOW_TARGET")
-        self.assertEqual(K.check(M, "x" * 18800)["status"], "BELOW_TARGET")  # 94 percent FAILS
-        self.assertFalse(K.check(M, "x" * 18800)["ok"])
+    def test_owner_rule_12_80_to_95_percent_warns_and_expands(self):
+        # Owner order 2026-10-05 (kie-common-rules.md section 12): below 80 percent rejects;
+        # 80 to below 95 percent PASSES with the characters to add; 95 to 100 percent passes.
+        v = K.check(M, "x" * 16000)  # 80 percent
+        self.assertTrue(v["ok"])
+        self.assertEqual(v["status"], "BELOW_TARGET")
+        v = K.check(M, "x" * 18800)  # 94 percent
+        self.assertTrue(v["ok"])
+        self.assertEqual(v["status"], "BELOW_TARGET")
         self.assertEqual(K.check(M, "x" * 19200)["status"], "PASS")  # 96 percent
         self.assertEqual(K.check(M, "x" * 19000)["status"], "PASS")
         self.assertEqual(K.check(M, "x" * 20000)["status"], "PASS")

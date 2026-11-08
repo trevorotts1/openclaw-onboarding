@@ -8,8 +8,10 @@ no network, no real key):
      failure (KIE reported the task failed) still falls back, and a prompt refusal never falls back.
   2. THE KEY GATE WORKS IN A BARE CLONE. With an empty HOME and no shared-utils anywhere (the Docker image and a
      clone), a well-formed key is AVAILABLE, a placeholder is UNAVAILABLE.
-  3. OWNER RULE 12, THE PROMPT FLOOR. A descriptive prompt below 80 percent of the model maximum is a HARD REJECT
-     with the characters to add; 95 percent passes; 101 percent is refused with the characters to cut (image and video).
+  3. THE PROMPT FLOOR (owner rule 12, 07-kie-setup/references/kie-common-rules.md section 12).
+     A descriptive prompt below 80 percent of the model maximum is a HARD REJECT with the characters to
+     add; 80 to below 95 percent PASSES with a warn-and-expand ADD; 95 percent passes; 101 percent is
+     refused with the characters to cut (image and video).
 
 Run:  python3 47-movie-producer/scripts/test_kie_adapter_safety.py      Exit: 0 = all pass.
 """
@@ -47,8 +49,15 @@ def main() -> int:
     GEM = {"prompt": "a calm lake", "output_path": str(tmp / "o.mp4")}
     RUNNING = {"code": 200, "data": {"taskId": "t", "state": "generating"}}
 
+    def transport(prompt: str = "a calm lake"):
+        """A fake transport whose declared cap is filled by the fixture prompt it will serve.
+        A cap alone is not enough: Skill 74 (F18) also enforces the strict 95% band floor."""
+        t = base.FakeKieTransport()
+        t.prompt_max = len(prompt)
+        return t
+
     print("== 1. no fallback and no resubmit when the outcome is unknown ==")
-    ft = base.FakeKieTransport()
+    ft = transport()
     ft.record_queue = [RUNNING] * 400   # the task never finishes inside the 30-minute deadline
     tool = base.fresh_tool(vid, "KieVideo", ft)
     res = tool.execute(dict(GEM))
@@ -61,7 +70,7 @@ def main() -> int:
     check("gemini timeout: the error says to re-poll and not to resubmit or switch model",
           "re-poll task task-1" in (res.error or "") and "do not resubmit or switch model" in (res.error or ""), detail=res.error)
 
-    ft = base.FakeKieTransport()
+    ft = transport()
     tool = base.fresh_tool(vid, "KieVideo", ft)
     ft.create_error = vid._kie_client()[0].KieError("network", "connection reset after send")
     res = tool.execute(dict(GEM))
@@ -71,13 +80,13 @@ def main() -> int:
           res.data.get("kie_task_state") == "createTask_outcome_unknown" and res.data.get("needs_repoll") is True
           and res.data.get("kie_task_id") is None, detail=str(res.data))
 
-    ft = base.FakeKieTransport()
+    ft = transport()
     ft.record_queue = [{"code": 200, "data": {"taskId": "a", "state": "fail", "failMsg": "content policy violation"}}]
     res = base.fresh_tool(vid, "KieVideo", ft).execute(dict(GEM))
     check("a DEFINITE failure (KIE reported the task failed) still falls back to veo3_fast",
           res.success and res.data["model"] == "veo3_fast" and len(ft.create_calls) == 1 and len(ft.veo_calls) == 1, detail=str(getattr(res, "error", "")))
 
-    ft = base.FakeKieTransport()
+    ft = transport()
     ft.record_queue = [{"code": 200, "data": {"taskId": "a", "state": "fail", "failMsg": "content policy violation"}}]
     ft.veo_record = {"code": 200, "data": {"successFlag": 0}}   # the fallback itself never finishes
     res = base.fresh_tool(vid, "KieVideo", ft).execute(dict(GEM))
@@ -85,40 +94,40 @@ def main() -> int:
           res.success is False and res.data.get("kie_task_id") == "veo-task-1" and res.data.get("needs_repoll") is True
           and len(ft.veo_calls) == 1, detail=str(res.data))
 
-    ft = base.FakeKieTransport()
+    ft = transport()
     ft.veo_record = {"code": 200, "data": {"successFlag": 0}}
     res = base.fresh_tool(vid, "KieVideo", ft).execute({"prompt": "a calm lake", "model": "veo3_fast", "output_path": str(tmp / "v.mp4")})
     check("direct veo3_fast timeout: unresolved with the task id (no resubmit)",
           res.success is False and res.data.get("kie_task_id") == "veo-task-1" and len(ft.veo_calls) == 1, detail=str(res.data))
 
-    ft = base.FakeKieTransport()
+    ft = transport()
     ft.record_queue = [RUNNING] * 400
     res = base.fresh_tool(vid, "KieVideo", ft).execute({"prompt": "a calm lake", "model": "bytedance/seedance-1.5-pro", "output_path": str(tmp / "s.mp4")})
     check("seedance timeout: unresolved with the task id, no second job",
           res.success is False and res.data.get("kie_task_id") == "task-1" and len(ft.create_calls) == 1, detail=str(res.data))
 
     print("== 1b. a LOST createTask answer that is not a socket error is unknown too (gateway 502 page, any 5xx) ==")
-    ft = base.FakeKieTransport()
+    ft = transport()
     ft.create_raw = (502, b"<html><body>502 Bad Gateway</body></html>")
     res = base.fresh_tool(vid, "KieVideo", ft).execute(dict(GEM))
     check("createTask HTTP 502 with a non-JSON body: no fallback, createTask sent once, veo never called",
           res.success is False and len(ft.create_calls) == 1 and ft.veo_calls == [], detail=str(res.data))
     check("createTask HTTP 502: needs_repoll with an unknown-outcome state and no task id",
           res.data.get("needs_repoll") is True and res.data.get("kie_task_state") == "createTask_outcome_unknown" and res.data.get("kie_task_id") is None)
-    ft = base.FakeKieTransport()
+    ft = transport()
     ft.create_raw = (200, json.dumps({"code": 503, "msg": "service unavailable"}).encode())
     res = base.fresh_tool(vid, "KieVideo", ft).execute(dict(GEM))
     check("createTask body code 503: no fallback, needs_repoll", res.success is False and ft.veo_calls == [] and res.data.get("needs_repoll") is True)
-    ft2 = base.FakeKieTransport()
+    ft2 = transport()
     ft2.create_raw = (502, b"Bad Gateway")
     res2 = base.fresh_tool(vid, "KieVideo", ft2).execute({"prompt": "a calm lake", "model": "bytedance/seedance-1.5-pro", "output_path": str(tmp / "s2.mp4")})
     check("seedance createTask HTTP 502: unresolved, sent once", res2.success is False and len(ft2.create_calls) == 1 and res2.data.get("needs_repoll") is True)
-    ft = base.FakeKieTransport()
+    ft = transport()
     ft.veo_raw = (502, b"Bad Gateway")
     res = base.fresh_tool(vid, "KieVideo", ft).execute({"prompt": "a calm lake", "model": "veo3_fast", "output_path": str(tmp / "v2.mp4")})
     check("veo3_fast submit HTTP 502 non-JSON: unresolved, submitted once, no retry",
           res.success is False and len(ft.veo_calls) == 1 and res.data.get("needs_repoll") is True, detail=str(res.data))
-    ft = base.FakeKieTransport()
+    ft = transport()
     ft.record_queue = [{"code": 200, "data": {"taskId": "a", "state": "fail", "failMsg": "content policy violation"}}]
     ft.veo_raw = (502, b"Bad Gateway")
     res = base.fresh_tool(vid, "KieVideo", ft).execute(dict(GEM))
@@ -128,7 +137,7 @@ def main() -> int:
     print("== 1c. an unexpected client fault (a truncated read) never raises out of execute() ==")
     import http.client
     for name, mod, cls, inputs in (("video", vid, "KieVideo", dict(GEM)), ("image", img, "KieImage", {"prompt": "a barn", "output_path": str(tmp / "i.png")})):
-        ft = base.FakeKieTransport()
+        ft = transport(inputs["prompt"])
         ft.schema_error = http.client.IncompleteRead(b"")
         try:
             res = base.fresh_tool(mod, cls, ft).execute(dict(inputs))
@@ -137,13 +146,13 @@ def main() -> int:
             res, raised = None, exc
         check(f"{name}: a transport fault while reading the schema returns a failed result, no spend, no exception",
               raised is None and res is not None and res.success is False and ft.create_calls == [] and ft.veo_calls == [], detail=str(raised or getattr(res, "error", "")))
-    ft = base.FakeKieTransport()
+    ft = transport()
     ft.create_error = http.client.IncompleteRead(b"")
     res = base.fresh_tool(vid, "KieVideo", ft).execute(dict(GEM))
     check("a truncated read AFTER createTask was sent: unresolved, no fallback, sent once",
           res.success is False and ft.veo_calls == [] and len(ft.create_calls) == 1 and res.data.get("needs_repoll") is True, detail=str(res.data or res.error))
 
-    ft = base.FakeKieTransport()
+    ft = transport("a barn")
     ft.record_queue = [RUNNING] * 400
     res = base.fresh_tool(img, "KieImage", ft).execute({"prompt": "a barn", "output_path": str(tmp / "slow.png")})
     check("image timeout: failed with the task id recorded for re-polling (parity with video), createTask sent once",
@@ -179,25 +188,27 @@ def main() -> int:
             else:
                 os.environ[k] = v
 
-    print("== 3. owner rule 12: the 80 percent prompt floor is a hard reject (79 refused, 95 passes, 101 refused) ==")
+    print("== 3. owner rule 12: below 80 percent rejected, 80-95 percent warns and expands, 95 passes, 101 refused ==")
     for name, mod, cls, extra in (("image", img, "KieImage", {}), ("video gemini", vid, "KieVideo", {}),
                                   ("video seedance", vid, "KieVideo", {"model": "bytedance/seedance-1.5-pro"})):
         def run(n):
-            ft = base.FakeKieTransport()
-            ft.prompt_max = 1000   # floor 800, target 950
+            ft = transport()
+            ft.prompt_max = 1000   # hard floor 800, 95 percent target 950
             res = base.fresh_tool(mod, cls, ft).execute(dict({"prompt": "x" * n, "output_path": str(tmp / f"{name}{n}.out")}, **extra))
             return res, ft
         res, ft = run(790)
         check(f"{name}: 79 percent is refused with the characters to add and nothing is sent",
-              res.success is False and "below the 80 percent floor" in (res.error or "") and "ADD at least 10" in (res.error or "")
+              res.success is False and "below the 80 percent floor" in (res.error or "")
+              and "ADD at least 10" in (res.error or "")
               and ft.create_calls == [] and ft.veo_calls == [], detail=res.error)
         res, ft = run(800)
-        check(f"{name}: exactly 80 percent passes", res.success is True, detail=str(getattr(res, "error", "")))
+        check(f"{name}: exactly 80 percent is accepted and submitted (owner rule 12 warn-and-expand band)",
+              res.success is True and len(ft.create_calls) == 1, detail=str(getattr(res, "error", "")))
         res, ft = run(950)
         check(f"{name}: 95 percent passes and is submitted", res.success is True and len(ft.create_calls) == 1, detail=str(getattr(res, "error", "")))
         res, ft = run(1010)
         check(f"{name}: 101 percent is refused with the characters to cut", res.success is False and "CUT exactly 10" in (res.error or "") and ft.create_calls == [])
-    ft = base.FakeKieTransport()
+    ft = transport()
     ft.prompt_max = 1000
     res = base.fresh_tool(vid, "KieVideo", ft).execute({"prompt": "x" * 100, "output_path": str(tmp / "gf.mp4")})
     check("a gemini prompt refused for the floor does NOT fall back to veo3_fast (no way around the rule)",
