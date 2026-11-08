@@ -111,7 +111,7 @@ class TestCountRuleBoundaries(unittest.TestCase):
         self.assertFalse(v["ok"])
         self.assertTrue(any("AF-PROMPT-LENGTH" in p and "CUT exactly 1 chars" in p for p in v["problems"]),
                         v["problems"])
-        self.assertEqual(v["count"], 32001)
+        self.assertEqual(v["count"], 20001)
 
     def test_old_9000_house_floor_is_retired(self):
         self.assertFalse(spc.validate_final(sized(9000))["ok"])

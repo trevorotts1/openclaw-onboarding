@@ -44,8 +44,9 @@ class TestEnforcer(unittest.TestCase):
         v = K.check(M, "x" * (MAX * 79 // 100))
         self.assertFalse(v["ok"])
         self.assertEqual(v["status"], "BELOW_FLOOR")
-        self.assertEqual(v["add"], 5120)  # to the strict 95 percent floor, not the old 80 percent
-        self.assertIn("ADD at least 5120", v["message"])
+        expect_add = (MAX * 95 // 100) - (MAX * 79 // 100)
+        self.assertEqual(v["add"], expect_add)  # to the strict 95 percent floor, not the old 80 percent
+        self.assertIn("ADD at least %d" % expect_add, v["message"])
 
     def test_floor_95_and_100_percent_pass(self):
         self.assertFalse(K.check(M, "x" * (MAX * 80 // 100))["ok"])  # 80 percent is no longer a warning-only pass
@@ -60,8 +61,9 @@ class TestEnforcer(unittest.TestCase):
         v = K.check(M, "x" * (MAX * 101 // 100))
         self.assertFalse(v["ok"])
         self.assertEqual(v["status"], "ABOVE_MAX")
-        self.assertEqual(v["cut"], 320)
-        self.assertIn("CUT exactly 320", v["message"])
+        expect_cut = (MAX * 101 // 100) - MAX
+        self.assertEqual(v["cut"], expect_cut)
+        self.assertIn("CUT exactly %d" % expect_cut, v["message"])
 
     def test_verbatim_is_exempt_from_the_floor_but_keeps_the_ceiling(self):
         self.assertTrue(K.check(M, "a short spoken script", "verbatim")["ok"])
