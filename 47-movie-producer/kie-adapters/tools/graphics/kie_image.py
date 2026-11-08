@@ -425,6 +425,9 @@ class KieImage(BaseTool):
             return f"kie_image: prompt exceeds the model limit: {err.get('msg')}", []
         if err.get("code") == "prompt_below_floor":
             return f"kie_image: prompt is below the 80 percent floor: {err.get('msg')}", []
+        if err.get("code") == "prompt_out_of_band":
+            # prompt-policy/2.0.0 strict band (95-100 percent): still a refusal, never a run.
+            return f"kie_image: prompt is below the strict 95 percent band: {err.get('msg')}", []
         return None, []
 
     # ------------------------------------------------------------------
