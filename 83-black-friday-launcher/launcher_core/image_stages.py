@@ -228,15 +228,121 @@ def _qc_records(root: Path) -> Dict[str, Dict[str, Any]]:
     return out
 
 
+_HTML_TYPES = ("text/html", "application/xhtml+xml")
+# Content type -> the format its BYTES must decode as. A recorded type alone is not evidence.
+# The accepted types are exactly the ones admission accepted before; nothing new is admitted.
+_IMAGE_TYPE_FORMATS = {"image/png": "png", "image/jpeg": "jpeg", "image/webp": "webp"}
+# Generic binary is a transport detail, not an image claim: admitted only with decoded image bytes.
+_GENERIC_BINARY_TYPES = ("application/octet-stream", "binary/octet-stream")
+
+
+def _image_evidence(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """What the fetched bytes ARE, as the hosting route recorded them: format, dimensions, decode.
+
+    ``45-design-intelligence-library/scripts/graphics_ghl_push.py`` reads the magic header and the
+    pixel dimensions of the body it fetched and records them under ``liveness.image``. An entry
+    that carries no such record is not evidence of a picture, so an empty dict here is refused."""
+    live = entry.get("liveness") if isinstance(entry.get("liveness"), dict) else {}
+    image = live.get("image") if isinstance(live.get("image"), dict) else {}
+    return image
+
+
+def remote_image_problems(entry: Dict[str, Any]) -> List[str]:
+    """Why the hosted URL's recorded remote evidence is not a picture (F17), or [].
+
+    A nonempty HTML response is insufficient proof of an image, so the route records the real
+    Content-Type header and what the fetched bytes decode to (magic header + dimensions). Admission
+    refuses by name: no content type at all (an unrecorded header is not evidence and is never
+    filled in from the filename), an HTML/XML/JSON or any other non-image type, bytes that do not
+    decode as an image, and a type that contradicts the bytes. A generic ``octet-stream`` is
+    admitted only when the bytes themselves decode as an image.
+    """
+    problems: List[str] = []
+    ctype = str(entry.get("content_type") or entry.get("mime_type") or "").split(";")[0].strip().lower()
+    evidence = _image_evidence(entry)
+    fmt = str(evidence.get("format") or "").strip().lower()
+    width, height = evidence.get("width"), evidence.get("height")
+    decodes = (evidence.get("decodes") is True and isinstance(width, int) and isinstance(height, int)
+               and width > 0 and height > 0)
+    if not ctype:
+        problems.append("records no remote content type, so a login page cannot be told from a picture")
+    elif ctype in _HTML_TYPES:
+        problems.append(f"the URL returned {ctype}, which is a page, not a picture")
+    elif ctype in _GENERIC_BINARY_TYPES:
+        pass  # a transport detail: the decoded bytes below are the evidence
+    elif ctype not in _IMAGE_TYPE_FORMATS:
+        problems.append(f"the URL returned {ctype}, not an image")
+    if not decodes:
+        problems.append("the fetched bytes do not decode as an image (no readable image header/dimensions)")
+    elif ctype in _IMAGE_TYPE_FORMATS and _IMAGE_TYPE_FORMATS[ctype] != fmt:
+        problems.append(f"the URL returned {ctype} but its bytes decode as {fmt}")
+    return problems
+
+
 def _hosted_urls(root: Path) -> Dict[str, str]:
-    """The public URL each asset really got: complete upload AND a live link, https only."""
+    """The public URL each asset really got: complete upload AND a live link, https only, and —
+    F17 — remote evidence that the URL really served a picture, never a 200 that is a login page."""
     doc = _read(Path(root) / HOSTED_LEDGER_REL) or {}
     out: Dict[str, str] = {}
     for rec in (doc.get("uploaded") or []) if isinstance(doc, dict) else []:
         url = str(rec.get("public_url") or "")
         if rec.get("ghl_upload_status") == "complete" and (rec.get("liveness") or {}).get("live") is True \
-                and url.startswith("https://") and rec.get("local_path"):
+                and url.startswith("https://") and rec.get("local_path") \
+                and not remote_image_problems(rec):
             out[str(Path(str(rec["local_path"])).resolve())] = url
+    return out
+
+
+def hosted_admission(run_dir: Path, run: Path) -> Dict[str, Any]:
+    """Admit each hosted link for this run's current artifacts. Returns a report, never raises.
+
+    The same rules the asset map applies — a complete upload, a live link, an https URL and a
+    local file that still hashes to what the ledger recorded — plus the F17 remote evidence: the
+    URL must have served a real content type and bytes that decode as an image with readable
+    dimensions. Every refusal is named, so an HTTP 200 whose body is an HTML login page is refused
+    as a page rather than admitted as a picture.
+    """
+    run, run_dir = Path(run), Path(run_dir)
+    doc, source = None, ""
+    for path in (run / HOSTED_LEDGER_REL, run_dir / HOSTED_LEDGER_REL):
+        loaded = _read(path)
+        if isinstance(loaded, dict):
+            doc, source = loaded, str(path)
+            break
+    out: Dict[str, Any] = {"ledger": source or None, "admitted": [], "refused": []}
+    if doc is None:
+        out["state"] = "not_recorded"
+        out["reason"] = f"no {HOSTED_LEDGER_REL}: hosting has not recorded an upload for this run"
+        return out
+    rows = doc.get("uploaded") if isinstance(doc.get("uploaded"), list) else []
+    for entry in rows:
+        if not isinstance(entry, dict):
+            continue
+        local = str(entry.get("local_path") or "")
+        name = Path(local).name or str(entry.get("asset_id") or "?")
+        url = str(entry.get("public_url") or "")
+        problems: List[str] = []
+        target = Path(local) if Path(local).is_absolute() else run / local
+        if not local or not target.is_file():
+            problems.append("the local artifact does not exist")
+        elif entry.get("sha256") and _sha(target) != entry["sha256"]:
+            problems.append("is not the current artifact (the ledger's hash is stale)")
+        if entry.get("ghl_upload_status") != "complete":
+            problems.append(f"completion status is {entry.get('ghl_upload_status')!r}, not 'complete'")
+        if not url.lower().startswith(("http://", "https://")):
+            problems.append("records no usable hosted URL")
+        live = entry.get("liveness") if isinstance(entry.get("liveness"), dict) else {}
+        if live.get("live") is not True:
+            problems.append("the URL is not recorded as live")
+        problems.extend(remote_image_problems(entry))
+        if problems:
+            out["refused"].append({"file": name, "problems": problems})
+        else:
+            out["admitted"].append({"file": name, "local_path": local, "public_url": url,
+                                    "ghl_media_id": entry.get("ghl_media_id") or entry.get("file_id"),
+                                    "sha256": entry.get("sha256")})
+    out["state"] = "pass" if out["admitted"] and not out["refused"] else (
+        "partial" if out["admitted"] else "refused")
     return out
 
 
