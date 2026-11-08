@@ -125,6 +125,27 @@ DEFAULT_SENDER = {
     "reply_to_ref": "sender-config:default",
 }
 
+# The post-sale short handler's variant identity.  The buildable template
+# (launch-b/post-sale-purchase.json, node n2) carries the literal placeholder
+# "variant tag (main / upsell-N / downsell-N)"; the launch compiler binds that
+# placeholder from build["variant_tag"] (workflow_builder.compile_launch_builds
+# -> launch_step_compiler._resolve_tags).  So the launch plan declares the tag
+# ONCE, on the automation unit, and this reader carries it through under the
+# same key: one identity, never a second variant system.
+VARIANT_TAG_KEY = "variant_tag"
+# Must accept exactly what launch_step_compiler._resolve_tags accepts, so a
+# plan-supplied tag can never pass this reader and then fail to bind.
+VARIANT_TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:_./-]*$")
+
+# The automation's own settings (launch-plan.schema.json definitions.automation
+# .settings) and the purchase identity its post-sale handler deduplicates on.
+# The reader carries both VERBATIM: it never turns an absent setting into a
+# default, because a guess here would be applied to a real workflow.
+SETTINGS_KEY = "settings"
+REENTRY_VALUES = ("allow", "block", "unknown", None)
+ENROLLMENT_VALUES = ("single", "successive", "unknown", None)
+PURCHASE_IDENTITY_KEY = "purchase_identity"
+
 
 class ReaderError(Exception):
     def __init__(self, code, message):
@@ -364,6 +385,36 @@ def read_launch_plan(plan, source="launch-plan"):
                          "automation %r template %r is not in buildable-templates.json "
                          "(a 'new' template needs new_template.owner_approved_reason and "
                          "new_template.compile_spec)" % (item["id"], template))
+                # A declared variant tag must really be a contact tag: it is
+                # written to the provider, and a value that does not bind leaves
+                # the post-sale handler on its sequence instead of its graph.
+                variant = item.get(VARIANT_TAG_KEY)
+                if variant is not None:
+                    _require(isinstance(variant, str) and bool(VARIANT_TAG_RE.match(variant)),
+                             "LAUNCH-PLAN-VARIANT-TAG",
+                             "automation %r %s %r is not a contact tag; it must "
+                             "match %s" % (item["id"], VARIANT_TAG_KEY, variant,
+                                           VARIANT_TAG_RE.pattern))
+                # A declared setting must be one of the contract's own values; an
+                # absent one stays absent (the compiler records it insufficient).
+                settings = item.get(SETTINGS_KEY)
+                if settings is not None:
+                    _require(isinstance(settings, dict), "LAUNCH-PLAN-SETTINGS",
+                             "automation %r %s is not an object" % (item["id"], SETTINGS_KEY))
+                    _require(settings.get("reentry") in REENTRY_VALUES,
+                             "LAUNCH-PLAN-REENTRY",
+                             "automation %r settings.reentry %r is not allow|block|unknown"
+                             % (item["id"], settings.get("reentry")))
+                    _require(settings.get("enrollment") in ENROLLMENT_VALUES,
+                             "LAUNCH-PLAN-ENROLLMENT",
+                             "automation %r settings.enrollment %r is not "
+                             "single|successive|unknown"
+                             % (item["id"], settings.get("enrollment")))
+                identity = item.get(PURCHASE_IDENTITY_KEY)
+                if identity is not None:
+                    _require(isinstance(identity, dict), "LAUNCH-PLAN-PURCHASE-IDENTITY",
+                             "automation %r %s is not an object"
+                             % (item["id"], PURCHASE_IDENTITY_KEY))
                 automations.append(item)
             elif kind in targets:
                 targets[kind][item["id"]] = item
@@ -776,6 +827,31 @@ def _dependency_blocker(dep, plan, bound, build_states):
     return None
 
 
+def _settings_value(automation, key):
+    """One declared settings value, or None when the plan declares none."""
+    settings = automation.get(SETTINGS_KEY)
+    if not isinstance(settings, dict):
+        return None
+    value = settings.get(key)
+    return value if isinstance(value, str) else None
+
+
+def _allow_reentry(automation):
+    """True/False for a declared allow/block, None when the plan declares none.
+
+    None is the honest "not declared" this reader hands on: the compiler records
+    it insufficient and applies nothing, rather than defaulting to False.
+    """
+    value = _settings_value(automation, "reentry")
+    return True if value == "allow" else False if value == "block" else None
+
+
+def _enrollment(automation):
+    """single/successive as declared, else None (never defaulted)."""
+    value = _settings_value(automation, "enrollment")
+    return value if value in ("single", "successive") else None
+
+
 def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowledged=None):
     now = now or datetime.now(timezone.utc)
     email_sequences = plan["email_sequences"]
@@ -875,6 +951,19 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowle
             "family": automation["family"],
             "phase": automation["family"],
             "template": automation.get("template"),
+            # The variant tag the short post-sale handler sets, declared once on
+            # the launch plan.  Always present (null when the plan declares none)
+            # so the key set a compiler reads never depends on the plan's mood.
+            VARIANT_TAG_KEY: automation.get(VARIANT_TAG_KEY),
+            # Reentry/enrolment exactly as the plan declared them.  allow_reentry
+            # is the native boolean CampaignBuilder applies and reads back; None
+            # means "not declared" and the compiler records it insufficient.
+            SETTINGS_KEY: automation.get(SETTINGS_KEY),
+            "allow_reentry": _allow_reentry(automation),
+            "allow_enrollment": _enrollment(automation),
+            # The purchase-event identity the handler deduplicates on, carried
+            # verbatim: the compiler decides sufficiency, never this reader.
+            PURCHASE_IDENTITY_KEY: automation.get(PURCHASE_IDENTITY_KEY),
             "build_rail": automation["build_rail"],
             "draft_only": True,
             "trigger": automation["trigger"],

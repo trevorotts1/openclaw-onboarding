@@ -1,29 +1,59 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Command Center launch approval record (the GET reply approval_record.verify reads)",
-  "description": "Minted only by Command Center from the client's own reply carrying the plan-hash prefix. An AI session cannot write it, so a file shaped like this is never an approval.",
+  "$id": "https://github.com/trevorotts1/openclaw-onboarding/shared-utils/signature_launch_contract/approval-record.schema.json",
+  "title": "Command Center launch approval record, contract 2.0 (canonical, after normalization)",
+  "description": "Minted only by Command Center from the client's own reply carrying the plan-hash prefix. An AI session cannot write it, so a file shaped like this is never an approval. This schema describes the CANONICAL record approval_record.normalize_record() produces; the raw Command Center wire row it is normalized FROM is described in $defs.command_center_wire, and the previous shared shape in $defs.shared_v1. Normalization is an explicit enumerated mapping (approval_record.LEGACY_KIND_ALIASES); a record it does not name is refused, never guessed.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "schema_version": { "const": "1.0" },
+    "schema_version": { "const": "2.0" },
+    "record_version": { "enum": ["2.0", "1.0", "cc-unversioned"] },
     "approval_id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,128}$" },
     "kind": {
+      "description": "Canonical kind. This is the only meaning the verifier acts on. No kind implies another (approval_record.IMPLIED_KINDS is empty for every kind).",
       "enum": [
         "launch_plan_build",
         "paid_asset_budget",
+        "page_publication",
+        "automation_write",
+        "design_board",
+        "pin_rotation",
         "test_location_use",
         "live_payment_test",
         "customer_send_activation",
-        "page_publication",
         "batch_merge",
         "release_publication",
         "fleet_rollout"
       ]
     },
-    "plan_hash": { "type": "string", "minLength": 1 },
-    "client_identity": { "type": "string", "minLength": 1 },
+    "kind_wire": {
+      "description": "The kind spelling as it arrived (e.g. Command Center's plan_build / publish). Kept for audit; never used for authorization.",
+      "type": "string",
+      "minLength": 1
+    },
+    "plan_hash": {
+      "description": "Bare lowercase SHA-256 hex digest, with any sha256: prefix stripped.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "plan_hash_wire": { "type": "string", "minLength": 1 },
+    "tenant_ref": {
+      "description": "The COMPANY/tenant routing identity (Command Center tenant_id). NOT the consenting person. Null on a legacy record that cannot distinguish the two.",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "consenting_actor_ref": {
+      "description": "The authenticated PERSON who approved (Command Center client_identity_ref). This is the only field that may be described as the approver.",
+      "type": "string",
+      "minLength": 1
+    },
     "source_message_ref": { "type": "string", "minLength": 1 },
-    "scope": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "scope": {
+      "description": "Normalized scope list. A Command Center single-string scope is split on commas and the whole string is kept as a member.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
     "cap": {
       "type": ["object", "null"],
       "additionalProperties": false,
@@ -36,19 +66,93 @@
     "expires_at": { "type": "string", "format": "date-time" },
     "revoked": { "type": "boolean" },
     "verification_class": {
-      "enum": ["authenticated_platform_record", "recorded_consent_not_cryptographically_sealed"]
-    }
+      "enum": [
+        "authenticated_platform_record",
+        "recorded_consent_not_cryptographically_sealed",
+        "local_test_record"
+      ]
+    },
+    "authority": {
+      "description": "Derived from the transport that produced the record, never read from the record body. A local file cannot declare itself authenticated.",
+      "enum": ["command-center", "local-test-record"]
+    },
+    "legacy_single_identity": { "type": "boolean" }
   },
   "required": [
     "schema_version",
+    "record_version",
     "approval_id",
     "kind",
     "plan_hash",
-    "client_identity",
+    "consenting_actor_ref",
     "source_message_ref",
     "scope",
     "expires_at",
     "revoked",
-    "verification_class"
-  ]
+    "verification_class",
+    "authority"
+  ],
+  "$defs": {
+    "command_center_wire": {
+      "title": "launch-approvals.ts row as the Command Center GET returns it",
+      "description": "Observed shape of src/lib/launch-approvals.ts at audit anchor b1f3b64b2. Listed so the mapping is documented where the schema lives. This is an INPUT shape: it is never itself a canonical record.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "approval_id": { "type": "string" },
+        "tenant_id": { "type": "string", "description": "-> tenant_ref (routing company)" },
+        "client_identity_ref": { "type": "string", "description": "-> consenting_actor_ref (the verified person)" },
+        "kind": {
+          "enum": ["plan_build", "paid_asset_budget", "publish", "automation_write", "pin_rotation", "design_board"],
+          "description": "-> canonical via approval_record.COMMAND_CENTER_KIND_ALIASES"
+        },
+        "plan_hash": { "type": "string", "description": "sha256:<64 hex> -> bare digest" },
+        "scope": { "type": "string", "description": "single string -> comma-split list" },
+        "cap_minor": { "type": ["integer", "null"], "description": "flat -> nested cap.cap_minor" },
+        "currency": { "type": ["string", "null"], "description": "flat -> nested cap.currency" },
+        "expires_at": { "type": "string" },
+        "revoked": { "type": "boolean", "description": "0/1 in the SQLite row; boolean on the wire" },
+        "source_message_ref": { "type": "string" },
+        "active": { "type": "boolean", "description": "server-computed; ignored by normalization" }
+      },
+      "required": [
+        "approval_id",
+        "tenant_id",
+        "client_identity_ref",
+        "kind",
+        "plan_hash",
+        "scope",
+        "expires_at",
+        "revoked",
+        "source_message_ref"
+      ]
+    },
+    "shared_v1": {
+      "title": "The previous shared record shape (schema_version 1.0)",
+      "description": "Still accepted. client_identity is read as the consenting actor and the result is marked identity_binding='legacy_unclassified' because this shape cannot say whether the value is a person or a company.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "schema_version": { "const": "1.0" },
+        "approval_id": { "type": "string" },
+        "kind": { "enum": ["launch_plan_build", "paid_asset_budget", "test_location_use", "live_payment_test", "customer_send_activation", "page_publication", "batch_merge", "release_publication", "fleet_rollout"] },
+        "plan_hash": { "type": "string" },
+        "client_identity": { "type": "string" },
+        "source_message_ref": { "type": "string" },
+        "scope": { "type": "array", "items": { "type": "string" } },
+        "cap": {
+          "type": ["object", "null"],
+          "properties": {
+            "cap_minor": { "type": "integer", "minimum": 0 },
+            "currency": { "type": "string" }
+          },
+          "required": ["cap_minor", "currency"]
+        },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "revoked": { "type": "boolean" },
+        "verification_class": { "type": "string" }
+      },
+      "required": ["schema_version", "approval_id", "kind", "plan_hash", "client_identity", "source_message_ref", "scope", "expires_at", "revoked", "verification_class"]
+    }
+  }
 }

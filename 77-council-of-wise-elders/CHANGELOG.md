@@ -1,5 +1,40 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.83: the green-suite release (all 16 failing runtime tests fixed)
+
+In plain English: the runtime carried **16 failing tests** and nobody had looked. Some were real product defects — a decision cell showing `3/9` where the shipped design says a plain count, a verdict line that put an HTML tag between `Verdict:` and the label so the printed string was broken, a capability matcher that could never match a slug to its plan step, and a PDF refusal message that named the wrong missing piece. Others were stale expectations or a test fixture that was an incomplete copy of a real DOM.
+
+- **Product fixes (5 files):**
+  - `public/chamber/chamber-decision.js` — the decision cell now shows the plain count (`3`, `0`), with the share carried by the bar width and the full wording by the screen-reader text, matching the v1.0.28 design line "a bar and count per option".
+  - `src/reports/render.ts` — the summary verdict is plain text, so `Verdict: GO` is contiguous in the print HTML (it was `Verdict:<span…> GO`); the now-unused `.verdict-label` rule is gone.
+  - `src/reports/capability-snapshot.ts` — exact-name matching treats a slug separator as equivalent to a space (`weekly-episode` matches "weekly episode"), so installed capabilities can match a plan step; it is still whole-word and adjacency-only, with no stemming or token overlap.
+  - `src/reports/pdf-renderer.ts`, `src/reports/registry.ts` — the PDF refusal names the renderer that is actually probed (Playwright/Chromium, a Chrome binary, or cupsfilter) instead of only Chrome/CUPS.
+- **Test-side corrections (7 files), none weakening an assertion:** cross-realm arrays imported from `node:vm` are compared after `Array.from`/JSON copy (6 assertions rewritten in place, 0 deleted, 0 skipped); a fake DOM node gains the standard `hasAttribute`; two fixture ids now carry realistic ids; `ctr158`'s fixture plan step actually names the capabilities it claims to match; `landing`'s front-door layer allow-list gains `../reports/`, which the door legitimately imports; `modes-service` pins the current `OLLAMA_PLAN_REQUIRED` recovery text (the old string was superseded when the refusal began recommending OpenRouter).
+- **Proof:** `npm test` 1271 tests, **1266 pass, 0 fail** (5 skipped), exit 0. `tsc --noEmit` clean. No test deleted, no `skip`/`todo` added.
+- Version carriers read 1.0.83.
+
+## v1.0.82: the OpenRouter standing-default release
+
+In plain English: an OpenRouter route still refused to convene unless the caller named one of the client's own models, because a provider that allows many models and names no default was treated as "ambiguous, never guessed". In practice that was a wall between a client and the provider they wanted. OpenRouter now carries a standing default: **DeepSeek Flash, preferring the pinned `1017` variant, otherwise the newest DeepSeek Flash the provider offers.** It is deterministic from the candidate list, it shows in the route's model label, and an explicit `--model` still wins. Nobody is blocked from OpenRouter, and nobody is silently handed a model they did not ask for.
+
+- Route discovery: `providerPolicyDefault()` resolves OpenRouter's standing default instead of refusing `ROUTE_MODEL_AMBIGUOUS`. Other providers keep the refusal — the council still never guesses.
+- Ordering is explicit and testable: the `1017` variant wins when present; otherwise candidates are ranked by parsed numeric version so the newest DeepSeek Flash wins.
+- Instructions: step 7 now says `--route openrouter-configured` needs no model name, and that an explicit `--model` overrides the default.
+- Tests: four cases cover the pinned variant, the newest-fallback, a non-OpenRouter provider, and an OpenRouter allow-list with no DeepSeek Flash at all. `tests/route-discovery.test.ts` 15/15.
+- Version carriers: `version`, `skill-version.txt` and the `SKILL.md` frontmatter read 1.0.82.
+
+## v1.0.81: the "say why, and ask before you answer" release
+
+In plain English: on one client box an explicit "ask the council" never opened a chamber. The front door ran the runtime, the runtime refused, and the refusal arrived on stderr while the door only read stdout, so every real reason became the same empty `CONVENE_REFUSED`. The agent could not tell what was wrong, so it did what a helpful model does: it started answering the question in chat. Two more faults sat underneath — the brief carried the client's question with a stray leading sentence period, and an OpenRouter route could never be named because provider model ids contain a slash the opaque-ID rule forbids.
+
+- Front door: the convene child's refusal is parsed from stderr as well as stdout, so `OLLAMA_PLAN_REQUIRED`, `ROUTE_CHOICE_REQUIRED`, `COUNCIL_PREPARATION_REQUIRED` and the rest reach the agent intact. A regression test pins the stderr case.
+- Brief: `trimQuestion()` strips leading sentence punctuation, so `ask the council. What should…` produces the question, not a fragment of it. A regression test pins it.
+- Model ids: `requested_model_id` accepts a provider's own namespaced id (`vendor/model`). Every other ID field keeps the strict opaque pattern. Previously an OpenRouter route could not be convened by name at all.
+- Asking, not answering: when the route or plan is unknown the instruction is now to ask the client — Ollama $20 or $100 first, then, if there is no Ollama plan, recommend OpenRouter because its advisors run in parallel with no plan cap. `OLLAMA_PLAN_QUESTION`, `OLLAMA_PLAN_ACTION` and the `ROUTE_CHOICE_REQUIRED` recovery all say the same thing.
+- Chamber: a sitting that did not open must never be answered in chat. The old "tell the client the Council is running" fallback is gone; the public chamber URL is the deliverable and a failure reports its typed code in one line.
+- Version carriers: `version`, `skill-version.txt` and the `SKILL.md` frontmatter read 1.0.81.
+- Known pre-existing failure, unchanged by this release: `extensions/council-before-dispatch/test/core.test.mjs` "…" asserts `brief.options` holds the explore option while the code emits none (26 pass / 1 fail before and after these changes).
+
 ## v1.0.80: the manifest-carrier release (version moved so the corrected package can land)
 
 In plain English: the manifest regeneration that fixed the recorded runtime digest shipped without moving the skill's own version, so the repository's content-change guard refused it. This release moves the version carriers to 1.0.80 and rebuilds the manifest and archive over the same corrected runtime build. No runtime behavior changed. Source only: no box was written, no provider or Telegram call made, and no paid Council session run.

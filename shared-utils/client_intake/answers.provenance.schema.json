@@ -1,0 +1,108 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "client-intake-answer-contract/v1",
+  "title": "Client intake answer provenance (F16 answer contract)",
+  "description": "The minimal canonical answer/provenance block engine.answer_contract(doc) emits and every consumer reads. It is derived from answers.schema.json (client-intake-answers/v1); it is never a second answer store. Four parts: the design-style decision, the brand the plan was built from, the approved monetary spend ceiling, and the exact plan revision and approval the run is bound to. Each part carries its own state, and missing evidence is `unknown` - absence never becomes a choice.",
+  "type": "object",
+  "required": ["schema", "design", "brand", "spend", "plan"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "client-intake-answer-contract/v1"},
+    "design": {
+      "type": "object",
+      "description": "The A Block / B Circle / C Hybrid design-style decision.",
+      "required": ["schema", "question_id", "state", "value", "proposal_pending", "proposed_value", "acceptance_ref", "source", "source_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {"const": "client-intake-decision/v1"},
+        "question_id": {"const": "design_style"},
+        "state": {"enum": ["client_choice", "accepted_recommendation", "unknown", null]},
+        "value": {"description": "A, B, C or null. Null whenever there is no recorded decision, so a proposal is never carried as a choice."},
+        "proposal_pending": {"type": "boolean", "description": "true when a suggestion is recorded but the client has not accepted it"},
+        "proposed_value": {"description": "the suggestion while it is still a proposal, else null"},
+        "acceptance_ref": {"type": ["string", "null"], "description": "the approval record that accepted the recommendation, or null"},
+        "source": {"type": ["string", "null"]},
+        "source_ref": {"type": "string"}
+      }
+    },
+    "brand": {
+      "type": "object",
+      "description": "The brand the plan was built from, so a producer can match the brand file it used to the plan's brand hash.",
+      "required": ["schema", "source_kind", "source_ref", "brand_file_sha256", "version", "palette_status", "palette_confirmed", "extracted", "confirmation", "source_ref_question"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {"const": "client-intake-brand-provenance/v1"},
+        "source_kind": {"enum": ["client", "website", "logo_file", "palette_help", "safe_default", "recommendation", "derived", "none"]},
+        "source_ref": {"type": ["string", "null"]},
+        "brand_file_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+        "version": {"type": "integer", "minimum": 0},
+        "palette_status": {"enum": ["provided", "suggested", "default_to_confirm", "unknown"], "description": "`provided` only when the palette is confirmed; missing or unrecognized statuses are `unknown`, never `provided`"},
+        "palette_confirmed": {"type": "boolean"},
+        "extracted": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "colors": {"type": "array"},
+            "color_roles": {"type": "object"},
+            "fonts": {},
+            "logo": {"type": "object"},
+            "assets": {"type": "array"}
+          }
+        },
+        "confirmation": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "confirmed": {"type": "boolean"},
+            "status": {"enum": ["provided", "suggested", "default_to_confirm", "unknown"]},
+            "source": {"type": ["string", "null"]},
+            "to_confirm": {"type": "array"}
+          }
+        },
+        "source_ref_question": {"type": "string"}
+      }
+    },
+    "spend": {
+      "type": "object",
+      "description": "The approved monetary ceiling for paid pictures. A picture count is never a spend ceiling.",
+      "required": ["schema", "source_ref", "picture_cap_is_not_a_ceiling", "state", "approved", "cap_minor", "currency", "approval_ref", "plan_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {"const": "client-intake-spend-contract/v1"},
+        "source_ref": {"type": "string"},
+        "picture_cap_is_not_a_ceiling": {"const": true},
+        "state": {"enum": ["provided", "recommended_unapproved", "unknown", "not_applicable"]},
+        "approved": {"type": "boolean"},
+        "cap_minor": {"type": ["integer", "null"], "minimum": 1},
+        "currency": {"type": ["string", "null"], "enum": ["USD", "EUR", "GBP", null]},
+        "approval_ref": {"type": ["string", "null"]},
+        "plan_hash": {"type": ["string", "null"]}
+      }
+    },
+    "plan": {
+      "type": "object",
+      "description": "The exact plan revision and approval references, and whether they still describe the current subject.",
+      "required": ["schema", "decision", "state", "plan_revision", "subject_hash", "approval_ref", "approval_subject", "stale", "binds_current_subject", "source_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {"const": "client-intake-plan-binding/v1"},
+        "decision": {"type": ["string", "null"], "enum": ["approve", "change", "stop", null]},
+        "state": {"enum": ["approved", "provided", "unknown"]},
+        "plan_revision": {"type": "integer", "minimum": 1},
+        "subject_hash": {"type": ["string", "null"]},
+        "approval_ref": {"type": ["string", "null"]},
+        "approval_subject": {
+          "type": ["object", "null"],
+          "properties": {
+            "plan_hash": {"type": "string"},
+            "revision": {"type": "integer", "minimum": 1},
+            "approval_ref": {"type": "string"}
+          }
+        },
+        "stale": {"type": "boolean", "description": "true when the recorded approval describes a different plan hash or revision"},
+        "binds_current_subject": {"type": "boolean", "description": "true only when an approval was recorded for the plan hash and revision this file carries now"},
+        "source_ref": {"type": "string"}
+      }
+    }
+  }
+}

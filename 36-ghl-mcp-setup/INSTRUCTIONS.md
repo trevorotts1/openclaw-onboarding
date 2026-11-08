@@ -151,9 +151,15 @@ curl -sS -X GET "https://services.leadconnectorhq.com/<endpoint>?locationId=$GOH
 ```
 
 Documented supported versions include `v3`, `2023-02-21`, `2021-07-28`, `2021-04-15`, and
-`legacy`; `v4` workflow contracts are staging-only evidence and are not on the production
-supported list. There is no global header rule and no default — a missing literal is a
+`legacy`. There is no global header rule and no default — a missing literal is a
 contract question to settle from the page, never a value to guess.
+
+The five workflow definition/publish/delete routes (`GET|PUT /workflows/{workflowId}/definition`,
+`POST /workflows`, `PUT /workflows/{workflowId}/status`, `DELETE /workflows/{workflowId}`) now
+have production operation pages, and each documents `Version: v3`. The Skill 44 registry rows
+are still frozen at the earlier staging-only `v4` transcription and stay default-deny behind
+the capability gate; `B-V4-S` is the named blocker for re-freezing them. Do not send `v4` on a
+production call on the strength of the frozen rows.
 
 ### Tier 4 — Browser (agent-browser FIRST, Playwright fallback) — skill 03
 

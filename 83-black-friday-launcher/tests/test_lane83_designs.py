@@ -348,8 +348,10 @@ class GraphicsHooksTests(Base):
         images = graphics_hooks.collect_images(built["manifest"], self.work / "pkg")
         (job / "qc").mkdir(parents=True)
         (job / "qc" / "image_qc_report.json").write_text(json.dumps({"assets": [
+            # the record shape graphics_hooks.qc_report writes: `pass` is the resolved review state,
+            # so a record without review_state "verified" is not a passed review (delivery_record).
             {"local_path": a["local_path"], "asset_id": a["asset_id"], "average": 9.0, "pass": True,
-             "triggered_autofails": []} for a in images]}), encoding="utf-8")
+             "review_state": "verified", "triggered_autofails": []} for a in images]}), encoding="utf-8")
         (job / "media_library.json").write_text(json.dumps({"uploaded": [
             {"local_path": a["local_path"], "ghl_upload_status": "complete", "public_url": "https://example.test/x.png",
              "liveness": {"live": True}} for a in images]}), encoding="utf-8")

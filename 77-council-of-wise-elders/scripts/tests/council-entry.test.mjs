@@ -163,6 +163,33 @@ test("service down is a typed refusal: no convene, no session, no invented link"
   assert.doesNotMatch(io.stdout(), /Chamber link:/);
 });
 
+test("a typed refusal written to STDERR keeps its code (the CONVENE_REFUSED black hole)", async (t) => {
+  const d = sandbox(t);
+  const io = capture();
+  const fetchImpl = fakeFetch(HEALTHY);
+  // The CLI writes its refusal JSON to stderr and exits non-zero; a stdout-only
+  // read used to turn every one of these into a bare CONVENE_REFUSED.
+  const stderr = JSON.stringify({
+    ok: false,
+    error: {
+      code: "OLLAMA_PLAN_REQUIRED",
+      message: "The client chooses their own Ollama, and its plan is not known yet.",
+      action: "Ask the client: are you on the Ollama $20 a month plan or the $100 a month plan?",
+    },
+  });
+  const run = fakeRun({ convene: { status: 3, stdout: "", stderr } });
+  const briefPath = join(d, "brief.json");
+  writeFileSync(briefPath, JSON.stringify({ question: "q" }));
+
+  const code = await main(["ask", "--brief", briefPath, "--json"], io, { env: { HOME: d, COUNCIL_CLI: fakeCli(d) }, fetchImpl, run, skillRoot: SKILL });
+
+  assert.equal(code, 3);
+  const refusal = JSON.parse(io.stderr().trim());
+  assert.equal(refusal.error.code, "OLLAMA_PLAN_REQUIRED", "the stderr code must survive, never CONVENE_REFUSED");
+  assert.match(refusal.error.action, /\$20/);
+  assert.doesNotMatch(io.stdout(), /Chamber link:/);
+});
+
 test("a session read uses the SERVICE, not the CLI's local store (the COUNCIL_SESSION_NOT_FOUND trap)", async (t) => {
   const d = sandbox(t);
   const io = capture();

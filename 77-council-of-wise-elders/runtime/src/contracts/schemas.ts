@@ -50,7 +50,7 @@ import {
   VALIDATION_STATUSES,
   VERDICT_LABELS,
 } from './enums.js';
-import { isSha256Hex, isUtcTimestamp, isValidId } from './primitives.js';
+import { isSha256Hex, isUtcTimestamp, isValidId, isValidModelId } from './primitives.js';
 import { MAX_ADVISOR_ROUND } from './modes.js';
 import type { ValidationIssue, ValidationResult } from './errors.js';
 
@@ -77,6 +77,11 @@ export const SCHEMA_VERSIONS = {
 export const idSchema = z
   .string()
   .refine(isValidId, { message: 'must be an opaque ID (no names, text, or secrets)' });
+
+/** A provider's own model id, which may be namespaced as `vendor/model`. */
+export const modelIdSchema = z
+  .string()
+  .refine(isValidModelId, { message: 'must be a provider model id (no names, text, or secrets)' });
 
 export const sha256Schema = z
   .string()
@@ -246,7 +251,7 @@ export type DecisionBrief = z.infer<typeof decisionBriefSchema>;
 export const modelPolicySchema = z.strictObject({
   selection: z.enum(MODEL_SELECTION_SOURCES),
   route_id: idSchema,
-  requested_model_id: idSchema.nullable(),
+  requested_model_id: modelIdSchema.nullable(),
   reasoning_preference: z.string().min(1).nullable(),
   fallback_policy: z.enum(FALLBACK_POLICIES),
 });

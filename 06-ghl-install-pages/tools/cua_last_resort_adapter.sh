@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cua_last_resort_adapter.sh — v0.1.0
+# cua_last_resort_adapter.sh — v0.2.0
 #
 # P1-13 (skill6-fix-plan) — CUA / computer-use LAST-RESORT lane adapter.
 #
@@ -28,6 +28,15 @@
 #   driverPresent; "peekaboo" when driverPresent alone; "unknown" when the
 #   plugin is enabled without a driver; anything else = lane not there. This
 #   adapter trusts that schema and fails closed on any deviation.
+#
+# ── WAIVER RECEIPT (W3 connection 7: prerequisite only, NEVER a completion) ──
+#   { requestedAt, reason, providerSelected, lane: "cua_last_resort",
+#     requiresVisionModel: true,
+#     prerequisiteReady: true,        # the LANE is authorized
+#     operationComplete: false,       # never — the run owns the operation proof
+#     ownedSessions: [], cleanup: {released: [], closed_all: false} }
+# A dispatcher reading this receipt can only learn "the lane is available". It
+# cannot read it as the requested operation being done.
 #
 # USAGE
 #   bash tools/cua_last_resort_adapter.sh check
@@ -78,7 +87,7 @@
 #   doctrine: sourcing/must not clobber caller options — explicit return-code
 #   checks only), reads NO secret env, does NO network, launches NO browser.
 
-CUA_ADAPTER_VERSION="v0.1.0"
+CUA_ADAPTER_VERSION="v0.2.0"
 
 _CUA_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)"
 _CUA_SKILL_DIR="$(cd "${_CUA_SELF_DIR}/.." 2>/dev/null && pwd)"
@@ -190,13 +199,16 @@ cmd_request() {
   # backslashes first and double-quotes second (sed applies in order per line).
   safe_reason="$(printf '%s' "$reason" | tr '\t\r\n' '   ' | sed 's/\\/\\\\/g; s/"/\\"/g')"
   mkdir -p "$(dirname "$receipt_path")" 2>/dev/null
-  printf '{\n  "requestedAt": "%s",\n  "reason": "%s",\n  "providerSelected": "%s",\n  "lane": "cua_last_resort",\n  "requiresVisionModel": true\n}\n' \
+  # W3 connection 7: this receipt authorizes a LANE. It never reports an
+  # operation complete — the caller runs the computer tool and owns the proof.
+  printf '{\n  "requestedAt": "%s",\n  "reason": "%s",\n  "providerSelected": "%s",\n  "lane": "cua_last_resort",\n  "requiresVisionModel": true,\n  "prerequisiteReady": true,\n  "operationComplete": false,\n  "ownedSessions": [],\n  "cleanup": {"released": [], "closed_all": false}\n}\n' \
     "$requested_at" "$safe_reason" "$provider" > "$receipt_path" 2>/dev/null
   if [ ! -s "$receipt_path" ]; then
     echo "CUA request FAILED: could not write the waiver receipt at ${receipt_path}. Nothing was requested." >&2
     return 1
   fi
   echo "CUA REQUESTED — operator must run the computer tool manually with a vision model; adapter never drives the pointer itself"
+  echo "prerequisite only: this authorizes the CUA lane. It does NOT complete any operation — the operation's own completion proof belongs to the run."
   echo "waiver receipt: $receipt_path"
   return 0
 }
@@ -213,7 +225,9 @@ _cua_receipt_valid_json() {
       grep -q '"lane": "cua_last_resort"' "$1" && \
       grep -q '"requestedAt"' "$1" && \
       grep -q '"reason"' "$1" && \
-      grep -q '"providerSelected"' "$1"
+      grep -q '"providerSelected"' "$1" && \
+      grep -q '"prerequisiteReady": true' "$1" && \
+      grep -q '"operationComplete": false' "$1"
   fi
 }
 
@@ -300,7 +314,13 @@ _cua_selftest() {
   grep -q '"requiresVisionModel": true' "${_cua_tmp}/r9.json" || _cua_fail "receipt missing requiresVisionModel=true"
   grep -q '"providerSelected": "cua"' "${_cua_tmp}/r9.json" || _cua_fail "receipt missing providerSelected=cua"
   grep -q '"requestedAt"' "${_cua_tmp}/r9.json" || _cua_fail "receipt missing requestedAt"
+  # W3 connection 7: a lane waiver is prerequisite-only and may never report the
+  # operation complete (a dispatcher must not be able to read "REQUESTED" as done).
+  grep -q '"prerequisiteReady": true' "${_cua_tmp}/r9.json" || _cua_fail "receipt missing prerequisiteReady=true"
+  grep -q '"operationComplete": false' "${_cua_tmp}/r9.json" || _cua_fail "receipt must report operationComplete=false"
+  grep -q '"closed_all": false' "${_cua_tmp}/r9.json" || _cua_fail "receipt must never report closed_all"
   grep -q 'CUA REQUESTED' "${_cua_tmp}/out9" || _cua_fail "gated request did not print the CUA REQUESTED line"
+  grep -q 'prerequisite only' "${_cua_tmp}/out9" || _cua_fail "gated request must say it is prerequisite only"
 
   # 10. request WITH opt-in but FAILING gate -> 2, NO receipt.
   CUA_CAPABILITY_PATH="$( _cua_mkcap false false none )"
