@@ -356,7 +356,12 @@ Confirm:
   `describe_operation`, `execute_operation`
 - The `Version` header is selected **per operation** (documented values include `v3`,
   `2023-02-21`, `2021-07-28`, `2021-04-15`, `legacy`). There is no global default and no
-  sweep. `v4` workflow contracts are staging-only evidence.
+  sweep. The five workflow definition/publish/delete routes (`GET|PUT /workflows/{workflowId}/definition`,
+  `POST /workflows`, `PUT /workflows/{workflowId}/status`, `DELETE /workflows/{workflowId}`) now have
+  production operation pages and each documents `Version: v3`; the Skill 44 registry rows are still
+  frozen at the earlier staging-only `v4` transcription and stay default-deny behind the capability
+  gate (blocker `B-V4-S` is the named re-freeze). Do not send `v4` on a production call on the strength
+  of the frozen rows.
 - No tool count is an interface. The old 588 / 858 / 500 figures describe other profiles or
   history and prove nothing about parity.
 
@@ -679,7 +684,7 @@ These values are authoritative. If your session history disagrees, trust this bl
 - Skill set at `$MASTER_FILES_DIR/29-ghl-convert-and-flow/` (Mac default: `~/Downloads/openclaw-master-files/29-ghl-convert-and-flow/`; VPS default: `~/Downloads/openclaw-master-files/29-ghl-convert-and-flow/`)
 - Read `references/[module].md` for endpoint specifics
 - Base URL: `https://services.leadconnectorhq.com`
-- **Version header is per operation** (documented values include `v3`, `2023-02-21`, `2021-07-28`, `2021-04-15`, `legacy`). No global default. The workflow definition/publish/delete routes now have production pages documenting `Version: v3`; the Skill 44 registry rows are still frozen at staging-only `v4` and stay default-deny behind the capability gate (blocker `B-V4-S` covers the re-freeze).
+- **Version header is per operation** (documented values include `v3`, `2023-02-21`, `2021-07-28`, `2021-04-15`, `legacy`). No global default. The five workflow definition/publish/delete routes (`GET|PUT /workflows/{workflowId}/definition`, `POST /workflows`, `PUT /workflows/{workflowId}/status`, `DELETE /workflows/{workflowId}`) now have production operation pages and each documents `Version: v3`; the Skill 44 registry rows are still frozen at the earlier staging-only `v4` transcription and stay default-deny behind the capability gate (blocker `B-V4-S` is the named re-freeze). Do not send `v4` on a production call on the strength of the frozen rows.
 - This is the replacement route for the retired community tool surface
 
 **Tier 4 — Browser: agent-browser (Vercel, skill 03) FIRST, Playwright fallback**
