@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "progress_file.schema.json",
   "title": "Signature Launch progress file (WF-SWARM)",
-  "description": "One resumable progress file per launch, keyed by launch_id. Holds every unit from the approved launch plan, its state, and a terminal percentage. A stopped run resumes from this file: terminal units are skipped, and an active unit whose artifact exists is recovered as done without a duplicate build or a second charge.",
+  "description": "One resumable progress file per launch, keyed by launch_id. Holds every unit from the approved launch plan, its state, and the delivered percentage. A stopped run resumes from this file: terminal units are skipped, and a crashed unit is recovered only from current admission evidence for the exact unit (a nonempty file is not completion).",
   "type": "object",
   "additionalProperties": true,
   "required": [
@@ -39,7 +39,7 @@
       "type": "number",
       "minimum": 0,
       "maximum": 100,
-      "description": "Percentage of planned units that are terminal (done or dropped). Written on every save."
+      "description": "Percentage of the approved plan's units that are DELIVERED (verified done). A dropped, skipped, stale or superseded unit stays in the denominator and contributes zero. Written on every save."
     },
     "counts": {
       "type": "object",
@@ -71,7 +71,8 @@
               "page",
               "email_sequence",
               "text_set",
-              "automation"
+              "automation",
+              "commerce_unit"
             ]
           },
           "waits_for": {
@@ -106,7 +107,37 @@
               "string",
               "null"
             ],
-            "description": "Path or id of the built artifact. Existence of this path recovers a crashed unit as done."
+            "description": "Path or id of the built artifact. Existence of this path is a filesystem fact only: it never recovers a unit as done. Recovery requires current admission evidence."
+          },
+          "verified": {
+            "type": "boolean",
+            "description": "True only when admission evidence for this exact unit/revision was accepted. A legacy done row is backfilled false and counts as unverified, not delivered."
+          },
+          "stale": {
+            "type": "boolean",
+            "description": "Set when a governing input changed; a stale unit is not delivered until re-verified."
+          },
+          "superseded": {
+            "type": "boolean"
+          },
+          "skipped": {
+            "type": "boolean",
+            "description": "An explicitly skipped unit contributes zero delivered work."
+          },
+          "evidence_digest": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Hash of the accepted artifact set, so later consumers can tell which bytes completed the unit."
+          },
+          "content_checked": {
+            "type": "boolean",
+            "description": "True when the artifact bytes were re-hashed under a run root; declared hashes alone are not byte verification."
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
           },
           "note": {
             "type": [
