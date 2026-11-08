@@ -5,15 +5,15 @@
  "adapter": "74-kie-live-adapter",
  "price_note": "pricing.raw is KIE's pricingDesc prose; credits are parsed numbers (never USD).",
  "counts": {
-  "models": 218,
-  "schema_readable": 217,
+  "models": 220,
+  "schema_readable": 219,
   "schema_not_readable": 1,
-  "kind_createTask": 178,
+  "kind_createTask": 180,
   "kind_sync": 39,
-  "with_prompt_field": 155,
-  "prompt_max_known": 141,
+  "with_prompt_field": 157,
+  "prompt_max_known": 143,
   "with_verbatim_fields": 14,
-  "price_parsed": 207,
+  "price_parsed": 209,
   "families": {
    "claude": 12,
    "deepseek": 1,
@@ -23,7 +23,7 @@
    "gemini-omni": 4,
    "gemini-tts": 4,
    "gpt-chat": 9,
-   "gpt-image": 9,
+   "gpt-image": 11,
    "grok": 3,
    "grok-imagine": 11,
    "hailuo": 9,
@@ -11740,6 +11740,332 @@
    "prompt_field": {
     "name": "prompt",
     "maxLength": 20000,
+    "verbatim": false,
+    "max_source": "schema",
+    "limits_listed": []
+   },
+   "verbatim_fields": []
+  },
+  {
+   "id": "gpt-image-2-6/sunburst-image-to-image",
+   "provider": "OpenAI",
+   "title": "GPT Image 2.6 Sunburst Image to Image",
+   "taskType": [
+    "Image to Image",
+    "Image Editing"
+   ],
+   "family": "gpt-image",
+   "version": [
+    2,
+    6
+   ],
+   "variant": "sunburst",
+   "pricing": {
+    "raw": "Text input 900 credits / 1M tokens ($4.50), cached text input 225 ($1.125), image input 1,440 ($7.20), cached image input 360 ($1.80), image output 5,400 ($27.00) \u2014 10% below official pricing. SVG output: image tokens as above, plus the SVG author model's tokens \u2014 gpt-5.6-luna (default): input 36 credits / 1M tokens ($0.18), output 216 ($1.08); gpt-6-sol: input 360 ($1.80), output 1,800 ($9.00); gpt-5.6-terra: input 360 ($1.80), output 2,160 ($10.80). High-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates.",
+    "status": "ok",
+    "credits_min": 36.0,
+    "credits_max": 900.0,
+    "unit": "per-1m-tokens",
+    "credits_estimate": 900.0
+   },
+   "schema": {
+    "readable": true,
+    "submit_path": "/api/v1/jobs/createTask",
+    "method": "post",
+    "kind": "createTask"
+   },
+   "schema_paths": [
+    {
+     "path": "/api/v1/jobs/createTask",
+     "method": "post",
+     "kind": "createTask"
+    }
+   ],
+   "callback_supported": true,
+   "required": [
+    "input_urls",
+    "prompt"
+   ],
+   "input_fields": {
+    "prompt": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 32000
+    },
+    "input_urls": {
+     "type": "array",
+     "maxItems": 16,
+     "items": {
+      "type": "string",
+      "format": "uri"
+     }
+    },
+    "mask_url": {
+     "type": "string",
+     "format": "uri"
+    },
+    "markup": {
+     "type": "string",
+     "format": "uri"
+    },
+    "aspect_ratio": {
+     "type": "string",
+     "enum": [
+      "auto",
+      "1:1",
+      "3:2",
+      "2:3",
+      "4:3",
+      "3:4",
+      "5:4",
+      "4:5",
+      "16:9",
+      "9:16",
+      "2:1",
+      "1:2",
+      "21:9",
+      "9:21",
+      "3:1",
+      "1:3"
+     ],
+     "default": "auto"
+    },
+    "resolution": {
+     "type": "string",
+     "enum": [
+      "1K",
+      "2K",
+      "4K"
+     ],
+     "default": "1K"
+    },
+    "quality": {
+     "type": "string",
+     "enum": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "auto"
+     ],
+     "default": "medium"
+    },
+    "background": {
+     "type": "string",
+     "enum": [
+      "transparent",
+      "opaque",
+      "auto"
+     ],
+     "default": "auto"
+    },
+    "output_format": {
+     "type": "string",
+     "enum": [
+      "png",
+      "jpeg",
+      "webp"
+     ],
+     "default": "png"
+    },
+    "complexity": {
+     "type": "string",
+     "enum": [
+      "low",
+      "medium",
+      "high"
+     ],
+     "default": "high"
+    },
+    "moderation": {
+     "type": "string",
+     "enum": [
+      "auto",
+      "low"
+     ],
+     "default": "low"
+    },
+    "output_compression": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 100
+    }
+   },
+   "branches": [],
+   "prompt_field": {
+    "name": "prompt",
+    "maxLength": 32000,
+    "verbatim": false,
+    "max_source": "schema",
+    "limits_listed": []
+   },
+   "verbatim_fields": []
+  },
+  {
+   "id": "gpt-image-2-6/sunburst-text-to-image",
+   "provider": "OpenAI",
+   "title": "GPT Image 2.6 Sunburst Text to Image",
+   "taskType": [
+    "Text to Image"
+   ],
+   "family": "gpt-image",
+   "version": [
+    2,
+    6
+   ],
+   "variant": "sunburst",
+   "pricing": {
+    "raw": "Text input 900 credits / 1M tokens ($4.50), cached text input 225 ($1.125), image input 1,440 ($7.20), cached image input 360 ($1.80), image output 5,400 ($27.00) \u2014 10% below official pricing. SVG output: image tokens as above, plus the SVG author model's tokens \u2014 gpt-5.6-luna (default): input 36 credits / 1M tokens ($0.18), output 216 ($1.08); gpt-6-sol: input 360 ($1.80), output 1,800 ($9.00); gpt-5.6-terra: input 360 ($1.80), output 2,160 ($10.80). High-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates.",
+    "status": "ok",
+    "credits_min": 36.0,
+    "credits_max": 900.0,
+    "unit": "per-1m-tokens",
+    "credits_estimate": 900.0
+   },
+   "schema": {
+    "readable": true,
+    "submit_path": "/api/v1/jobs/createTask",
+    "method": "post",
+    "kind": "createTask"
+   },
+   "schema_paths": [
+    {
+     "path": "/api/v1/jobs/createTask",
+     "method": "post",
+     "kind": "createTask"
+    }
+   ],
+   "callback_supported": true,
+   "required": [
+    "prompt"
+   ],
+   "input_fields": {
+    "prompt": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 32000
+    },
+    "aspect_ratio": {
+     "type": "string",
+     "enum": [
+      "auto",
+      "1:1",
+      "3:2",
+      "2:3",
+      "4:3",
+      "3:4",
+      "5:4",
+      "4:5",
+      "16:9",
+      "9:16",
+      "2:1",
+      "1:2",
+      "21:9",
+      "9:21",
+      "3:1",
+      "1:3"
+     ],
+     "default": "auto"
+    },
+    "resolution": {
+     "type": "string",
+     "enum": [
+      "1K",
+      "2K",
+      "4K"
+     ],
+     "default": "1K"
+    },
+    "quality": {
+     "type": "string",
+     "enum": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "auto"
+     ],
+     "default": "medium"
+    },
+    "background": {
+     "type": "string",
+     "enum": [
+      "transparent",
+      "opaque",
+      "auto"
+     ],
+     "default": "auto"
+    },
+    "output_format": {
+     "type": "string",
+     "enum": [
+      "png",
+      "jpeg",
+      "webp",
+      "gif",
+      "svg"
+     ],
+     "default": "png"
+    },
+    "complexity": {
+     "type": "string",
+     "enum": [
+      "low",
+      "medium",
+      "high"
+     ],
+     "default": "high"
+    },
+    "moderation": {
+     "type": "string",
+     "enum": [
+      "auto",
+      "low"
+     ],
+     "default": "low"
+    },
+    "output_compression": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 100
+    },
+    "size": {
+     "type": "string",
+     "default": "auto"
+    },
+    "frame_count": {
+     "type": "integer",
+     "minimum": 2,
+     "maximum": 16,
+     "default": 9
+    },
+    "frame_duration_ms": {
+     "type": "integer",
+     "minimum": 20,
+     "maximum": 2000,
+     "default": 200
+    },
+    "svg": {
+     "type": "object",
+     "properties": {
+      "model": {
+       "type": "string",
+       "enum": [
+        "gpt-6-sol",
+        "gpt-5.6-luna",
+        "gpt-5.6-terra"
+       ],
+       "default": "gpt-5.6-luna"
+      }
+     }
+    }
+   },
+   "branches": [],
+   "prompt_field": {
+    "name": "prompt",
+    "maxLength": 32000,
     "verbatim": false,
     "max_source": "schema",
     "limits_listed": []
