@@ -598,7 +598,8 @@
         "python3 scripts/validate_page.py {run_dir}/final-mockups/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}",
         "python3 scripts/validate_mockup_slots.py {run_dir} final-mockups",
         "python3 scripts/validate_production_record.py {run_dir}/final-mockups/production-record.json --ocr --model {model}",
-        "python3 scripts/validate_review_pdf.py {run_dir} --stage final-mockups"
+        "python3 scripts/validate_review_pdf.py {run_dir} --stage final-mockups",
+        "python3 scripts/validate_annotation_leak.py {run_dir}/final-mockups/mockup.html --run-dir {run_dir}"
       ],
       "review_required": true,
       "review_covers": [
@@ -661,7 +662,8 @@
       "validators": [
         "python3 scripts/validate_page.py {run_dir}/responsive-html/index.html --brand {brand} --mode page --run-dir {run_dir}",
         "python3 scripts/validate_handoff.py {run_dir}",
-        "python3 scripts/compare_sheet.py {run_dir}"
+        "python3 scripts/compare_sheet.py {run_dir}",
+        "python3 scripts/validate_annotation_leak.py {run_dir}/responsive-html/index.html --run-dir {run_dir}"
       ],
       "review_required": true,
       "review_covers": "responsive-html/compare/*.png",
