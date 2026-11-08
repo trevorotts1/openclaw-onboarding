@@ -426,8 +426,9 @@ class KieImage(BaseTool):
         if err.get("code") == "prompt_below_floor":
             return f"kie_image: prompt is below the 80 percent floor: {err.get('msg')}", []
         if err.get("code") == "prompt_out_of_band":
-            # prompt-policy/2.0.0 strict band (95-100 percent): still a refusal, never a run.
-            return f"kie_image: prompt is below the strict 95 percent band: {err.get('msg')}", []
+            # Any other band refusal (above the target ceiling, a separate documented limit, an
+            # unverifiable unit) is a refusal here, before any spend -- never a run that fails later.
+            return f"kie_image: prompt is outside the prompt band: {err.get('msg')}", []
         return None, []
 
     # ------------------------------------------------------------------
