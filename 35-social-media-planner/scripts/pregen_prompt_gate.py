@@ -24,9 +24,8 @@ declared metadata BEFORE any generation call, mirroring the Graphics department'
   6 — QUALITY/ROUTING failure (AF-SM-MODEL-ROUTING / AF-SM-INPUT-QC-GATE): the prompt is
       structurally complete but (a) a text-overlay image is routed to a non-text-rendering
       model, or Nano Banana is used at all (owner rule: never for social, no fallback
-      label exists; the only fallback for Sunburst is legacy gpt-image-2 under the N43
-      ratio rules). Skill 35's default image
-      model is KIE GPT Image 2.6 Sunburst (owner order 2026-10-05, AGENTS.md N43;
+      label exists). Skill 35's default image
+      model is KIE GPT Image 2.6 Sunburst (owner order 2026-10-05;
       playbook.md Section 8), or
       (b) a graphics-department-sourced asset has no SOP-GIP-02 QC receipt scoring >= 8.5.
 
@@ -79,16 +78,15 @@ EXIT_USAGE = 2
 EXIT_FORM = 3
 EXIT_QUALITY = 6
 
-# Owner order 2026-10-05 + AGENTS.md N43 (fleet pin): Skill 35 generates every image
+# Owner order 2026-10-05 (fleet pin): Skill 35 generates every image
 # with KIE GPT Image 2.6 Sunburst. `--model` defaults to the text-to-image id; use the
-# image-to-image id when a reference image is supplied. Legacy gpt-image-2 is only for
-# 3:1, 1:3 and 9:21 (Skill 35 produces none); `flare` is never registered.
+# image-to-image id when a reference image is supplied. GPT Image 2.6 serves every
+# aspect ratio in its 16-member enum natively, so a declared ratio is passed through
+# literally: there is no substitution table and no ratio-based detour to the retained
+# legacy gpt-image-2 route, which stays reachable only by an explicit `--model` pin.
+# `flare` is never registered.
 DEFAULT_IMAGE_MODEL = "gpt-image-2-6/sunburst-text-to-image"
 DEFAULT_IMAGE_MODEL_I2I = "gpt-image-2-6/sunburst-image-to-image"
-# N43 ratio substitution: Skill 35's 4:5 deliverable is requested as 3:4 and cropped to
-# 4:5 after generation. 2:3, 9:16, 16:9 and 1:1 are requested as they are.
-DISPATCH_RATIO_SUBSTITUTION = {"4:5": "3:4"}
-LEGACY_GPT_IMAGE_2_RATIOS = frozenset({"3:1", "1:3", "9:21"})
 
 # Every ratio Skill 35 actually produces (playbook.md Section 7/8/9). A prompt declaring a
 # ratio outside this set is a FORM failure — it does not match any real deliverable slot.
@@ -311,21 +309,15 @@ def check_prompt(
     # F32: capability-metadata routing via model-capabilities.json. GPT Image 2.6 and
     # Agnes are ELIGIBLE through verified adapters; the Ideogram-only allowlist is gone.
     # Owner rule: Nano Banana is never a social route, labeled or not.
-    # AGENTS.md N43: legacy gpt-image-2 (not 2.5) is allowed ONLY for 3:1, 1:3 and 9:21.
-    _bare = model_norm.split("/")[-1]
-    if _bare.startswith("gpt-image-2") and not _bare.startswith("gpt-image-2-6") \
-            and ratio not in LEGACY_GPT_IMAGE_2_RATIOS:
-        res.quality_problems.append(
-            f"AF-SM-MODEL-ROUTING: {model!r} is legacy GPT Image 2, allowed only for ratios "
-            f"{sorted(LEGACY_GPT_IMAGE_2_RATIOS)} (AGENTS.md N43). Ratio {ratio!r} must use "
-            f"{DEFAULT_IMAGE_MODEL} (or {DEFAULT_IMAGE_MODEL_I2I}).")
-
+    # AGENTS.md N43 is retired as a ROUTING rule: GPT Image 2.6 serves 3:1, 1:3 and 9:21
+    # natively, so no ratio detours to legacy. A legacy pin is the caller's explicit
+    # `--model` choice and is not second-guessed here.
     if model_norm.split("/")[-1].startswith("nano-banana"):
         res.quality_problems.append(
             f"AF-SM-MODEL-ROUTING: {model!r} is not a Skill 35 route. The default image "
             f"model is KIE GPT Image 2.6 Sunburst ({DEFAULT_IMAGE_MODEL}; "
             f"{DEFAULT_IMAGE_MODEL_I2I} with a reference image). Nano Banana is never "
-            "allowed for social images; the only fallback is legacy gpt-image-2 under the N43 ratio rules.")
+            "allowed for social images.")
 
     if text_overlay and not model_is_text_capable(model_norm):
         res.quality_problems.append(

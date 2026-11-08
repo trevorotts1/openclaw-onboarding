@@ -348,7 +348,7 @@ def main() -> int:
         )
         check("Sunburst image-to-image id also clears the gate (exit 0)", r11d.returncode == 0,
               f"got {r11d.returncode}, stderr={r11d.stderr[:200]!r}")
-    print("\n=== 12. N43: legacy gpt-image-2 only for 3:1, 1:3, 9:21 ===")
+    print("\n=== 12. ratio routing: no substitution, no ratio-based legacy detour ===")
     with tempfile.TemporaryDirectory() as td3:
         t3 = Path(td3)
         av3 = _write(t3, "av.txt", _AVOID_LIST)
@@ -357,8 +357,10 @@ def main() -> int:
         rl = run_gate("--prompt-file", str(pp3), "--model", "gpt-image-2-text-to-image",
                       "--ratio", "2:3", "--pixels", "1000x1500", "--brand-colors", "#0B3D2E",
                       "--avoid-list-file", str(av3))
-        check("legacy gpt-image-2 on 2:3 is refused (exit 6)", rl.returncode == 6, f"got {rl.returncode}")
-        check("refusal cites N43", "N43" in rl.stderr, rl.stderr)
+        check("legacy gpt-image-2 stays reachable by explicit pin (exit 0)",
+              rl.returncode == 0, f"got {rl.returncode}, stderr={rl.stderr[:200]!r}")
+        check("no ratio-based legacy-routing refusal is emitted",
+              "AF-SM-MODEL-ROUTING" not in rl.stderr, rl.stderr)
         rs = run_gate("--prompt-file", str(pp3b), "--model", "gpt-image-2-6/sunburst-text-to-image",
                       "--ratio", "2:3", "--pixels", "1000x1500", "--brand-colors", "#0B3D2E",
                       "--avoid-list-file", str(av3))
@@ -374,8 +376,22 @@ def main() -> int:
     _sp = _iu.spec_from_file_location("pregen_default", str(GATE)); _g = _iu.module_from_spec(_sp); _sp.loader.exec_module(_g)
     check("DEFAULT_IMAGE_MODEL constant is the Sunburst text-to-image id",
           _g.DEFAULT_IMAGE_MODEL == "gpt-image-2-6/sunburst-text-to-image")
-    check("4:5 is requested as 3:4 per N43 (cropped after generation)",
-          _g.DISPATCH_RATIO_SUBSTITUTION.get("4:5") == "3:4")
+    check("no dispatch ratio substitution table exists",
+          not hasattr(_g, "DISPATCH_RATIO_SUBSTITUTION"), "the retired N43 substitution is still defined")
+    _r45 = _g.check_prompt(_sized(19000), model="gpt-image-2-6/sunburst-text-to-image", ratio="4:5",
+                           pixels="1080x1350", platform=None, text_overlay=None,
+                           brand_colors="#0B3D2E", avoid_list_text="x",
+                           asset_source="internal-generated", qc_receipt=None)
+    check("4:5 passes through unchanged: no substitution, no legacy detour",
+          not any("substitut" in m or "legacy GPT Image 2" in m for m in _r45.quality_problems),
+          str(_r45.quality_problems))
+    _r31 = _g.check_prompt(_sized(19000), model="gpt-image-2-6/sunburst-text-to-image", ratio="3:1",
+                           pixels="3000x1000", platform=None, text_overlay=None,
+                           brand_colors="#0B3D2E", avoid_list_text="x",
+                           asset_source="internal-generated", qc_receipt=None)
+    check("3:1 passes through with no legacy detour",
+          not any("legacy GPT Image 2" in m for m in _r31.quality_problems),
+          str(_r31.quality_problems))
 
     print("\n=== 10. fallback routing sets agree with shared-utils/model-capabilities.json (no drift) ===")
     import importlib.util

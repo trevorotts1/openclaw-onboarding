@@ -8,8 +8,10 @@ returns valid=false with an alternative when the request cannot be served.
 
 STDLIB PYTHON3 ONLY. No secrets read. The GPT Image default follows the newest GPT Image generation
 in KIE's live catalog (owner order 2026-10-05): resolved through Skill 74 `latest-family` when that
-adapter is present and reachable, else the models.json default below. Explicit model/alias pins,
-department pins, the legacy 3:1/1:3/9:21 routing and the N43 substitutions are unchanged.
+adapter is present and reachable, else the models.json default below. Explicit model/alias pins and
+department pins are unchanged. GPT Image 2.6 Sunburst serves all 16 enum aspect ratios natively, so
+a ratio inside that enum is dispatched LITERALLY -- never rerouted to the legacy route and never
+substituted -- and a ratio outside the enum is refused.
 
 Exit codes:
   0  selected (valid=true)
@@ -38,9 +40,11 @@ MODELS_JSON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 # ---------------------------------------------------------------------------
 
 REGISTRY = {
-    # GPT Image 2.6 Sunburst -- operator default (ruling 2026-09-09, Ruling 6).
-    # Two-model system: GPT Image 2 (legacy, below) is RETAINED, not retired,
-    # and is the required route for aspect ratios 3:1, 1:3, 9:21 only.
+    # GPT Image 2.6 Sunburst family -- operator default. The family carries the
+    # GPT Image 2.6 aspect-ratio enum (16 values, every one native), so an
+    # aspect ratio is never a routing input. GPT Image 2 (legacy, below) is
+    # RETAINED, not retired, and stays reachable by explicit pin; it is no
+    # longer the required route for any ratio.
     "gpt-image-2-6/sunburst": {
         "name": "GPT Image 2.6",
         "routes": {
@@ -390,13 +394,15 @@ def family_from_text(text):
     return None, None, None
 
 
-# GPT Image 2.6 Sunburst ratio routing (operator ruling 2026-09-09, Ruling 6 --
-# supersedes Ruling 5's hard-fail reading for the first three). A two-model
-# system: these three ratios are NOT served by 2.5 and dispatch to the
-# retained legacy GPT Image 2 route instead; these four are served ON 2.5 via
-# an operator-approved substitution, never a silently-invented one.
-GPT_2_5_LEGACY_ONLY_RATIOS = {"3:1", "1:3", "9:21"}
-GPT_2_5_RATIO_SUBSTITUTIONS = {"5:4": "4:3", "4:5": "3:4", "2:1": "16:9", "1:2": "9:16"}
+# GPT Image 2.6 Sunburst aspect-ratio handling. The vendor OpenAPI enum is
+# exactly: auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1, 1:2,
+# 21:9, 9:21, 3:1, 1:3. Every member is native, so the requested ratio is
+# passed through untouched. The 2.5-era workarounds are gone: no ratio reroutes
+# to the legacy GPT Image 2 route, and no ratio is substituted for another
+# (a 5:4 request must never be dispatched as 4:3). The enum itself is NOT
+# duplicated here -- it is read from models.json through capability_entry and
+# capability_conflict, so a ratio outside it (27:16, 16:27, 9:8, 8:9, ...) is
+# refused as invalid rather than coerced.
 
 # Version-less generic names ("gpt image", "gpt-image", "openai image") mean "the fleet GPT Image default" and
 # follow the newest generation (owner order 2026-10-05). Names that carry a version ("gpt image 2", "gpt-img2",
@@ -494,27 +500,11 @@ def choose_answer(family, request, explicit_model_id, dynamic=False):
     if family == "gpt-image-2-6/sunburst":
         key = "i2i" if task == "image-to-image" else "t2i"
         dflt = gpt_default_routes() if dynamic else None
-        if dflt:  # auto-latest default (owner order 2026-10-05); ratio routing below still applies
+        if dflt:  # auto-latest default (owner order 2026-10-05)
             routes = {k: {"canonical_model_id": dflt[k], "task": routes[k]["task"]} for k in ("t2i", "i2i")}
-        ratio = detect_aspect_ratio(request)
+        # Every ratio in the 2.6 enum is native here, so the ratio travels
+        # untouched; capability_conflict in select() rejects a ratio outside it.
         task_label = "image-to-image" if key == "i2i" else "text-to-image"
-        if ratio in GPT_2_5_LEGACY_ONLY_RATIOS:
-            legacy_routes = REGISTRY["gpt-image-2"]["routes"]
-            return _ok(
-                legacy_routes[key]["canonical_model_id"],
-                "GPT Image 2.6 does not serve aspect ratio %s; routed to the retained legacy "
-                "GPT Image 2 %s route per operator ruling 2026-09-09 (Ruling 6)" % (ratio, task_label),
-            )
-        if ratio in GPT_2_5_RATIO_SUBSTITUTIONS:
-            sub = GPT_2_5_RATIO_SUBSTITUTIONS[ratio]
-            return _ok(
-                routes[key]["canonical_model_id"],
-                "GPT Image 2.6 %s: requested aspect ratio %s substituted with operator-approved "
-                "%s (operator ruling 2026-09-09, Ruling 5)" % (task_label, ratio, sub),
-                resolved_ratio=sub,
-                notes=["aspect_ratio %s substituted with %s for dispatch (operator-approved "
-                       "substitution, ruling 2026-09-09)" % (ratio, sub)],
-            )
         return _ok(routes[key]["canonical_model_id"], "GPT Image default %s (%s)" % (
             task_label, ("auto-latest via %s" % dflt["source"]) if dflt else "2.6 sunburst pinned"))
 
@@ -566,30 +556,42 @@ def choose_answer(family, request, explicit_model_id, dynamic=False):
     return _ok(first["canonical_model_id"], fam_spec["name"] + " first route")
 
 
-def _ok(model_id, reason, resolved_ratio=None, notes=None):
+def _ok(model_id, reason, notes=None):
     return {
         "valid": True,
         "selected_model_id": model_id,
         "reason": reason,
         "alternative": None,
-        "resolved_ratio": resolved_ratio,
         "notes": list(notes) if notes else [],
     }
 
 
-def capability_conflict(model_id, request, res, ratio_override=None):
+def capability_entry(model_id, family):
+    """The models.json row that governs `model_id`'s limits, or None.
+
+    The auto-latest default can name a generation newer than the models.json
+    snapshot. That newer id may have no row, and a missing row must never mean
+    "no limits", so this family's own registry row supplies the capability
+    data. An exact row always wins.
+    """
+    reg = registry_by_id()
+    if model_id in reg:
+        return reg[model_id]
+    for rinfo in REGISTRY.get(family or "", {}).get("routes", {}).values():
+        if rinfo["canonical_model_id"] in reg:
+            return reg[rinfo["canonical_model_id"]]
+    return None
+
+
+def capability_conflict(entry, request, res):
     """Registry-driven capability check: when the request names a resolution or
     aspect ratio and the selected route's registry entry publishes a non-null
     list that does not contain the requested value, return the rejection shape
     (suggesting a same-family route that does support it when one exists).
 
-    `ratio_override` lets the caller pass an already-resolved effective ratio
-    (e.g. after an operator-approved substitution such as 4:5 -> 3:4 on GPT
-    Image 2.5) instead of re-deriving the literally-requested ratio from the
-    raw request text, so a substitution never gets rejected against the very
-    enum it was substituted to satisfy.
+    The requested ratio is checked literally. Nothing resolves it to a
+    different ratio before the check, because no ratio substitution exists.
     """
-    entry = registry_by_id().get(model_id)
     if entry is None:
         return None
     norm = normalize(request)
@@ -608,7 +610,7 @@ def capability_conflict(model_id, request, res, ratio_override=None):
                 "alternative": alt,
             }
 
-    ratio = ratio_override if ratio_override is not None else detect_aspect_ratio(request)
+    ratio = detect_aspect_ratio(request)
     allowed_ar = entry.get("aspect_ratios")
     if ratio and allowed_ar and ratio not in [str(x) for x in allowed_ar]:
         alt = _same_family_alternative(entry, "aspect_ratios", ratio)
@@ -621,9 +623,12 @@ def capability_conflict(model_id, request, res, ratio_override=None):
         }
 
     # Per-ratio resolution exclusion, registry-driven and per-generation: GPT
-    # Image 2 (legacy) carries its own old 5-item list (5:4, 4:5, 3:1, 1:3,
-    # 9:21); GPT Image 2.6 Sunburst has NO per-resolution exclusions (empty
-    # list) -- its 16-member enum is flat across 1K/2K/4K. Never merged.
+    # Image 2 (legacy) carries its own old 5-item 2K/4K exclusion list (5:4,
+    # 4:5, 3:1, 1:3, 9:21). GPT Image 2.6 Sunburst carries none -- the vendor
+    # document states no per-resolution aspect-ratio exclusions, and the
+    # 2.5-only "1K only" rule for 27:16/16:27/9:8/8:9 is retired because those
+    # ratios are not enum members at all (caught by the check above). Each
+    # entry's own list governs; never merged.
     excluded = entry.get("ratio_resolution_exclusions")
     if ratio and excluded and req_res and ratio in [str(x) for x in excluded]:
         wanted_res = {"4k": "4K", "2k": "2K", "1k": "1K"}.get(req_res, req_res)
@@ -653,7 +658,8 @@ def _same_family_alternative(entry, key, wanted):
 RATIO_TOKENS = [
     "21:9", "9:21", "1:8", "8:1", "16:9", "9:16", "4:5", "5:4", "3:4", "4:3",
     "2:3", "3:2", "1:2", "2:1", "1:3", "3:1", "1:4", "4:1", "1:1",
-    # GPT Image 2.6 Sunburst-only ratios (operator ruling 2026-09-09)
+    # Outside the GPT Image 2.6 enum. Listed so they are DETECTED and refused,
+    # never silently dropped from the request and never coerced to a member.
     "27:16", "16:27", "9:8", "8:9",
 ]
 
@@ -683,14 +689,11 @@ def select(request):
         dynamic = True
     ans = choose_answer(family, request, explicit_id, dynamic)
     # registry-driven capability check applies to ALL families; explicit pins
-    # are re-checked too. ratio_override carries an already-resolved ratio
-    # (e.g. an operator-approved GPT Image 2.6 substitution) through to the
-    # check so it is never re-rejected against the enum it was substituted
-    # to satisfy.
+    # are re-checked too, against the literally requested ratio.
     conflict = None
     if ans["selected_model_id"]:
-        conflict = capability_conflict(ans["selected_model_id"], request, detect_resolution(request),
-                                        ratio_override=ans.get("resolved_ratio"))
+        conflict = capability_conflict(
+            capability_entry(ans["selected_model_id"], family), request, detect_resolution(request))
     notes = list(ans.get("notes") or [])
     if conflict is not None:
         ans = conflict
@@ -700,6 +703,8 @@ def select(request):
         "selected_family": family,
         "task": detect_task(request),
         "resolution": detect_resolution(request),
+        # the ratio as it must be dispatched: what the request asked for, verbatim
+        "aspect_ratio": detect_aspect_ratio(request),
         "compatibility": "full" if ans["valid"] else "conflict",
         "reason": ans["reason"],
         "alternative": ans["alternative"],
@@ -736,27 +741,28 @@ SELFTEST_CASES = [
     ("imagen 4 ultra studio shot", "google/imagen4-ultra", True, None),
     ("generate with flux 2 flex", "flux-2/flex-text-to-image", True, None),
     ("edit this with nano banana", "nano-banana-2", True, None),
-    # --- GPT Image 2.6 dual-route ratio behavior (operator ruling 2026-09-09) ---
+    # --- GPT Image 2.6 ratio behavior: every enum member is native ---
     # Explicit legacy pin phrase still resolves to the retained legacy route.
     ("use gpt image 2 legacy for this banner", "gpt-image-2-text-to-image", True, None),
     # Explicit canonical legacy model id mention always resolves to legacy,
-    # regardless of the default having moved to 2.5.
+    # regardless of the default having moved on.
     ("dispatch with gpt-image-2-text-to-image explicitly", "gpt-image-2-text-to-image", True, None),
-    # 3:1 / 1:3 / 9:21 ARE served by 2.6 natively (vendor 2.6 enum, checked
-    # 2026-11-08). The router still sends them to the retained legacy GPT Image 2
-    # route: pre-existing wiring, no longer required, awaiting the operator's go-ahead.
-    ("banner in 3:1 ratio", "gpt-image-2-text-to-image", True, None),
-    ("edit this in 1:3 ratio", "gpt-image-2-image-to-image", True, None),
-    ("poster in 9:21 ratio", "gpt-image-2-text-to-image", True, None),
-    # 5:4 / 4:5 / 2:1 / 1:2 are NATIVE on 2.6 as of 2026-11-08; the router still
-    # applies the 2026-09-09 substitution table (pre-existing wiring, awaiting go-ahead).
-    ("product shot in 4:5 aspect ratio", "gpt-image-2-6/sunburst-text-to-image", True, None),
-    ("banner in 2:1 aspect ratio", "gpt-image-2-6/sunburst-text-to-image", True, None),
-    # A 27:16 / 16:27 / 9:8 / 8:9 request hard-fails: none of them is a 2.6 enum
-    # member at ANY resolution (registry ratio_resolution_exclusions is empty).
-    ("photo at 9:8 aspect ratio in 4K", None, False, None),
-    # ... and no resolution helps. The old "1K-only" allowance is retracted.
-    ("photo at 9:8 aspect ratio", None, False, None),
+    # 3:1 / 1:3 / 9:21 are native members of the 2.6 enum (measured live
+    # 2026-11-08: a 3:1 sunburst submit returned HTTP 200 with a taskId), so
+    # they stay on the sunburst route; the legacy reroute is gone.
+    ("banner in 3:1 ratio", "gpt-image-2-6/sunburst-text-to-image", True, None, "3:1"),
+    ("edit this in 1:3 ratio", "gpt-image-2-6/sunburst-image-to-image", True, None, "1:3"),
+    ("poster in 9:21 ratio", "gpt-image-2-6/sunburst-text-to-image", True, None, "9:21"),
+    # 5:4 / 4:5 / 2:1 are literal enum members on 2.6 and reach the route
+    # UNCHANGED: a 5:4 banner is never dispatched as 4:3 (substitution gone).
+    ("product shot in 5:4 aspect ratio", "gpt-image-2-6/sunburst-text-to-image", True, None, "5:4"),
+    ("product shot in 4:5 aspect ratio", "gpt-image-2-6/sunburst-text-to-image", True, None, "4:5"),
+    ("banner in 2:1 aspect ratio", "gpt-image-2-6/sunburst-text-to-image", True, None, "2:1"),
+    # 9:8 / 16:27 / 27:16 / 8:9 are NOT members of the GPT Image 2.6 enum at
+    # all, so they hard-fail at EVERY resolution -- not just at 2K/4K. The
+    # ratio is still detected; nothing coerces it to a member.
+    ("photo at 9:8 aspect ratio in 4K", None, False, None, "9:8"),
+    ("photo at 9:8 aspect ratio", None, False, None, "9:8"),
 ]
 
 
@@ -781,13 +787,18 @@ DYNAMIC_CASES = [
     ("explicit canonical id is a pin", NEWER, "dispatch with gpt-image-2-6/sunburst-text-to-image explicitly",
      "gpt-image-2-6/sunburst-text-to-image"),
     ("another family pin is untouched", NEWER, "use ideogram for typography", "ideogram/v3-text-to-image"),
-    ("legacy 3:1 still routes to GPT Image 2", NEWER, "banner in 3:1 ratio", "gpt-image-2-text-to-image"),
-    ("N43 substitution still applies on the newest default", NEWER, "product shot in 4:5 aspect ratio",
-     "gpt-image-3-aurora-text-to-image"),
+    ("legacy 3:1 is native on 2.6 and follows the newest default", NEWER, "banner in 3:1 ratio",
+     "gpt-image-3-aurora-text-to-image", "3:1"),
+    ("4:5 passes through literally on the newest default", NEWER, "product shot in 4:5 aspect ratio",
+     "gpt-image-3-aurora-text-to-image", "4:5"),
     ("adapter unreachable falls back to models.json", "broken", "general product photography request",
      "gpt-image-2-6/sunburst-text-to-image"),
     ("adapter absent falls back to models.json", None, "general product photography request",
      "gpt-image-2-6/sunburst-text-to-image"),
+    # an auto-latest id newer than the models.json snapshot still gets the
+    # family's capability row, so an out-of-enum ratio stays refused
+    ("out-of-enum ratio is refused on the newest default", NEWER, "photo at 9:8 aspect ratio",
+     None, "9:8"),
 ]
 
 
@@ -799,7 +810,9 @@ def _dynamic_selftest():
         script = os.path.join(d, "kie_live_adapter.py")
         with open(script, "w") as fh:
             fh.write("import json, os, sys\nsys.stdout.write(open(os.path.join(os.path.dirname(__file__), 'answer.json')).read())\n")
-        for name, answer, req, exp in DYNAMIC_CASES:
+        for case in DYNAMIC_CASES:
+            name, answer, req, exp = case[:4]
+            exp_ratio = case[4] if len(case) > 4 else None
             _DEFAULT_MEMO.clear()
             if answer is None:
                 os.environ["KIE_LIVE_ADAPTER_PATH"] = ""
@@ -811,9 +824,13 @@ def _dynamic_selftest():
                 with open(os.path.join(d, "answer.json"), "w") as fh:
                     json.dump(answer, fh)
                 os.environ["KIE_LIVE_ADAPTER_PATH"] = script
-            got = select(req)["selected_model_id"]
+            res = select(req)
+            got = res["selected_model_id"]
             if got != exp:
                 failures.append("FAIL %s: %r expected %s got %s" % (name, req, exp, got))
+            elif exp_ratio is not None and res["aspect_ratio"] != exp_ratio:
+                failures.append("FAIL %s: %r expected aspect_ratio %s unchanged, got %s" % (
+                    name, req, exp_ratio, res["aspect_ratio"]))
     if saved is None:
         os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)
     else:
@@ -828,18 +845,21 @@ def selftest():
     os.environ["KIE_LIVE_ADAPTER_PATH"] = ""
     _DEFAULT_MEMO.clear()
     failures = []
-    for req, exp_id, exp_valid, exp_alt in SELFTEST_CASES:
+    for case in SELFTEST_CASES:
+        req, exp_id, exp_valid, exp_alt = case[:4]
+        exp_ratio = case[4] if len(case) > 4 else None
         res = select(req)
         got_bad = (
             res["selected_model_id"] != exp_id
             or res["valid"] != exp_valid
             or res["alternative"] != exp_alt
+            or (exp_ratio is not None and res["aspect_ratio"] != exp_ratio)
         )
         if got_bad:
             failures.append(
-                "FAIL %r: expected id=%s valid=%s alt=%s; got id=%s valid=%s alt=%s" % (
-                    req, exp_id, exp_valid, exp_alt,
-                    res["selected_model_id"], res["valid"], res["alternative"])
+                "FAIL %r: expected id=%s valid=%s alt=%s ratio=%s; got id=%s valid=%s alt=%s ratio=%s" % (
+                    req, exp_id, exp_valid, exp_alt, exp_ratio,
+                    res["selected_model_id"], res["valid"], res["alternative"], res["aspect_ratio"])
             )
     if saved is None:
         os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)
