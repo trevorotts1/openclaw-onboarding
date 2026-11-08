@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """prove_sf_prompt_floor.py — fail-closed two-floor gate for Signature Funnel image
-prompts (Kie.ai gpt-image-2.5). A clone of the presentations two-floor prompt gate
+prompts (Kie.ai gpt-image-2-6). A clone of the presentations two-floor prompt gate
 (structural-block / density), with the LENGTH floor measured by the shared KIE rule 12
 enforcer (shared-utils/kie_prompt_enforcer.py) instead of a band of its own.
 
@@ -77,7 +77,7 @@ EXIT_FAILCLOSED = 3
 # --- prompt length: KIE rule 12 (owner order 2026-10-05), measured by the shared enforcer ----------
 # 95 to 100 percent of the model maxLength, hard floor 80 percent (AF-FUN-PROMPT-FLOOR), hard ceiling
 # 100 percent (AF-FUN-PROMPT-CEILING). The limit comes from Skill 74 prompt-budget; no band lives here.
-IMAGE_MODEL_DEFAULT = "gpt-image-2-5-sunburst-text-to-image"
+IMAGE_MODEL_DEFAULT = "gpt-image-2-6/sunburst-text-to-image"
 PROMPT_MIN_DISTINCT_WORDS = 220  # AF-FUN-PROMPT-DENSITY: catches paragraph-repeat padding
 
 # The canonical SIGNATURE GRADE BLOCK (SACRED IP) — embedded verbatim in block 4 of

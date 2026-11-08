@@ -139,7 +139,7 @@ jumps past it; **every path terminates at Thank-You** — nobody ends a purchase
 ## 4. IMAGE SYSTEM (SACRED length budget: 95 to 100 percent of the model maximum, never below 80 percent)
 
 - **Model:** Kie.ai, **text-to-image by default**. The default is the newest GPT Image generation in KIE's
-  live catalog (rule 13), resolved by Skill 66 through Skill 74 `latest-family` (GPT Image 2.5 Sunburst
+  live catalog (rule 13), resolved by Skill 66 through Skill 74 `latest-family` (GPT Image 2.6 Sunburst
   today); no model id is written here. Transport is Skill 74 only (`SOP-FUNNEL-03` section 3). 16:9 / 2K
   defaults; Sec 4 → 16:9 (was 21:9); Sec 12 → 3:4 (was 2:3); both ratios are served as asked on the
   default model (N43 substitutions only touch 5:4, 4:5, 2:1, 1:2). All Midjourney syntax retired.

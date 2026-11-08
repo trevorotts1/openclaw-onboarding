@@ -190,7 +190,7 @@ class ImageModelResolvedThroughSkill66(unittest.TestCase):
         return [c[c.index("--model") + 1] for c in seen if "--model" in c]
 
     def test_the_source_holds_no_hard_coded_model_id(self):
-        self.assertNotIn("gpt-image-2-5-sunburst-image-to-image", TOOL.read_text(encoding="utf-8"))
+        self.assertNotIn("gpt-image-2-6/sunburst-image-to-image", TOOL.read_text(encoding="utf-8"))
 
     def test_changing_the_skill66_default_changes_the_model_in_every_production_request(self):
         adapter = self.root / "kie_live_adapter.py"  # Skill 74 `latest-family`, the way Skill 66 asks it
