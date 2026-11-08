@@ -5,6 +5,8 @@ never invents survey/quiz scoring selectors; validate_model and evaluate_model
 provide exact expected behavior for their independent submission checks.
 """
 from copy import deepcopy
+import re
+from urllib.parse import urlsplit
 
 
 STANDARD_FIELDS = {
@@ -18,6 +20,34 @@ PROPERTIES = ('label', 'placeholder', 'short_label', 'query_key', 'width_pct')
 
 class AssessmentError(ValueError):
     pass
+
+
+def reopen_editor(page, kind, name, editor_url):
+    """Independent list read-back without relying on browser history.
+
+    Native Back returns about:blank when a host starts at a direct editor URL.
+    These list routes were captured in the corresponding native builders.
+    """
+    if __package__:
+        from .skill6_playwright import exact_search, click, Stop
+    else:
+        from skill6_playwright import exact_search, click, Stop
+    if kind not in ('form', 'survey', 'quiz'):
+        raise AssessmentError('Unknown native editor kind')
+    parsed = urlsplit(editor_url)
+    match = re.fullmatch(r'/v2/location/([A-Za-z0-9_-]+)/' + kind + r'-builder-v2/[A-Za-z0-9_-]+/?', parsed.path)
+    if parsed.scheme != 'https' or parsed.username or parsed.password or parsed.query or parsed.fragment or not match:
+        raise Stop('Native editor identity is not a captured exact HTTPS route')
+    list_url = parsed.scheme + '://' + parsed.netloc + '/v2/location/' + match.group(1) + '/' + kind + '-builder/main'
+    page.goto(list_url, wait_until='domcontentloaded', timeout=45000)
+    cell = exact_search(page, kind + ('zes' if kind == 'quiz' else 's'), name)
+    if cell is None:
+        raise Stop('Saved ' + kind + ' absent from independent list read-back')
+    click(cell.get_by_text(name, exact=True))
+    title = page.frame_locator('iframe[name="' + kind + '-builder-app"]').get_by_role('textbox', name='Form Name', exact=True)
+    title.wait_for(state='visible', timeout=45000)
+    if page.url != editor_url or title.input_value() != name:
+        raise Stop('Reopened native editor identity changed')
 
 
 def validate_fields(step):
@@ -135,15 +165,9 @@ def configure_fields(page, step):
         expected.append((field, [inputs.nth(i).input_value() for i in range(5)], wanted_required, wanted_hidden))
         close_panel()
     click(frame.get_by_role('button', name='Save', exact=True))
-    wait_until(lambda: frame.get_by_role('button', name='Save', exact=True).is_enabled(), 'Form save did not finish')
-    click(frame.get_by_role('button', name='Back', exact=True))
-    cell = exact_search(page, 'forms', name)
-    if cell is None:
-        raise Stop('Saved form absent from independent list read-back')
-    click(cell.get_by_text(name, exact=True))
-    title.wait_for(state='visible', timeout=45000)
-    if page.url != editor_url:
-        raise Stop('Reopened form identity changed')
+    wait_until(lambda: frame.get_by_role('button', name='Save', exact=True).count() == 1
+               and frame.get_by_role('button', name='Save', exact=True).is_enabled(), 'Form save did not finish')
+    reopen_editor(page, 'form', name, editor_url)
     if visible(close):
         click(close)
     for field, values, required, hidden in expected:
@@ -184,17 +208,40 @@ def configure_condition(page, step):
     their intended persisted identity is unknown. Save is not functional proof.
     """
     if __package__:
-        from .skill6_playwright import click, fill, form_builder, visible, Stop
+        from .skill6_playwright import click, fill, form_builder, visible, wait_until, Stop
     else:
-        from skill6_playwright import click, fill, form_builder, visible, Stop
+        from skill6_playwright import click, fill, form_builder, visible, wait_until, Stop
     step = validate_condition(step)
     frame = form_builder(page)
+    editor_url = page.url
+    title = frame.get_by_role('textbox', name='Form Name', exact=True)
+    form_name = title.input_value()
     close = frame.get_by_role('dialog').get_by_role('button', name='Close', exact=True)
     if visible(close):
         click(close)
     click(frame.get_by_role('tab', name='Edit', exact=True))
     click(frame.get_by_role('button', name='Open Conditional Logic', exact=True))
     dialog = frame.get_by_role('dialog')
+    unary = step['operator'] in {'Is Empty', 'Is Filled'}
+
+    def persisted_match():
+        if not unary:
+            return False  # Binary condition card text needs its own capture.
+        anchors = dialog.get_by_text('If' + step['if_field'] + step['operator'], exact=True)
+        matches = 0
+        for index in range(anchors.count()):
+            # Three ancestors are the independently reopened native rule card.
+            card = anchors.nth(index).locator('..').locator('..').locator('..')
+            if card.get_by_text(step['target'], exact=True).count() == 1 and card.get_by_text('Hide Field', exact=True).count() == 2:
+                matches += 1
+        if matches > 1:
+            raise Stop('Duplicate persisted conditions require reconciliation')
+        return matches == 1
+
+    if persisted_match():
+        return {'status': 'CONDITION_ALREADY_PRESENT', 'kind': 'form_condition',
+                'independent_readback': 'VERIFIED', 'submission_verified': False,
+                'if_field': step['if_field'], 'operator': step['operator'], 'target': step['target']}
     if dialog.get_by_text('No existing conditions yet', exact=True).count() != 1:
         raise Stop('Existing conditions require inventory before another create')
     click(dialog.get_by_text('Show/Hide Fields', exact=True))
@@ -214,7 +261,6 @@ def configure_condition(page, step):
     choose(step['if_field'])
     click(inputs.nth(1))
     choose(step['operator'])
-    unary = step['operator'] in {'Is Empty', 'Is Filled'}
     if inputs.count() != (4 if unary else 5):
         raise Stop('Native condition operator shape changed')
     if not unary:
@@ -228,8 +274,26 @@ def configure_condition(page, step):
     if not save.is_enabled():
         raise Stop('Native condition remains invalid; no save attempted')
     click(save)
-    return {'status': 'CONDITION_SAVE_SUBMITTED', 'kind': 'form_condition',
-            'independent_readback': 'REQUIRED', 'submission_verified': False,
+    wait_until(lambda: dialog.get_by_text('Hide Field', exact=True).count() >= 2,
+               'Saved native condition card did not appear')
+    # The first Save stores the rule card; the drawer Save stores its list.
+    click(dialog.get_by_role('button', name='Save', exact=True))
+    dialog.wait_for(state='hidden', timeout=45000)
+    click(frame.get_by_role('button', name='Save', exact=True))
+    wait_until(lambda: frame.get_by_role('button', name='Save', exact=True).count() == 1
+               and frame.get_by_role('button', name='Save', exact=True).is_enabled(), 'Form save did not finish')
+    page.goto(editor_url, wait_until='domcontentloaded', timeout=45000)
+    title.wait_for(state='visible', timeout=45000)
+    if page.url != editor_url or title.input_value() != form_name:
+        raise Stop('Reopened form identity changed')
+    if visible(close):
+        click(close)
+    click(frame.get_by_role('tab', name='Edit', exact=True))
+    click(frame.get_by_role('button', name='Open Conditional Logic', exact=True))
+    if unary and not persisted_match():
+        raise Stop('Saved native condition absent from independent editor read-back')
+    return {'status': 'CONDITION_SAVED_AND_REOPENED' if unary else 'CONDITION_SAVE_SUBMITTED', 'kind': 'form_condition',
+            'independent_readback': 'VERIFIED' if unary else 'REQUIRED', 'submission_verified': False,
             'if_field': step['if_field'], 'operator': step['operator'], 'target': step['target']}
 
 

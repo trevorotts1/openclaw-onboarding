@@ -16,6 +16,7 @@ import checkpoint
 import tarfile
 import subprocess
 import fcntl
+from datetime import datetime, timezone
 
 
 class HostRuntimeTests(unittest.TestCase):
@@ -230,6 +231,106 @@ class HostCLITests(unittest.TestCase):
             self.assertEqual(receipt['status'], 'VALIDATED_ONLY')
             self.assertFalse(receipt['browser_used'])
             self.assertFalse(evidence.exists())
+
+
+class HostAPICheckTests(unittest.TestCase):
+    def check(self, operation, changes, provider='public_api'):
+        inputs = {'location_id':'LOC_TEST', 'location_name':'Fixture',
+            'start_url':'https://app.convertandflow.com/v2/location/LOC_TEST/dashboard',
+            'api_capability': {'location_id':'LOC_TEST', 'version':'v3', 'status':'PASS',
+                'source':'fixture receipt', 'scopes':['courses.readonly','courses.write'],
+                'checked_at':datetime.now(timezone.utc).isoformat()}, **changes}
+        probes = {'api_capabilities':{operation:{'location_id':'LOC_TEST',
+            'version':'v3','provider':provider,'supported':True,'scope_ok':True,
+            'observed_at':time.time()}}}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'inputs.json').write_text(json.dumps(inputs))
+            (root/'probes.json').write_text(json.dumps(probes))
+            evidence = root/'evidence'
+            result = subprocess.run([sys.executable, host.__file__, '--operation',operation,
+                '--inputs',str(root/'inputs.json'),'--probes',str(root/'probes.json'),
+                '--evidence-root',str(evidence),'--check'],capture_output=True,text=True,timeout=10)
+            self.assertFalse(evidence.exists())
+            return result, json.loads(result.stdout)
+
+    def test_api_check_rejects_missing_course_and_update_payloads(self):
+        for operation in ('courses.create','courses.update','courses.lesson_quiz.create'):
+            with self.subTest(operation=operation):
+                result, receipt = self.check(operation, {})
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(receipt['status'], 'STOP_INVALID_INPUT')
+                self.assertFalse(receipt['browser_used'])
+
+    def test_api_check_accepts_complete_course_and_update_without_transport(self):
+        for operation, changes in (
+            ('courses.create', {'course':{'title':'Fixture course'}}),
+            ('courses.update', {'product_id':'COURSE_TEST','course_changes':{'description':'Updated fixture'}}),
+            ('courses.lesson_quiz.create', {'product_id':'COURSE_TEST','lesson_id':'LESSON_TEST',
+                'quiz':{'title':'Fixture quiz', 'questions':[{'title':'Choose one','questionType':'single',
+                    'sequenceNumber':1, 'options':[{'title':'Yes','isCorrect':True},{'title':'No','isCorrect':False}]}]}})):
+
+            with self.subTest(operation=operation):
+                result, receipt = self.check(operation, changes)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(receipt['status'], 'VALIDATED_ONLY')
+                self.assertFalse(receipt['browser_used'])
+
+    def test_api_check_validates_capability_scope_not_only_route_receipt(self):
+        result, receipt = self.check('courses.create', {'course':{'title':'Fixture course'},
+            'api_capability':{'location_id':'LOC_TEST','version':'v3','status':'PASS'}})
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(receipt['status'], 'STOP_INVALID_INPUT')
+
+
+class NativeCheckoutReadinessTests(unittest.TestCase):
+    def probes(self):
+        return {'lanes':{'playwright':{'available':True},
+            'openclaw_extension':{'available':True,'current':True}},
+            'recorded_profiles':['checkout.one_click_upsell']}
+
+    def test_valid_target_bound_native_capture_selects_playwright_without_options(self):
+        from test_pages_checkout import inputs, capture
+        data = inputs()
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory,'capture.json').write_text(json.dumps(capture()))
+            with patch.object(host, 'run_on_page', return_value={'status':'NEEDS_VERIFICATION'}) as runner:
+                result = host.run_recipe('checkout.one_click_upsell', data, self.probes(),
+                    Path(directory)/'evidence', input_dir=directory, page=object())
+            self.assertEqual(result['route']['lane'], 'playwright')
+            self.assertEqual(runner.call_count, 1)
+            self.assertEqual(runner.call_args.args[1]['steps'][0]['action'], 'native_checkout')
+
+    def test_invalid_or_absent_capture_cannot_be_blessed_by_a_recorded_profile(self):
+        from test_pages_checkout import inputs, capture
+        for variant in ('missing','wrong_location','unsafe_route'):
+            with self.subTest(variant=variant), tempfile.TemporaryDirectory() as directory:
+                data = inputs()
+                if variant != 'missing':
+                    receipt = capture()
+                    if variant == 'wrong_location': receipt['location_id'] = 'OTHER'
+                    else: receipt['autosave']['path'] = '//untrusted.invalid/write'
+                    Path(directory,'capture.json').write_text(json.dumps(receipt))
+                with patch.object(host, 'run_on_page') as runner, patch.object(host, 'execute') as execute:
+                    result = host.run_recipe('checkout.one_click_upsell',data,self.probes(),
+                        Path(directory)/'evidence',input_dir=directory,page=object())
+                self.assertEqual(result['status'], 'NEEDS_BROWSER_RECOVERY')
+                self.assertEqual(result['route']['lane'], 'openclaw_extension')
+                runner.assert_not_called()
+                execute.assert_not_called()
+
+    def test_check_mode_refuses_capture_before_any_browser_or_evidence(self):
+        from test_pages_checkout import inputs
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'inputs.json').write_text(json.dumps(inputs()))
+            (root/'probes.json').write_text(json.dumps(self.probes()))
+            result = subprocess.run([sys.executable,host.__file__,'--operation','checkout.one_click_upsell',
+                '--inputs',str(root/'inputs.json'),'--probes',str(root/'probes.json'),
+                '--evidence-root',str(root/'evidence'),'--check'],capture_output=True,text=True,timeout=10)
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(json.loads(result.stdout)['status'], 'STOP_INVALID_CAPTURE')
+            self.assertFalse((root/'evidence').exists())
 
 
 if __name__ == '__main__':

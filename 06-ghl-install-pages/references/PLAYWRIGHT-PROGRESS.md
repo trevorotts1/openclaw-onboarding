@@ -142,3 +142,25 @@ modules and catalog entries do not close pending live/profile/payment checks.
 Remaining actual UI capture includes advanced choices, survey branching, quiz
 scoring/results, split traffic/native binding maps, portal privacy/branding, and
 native calendar connections. Continue work; do not treat this checkpoint as done.
+
+## Native quiz, survey and layout continuation
+
+Added quiz_ui.py with categories, choice category/score binding, three score
+tiers, independent saved-editor readback and explicit known-control guards.
+Added survey_ui.py with source-slide ownership, forward-only Jump To creation,
+three save levels, independent native saved-card readback and idempotent reuse.
+Root exercised the saved survey fixture: matching synthetic email skipped Slide2
+to LastName/Submit; nonmatching synthetic email went to FirstName/Next. No final
+submission was clicked. An unfinished-submission prompt required Start over when
+resetting the preview; no real contact details were entered.
+
+Captured actual section width #width dropdown and Full option, separate from
+Allow Rows to take entire width. Runner now sets the dropdown rather than only
+checking class; section-toolbar targeting avoids overlapping row toolbar.
+Explicit native element/name/section identity now supports safe existing code
+updates on multi-section pages and returns code identity receipts.
+
+Created GitHub Actions Ubuntu/Mac real-Chromium fixture workflow; local Chromium
+remains unavailable. Offline tests and skipped fixture count are recorded by
+final suite. Do not claim native Mac/VPS proof or paid checkout proof from CI.
+Community portal independently still shows expired-password screen.

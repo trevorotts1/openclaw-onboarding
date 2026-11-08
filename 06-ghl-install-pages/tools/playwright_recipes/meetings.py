@@ -16,8 +16,9 @@ must supply its vetted API dispatcher with that operation enabled; this module
 does not invent a transport, credential resolver or override the registry gate.
 """
 from copy import deepcopy
+import hashlib
 import re
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
 if __package__:
     from .skill6_playwright import Stop, assert_tenant, click, fill, navigate, wait_until
@@ -31,6 +32,24 @@ SECURITY = {'waiting_room':'Waiting room', 'guest_users':'Allow guest users', 'o
 def validate_room(spec):
     if not isinstance(spec, dict):
         raise Stop('Meeting Room inputs must be an object')
+    canonical = {'location_id', 'location_name', 'start_url'}
+    allowed = canonical | {'name', 'slug', *SECURITY, 'allow_creation',
+                           'expected_room_id', 'id', 'action', '_context'}
+    unsupported = set(spec) - allowed
+    if unsupported:
+        raise Stop('Unsupported Meeting Room controls require a captured implementation: ' + ', '.join(sorted(unsupported)))
+    if 'allow_creation' in spec and type(spec['allow_creation']) is not bool:
+        raise Stop('Meeting allow_creation must be a real boolean')
+    if 'expected_room_id' in spec and (not isinstance(spec['expected_room_id'], str) or not spec['expected_room_id'].strip()):
+        raise Stop('Meeting update requires a nonempty existing room identity')
+    if 'action' in spec and spec['action'] != 'meeting':
+        raise Stop('Unexpected Meeting Room runner action')
+    if 'id' in spec and (not isinstance(spec['id'], str) or not re.fullmatch(r'[a-z0-9_-]+', spec['id'])):
+        raise Stop('Invalid Meeting Room runner step identity')
+    if '_context' in spec:
+        context = spec['_context']
+        if not isinstance(context, dict) or set(context) != canonical or any(context[key] != spec.get(key) for key in canonical):
+            raise Stop('Meeting Room runner context must match the canonical location')
     for key in ('location_id', 'location_name', 'start_url', 'name', 'slug'):
         if not isinstance(spec.get(key), str) or not spec[key].strip():
             raise Stop('Meeting Room requires ' + key)
@@ -40,8 +59,6 @@ def validate_room(spec):
         raise Stop('Invalid meeting room slug')
     if any(type(spec.get(key)) is not bool for key in SECURITY):
         raise Stop('Specify every meeting security choice as a real boolean')
-    if spec.get('cohosts') or spec.get('passcode') or spec.get('start_meeting'):
-        raise Stop('Co-host, passcode and call-start actions require their separate identity/security workflows')
     return deepcopy(spec)
 
 
@@ -219,7 +236,69 @@ def update_room(page, inputs, *, expected_room_id, reader=None):
             'previous_room_identity':expected_room_id}
 
 
-def permanent_link_patch(calendar, *, location_id, room, member_id=None, replace_index=None):
+def _join_link(canonical, private_invite_url=None):
+    """Keep a supplied private invite in memory; return only safe metadata.
+
+    The public/safe canonical URL identifies the room. It does not embed the
+    generated passcode, so it must not be described as an equivalent join link.
+    """
+    canonical = safe_room_url(canonical)
+    metadata = {'credential_link_supplied':False, 'embedded_passcode':False,
+                'passcode_required':True, 'manual_passcode_entry_required':True,
+                'join_link_mode':'canonical_without_embedded_passcode'}
+    if private_invite_url is None:
+        return canonical, metadata
+    try:
+        expected, private = urlsplit(canonical), urlsplit(private_invite_url)
+        pairs = parse_qsl(private.query, keep_blank_values=True, strict_parsing=True)
+    except (TypeError, ValueError):
+        raise Stop('Private room invite format is invalid') from None
+    if (private.scheme, private.netloc, private.path) != (expected.scheme, expected.netloc, expected.path) or private.fragment or private.username or private.password:
+        raise Stop('Private room invite must identify the same verified canonical room')
+    if len(pairs) != 1 or pairs[0][0] != 'pwd' or not pairs[0][1]:
+        raise Stop('Private room invite may contain one nonempty pwd parameter only')
+    metadata.update(credential_link_supplied=True, embedded_passcode=True,
+                    manual_passcode_entry_required=False,
+                    join_link_mode='private_invite_with_embedded_passcode',
+                    invite_url_sha256=hashlib.sha256(private_invite_url.encode()).hexdigest())
+    return private_invite_url, metadata
+
+
+def _put_locations(locations):
+    """Only documented writable calendar-location fields, never read-only IDs."""
+    allowed_kinds = {'custom','zoom_conference','google_conference','inbound_call',
+                     'outbound_call','physical','booker','ms_teams_conference'}
+    out = []
+    for value in locations:
+        if not isinstance(value, dict) or value.get('kind') not in allowed_kinds:
+            raise Stop('Existing calendar location kind is not supported by the documented update contract')
+        clean = {'kind':value['kind']}
+        if 'location' in value:
+            if not isinstance(value['location'], str):
+                raise Stop('Existing calendar location is malformed')
+            clean['location'] = value['location']
+        out.append(clean)
+    return out
+
+
+def _put_members(members):
+    out = []
+    for member in members:
+        if not isinstance(member, dict) or not isinstance(member.get('userId'), str) or not member['userId']:
+            raise Stop('Existing calendar team member is malformed')
+        if member.get('meetingLocation') and not member.get('locationConfigurations'):
+            raise Stop('Migrate legacy member meeting locations before this calendar update')
+        clean = {'userId':member['userId']}
+        for key in ('priority','isPrimary'):
+            if key in member:
+                clean[key] = member[key]
+        if 'locationConfigurations' in member:
+            clean['locationConfigurations'] = _put_locations(member['locationConfigurations'])
+        out.append(clean)
+    return out
+
+
+def permanent_link_patch(calendar, *, location_id, room, member_id=None, replace_index=None, private_invite_url=None):
     """Prepare only the documented location field, preserving other choices.
 
     Existing meeting locations are never silently replaced: append by default;
@@ -230,15 +309,21 @@ def permanent_link_patch(calendar, *, location_id, room, member_id=None, replace
         raise Stop('Calendar read-back is not bound to the requested location')
     if not isinstance(room, dict) or room.get('location_id') != location_id or room.get('status') != 'PRESENT' or not room.get('room_id') or not room.get('source'):
         raise Stop('A sourced, persisted room receipt for this location is required')
-    link = safe_room_url(room.get('url'))
+    canonical = safe_room_url(room.get('url'))
+    link, join_metadata = _join_link(canonical, private_invite_url)
     patch = {}
     is_event = calendar.get('calendarType') == 'event'
     if is_event:
         if member_id:
             raise Stop('Event calendars do not select a team member')
         target = deepcopy(calendar.get('locationConfigurations', []))
+        if calendar.get('meetingLocation') and not target:
+            raise Stop('Migrate the legacy calendar meeting location before this update')
     else:
         members = deepcopy(calendar.get('teamMembers', []))
+        if not isinstance(members, list):
+            raise Stop('Calendar team members are malformed')
+        _put_members(members)  # Validate original legacy state before mutation.
         if not member_id or len([m for m in members if m.get('userId') == member_id]) != 1:
             raise Stop('Select one existing calendar team member explicitly')
         selected = next(m for m in members if m.get('userId') == member_id)
@@ -246,7 +331,16 @@ def permanent_link_patch(calendar, *, location_id, room, member_id=None, replace
     if not isinstance(target, list) or any(not isinstance(x, dict) or not x.get('kind') for x in target):
         raise Stop('Existing location configuration is malformed')
     if any(x.get('kind') == 'custom' and x.get('location') == link for x in target):
-        return {}, {'mode':'permanent_link', 'already_configured':True, 'room_id':room['room_id']}
+        return {}, {'mode':'permanent_link', 'already_configured':True, 'room_id':room['room_id'], **join_metadata}
+    if replace_index is None:
+        # Do not duplicate the same room or silently downgrade an authenticated
+        # invite to a clean URL (or replace credentials) during a later run.
+        for existing in target:
+            if existing.get('kind') != 'custom' or not isinstance(existing.get('location'), str):
+                continue
+            parsed = urlsplit(existing['location'])
+            if urlunsplit((parsed.scheme, parsed.netloc, parsed.path, '', '')) == canonical:
+                raise Stop('This room already has a different join-link mode; select an explicit replacement')
     new = {'kind':'custom', 'location':link}
     if replace_index is None:
         target.append(new)
@@ -257,14 +351,14 @@ def permanent_link_patch(calendar, *, location_id, room, member_id=None, replace
     if not is_event and (len(members) > 1 or calendar.get('calendarType') in ('class_booking', 'collective')) and len(target) > 1:
         raise Stop('This calendar supports one location per team member; request an explicit replacement')
     if is_event:
-        patch['locationConfigurations'] = target
+        patch['locationConfigurations'] = _put_locations(target)
     else:
         selected['locationConfigurations'] = target
-        patch['teamMembers'] = members
-    return patch, {'mode':'permanent_link', 'already_configured':False, 'room_id':room['room_id']}
+        patch['teamMembers'] = _put_members(members)
+    return patch, {'mode':'permanent_link', 'already_configured':False, 'room_id':room['room_id'], **join_metadata}
 
 
-def integrate_calendar(api, *, location_id, calendar_id, room, member_id=None, replace_index=None):
+def integrate_calendar(api, *, location_id, calendar_id, room, member_id=None, replace_index=None, private_invite_url=None):
     """Run GET -> minimal PUT -> independent GET through a vetted dispatcher.
 
     api(operation_id, location_id=..., path_params=..., body=...) is the host's
@@ -281,11 +375,11 @@ def integrate_calendar(api, *, location_id, calendar_id, room, member_id=None, r
             raise Stop('Calendar API read-back identity mismatch')
         return calendar
     current = get()
-    patch, receipt = permanent_link_patch(current, location_id=location_id, room=room, member_id=member_id, replace_index=replace_index)
+    patch, receipt = permanent_link_patch(current, location_id=location_id, room=room, member_id=member_id, replace_index=replace_index, private_invite_url=private_invite_url)
     if patch:
         api('calendars.update', location_id=location_id, path_params=params, body=patch)
         saved = get()
-        after, _ = permanent_link_patch(saved, location_id=location_id, room=room, member_id=member_id, replace_index=replace_index)
+        after, _ = permanent_link_patch(saved, location_id=location_id, room=room, member_id=member_id, replace_index=replace_index, private_invite_url=private_invite_url)
         if after:
             raise Stop('Permanent Meeting Room link did not persist on the calendar')
     return {'status':'CALENDAR_PERMANENT_ROOM_LINK_VERIFIED', 'calendar_id':calendar_id, 'location_id':location_id, **receipt, 'dynamic_room_generation':False}

@@ -136,7 +136,10 @@ class NativeFieldExecution(unittest.TestCase):
                 state['required'] = False
                 state['hidden'] = False
         back.click.side_effect = leave
+        page.goto.side_effect = lambda *args, **kwargs: leave()
+        page.frame_locator.return_value = frame
         save = MagicMock()
+        save.count.return_value = 1
         save.click.side_effect = lambda: state.__setitem__('saves', state['saves'] + 1)
         save.is_enabled.return_value = True
         checks = {}
@@ -203,9 +206,11 @@ class NativeFieldExecution(unittest.TestCase):
 
 
 class NativeConditionExecution(unittest.TestCase):
-    def surface(self, *, existing=False, enabled=True):
+    def surface(self, *, existing=False, enabled=True, persist=True):
         page, frame, dialog = MagicMock(), MagicMock(), MagicMock()
-        state = {'count': 5, 'saves': 0}
+        page.url = 'https://app.convertandflow.com/v2/location/fixture/form-builder-v2/form'
+        state = {'count': 5, 'saves': 0, 'reopened': False}
+        page.goto.side_effect = lambda *args, **kw: state.__setitem__('reopened', True)
         inputs, save = MagicMock(), MagicMock()
         inputs.count.side_effect = lambda: state['count']
         def entry(index):
@@ -213,38 +218,74 @@ class NativeConditionExecution(unittest.TestCase):
             control.input_value.return_value = 'Hide Field' if index == state['count'] - 2 else ''
             return control
         inputs.nth.side_effect = entry
+        save.count.return_value = 1
         save.is_enabled.return_value = enabled
         save.click.side_effect = lambda: state.__setitem__('saves', state['saves'] + 1)
+        card = MagicMock()
+        def card_text(value, **kw):
+            loc = MagicMock()
+            loc.count.return_value = 2 if value == 'Hide Field' else 1
+            return loc
+        card.get_by_text.side_effect = card_text
         def text(value, *, exact):
             loc = MagicMock()
-            loc.count.return_value = int(not existing) if value == 'No existing conditions yet' else 1
+            if value == 'No existing conditions yet':
+                loc.count.return_value = int(not existing)
+            elif value == 'IfLast NameIs Filled':
+                loc.count.return_value = int((existing or state['saves'] > 0) and (persist or not state['reopened']))
+                loc.nth.return_value.locator.return_value.locator.return_value.locator.return_value = card
+            elif value == 'Hide Field':
+                loc.count.return_value = 2 if state['saves'] else 0
+            else:
+                loc.count.return_value = 1
             if value in ('Is Empty', 'Is Filled'):
                 loc.click.side_effect = lambda: state.__setitem__('count', 4)
             return loc
         dialog.get_by_text.side_effect = text
         dialog.get_by_role.side_effect = lambda role, **kw: inputs if role == 'textbox' else save
-        frame.get_by_role.side_effect = lambda role, **kw: dialog if role == 'dialog' else MagicMock()
+        title = MagicMock()
+        title.input_value.return_value = 'ZHC Condition Fixture'
+        def role(role, **kw):
+            if role == 'dialog':
+                return dialog
+            if role == 'textbox':
+                return title
+            return save if kw.get('name') == 'Save' else MagicMock()
+        frame.get_by_role.side_effect = role
         return page, frame, state
 
     def run_surface(self, page, frame):
         with patch.object(runner, 'form_builder', return_value=frame), \
              patch.object(runner, 'click', side_effect=lambda loc: loc.click()), \
+             patch.object(runner, 'wait_until', side_effect=lambda predicate, message: self.assertTrue(predicate())), \
              patch.object(runner, 'visible', return_value=False):
             return a.configure_condition(page, {'if_field': 'Last Name', 'operator': 'Is Filled', 'target': 'First Name'})
 
-    def test_native_condition_save_stays_unverified_without_reopen(self):
+    def test_native_condition_requires_all_three_saves_and_reopen(self):
         page, frame, state = self.surface()
         result = self.run_surface(page, frame)
-        self.assertEqual(state['saves'], 1)
-        self.assertEqual(result['independent_readback'], 'REQUIRED')
+        self.assertEqual(state['saves'], 3)
+        self.assertEqual(result['independent_readback'], 'VERIFIED')
         self.assertFalse(result['submission_verified'])
+        self.assertTrue(state['reopened'])
 
-    def test_existing_rules_and_disabled_save_do_not_create(self):
-        for flags in ({'existing': True}, {'enabled': False}):
-            page, frame, state = self.surface(**flags)
-            with self.subTest(flags=flags), self.assertRaises(runner.Stop):
-                self.run_surface(page, frame)
-            self.assertEqual(state['saves'], 0)
+    def test_existing_matching_rule_is_read_without_duplicate_create(self):
+        page, frame, state = self.surface(existing=True)
+        result = self.run_surface(page, frame)
+        self.assertEqual(result['status'], 'CONDITION_ALREADY_PRESENT')
+        self.assertEqual(state['saves'], 0)
+
+    def test_disabled_save_does_not_create(self):
+        page, frame, state = self.surface(enabled=False)
+        with self.assertRaises(runner.Stop):
+            self.run_surface(page, frame)
+        self.assertEqual(state['saves'], 0)
+
+    def test_missing_persisted_card_is_not_success(self):
+        page, frame, state = self.surface(persist=False)
+        with self.assertRaises(runner.Stop):
+            self.run_surface(page, frame)
+        self.assertEqual(state['saves'], 3)
 
 
 if __name__ == '__main__':

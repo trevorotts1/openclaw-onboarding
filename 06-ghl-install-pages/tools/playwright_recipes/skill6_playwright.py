@@ -88,7 +88,7 @@ def validate_job(job, base):
     if not isinstance(steps,list) or not steps:
         raise Stop("No executable steps")
     keys = set()
-    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_fields", "native_condition", "form", "form_css", "form_settings", "community", "assessment", "meeting", "options"}
+    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_fields", "native_condition", "quiz_configuration", "survey_configuration", "form", "form_css", "form_settings", "community", "assessment", "meeting", "options"}
     prepared = json.loads(json.dumps(job))
     for s in prepared["steps"]:
         if not isinstance(s,dict):
@@ -101,9 +101,20 @@ def validate_job(job, base):
         if s['action'] in ('native_fields','native_condition'):
             from playwright_recipes.assessments import validate_fields, validate_condition
             (validate_fields if s['action']=='native_fields' else validate_condition)(s)
+        if s['action']=='survey_configuration':
+            from playwright_recipes.survey_ui import validate
+            validate(s)
+        if s['action']=='quiz_configuration':
+            from playwright_recipes.quiz_ui import validate
+            validate(s)
         if s['action']=='native_checkout':
-            from playwright_recipes.pages_checkout import validate_checkout_inputs
+            from playwright_recipes.pages_checkout import validate_checkout_inputs, load_checkout_capture
             validate_checkout_inputs(s.get('payload'))
+            payload = s['payload']
+            capture = Path(payload['adapter_capture'])
+            if not capture.is_absolute():
+                capture = base / capture
+            load_checkout_capture(capture, location_id=job['location_id'], page_id=payload['page_id'])
             s['_input_dir'] = str(base.resolve())
         if s['action']=='meeting':
             s['_context'] = {k:job[k] for k in ('location_id','location_name','start_url')}
@@ -372,26 +383,38 @@ def ensure_page(page, step):
     return {"editor_url": page.url}
 
 
-def full_width(frame):
-    sections = frame.locator(".c-section")
+def full_width(frame, section_id=None):
+    if section_id is not None and not re.fullmatch(r'[A-Za-z0-9_-]+', section_id):
+        raise Stop('Section identity is malformed')
+    sections = frame.locator(".c-section" + ('[id='+json.dumps(section_id)+']' if section_id else ''))
     if sections.count()!=1:
         raise Stop('Width mutation requires one inventoried target section; refusing to alter unrelated sections')
     if not sections.count():
         raise Stop("No section to configure")
     for n in range(sections.count()):
         section = sections.nth(n)
-        section.click(position={"x":20, "y":20})
-        settings = frame.locator('[title="Open Settings"]')
-        if not visible(frame.get_by_text("Allow Rows to take entire width", exact=True)):
-            click(settings)
+        # The row toolbar overlaps the section's left edge. Hover the middle
+        # of the section's captured top padding to expose the SECTION toolbar.
+        box = section.bounding_box()
+        if not box:
+            raise Stop('Target section has no visible bounds')
+        section.hover(position={'x':box['width']/2, 'y':5})
+        settings = frame.locator('.ui-section.hovered [title="Open Settings"]:visible')
+        click(settings)
+        width = frame.locator('#width')
+        width.wait_for(state='visible', timeout=45000)
+        if width.inner_text().strip() != 'Full':
+            click(width)
+            click(frame.locator('.n-base-select-option').get_by_text('Full', exact=True))
+        wait_until(lambda:'fullSection' in (section.get_attribute('class') or ''), 'Section did not become Full width')
         group = frame.locator(".toggle-group").filter(has_text="Allow Rows to take entire width")
         toggle = group.locator(".toggle-btn")
         if "toggle-btn-end" not in (toggle.get_attribute("class") or ""):
             click(group.locator(".toggle"))
         if "toggle-btn-end" not in (toggle.get_attribute("class") or ""):
             raise Stop("Entire-width rows did not enable")
-        if "fullSection" not in (section.get_attribute("class") or ""):
-            raise Stop("Section width is not Full; current pilot refuses an uncaptured width dropdown variant")
+        if width.inner_text().strip() != 'Full':
+            raise Stop('Full width dropdown readback failed')
 
 
 def add_tile(frame, category, name):
@@ -412,8 +435,11 @@ def save_page(frame):
 
 def install_html(page, step):
     frame = builder(page)
+    before_ids = set(frame.locator('.c-custom-code').evaluate_all('(els)=>els.map(el=>el.id)'))
+    target_info = None
+    section_id = step.get('section_id')
     blank = frame.get_by_role("button", name="Blank Section", exact=True)
-    if not visible(blank) and frame.locator('.c-section').count()!=1:
+    if not visible(blank) and frame.locator('.c-section').count()!=1 and not step.get('element_id'):
         raise Stop('Existing multi-section page needs a recorded target profile before any code or width mutation')
     if visible(blank):
         click(blank)
@@ -421,6 +447,12 @@ def install_html(page, step):
         add_tile(frame, "Rows", "1 Column")
         add_tile(frame, "Elements", "Code")
         fill(frame.get_by_role("textbox", name="Element name", exact=True), "ZHC Code " + step["id"])
+    elif step.get('element_id'):
+        if step.get('append'):
+            raise Stop('An existing code identity is an update, not an append target')
+        from playwright_recipes.pages_checkout import resolve_code_target
+        target_info = resolve_code_target(frame, step['element_id'], step.get('expected_name','ZHC Code '+step['id']), section_id)
+        section_id = target_info['section_id']
     elif step.get("append"):
         click(frame.get_by_role("button",name="1st Column",exact=True))
         add_tile(frame,"Elements","Code")
@@ -439,7 +471,7 @@ def install_html(page, step):
     close = frame.get_by_role("button", name="Close", exact=True)
     if visible(close):
         click(close)
-    full_width(frame)
+    full_width(frame, section_id)
     save_page(frame)
     href = frame.locator('a[href*="/preview/"]').get_attribute("href")
     check = page.context.new_page()
@@ -448,7 +480,10 @@ def install_html(page, step):
         if response is None or response.status != 200:
             raise Stop("Preview did not return HTTP 200")
         check.get_by_text(step["marker"], exact=False).first.wait_for(state="visible", timeout=45000)
-        return {"editor_url":page.url, "preview_url":check.url, "rendered_marker":step["marker"], "html_sha256":step["html_sha256"], "status":"RENDERED"}
+        after_ids = set(frame.locator('.c-custom-code').evaluate_all('(els)=>els.map(el=>el.id)'))
+        new_ids = after_ids-before_ids
+        native_id = target_info['element_id'] if target_info else (next(iter(new_ids)) if len(new_ids)==1 else step.get('element_id'))
+        return {"editor_url":page.url, "preview_url":check.url, "rendered_marker":step["marker"], "html_sha256":step["html_sha256"], "status":"RENDERED", 'element_id':native_id, 'section_id':section_id}
     finally:
         check.close()
 
@@ -634,7 +669,10 @@ def assessment(page, step):
             close=frame.get_by_role('dialog').get_by_role('button',name='Close',exact=True)
             if visible(close):
                 click(close)
-            click(frame.get_by_role('button',name='Add Slide' if kind=='survey' else 'Add Page',exact=True))
+            add_page = frame.get_by_role('button',name='Add Slide' if kind=='survey' else 'Add Page',exact=True)
+            if add_page.count() not in (1,index):
+                raise Stop('Assessment page insertion controls changed')
+            click(add_page.nth(add_page.count()-1))
             click(frame.get_by_role('button',name='Add '+kind.title()+' Element',exact=True))
         drag_field(page,frame,name)
         frame.get_by_placeholder({'Email':'your@email.com','First Name':'Enter your first name','Last Name':'Enter your last name','Phone':'+1 (555) 000-0000','Full Name':'Enter your full name'}[name],exact=True).wait_for(state='visible',timeout=45000)
@@ -724,6 +762,16 @@ def native_fields(page, step):
 def native_condition(page, step):
     from playwright_recipes.assessments import configure_condition
     return configure_condition(page, step)
+
+
+def quiz_configuration(page, step):
+    from playwright_recipes.quiz_ui import configure
+    return configure(page, step)
+
+
+def survey_configuration(page, step):
+    from playwright_recipes.survey_ui import configure
+    return configure(page, step)
 
 
 def native_checkout(page, step):
@@ -866,7 +914,7 @@ def _run_on_page(page, job, evidence_root):
         raise Stop("An interrupted job exists: reconcile recorded objects before any replay")
     results = []
     state = {"fingerprint":fingerprint, "location_id":job["location_id"], "status":"RUNNING", "results":results}
-    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_fields":native_fields, "native_condition":native_condition, "form":make_form, "form_css":form_css, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"options":options}
+    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_fields":native_fields, "native_condition":native_condition, "quiz_configuration":quiz_configuration, "survey_configuration":survey_configuration, "form":make_form, "form_css":form_css, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"options":options}
     for step in job["steps"]:
         assert_tenant(page, job)
         state["current_step"] = step["id"]
@@ -886,7 +934,9 @@ def _run_on_page(page, job, evidence_root):
                 'FORM_CSS_RENDERED', 'FORM_SETTINGS_PERSISTED', 'ASSESSMENT_REUSED',
                 'ASSESSMENT_SAVE_SUBMITTED', 'ROOM_SAVE_SUBMITTED',
                 'RECORDED_OPTIONS_EXECUTED', 'GROUP_RETAINED_INACTIVE', 'GROUP_CREATED',
-                'FIELD_PROPERTIES_SAVED_AND_REOPENED', 'CONDITION_SAVE_SUBMITTED',
+                'FIELD_PROPERTIES_SAVED_AND_REOPENED', 'CONDITION_SAVE_SUBMITTED', 'CONDITION_SAVED_AND_REOPENED',
+                'QUIZ_CONFIGURATION_SAVED_AND_REOPENED', 'CONDITION_ALREADY_PRESENT',
+                'SURVEY_RULE_SAVED_AND_REOPENED', 'SURVEY_RULE_ALREADY_PRESENT',
                 'NATIVE_CONFIGURATION_READBACK_VERIFIED', 'ROOM_PERSISTED',
                 'ROOM_CREATED_AND_VERIFIED', 'ROOM_REUSED_AND_VERIFIED',
                 'ROOM_CREATED_VERIFIED', 'ROOM_REUSED_VERIFIED', 'ROOM_UPDATED_VERIFIED',

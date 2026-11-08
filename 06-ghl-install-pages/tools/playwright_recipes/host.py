@@ -95,6 +95,39 @@ def _execute_provider_owned(operation, inputs, route, root, executor):
         raise
 
 
+def _recipe_readiness(operation, inputs, probes, input_dir):
+    """Only a validated, target-bound capture makes this job script-ready."""
+    observed = deepcopy(probes)
+    native = operation in ('checkout.configure_native','checkout.one_click_upsell') and bool(inputs.get('adapter_capture'))
+    recorded = bool(inputs.get('options'))
+    if not native and not recorded:
+        return observed, None
+    # A receipt for another input/profile cannot bless this specific capture.
+    profiles = observed.get('recorded_profiles', [])
+    if not isinstance(profiles, (list, tuple)):
+        profiles = []
+    observed['recorded_profiles'] = [entry for entry in profiles if entry != operation]
+    try:
+        validate_job(compile_recipe(operation, inputs), Path(input_dir))
+        if native:
+            if __package__:
+                from .pages_checkout import load_checkout_capture
+            else:
+                from pages_checkout import load_checkout_capture
+            path = (Path(input_dir) / inputs['adapter_capture']).resolve()
+            load_checkout_capture(path, location_id=inputs['location_id'], page_id=inputs['page_id'])
+        observed['recorded_profiles'].append(operation)
+        return observed, None
+    except Exception as exc:
+        # Invalid job/capture is never promoted solely because a path exists.
+        lanes = observed.get('lanes', {})
+        if isinstance(lanes, dict):
+            lanes = deepcopy(lanes)
+            lanes['playwright'] = {'available': False}
+            observed['lanes'] = lanes
+        return observed, type(exc).__name__
+
+
 def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None, executors=None):
     if not isinstance(inputs, Mapping) or not isinstance(inputs.get('location_id'), str) or not inputs['location_id']:
         return {'status': 'STOP_INVALID_INPUT', 'browser_used': False,
@@ -104,9 +137,7 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
     if executors is not None and not isinstance(executors, Mapping):
         return {'status': 'STOP_INVALID_INPUT', 'browser_used': False,
                 'reason': 'Installed executors must be a provider mapping'}
-    observed = deepcopy(probes)
-    if inputs.get('options'):
-        observed.setdefault('recorded_profiles', []).append(operation)
+    observed, capture_error = _recipe_readiness(operation, inputs, probes, input_dir)
     route = decide(operation, inputs['location_id'], observed)
     root = Path(evidence_root).resolve()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -129,7 +160,7 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
                 return {'status': 'PROVIDER_RECONCILIATION_REQUIRED', 'route': route,
                         'browser_used': False, 'error_type': type(exc).__name__,
                         'state_file': str(root / 'provider-state.json')}
-        return {'status': 'HANDOFF_REQUIRED', 'route': route, 'browser_used': False}
+        return {'status': 'NEEDS_BROWSER_RECOVERY' if capture_error else 'HANDOFF_REQUIRED', 'route': route, 'browser_used': False, **({'error_type':capture_error} if capture_error else {})}
     try:
         job = validate_job(compile_recipe(operation, inputs), Path(input_dir))
         result = run_on_page(page, job, root) if page is not None else execute(job, root)
@@ -161,12 +192,30 @@ def main(argv=None):
         inputs = json.loads(args.inputs.read_text())
         probes = json.loads(args.probes.read_text())
         if args.check:
-            selected = decide(args.operation, inputs['location_id'], probes)
+            observed, capture_error = _recipe_readiness(args.operation, inputs, probes, args.inputs.resolve().parent)
+            selected = decide(args.operation, inputs['location_id'], observed)
+            if capture_error and selected['lane'] not in ('public_api','skill44','official_mcp'):
+                print(json.dumps({'status':'STOP_INVALID_CAPTURE', 'route':selected,
+                                  'error_type':capture_error, 'browser_used':False}))
+                return 2
+            status = 'ROUTE_VALIDATED_ONLY'
             if selected['lane'] == 'playwright':
                 validate_job(compile_recipe(args.operation, inputs), args.inputs.resolve().parent)
-            print(json.dumps({'status':'VALIDATED_ONLY', 'route':selected,
+                status = 'VALIDATED_ONLY'
+            elif selected['lane'] in ('public_api','skill44','official_mcp') and args.operation in ('courses.create','courses.update','courses.lesson_quiz.create'):
+                if __package__:
+                    from .delivery import validate_api_inputs
+                else:
+                    from delivery import validate_api_inputs
+                validate_api_inputs(args.operation, inputs, selected)
+                status = 'VALIDATED_ONLY'
+            elif selected['lane'] == 'PROBE_API':
+                status = 'API_PROBE_REQUIRED'
+            elif selected['lane'].startswith('STOP_'):
+                status = selected['lane']
+            print(json.dumps({'status':status, 'route':selected,
                               'browser_used':False}))
-            return 2 if selected['lane'].startswith('STOP_') else 0
+            return 2 if selected['lane'].startswith('STOP_') or status == 'API_PROBE_REQUIRED' else 0
         result = run_recipe(args.operation, inputs, probes, args.evidence_root,
                             input_dir=args.inputs.resolve().parent)
         # Print a small named receipt; provider payloads never reach stdout.

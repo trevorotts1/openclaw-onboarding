@@ -28,7 +28,7 @@ def compile_recipe(operation, data):
             receipt=data.get('embed_receipt',{})
             if receipt.get('status')!='PASS' or receipt.get('location_id')!=data['location_id'] or not receipt.get('source'):
                 raise Stop('Hosted embed needs the existing embeddability-gate PASS receipt bound to this location')
-        add('html',id=data.get('code_id','main_code'),file=data['file'],marker=data['marker'],append=data.get('append',False),**({'embed_receipt':data['embed_receipt']} if operation=='pages.install_embed' else {}))
+        add('html',id=data.get('code_id','main_code'),file=data['file'],marker=data['marker'],append=data.get('append',False),**{k:data[k] for k in ('element_id','expected_name','section_id') if k in data},**({'embed_receipt':data['embed_receipt']} if operation=='pages.install_embed' else {}))
         add('seo',**data['seo'])
     elif operation=='checkout.wrap_native':
         add('html',id='checkout_before',file=data['before_file'],marker=data['before_marker'])
@@ -49,6 +49,10 @@ def compile_recipe(operation, data):
         add('native_fields', fields=data['fields'])
     elif operation=='forms.conditions':
         add('native_condition', **data['condition'])
+    elif operation=='quizzes.configure':
+        add('quiz_configuration', **data['configuration'])
+    elif operation=='surveys.configure':
+        add('survey_configuration', **data['configuration'])
     elif operation in ('checkout.configure_native','checkout.one_click_upsell') and data.get('adapter_capture'):
         add('native_checkout', payload=data)
     elif operation in ('surveys.create','quizzes.create'):
@@ -58,7 +62,12 @@ def compile_recipe(operation, data):
     elif operation=='communities.create':
         add('community',**data['community'])
     elif operation in ('meetings.setup','meetings.update'):
-        add('meeting',**data['meeting'])
+        details = dict(data['meeting'])
+        if operation == 'meetings.update':
+            if not isinstance(details.get('expected_room_id'),str) or not details['expected_room_id']:
+                raise Stop('Meeting update requires the exact existing room identity')
+            details['allow_creation'] = False
+        add('meeting',**details)
     elif operation in ('forms.configure','checkout.one_click_upsell','funnels.split_variant','communities.configure','courses.configure_ui','meetings.integrate'):
         if operation=='checkout.one_click_upsell':
             receipt=data.get('checkout_contract',{})

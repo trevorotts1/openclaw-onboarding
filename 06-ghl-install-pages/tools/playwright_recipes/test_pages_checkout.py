@@ -8,7 +8,9 @@ import subprocess
 import unittest
 
 from pages_checkout import (CheckoutRefused, configure_native_checkout,
-    load_checkout_capture, validate_checkout_inputs, PlaywrightOrderDriver)
+    load_checkout_capture, validate_checkout_inputs, PlaywrightOrderDriver,
+    check_split_prerequisites, SPLIT_MISSING_DOMAIN_NOTICE,
+    resolve_code_target, inventory_code_targets)
 import order_components as native
 
 
@@ -206,6 +208,157 @@ global.fetch = async (url, options={}) => {
         page.url='https://app.convertandflow.com/v2/location/another/editor/page_fixture'
         with self.assertRaises(CheckoutRefused): driver.list_components(scope)
         self.assertEqual(page.frames[0].calls,[])
+
+
+class ReadOnlyLocator:
+    def __init__(self, count=1, visible=True, enabled=True):
+        self._count, self._visible, self._enabled = count, visible, enabled
+    def count(self): return self._count
+    def nth(self, index): return self
+    def is_visible(self): return self._visible
+    def is_enabled(self): return self._enabled
+    def get_by_role(self, *args, **kwargs): return self
+    def wait_for(self, **kwargs): return None
+    def click(self, *args, **kwargs): raise AssertionError('Preflight must never click')
+
+
+class SplitPage:
+    def __init__(self, missing_domain=True, create_count=1):
+        self.url = split_inputs()['start_url']
+        self.missing_domain, self.create_count = missing_domain, create_count
+        self.create_lookups = 0
+    def locator(self, selector): return ReadOnlyLocator(count=0)
+    def get_by_text(self, text, exact=True):
+        return ReadOnlyLocator(count=int(self.missing_domain) if text == SPLIT_MISSING_DOMAIN_NOTICE else 1)
+    def get_by_role(self, role, **kwargs):
+        if kwargs.get('name') == 'Create variation':
+            self.create_lookups += 1
+            return ReadOnlyLocator(count=self.create_count)
+        return ReadOnlyLocator()
+
+
+def split_inputs():
+    return {'location_id':'fixture','location_name':'Fixture','funnel_id':'funnel_fixture',
+        'step_id':'step_fixture','funnel_name':'Fixture Funnel','page_name':'Fixture Page',
+        'start_url':'https://app.convertandflow.com/v2/location/fixture/funnels-websites/funnels/funnel_fixture/steps/step_fixture/overview'}
+
+
+class SplitPrerequisiteTests(unittest.TestCase):
+    def test_missing_domain_returns_precise_dependency_without_even_targeting_create(self):
+        page = SplitPage()
+        result = check_split_prerequisites(page, split_inputs())
+        self.assertEqual(result['status'], 'DEPENDENCY_DOMAIN_MISSING')
+        self.assertEqual(result['observed_notice'], SPLIT_MISSING_DOMAIN_NOTICE)
+        self.assertFalse(result['mutation_attempted'])
+        self.assertFalse(result['variant_created'])
+        self.assertEqual(page.create_lookups, 0)
+
+    def test_no_missing_notice_never_bypasses_canonical_native_capture(self):
+        result = check_split_prerequisites(SplitPage(missing_domain=False), split_inputs())
+        self.assertEqual(result['status'], 'DEPENDENCY_SPLIT_CAPTURE_REQUIRED')
+        self.assertEqual(result['native_capability_state'], 'PENDING_LIVE_SELECTOR_CAPTURE')
+        self.assertFalse(result['mutation_attempted'])
+
+    def test_wrong_step_url_refused_before_dom_access(self):
+        page = SplitPage()
+        page.url = page.url.replace('/step_fixture/', '/another_step/')
+        with self.assertRaises(CheckoutRefused):
+            check_split_prerequisites(page, split_inputs())
+        self.assertEqual(page.create_lookups, 0)
+
+    def test_changed_split_control_is_reconciliation_dependency(self):
+        result = check_split_prerequisites(SplitPage(False, create_count=0), split_inputs())
+        self.assertEqual(result['status'], 'DEPENDENCY_SPLIT_UI_CHANGED')
+        self.assertFalse(result['mutation_attempted'])
+
+
+class CodeLocator:
+    def __init__(self, frame, rows):
+        self.frame, self.rows = frame, rows
+    def count(self): return len(self.rows)
+    def evaluate(self, _): return self.rows[0]['section_id']
+    def evaluate_all(self, _):
+        return [{key:row[key] for key in ('element_id','section_id')} for row in self.rows]
+    def click(self):
+        self.frame.clicks.append(self.rows[0]['element_id'])
+        self.frame.selected = self.rows[0]
+
+
+class PropertyControl:
+    def __init__(self, frame, role): self.frame,self.role=frame,role
+    def count(self): return int(self.frame.panel and self.frame.selected is not None)
+    def wait_for(self, **_):
+        if not self.is_visible(): raise AssertionError('panel missing')
+    def is_visible(self): return bool(self.frame.panel and self.frame.selected)
+    def input_value(self): return self.frame.selected['element_name']
+    def fill(self, *_): raise AssertionError('Resolution must not modify inputs')
+    def click(self, *_): raise AssertionError('Resolution must not open code editor')
+
+
+class CodeFrame:
+    def __init__(self):
+        self.rows=[{'element_id':'custom-code-fixture1','section_id':'section-fixture1','element_name':'Custom Code'},
+                   {'element_id':'custom-code-fixture2','section_id':'section-fixture2','element_name':'Approved Checkout Wrapper'}]
+        self.selected=None
+        self.clicks=[]
+        self.panel=True
+    def locator(self, selector):
+        if selector=='.c-custom-code': return CodeLocator(self,self.rows)
+        target=json.loads(selector.split('[id=',1)[1][:-1])
+        return CodeLocator(self,[row for row in self.rows if row['element_id']==target])
+    def get_by_role(self, role, **kwargs):
+        if kwargs.get('name') not in ('Element name','Open Code Editor'):
+            raise AssertionError('Uncaptured property control')
+        return PropertyControl(self,role)
+
+
+class CodeTargetTests(unittest.TestCase):
+    def test_exact_native_target_selects_correct_section_among_multiple(self):
+        frame=CodeFrame()
+        result=resolve_code_target(frame,'custom-code-fixture2','Approved Checkout Wrapper','section-fixture2')
+        self.assertEqual(result['section_id'],'section-fixture2')
+        self.assertEqual(result['element_name'],'Approved Checkout Wrapper')
+        self.assertEqual(frame.clicks,['custom-code-fixture2'])
+
+    def test_section_mismatch_and_duplicate_id_refuse_before_selection(self):
+        frame=CodeFrame()
+        with self.assertRaises(CheckoutRefused):
+            resolve_code_target(frame,'custom-code-fixture1','Custom Code','section-fixture2')
+        self.assertEqual(frame.clicks,[])
+        frame.rows.append(deepcopy(frame.rows[0]))
+        with self.assertRaises(CheckoutRefused):
+            resolve_code_target(frame,'custom-code-fixture1','Custom Code')
+        self.assertEqual(frame.clicks,[])
+
+    def test_wrong_property_name_never_opens_or_changes_code(self):
+        frame=CodeFrame()
+        with self.assertRaises(CheckoutRefused):
+            resolve_code_target(frame,'custom-code-fixture1','Another Name')
+        self.assertEqual(frame.rows[0]['element_name'],'Custom Code')
+
+    def test_missing_panel_stops_instead_of_clicking_guessed_settings(self):
+        frame=CodeFrame();frame.panel=False
+        with self.assertRaises(CheckoutRefused):
+            resolve_code_target(frame,'custom-code-fixture1','Custom Code')
+
+    def test_unsafe_native_id_refused_before_browser_access(self):
+        with self.assertRaises(CheckoutRefused):
+            resolve_code_target(object(),'custom-code-fixture1] > *','Custom Code')
+
+    def test_inventory_reads_visible_property_names_for_each_native_id(self):
+        frame=CodeFrame()
+        inventory=inventory_code_targets(frame)
+        self.assertEqual(inventory[1]['element_name'],'Approved Checkout Wrapper')
+        self.assertEqual(frame.clicks,['custom-code-fixture1','custom-code-fixture2'])
+        self.assertTrue(all('locator' not in row for row in inventory))
+
+    def test_id_only_inventory_and_duplicate_detection_never_select(self):
+        frame=CodeFrame()
+        self.assertTrue(all(row['element_name'] is None for row in inventory_code_targets(frame,include_names=False)))
+        self.assertEqual(frame.clicks,[])
+        frame.rows.append(deepcopy(frame.rows[0]))
+        with self.assertRaises(CheckoutRefused): inventory_code_targets(frame)
+        self.assertEqual(frame.clicks,[])
 
 
 if __name__ == '__main__': unittest.main()

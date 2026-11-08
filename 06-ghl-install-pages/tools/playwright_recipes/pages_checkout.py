@@ -204,3 +204,150 @@ def configure_native_checkout(page, data, *, input_dir='.'):
         'verification_required': 'Independent native checkout and test-payment journey',
         'component_id': component, 'page_id': data['page_id'],
         'operations': [asdict(record) for record in records]}
+
+
+SPLIT_MISSING_DOMAIN_NOTICE = 'Please add a domain in the settings to see your Funnel live!'
+
+
+def check_split_prerequisites(page, data):
+    """Read the exact native step overview before any variation click.
+
+    The missing-domain text and Create variation control were observed in the
+    authorized fixture on 2026-11-08. The notice is a concrete missing
+    prerequisite; this function does not claim it caused any browser alert.
+    Absence of that notice is not proof the native split relation is captured.
+    """
+    if not isinstance(data, dict):
+        raise CheckoutRefused('Split prerequisite inputs must be an object')
+    for key in ('location_id', 'location_name', 'start_url', 'funnel_id',
+                'step_id', 'funnel_name', 'page_name'):
+        _text(data.get(key), key)
+    expected = urlsplit(data['start_url'])
+    path = ('/v2/location/' + data['location_id'] + '/funnels-websites/funnels/'
+            + data['funnel_id'] + '/steps/' + data['step_id'] + '/overview')
+    if (expected.scheme != 'https' or expected.username or expected.password
+            or expected.query or expected.fragment or expected.path != path):
+        raise CheckoutRefused('Split preflight requires the exact location/funnel/step overview URL')
+    if page.url != data['start_url']:
+        raise CheckoutRefused('Open the exact native control-step overview before split preflight')
+    if __package__:
+        from .skill6_playwright import assert_tenant
+    else:
+        from skill6_playwright import assert_tenant
+    assert_tenant(page, data)
+    for key in ('funnel_name', 'page_name'):
+        matches = page.get_by_text(data[key], exact=True)
+        if not matches.count() or not any(matches.nth(i).is_visible() for i in range(matches.count())):
+            raise CheckoutRefused('Native split overview identity not visible: ' + key)
+    base = {'operation': 'funnels.split_variant', 'location_id': data['location_id'],
+            'funnel_id': data['funnel_id'], 'step_id': data['step_id'],
+            'mutation_attempted': False, 'variant_created': False}
+    notice = page.get_by_text(SPLIT_MISSING_DOMAIN_NOTICE, exact=True)
+    if any(notice.nth(i).is_visible() for i in range(notice.count())):
+        return {**base, 'status': 'DEPENDENCY_DOMAIN_MISSING',
+                'observed_notice': SPLIT_MISSING_DOMAIN_NOTICE,
+                'required_dependency': 'An explicitly approved domain binding on this funnel',
+                'next_action': 'Resolve the domain dependency through the existing domain workflow, then rerun preflight.'}
+    create = page.get_by_role('button', name='Create variation', exact=True)
+    if create.count() != 1 or not create.is_visible() or not create.is_enabled():
+        return {**base, 'status': 'DEPENDENCY_SPLIT_UI_CHANGED',
+                'next_action': 'Reconcile the existing variant or capture the current native split controls.'}
+    # The canonical native split module owns the relation/traffic capture gate.
+    # Do not infer native relations merely because a Create button is present.
+    import ghl_split_variant
+    state = ghl_split_variant.capability_state()
+    return {**base, 'status': 'DEPENDENCY_SPLIT_CAPTURE_REQUIRED',
+            'domain_missing_notice_observed': False,
+            'native_capability_state': state['state'],
+            'next_action': state['next_action']}
+
+
+_NATIVE_ELEMENT_ID = re.compile(r'^[A-Za-z0-9_-]+$')
+
+
+def _native_id(value, label):
+    if not isinstance(value, str) or not _NATIVE_ELEMENT_ID.fullmatch(value):
+        raise CheckoutRefused(label + ' must be an exact native DOM identifier')
+    return value
+
+
+def _select_code_target(frame, element_id, *, section_id=None):
+    """Select one inventoried native code element and read its property name.
+
+    Captured 2026-11-08: clicking the .c-custom-code wrapper opens General/Styles
+    and the Element name textbox. A breadcrumb button with the custom element
+    name appears only after selection, so it is not used for initial targeting.
+    No editor text is changed by this operation.
+    """
+    _native_id(element_id, 'element_id')
+    if section_id is not None:
+        _native_id(section_id, 'section_id')
+    target = frame.locator('.c-custom-code[id=' + json.dumps(element_id) + ']')
+    if target.count() != 1:
+        raise CheckoutRefused('Native code element is missing or duplicated; no first-match target')
+    containing = target.evaluate("el => {const section=el.closest('.c-section');return section ? section.id : null;}")
+    if not containing:
+        raise CheckoutRefused('Native code element has no containing native section')
+    _native_id(containing, 'containing section_id')
+    if section_id is not None and containing != section_id:
+        raise CheckoutRefused('Native code element belongs to a different section')
+    target.click()
+    name = frame.get_by_role('textbox', name='Element name', exact=True)
+    try:
+        name.wait_for(state='visible', timeout=45000)
+    except Exception:
+        raise CheckoutRefused('Selecting native code did not expose the captured property panel') from None
+    if name.count() != 1:
+        raise CheckoutRefused('Selecting native code did not expose one Element name control')
+    editor = frame.get_by_role('button', name='Open Code Editor', exact=True)
+    if editor.count() != 1 or not editor.is_visible():
+        raise CheckoutRefused('Selected native element is not the captured code-property panel')
+    return {'locator': target, 'element_id': element_id,
+            'section_id': containing, 'element_name': name.input_value()}
+
+
+def resolve_code_target(frame, element_id, expected_name, section_id=None):
+    """Resolve/select an exact code element, then verify its saved property name.
+
+    A matching label elsewhere, an arbitrary code block or a breadcrumb from a
+    previous selection cannot authorize replacing code. Only selection occurs;
+    name mismatch stops before opening or writing the code editor.
+    """
+    _text(expected_name, 'expected_name')
+    result = _select_code_target(frame, element_id, section_id=section_id)
+    if result['element_name'] != expected_name:
+        raise CheckoutRefused('Selected code Element name does not match the approved target')
+    return result
+
+
+def inventory_code_targets(frame, *, include_names=True):
+    """Read native element/section IDs; optionally select each to read its name.
+
+    Selection changes the visible property panel only. No code editor is opened,
+    no input is filled, and nothing is saved. The returned element_name comes
+    from the visible captured property textbox, never an inferred canvas label.
+    """
+    nodes = frame.locator('.c-custom-code')
+    observed = nodes.evaluate_all("""els => els.map(el => ({
+        element_id:el.id,
+        section_id:el.closest('.c-section')?.id || null
+    }))""")
+    if not isinstance(observed, list):
+        raise CheckoutRefused('Native code inventory returned an invalid result')
+    seen = set()
+    for item in observed:
+        if not isinstance(item, dict):
+            raise CheckoutRefused('Native code inventory contains an invalid row')
+        _native_id(item.get('element_id'), 'element_id')
+        _native_id(item.get('section_id'), 'section_id')
+        if item['element_id'] in seen:
+            raise CheckoutRefused('Native code inventory has duplicate element IDs')
+        seen.add(item['element_id'])
+    results = []
+    for item in observed:
+        if include_names:
+            selected = _select_code_target(frame, item['element_id'], section_id=item['section_id'])
+            results.append({key:selected[key] for key in ('element_id','section_id','element_name')})
+        else:
+            results.append({**item, 'element_name': None})
+    return results

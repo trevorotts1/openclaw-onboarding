@@ -196,6 +196,20 @@
       "implemented": true,
       "proof": "CAPTURED",
       "use": "Native room identity guard, Save changes and independent readback"
+    },
+    "quizzes.configure": {
+      "name": "28_configure_quiz_scores_and_tiers",
+      "action": "quiz_configuration",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Native categories, existing choice scores and three result tiers; final Python live run pending"
+    },
+    "surveys.configure": {
+      "name": "29_configure_survey_branch",
+      "action": "survey_configuration",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Native forward Jump To with slide/source identity guards and saved-card readback"
     }
   }
 }

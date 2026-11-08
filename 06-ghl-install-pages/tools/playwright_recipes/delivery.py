@@ -180,12 +180,12 @@ class Skill44Transport:
             raise DeliveryApiError(status,type(exc).__name__) from None
 
 
-def _capability(record, location_id):
+def _capability(record, location_id, scopes=('courses.readonly','courses.write')):
     if not isinstance(record,dict) or record.get('location_id')!=location_id or record.get('version')!=VERSION:
         raise Stop('Courses capability receipt must match location and v3')
     if record.get('status') not in ('PASS','SUPPORTED') or not record.get('source'):
         raise Stop('Courses capability is not proven supported')
-    if not {'courses.readonly','courses.write'}.issubset(set(record.get('scopes',[]))):
+    if not set(scopes).issubset(set(record.get('scopes',[]))):
         raise Stop('Courses read/write scopes are required')
     try:
         checked = datetime.fromisoformat(record['checked_at'].replace('Z','+00:00'))
@@ -352,12 +352,40 @@ def configure_community_channels(page, step):
     return {'status':'CHANNELS_SAVE_SUBMITTED','channels':outcomes,'independent_readback':'REQUIRED','privacy_branding':'requires separately captured settings controls'}
 
 
-def course_executor(*, operation, inputs, route, evidence_root):
-    """Host.run_recipe callback; no API handoff masquerading as execution."""
+def validate_api_inputs(operation, inputs, route):
+    """Read-only schema and route check for host --check and actual execution."""
     if operation not in ('courses.create','courses.lesson_quiz.create','courses.update'):
         raise Stop('Unsupported delivery API operation')
-    if route.get('location_id') != inputs.get('location_id'):
+    if not isinstance(route,dict) or route.get('operation')!=operation or route.get('version')!=VERSION:
+        raise Stop('Courses route must match the exact operation and v3')
+    if route.get('lane') not in ('public_api','skill44','official_mcp'):
+        raise Stop('Courses validation requires a documented API/MCP route')
+    if route.get('location_id')!=inputs.get('location_id'):
         raise Stop('API route location mismatch')
+    _capability(inputs.get('api_capability'),inputs.get('location_id'))
+    if operation=='courses.create':
+        return validate_course(inputs)
+    loc=_id(inputs.get('location_id'),'location_id')
+    product=_id(inputs.get('product_id'),'product_id')
+    if operation=='courses.lesson_quiz.create':
+        return {'location_id':loc,'product_id':product,
+                'lesson_id':_id(inputs.get('lesson_id'),'lesson_id'),
+                'quiz':validate_quiz(inputs.get('quiz'))}
+    changes=inputs.get('course_changes')
+    if not isinstance(changes,dict) or not changes:
+        raise Stop('course_changes must be a nonempty object')
+    cooked=validate_course({'location_id':loc,'course':{'title':'Validation only',**changes}})['course']
+    if 'title' not in changes:cooked.pop('title')
+    if inputs.get('expected_updated_at') is not None:
+        _text(inputs['expected_updated_at'],'expected_updated_at')
+    return {'location_id':loc,'product_id':product,'course_changes':cooked}
+
+
+def course_executor(*, operation, inputs, route, evidence_root):
+    """Host.run_recipe callback; no API handoff masquerading as execution."""
+    validate_api_inputs(operation,inputs,route)
+    if route.get('lane') not in ('public_api','skill44'):
+        raise Stop('Courses HTTP executor requires a public_api or skill44 route')
     runner={'courses.create':run_course,'courses.lesson_quiz.create':run_lesson_quiz,'courses.update':run_course_update}[operation]
     return runner(inputs,evidence_root,capability=inputs.get('api_capability'))
 
@@ -474,3 +502,150 @@ def run_course_update(inputs,evidence_root,*,capability,transport=None):
             secure_json(state_path,state)
             raise
     finally: os.close(fd)
+
+
+class RegisteredCalendarDispatcher:
+    """Production calendar rail through the canonical PublicGhlAdapter registry.
+
+    Default capability records remain default-deny. This class never manufactures
+    enablement from a recipe input. Tests may inject a genuine CapabilityGate.
+    Every HTTP write also passes Skill 44's existing approval/allowlist gate.
+    """
+    def __init__(self, location_id, *, capability_record=None, capability_gate=None,
+                 transport=None, client=None):
+        from ghl_public_client import engine
+        seams=engine()
+        self.location_id=location_id
+        self.client=client or Skill44Transport().client
+        self.seams=seams
+        self.transport=transport or CalendarHttpTransport(self.client,location_id)
+        auth=seams['AuthContext'](kind=seams['AuthKind'].location_pit,
+            location_id=location_id,source='env:GOHIGHLEVEL_API_KEY',
+            resolve_secret=lambda name:self.client._get_token())
+        # Resolving through the canonical registry is mandatory, not an injected
+        # row or a raw HTTP fallback when the update operation is unavailable.
+        row=seams['OPERATIONS'].get('calendars.update')
+        if row is None or row.method!='PUT' or row.version!='v3' or row.readback_plan!='calendars.get':
+            raise Stop('Canonical calendars.update operation is not registered')
+        self.adapter=seams['PublicGhlAdapter'](auth=auth,transport=self.transport,
+            capability=capability_gate,capability_record=capability_record)
+        self.last_receipt=None
+
+    def __call__(self, operation_id, *, location_id, path_params, body=None):
+        from cli_anything.gohighlevel.public.readback import ReadbackSpec
+        from cli_anything.gohighlevel.public.idempotency import IdempotencyKey
+        if location_id!=self.location_id or operation_id not in ('calendars.get','calendars.update'):
+            raise Stop('Calendar dispatcher operation/location mismatch')
+        calendar_id=_id(path_params.get('calendarId'),'calendarId')
+        if set(path_params)!={'calendarId'}:
+            raise Stop('Calendar dispatcher has unexpected path parameters')
+        kwargs={'operation_id':operation_id,
+            'tenant':self.seams['TenantBinding'](location_id=location_id,source='skill06:meeting-integration'),
+            'path_params':path_params}
+        if operation_id=='calendars.update':
+            if not isinstance(body,dict) or not body or set(body)-{'locationConfigurations','teamMembers'}:
+                raise Stop('Room integration may change only calendar meeting locations')
+            kwargs.update(body=body,idempotency_key=IdempotencyKey.issue(operation_id).value,
+                readback=ReadbackSpec(operation_id='calendars.get',target_params=path_params,
+                    expect={'id':calendar_id,'locationId':location_id,**body},scan_nested=True,
+                    description='Persisted calendar identity and exact requested meeting locations'))
+        result=self.adapter.call(**kwargs)
+        self.last_receipt=result
+        status=getattr(result.status,'value',str(result.status))
+        if status!='ok':
+            if result.http_status is not None and result.http_status>=400:
+                raise DeliveryApiError(result.http_status)
+            raise Stop('Calendar public route refused: '+str((result.error or {}).get('rule',status)))
+        return deepcopy(self.transport.last_body)
+
+
+class CalendarHttpTransport:
+    """Adapter transport using existing Skill44 HTTP library and safety gate."""
+    def __init__(self, client, location_id):
+        self.client=client;self.location_id=location_id;self.last_body=None
+
+    def request(self, *, method, url, version, headers, query, body, timeout_s):
+        from cli_anything.gohighlevel.public.transport import TransportResponse
+        full=self.client.BASE_URL+url
+        if method!='GET':
+            # Canonical dry-run output prints payloads. Do not pass a private
+            # invitation URL to that printer; host --check is the read-only path.
+            if os.environ.get('CAF_DRY_RUN','').lower() in ('1','true','yes','on'):
+                raise Stop('Use host --check for credential-safe calendar validation')
+            self.client.check_write(method,full,body,location_id=self.location_id)
+        h=dict(headers)
+        if version is not None:h['Version']=version
+        try:
+            response=self.client.requests.request(method,full,params=query,json=body,
+                headers=h,timeout=timeout_s)
+        except self.client.requests.exceptions.Timeout:
+            return TransportResponse(status=None,headers={},body=b'',error_kind='timeout')
+        except self.client.requests.exceptions.RequestException:
+            return TransportResponse(status=None,headers={},body=b'',error_kind='connection')
+        raw=response.content
+        try:self.last_body=response.json()
+        except (ValueError,TypeError):self.last_body=None
+        return TransportResponse(status=response.status_code,headers={},body=raw)
+
+
+def validate_calendar_integration(inputs, route):
+    """Pure validation for the static permanent-room calendar integration."""
+    loc=_id(inputs.get('location_id'),'location_id')
+    if not isinstance(route,dict) or route.get('operation')!='meetings.integrate' or route.get('location_id')!=loc or route.get('version')!='v3':
+        raise Stop('Calendar integration route must match meetings.integrate, location and v3')
+    if route.get('lane') not in ('public_api','skill44','official_mcp'):
+        raise Stop('Calendar integration needs a documented API/MCP route')
+    _capability(inputs.get('api_capability'),loc,scopes=('calendars.readonly','calendars.write'))
+    _id(inputs.get('calendar_id'),'calendar_id')
+    room=inputs.get('room')
+    if not isinstance(room,dict) or room.get('location_id')!=loc or room.get('status')!='PRESENT' or not room.get('room_id') or not room.get('source'):
+        raise Stop('Calendar integration needs a verified room receipt for this location')
+    # Detailed room URL and calendar-type constraints are validated by meetings.
+    if __package__:
+        from .meetings import safe_room_url
+    else:
+        from meetings import safe_room_url
+    safe_room_url(room.get('url'))
+    if inputs.get('member_id') is not None:_id(inputs['member_id'],'member_id')
+    if inputs.get('replace_index') is not None and (type(inputs['replace_index']) is not int or inputs['replace_index']<0):
+        raise Stop('replace_index must be a nonnegative integer')
+    return {'location_id':loc,'calendar_id':inputs['calendar_id'],'room':deepcopy(room)}
+
+
+def meeting_calendar_executor(*, operation, inputs, route, evidence_root, dispatcher=None):
+    """Host provider for static permanent-room links, with durable no-replay state."""
+    if operation!='meetings.integrate':raise Stop('Unsupported calendar integration operation')
+    validate_calendar_integration(inputs,route)
+    if route.get('lane') not in ('public_api','skill44'):
+        raise Stop('Calendar HTTP provider does not substitute for official MCP')
+    if __package__:
+        from .meetings import integrate_calendar
+    else:
+        from meetings import integrate_calendar
+    root=Path(evidence_root).resolve();root.mkdir(parents=True,exist_ok=True,mode=0o700);os.chmod(root,0o700)
+    fd=os.open(root/'calendar-delivery.lock',os.O_CREAT|os.O_RDWR,0o600)
+    try:
+        try:fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:raise Stop('Calendar integration run is already leased') from None
+        state_path=root/'calendar-delivery-state.json'
+        digest=sha(json.dumps({k:inputs.get(k) for k in ('location_id','calendar_id','room','member_id','replace_index','private_invite_url')},sort_keys=True))
+        if state_path.exists():
+            old=json.loads(state_path.read_text())
+            if old.get('fingerprint')!=digest:raise Stop('Calendar evidence belongs to a different plan')
+            if old.get('status')=='API_STEPS_COMPLETE':return {**old,'status':'ALREADY_EXECUTED'}
+            raise Stop('Interrupted calendar integration requires reconciliation')
+        state={'fingerprint':digest,'location_id':inputs['location_id'],'status':'RUNNING',
+            'current_step_status':'INTENT_RECORDED','objects':[{'kind':'calendar','id':inputs['calendar_id']}]}
+        secure_json(state_path,state)
+        api=dispatcher or RegisteredCalendarDispatcher(inputs['location_id'],capability_record=inputs.get('capability_record'))
+        try:
+            extra={k:inputs[k] for k in ('member_id','replace_index','private_invite_url') if k in inputs}
+            result=integrate_calendar(api,location_id=inputs['location_id'],calendar_id=inputs['calendar_id'],room=inputs['room'],**extra)
+            state.update(status='API_STEPS_COMPLETE',current_step_status='VERIFIED',integration=result)
+            secure_json(state_path,state)
+            return state
+        except Exception as exc:
+            state.update(status='NEEDS_RECONCILIATION',error_type=type(exc).__name__)
+            secure_json(state_path,state)
+            raise
+    finally:os.close(fd)

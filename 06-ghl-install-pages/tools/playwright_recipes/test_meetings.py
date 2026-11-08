@@ -3,6 +3,9 @@ import unittest
 from unittest.mock import patch
 
 import meetings as m
+from pathlib import Path
+from recipe_cli import compile_recipe
+from skill6_playwright import validate_job
 
 
 SPEC = {'location_id':'loc', 'location_name':'Fixture',
@@ -84,6 +87,33 @@ class ReaderPage(Page):
 
 
 class MeetingTests(unittest.TestCase):
+    def test_unsupported_requested_controls_stop_before_browser_activity(self):
+        for settings in ({'recording':False}, {'transcription':True}, {'cohosts':[]},
+                         {'passcode':''}, {'native_integration':'calendar'}, {'start_meeting':False}):
+            page = Page()
+            with self.subTest(settings=settings), self.assertRaises(m.Stop):
+                m.create_room(page, {**SPEC, **settings})
+            self.assertEqual(page.actions, [])
+
+    def test_compiler_metadata_is_accepted_for_real_setup_and_update_steps(self):
+        for operation in ('meetings.setup', 'meetings.update'):
+            data = {k:SPEC[k] for k in ('location_id','location_name','start_url')}
+            data['meeting'] = {key:value for key,value in SPEC.items() if key not in data}
+            if operation == 'meetings.update':
+                data['meeting']['expected_room_id'] = 'https://rooms.example/meet/fixture-room'
+            job = validate_job(compile_recipe(operation, data), Path('.'))
+            step = job['steps'][0]
+            inputs = {**step, **step['_context']}
+            parsed = m.validate_room(inputs)
+            self.assertEqual(parsed['action'], 'meeting')
+            self.assertEqual(parsed['location_id'], 'loc')
+
+    def test_mismatched_context_and_string_creation_flag_are_refused(self):
+        for change in ({'_context':{'location_id':'other','location_name':'Fixture','start_url':SPEC['start_url']}},
+                       {'allow_creation':'false'}):
+            with self.subTest(change=change), self.assertRaises(m.Stop):
+                m.validate_room({**SPEC, **change})
+
     def test_native_reader_reloads_and_reads_editor_without_exposing_invite_password(self):
         page = ReaderPage()
         with patch.object(m, 'assert_tenant'), patch.object(m, 'click', side_effect=lambda c:c.click()):
@@ -160,6 +190,68 @@ class MeetingTests(unittest.TestCase):
 
 
 class CalendarTests(unittest.TestCase):
+    def test_put_excludes_readonly_member_and_location_fields(self):
+        calendar = self.calendar('personal')
+        calendar['teamMembers'][0].update(id='readonly', email='private@example.invalid', meetingLocationType='custom')
+        calendar['teamMembers'][0]['locationConfigurations'][0]['meetingId'] = 'readonly-location-id'
+        patch, _ = m.permanent_link_patch(calendar, location_id='loc', room=present(), member_id='u1', replace_index=0)
+        self.assertEqual(set(patch['teamMembers'][0]), {'userId','priority','isPrimary','locationConfigurations'})
+        self.assertEqual(set(patch['teamMembers'][0]['locationConfigurations'][0]), {'kind','location'})
+
+    def test_legacy_only_location_is_not_silently_discarded(self):
+        calendar = self.calendar('personal')
+        member = calendar['teamMembers'][0]
+        member.pop('locationConfigurations')
+        member['meetingLocation'] = 'https://legacy.example/room'
+        with self.assertRaises(m.Stop):
+            m.permanent_link_patch(calendar, location_id='loc', room=present(), member_id='u1')
+
+    def test_canonical_link_receipt_explicitly_requires_manual_passcode(self):
+        patch, receipt = m.permanent_link_patch(self.calendar(), location_id='loc', room=present())
+        self.assertFalse(receipt['credential_link_supplied'])
+        self.assertTrue(receipt['passcode_required'])
+        self.assertTrue(receipt['manual_passcode_entry_required'])
+        self.assertEqual(receipt['join_link_mode'], 'canonical_without_embedded_passcode')
+
+    def test_private_invite_sent_only_in_patch_and_redacted_from_receipt(self):
+        invite = present()['url'] + '?pwd=SYNTHETIC-PRIVATE'
+        patch, receipt = m.permanent_link_patch(self.calendar(), location_id='loc', room=present(), private_invite_url=invite)
+        self.assertEqual(patch['locationConfigurations'][-1]['location'], invite)
+        self.assertTrue(receipt['credential_link_supplied'])
+        self.assertFalse(receipt['manual_passcode_entry_required'])
+        self.assertNotIn('SYNTHETIC-PRIVATE', str(receipt))
+        self.assertNotIn('pwd=', str(receipt))
+        self.assertEqual(len(receipt['invite_url_sha256']), 64)
+
+    def test_private_invite_wrong_room_extra_parameters_empty_and_duplicate_pwd_refused(self):
+        for invite in ('https://other.example/fixture-room?pwd=fake',
+                       present()['url'] + '?pwd=fake&token=other',
+                       present()['url'] + '?pwd=',
+                       present()['url'] + '?pwd=fake&pwd=other',
+                       present()['url'] + '?pwd=fake#fragment'):
+            with self.subTest(invite=invite), self.assertRaises(m.Stop):
+                m.permanent_link_patch(self.calendar(), location_id='loc', room=present(), private_invite_url=invite)
+
+    def test_existing_private_invite_cannot_silently_downgrade_to_clean_link(self):
+        calendar = self.calendar()
+        calendar['locationConfigurations'] = [{'kind':'custom','location':present()['url']+'?pwd=SYNTHETIC'}]
+        with self.assertRaises(m.Stop):
+            m.permanent_link_patch(calendar, location_id='loc', room=present())
+
+    def test_private_integration_checks_full_invite_persisted_and_returns_no_secret(self):
+        calendar, calls = self.calendar(), []
+        invite = present()['url']+'?pwd=SYNTHETIC-API-PRIVATE'
+        def api(op, **kw):
+            calls.append(op)
+            if op == 'calendars.update':
+                self.assertEqual(kw['body']['locationConfigurations'][-1]['location'], invite)
+                calendar.update(deepcopy(kw['body']))
+            return {'calendar':deepcopy(calendar)}
+        result = m.integrate_calendar(api, location_id='loc', calendar_id='cal1', room=present(), private_invite_url=invite)
+        self.assertNotIn('SYNTHETIC-API-PRIVATE', str(result))
+        self.assertTrue(result['embedded_passcode'])
+        self.assertEqual(calls, ['calendars.get','calendars.update','calendars.get'])
+
     def calendar(self, kind='event'):
         return {'id':'cal1','locationId':'loc','calendarType':kind,
                 'slotDuration':60,'locationConfigurations':[{'kind':'physical','location':'Office'}],

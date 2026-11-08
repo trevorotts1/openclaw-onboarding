@@ -113,10 +113,9 @@ later sibling changes before they are integrated and rerun:
 
 ## Verification during parallel continuation
 
-- The central incomplete-result regression initially passed three acceptance
-  tests after repair. Strengthening the same boundary with unknown/no-op statuses
-  exposed three additional false-completion cases; the final integrated suite
-  must pass those cases too, using recognized outcomes rather than a blacklist.
+- Central result validation now accepts recognized outcomes rather than a
+  blacklist. Four acceptance-boundary tests pass: nine incomplete/no-op status
+  cases, missing outcomes, pending read-back and meeting-update creation refusal.
 - At the reviewed parallel snapshot, `python3 -m unittest discover -s
   06-ghl-install-pages/tools/playwright_recipes -p 'test_*.py' -v` ran 79 tests
   with zero failures. Re-run after final integration; this snapshot is not the
@@ -125,3 +124,37 @@ later sibling changes before they are integrated and rerun:
   components now have offline tests. Required host callbacks, captured adapters,
   native associations and actual live fixture behavior still require their own
   evidence. Module tests cannot close those live requirements by themselves.
+
+## Mac/Linux GitHub Actions fixture proof
+
+The portability workflow and four real-browser fixtures are implemented in
+`.github/workflows/skill6-recipes-portability.yml` and
+`tools/playwright_recipes/test_browser_fixture.py`. Their browser pass still
+requires CI execution. A Chromium download failure on the development host is a
+real environment limit, not a successful browser check.
+
+| Layer | Runner and trigger | Required execution | What it proves |
+| --- | --- | --- | --- |
+| Offline contracts | `macos-latest` and `ubuntu-latest`, pull requests touching this package | Install the declared Python dependencies, run package imports and the complete unittest suite, record Python/OS versions and actual counts. | Both platforms can import and execute the tested contracts. No client operation is claimed. |
+| Real browser fixtures | Same two runner OSs, isolated local fixture servers | Install Playwright and its Chromium build; serve shell and builder on different loopback origins; exercise the actual maintained form-settings executor. Four cases cover save/reload of seven settings, row drift, count drift and a Save click that loses its data. Selected tests fail when browser launch fails. | Real Playwright frames, switch clicks, selector ambiguity, save/reopen, cross-origin isolation and cleanup work in the fixture. This still does not prove GHL live behavior. |
+| Native client smoke | Explicit manual dispatch to separate client-controlled Mac and Linux VPS workers | Use client-local secret resolver and existing browser lifecycle, exact location/account binding and named fixture objects. Run final installed scripts, then independently fetch/reopen each persisted result. | Actual native script execution on each required host. Record each operation separately. |
+| Functional journey | Explicit fixture-run scope with existing payment/message approvals | Submit form/survey/quiz fixtures and use the existing authorized test-payment contract for checkout and upsell. Prove branch boundaries, accept/decline and correct native associations. | Requested functional behavior, beyond editor saves. |
+
+Additional browser fixtures still must include initially non-full sections, multiple pages and
+sections, existing code targets, inputs without type attributes, changed selector
+counts, delayed saves, failed reads, uncertain writes and duplicate object names.
+Payment fixtures use synthetic data only; native payment execution uses the
+existing approved test-mode flow. Do not put client tokens in hosted workflow
+inputs, public artifacts or raw Playwright traces. Retain only sanitized test
+summaries in public CI; client-bound proof stays in protected client run storage.
+
+Acceptance requires both OS jobs to succeed, no skipped required browser checks,
+clean session teardown, no later mutation after uncertain results, and source
+commit/manifest correspondence. Automated CI setup must use the repository's
+existing dependency/runner conventions rather than introduce another auth rail.
+
+Local validation: fixture Python AST and workflow YAML structure pass. Ordinary
+local discovery explicitly skips the four opt-in browser cases. An explicit
+`SKILL6_BROWSER_FIXTURE=1` run fails in setup because Chromium is unavailable;
+it does not silently skip or report a browser pass. CI enables that variable
+for both operating systems and installs Chromium before discovery.

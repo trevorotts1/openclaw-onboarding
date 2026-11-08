@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from delivery import run_course, validate_course, validate_quiz, Skill44Transport, course_executor, run_lesson_quiz, DeliveryApiError, run_course_update, configure_community_channels
+from delivery import run_course, validate_course, validate_quiz, Skill44Transport, course_executor, run_lesson_quiz, DeliveryApiError, run_course_update, configure_community_channels, validate_api_inputs, RegisteredCalendarDispatcher, meeting_calendar_executor, validate_calendar_integration, CalendarHttpTransport
 from skill6_playwright import Stop
 
 
@@ -174,6 +174,26 @@ class DeliveryTests(unittest.TestCase):
                 'expected_updated_at':'old','course_changes':{'customCss':'.brand{}'}},directory,capability=capability(),transport=api)
             self.assertFalse(any(c[0]=='PUT' for c in api.calls))
 
+    def test_api_callback_refuses_operation_version_or_transport_mismatch(self):
+        data={**inputs(),'api_capability':capability()}
+        base={'operation':'courses.create','version':'v3','lane':'public_api','location_id':'fixture'}
+        for change in ({'operation':'courses.update'},{'version':'2021-07-28'},{'version':None},{'lane':'official_mcp'}):
+            with self.subTest(change=change), patch('delivery.run_course') as run:
+                with self.assertRaises(Stop):course_executor(operation='courses.create',inputs=data,
+                    route={**base,**change},evidence_root='unused')
+                run.assert_not_called()
+
+    def test_api_schema_check_is_concrete_and_read_only(self):
+        route={'operation':'courses.create','version':'v3','lane':'skill44','location_id':'fixture'}
+        with patch('delivery.Skill44Transport') as transport:
+            result=validate_api_inputs('courses.create',{**inputs(),'api_capability':capability()},route)
+            validate_api_inputs('courses.create',{**inputs(),'api_capability':capability()},{**route,'lane':'official_mcp'})
+            self.assertEqual(result['course']['title'],'Course A')
+            transport.assert_not_called()
+            with self.assertRaises(Stop):validate_api_inputs('courses.create',{'location_id':'fixture',
+                'course':{'title':''},'api_capability':capability()},route)
+            transport.assert_not_called()
+
     def test_api_callback_validates_route(self):
         with self.assertRaises(Stop):course_executor(operation='courses.create',inputs=inputs(),route={'location_id':'other'},evidence_root='unused')
 
@@ -236,6 +256,94 @@ class CommunityChannelTests(unittest.TestCase):
         page=self.Page();page.password=True
         with self.assertRaises(Stop):configure_community_channels(page,{'portal_url':page.url,'channels':[{'name':'A','description':'D'}]})
         self.assertEqual(page.clicks,[])
+
+
+class CalendarProviderTests(unittest.TestCase):
+    def context(self, mutate=True, forbidden=False):
+        from types import SimpleNamespace
+        from ghl_public_client import engine
+        seams=engine()
+        api_client=SimpleNamespace(_get_token=lambda:'pit-fixture-placeholder-for-offline-test')
+        gate=seams['CapabilityGate']({name:seams['Capability'](operation_id=name,
+            contract_verified=True,adapter_built=True,offline_tests_passed=True,
+            read_verified=True,canary_verified=True,enabled=True,tenant='fixture',activation='VERIFIED')
+            for name in ('calendars.get','calendars.update')},tenant='fixture')
+        class Transport:
+            def __init__(self):
+                self.calendar={'id':'cal','locationId':'fixture','calendarType':'event','locationConfigurations':[]}
+                self.calls=[];self.last_body=None
+            def request(self,**kw):
+                self.calls.append(kw)
+                status=403 if forbidden else 200
+                if kw['method']=='PUT' and mutate:self.calendar.update(kw['body'])
+                self.last_body={'calendar':json.loads(json.dumps(self.calendar))}
+                return seams['TransportResponse'](status=status,headers={},body=json.dumps(self.last_body).encode())
+        transport=Transport()
+        dispatcher=RegisteredCalendarDispatcher('fixture',capability_gate=gate,transport=transport,client=api_client)
+        inputs={'location_id':'fixture','calendar_id':'cal',
+            'room':{'location_id':'fixture','status':'PRESENT','room_id':'room','source':'fixture:room',
+                    'url':'https://portal.example/meeting-room/room'},
+            'api_capability':{**capability(),'scopes':['calendars.readonly','calendars.write']}}
+        route={'operation':'meetings.integrate','version':'v3','lane':'public_api','location_id':'fixture'}
+        return dispatcher,transport,inputs,route
+
+    def test_calendar_update_is_registered_with_contract_and_readback(self):
+        dispatcher,_,_,_=self.context()
+        row=dispatcher.seams['OPERATIONS'].get('calendars.update')
+        self.assertEqual((row.method,row.path_template,row.version),('PUT','/calendars/{calendarId}','v3'))
+        self.assertEqual(row.scopes_candidate,('calendars.write',))
+        self.assertEqual(row.readback_plan,'calendars.get')
+        self.assertEqual(row.doc_fetch_date,'2026-11-08')
+
+    def test_registered_provider_updates_and_independently_reads_back(self):
+        dispatcher,transport,inputs,route=self.context()
+        with tempfile.TemporaryDirectory() as directory:
+            result=meeting_calendar_executor(operation='meetings.integrate',inputs=inputs,route=route,evidence_root=directory,dispatcher=dispatcher)
+            self.assertEqual(result['status'],'API_STEPS_COMPLETE')
+            self.assertEqual([c['method'] for c in transport.calls],['GET','PUT','GET','GET'])
+            self.assertTrue(all(c['version']=='v3' for c in transport.calls))
+            self.assertEqual(result['objects'],[{'kind':'calendar','id':'cal'}])
+
+    def test_readback_mismatch_is_failure_not_success(self):
+        dispatcher,transport,inputs,route=self.context(mutate=False)
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(Stop):meeting_calendar_executor(operation='meetings.integrate',inputs=inputs,route=route,evidence_root=directory,dispatcher=dispatcher)
+            state=json.loads((Path(directory)/'calendar-delivery-state.json').read_text())
+            self.assertEqual(state['status'],'NEEDS_RECONCILIATION')
+            self.assertEqual(sum(c['method']=='PUT' for c in transport.calls),1)
+
+    def test_403_never_falls_back_or_writes(self):
+        dispatcher,transport,inputs,route=self.context(forbidden=True)
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(DeliveryApiError):meeting_calendar_executor(operation='meetings.integrate',inputs=inputs,route=route,evidence_root=directory,dispatcher=dispatcher)
+            self.assertEqual([c['method'] for c in transport.calls],['GET'])
+
+    def test_private_invite_is_only_in_api_request_not_state(self):
+        dispatcher,transport,inputs,route=self.context()
+        secret='fixture-invite-only-in-memory'
+        inputs['private_invite_url']=inputs['room']['url']+'?pwd='+secret
+        with tempfile.TemporaryDirectory() as directory:
+            result=meeting_calendar_executor(operation='meetings.integrate',inputs=inputs,route=route,evidence_root=directory,dispatcher=dispatcher)
+            self.assertEqual(result['status'],'API_STEPS_COMPLETE')
+            writes=[c for c in transport.calls if c['method']=='PUT']
+            self.assertIn(secret,json.dumps(writes[0]['body']))
+            for path in Path(directory).glob('*.json'):
+                self.assertNotIn(secret,path.read_text())
+                self.assertNotIn('?pwd=',path.read_text())
+
+    def test_calendar_http_transport_keeps_skill44_write_gate(self):
+        client=Skill44Transport().client
+        transport=CalendarHttpTransport(client,'fixture')
+        with patch.object(client,'check_write',side_effect=Stop('gate')),patch.object(client.requests,'request') as request:
+            with self.assertRaises(Stop):transport.request(method='PUT',url='/calendars/cal',version='v3',headers={},query={},body={'locationConfigurations':[]},timeout_s=30)
+            request.assert_not_called()
+
+    def test_default_deny_is_not_replaced_by_recipe_receipt(self):
+        dispatcher,transport,inputs,route=self.context()
+        dispatcher.adapter._capability=dispatcher.seams['CapabilityGate'](tenant='fixture')
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(Stop):meeting_calendar_executor(operation='meetings.integrate',inputs=inputs,route=route,evidence_root=directory,dispatcher=dispatcher)
+            self.assertEqual(transport.calls,[])
 
 
 if __name__=='__main__':unittest.main()

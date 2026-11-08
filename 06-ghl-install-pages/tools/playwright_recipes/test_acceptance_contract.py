@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 import skill6_playwright as runner
+from recipe_cli import compile_recipe
 
 
 def two_steps():
@@ -25,6 +26,22 @@ def two_steps():
 
 
 class AcceptanceBoundaryTests(unittest.TestCase):
+    def test_meeting_update_cannot_downgrade_into_create(self):
+        inputs = {
+            'location_id': 'FIXTURE', 'location_name': 'Acceptance fixture',
+            'start_url': 'https://app.convertandflow.com/v2/location/FIXTURE/dashboard',
+            'meeting': {'name': 'Fixture Room', 'slug': 'fixture-room',
+                        'waiting_room': True, 'guest_users': False,
+                        'open_room': False, 'allow_creation': True},
+        }
+        with self.assertRaises(runner.Stop):
+            compile_recipe('meetings.update', inputs)
+        inputs['meeting']['expected_room_id'] = 'https://fixture.example/room/current'
+        compiled = compile_recipe('meetings.update', inputs)
+        self.assertIs(compiled['steps'][0].get('allow_creation'), False)
+        self.assertEqual(compiled['steps'][0]['expected_room_id'],
+                         inputs['meeting']['expected_room_id'])
+
     def test_incomplete_handler_cannot_complete_or_continue_build(self):
         for status in ('NEEDS_CAPTURE', 'HANDOFF_REQUIRED', 'BLOCKED', 'API_ROUTE',
                        'NEEDS_VERIFICATION', 'STOP_AUTH', 'PENDING_CAPTURE',
