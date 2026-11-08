@@ -23,12 +23,19 @@
 #      restarted only when the token file or the cloudflared path changes; the
 #      Command Center's own connector is never touched; the token value is
 #      never printed or logged. No token file = no-op (most boxes),
-#   5. verifies the copy the runtime RESOLVER selects
-#      (scripts/selected-tree-gate.mjs): competing copies are reported loudly
-#      and a stale, contract-drifted or executable-less selected copy exits 1,
-#      so no roll reports success after updating only an unused directory. On a
-#      box with several copies the gate is given the folder the OpenClaw agent
-#      resolver serves (COUNCIL_AGENT_SKILL_DIR, else asked of the resolver).
+#   5. converges and then verifies the copy the runtime RESOLVER selects
+#      (scripts/selected-tree-refresh.mjs, then scripts/selected-tree-gate.mjs):
+#      the roll maintains $OPENCLAW_ROOT/skills, so a copy the agent resolver
+#      selects elsewhere (~/.agents/skills, ~/.claude/skills ...) is refreshed
+#      from this shipped tree before it is verified: otherwise a copy left at
+#      the current version but the PREVIOUS release archive could only ever fail
+#      the gate, and a human rsync was the only way to reach readiness.
+#      Competing copies are still reported loudly, and a stale,
+#      contract-drifted or executable-less selected copy still exits 1, so no
+#      roll reports success after updating only an unused directory. The
+#      refresh never deletes, never follows a symlink, never creates a copy and
+#      never rewrites a git checkout; the gate itself is unchanged and still
+#      refuses a genuinely stale or modified payload.
 # It writes nothing inside the skill folder and touches no credential, model,
 # AGENTS.md, gateway or Command Center. It does write openclaw.json, narrowly:
 # only plugins.entries.council-before-dispatch, plugins.load.paths and an
@@ -567,19 +574,65 @@ CHANGED=0
 # verifies the named copy and still rejects evidence that contradicts the live
 # install-record. No resolver answer leaves the selection unproven and this
 # step refuses - by design.
+#
+# The copy the resolver selects is CONVERGED before it is verified
+# (scripts/selected-tree-refresh.mjs): this roll maintains $OC/skills, so the
+# copy the agent actually reads would otherwise keep the PREVIOUS release's
+# .skill archive forever and no box could reach readiness without a human
+# rsync. The refresh mirrors the shipped tree over a plain copy and replaces
+# only the release artifact in a 999 distribution copy; it never deletes,
+# never follows a symlink, never creates a copy, and never rewrites a checkout.
+# The gate is run again afterwards and is unchanged - a genuinely stale or
+# modified payload is still refused.
 GT_RC=0
+GT_OUT=""
+converge_selected() { # $1 = the copy the agent resolver selects
+  [ -n "${1:-}" ] || return 1
+  "$NODE" "$SKILL_DIR/scripts/selected-tree-refresh.mjs" --source "$SKILL_DIR" --selected "$1" 2>&1
+}
+gate_selected_tree() {
+  GT_RC=0
+  GT_OUT="$( "$NODE" "$SKILL_DIR/scripts/selected-tree-gate.mjs" "${GT_ARGS[@]}" 2>&1 )" || GT_RC=$?
+}
+# The copy named by the gate's own summary line (empty when it names none).
+gate_selected_path() {
+  printf '%s\n' "$1" | sed -n 's/^SELECTED-TREE: FAIL selected=\(.*\) via=.*$/\1/p' | head -n 1
+}
+SKILL_REAL="$(cd "$SKILL_DIR" 2>/dev/null && pwd -P)"
 GT_ARGS=(--skill-dir "$SKILL_DIR" --prefix "$P" --home "$HOME")
 if [ -n "${COUNCIL_AGENT_SKILL_DIR:-}" ]; then
   GT_ARGS+=(--agent-selected "$COUNCIL_AGENT_SKILL_DIR" --agent-source "COUNCIL_AGENT_SKILL_DIR")
+  CONV_OUT="$(converge_selected "$COUNCIL_AGENT_SKILL_DIR")" || true
+  [ -n "$CONV_OUT" ] && printf '%s\n' "$CONV_OUT"
 fi
-GT_OUT="$( "$NODE" "$SKILL_DIR/scripts/selected-tree-gate.mjs" "${GT_ARGS[@]}" 2>&1 )" || GT_RC=$?
+gate_selected_tree
+CONVERGED=""
 if [ "$GT_RC" -ne 0 ] && [ -z "${COUNCIL_AGENT_SKILL_DIR:-}" ] \
    && printf '%s\n' "$GT_OUT" | grep -q 'agent selection unproven'; then
   AG_DIR="$( "$NODE" "$SKILL_DIR/scripts/agent-resolver-evidence.mjs" --config "$OC/openclaw.json" 2>/dev/null )" || AG_DIR=""
   if [ -n "$AG_DIR" ]; then
-    GT_RC=0
-    GT_OUT="$( "$NODE" "$SKILL_DIR/scripts/selected-tree-gate.mjs" "${GT_ARGS[@]}" \
-      --agent-selected "$AG_DIR" --agent-source "openclaw skills info council-of-wise-elders" 2>&1 )" || GT_RC=$?
+    CONV_OUT="$(converge_selected "$AG_DIR")"
+    [ -n "$CONV_OUT" ] && printf '%s\n' "$CONV_OUT"
+    CONVERGED="$AG_DIR"
+    GT_ARGS+=(--agent-selected "$AG_DIR" --agent-source "openclaw skills info council-of-wise-elders")
+    gate_selected_tree
+  fi
+fi
+# A plain copy can also be selected without agent evidence (install-record or
+# the resolver's fallback walk). When the gate refuses and names that copy,
+# converge it once and re-verify - the selection itself is unchanged.
+if [ "$GT_RC" -ne 0 ]; then
+  SEL="$(gate_selected_path "$GT_OUT")"
+  if [ -n "$SEL" ] && [ "$SEL" != "<none>" ] && [ "$SEL" != "$CONVERGED" ] && [ "$SEL" != "$SKILL_REAL" ]; then
+    CONV_OUT="$(converge_selected "$SEL")"; _CONV_RC=$?
+    if [ -n "$CONV_OUT" ]; then
+      printf '%s\n' "$CONV_OUT"
+    fi
+    # Only re-verify what the refresh actually converged; a copy it refused
+    # (a symlink, a checkout, an unrelated folder) keeps the gate's own verdict.
+    if [ "$_CONV_RC" -eq 0 ]; then
+      gate_selected_tree
+    fi
   fi
 fi
 [ -n "$GT_OUT" ] && printf '%s\n' "$GT_OUT"
