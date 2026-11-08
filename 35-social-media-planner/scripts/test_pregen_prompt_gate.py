@@ -244,8 +244,12 @@ def main() -> int:
             base = "A useful visual decision sentence for the scene. "
             return base + "x" * (n - len(base) - len(suffix)) + suffix
 
-        for size, expect_exit, label in ((15800, 3, "79 percent (15800) rejected"), (19000, 0, "95 percent (19000) passes"),
-                                         (20000, 0, "100 percent (20000) passes"), (20200, 3, "101 percent (20200) rejected")):
+        for size, expect_exit, label, want_msg in (
+                (15800, 3, "79 percent (15800) rejected", "ADD at least 3200"),
+                (16000, 3, "80 percent floor (16000) rejected", "ADD 3000 chars"),
+                (19000, 0, "95 percent (19000) passes", None),
+                (20000, 0, "100 percent (20000) passes", None),
+                (20200, 3, "101 percent (20200) rejected", "CUT exactly 200")):
             pf = _write(tmp, f"band_{size}.txt", _sized(size))
             rr = run_gate(
                 "--prompt-file", str(pf), "--model", gpt,
@@ -258,12 +262,8 @@ def main() -> int:
                   f"got {rr.returncode}, stderr={rr.stderr[:200]!r}")
             if expect_exit == 3:
                 check(f"band {size}: failure names AF-PROMPT-LENGTH", "AF-PROMPT-LENGTH" in rr.stderr, rr.stderr)
-        r79 = run_gate("--prompt-file", str(tmp / "band_25280.txt"), "--model", gpt, "--ratio", "4:5",
-                       "--pixels", "1080x1350", "--brand-colors", "#0B3D2E", "--avoid-list-file", str(avoid_file))
-        check("79 percent rejection names the exact chars to add (5120)", "ADD at least 5120" in r79.stderr, r79.stderr)
-        r101 = run_gate("--prompt-file", str(tmp / "band_32320.txt"), "--model", gpt, "--ratio", "4:5",
-                        "--pixels", "1080x1350", "--brand-colors", "#0B3D2E", "--avoid-list-file", str(avoid_file))
-        check("101 percent rejection names the exact chars to cut (320)", "CUT exactly 320" in r101.stderr, r101.stderr)
+            if want_msg:
+                check(f"band {size}: names the exact chars ({want_msg})", want_msg in rr.stderr, rr.stderr)
         r_old = run_gate("--prompt-file", str(_write(tmp, "old9000.txt", _sized(9000))), "--model", gpt,
                          "--ratio", "4:5", "--pixels", "1080x1350", "--brand-colors", "#0B3D2E",
                          "--avoid-list-file", str(avoid_file))
@@ -274,7 +274,7 @@ def main() -> int:
         # schema maxLength and no policy-owner character limit, so routing must ADMIT it (no
         # AF-SM-MODEL-ROUTING) and the length gate must REFUSE it — and no F32 spend receipt may be
         # written for a prompt that is never submitted.
-        for model, size, want_exit in (("gpt-image-2-6/sunburst-text-to-image", 30720, 0),
+        for model, size, want_exit in (("gpt-image-2-6/sunburst-text-to-image", 19000, 0),
                                        ("agnes-image-2.1-flash", 9000, 3)):
             pf = _write(tmp, "cap_%s.txt" % model.replace(".", "_").replace("/", "_"), _sized(size))
             rr = run_gate(
@@ -313,7 +313,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as td2:
         t2 = Path(td2)
         av = _write(t2, "av.txt", _AVOID_LIST)
-        pp = _write(t2, "pp.txt", _sized(30720))
+        pp = _write(t2, "pp.txt", _sized(19000))
         ppn = _write(t2, "ppn.txt", _sized(19000))
         r11 = run_gate(  # NO --model: the default must be Sunburst text-to-image
             "--prompt-file", str(pp), "--ratio", "2:3", "--pixels", "1000x1500",
@@ -353,7 +353,7 @@ def main() -> int:
         t3 = Path(td3)
         av3 = _write(t3, "av.txt", _AVOID_LIST)
         pp3 = _write(t3, "pp.txt", _sized(19000))
-        pp3b = _write(t3, "pp26.txt", _sized(30720))
+        pp3b = _write(t3, "pp26.txt", _sized(19000))
         rl = run_gate("--prompt-file", str(pp3), "--model", "gpt-image-2-text-to-image",
                       "--ratio", "2:3", "--pixels", "1000x1500", "--brand-colors", "#0B3D2E",
                       "--avoid-list-file", str(av3))
