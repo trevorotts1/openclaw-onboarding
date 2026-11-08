@@ -120,7 +120,7 @@ class PromptJudgedAgainstTheRunModel(Tmp):
 
     def test_19000_chars_fails_a_5000_char_model_maximum(self):
         res = validate_prompt.inspect(self.PROMPT, model="gpt-image-2-5-sunburst-text-to-image", max_chars=5000)
-        self.assertTrue([e for e in res["errors"] if "max is 5000" in e], res["errors"])
+        self.assertTrue([e for e in res["errors"] if "of max 5000" in e], res["errors"])
         self.assertEqual(res["telemetry"]["budget"]["status"], "ABOVE_MAX")
 
     def test_control_without_the_request_maximum_the_policy_band_passes_it(self):
@@ -149,10 +149,10 @@ class PromptJudgedAgainstTheRunModel(Tmp):
     def test_stage_validator_fails_the_prompt_against_the_request_model(self):
         write_json(self.run_dir / "production-request.json",
                    {"model": "gpt-image-2-5-sunburst-text-to-image", "model_max_chars": 5000, "sections": []})
-        self.assertIn("max is 5000", self.item_failures())
+        self.assertIn("of max 5000", self.item_failures())
 
     def test_control_no_request_model_leaves_the_default_judgement(self):
-        self.assertNotIn("max is 5000", self.item_failures())
+        self.assertNotIn("of max 5000", self.item_failures())
 
     def test_close_records_the_budget_against_the_run_model(self):
         write_json(self.run_dir / "production-request.json",
