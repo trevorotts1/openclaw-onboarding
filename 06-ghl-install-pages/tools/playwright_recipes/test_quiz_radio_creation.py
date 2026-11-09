@@ -12,8 +12,8 @@ from test_quiz_choice_questions import ChoiceDom
 from test_quiz_text_questions import question
 
 
-NEW_ID='17f03f3b-4b73-462c-b3ad-e6f1ba228c4d'
-OLD_ID='0eaf0780-9e88-456a-8f77-1298ea746512'
+NEW_ID='bbbbbbbb-2222-4222-8222-222222222222'
+OLD_ID='cccccccc-3333-4333-8333-333333333333'
 
 
 def authored(count=3):
@@ -119,6 +119,7 @@ class RadioExecution(unittest.TestCase):
             if lost:state['inventory']=deepcopy(initial)
         with ExitStack() as stack:
             stack.enter_context(patch.object(choice,'assert_tenant'))
+            stack.enter_context(patch.object(native,'_wait_baseline'))
             stack.enter_context(patch.object(choice,'click',side_effect=lambda target:target.click()))
             stack.enter_context(patch.object(choice,'wait_until',side_effect=lambda pred,reason:self.assertTrue(pred())))
             stack.enter_context(patch.object(choice,'_inventory',side_effect=lambda *args,**kwargs:deepcopy(state['inventory'])))

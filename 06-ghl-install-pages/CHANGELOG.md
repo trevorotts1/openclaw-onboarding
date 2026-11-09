@@ -1,3 +1,26 @@
+## [v27.1.96] - 2026-11-09
+
+- Add native quiz Single Dropdown with its captured option identities and
+  explicitly absent Hidden/Spread controls. Add an explicit one-question,
+  new-empty-page mode using the last page's scoped Add Page control and exact
+  generated caption, while preserving all previous pages and question metadata.
+  Existing-page authoring never silently changes to page creation.
+- Bind new-page configuration hashes and saved receipts to the original
+  authored payload. Refuse changed page owners during the first insertion poll;
+  populated-page append acceptance remains a separate measured gap.
+- Wait for positive quiz title/page/widget hydration, reject positive owner
+  mismatches, and require actual list navigation with every editor iframe gone
+  before independent reopening. Canceled navigation cannot bless staged edits.
+- Remove captured tail predicate rows during same-count Show/Hide edits,
+  preserving the initial If row and checking complete remaining predicate,
+  connector, effect and target state after every removal.
+- Bind split readback/reuse to exact nonempty variant IDs, complete inventories,
+  relation and typed traffic evidence. Native split creation and traffic
+  allocation remain unimplemented and the capture gate stays disabled.
+- Keep native save, functional, submission, payment and notification acceptance
+  pending. This is a Skill6-only checkpoint; repository-wide release metadata
+  and unrelated manifests are unchanged.
+
 ## [v27.1.95] - 2026-11-09
 
 - Build ordered native Redirect to URL, Display custom message and Disqualify

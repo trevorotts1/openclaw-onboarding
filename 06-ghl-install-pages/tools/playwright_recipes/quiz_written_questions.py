@@ -30,9 +30,9 @@ def validate(step):
         for page in projected['pages']:
             if isinstance(page,dict) and isinstance(page.get('questions'),list):
                 for index,question in enumerate(page['questions']):
-                    if isinstance(question,dict) and question.get('field_type') in ('RADIO','CHECKBOX') and 'options' in question:
+                    if isinstance(question,dict) and question.get('field_type') in ('RADIO','CHECKBOX','SINGLE_OPTIONS'):
                         choice._question(question)
-                        page['questions'][index]={key:question[key] for key in native.PROPERTIES}
+                        page['questions'][index]={key:question[key] for key in native.properties_for(question['field_type'])}
     projected=native.validate({'action':'quiz_short_answers','payload':projected},field_types=TYPES,
                               new_types=tuple(PROFILES),reserved_key=None)
     return deepcopy(payload)
@@ -64,22 +64,22 @@ def _append(frame,plan,question,*,page=None):
 
 
 def configure(page,step):
-    plan=validate(step);frame=page.frame_locator('iframe[name="quiz-builder-app"]')
+    plan=validate(step);runtime=plan;frame=page.frame_locator('iframe[name="quiz-builder-app"]')
     title=frame.get_by_role('textbox',name='Form Name',exact=True)
     def identity():
         if page.url!=plan['start_url'] or title.count()!=1 or title.input_value()!=plan['expected_quiz_name']:
             raise Stop('Native written-answer quiz identity changed')
         assert_tenant(page,plan)
-    def inventory():return choice._inventory(frame,plan,field_types=TYPES)
-    title.wait_for(state='visible',timeout=45000);identity()
+    def inventory():return choice._inventory(frame,runtime,field_types=TYPES)
+    title.wait_for(state='visible',timeout=45000);native._wait_editor_identity(page,title,plan);identity();native._wait_baseline(frame,plan)
     before=inventory()
     if choice._properties(before)!=[owner['questions'] for owner in plan['pages']]:
         raise Stop('Native quiz differs from its complete expected written-answer inventory')
-    desired=deepcopy(before);owner=plan['target_page']-1
+    runtime,desired=native._target_page(frame,plan,before,choice._inventory);owner=plan['target_page']-1
     for question in plan['questions']:
         identity()
         if inventory()!=desired:raise Stop('Native quiz changed before the next written-answer insertion')
-        item=_append(frame,plan,question,page=page)
+        item=_append(frame,runtime,question,page=page)
         authored=native._write_question(frame,item,question,field_types=TYPES,new_kind=question['field_type'],
                                         default_key=PROFILES[question['field_type']]['default_key'],metadata_reader=choice._metadata)
         desired[owner].append(authored)
@@ -90,7 +90,7 @@ def configure(page,step):
     page.wait_for_load_state('networkidle',timeout=45000)
     native.reopen_editor(page,'quiz',plan['expected_quiz_name'],plan['start_url'])
     frame=page.frame_locator('iframe[name="quiz-builder-app"]');title=frame.get_by_role('textbox',name='Form Name',exact=True)
-    title.wait_for(state='visible',timeout=45000);identity()
+    title.wait_for(state='visible',timeout=45000);native._wait_editor_identity(page,title,plan);identity();native._wait_baseline(frame,runtime,expected=desired)
     if inventory()!=desired:raise Stop('Native written answers did not persist after independent reopen')
     return {'status':'QUIZ_WRITTEN_ANSWERS_SAVED_AND_REOPENED','kind':'quiz_written_answers',
         'editor_url':page.url,'configuration_sha256':configuration_hash(step),

@@ -82,6 +82,7 @@ class TextExecution(unittest.TestCase):
         from contextlib import ExitStack
         with ExitStack() as stack:
             stack.enter_context(patch.object(text,'assert_tenant'))
+            stack.enter_context(patch.object(text,'_wait_baseline'))
             stack.enter_context(patch.object(text,'click',side_effect=lambda loc:loc.click()))
             stack.enter_context(patch.object(text,'wait_until',side_effect=lambda pred,reason:self.assertTrue(pred())))
             stack.enter_context(patch.object(text,'_inventory',side_effect=lambda frame,plan:deepcopy(state['inventory'])))
@@ -193,6 +194,19 @@ class NativeAppend(unittest.TestCase):
                 patch.object(text,'wait_until',side_effect=lambda pred,reason:self.assertTrue(pred())):
             text._append(frame,step()['payload'])
         self.assertTrue(selection['active']);item.get_by_role.return_value.click.assert_called_once()
+    def test_unexpected_new_page_is_refused_during_the_first_insertion_poll(self):
+        frame,canvas,state,_=self.surface(insert=False);calls={'owners':0}
+        def owners(*args):
+            calls['owners']+=1
+            if calls['owners']>1:raise runner.Stop('Unexpected new page owner')
+            return [(object(),canvas)]
+        def poll(predicate,reason):
+            if not predicate():raise runner.Stop('Insertion count timeout')
+        with patch.object(text,'_close_properties'),patch.object(text,'_close_drawer'),patch.object(text,'click'), \
+                patch.object(text,'_owners',side_effect=owners),patch.object(text,'wait_until',side_effect=poll), \
+                self.assertRaisesRegex(runner.Stop,'Unexpected new page owner'):
+            text._append(frame,step()['payload'])
+        self.assertEqual(state['drags'],1)
 
 
 class NativeQuestionProperties(unittest.TestCase):

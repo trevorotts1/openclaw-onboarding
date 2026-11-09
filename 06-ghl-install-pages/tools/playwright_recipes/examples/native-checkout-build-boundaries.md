@@ -39,3 +39,20 @@ be reconciled before any new Create variation click. Two disconnected pages are
 never an implementation of a native split test.
 
 No optional tests or native payment journeys were run during this build pass.
+
+
+## Captured split identity checks
+
+The capture-gated split planner now checks exact variant ID, control relation
+and typed unchanged traffic readback even when a capture's key list omits a
+binding field. Reuse validates the whole returned inventory: malformed rows,
+duplicate IDs, multiple matches, a different captured ID, conflicting occupied
+IDs and explicit foreign location/funnel claims require reconciliation. No
+missing native ID is fabricated from capture metadata, and a first matching row
+cannot hide a later conflict. Requests retain their explicit text/boolean types
+and cannot smuggle whitespace, control characters or path/query delimiters.
+
+These are executable identity/planning safeguards. They do not create a native
+variant, allocate traffic or enable the capture-gated writer. The real split
+creation/allocation implementation still needs authoritative native UI/API
+capture; an offline fixture and a missing-domain probe cannot supply it.

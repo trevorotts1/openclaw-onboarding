@@ -106,6 +106,7 @@ class Execution(unittest.TestCase):
             if lost:state['inventory']=deepcopy(initial)
         with ExitStack() as stack:
             stack.enter_context(patch.object(written,'assert_tenant'))
+            stack.enter_context(patch.object(native,'_wait_baseline'))
             stack.enter_context(patch.object(written,'click',side_effect=lambda target:target.click()))
             stack.enter_context(patch.object(written,'wait_until',side_effect=lambda pred,reason:self.assertTrue(pred())))
             stack.enter_context(patch.object(choice,'_inventory',side_effect=lambda *args,**kwargs:deepcopy(state['inventory'])))

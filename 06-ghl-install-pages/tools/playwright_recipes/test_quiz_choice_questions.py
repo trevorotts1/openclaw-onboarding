@@ -58,7 +58,7 @@ class Validation(unittest.TestCase):
 class Choices(unittest.TestCase):
     def surface(self):
         item=MagicMock();values=['Option 1','Option 2','Option 3'];fields=[];labels=[]
-        prefix='checkbox-b404df9d-9835-4aee-8fd9-2d0b12c78075-'
+        prefix='checkbox-aaaaaaaa-1111-4111-8111-111111111111-'
         for index in range(3):
             field,label=MagicMock(),MagicMock();fields.append(field);labels.append(label)
             field.get_attribute.side_effect=lambda key,index=index:{'id':prefix+str(index),'name':'','disabled':''}.get(key)
@@ -79,13 +79,13 @@ class Choices(unittest.TestCase):
     def test_identity_is_scoped_by_for_attribute_not_duplicated_global_id(self):
         item,values,_,_,_=self.surface()
         self.assertEqual([row['value'] for row in choice._choices(item)],values)
-        self.assertTrue(all(call.args[0]!='#checkbox-b404df9d-9835-4aee-8fd9-2d0b12c78075-0'
+        self.assertTrue(all(call.args[0]!='#checkbox-aaaaaaaa-1111-4111-8111-111111111111-0'
                             for call in item.locator.call_args_list))
     def test_missing_disabled_mismatched_uuid_label_value_or_extra_option_refuses(self):
         for defect in ('disabled','identity','value','extra'):
             item,_,fields,labels,all_labels=self.surface()
-            if defect=='disabled':fields[0].get_attribute.side_effect=lambda key:{'id':'checkbox-b404df9d-9835-4aee-8fd9-2d0b12c78075-0','name':''}.get(key)
-            elif defect=='identity':fields[1].get_attribute.side_effect=lambda key:{'id':'checkbox-c404df9d-9835-4aee-8fd9-2d0b12c78075-1','name':'','disabled':''}.get(key)
+            if defect=='disabled':fields[0].get_attribute.side_effect=lambda key:{'id':'checkbox-aaaaaaaa-1111-4111-8111-111111111111-0','name':''}.get(key)
+            elif defect=='identity':fields[1].get_attribute.side_effect=lambda key:{'id':'checkbox-dddddddd-4444-4444-8444-444444444444-1','name':'','disabled':''}.get(key)
             elif defect=='value':labels[0].inner_text.side_effect=None;labels[0].inner_text.return_value='Different'
             else:all_labels.count.return_value=4
             with self.subTest(defect=defect),self.assertRaises(Stop):choice._choices(item)
@@ -100,7 +100,9 @@ class Choices(unittest.TestCase):
             result=choice._write_question(frame,item,new_question())
         self.assertEqual(values,new_question()['options'])
         self.assertEqual(result['options'],values)
-        self.assertEqual(write.call_args.kwargs,{'field_types':choice.TYPES,'new_kind':'CHECKBOX','default_key':'checkbox','metadata_reader':choice._metadata})
+        self.assertEqual({key:value for key,value in write.call_args.kwargs.items() if key!='metadata_reader'},
+            {'field_types':choice.TYPES,'new_kind':'CHECKBOX','default_key':'checkbox'})
+        self.assertTrue(callable(write.call_args.kwargs['metadata_reader']))
         self.assertTrue(all(label.press.call_count==1 for label in labels))
     def test_changed_defaults_do_not_write_question_properties(self):
         item,values,_,_,_=self.surface();values[0]='Changed'
@@ -128,10 +130,12 @@ class Execution(unittest.TestCase):
             if lost:state['inventory']=deepcopy(original)
         with ExitStack() as stack:
             stack.enter_context(patch.object(choice,'assert_tenant'))
+            stack.enter_context(patch.object(text,'_wait_baseline'))
             stack.enter_context(patch.object(choice,'click',side_effect=lambda target:target.click()))
             stack.enter_context(patch.object(choice,'wait_until',side_effect=lambda pred,reason:self.assertTrue(pred())))
             stack.enter_context(patch.object(choice,'_inventory',side_effect=lambda *args:deepcopy(state['inventory'])))
             append=stack.enter_context(patch.object(choice,'_append',return_value=object()))
+            stack.enter_context(patch.object(choice,'_fresh_choice'))
             stack.enter_context(patch.object(choice,'_write_question',side_effect=write))
             stack.enter_context(patch.object(text,'reopen_editor',side_effect=reopen))
             try:receipt=choice.configure(page,step())
@@ -185,13 +189,13 @@ class CapturedChoiceDom(unittest.TestCase):
     def fixture(self):
         owner=ElementTree.Element('section',{'class':'form-builder--item','data-active':'true'})
         for index,value in enumerate(choice.OPTIONS):
-            identifier='checkbox-b404df9d-9835-4aee-8fd9-2d0b12c78075-'+str(index)
+            identifier='checkbox-aaaaaaaa-1111-4111-8111-111111111111-'+str(index)
             ElementTree.SubElement(owner,'input',{'id':identifier,'type':'checkbox','disabled':'','value':value})
             ElementTree.SubElement(owner,'label',{'id':identifier,'for':identifier,'contenteditable':'true'}).text=value
         return owner
     def test_native_duplicate_ids_do_not_make_scoped_input_and_label_identity_ambiguous(self):
         owner=self.fixture();surface=ChoiceDom([owner])
-        self.assertEqual(surface.locator('[id="checkbox-b404df9d-9835-4aee-8fd9-2d0b12c78075-0"]').count(),2)
+        self.assertEqual(surface.locator('[id="checkbox-aaaaaaaa-1111-4111-8111-111111111111-0"]').count(),2)
         actual=choice._choices(surface)
         self.assertEqual([option['value'] for option in actual],choice.OPTIONS)
         self.assertNotIn('name',owner[0].attrib)
@@ -200,11 +204,17 @@ class CapturedChoiceDom(unittest.TestCase):
             owner=self.fixture()
             if mutation=='value':owner[0].set('value','Wrong')
             elif mutation=='editable':owner[1].attrib.pop('contenteditable')
-            else:owner[2].set('id','checkbox-c404df9d-9835-4aee-8fd9-2d0b12c78075-1')
+            else:owner[2].set('id','checkbox-dddddddd-4444-4444-8444-444444444444-1')
             with self.subTest(mutation=mutation),self.assertRaises(Stop):choice._choices(ChoiceDom([owner]))
 
 
 class ChoiceMetadata(unittest.TestCase):
+    def test_new_choice_stale_option_owner_or_nonzero_enabled_score_refuses_before_property_writes(self):
+        defaults=[{'label':value,'score':'0','score_enabled':False} for value in choice.OPTIONS]
+        for mutation in ({'label':'Other owner'},{'score':'10'},{'score_enabled':True}):
+            rows=deepcopy(defaults);rows[0].update(mutation)
+            with self.subTest(mutation=mutation),patch.object(choice,'_metadata',return_value={'_choice_controls':rows}),self.assertRaises(Stop):
+                choice._default_metadata(MagicMock(),'CHECKBOX',choice.OPTIONS)
     def test_property_writer_refuses_collateral_score_metadata_changes(self):
         helper=text_tests.NativeQuestionProperties();frame,item,_,_=helper.surface()
         captures=iter(({'_choice_controls':[{'score':'0'}]},{'_choice_controls':[{'score':'10'}]}))
