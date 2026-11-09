@@ -38,6 +38,7 @@ on:
     paths:
       - "49-signature-funnel/**"
       - "83-black-friday-launcher/**"
+      - "71-blackceo-signature-page/**"
       - "shared-utils/signature_launch/**"
       - "shared-utils/signature_launch_contract/**"
       - ".github/workflows/sf-prover-pin-authority.yml"
@@ -47,6 +48,7 @@ on:
     paths:
       - "49-signature-funnel/**"
       - "83-black-friday-launcher/**"
+      - "71-blackceo-signature-page/**"
       - "shared-utils/signature_launch/**"
       - "shared-utils/signature_launch_contract/**"
       - ".github/workflows/sf-prover-pin-authority.yml"
