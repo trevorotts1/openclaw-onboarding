@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 1.3.21 - 2026-11-08 - F16: 2.6 serves every ratio natively; the shared brand record governs the style answer
+
+- `scripts/stage_gate.py`: GPT Image 2.6 serves every enum ratio natively, so `_ratio_problem()` no longer substitutes or reroutes a ratio. A generated ratio that differs from the requested one is drift on every `model_source`, `legacy-ratio-route` included. `N43_SUBSTITUTIONS` and `N43_LEGACY_ONLY` remain only because `scripts/check-skill71-parity.py` reads them into the generated 999 policy.
+- `scripts/write_intake.py`: the `design_style` answer now comes from the one shared brand record (`shared-utils/client_intake/brand_record.py`). An accepted recommendation is recorded as `recommended_accepted` and never as the client's own choice; when the shared module is not installed the refusal is explicit instead of a second copy of the vocabulary.
+- tests: `tests/test_stage_gate.py`, `tests/test_f16_intake_provenance.py`.
+- Version bumped to 1.3.21 (`skill-version.txt`, `SKILL.md` frontmatter).
+
 ## 1.3.18 - 2026-11-08 - one prompt-band rule: owner rule 12 governs (POL-001)
 
 - `scripts/stage_executor.py`: the paid path's hard floor moves from the strict 95 percent reading to owner rule 12's 80 percent. `prompt_budget()` now carries `hard_floor_chars` (ceil(0.80 x max)) beside the 95 percent target; below the hard floor the paid path refuses (naming the ADD to the floor and to the target), and 80 to below 95 percent PASSES with a warn-and-expand ADD on stderr. Basis: owner Decision 1 (2026-10-15) adopted the rule 12 band and Q1 (2026-10-17) confirmed it governs in all contexts; F18 (2026-11-07) introduced the strict reading without an owner ruling.
