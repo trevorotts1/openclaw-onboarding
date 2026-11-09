@@ -4,6 +4,19 @@ Version stamped above `main` (v2.1.40) so G3 sees the bump for the folded conten
 
 # Changelog — Signature Funnel (Skill 49)
 
+## v2.1.40 - 2026-11-08 - registry-hash restamp for the AGNES gate fixtures (no behaviour change)
+
+- `scripts/test_agnes_gates.py` and `scripts/test_agnes_dispatch_e2e.py` carry the updated
+  `KNOWN_ENTRY_HASH` (`0981c8f0…` to `d90d7f6f…`) for the KIE GPT Image 2.6 Sunburst registry
+  entry, so the fixtures assert against the current `66-kie-image/models.json` bytes.
+- `scripts/SF-PROVER-PIN.sha256` re-minted by the sf-prover-pin-authority workflow so the
+  hash-pin gate matches the restamped fixtures. Test files are outside the pin set.
+- No production path, gate threshold, band or dispatch rule changed; the front door, the
+  12-section contract and every autofail code are untouched.
+- Version v2.1.40: main independently reached v2.1.39 (#2895, BLD-010 F17 residue), so this
+  migration takes the next patch to keep the G3 skill-version-bump guard honest.
+- Risk: LOW. Tests and their pin only.
+
 ## v2.1.36 - 2026-11-08 - launch-path pin re-minted for the contract wording (F05/BLD-015)
 
 - `scripts/SF-PROVER-PIN.sha256` was minted by the `sf-prover-pin-authority` mint job for this tree. The only launch-path change in the pull request is the description wording of `shared-utils/signature_launch_contract/launch-plan.schema.json`: no prover, validator, wrapper, route, page type or launcher file changed, and `hashpin` plus `bypass-scan` both pass on the minted pin.

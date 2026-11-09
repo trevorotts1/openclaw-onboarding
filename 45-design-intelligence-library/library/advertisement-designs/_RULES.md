@@ -19,5 +19,5 @@
 - Clutter ceiling: max 5 distinct elements (subject, headline, subhead, offer, CTA+logo counted together).
 
 ## Model routing
-- Default: GPT Image 2.5 Sunburst (`gpt-image-2-5-sunburst-text-to-image`; layout + multiple text strings), for every ad type.
-- People-led brand ads → GPT Image 2.5 Sunburst (`gpt-image-2-5-sunburst-text-to-image`, or `-image-to-image` with a reference; Nano Banana is never used for social ads). Offer/typography-led → GPT Image 2.5 Sunburst with the full-length prompt (rule 12 of `07-kie-setup/references/kie-common-rules.md`). There is no Ideogram route for ads (consistent with `social-media-designs/_RULES.md`).
+- Default: GPT Image 2.6 Sunburst (`gpt-image-2-6/sunburst-text-to-image`; layout + multiple text strings), for every ad type.
+- People-led brand ads → GPT Image 2.6 Sunburst (`gpt-image-2-6/sunburst-text-to-image`, or `-image-to-image` with a reference; Nano Banana is never used for social ads). Offer/typography-led → GPT Image 2.6 Sunburst with the full-length prompt (rule 12 of `07-kie-setup/references/kie-common-rules.md`). There is no Ideogram route for ads (consistent with `social-media-designs/_RULES.md`).

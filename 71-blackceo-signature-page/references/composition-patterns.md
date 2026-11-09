@@ -16,7 +16,7 @@ column and the words in the other. Real pages, Go Full Page among them, also:
 3. run a very light image or pattern behind the words, the full width of the
    screen, edge to edge.
 
-GPT Image 2.5 does none of this unless the prompt names it. The wireframe has
+GPT Image 2.6 does none of this unless the prompt names it. The wireframe has
 to carry it too: a pipeline that obeys "the mockup matches the wireframe"
 erases anything the wireframe never drew. So the treatment is data, set once
 per image slot at the wireframe and carried unchanged to the HTML.

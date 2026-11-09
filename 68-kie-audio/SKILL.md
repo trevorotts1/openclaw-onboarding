@@ -7,7 +7,7 @@ description: >
   legacy /api/v1/generate music-generation route is RETIRED), supported audio
   processing operations, and speech-to-text CAPABILITY DETECTION (ADVERTISED_NOT_YET_VERIFIED — no
   endpoint, dispatch_enabled false).
-version: v2.3.6
+version: v2.3.7
 metadata:
   version: "2.3.4"
   priority: HIGH
