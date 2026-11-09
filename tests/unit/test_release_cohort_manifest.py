@@ -341,5 +341,87 @@ class PromotionCandidateBinding(unittest.TestCase):
         self.assertEqual(record["onb_sha"], instance["onb_sha"])
 
 
+class DistributionsDeclared(unittest.TestCase):
+    """F24 items 5 and 12: the record names every distribution it was built
+    against, and the Command Center version it names is the one whose tag
+    peels to the recorded cc_sha.
+
+    The v7.6.112 defect this closes: the committed instance said
+    cc_version v7.6.126 while cc_sha was the v7.6.112 merge commit, and
+    nothing in the suite compared the two. A version string and a SHA for a
+    different release read as one coherent pair unless something checks.
+    """
+
+    REQUIRED = ("onboarding", "n999", "command_center",
+                "shared_launch_contract")
+
+    def test_sources_block_names_all_four_distributions(self):
+        manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+        sources = manifest.get("sources")
+        self.assertIsInstance(sources, dict,
+                              "F24 item 5 requires a 'sources' block")
+        for name in self.REQUIRED:
+            self.assertIsInstance(sources.get(name), dict,
+                                  "sources.%s is missing" % name)
+
+    def test_sources_agree_with_the_top_level_pair(self):
+        manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+        sources = manifest["sources"]
+        self.assertEqual(sources["onboarding"]["version"],
+                         manifest["onb_version"])
+        self.assertEqual(sources["onboarding"]["sha"], manifest["onb_sha"])
+        self.assertEqual(sources["command_center"]["version"],
+                         manifest["cc_version"])
+        self.assertEqual(sources["command_center"]["sha"],
+                         manifest["cc_sha"])
+
+    def test_command_center_tag_object_is_a_real_sha(self):
+        """A padded or guessed tag object cannot stand in for the real tag."""
+        manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+        cc = manifest["sources"]["command_center"]
+        self.assertTrue(cohort.is_hex_sha(cc.get("tag_object_sha")),
+                        "tag_object_sha not exact 40-hex: %r"
+                        % cc.get("tag_object_sha"))
+        self.assertNotEqual(cc["tag_object_sha"], cc["sha"],
+                            "an annotated tag object never equals the commit "
+                            "it peels to; equal values mean the tag was never "
+                            "queried")
+
+    def test_n999_source_looks_like_a_release(self):
+        manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+        n999 = manifest["sources"]["n999"]
+        self.assertRegex(n999["version"], r"^\d+(?:\.\d+)+$")
+        self.assertTrue(cohort.is_hex_sha(n999["sha"]))
+
+    def test_shared_launch_contract_is_versioned(self):
+        manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+        shared = manifest["sources"]["shared_launch_contract"]
+        self.assertEqual(shared["launch_plan"], "U-CONTRACT v1")
+        self.assertIsInstance(shared["command_center_launch"], int)
+        self.assertTrue(shared["approval_record"])
+
+    def test_check_mode_refuses_a_record_without_sources(self):
+        """The roll script's --check is the gate, not just a formatter."""
+        import subprocess
+        manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+        stripped = {k: v for k, v in manifest.items() if k != "sources"}
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "version").write_text(manifest["onb_version"] + "\n",
+                                          encoding="utf-8")
+            (root / "cc-compat.json").write_text(json.dumps(
+                {"commandCenter": {"pinnedTag": manifest["cc_version"]}}),
+                encoding="utf-8")
+            (root / COHORT_MANIFEST_RELPATH).write_text(
+                json.dumps(stripped), encoding="utf-8")
+            proc = subprocess.run(
+                [sys.executable,
+                 str(_REPO_ROOT / "scripts" / "roll-release-cohort.py"),
+                 "--repo-root", str(root), "--check"],
+                capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+            self.assertIn("sources", proc.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
