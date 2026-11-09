@@ -1,5 +1,9 @@
 # Changelog - kie-image
 
+## [2.2.6] - 2026-11-08 - G3 lockstep roll (PR 2868)
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled 2.2.5 -> 2.2.6 so this skill's changelog entry carries the version bump G3 requires above main. No behavior change; main's one prompt-band rule (owner rule 12) is carried unchanged.
+
 ## [2.2.5] - 2026-11-08 - G3 lockstep roll (PR 2868)
 
 - `SKILL.md` frontmatter and `skill-version.txt` rolled 2.2.4 -> 2.2.5 so the changelog entries added to this skill carry the required version bump. No behavior change; the prompt gate is unchanged.
