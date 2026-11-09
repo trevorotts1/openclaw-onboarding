@@ -1,0 +1,142 @@
+{
+  "model": "gpt-image-2-6/sunburst-image-to-image",
+  "style": "",
+  "copy_version": "long-form",
+  "references": [],
+  "page_kind": "sales",
+  "sections": [
+    {
+      "section_id": "1",
+      "section_name": "Opening claim",
+      "copy": "Turn Your Expertise Into a Signature Talk",
+      "cta": "Apply Now",
+      "slots": []
+    },
+    {
+      "section_id": "2",
+      "section_name": "First problem",
+      "copy": "Most founders can fill a room and still cannot say what the room is for.",
+      "cta": null,
+      "slots": []
+    },
+    {
+      "section_id": "2A",
+      "section_name": "First solution",
+      "copy": "One working session names the room and the promise it makes.",
+      "cta": null,
+      "slots": []
+    },
+    {
+      "section_id": "3",
+      "section_name": "Second problem",
+      "copy": "Most founders can fill a room and still cannot say what the room is for.",
+      "cta": null,
+      "slots": []
+    },
+    {
+      "section_id": "3A",
+      "section_name": "Second solution",
+      "copy": "The story room rebuilds the founder story until it lands.",
+      "cta": null,
+      "slots": []
+    },
+    {
+      "section_id": "4",
+      "section_name": "Third problem",
+      "copy": "A stage without rehearsal is a stage you borrow.",
+      "cta": null,
+      "slots": []
+    },
+    {
+      "section_id": "4A",
+      "section_name": "Third solution",
+      "copy": "The stage room rehearses with real lights and real peers.",
+      "cta": null,
+      "slots": []
+    },
+    {
+      "section_id": "5",
+      "section_name": "Why",
+      "copy": "Because the room is the offer, not the stage.",
+      "cta": null,
+      "slots": []
+    },
+    {
+      "section_id": "6",
+      "section_name": "Who it is for",
+      "copy": "Founders with a proven service and no room of their own.",
+      "cta": "Book a Call",
+      "slots": []
+    },
+    {
+      "section_id": "7",
+      "section_name": "What you get",
+      "copy": "Three rooms, one calendar, and a standard set by the cohort.",
+      "cta": null,
+      "slots": []
+    },
+    {
+      "section_id": "8",
+      "section_name": "First benefit",
+      "copy": "You leave with a signature talk that holds a room.",
+      "cta": null,
+      "slots": []
+    },
+    {
+      "section_id": "9",
+      "section_name": "Second benefit",
+      "copy": "You leave with a calendar of stages that fills itself.",
+      "cta": null,
+      "slots": []
+    },
+    {
+      "section_id": "10",
+      "section_name": "Third benefit",
+      "copy": "You leave with peers who keep the standard after you leave.",
+      "cta": null,
+      "slots": []
+    },
+    {
+      "section_id": "11",
+      "section_name": "Steps",
+      "copy": "1. Name the room. 2. Build the story. 3. Rehearse the stage.",
+      "cta": null,
+      "slots": []
+    },
+    {
+      "section_id": "12",
+      "section_name": "Founder letter",
+      "copy": "Trevor built the room so other founders would not have to borrow one.",
+      "cta": "Claim Your Seat",
+      "slots": []
+    }
+  ],
+  "stage_prompts": {
+    "final-mockups": "Final production mockup, section {section_number} of {section_total}, {section_name}, at {width}px. Photographic editorial finish. The attached wireframe is a layout reference: its section chips, name tabs, type-spec labels and behaviour notes are annotations and are never drawn.\n\n{layout}\nLAYOUT AND COPY:\n{copy}\nIMAGE SLOTS:\n{slots}"
+  },
+  "metadata": {
+    "stage": "final-mockups",
+    "copy_version": "long-form",
+    "page_role": "landing",
+    "page_kind": "sales",
+    "section_count": 15,
+    "canonical_ids": [
+      "1",
+      "2",
+      "2A",
+      "3",
+      "3A",
+      "4",
+      "4A",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "provider_calls": 0
+  }
+}

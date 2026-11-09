@@ -9,6 +9,11 @@
   its assertions and the F18 prompt band are unchanged.
 - Version lockstep: `skill-version.txt`, `VERSION` and the `SKILL.md` frontmatter all move to
   1.3.21 together.
+- Restored from main (lost by the stale-snapshot commit f1e231cd0): ANNOT-001's
+  `scripts/validate_annotation_leak.py`, `tests/test_annotation_leak.py`, its six fixtures, the
+  `run_tests.py` registration, the two `references/stage-contract.json` invocations and the
+  annotation sentence in `scripts/build_production_request.py`. Its `--model` default and the
+  annotation_leak fixture name `gpt-image-2-6/sunburst-image-to-image`.
 - Risk: LOW. One literal inside a self-check fixture.
 
 ## 1.3.18 - 2026-11-08 - one prompt-band rule: owner rule 12 governs (POL-001)
