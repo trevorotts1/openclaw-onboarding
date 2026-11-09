@@ -1,3 +1,33 @@
+## [v27.1.87] - 2026-11-08
+
+- Add guarded native form built-in placement with Query Key inventory, duplicate
+  and Address overlap refusal, one drag per addition and independent reopen.
+- Scope existing page edits to native inventory and require fresh-container
+  provenance before adding the first page to an empty container.
+- Share writer leases across editor, API and portal execution; reject unsafe
+  journal links, uncertain writes and unbound or malformed saved replay.
+- Reject conflicting same-session location claims and stale search absence;
+  preserve pending functional proof through every recognized outcome.
+- Add captured classic community channel/details paths with trusted host identity
+  requirements. New portal layouts and complete feature/live coverage remain open.
+
+## [v27.1.85] - 2026-11-08
+
+- Recover the shared Playwright recipe package and API-first operation router.
+- Add a continuation ledger, source-only Downloads checkpoints and integrity tests.
+- Add concrete native form fields/conditions/custom CSS, survey Jump To rules,
+  marketing quiz categories/answer authoring/scoring/tiers, authored submission
+  messages/redirects and notification settings, checkout UI settings/approved terms,
+  exact existing code targets, Meeting Room creation/update and API-first delivery.
+- Register canonical calendar update with default-deny scope/tenant/read-back checks;
+  distinguish permanent room links from native dynamic appointment integration.
+- Require recognized handler outcomes, per-run writer locks, uncertainty reconciliation,
+  bound provider receipts and independent read-back; preserve pending verification.
+- Add Mac/Linux Chromium fixture CI and verify source backups on the client Mac.
+  Coverage remains partial: advanced uncaptured controls, native split traffic,
+  portal settings, client VPS execution and payment journeys remain unverified.
+  This is a draft source change, without a rollout or merge.
+
 # Changelog - ghl-install-pages
 
 All notable changes to this skill wrapper are documented here.
@@ -14,13 +44,14 @@ All notable changes to this skill wrapper are documented here.
 ---
 
 
-## [v27.1.87] - 2026-11-08 - KIE prompt-enforcer copy regenerated; version past main's fold
+## [v27.1.88] - 2026-11-08 - KIE prompt-enforcer copy regenerated; version past main's fold
 
 - `tools/_kie_prompt_enforcer_embedded.py` and `tools/prompt_policy.py` carry main's regenerated
   rule-12 band (95 to 100 passes, 80 to below 95 warns and expands, below 80 rejects) with the
   GPT Image 2.6 slash ids; `tools/gates.json` and `tools/ghl_media.py` dispatch 2.6 only.
-- Version bumped to v27.1.87: main's own W19 fold already reached v27.1.86, so the migration
-  diff needs the next patch to keep the G3 skill-version-bump guard honest.
+- Version bumped to v27.1.88: main's W19 fold reached v27.1.86 and main's builder-scripts change
+  (#2877) reached v27.1.87, so the migration diff needs the next patch to keep the G3
+  skill-version-bump guard honest.
 - Risk: LOW. Model ids and their gates only.
 
 ## [v27.1.86] - 2026-11-08 - KIE GPT Image 2.6 Sunburst reaches the media tools

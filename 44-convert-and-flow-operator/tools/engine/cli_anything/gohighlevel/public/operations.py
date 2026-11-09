@@ -240,6 +240,7 @@ def _R(
     readback: str | None = None,
     required_query: tuple[str, ...] = (),
     query_enums: tuple[tuple[str, tuple[str, ...]], ...] = (),
+    fetch_date: str | None = None,
 ) -> OperationRow:
     return OperationRow(
         operation_id=operation_id,
@@ -255,7 +256,7 @@ def _R(
         approval_required=approval,
         scopes_candidate=scopes,
         doc_url=doc_url,
-        doc_fetch_date=DOC_FETCH_DATE if doc_url else None,
+        doc_fetch_date=(fetch_date or DOC_FETCH_DATE) if doc_url else None,
         blocker=blocker,
         readback_plan=readback,
         required_query=required_query,
@@ -432,6 +433,13 @@ _CONVERSATIONS_CALENDARS: tuple[OperationRow, ...] = (
     _R("calendars.get", "GET", "/calendars/{calendarId}", "v3", "D", PUB,
        PIT_OR_OAUTH, "path.calendarId", False, False, "A-UNVERIFIED",
        DOCS + "/ghl/calendars/get-calendar"),
+    # Skill 6 permanent Meeting Room link integration, official contract checked
+    # 2026-11-08. Enablement remains per-tenant/default-deny; a write still needs
+    # idempotency, a nonvacuous calendars.get readback and verified capability.
+    _R("calendars.update", "PUT", "/calendars/{calendarId}", "v3", "D", PUB,
+       PIT_OR_OAUTH, "path.calendarId", True, False, None,
+       DOCS + "/ghl/calendars/update-calendar", scopes=("calendars.write",),
+       readback="calendars.get", fetch_date="2026-11-08"),
     _R("calendars.create", "POST", "/calendars/", "v3", "D", PUB, PIT_OR_OAUTH,
        "body.locationId", True, False, "B-TEAMMEMBERS",
        DOCS + "/ghl/calendars/create-calendar"),

@@ -14,6 +14,11 @@
   `run_tests.py` registration, the two `references/stage-contract.json` invocations and the
   annotation sentence in `scripts/build_production_request.py`. Its `--model` default and the
   annotation_leak fixture name `gpt-image-2-6/sunburst-image-to-image`.
+- Restored from main (also lost by f1e231cd0): POL-001's warn-and-expand band in
+  `scripts/validate_prompt.py` (80 to below 95 percent passes and surfaces the warning with its ADD
+  count), `references/prompt-budget-policy.json` band wording, and the `tests/test_validate_copy_prompt.py`
+  assertions on `WARNING:`, `ADD 2000 chars`, `ADD 200 chars`, BELOW_TARGET and `add_chars`. Only the
+  model ids moved to 2.6.
 - Risk: LOW. One literal inside a self-check fixture.
 
 ## 1.3.18 - 2026-11-08 - one prompt-band rule: owner rule 12 governs (POL-001)
