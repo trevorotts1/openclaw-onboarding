@@ -2843,7 +2843,8 @@ class CampaignBuilder:
             route = self.route_for("create")
             if route.public:
                 public_gate = compile_gate_findings(
-                    {**wf_def, "templates": templates},
+                    {**wf_def, "templates": templates,
+                     "asset_reference_findings": asset_findings},
                     public_route=True)
                 blocker = (
                     "public compile refused ("

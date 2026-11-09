@@ -136,6 +136,10 @@ def test_unresolved_asset_reference_refuses_the_compile():
         {"name": "Mail", "templates": resolved,
          "asset_reference_findings": findings}, public_route=False)
     assert "asset_reference_unresolved" in [f["code"] for f in gate]
+    public_gate = wb.compile_gate_findings(
+        {"name": "Mail", "templates": resolved,
+         "asset_reference_findings": findings}, public_route=True)
+    assert "asset_reference_unresolved" in [f["code"] for f in public_gate]
 
 
 def test_builder_only_required_enforcement_needs_client_side_proof():
