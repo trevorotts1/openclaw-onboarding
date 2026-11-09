@@ -1,0 +1,33 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "Approved account name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_FROM_INVENTORY/quiz-builder-v2/QUIZ_FROM_INVENTORY",
+  "configuration": {
+    "expected_question_count": 1,
+    "questions": [
+      {
+        "index": 0,
+        "expected_question": "Which service interests you?",
+        "expected_query_key": "SERVICE_FROM_INVENTORY",
+        "expected_placeholder": "",
+        "placeholder": "Choose a service",
+        "expected_short_label": "",
+        "short_label": "Service interest",
+        "shared_field_change_ack": true,
+        "options": [
+          {
+            "label": "Coaching",
+            "category": "Overall Only",
+            "score": 10
+          },
+          {
+            "label": "Consulting",
+            "category": "Overall Only",
+            "score": 20
+          }
+        ],
+        "query_key": "SERVICE_INTEREST_FROM_APPROVED_INPUT"
+      }
+    ]
+  }
+}

@@ -19,9 +19,10 @@ name: SF prover pin authority
 #                                     PR checks and warns; its pin comes from the mint job after merge. A PR
 #                                     whose net diff edits the pin file fails unless every commit touching it
 #                                     is bot-authored, bot-committed and touches only the pin.
-#   mint    push to main / manual   : the merge is the authority. Recompute, and commit the pin as
-#                                     github-actions[bot] when it changed. `mint-pin --ci` refuses to run
-#                                     anywhere else, and the local `--write-pin` needs a signed pin_rotation
+#   mint    push to main / manual   : the merge is the authority. Recompute, and when the pin changed open a
+#                                     PR to main carrying it as ONE github-actions[bot] commit touching ONLY
+#                                     the pin file (never a direct push to main). `mint-pin --ci` refuses to
+#                                     run anywhere else, and the local `--write-pin` needs a signed pin_rotation
 #                                     approval record held by the operator. 999 receives the pin only through
 #                                     the sync script, never by minting its own.
 #
@@ -220,6 +221,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - name: Checkout the merged branch
         uses: actions/checkout@v4
@@ -238,17 +240,59 @@ jobs:
           set -euo pipefail
           python3 49-signature-funnel/scripts/front_door.py --skill-dir 49-signature-funnel bypass-scan
 
-      - name: Mint and commit the pin
+      - name: Mint the pin as a PR (never a direct push to main)
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MINT_REF: ${{ github.ref }}
+          MINT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          pin_path="49-signature-funnel/scripts/SF-PROVER-PIN.sha256"
+          bot_name="github-actions[bot]"
+          bot_email="41898282+github-actions[bot]@users.noreply.github.com"
+          short="${MINT_SHA::12}"
+          branch="pin/mint-${short}"
+          # A re-run for the same tree reuses the branch (fast-forward only; history is never rewritten).
+          git fetch origin "$branch" 2>/dev/null || true
+          if git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
+            git checkout -B "$branch" "origin/${branch}"
+          else
+            git checkout -b "$branch"
+          fi
           python3 49-signature-funnel/scripts/front_door.py --skill-dir 49-signature-funnel mint-pin --ci
-          if git diff --quiet -- 49-signature-funnel/scripts/SF-PROVER-PIN.sha256; then
+          if git diff --quiet -- "$pin_path"; then
             echo "pin already matches the tree; nothing to commit"
+            if gh pr view "$branch" --json number --jq .number >/dev/null 2>&1; then
+              echo "mint PR for $branch is already open"
+            elif git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
+              echo "branch $branch exists but has no open PR; opening one"
+              gh pr create --base main --head "$branch" \
+                --title "ci: mint SF-PROVER-PIN.sha256 for ${short}" \
+                --body "Mints the pin for tree ${MINT_SHA} (ref ${MINT_REF}). The committed pin already matches; this PR only carries the branch forward."
+            fi
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add 49-signature-funnel/scripts/SF-PROVER-PIN.sha256
-          git commit -m "ci: mint SF-PROVER-PIN.sha256 for ${GITHUB_SHA::12}"
-          git push origin "HEAD:${GITHUB_REF}"
+          git config user.name "$bot_name"
+          git config user.email "$bot_email"
+          git add "$pin_path"
+          git commit -m "ci: mint SF-PROVER-PIN.sha256 for ${short}"
+          # The ONLY push this workflow ever does, and only to the mint branch: main is never pushed to.
+          git push -u origin "$branch"
+          body_file="$(mktemp)"
+          cat > "$body_file" <<EOF
+          Mints \`${pin_path}\` for tree \`${MINT_SHA}\` (ref \`${MINT_REF}\`).
+
+          - computed pin: \`$(tr -d '[:space:]' < "$pin_path")\`
+          - one commit, authored and committed by \`${bot_name}\`, touching only \`${pin_path}\`
+          - never pushed to main directly: merge this PR to certify the tree
+
+          The \`verify\` check recomputes the pin from this PR's tree with the trusted base verifier and refuses any hand edit.
+          EOF
+          if gh pr view "$branch" --json number --jq .number >/dev/null 2>&1; then
+            echo "a PR for $branch is already open; pushed the pin commit onto it"
+          else
+            gh pr create --base main --head "$branch" \
+              --title "ci: mint SF-PROVER-PIN.sha256 for ${short}" \
+              --body-file "$body_file"
+          fi

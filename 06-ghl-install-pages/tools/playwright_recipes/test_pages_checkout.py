@@ -96,7 +96,35 @@ class NativeCheckoutTests(unittest.TestCase):
         self.assertEqual(page.frames[0].state['main_price'], PRICE)
         self.assertEqual(page.frames[0].state['action']['target_step_id'],'step_next')
         self.assertEqual(page.frames[0].installs,1)
-        self.assertEqual(sum(call['op']=='get_state' for call in page.frames[0].calls),3)
+        # Full preflight and final preservation reads supplement each write's
+        # read-back; the last observation must cover the completed checkout.
+        self.assertEqual(page.frames[0].calls[-1]['op'], 'get_state')
+
+    def test_main_price_only_change_preflights_preserved_bump_currency(self):
+        page = Page()
+        page.frames[0].state['bumps'] = [{'offer_id':'existing','headline':'Existing',
+            'benefit_explanation':'Existing extra','selected':False,
+            'price':{**PRICE,'native_price_id':'old_bump','currency':'EUR'}}]
+        with self.assertRaises(CheckoutRefused):
+            self.run_fixture(inputs(), page)
+        self.assertFalse(any(call['op']=='set_state' for call in page.frames[0].calls))
+
+    def test_main_price_readback_preserves_existing_bumps(self):
+        page = Page()
+        original = page.frames[0].evaluate
+        page.frames[0].state['bumps'] = [{'offer_id':'existing','headline':'Existing',
+            'benefit_explanation':'Existing extra','selected':False,
+            'price':{**PRICE,'native_price_id':'old_bump'}}]
+        def dropping_bumps(script):
+            result = original(script)
+            if 'const r = await f(' in script:
+                req, _ = json.JSONDecoder().raw_decode(script.split('const r = await f(', 1)[1])
+                if req['op']=='set_state' and 'main_price' in req['patch']:
+                    page.frames[0].state['bumps'] = []
+            return result
+        page.frames[0].evaluate = dropping_bumps
+        with self.assertRaises(native.ReadbackMismatch):
+            self.run_fixture(inputs(), page)
 
     def test_contract_failure_happens_before_browser_access(self):
         data = inputs()

@@ -1,0 +1,45 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "Approved account name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_FROM_INVENTORY/survey-builder-v2/SURVEY_FROM_INVENTORY",
+  "configuration": {
+    "expected_slide_count": 2,
+    "slide_labels": [
+      "P1 - Welcome",
+      "P2 - Question"
+    ],
+    "target_slide": 2,
+    "object_fields": [
+      {
+        "id": "FIELD_FROM_API_GET",
+        "name": "Approved existing question",
+        "field_key": "contact.APPROVED_FIELD_KEY",
+        "data_type": "RADIO",
+        "options": [
+          "Approved answer A",
+          "Approved answer B"
+        ]
+      }
+    ],
+    "field_dependencies": {
+      "status": "VERIFIED",
+      "provider": "skill44",
+      "location_id": "LOCATION_FROM_INVENTORY",
+      "observed_at": 0,
+      "operation": "custom_fields.get",
+      "http_status": 200,
+      "fields": [
+        {
+          "id": "FIELD_FROM_API_GET",
+          "name": "Approved existing question",
+          "field_key": "contact.APPROVED_FIELD_KEY",
+          "data_type": "RADIO",
+          "options": [
+            "Approved answer A",
+            "Approved answer B"
+          ]
+        }
+      ]
+    }
+  }
+}

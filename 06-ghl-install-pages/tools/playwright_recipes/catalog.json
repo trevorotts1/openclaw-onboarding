@@ -141,10 +141,10 @@
     },
     "courses.configure_ui": {
       "name": "19_configure_course_ui",
-      "action": "options",
+      "action": "native_course_theme_or_options",
       "implemented": true,
-      "proof": "PROFILE",
-      "use": "Recorded UI-only course controls; never replace documented API operations"
+      "proof": "CAPTURED",
+      "use": "Edit fourteen captured Neo Classic text/visibility controls on an exact existing inactive template; expected-value preflight, active-theme preservation and independent reopen; live Python proof deferred. Other theme controls require captured profiles."
     },
     "meetings.setup": {
       "name": "20_setup_meeting_room",

@@ -154,8 +154,8 @@ def _recipe_readiness(operation, inputs, probes, input_dir):
     observed = deepcopy(probes)
     native = operation in ('checkout.configure_native','checkout.one_click_upsell') and bool(inputs.get('adapter_capture'))
     recorded = bool(inputs.get('options'))
-    ui = operation == 'checkout.configure_ui'
-    portal = operation == 'communities.configure' and ('channels' in inputs or 'details' in inputs)
+    ui = operation in ('checkout.configure_ui', 'courses.configure_ui')
+    portal = operation == 'communities.configure' and bool(set(inputs).intersection({'channels', 'details', 'access'}))
     if not native and not recorded and not ui and not portal:
         return observed, None
     # A receipt for another input/profile cannot bless this specific capture.
@@ -184,11 +184,15 @@ def _recipe_readiness(operation, inputs, probes, input_dir):
         return observed, type(exc).__name__
 
 
-def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None, executors=None, portal_context=None):
+def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None, executors=None, portal_context=None, access_authorization=None):
     if not isinstance(inputs, Mapping) or not isinstance(inputs.get('location_id'), str) or not inputs['location_id']:
         return {'status': 'STOP_INVALID_INPUT', 'browser_used': False,
                 'reason': 'A location-bound input mapping is required'}
-    if 'auth_activation' in inputs and (page is not None or portal_context is not None):
+    access_mode = operation == 'communities.configure' and 'access' in inputs
+    if access_authorization is not None and not access_mode:
+        return {'status':'STOP_INVALID_INPUT', 'browser_used':False,
+                'reason':'A live access authorization applies only to its exact community access operation'}
+    if 'auth_activation' in inputs and (page is not None or portal_context is not None or access_authorization is not None):
         return {'status': 'STOP_INVALID_INPUT', 'browser_used': False,
                 'reason': 'Fresh authentication activation cannot use a supplied browser or portal context'}
     auth_stop = Path(evidence_root).resolve()/'auth-stop.json'
@@ -204,6 +208,12 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
                 'reason': 'Installed executors must be a provider mapping'}
     observed, capture_error = _recipe_readiness(operation, inputs, probes, input_dir)
     route = decide(operation, inputs['location_id'], observed, inputs=inputs)
+    if access_mode and route['lane'] != 'playwright':
+        return {'status':'STOP_INVALID_INPUT' if capture_error else 'ACCESS_SCRIPT_ROUTE_REQUIRED',
+                'route':route, 'browser_used':False,
+                'reason':'Invalid community access configuration' if capture_error else
+                    'Community access requires its captured native script and live same-session host context; an authorization cannot be delegated to another lane',
+                **({'error_type':capture_error} if capture_error else {})}
     if 'auth_activation' in inputs and route['lane'] != 'playwright':
         return {'status':'STOP_FRESH_ACTIVATION_REQUIRED', 'route':route,
                 'browser_used':False,
@@ -211,7 +221,7 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
     root = Path(evidence_root).resolve()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(root, 0o700)
-    journals = ('state.json', 'provider-state.json', 'community-portal-state.json', 'community-details-state.json', 'handoff.json', 'auth-stop.json')
+    journals = ('state.json', 'provider-state.json', 'community-portal-state.json', 'community-details-state.json', 'community-access-state.json', 'handoff.json', 'auth-stop.json')
     if not any(journal_present(root / name) for name in journals):
         secure_json(root / 'route.json', route)
     if route['lane'] != 'playwright':
@@ -252,7 +262,7 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
                 blocked_state = root / 'state.json'
                 if not journal_present(blocked_state):
                     blocked_state = next((root / name for name in (
-                        'handoff.json', 'community-portal-state.json', 'community-details-state.json', 'provider-state.json',
+                        'handoff.json', 'community-portal-state.json', 'community-details-state.json', 'community-access-state.json', 'provider-state.json',
                         'delivery-state.json', 'calendar-delivery-state.json')
                         if journal_present(root / name)), root / 'provider-state.json')
                 return {'status': 'PROVIDER_RECONCILIATION_REQUIRED', 'route': route,
@@ -267,19 +277,20 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
             if 'auth_activation' in inputs:
                 return _terminal_auth_stop(operation, inputs, root, type(exc).__name__, contract=True)
             raise
-        if operation == 'communities.configure' and ('channels' in inputs or 'details' in inputs):
+        if operation == 'communities.configure' and set(inputs).intersection({'channels', 'details', 'access'}):
             if page is None or portal_context is None:
                 return {'status': 'PORTAL_CONTEXT_REQUIRED', 'route': route,
                         'browser_used': False,
                         'reason': 'Supply an authenticated caller-owned portal Page and same-session identity context; no login or token seed attempted'}
             if __package__:
-                from .skill6_playwright import community_channels, community_details
+                from .skill6_playwright import community_channels, community_details, community_access
             else:
-                from skill6_playwright import community_channels, community_details
-            handler = community_details if 'details' in inputs else community_channels
-            result = handler(page, job['steps'][0],
-                                        portal_context=portal_context,
-                                        evidence_root=root)
+                from skill6_playwright import community_channels, community_details, community_access
+            handler = community_access if access_mode else community_details if 'details' in inputs else community_channels
+            arguments = {'portal_context':portal_context, 'evidence_root':root}
+            if access_mode:
+                arguments['access_authorization'] = access_authorization
+            result = handler(page, job['steps'][0], **arguments)
             return {'status': result['status'], 'route': route,
                     'browser_used': True, 'result': result}
         result = run_on_page(page, job, root) if page is not None else execute(job, root)
@@ -289,9 +300,16 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
         from ghl_auth import AuthBridgeError
         if isinstance(exc, AuthBridgeError):
             return _terminal_auth_stop(operation, inputs, root, type(exc).__name__)
-        expected_state = root / ('community-details-state.json' if operation == 'communities.configure' and 'details' in inputs else 'community-portal-state.json' if operation == 'communities.configure' and 'channels' in inputs else 'state.json')
+        if access_mode and isinstance(exc, Stop) and str(exc).startswith('ACCESS_CONFIRMATION_REQUIRED:'):
+            result = {'status':'ACCESS_CONFIRMATION_REQUIRED', 'route':route, 'browser_used':True,
+                      'reason':'Fresh same-session authorization for this exact access expansion is required; no alternative execution lane is authorized'}
+            if journal_present(root / 'community-access-state.json'):
+                result['state_file'] = str(root / 'community-access-state.json')
+                result['instruction'] = 'Reconcile the retained access intent before another write.'
+            return result
+        expected_state = root / ('community-access-state.json' if access_mode else 'community-details-state.json' if operation == 'communities.configure' and 'details' in inputs else 'community-portal-state.json' if operation == 'communities.configure' and 'channels' in inputs else 'state.json')
         blocked_state = next((root / name for name in (
-            'state.json', 'provider-state.json', 'community-portal-state.json', 'community-details-state.json')
+            'state.json', 'provider-state.json', 'community-portal-state.json', 'community-details-state.json', 'community-access-state.json')
             if journal_present(root / name)), expected_state)
         handoff = {
             'status': 'NEEDS_BROWSER_RECOVERY', 'operation': operation,

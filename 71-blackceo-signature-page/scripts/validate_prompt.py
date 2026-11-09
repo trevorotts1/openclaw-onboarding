@@ -327,6 +327,41 @@ def load_policy(path=None):
                 "tripwire_chars": 2000}
 
 
+def _image_owner_registry_path():
+    """Locate Skill 66's canonical curated owner-policy registry."""
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    roots = list(Path(__file__).resolve().parents)
+    if envd:
+        roots.append(Path(envd))
+    roots += [Path.home() / ".openclaw" / "skills",
+              Path("/data/.openclaw/skills")]
+    for root in roots:
+        candidate = root / "66-kie-image" / "models.json"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _owner_image_cap(model):
+    """Read an exact model's owner cap; never invent a second numeric limit."""
+    path = _image_owner_registry_path()
+    if path is None:
+        return None
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        entries = [entry for entry in document.get("models", [])
+                   if isinstance(entry, dict) and entry.get("canonical_model_id") == model]
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+    if len(entries) != 1:
+        return None
+    maximum = entries[0].get("owner_prompt_cap_chars")
+    if type(maximum) is not int or maximum <= 0:
+        return None
+    return {"max_chars": maximum, "cap_status": "OWNER_RULED", "unit": "chars",
+            "source": str(path) + " owner_prompt_cap_chars for " + model}
+
+
 def cap_for_model(model, policy):
     """Resolve the policy entry for a model id (longest prefix wins)."""
     best = None
@@ -338,10 +373,13 @@ def cap_for_model(model, policy):
     if best is not None:
         return best
     if model and "gpt-image-2-6" in model:
-        # Fail to the law, never to 32,000: owner ruling 2026-11-08 caps every
-        # 2.6 route at 20,000 even if the policy file lookup misses.
-        return {"max_chars": 20000, "cap_status": "OWNER_RULED", "unit": "chars",
-                "source": "Owner ruling 2026-11-08 fallback: 20,000 (66-kie-image/models.json owner_prompt_cap_chars)."}
+        # A missing local policy entry falls back to the same owner registry,
+        # not a duplicated literal or the vendor's larger schema maximum.
+        owner_cap = _owner_image_cap(model)
+        if owner_cap is not None:
+            return owner_cap
+        return {"max_chars": None, "cap_status": "UNKNOWN", "unit": "chars",
+                "source": "Exact owner-policy registry cap unavailable for " + model}
     return policy.get("default", {"max_chars": None, "cap_status": "UNKNOWN",
                                    "unit": "chars"})
 
