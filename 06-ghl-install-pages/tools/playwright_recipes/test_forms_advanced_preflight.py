@@ -60,6 +60,7 @@ class ObjectBindingPreflightTests(unittest.TestCase):
         events = []
         def read(frame, scope, field):
             events.append(('binding',field['id']))
+            return 'actual_native_query'
         def select(control):
             self.assertIs(control,fixture[7]['pending'][2])
             events.append(('select','pending'))

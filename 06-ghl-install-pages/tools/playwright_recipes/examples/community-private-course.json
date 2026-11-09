@@ -1,0 +1,15 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "Exact approved location name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_FROM_INVENTORY/memberships/communities/community-groups",
+  "portal_url": "https://portal.example.com/communities/groups/exact-group-slug/home",
+  "group_name": "Exact approved group name",
+  "publish": false,
+  "course_associations": {
+    "course_id": "COURSE_ID_FROM_API_INVENTORY",
+    "course_title": "Exact unique course title",
+    "expected_group_id": "NATIVE_GROUP_ID_FROM_AUTHENTICATED_INVENTORY",
+    "visibility": "Private",
+    "expected_courses": []
+  }
+}

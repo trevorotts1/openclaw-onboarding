@@ -15,6 +15,7 @@ NO client names / IDs — only fabricated placeholders.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import stat
 import subprocess
@@ -308,6 +309,73 @@ class TestTier1Untouched:
                              text=True, timeout=60, cwd=str(_REPO_ROOT))
         assert res.returncode == 0, (
             f"Tier-1 activation-resilience guard must stay green.\n{res.stdout}\n{res.stderr}")
+
+
+class TestTokenOnlyScanProcessBudget:
+    """Same ERE checks, with process count independent of auth-script length."""
+    def run_guard(self, tmp_path, *, seed=None, inject=None, env=None):
+        _lay_repo(tmp_path)
+        tools=tmp_path / '06-ghl-install-pages' / 'tools'
+        if seed is not None:(tools/'seed-ghl-auth.py').write_text(seed,encoding='utf-8')
+        if inject is not None:(tools/'inject-ghl-auth.sh').write_text(inject,encoding='utf-8')
+        return subprocess.run(['bash',str(_TOKEN_GUARD),'--repo-root',str(tmp_path)],
+            capture_output=True,text=True,timeout=20,env=env)
+
+    def test_clean_large_scripts_do_not_spawn_grep_per_line_and_pattern(self,tmp_path):
+        # A PATH wrapper counts actual external grep invocations instead of
+        # asserting a machine-dependent stopwatch threshold. Three doc
+        # sentinel reads are legitimate; code scanning must remain in-process.
+        bin_dir=tmp_path/'bin';bin_dir.mkdir()
+        wrapper=bin_dir/'grep'
+        wrapper.write_text('#!/usr/bin/env bash\n'
+            'printf "called\\n" >> "$GUARD_GREP_LOG"\n'
+            'exec "$GUARD_REAL_GREP" "$@"\n',encoding='utf-8')
+        wrapper.chmod(0o755)
+        log=tmp_path/'grep-calls.txt'
+        env={**os.environ,'PATH':str(bin_dir)+os.pathsep+os.environ.get('PATH',''),
+             'GUARD_GREP_LOG':str(log),'GUARD_REAL_GREP':shutil.which('grep')}
+        result=self.run_guard(tmp_path,seed='print(1)\n'*1000,
+            inject='printf token_only\n'*1000,env=env)
+        assert result.returncode==0,result.stdout+result.stderr
+        assert log.read_text().splitlines()==['called']*3
+
+    @pytest.mark.parametrize('code',[
+        "input[type=password]",
+        "node.type(password)",
+        "node.fill(Password)",
+        "node.sendKeys(password)",
+        "node.value = password",
+        "document.querySelector('password').value = value",
+        "value = os.environ.get('GHL_AGENCY_PASSWORD')",
+        'value=$GHL_AGENCY_PASSWORD',
+        'value=${GHL_EMAIL}',
+        'do_login()',
+        'loginWithCredentials()',
+        'signInWithPassword()',
+        'handle_2fa()',
+        'fill_login_form()',
+    ])
+    def test_every_existing_active_login_pattern_still_refuses(self,tmp_path,code):
+        result=self.run_guard(tmp_path,inject='#!/usr/bin/env bash\n'+code+'\n')
+        assert result.returncode!=0,result.stdout+result.stderr
+        assert 'reintroduces auto UI-login / 2FA' in result.stdout
+
+    def test_read_only_detection_and_python_prose_stay_allowed(self,tmp_path):
+        result=self.run_guard(tmp_path,
+            seed='"""do_login() is not allowed."""\n# handle_2fa()\nprint("signInWithPassword is prohibited")\n',
+            inject="# do_login()\nconst hasPwd = !!document.querySelector('input[type=password]');\n")
+        assert result.returncode==0,result.stdout+result.stderr
+
+    def test_unparseable_python_and_missing_sentinel_still_fail_closed(self,tmp_path):
+        result=self.run_guard(tmp_path,seed='"""unterminated\n')
+        assert result.returncode!=0
+        assert 'GUARD-ERROR-UNPARSEABLE-PYTHON' in result.stdout
+        _lay_repo(tmp_path)
+        (tmp_path/'06-ghl-install-pages'/'SKILL.md').write_text('# missing sentinel\n',encoding='utf-8')
+        result=subprocess.run(['bash',str(_TOKEN_GUARD),'--repo-root',str(tmp_path)],
+            capture_output=True,text=True,timeout=20)
+        assert result.returncode!=0
+        assert 'doctrine sentinel MISSING' in result.stdout
 
 
 # ---------------------------------------------------------------------------

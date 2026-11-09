@@ -568,9 +568,12 @@ class VariantRequest:
 
     def validate(self) -> "VariantRequest":
         for name in ("location_id", "funnel_id", "step_id", "name", "slug"):
-            value = str(getattr(self, name) or "").strip()
-            if not value:
-                raise VariantRefused(f"variant request: {name} is required")
+            value = getattr(self, name)
+            if (not isinstance(value, str) or not value or value != value.strip()
+                    or any(ord(char) < 32 or ord(char) == 127 for char in value)):
+                raise VariantRefused(f"variant request: {name} must be explicit nonempty text without padding or control characters")
+        if type(self.is_control) is not bool:
+            raise VariantRefused("variant request: is_control must be a real boolean")
         if self.is_control:
             raise VariantRefused(
                 "is_control=True is refused: a recipe may never declare a NEW "
@@ -578,7 +581,8 @@ class VariantRequest:
                 "whatever the platform already has, and its identity must not "
                 "move (B10 'unchanged control variant')"
             )
-        if "/" in self.slug or " " in self.slug:
+        if (any(char.isspace() for char in self.slug) or any(char in self.slug for char in "/\\?#")
+                or self.slug in (".", "..")):
             raise VariantRefused(
                 f"slug {self.slug!r} is not a plain path segment; a variant slug "
                 "is a reviewed value, never a label"
@@ -967,13 +971,15 @@ def readback_passes(capture: Any,
         if key not in readback:
             problems.append(f"read-back missing captured key {key!r}")
     rel_field, rel_value = a["relation_field"], a["relation_value"]
-    if rel_field in a["must_contain_keys"] and readback.get(rel_field) != rel_value:
+    if readback.get("id") != a["variant_id"]:
+        problems.append("read-back id differs from the exact captured native variant identity")
+    if readback.get(rel_field) != rel_value:
         problems.append(
             f"read-back {rel_field!r}={readback.get(rel_field)!r}; the variant "
             f"is not linked to the control ({rel_value!r})"
         )
     tf, tv = a["traffic_field"], a["traffic_must_equal"]
-    if tf in a["must_contain_keys"] and readback.get(tf) != tv:
+    if type(readback.get(tf)) is not type(tv) or readback.get(tf) != tv:
         problems.append(
             f"read-back {tf!r}={readback.get(tf)!r} but traffic must stay at the "
             f"captured default {tv!r} — a created variant may not move traffic"
@@ -1002,23 +1008,49 @@ def reuse_decision(capture: Any,
     cap = _require_valid_capture(capture, capture_path=capture_path)
     if not isinstance(existing, list):
         raise VariantRefused("existing variants must be a list from a read-back")
+    if not isinstance(request, VariantRequest):
+        raise VariantRefused("variant reuse requires an explicit VariantRequest")
+    request.validate()
+    if request.location_id != cap["location_id"] or request.step_id != cap["step_id"]:
+        raise VariantRefused("variant reuse request differs from its captured location/control step")
     rel_field = cap["variant_relation"]
+    identities = set()
+    matches = []
     for row in existing:
-        if not isinstance(row, dict):
-            continue
-        if (row.get(rel_field) == cap["control_id_before"]
-                and row.get("name") == request.name
-                and row.get("url") == request.slug):
-            return {
-                "action": "REUSE",
-                "variant_id": row.get("id", cap["variant_id"]),
-                "matched_on": {"relation_field": rel_field,
-                               "relation_value": cap["control_id_before"],
-                               "name": request.name, "url": request.slug},
-                "reason": "a variant already linked to this control with this "
-                          "name and slug exists; creating another would split "
-                          "traffic across an unintended third branch",
-            }
+        if (not isinstance(row, dict)
+                or any(not isinstance(row.get(key), str) or not row[key].strip()
+                       for key in ("id", "name", "url", rel_field))):
+            raise VariantRefused("existing variant inventory has incomplete native identities; reconcile before CREATE/REUSE")
+        if row["id"] in identities:
+            raise VariantRefused("existing variant inventory has duplicate native ids")
+        identities.add(row["id"])
+        for key in ("locationId", "location_id"):
+            if key in row and row[key] != request.location_id:
+                raise VariantRefused("existing variant explicitly belongs to another location")
+        for key in ("funnelId", "funnel_id"):
+            if key in row and row[key] != request.funnel_id:
+                raise VariantRefused("existing variant explicitly belongs to another funnel")
+        same = (row[rel_field] == cap["control_id_before"]
+                and row["name"] == request.name and row["url"] == request.slug)
+        if row["id"] == cap["variant_id"] and not same:
+            raise VariantRefused("captured native variant id is occupied by a different relation/name/slug")
+        if same:
+            matches.append(row)
+    if len(matches) > 1:
+        raise VariantRefused("multiple native variants match the same captured control/name/slug")
+    if matches:
+        row = matches[0]
+        if row["id"] != cap["variant_id"]:
+            raise VariantRefused("matching variant differs from the exact captured native id; refresh capture before reuse")
+        return {
+            "action": "REUSE",
+            "variant_id": row["id"],
+            "matched_on": {"relation_field": rel_field,
+                           "relation_value": cap["control_id_before"],
+                           "name": request.name, "url": request.slug},
+            "reason": "one exact native variant already matches the captured control, id, name and slug",
+        }
+
     return {
         "action": "CREATE",
         "variant_id": None,
@@ -1369,6 +1401,7 @@ def _selftest() -> int:
             errors.append("the built body must carry no traffic-affecting field")
 
         rb = {k: "x" for k in cap["readback_keys"]}
+        rb["id"] = cap["variant_id"]
         rb[cap["variant_relation"]] = cap["control_id_before"]
         rb[cap["traffic_field"]] = cap["traffic_default"]
         ok, problems = readback_passes(cap, rb,
@@ -1379,12 +1412,12 @@ def _selftest() -> int:
         if readback_passes(cap, moved, capture_path=bundle["capture_path"])[0]:
             errors.append("a read-back that moved traffic must fail")
 
-        existing = [{"id": cap["variant_id"], "name": req.name, "url": req.slug,
+        existing = [{"id": cap["variant_id"], "name": op_req.name, "url": op_req.slug,
                      cap["variant_relation"]: cap["control_id_before"]}]
-        if reuse_decision(cap, existing, req,
+        if reuse_decision(cap, existing, op_req,
                           capture_path=bundle["capture_path"])["action"] != "REUSE":
             errors.append("a linked, matching variant must be REUSED")
-        if reuse_decision(cap, [], req,
+        if reuse_decision(cap, [], op_req,
                           capture_path=bundle["capture_path"])["action"] != "CREATE":
             errors.append("with no match the decision must be CREATE")
 
