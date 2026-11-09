@@ -26,6 +26,7 @@ STATUSES = {
     'native_survey_object_fields': {'SURVEY_OBJECT_FIELDS_SAVED_AND_REOPENED'},
     'native_condition': {'CONDITION_ALREADY_PRESENT', 'CONDITION_SAVED_AND_REOPENED', 'CONDITION_SAVE_SUBMITTED'},
     'quiz_configuration': {'QUIZ_CONFIGURATION_SAVED_AND_REOPENED'},
+    'quiz_results': {'QUIZ_RESULTS_SAVED_AND_REOPENED'},
     'survey_configuration': {'SURVEY_RULE_ALREADY_PRESENT', 'SURVEY_RULE_SAVED_AND_REOPENED'},
     'survey_rule_stack': {'SURVEY_RULE_STACK_SAVED_AND_REOPENED'},
     'assessment': {'ASSESSMENT_REUSED', 'ASSESSMENT_SAVE_SUBMITTED'},
@@ -53,6 +54,7 @@ REQUIRED = {
     'native_survey_object_fields': ('kind', 'editor_url', 'target_slide', 'field_count', 'configuration_sha256', 'independent_readback', 'submission_verified', 'behavior_verified'),
     'native_condition': ('kind', 'effect', 'if_field', 'operator', 'target', 'independent_readback', 'submission_verified', 'behavior_verified'),
     'quiz_configuration': ('kind', 'editor_url', 'questions', 'submission_verified'),
+    'quiz_results': ('kind', 'editor_url', 'configuration_sha256', 'independent_readback', 'behavior_verified', 'submission_verified'),
     'survey_configuration': ('kind', 'editor_url', 'source_slide', 'target_slide', 'independent_readback', 'submission_verified', 'behavior_verified'),
     'survey_rule_stack': ('kind', 'editor_url', 'rule_count', 'configuration_sha256', 'independent_readback', 'submission_verified', 'behavior_verified'),
     'assessment': ('kind', 'editor_url', 'independent_readback'),
@@ -188,7 +190,7 @@ def _result(step, value, job):
             safe[key] = _url(value[key], job)
             if key != 'container_url':
                 family = ('page-builder' if action in ('page', 'html', 'native_checkout_ui')
-                    else 'quiz-builder-v2' if action == 'quiz_configuration' or (action == 'assessment' and step.get('kind') == 'quiz')
+                    else 'quiz-builder-v2' if action in ('quiz_configuration', 'quiz_results') or (action == 'assessment' and step.get('kind') == 'quiz')
                     else 'survey-builder-v2' if action in ('survey_configuration', 'survey_rule_stack', 'native_survey_object_fields') or action == 'assessment'
                     else 'form-builder-v2')
                 if '/' + family + '/' not in urlsplit(safe[key]).path:
@@ -203,7 +205,7 @@ def _result(step, value, job):
                 _fail()
             safe[key] = value[key]
     if 'kind' in value:
-        if value['kind'] not in ('quiz', 'survey', 'form_condition', 'survey_condition', 'survey_condition_stack', 'survey_object_fields'):
+        if value['kind'] not in ('quiz', 'quiz_results', 'survey', 'form_condition', 'survey_condition', 'survey_condition_stack', 'survey_object_fields'):
             _fail()
         safe['kind'] = value['kind']
     if 'mode' in value and value['mode'] is not None:
@@ -232,6 +234,14 @@ def _result(step, value, job):
                 or value['configuration_sha256'] != configuration_hash(step)
                 or value['independent_readback'] != 'VERIFIED'
                 or value['submission_verified'] is not False or value['behavior_verified'] is not False):
+            _fail()
+    if action == 'quiz_results':
+        from playwright_recipes.quiz_results import configuration_hash
+        if (value['kind'] != 'quiz_results'
+                or value['configuration_sha256'] != configuration_hash(step)
+                or value['independent_readback'] != 'VERIFIED'
+                or value['behavior_verified'] is not False
+                or value['submission_verified'] is not False):
             _fail()
     if action == 'form_settings':
         if value['settings'] != step.get('settings') or not isinstance(value['settings'], dict) or any(type(x) is not bool for x in value['settings'].values()):

@@ -59,16 +59,16 @@ def _validate_shape(step):
     return deepcopy(step)
 
 
-def validate(step):
+def validate(step, *, require_fresh=False):
     value = _validate_shape(step)
     payload = value['payload']
     if __package__:
         from .forms_advanced import validate_object_fields
     else:
         from forms_advanced import validate_object_fields
-    # The shared validator binds fresh same-location API GET data, exact field
-    # IDs/names/keys/types/options, and only the actually captured native types.
-    validate_object_fields(_object_step(payload), kind='survey')
+    # Structural validation also remains usable on completed replay. Execution
+    # separately requires a fresh GET before touching the native owner controls.
+    validate_object_fields(_object_step(payload), kind='survey', require_fresh=require_fresh)
     return value
 
 
@@ -121,7 +121,7 @@ def _owner(frame, payload):
 
 
 def configure(page, step):
-    value = validate(step)
+    value = validate(step, require_fresh=True)
     payload = value['payload']
     if page.url != payload['start_url']:
         raise Stop('Current survey editor is not the requested question target')

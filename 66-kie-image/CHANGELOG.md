@@ -1,3 +1,13 @@
+## [2.2.10] - 2026-11-09 - GPT Image 2.6 owner cap 20,000 recorded in models.json
+
+- `models.json`: `owner_prompt_cap_chars: 20000` on both 2.6 sunburst entries (t2i + i2i). The existing `policy_owner_cap` precedence in the 74 adapter and 66 validator now resolves max 20000 with `limit_source` owner-ruling.
+
+## [2.2.9] - 2026-11-09 - 2.6 named as the ratio-rule default; remaining 2.5 default claims corrected
+
+- `models.json` `owner_preferred_default` / `_note`: 2.6 Sunburst is the current default since #2860; Ruling 6 is retained as history and 2.5 is retained by operator ruling 2026-09-09. `SKILL.md`: the `(default)` ratio-rule label moved to 2.6, with the 2.5 ratio facts kept attached to 2.5. Two stale comments in `normalize_alias.py` and `select_image_model.py` corrected. No executable logic changed; both self-tests pass.
+- Second pass (same version): the legacy GPT Image 2 `status_note`/`notes` rows no longer call 2.5 the default, and five more comments (`normalize_alias.py:64`, `:144-145`, `select_image_model.py:41`, `:204-208`, `validate_payload.py:335`) no longer describe 2.5 as the default. Comments and JSON prose only; no executable line, mapping, assertion, ratio table or test changed; a third pass relabelled the two 2.5 rows' own `status_note`/`notes` as RETAINED and no longer the default.
+- Fourth pass (same version): the two 2.5 rows are marked `status: legacy` in data as well as prose; the 2.6 rows keep `status: default`. No key, id, alias, cap, ratio, note or ordering changed.
+
 # Changelog - kie-image
 ## [2.2.8] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
 

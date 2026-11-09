@@ -7,7 +7,7 @@ description: >
   Imagen 4), payload validation against a machine-readable registry, prompt
   sizing against published limits, asynchronous task dispatch with callbacks or
   polling, and mandatory real visual QC.
-version: v2.2.8
+version: v2.2.10
 metadata:
   version: "2.2.7"
   priority: HIGH
@@ -154,10 +154,15 @@ chars to CUT), 80-95% warns. Unknown limit: UNKNOWN, no floor. Verbatim content
   ratio/resolution for the model, an over-limit prompt, or an unsupported mode
   combination.
 - **GPT Image 2 / GPT Image 2.5 ratio rules are hard, and are SEPARATE rule
-  sets (operator ruling 2026-09-09, never merged):**
+  sets (operator ruling 2026-09-09, never merged); since #2860 GPT Image 2.6
+  Sunburst is the default, and its ratio/resolution facts are governed by its
+  own `models.json` row, never by the 2.5 set below:**
   - GPT Image 2 (legacy, 3:1/1:3/9:21 route only): 2K/4K exclude 5:4, 4:5,
     3:1, 1:3, 9:21; `auto` yields 1K only; 1:1 cannot convert to 4K.
-  - GPT Image 2.5 (default): 2K/4K exclude 27:16, 16:27, 9:8, 8:9 (1K only).
+  - GPT Image 2.6 (default): see its `models.json` row for the authoritative
+    aspect-ratio and resolution facts.
+  - GPT Image 2.5 (retained, not the default): 2K/4K exclude 27:16, 16:27, 9:8,
+    8:9 (1K only).
     The legacy `auto`-1K-only and `1:1`-never-4K rules are RETIRED here —
     not restated in the 2.5 docs. 5:4, 4:5, 2:1, 1:2 are served via an
     operator-approved substitution (5:4→4:3, 4:5→3:4, 2:1→16:9, 1:2→9:16);

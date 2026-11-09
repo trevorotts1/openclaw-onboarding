@@ -1,7 +1,7 @@
 ---
 name: design-intelligence-library
 description: Design Intelligence Unit (DIU) — a self-contained image-style analysis and generation system. Ships a 12-dimension style analysis protocol, style-card library with 3 prompt tiers (SHORT/MEDIUM/LONG), deterministic deck generation via Style Rotation Engine, personal photo shoot mode with identity-lock guarantees, and a fidelity-test protocol (≥4.0 avg, 3-strike escalation). Routes across 7 image-generation endpoints (GPT-Image 2.5 T2I/I2I, Nano Banana 2, Seedream 4.5 T2I/Edit, Ideogram V3, Wan 2.7). Five specialist roles + extended Brainstorming Buddy + gatekeeper (Chief Design Officer) + operating rules. Skill 07 (Kie.ai) prerequisite.
-version: 2.2.12
+version: 2.2.13
 ---
 
 # Skill 45: Design Intelligence Library
@@ -194,7 +194,7 @@ Receipts append to `working/checkpoints/diu_fidelity_receipts.json` (never delet
 
 MODEL-SPECS.md (repo-owned, vendor-asserted) specifies API limits, character tiers (SHORT/MEDIUM/LONG), and per-category routing rules:
 
-- **GPT-Image 2.5** — T2I (layout adherence) / I2I (precise edits). Default general-purpose; the live default model comes from Skill 74 `latest-family` (rule 13), the Sunburst ids in MODEL-SPECS are a snapshot.
+- **GPT-Image 2.6** — T2I (layout adherence) / I2I (precise edits). Default general-purpose since #2860; the live default model comes from Skill 74 `latest-family` (rule 13), the Sunburst ids in MODEL-SPECS are a snapshot. **GPT-Image 2.5** is the retained legacy route — not the default.
 - **Nano Banana 2** — people-led creative, faster, great for lifestyle/portrait.
 - **Seedream 4.5** — identity-locked personal photo shoots; surgical retouch (Mode G).
 - **Ideogram V3** — design/typography-heavy; clean graphic elements.

@@ -151,20 +151,28 @@ def _draft_dependencies(plan, snapshots, get):
             category_cache[identity] = get('category', identity)[1]
         return category_cache[identity]
 
-    for edit in plan['category_changes']:
-        if 'parentCategory' not in edit['changes']:
-            continue
-        seen, identity = set(), edit['category_id']
-        while identity is not None:
-            if identity in seen:
-                raise Stop('Proposed course module hierarchy contains a cycle')
-            seen.add(identity)
-            current = category(identity)
-            if 'parentCategory' not in current:
-                raise Stop('Module hierarchy is not fully exposed by inventory')
-            identity = proposed.get(identity, {}).get('parentCategory', current['parentCategory'])
-            if identity is not None:
-                delivery._id(identity, 'parentCategory')
+    starts = {edit['category_id'] for edit in plan['category_changes']
+              if 'parentCategory' in edit['changes']}
+    starts.update(edit['changes']['categoryId'] for edit in plan['lesson_changes']
+                  if 'categoryId' in edit['changes'])
+    for start in starts:
+        # Read both current and proposed ancestors. A valid final plan can
+        # still contain a temporarily cyclic write order (move a child out
+        # before moving its former parent beneath it). Retain both inventories
+        # so the scheduler can select safe individual PUTs before any write.
+        for proposed_tree in (False, True):
+            seen, identity = set(), start
+            while identity is not None:
+                if identity in seen:
+                    raise Stop('Course module hierarchy contains a cycle')
+                seen.add(identity)
+                current = category(identity)
+                if 'parentCategory' not in current:
+                    raise Stop('Module hierarchy is not fully exposed by inventory')
+                identity = (proposed.get(identity, {}).get('parentCategory', current['parentCategory'])
+                            if proposed_tree else current['parentCategory'])
+                if identity is not None:
+                    delivery._id(identity, 'parentCategory')
 
     published = {}
     def predecessor(kind, identity):
@@ -200,6 +208,44 @@ def _draft_dependencies(plan, snapshots, get):
                     if ('category',identity) not in edited}
     dependencies.update(published)
     return dependencies
+
+
+
+def _ordered_tasks(tasks, snapshots, dependencies):
+    """Apply module moves only when their individual write is cycle-free.
+
+    The requested final graph is checked in _draft_dependencies. Ordering by
+    the authored array alone can nevertheless create a temporary cycle while
+    moving an ancestor beneath one of its former children. Do not rely on the
+    provider accepting such an intermediate state or leave half a move saved.
+    """
+    categories = {identity:current for (kind,identity), (_,current) in snapshots.items()
+                  if kind == 'category'}
+    categories.update({identity:current for (kind,identity), current in dependencies.items()
+                       if kind == 'category'})
+    parents = {identity:current['parentCategory'] for identity,current in categories.items()
+               if 'parentCategory' in current}
+    pending = [task for task in tasks if task[0] == 'category']
+    ordered = []
+    while pending:
+        for index,task in enumerate(pending):
+            _, identity, _, _, changes = task
+            if 'parentCategory' not in changes:
+                ordered.append(pending.pop(index))
+                break
+            parent, seen = changes['parentCategory'], {identity}
+            while parent is not None and parent not in seen:
+                seen.add(parent)
+                if parent not in parents:
+                    raise Stop('Module move ancestor inventory is incomplete')
+                parent = parents[parent]
+            if parent is None:
+                parents[identity] = changes['parentCategory']
+                ordered.append(pending.pop(index))
+                break
+        else:
+            raise Stop('Module moves have no cycle-free native write order')
+    return ordered + [task for task in tasks if task[0] != 'category']
 
 
 def _objects(plan):
@@ -274,6 +320,7 @@ def run_outline(inputs, evidence_root, *, capability, transport=None):
                         raise Stop('Existing quiz or assignment content cannot be rebound as an ordinary lesson edit')
                 changes = _category_payload(edit['changes'],current) if kind == 'category' else edit['changes']
                 tasks.append((kind,identity,resource,current,changes))
+        tasks = _ordered_tasks(tasks, snapshots, dependencies)
         # Every target and inventory precondition has been checked before intent
         # or the first HTTP write; no later malformed target can leave half a build.
         state = {'operation':OPERATION,'location_id':loc,'fingerprint':fingerprint,
@@ -307,6 +354,12 @@ def run_outline(inputs, evidence_root, *, capability, transport=None):
                 state['completed'].append({'kind':kind,'id':identity})
                 state['current_step_status'] = 'VERIFIED'
                 secure_json(path,state)
+            # A successful receipt uses authored target order, independent of
+            # the safe native hierarchy write order selected above. Interrupted
+            # journals retain their real completed sequence for reconciliation.
+            state['completed'] = [{'kind':kind,'id':edit[kind+'_id']}
+                for group,kind in (('category_changes','category'),('lesson_changes','lesson'))
+                for edit in plan[group]]
             state.update(status='NEEDS_VERIFICATION',current_step_status='VERIFIED')
             secure_json(path,state)
             return state

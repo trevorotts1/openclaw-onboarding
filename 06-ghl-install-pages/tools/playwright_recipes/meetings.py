@@ -219,12 +219,22 @@ def update_room(page, inputs, *, expected_room_id, reader=None):
     an update from being applied to a different owner's room after navigation.
     """
     spec = validate_room(inputs)
+    if (not isinstance(expected_room_id, str) or not expected_room_id.strip()
+            or ('expected_room_id' in spec and spec['expected_room_id'] != expected_room_id)):
+        raise Stop('Meeting update requires one consistent existing room identity')
     reader = reader or read_room
     assert_tenant(page, spec)
     navigate(page, 'Meeting Room')
     before = reader(page, spec)
-    if not before.get('source') or before.get('status') != 'PRESENT' or before.get('location_id') != spec['location_id'] or before.get('room_id') != expected_room_id:
+    if (not isinstance(before, dict) or not before.get('source')
+            or before.get('status') != 'PRESENT' or before.get('location_id') != spec['location_id']
+            or before.get('room_id') != expected_room_id):
         raise Stop('Requested existing room identity is not present; no update performed')
+    # Validate the persisted previous state independently of the requested new
+    # name/security values. A matching opaque ID alone is not a room inventory.
+    previous = {**spec, **{key:before.get(key) for key in ('name','slug',*SECURITY)}}
+    validate_room(previous)
+    validate_observation(before, previous)
     click(page.get_by_text('Edit settings', exact=True))
     region = page.get_by_role('region', name=re.compile(r'^Edit ".*"$'))
     region.wait_for(state='visible', timeout=45000)
@@ -276,6 +286,8 @@ def _put_locations(locations):
     """Only documented writable calendar-location fields, never read-only IDs."""
     allowed_kinds = {'custom','zoom_conference','google_conference','inbound_call',
                      'outbound_call','physical','booker','ms_teams_conference'}
+    if not isinstance(locations, list):
+        raise Stop('Existing calendar locations must be a list')
     out = []
     for value in locations:
         if not isinstance(value, dict) or value.get('kind') not in allowed_kinds:
@@ -290,10 +302,16 @@ def _put_locations(locations):
 
 
 def _put_members(members):
+    if not isinstance(members, list):
+        raise Stop('Existing calendar team members must be a list')
     out = []
+    seen = set()
     for member in members:
         if not isinstance(member, dict) or not isinstance(member.get('userId'), str) or not member['userId']:
             raise Stop('Existing calendar team member is malformed')
+        if member['userId'] in seen:
+            raise Stop('Existing calendar team member identities are duplicated')
+        seen.add(member['userId'])
         if member.get('meetingLocation') and not member.get('locationConfigurations'):
             raise Stop('Migrate legacy member meeting locations before this calendar update')
         clean = {'userId':member['userId']}
@@ -338,8 +356,17 @@ def permanent_link_patch(calendar, *, location_id, room, member_id=None, replace
         target = deepcopy(selected.get('locationConfigurations', []))
     if not isinstance(target, list) or any(not isinstance(x, dict) or not x.get('kind') for x in target):
         raise Stop('Existing location configuration is malformed')
-    if any(x.get('kind') == 'custom' and x.get('location') == link for x in target):
+    # Validate all preserved rows even when the requested link already exists.
+    # An explicit replacement binds one slot, rather than any matching sibling.
+    _put_locations(target)
+    if replace_index is not None and (type(replace_index) is not int or not 0 <= replace_index < len(target)):
+        raise Stop('Replacement index must identify an existing meeting location')
+    candidates = target if replace_index is None else [target[replace_index]]
+    if any(x.get('kind') == 'custom' and x.get('location') == link for x in candidates):
         return {}, {'mode':'permanent_link', 'already_configured':True, 'room_id':room['room_id'], **join_metadata}
+    if replace_index is not None and any(x.get('kind') == 'custom' and x.get('location') == link
+                                         for index,x in enumerate(target) if index != replace_index):
+        raise Stop('Requested room link already belongs to another location slot; reconcile before replacement')
     if replace_index is None:
         # Do not duplicate the same room or silently downgrade an authenticated
         # invite to a clean URL (or replace credentials) during a later run.
@@ -390,6 +417,14 @@ def integrate_calendar(api, *, location_id, calendar_id, room, member_id=None, r
     if patch:
         api('calendars.update', location_id=location_id, path_params=params, body=patch)
         saved = get()
+        # Checking only that the room appears somewhere would accept a PUT that
+        # silently removed another location/member or moved the requested slot.
+        # Compare the entire documented writable projection of our minimal PUT.
+        for key, expected in patch.items():
+            actual = (_put_locations(saved.get(key)) if key == 'locationConfigurations'
+                      else _put_members(saved.get(key)))
+            if actual != expected:
+                raise Stop('Calendar read-back changed a requested or preserved meeting-location setting')
         after, _ = permanent_link_patch(saved, location_id=location_id, room=room, member_id=member_id, replace_index=replace_index, private_invite_url=private_invite_url)
         if after:
             raise Stop('Permanent Meeting Room link did not persist on the calendar')

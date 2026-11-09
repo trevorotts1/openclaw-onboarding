@@ -18,7 +18,11 @@ All hierarchy chains are read before the first PUT, including a proposed parent
 changed elsewhere in the same plan; cycles are refused. Unlock references must
 be published resources in the same product; an unlock lesson must have a published
 parent module. Self-unlock and a module unlocked by its own lesson are refused.
-Read-only dependencies are rechecked before writes.
+Read-only dependencies are rechecked before writes. Module moves are scheduled
+against both current and proposed ancestor inventories, so moving a parent below
+its former child first detaches that child. Every individual PUT remains
+cycle-free; the final receipt retains the original authored target order. Moving
+a lesson also inventories its destination module ancestry before any write.
 
 Targets and destination/parent modules remain drafts. This configures inactive
 access metadata; it does not enable locked/drip visibility, publish a course or

@@ -68,3 +68,29 @@ options are API-owned; this operation only places an existing exact ID/key.
 The native result retains submission/behavior verification as pending. The
 owner deferred optional, manual and live tests; these source additions are not
 claims that a Python job ran against a client survey.
+
+## Marketing-quiz result copy
+
+`quizzes.configure` accepts `configuration.result_page` for native Header
+business-name copy and Call to action content/button text/HTTPS destinations.
+See `quiz-result-copy.json`; replace every previous-value placeholder with the
+actual native inventory before execution. Every requested old/new field pair
+must use the same keys. No business name, offer copy or destination is invented.
+
+Dynamic CTA variants require the exact existing dynamic-content mode and score
+source. The handler never changes those settings. It selects only the editing
+tier view, preflights every requested variant before writing, checks all authored
+variants again before Save, then saves the native modal and the outer quiz once.
+Independent reopening verifies every requested score/tier-specific value. Static
+CTA mode has one variant without a tier and must already be static. Header
+business-name copy must already be visible.
+
+The score-source reader uses its captured label and smallest unique native-select
+container, explicitly excluding the tier picker and rejecting ambiguous shapes.
+The editing-tier picker uses its captured native ID; no global select indexing.
+Only literal plain text is inserted into the RTE. URL changes require HTTPS
+without embedded credentials. Untouched content/button/link values within each
+requested variant are compared before and after Save. Styling, global dynamic
+mode/source changes, uploads and other result sections remain outside this
+handler. `behavior_verified` and `submission_verified` remain false. No optional
+or live tests have been run for this implementation pass.

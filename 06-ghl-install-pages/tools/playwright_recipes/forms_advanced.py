@@ -575,7 +575,7 @@ def configure_object_fields(page, step, *, kind='form', frame=None, canvas_scope
     selected_counter = dialog.get_by_text(re.compile(r'^\s*\d+ selected\s*$'))
     if selected_counter.count():
         raise Stop('Native object-field drawer already has an unrelated selection')
-    pending = []
+    pending, existing = [], []
     for field in fields:
         _, tile, checkbox = _object_row(dialog, search, field)
         disabled = tile.get_attribute('aria-disabled') == 'true'
@@ -583,10 +583,27 @@ def configure_object_fields(page, step, *, kind='form', frame=None, canvas_scope
             raise Stop('Native object-field drawer already contains an unrelated selection')
         if disabled:
             _object_wrapper(frame, canvas_scope, field)
+            existing.append(field)
         else:
             if frame.locator('input[name="' + field['id'] + '"]').count():
                 raise Stop('Object field exists on another canvas or native placement state conflicts')
             pending.append(field)
+    # Existing widgets must prove their Query Key before any different field
+    # is inserted. Merely matching Radio values/ID is not proof of its binding.
+    # Close the drawer before opening a field property panel, then reopen the
+    # same captured picker when there is actual insertion work left to do.
+    if existing:
+        fill(search, '')
+        _close_object_drawer(frame, kind)
+        for field in existing:
+            _read_object_binding(frame, canvas_scope, field)
+        if _canvas_identity(canvas_scope) != before:
+            raise Stop('Native object-field identities changed during binding preflight')
+        if pending:
+            dialog, search = _object_dialog(frame, kind)
+            selected_counter = dialog.get_by_text(re.compile(r'^\s*\d+ selected\s*$'))
+            if selected_counter.count():
+                raise Stop('Native object-field drawer selection changed after binding preflight')
     # Read every API-bound target before selecting any field for insertion.
     # The current native Add 1 field control was captured directly. Select and
     # add each different field once; do not guess plural control labels.
@@ -610,8 +627,9 @@ def configure_object_fields(page, step, *, kind='form', frame=None, canvas_scope
             == len(field['options']) and tile.get_attribute('aria-disabled') == 'true'
             and dialog.get_by_role('button', name='Add', exact=True).count() == 1,
             'Native object field did not appear with its source selection cleared')
-    fill(search, '')
-    _close_object_drawer(frame, kind)
+    if not existing or pending:
+        fill(search, '')
+        _close_object_drawer(frame, kind)
     for field in fields:
         _read_object_binding(frame, canvas_scope, field)
     after = _canvas_identity(canvas_scope)

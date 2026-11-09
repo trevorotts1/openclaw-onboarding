@@ -90,8 +90,12 @@ def decide(operation, location_id, probes, catalog=None, failed_lanes=(), inputs
             continue
         if lane == 'playwright' and not entry.get('implemented'):
             continue
-        if lane == 'playwright' and entry.get('action') in ('options', 'native_course_theme_or_options') and operation not in probes.get('recorded_profiles',[]):
-            continue
+        if lane == 'playwright':
+            native_theme = (entry.get('action') == 'native_course_theme_or_options'
+                            and 'template_id' in context and 'options' not in context)
+            if (entry.get('action') in ('options', 'native_course_theme_or_options')
+                    and not native_theme and operation not in probes.get('recorded_profiles', [])):
+                continue
         if lane == 'computer_use' and state.get('enabled') is not True:
             continue
         return {'lane':lane,'operation':operation,'recipe':entry['name'],'proof':entry['proof'],'location_id':location_id,'resume':'Read recorded object IDs before repeating any create/save'}

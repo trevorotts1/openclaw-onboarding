@@ -4,7 +4,7 @@ description: >
   Complete setup, credential management, and API router reference for KIE.ai, a
   unified API platform for generating images, videos, and audio through one API
   key and consistent async job conventions.
-version: v7.2.6
+version: v7.2.7
 metadata:
   version: "7.2.3"
   priority: CRITICAL
@@ -87,7 +87,7 @@ When dispatching media generation requests, use this routing architecture:
 - **Rate limits:** Maximum 20 new tasks per 10 seconds per account. Maximum 10 status queries per second per API key. Obey HTTP 429 with backoff.
 - **Generated files expire:** KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 - **For production batch jobs:** Use Skill 46 (kie-callback-relay) callback architecture rather than polling sequentially. **Presentations decks are the exception:** a deck run never uses Skill 46 callbacks and never dispatches through Skill 74; the Presentations engine (`build_deck.py`, `kie_generate.py`) batch-polls `recordInfo`, and that polling is the department's doctrine (Presentations department decision record, 2026-10-14).
-- **Department pipelines OVERRIDE defaults:** Never override a model pinned by Presentations (GPT-Image-2.5 only), Movie Producer, or department manifests.
+- **Department pipelines OVERRIDE defaults:** Never override a model pinned by Presentations (GPT-Image-2.6 only), Movie Producer, or department manifests.
 - **The API key convention is `KIE_API_KEY`:** Stored in `~/.openclaw/secrets/.env` (and `~/.openclaw/.env`). Reference only; NEVER print or log the key.
 
 ## Skill 46 Companion (Callback Architecture)

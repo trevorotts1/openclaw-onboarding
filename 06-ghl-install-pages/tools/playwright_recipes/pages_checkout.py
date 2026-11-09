@@ -195,7 +195,7 @@ def _preflight_bumps(executor, component, prepared):
     must be known before binding a new main price. Reusing an identical existing
     bump consumes no additional slot. This only reads native persisted state.
     """
-    if not prepared['bumps']:
+    if not prepared['bumps'] and prepared['main'] is None:
         return None
     state = executor.read_component(component)
     current = state.get('bumps') if isinstance(state, Mapping) else None

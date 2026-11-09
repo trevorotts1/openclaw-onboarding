@@ -417,6 +417,22 @@ class AdditionalBuiltinPlacementTests(unittest.TestCase):
             self.configure(frame,['Date of birth'])
         self.assertEqual((frame.drags,frame.saves),(0,0))
 
+    def test_later_type_conflict_prevents_earlier_unrelated_insertion(self):
+        frame = NativeFrame([{'type':'text','key':'date_of_birth'},{'type':'submit'}])
+        original = deepcopy(frame.items)
+        with self.assertRaisesRegex(Stop,'different field type'):
+            self.configure(frame,['Website','Date of birth'])
+        self.assertEqual((frame.drags,frame.saves),(0,0))
+        self.assertEqual(frame.items, original)
+
+    def test_later_address_overlap_prevents_earlier_unrelated_insertion(self):
+        frame = NativeFrame([{'type':'text','key':'city'},{'type':'submit'}])
+        original = deepcopy(frame.items)
+        with self.assertRaisesRegex(Stop,'overlapping address layout'):
+            self.configure(frame,['Website','Address'])
+        self.assertEqual((frame.drags,frame.saves),(0,0))
+        self.assertEqual(frame.items, original)
+
     def test_unknown_date_input_shape_does_not_trigger_duplicate_creation(self):
         frame = NativeFrame([{'type':'date','key':'date_of_birth','input_count':2},{'type':'submit'}])
         with self.assertRaisesRegex(Stop,'missing or ambiguous'):

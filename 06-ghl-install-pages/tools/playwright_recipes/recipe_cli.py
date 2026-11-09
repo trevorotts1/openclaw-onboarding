@@ -99,7 +99,13 @@ def compile_recipe(operation, data):
             raise Stop('Only the captured Hide Field/Show Field condition effects are implemented')
         add('native_condition', **condition)
     elif operation=='quizzes.configure':
-        add('quiz_configuration', **data['configuration'])
+        config = dict(data['configuration'])
+        has_results = 'result_page' in config
+        result_page = config.pop('result_page', None)
+        if config:
+            add('quiz_configuration', **config)
+        if has_results:
+            add('quiz_results', result_page=result_page)
     elif operation=='surveys.configure':
         config = data['configuration']
         if 'object_fields' in config:

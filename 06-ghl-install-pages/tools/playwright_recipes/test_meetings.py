@@ -190,6 +190,41 @@ class MeetingTests(unittest.TestCase):
 
 
 class CalendarTests(unittest.TestCase):
+    def test_explicit_replacement_does_not_reuse_a_different_slot(self):
+        calendar = self.calendar()
+        calendar['locationConfigurations'].append({'kind':'custom','location':present()['url']})
+        with self.assertRaises(m.Stop):
+            m.permanent_link_patch(calendar, location_id='loc', room=present(), replace_index=0)
+        with self.assertRaises(m.Stop):
+            m.permanent_link_patch(calendar, location_id='loc', room=present(), replace_index=9)
+
+    def test_readback_refuses_lost_preserved_locations_and_members(self):
+        for kind in ('event', 'personal'):
+            calendar = self.calendar(kind)
+            if kind == 'personal':
+                calendar['teamMembers'].append({'userId':'u2','priority':0.2,'isPrimary':False,
+                    'locationConfigurations':[{'kind':'physical','location':'Other office'}]})
+            calls = []
+            def api(op, **kw):
+                calls.append(op)
+                if op == 'calendars.update':
+                    calendar.update(deepcopy(kw['body']))
+                    if kind == 'event':
+                        calendar['locationConfigurations'] = calendar['locationConfigurations'][-1:]
+                    else:
+                        calendar['teamMembers'] = calendar['teamMembers'][:1]
+                return {'calendar':deepcopy(calendar)}
+            with self.subTest(kind=kind), self.assertRaises(m.Stop):
+                m.integrate_calendar(api, location_id='loc', calendar_id='cal1', room=present(),
+                    **({'member_id':'u1','replace_index':0} if kind == 'personal' else {}))
+            self.assertEqual(calls, ['calendars.get','calendars.update','calendars.get'])
+
+    def test_duplicate_calendar_member_identity_refused_before_update(self):
+        calendar = self.calendar('personal')
+        calendar['teamMembers'] *= 2
+        with self.assertRaises(m.Stop):
+            m.permanent_link_patch(calendar, location_id='loc', room=present(), member_id='u1', replace_index=0)
+
     def test_put_excludes_readonly_member_and_location_fields(self):
         calendar = self.calendar('personal')
         calendar['teamMembers'][0].update(id='readonly', email='private@example.invalid', meetingLocationType='custom')

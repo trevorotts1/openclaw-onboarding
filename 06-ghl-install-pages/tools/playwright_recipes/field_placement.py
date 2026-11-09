@@ -277,17 +277,31 @@ def configure(page, step):
     _close_initial(frame)
     click(frame.get_by_role('tab', name='Edit', exact=True))
     initial = _inventory(frame)
-    expected, outcomes = dict(initial), []
-    added = False
+    # Resolve every requested field against the complete existing inventory
+    # before the first drag. A later Address/standalone overlap or type conflict
+    # must not follow an earlier successful insertion in the same job.
+    planned = dict(initial)
+    placements = []
     for label in step['add_fields']:
         spec = CAPTURED_FIELDS[label]
         keys = spec['query_keys']
-        present = [key for key in keys if key in expected]
+        present = [key for key in keys if key in planned]
         if present:
-            if len(present) != len(keys) or any(expected[key] != spec['field_type'] for key in keys):
+            if len(present) != len(keys) or any(planned[key] != spec['field_type'] for key in keys):
                 _stop('Existing native query belongs to a different field type or overlapping address layout')
+            placements.append((label, spec, True))
+        else:
+            placements.append((label, spec, False))
+            planned.update({key:spec['field_type'] for key in keys})
+    expected, outcomes = dict(initial), []
+    added = False
+    for label, spec, reused in placements:
+        keys = spec['query_keys']
+        if reused:
             outcomes.append({'field':label, 'query_keys':list(keys), 'placement':'reused'})
             continue
+        if _inventory(frame) != expected:
+            _stop('Native canvas identities changed after the complete placement preflight')
         _drag_builtin(frame, label, spec)
         expected.update({key:spec['field_type'] for key in keys})
         if _inventory(frame) != expected:
