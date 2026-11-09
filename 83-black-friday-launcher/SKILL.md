@@ -2,7 +2,7 @@
 name: black-friday-launcher
 description: "Helps a business owner get their whole Black Friday sale ready, step by step: the sales page, the order form, the special offers, the thank-you page, and the launch emails and text messages. Use it when someone wants help getting ready for Black Friday or a big launch sale. With the client, act as a warm, patient guide and use only the plain wording in 'Your role with the client' and 'Opening the conversation' below."
 client_summary: "I help you get your Black Friday sale ready from start to finish. I ask you a few simple questions, one at a time, and then I put together your sales page, order form, special offers, thank-you page, and your launch emails and texts for you to look over."
-version: 0.2.30
+version: 0.2.31
 priority: HIGH
 ---
 
@@ -280,7 +280,15 @@ a numbered directory, so the same code runs in both layouts.
 Read in this order. Each step names the file, so nothing here depends on guessing a path.
 
 1. This file, then `DISPATCH.md` (dispatch, designs, pictures and delivery in full) and
-   `DECISIONS-PENDING.md` (what is decided, what is open).
+   `DECISIONS-PENDING.md` (what is decided, what is open). Then read every SOP this skill
+   declares, in full, each named by its full repo path:
+   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md`,
+   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-03-GHL-MEDIA-DELIVERY.md`,
+   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-602.md`,
+   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-607.md`,
+   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-610.md`,
+   and the registration SOP
+   `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-07-Full-Funnel-Build-Orchestration.md`.
 2. For the pages: `49-signature-funnel` (launch record, gates, dispatch), then the page skills 71, 78, 79,
    80, 81 and 82 that Skill 49 calls.
 3. For the launch automations (emails, texts, reminders, workflows): `50-email-engine` writes the DRAFT-ONLY
