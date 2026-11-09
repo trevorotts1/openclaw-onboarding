@@ -1,6 +1,7 @@
 # SOP-WEB-05: CERTIFY + PREVIEW + APPROVE
 
 **Cluster:** Website-Craft Rules (`universal-sops/website-craft/`)
+**Canonical GHL operations cluster:** cross-craft GHL procedures (meeting rooms, native AI, knowledge bases, widgets, Projects sync, workflow monitoring, marketing quizzes) live in the single `universal-sops/ghl-hybrid-operations/` cluster (its README is the index). This SOP is not duplicated there; do not fork a second `ghl-operations/` cluster.
 **Owning role:** QC Specialist — Marketing
 **Stage:** P4-CERTIFY
 **Produces:** `website-certificate.json`

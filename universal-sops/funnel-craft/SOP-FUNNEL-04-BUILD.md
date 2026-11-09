@@ -1,6 +1,7 @@
 # SOP-FUNNEL-04: GHL MEDIA + FUNNEL BUILD (DELEGATED to Skill 6)
 
 **Cluster:** Funnel-Craft Rules (`universal-sops/funnel-craft/`)
+**Canonical GHL operations cluster:** cross-craft GHL procedures (meeting rooms, native AI, knowledge bases, widgets, Projects sync, workflow monitoring, marketing quizzes) live in the single `universal-sops/ghl-hybrid-operations/` cluster (its README is the index). This SOP is not duplicated there; do not fork a second `ghl-operations/` cluster.
 **Master authority:** `49-signature-funnel/MASTERDOC.md` §3 (3/5/7 matrix + branching) + §6 (delegation seams)
 **Owning role:** Signature Funnel Specialist (authoring) → **Skill 6 (delivery)**
 **Stage:** P4-MEDIA · P5-HTML · P6-COMPOSE · P7-BUILD

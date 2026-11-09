@@ -1,6 +1,7 @@
 # SOP-FUNNEL-05: NO-PITCH + CERTIFICATE + PREVIEW/APPROVE + 10-EMAIL OFFER
 
 **Cluster:** Funnel-Craft Rules (`universal-sops/funnel-craft/`)
+**Canonical GHL operations cluster:** cross-craft GHL procedures (meeting rooms, native AI, knowledge bases, widgets, Projects sync, workflow monitoring, marketing quizzes) live in the single `universal-sops/ghl-hybrid-operations/` cluster (its README is the index). This SOP is not duplicated there; do not fork a second `ghl-operations/` cluster.
 **Master authority:** `49-signature-funnel/MASTERDOC.md` §5 (QC gates)
 **Owning role:** Signature Funnel Specialist → owner (human approval)
 **Stage:** P9-CERTIFY + P10-EMAIL

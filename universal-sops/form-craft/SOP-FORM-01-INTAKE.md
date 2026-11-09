@@ -1,6 +1,7 @@
 # SOP-FORM-01: LOCK THE FORM BRIEF IN ONE BLOCK
 
 **Cluster:** Form-Craft Rules (`universal-sops/form-craft/`)
+**Canonical GHL operations cluster:** cross-craft GHL procedures (meeting rooms, native AI, knowledge bases, widgets, Projects sync, workflow monitoring, marketing quizzes) live in the single `universal-sops/ghl-hybrid-operations/` cluster (its README is the index). This SOP is not duplicated there; do not fork a second `ghl-operations/` cluster.
 **Master authority:** `FORM-PIPELINE-MANIFEST.json` + `06-ghl-install-pages/tools/ghl_form_builder.py` (`_build_form_plan` + `_run_preflight` F-P1/F-P2/F-P3) + `MASTER-FORM-QC-AUTOFAIL-RULESET.md`
 **Owning role:** GHL form-build operator (Web-Development / CRM / Marketing) — Skill 6 THINK layer
 **Stage:** P0-INTAKE

@@ -1,7 +1,7 @@
 # SOP-CONV-AI-01: OPERATING THE CONVERSATIONAL AI SYSTEM
 
 **Cluster:** Universal SOPs (`universal-sops/`)
-**Canonical GHL operations cluster:** the GHL-hybrid procedures live in the single `universal-sops/ghl-hybrid-operations/` cluster (its README is the index). This SOP points into `SOP-GHL-08-NATIVE-AI.md` for native provisioning and keeps no second copy; do not create a parallel `universal-sops/ghl-operations/` cluster.
+**Canonical GHL operations cluster:** the GHL-hybrid procedures live in the single `universal-sops/ghl-hybrid-operations/` cluster (its README is the index). This SOP points into `SOP-GHL-08-NATIVE-AI.md` for native provisioning and keeps no second copy; do not create a second, parallel GHL-operations cluster.
 **Master authority:** `38-conversational-ai-system/SKILL.md` + `38-conversational-ai-system/INSTRUCTIONS.md` (the install + operate manual) + `38-conversational-ai-system/protocols/` (the behavioral protocols)
 **Owning department:** Communications
 **Consuming departments:** Sales, Customer Support (the same trio whose presence fires the Skill 23 to Skill 38 handoff)

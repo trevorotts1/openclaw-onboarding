@@ -1,6 +1,7 @@
 # SOP-FORM-04: THE DUMB BROWSER BUILD (F1..F13) + EMBED SPLICE
 
 **Cluster:** Form-Craft Rules (`universal-sops/form-craft/`)
+**Canonical GHL operations cluster:** cross-craft GHL procedures (meeting rooms, native AI, knowledge bases, widgets, Projects sync, workflow monitoring, marketing quizzes) live in the single `universal-sops/ghl-hybrid-operations/` cluster (its README is the index). This SOP is not duplicated there; do not fork a second `ghl-operations/` cluster.
 **Master authority:** `06-ghl-install-pages/tools/ghl_form_builder.py` (`_emit_click_list` F1..F13) + `SELECTORS-LIVE-form.md` + `references/forms-playbook.md`
 **Owning role:** Skill 6 THINK layer emits the click list → **DUMB browser operator (agent-browser)** executes → embed splice via `ghl_rest_canvas`
 **Stage:** P3-BUILD

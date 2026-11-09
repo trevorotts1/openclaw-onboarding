@@ -1,6 +1,7 @@
 # SOP-FORM-05: RENDER-VERIFY + TAG WORKFLOW + PREVIEW/APPROVE + CERTIFY
 
 **Cluster:** Form-Craft Rules (`universal-sops/form-craft/`)
+**Canonical GHL operations cluster:** cross-craft GHL procedures (meeting rooms, native AI, knowledge bases, widgets, Projects sync, workflow monitoring, marketing quizzes) live in the single `universal-sops/ghl-hybrid-operations/` cluster (its README is the index). This SOP is not duplicated there; do not fork a second `ghl-operations/` cluster.
 **Master authority:** `06-ghl-install-pages/tools/ghl_verify.py` (`render_check`) + `06-ghl-install-pages/qc-built-form.sh` (QC-F1..F11) + Skill 44 workflow (WF-1..21, rubric >= 8.5)
 **Owning role:** Skill 6 QC + Skill 44 tag workflow → owner (human approval)
 **Stage:** P4-CERTIFY

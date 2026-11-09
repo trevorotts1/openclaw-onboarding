@@ -1,6 +1,7 @@
 # SOP-FORM-03: PRE-CREATE THE `zhc_` DEPENDENCIES (the grocery-shopping rule)
 
 **Cluster:** Form-Craft Rules (`universal-sops/form-craft/`)
+**Canonical GHL operations cluster:** cross-craft GHL procedures (meeting rooms, native AI, knowledge bases, widgets, Projects sync, workflow monitoring, marketing quizzes) live in the single `universal-sops/ghl-hybrid-operations/` cluster (its README is the index). This SOP is not duplicated there; do not fork a second `ghl-operations/` cluster.
 **Master authority:** `06-ghl-install-pages/tools/ghl_form_builder.py` (`plan_dependencies`, `_tag_attachment_plan`, `zhc_tag`) + `_run_preflight` F-P5
 **Owning role:** Skill 6 THINK layer emits the plan → **Skill 44 (`44-convert-and-flow-operator`, the `caf` PIT-authenticated CLI)** executes it BEFORE the browser build
 **Stage:** P2-DEPENDENCIES
