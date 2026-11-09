@@ -281,7 +281,7 @@ def test_non_video_jobs_untouched():
                            "input": {"prompt": "song"}}) is None)
     check("image job needs no storyboard record",
           KD.check_storyboard_approval(
-              None, None, {"model": "gpt-image-2-5",
+              None, None, {"model": "gpt-image-2-6",
                            "input": {"prompt": "a"}}) is None)
 
 

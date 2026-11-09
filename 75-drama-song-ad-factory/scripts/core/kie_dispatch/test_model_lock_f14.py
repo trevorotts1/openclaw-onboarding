@@ -277,7 +277,7 @@ def test_video_job_flag_scope():
     # image models are outside the F14 scope entirely
     tmp2 = tempfile.mkdtemp(prefix="f14-")
     env2, fake2, _ = disp(BASE_SCRIPT, "imgscope",
-                          "gpt-image-2-5-sunburst-text-to-image",
+                          "gpt-image-2-6/sunburst-text-to-image",
                           lock=None, tmp=tmp2)
     check("f14: image model outside lock scope reaches Skill 74",
           env2["reason_code"] != "MODEL_NOT_ON_MENU"

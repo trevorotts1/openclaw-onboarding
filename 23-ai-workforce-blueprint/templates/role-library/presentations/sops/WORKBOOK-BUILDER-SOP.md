@@ -14,7 +14,7 @@ conclusion is the piece this SOP supersedes) + `~/Downloads/GAUNTLET-LOOP-WORK/W
 
 A workbook is a **beautifully designed, content-rich companion** to the deck — never a blank
 wireframe. The page's real content (headline, bullets, questions, quote, quiz, contact) is
-**DESIGNED INTO the image** by kie.ai **GPT Image 2.5 Sunburst** (or the client's routed Agnes tier),
+**DESIGNED INTO the image** by kie.ai **GPT Image 2.6 Sunburst** (or the client's routed Agnes tier),
 exactly as the deck's content lives inside its slide images. The AcroForm overlay adds only the
 empty write-in zones (answer lines, checkboxes, blanks, commitment panel) on top.
 
@@ -65,7 +65,7 @@ It produces:
 2. **PROMPT** (per page) — fill the `WORKBOOK-PAGE-PROMPT-TEMPLATE.md` content-in-image skeleton
    with that page's real content + the brand palette + the logo reference. The prompt MUST contain
    every `content_string` verbatim (mirrors `build_deck.py`'s AF-P-VERBATIM discipline).
-3. **DESIGN** (kie GPT Image 2.5 Sunburst, two-phase harmony-first) — page 1 is T2I (the brand-template
+3. **DESIGN** (kie GPT Image 2.6 Sunburst, two-phase harmony-first) — page 1 is T2I (the brand-template
    page); every later page is I2I referencing page-1 + the real client logo + the deck render
    record URLs in `input_urls` (max 16). Prompts follow the Presentations rich-prompt gate
    (KIE rule 12, enforced by the ONE shared enforcer shared-utils/kie_prompt_enforcer.py; the
@@ -150,7 +150,7 @@ structurally impossible.
 
 ## 6. RULES
 
-- **Model sovereignty:** GPT Image 2.5 Sunburst ONLY (or the client's routed Agnes tier inside a Presentations
+- **Model sovereignty:** GPT Image 2.6 Sunburst ONLY (or the client's routed Agnes tier inside a Presentations
   run) — never substitute another model inside a Presentations run.
 - **CONTENT-IN-IMAGE is mandatory.** The wireframe language ("BACKGROUND ONLY", "NO text",
   "NO labels") is **BANNED** in page prompts (AF-WORKBOOK-PROMPT-NO-CONTENT).

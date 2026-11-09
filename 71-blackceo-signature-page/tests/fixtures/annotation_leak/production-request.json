@@ -1,5 +1,5 @@
 {
-  "model": "gpt-image-2-5-sunburst-image-to-image",
+  "model": "gpt-image-2-6/sunburst-image-to-image",
   "style": "",
   "copy_version": "long-form",
   "references": [],

@@ -1,3 +1,7 @@
+## [v2.1.44] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
+
 ## [v2.1.41] - 2026-11-08 - batch merge: W26 fold content landed (F22 linked-delivery governance, F14 governed runner, F16 style vocabulary, F19 review independence, F05 enrolment readback); version stamped above main for G3
 
 Version stamped above `main` (v2.1.40) so G3 sees the bump for the folded content in the same batch. No change beyond the folded content itself.
@@ -31,6 +35,20 @@ Version stamped above `main` (v2.1.40) so G3 sees the bump for the folded conten
 
 - `scripts/SF-PROVER-PIN.sha256` was minted by the `sf-prover-pin-authority` mint job for this tree. The only launch-path change in the pull request is the description wording of `shared-utils/signature_launch_contract/launch-plan.schema.json`: no prover, validator, wrapper, route, page type or launcher file changed, and `hashpin` plus `bypass-scan` both pass on the minted pin.
 
+## v2.1.40 - 2026-11-08 - registry-hash restamp for the AGNES gate fixtures (no behaviour change)
+
+- `scripts/test_agnes_gates.py` and `scripts/test_agnes_dispatch_e2e.py` carry the updated
+  `KNOWN_ENTRY_HASH` (`0981c8f0…` to `d90d7f6f…`) for the KIE GPT Image 2.6 Sunburst registry
+  entry, so the fixtures assert against the current `66-kie-image/models.json` bytes.
+- `scripts/SF-PROVER-PIN.sha256` re-minted by the sf-prover-pin-authority workflow so the
+  hash-pin gate matches the restamped fixtures. Test files are outside the pin set.
+- No production path, gate threshold, band or dispatch rule changed; the front door, the
+  12-section contract and every autofail code are untouched.
+- Version v2.1.40: main independently reached v2.1.39 (#2895, BLD-010 F17 residue), so this
+  migration takes the next patch to keep the G3 skill-version-bump guard honest.
+- Risk: LOW. Tests and their pin only.
+
+
 ## v2.1.27 - 2026-10-26 - oct-25 fix batch: l09-l12 launch-plan, dispatch and role-wrapper hardening
 
 - `scripts/launch_plan.py` (l09): launch plans reject non-web access URLs, honour no-delivery plans, and reject parse-mismatch access URLs; `check()` tests tightened to the same contract.
@@ -47,7 +65,6 @@ Version stamped above `main` (v2.1.40) so G3 sees the bump for the folded conten
 - `scripts/legacy_downsell_images.py --checkout-manuscript <file>`: a 7-step funnel's `checkout` page is drawn (desktop and mobile wireframes, visual mockup, five sections each) through Skill 71's own builder and executor from the approved five-section checkout manuscript the owner stages. It does not go through `checkout_wrapper.py`, which needs a Skill 79 request, launch record and route graph that legacy mode does not have. A manuscript that names card, expiry or security-code fields is refused (the same rule as the wrapper). Without the flag the receipt still lists `checkout` as not built and now says what it needs. The tool never writes checkout copy.
 - Tests: `test_legacy_downsell_images.py` (checkout drawn from the staged manuscript with 5/5/10 images, card fields refused, receipt names the flag). The folded-levels mockup fix is in Skill 71 (see its CHANGELOG).
 
-## v2.1.17 (round 1) - 2026-10-20 - LANE-49 repair round 1: the client's landing pages reach the bridge, legacy funnels get every design, pages build side by side
 
 - **Landing page set reaches the bridge (guard restored, now driven by the client's choice).** `dispatch_launch.py` fills `{landing_pages}` (the `--landing-pages` choice, else the recommended set) into the landing adapter command; `landing_bridge.py --landing-pages` refuses before staging a config that builds a different set (`page_kind` sales, plus `landing.opt_in` for the signature landing page), and `executor_from_config` refuses a `landing_bridge.py` command that leaves the placeholder out. This replaces the full-funnel refusal removed earlier in LANE-49 (the SPF030 entry below describes that older rule). The bridge also checks planned versus delivered with `page_set.check_deliverables`: a page whose images it drew must hold every image its page type promises, or the landing lane is refused instead of reporting ok; review PDFs and boards are reported as render pending. `landing.opt_in.manuscript` gives the opt-in page its own copy (it previously drew from the sales page's). The sales page and the opt-in page are built side by side.
 - **Every page lane runs side by side.** `page_swarm.py` no longer holds the other pages for the landing lane (the visual bible it made was only copied into folders, never read by a prompt). `visual-bible.json` is written when the swarm ends as the record of the landing run; `lane_plan` returns `{"parallel": [...]}`.

@@ -3,6 +3,9 @@
 All notable changes to this skill are documented here.
 
 ---
+## [2.0.6] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
 
 ## [2.0.0] - 2026-08-26 - feat: second approved model, deterministic model router, verified contracts
 

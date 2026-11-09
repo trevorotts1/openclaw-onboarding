@@ -142,7 +142,7 @@ class LyricSpellingRefusedBeforeSuno(unittest.TestCase):
 class OnScreenTextGatedBeforeSpend(unittest.TestCase):
     """(d) A paid keyframe may not print a string nobody checked."""
 
-    MODEL = "gpt-image-2-5-sunburst-text-to-image"
+    MODEL = "gpt-image-2-6/sunburst-text-to-image"
     TEXT = "MANDATORY ALL-STAFF MEETING - 9:00 AM"
 
     def setUp(self):

@@ -31,7 +31,7 @@ def cat(*rows):
 
 
 T2I, I2I = ["Text to Image"], ["Image to Image"]
-G25S, G25S_I = "gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-5-sunburst-image-to-image"
+G25S, G25S_I = "gpt-image-2-6/sunburst-text-to-image", "gpt-image-2-6/sunburst-image-to-image"
 G3A, G3A_I = "gpt-image-3-aurora-text-to-image", "gpt-image-3-aurora-image-to-image"
 G3B, G3B_I = "gpt-image-3-borealis-text-to-image", "gpt-image-3-borealis-image-to-image"
 
@@ -85,7 +85,7 @@ class Helpers(unittest.TestCase):
         self.assertEqual(K.budget(3072)["target_min"], 2919)
 
     def test_family_version_variant(self):
-        self.assertEqual((K.family_of(G25S), K.version_of(G25S), K.variant_of(G25S)), ("gpt-image", [2, 5], "sunburst"))
+        self.assertEqual((K.family_of(G25S), K.version_of(G25S), K.variant_of(G25S)), ("gpt-image", [2, 6], "sunburst"))
         self.assertEqual((K.version_of("gpt-image-2-text-to-image"), K.variant_of("gpt-image-2-text-to-image")), ([2], None))
         self.assertEqual(K.version_of("gpt-image/1.5-text-to-image"), [1, 5])
         self.assertIsNone(K.version_of("4o-image-api"))
@@ -312,7 +312,7 @@ class LatestFamily(Base):
                             ("gpt-image-2-text-to-image", T2I, "6"), ("gpt-image-2-image-to-image", I2I, "6"),
                             ("4o-image-api", T2I + I2I, "6")]
         a, tr, c = self.adapter(self.routes(rows))
-        self.assertEqual(a.cmd_latest_family("gpt-image")["data"]["version"], [2, 5])
+        self.assertEqual(a.cmd_latest_family("gpt-image")["data"]["version"], [2, 6])
 
     def test_registry_fallback_when_catalog_unreachable(self):
         def row(i, tt, ok=True):
@@ -413,7 +413,7 @@ class RegistryBuild(Base):
         self.assertEqual((reg["source"], reg["counts"]["models"], reg["counts"]["schema_readable"], reg["counts"]["kind_sync"]), ("live-api", 3, 2, 1))
         by = {m["id"]: m for m in json.loads(slurp(out))["models"]}
         g = by[G25S]
-        self.assertEqual((g["family"], g["version"], g["variant"], g["prompt_field"]["maxLength"], g["pricing"]["credits_max"]), ("gpt-image", [2, 5], "sunburst", 20000, 6.0))
+        self.assertEqual((g["family"], g["version"], g["variant"], g["prompt_field"]["maxLength"], g["pricing"]["credits_max"]), ("gpt-image", [2, 6], "sunburst", 20000, 6.0))
         self.assertEqual(g["input_fields"]["seed"]["minimum"], 0)
         self.assertEqual(g["input_fields"]["resolution"]["enum"], ["1K", "2K"])
         self.assertEqual(by["claude-x"]["schema"]["kind"], "sync")
@@ -514,7 +514,7 @@ class RealPricing(Base):
             "wan/2-2-a14b-speech-to-video-turbo", "wan/2-2-animate-move", "grok-imagine/text-to-video",
             "kling/ai-avatar-pro", "hailuo/02-image-to-video-pro", "wan/2-7-text-to-video", "infinitalk/from-audio"}
         per_job_ids = {"kling/v2-1-pro", "kling/v2-1-master-text-to-video", "wan/2-6-text-to-video", "runway",
-                       "kling/v2-5-turbo-text-to-video-pro", "veo-3-1", "gpt-image-2-5-sunburst-text-to-image"}
+                       "kling/v2-5-turbo-text-to-video-pro", "veo-3-1", "gpt-image-2-6/sunburst-text-to-image"}
         by = {m["id"]: m for m in reg["models"]}
         for i in per_second_ids:
             self.assertEqual(by[i]["pricing"]["unit"], "per-second", i)

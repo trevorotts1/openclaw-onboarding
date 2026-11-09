@@ -1,4 +1,7 @@
 # Changelog — video-creator (Skill 25)
+## [7.1.5] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
 
 ## [7.1.4] - 2026-11-08 - test: prompt-budget contract rides GPT Image 2.6
 

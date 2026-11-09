@@ -1,4 +1,7 @@
 # Changelog — Cinematic and Web Funnel Engine (Skill 62)
+## v2.1.6 - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
 
 ## v2.1.4 - 2026-10-06
 

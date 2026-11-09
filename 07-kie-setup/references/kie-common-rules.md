@@ -71,10 +71,11 @@ One authority: the live schema, checked with
 `python3 74-kie-live-adapter/scripts/kie_live_adapter.py validate` (falls back to the generated
 snapshot `74-kie-live-adapter/references/kie-model-registry.json`). It covers prompt
 maxLength/minLength, enums and required fields per model. Requests outside the limits are
-blocked before dispatch. For the GPT Image 2.5 family the prompt cap is 20,000 characters
-(N43 and the KIE model page); a 25,000 figure is wrong for 2.5. (N43 records 25,000 as the
-owner-confirmed cap for retained legacy `gpt-image-2-*` entries only; never apply either number
-across generations.) The older house band of 9,000 to 19,000 is superseded by rule 12.
+blocked before dispatch. For the GPT Image 2.6 family the prompt cap is 20,000 characters
+(owner ruling 2026-11-08; the ruling governs over the larger vendor docs figure). (N43 records
+25,000 as the owner-confirmed cap for retained legacy
+`gpt-image-2-*` entries only; never apply either number across generations.) The older house
+band of 9,000 to 19,000 is superseded by rule 12.
 
 ## 6. Credit preflight
 
@@ -112,12 +113,13 @@ New live models start as DISCOVERED and are never auto-defaults. Exception: the 
 ## 11. Image pin (restated from AGENTS.md N43)
 
 N43 named the sunburst family as the pinned default. Rule 13 makes the default follow the newest
-GPT Image generation (today that is 2.5 sunburst); the N43 ids below are the current resolution.
-Default today: `gpt-image-2-5-sunburst-text-to-image` and `gpt-image-2-5-sunburst-image-to-image`.
-Legacy `gpt-image-2-*` is used only for the ratios 3:1, 1:3 and 9:21 (must not use 2.5 per N43). Ratio substitutions on 2.5 sunburst: 5:4 becomes 4:3; 4:5 becomes 3:4;
-2:1 becomes 16:9; 1:2 becomes 9:16. All other requested ratios go to 2.5 sunburst as asked.
+GPT Image generation (today that is 2.6 sunburst); the N43 ids below are the current resolution.
+Default today: `gpt-image-2-6/sunburst-text-to-image` and `gpt-image-2-6/sunburst-image-to-image`.
+GPT Image 2.6 serves every ratio in the vendor enum natively (including 5:4, 4:5, 2:1, 1:2, 3:1,
+1:3 and 9:21), so no ratio is substituted and no ratio requires the legacy route. The retained
+legacy `gpt-image-2-*` route is still wired, but nothing dispatches to it by necessity.
 `flare` is not introduced without a new owner ruling (see the variant order in rule 13).
-Constraint sets are per generation and never merged (2.5 prompt cap 20,000; legacy 25,000).
+Constraint sets are per generation and never merged (2.6 prompt cap 20,000; legacy 25,000).
 
 ## 12. Prompt length budget (owner order 2026-10-05)
 
@@ -133,7 +135,7 @@ Prompt writers must know each model's character limit and write prompts close to
   Never from memory.
 - Target: 95 to 100 percent of maxLength. Hard floor: 80 percent (below it, reject and rewrite).
   Hard ceiling: 100 percent (above it, reject). 80 to 95 percent: warn and expand.
-- Example: GPT Image 2.5 (sunburst), maxLength 20,000: floor 16,000, target 19,000 to 20,000.
+- Example: GPT Image 2.6 (sunburst), maxLength 20,000: floor 16,000, target 19,000 to 20,000.
   Legacy `gpt-image-2-*` per N43, cap 25,000: floor 20,000, target 23,750 to 25,000.
 - This rule supersedes the older house band of 9,000 to 19,000 (its floor and ceiling). Any skill
   or SOP still stating that band is out of date and will be updated to point here.
@@ -147,7 +149,7 @@ Owner order: if a new GPT Image model comes out, the system moves to it as the d
 automatically.
 
 - The fleet image default is the NEWEST GPT Image generation in KIE's live catalog that has both a
-  text-to-image and an image-to-image model and a readable live schema. Today that is GPT Image 2.5
+  text-to-image and an image-to-image model and a readable live schema. Today that is GPT Image 2.6
   Sunburst.
 - Resolve it at selection time with
   `python3 74-kie-live-adapter/scripts/kie_live_adapter.py latest-family --family gpt-image`

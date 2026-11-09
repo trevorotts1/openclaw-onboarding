@@ -107,7 +107,7 @@ FALLBACK_MODEL = fallback_model()
 
 # Prompt length is KIE rule 12 (owner order 2026-10-05), measured by the shared enforcer
 # (shared-utils/kie_prompt_enforcer.py, limit from Skill 74 prompt-budget); no band lives in this retired module.
-IMAGE_MODEL_DEFAULT = "gpt-image-2-5-sunburst-text-to-image"
+IMAGE_MODEL_DEFAULT = "gpt-image-2-6/sunburst-text-to-image"
 
 # Required structural blocks -- checked case-insensitively
 REQUIRED_STRUCTURAL_BLOCKS = [
