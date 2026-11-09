@@ -1,0 +1,17 @@
+{
+  "action": "quiz_written_answers",
+  "payload": {
+    "location_id": "REPLACE_LOCATION_ID",
+    "location_name": "REPLACE_EXACT_ACCOUNT_NAME",
+    "start_url": "https://app.convertandflow.com/v2/location/REPLACE_LOCATION_ID/quiz-builder-v2/REPLACE_QUIZ_ID",
+    "expected_quiz_name": "REPLACE_EXACT_QUIZ_NAME",
+    "pages": [{"label": "Page 1", "questions": []}],
+    "target_page": 1,
+    "questions": [
+      {"field_type": "LARGE_TEXT", "question": "Tell us about your goals", "placeholder": "Share your goals",
+       "short_label": "Goals", "query_key": "goal_context", "required": true, "hidden": false},
+      {"field_type": "NUMERICAL", "question": "How many people are on your team?", "placeholder": "Team size",
+       "short_label": "Team size", "query_key": "team_size", "required": false, "hidden": false}
+    ]
+  }
+}

@@ -229,3 +229,170 @@ class CoHostPreflightTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+
+class CoHostWriterTests(unittest.TestCase):
+    def writer_inputs(self):
+        data = inputs()
+        data['cohosts']['desired'] = [{'name':'Added Fixture','email':'added@example.invalid'}]
+        data['cohosts']['access_change_acknowledged'] = True
+        return data
+
+    def test_writer_requires_explicit_complete_scoped_plan_before_browser(self):
+        data = self.writer_inputs()
+        for config in (
+            {'expected':[], 'desired':[]},
+            {**data['cohosts'], 'access_change_acknowledged':False},
+            {**data['cohosts'], 'access_change_acknowledged':'true'},
+            {**data['cohosts'], 'unknown':True},
+        ):
+            with self.subTest(config=config), self.assertRaises(meetings.Stop):
+                cohosts.configure(object(), {**data,'cohosts':config})
+
+    def test_hash_binds_origin_expected_desired_security_and_acknowledgment(self):
+        data = self.writer_inputs()
+        original = cohosts.write_configuration_hash(data)
+        mutations = [
+            lambda v:v.update(start_url='https://different.invalid/v2/location/loc/dashboard'),
+            lambda v:v.update(guest_users=True),
+            lambda v:v['cohosts']['expected'][0].update(name='Another exact name'),
+            lambda v:v['cohosts']['desired'][0].update(email='another@example.invalid'),
+        ]
+        for mutate in mutations:
+            changed = deepcopy(data)
+            mutate(changed)
+            self.assertNotEqual(original,cohosts.write_configuration_hash(changed))
+
+    def exercise(self, *, persisted_override=None, candidate_absent=False, drift=False, no_change=False):
+        from contextlib import ExitStack
+        data = self.writer_inputs()
+        if no_change:
+            data['cohosts']['desired'] = deepcopy(data['cohosts']['expected'])
+        events = []
+        state = {'staged':deepcopy(data['cohosts']['expected']),
+                 'persisted':deepcopy(data['cohosts']['expected']), 'opens':0}
+        class Visible:
+            def count(self): return 1
+            def is_visible(self): return True
+            def is_enabled(self): return True
+            def wait_for(self, **kwargs): events.append(('wait',kwargs['state']))
+        class Editor(Visible):
+            def get_by_role(self, role, name, exact):
+                if (role,name,exact) != ('button','Save changes',True):
+                    raise AssertionError('Unexpected writer control')
+                return save
+        editor, dialog, search, candidate, remove, save = (Editor(),Visible(),Visible(),Visible(),Visible(),Visible())
+        class Empty:
+            def count(self): return 0
+        class Page:
+            url = 'https://app.convertandflow.com/v2/location/loc/meetings/personal-room'
+            def goto(self,url,**kwargs):
+                if url != self.url: raise AssertionError('Unexpected navigation')
+                events.append(('discard-or-close',))
+            def get_by_role(self,role):
+                if role != 'dialog': raise AssertionError('Unexpected page role')
+                return Empty()
+        page = Page()
+        def opened(page,data):
+            state['opens'] += 1
+            state['staged'] = deepcopy(state['persisted'])
+            if drift and state['opens'] == 2:
+                state['staged'] = []
+            if persisted_override is not None and state['opens'] == 3:
+                state['staged'] = deepcopy(persisted_override)
+            events.append(('open',state['opens']))
+            return editor,page.url
+        def find(dialog,search,person):
+            events.append(('candidate',person['email']))
+            if candidate_absent: raise meetings.Stop('Fixture candidate absent')
+            return candidate
+        def click(control):
+            if control is remove:
+                events.append(('remove',))
+                state['staged'] = [entry for entry in state['staged']
+                    if entry != data['cohosts']['expected'][0]]
+            elif control is candidate:
+                events.append(('add',))
+                state['staged'].append(deepcopy(data['cohosts']['desired'][0]))
+            elif control is save:
+                events.append(('save',))
+                state['persisted'] = deepcopy(state['staged'])
+            else: raise AssertionError('Unexpected click')
+        def wait(fn,message):
+            if not fn(): raise meetings.Stop(message)
+        with ExitStack() as stack:
+            for name,kwargs in (
+                ('assert_tenant',{}), ('_open_existing',{'side_effect':opened}),
+                ('_editor',{'return_value':editor}),
+                ('read_roster',{'side_effect':lambda _:deepcopy(state['staged'])}),
+                ('_open_directory',{'return_value':(dialog,search)}),
+                ('_find_candidate',{'side_effect':find}),
+                ('_remove_control',{'return_value':remove}),
+                ('click',{'side_effect':click}), ('wait_until',{'side_effect':wait}),
+            ):
+                stack.enter_context(patch.object(cohosts,name,**kwargs))
+            try:
+                result = cohosts.configure(page,data)
+            except meetings.Stop as exc:
+                result = exc
+        return result,events,state,data
+
+    def test_complete_preflight_precedes_any_access_write_then_single_save_and_reopen(self):
+        result,events,state,data = self.exercise()
+        self.assertIsInstance(result,dict)
+        self.assertEqual(result['status'],'COHOSTS_SAVED_AND_REOPENED')
+        self.assertEqual(state['persisted'],data['cohosts']['desired'])
+        self.assertEqual(events.count(('save',)),1)
+        self.assertLess(events.index(('candidate','added@example.invalid')),events.index(('remove',)))
+        self.assertLess(events.index(('add',)),events.index(('remove',)))
+        self.assertEqual(state['opens'],3)
+        self.assertEqual(result['independent_readback'],'VERIFIED')
+        self.assertFalse(result['meeting_started'])
+        self.assertFalse(result['functional_verified'])
+        self.assertFalse(result['notification_behavior_verified'])
+        self.assertNotIn('added@example.invalid',str(result))
+
+    def test_absent_candidate_stops_before_remove_add_or_save(self):
+        result,events,_,_ = self.exercise(candidate_absent=True)
+        self.assertIsInstance(result,meetings.Stop)
+        self.assertFalse(any(event[0] in ('remove','add','save') for event in events))
+
+    def test_roster_drift_after_directory_preflight_stops_before_access_write(self):
+        result,events,_,_ = self.exercise(drift=True)
+        self.assertIsInstance(result,meetings.Stop)
+        self.assertFalse(any(event[0] in ('remove','add','save') for event in events))
+
+    def test_reopen_roster_loss_is_uncertain_not_success_or_second_save(self):
+        result,events,_,_ = self.exercise(persisted_override=[])
+        self.assertIsInstance(result,meetings.Stop)
+        self.assertEqual(events.count(('save',)),1)
+
+    def test_exact_noop_reopens_without_access_writes_or_save(self):
+        result,events,state,_ = self.exercise(no_change=True)
+        self.assertEqual(result['status'],'COHOSTS_REUSED_AND_REOPENED')
+        self.assertFalse(any(event[0] in ('candidate','remove','add','save') for event in events))
+        self.assertEqual(state['opens'],2)
+
+
+class CoHostEmptyStateTests(unittest.TestCase):
+    def test_zero_rows_are_unknown_not_an_authoritative_empty_roster(self):
+        class Card:
+            def count(self): return 1
+            def is_visible(self): return True
+            def locator(self, selector):
+                if selector != '.pr-members__rows > div': raise AssertionError(selector)
+                return Elements([])
+        class Editor:
+            def locator(self, selector):
+                if selector != '#create-room-members-card': raise AssertionError(selector)
+                return Card()
+        with self.assertRaisesRegex(meetings.Stop, 'loaded-empty'):
+            cohosts.read_roster(Editor())
+
+    def test_empty_before_or_clear_all_write_stops_before_browser(self):
+        data = CoHostWriterTests().writer_inputs()
+        for key in ('expected', 'desired'):
+            value = deepcopy(data)
+            value['cohosts'][key] = []
+            with self.subTest(key=key), self.assertRaisesRegex(meetings.Stop, 'nonempty'):
+                cohosts.configure(object(),value)
