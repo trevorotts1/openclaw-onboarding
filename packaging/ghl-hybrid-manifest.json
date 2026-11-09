@@ -1,0 +1,61 @@
+{
+  "record": "ghl-hybrid-packaging-manifest",
+  "schema": "ghl-hybrid/packaging-manifest/v1",
+  "unit": "WFIN-021",
+  "why": "Pins what this package ships so an installed tree can be proven equal to its source. Versions here are the skills' own declared versions; check-ghl-hybrid-parity.sh fails when they drift, so a skill change and its version bump move together.",
+  "package": {
+    "name": "openclaw-onboarding",
+    "version": "v27.1.71",
+    "version_file": "VERSION",
+    "installed_root_default": "~/.openclaw/skills",
+    "installed_root_env": "GHL_HYBRID_INSTALLED"
+  },
+  "verifier": {
+    "path": "scripts/verify-ghl-hybrid.sh",
+    "sha256": "73ae8c88aa8fb178aecf60bd0742792e6d982871f88f53a2fef40c83cd62e8ae",
+    "assertions": [
+      "A1",
+      "A2",
+      "A3",
+      "A4",
+      "A5"
+    ]
+  },
+  "parity_check": {
+    "path": "scripts/check-ghl-hybrid-parity.sh",
+    "digest_source": "scripts/skill-content-hash.sh",
+    "assertions": [
+      "P1",
+      "P2",
+      "P3",
+      "P4",
+      "P5"
+    ]
+  },
+  "candidate": {
+    "mode_file": "integration/mode.json",
+    "file": "integration/candidate.json",
+    "location": "run root, NOT this repo: <run-root>/integration/",
+    "schema": "ghl-hybrid/integration-candidate/v2",
+    "generator": "scripts/gen-ghl-hybrid-candidate.sh",
+    "note": "Records the onboarding branch + SHA each WF00-WF35 unit was built from, re-read from `git ls-remote --heads origin` at generation time; a unit absent on origin is recorded absent with the exact ref checked, the query, and the alternate refs found. Nothing is copied from an earlier candidate.",
+    "self_invalidating": "generated_at (UTC) + max_age_seconds. P5 of the parity gate fails when the candidate is older than max_age_seconds, when main has moved, when any recorded sha no longer equals live origin, when a recorded-present ref has vanished, when a recorded-absent ref now exists, or when the candidate omits any unit WF00-WF35. Regenerate with the generator before integrating; never hand-edit a sha."
+  },
+  "covered_skills": [
+    {
+      "name": "05-ghl-setup",
+      "version": "v7.0.3",
+      "version_source": "05-ghl-setup/skill-version.txt"
+    },
+    {
+      "name": "06-ghl-install-pages",
+      "version": "v27.1.87",
+      "version_source": "06-ghl-install-pages/skill-version.txt"
+    },
+    {
+      "name": "44-convert-and-flow-operator",
+      "version": "v2.1.44",
+      "version_source": "44-convert-and-flow-operator/skill-version.txt"
+    }
+  ]
+}
