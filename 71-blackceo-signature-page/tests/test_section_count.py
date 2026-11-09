@@ -301,13 +301,24 @@ class BandTests(unittest.TestCase):
         self.assertNotRegex(template, r"(?i)\bpain \d")
         self.assertIn("| the first cost | 394", template)
 
-    def test_slot_canon_only_where_the_run_plans_slots(self):
-        bare = " ".join(s["layout"] for s in self.build("standard", design_prose())["sections"])
-        self.assertNotIn("SLOT CANON", bare)
+    def test_slot_canon_only_where_the_spec_plans_slots(self):
+        # MOCK-001: the spec itself now plans its image slots (default_slots from the
+        # section-image-prompt.md skeleton table), so the canon prints for those
+        # sections without the caller passing --slots, and never for the type-only
+        # sections (6 persona cards, 7 icon cards, 11 numbered steps).
+        built = self.build("standard", design_prose())["sections"]
+        canon = {s["section_id"] for s in built if "SLOT CANON" in s["layout"]}
+        self.assertEqual(canon, {"1", "2", "3", "4", "5", "8", "9", "10", "12"})
+        # the canon names the section's own planned slot and ratio, not a vague canon
+        self.assertIn("SLOT CANON: IMG-001 (16:9) hero image", built[0]["layout"])
+        self.assertIn("SLOT CANON: IMG-009 (3:4) founder portrait", built[-1]["layout"])
+        for sid in ("6", "7", "11"):
+            self.assertNotIn("SLOT CANON",
+                             next(s for s in built if s["section_id"] == sid)["layout"])
         slots = {"2": [{"slot_id": "hero", "aspect_ratio": "16:9", "art_direction": "x"}]}
         planned = self.build("standard", design_prose(), slots=slots)["sections"]
         self.assertIn("SLOT CANON", planned[1]["layout"])
-        self.assertEqual(sum("SLOT CANON" in s["layout"] for s in planned), 1)
+        self.assertEqual(sum("SLOT CANON" in s["layout"] for s in planned), 9)
 
     def test_signature_is_a_label_and_the_founder_letter_still_builds(self):
         request = self.build("standard", design_prose())
