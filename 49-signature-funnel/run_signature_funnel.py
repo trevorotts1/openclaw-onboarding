@@ -26,7 +26,9 @@ image PROVENANCE (Kie taskId + GHL media host) is enforced at P9 by prove_sf_no_
 Run-dir inputs:
   brief.json          — locked intake brief        (P0 gate: prove_sf_intake.py)
   copy_ledger.json    — per-page 12-section copy    (P1 gate: prove_sf_copy.py)
-  prompt_ledger.json  — image prompts 5k-19k        (P2 gate: prove_sf_prompt_floor.py)
+  prompt_ledger.json  — image prompts at the prompt-policy band
+                        (95-100 percent of the verified maximum;
+                        hard floor 80 percent)           (P2 gate: prove_sf_prompt_floor.py)
   media_ledger.json   — images + pages              (P9 gate: prove_sf_no_pitch.py)
 
 stdlib only. Exit 0 = certified, 2 = a phase gate failed, 3 = front-door / usage.

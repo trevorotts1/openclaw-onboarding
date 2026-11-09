@@ -689,7 +689,11 @@ fleet_standing_gate() {
     exit 0
 }
 
-fleet_standing_gate
+# --help/-h performs no side effects: skip the gates so a paused box still
+# documents its flags (OCT4 #10 T7 asserts --help names --onboarding-only).
+if [ "${_oc_help_only:-0}" != "1" ]; then
+  fleet_standing_gate
+fi
 #=== END FLEET-STANDING-GATE-V1 ===
 
 #=== BEGIN FLEET-PREFLIGHT-V1 ===
@@ -733,7 +737,10 @@ fleet_preflight_checks() {
     fi
     return 0
 }
-fleet_preflight_checks
+# Match the standing gate above: --help/-h prints usage without side effects.
+if [ "${_oc_help_only:-0}" != "1" ]; then
+  fleet_preflight_checks
+fi
 
 #=== BEGIN BOUNDED-CHILD-V1 ===
 # ----------------------------------------------------------

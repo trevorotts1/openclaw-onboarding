@@ -1,3 +1,37 @@
+# Current build recovery — November 9, 2026
+
+This checkpoint supersedes older operation counts below. The exact build inventory
+is `PLAYWRIGHT-BUILD-STATUS.json`: 33 named operations, 21 BUILT, 11 PARTIAL and
+1 GENERIC_ONLY. Twelve operations still need feature implementation. These are
+equal-weight operation counts, not remaining hours or final native readiness.
+
+Earlier batches #2877 and #2951 are merged. The remaining-features draft #2962
+preserves the third batch. Its newer continuation recovers Header/CTA quiz-result
+copy and integrates compiler, validation, handler outcomes and hash-bound replay.
+Existing draft course outline hierarchy/drip/lock edits close that operation's
+old implementation gap. Active course publication and learner proof stay separate.
+
+Recovered additions include consent/Address/existing Radio placement, ordered
+survey forward rules, quiz property/category controls, inactive theme palette and
+font controls, draft outline/access metadata and classic community access controls.
+The continuation also preflights complete form-placement batches, schedules course
+moves without temporary hierarchy cycles, and verifies preserved calendar and
+checkout state. A read-only co-host roster/candidate inspector is available;
+it never assigns/removes/saves and does not complete co-host provisioning.
+
+Still partial: additional form/question types and compound conditions; survey
+completion effects; quiz question creation and remaining result surfaces;
+community branding/media/course links and exact app-to-portal reuse identity;
+course media/custom blocks; co-host writing, dynamic rooms and native meeting
+associations. Split variation/traffic execution remains generic-only.
+Tracking/integrations and payment-owned Order Confirmation remain separate gaps.
+
+Optional/manual/live testing is deferred. Required repository merge checks remain
+enabled. Preserve uncertain client journals and existing object IDs. Do not infer
+native final-script, submission, learner, payment or VPS proof from source checks.
+
+---
+
 # Skill 6 recovery and continuation ledger
 
 Updated: November 8, 2026. Owner: Trevor Otts.

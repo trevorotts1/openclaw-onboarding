@@ -161,8 +161,8 @@ class DraftOutlineTests(unittest.TestCase):
 
     def test_invalid_or_access_changing_requests_fail_before_network(self):
         bad = []
-        for value in ({'visibility':'published'},{'parentCategory':'C2'},{'lockedBy':'L1'},
-                      {'metadata':{'dripUnit':'days'}},{'title':''},{'sequenceNo':True}):
+        for value in ({'visibility':'published'},{'parentCategory':[]},{'lockedBy':{}},
+                      {'metadata':{'unknown':'days'}},{'title':''},{'sequenceNo':True}):
             data=plan();data['category_changes'][0]['changes']=value;bad.append(data)
         data=plan();data['publish']=True;bad.append(data)
         data=plan();data['options']={};bad.append(data)
@@ -173,6 +173,92 @@ class DraftOutlineTests(unittest.TestCase):
                 api=Api(root)
                 with self.assertRaises(Stop):outline.run_outline(data,root,capability=capability(),transport=api)
                 self.assertEqual(api.calls,[])
+
+    def test_hierarchy_rotation_detaches_child_before_parent_and_replays_without_calls(self):
+        with tempfile.TemporaryDirectory() as root:
+            api=Api(root)
+            api.rows['/courses/products/P/categories/C1']['parentCategory']=None
+            api.rows['/courses/products/P/categories/C2']['parentCategory']='C1'
+            data={'location_id':'LOC','product_id':'P','category_changes':[
+                {'category_id':'C1','expected_updated_at':'v1','changes':{'parentCategory':'C2'}},
+                {'category_id':'C2','expected_updated_at':'v1','changes':{'parentCategory':None}}]}
+            request=api.request
+            def cycle_guard(method,path,**kwargs):
+                if method=='PUT' and 'parentCategory' in kwargs.get('body',{}):
+                    parents={key.rsplit('/',1)[1]:row.get('parentCategory') for key,row in api.rows.items()
+                             if '/categories/' in key}
+                    identity=path.rsplit('/',1)[1]
+                    parents[identity]=kwargs['body']['parentCategory']
+                    seen=set()
+                    while identity is not None:
+                        self.assertNotIn(identity,seen,'Native PUT would introduce a transient cycle')
+                        seen.add(identity);identity=parents[identity]
+                return request(method,path,**kwargs)
+            api.request=cycle_guard
+            result=outline.run_outline(data,root,capability=capability(),transport=api)
+            self.assertEqual([path for method,path,_ in api.calls if method=='PUT'],[
+                '/courses/products/P/categories/C2','/courses/products/P/categories/C1'])
+            self.assertEqual(result['completed'],[{'kind':'category','id':'C1'},{'kind':'category','id':'C2'}])
+            count=len(api.calls)
+            outline.run_outline(data,root,capability=capability(),transport=api)
+            self.assertEqual(len(api.calls),count)
+
+    def test_invalid_access_dependencies_stop_before_journal_or_put(self):
+        for change in ({'parentCategory':'C2'},{'lockedBy':'L1'},{'metadata':{'dripUnit':'days'}}):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as root:
+                api=Api(root);data=plan();data['category_changes'][0]['changes']=change
+                with self.assertRaises(Stop):
+                    outline.run_outline(data,root,capability=capability(),transport=api)
+                self.assertTrue(api.calls)  # Supported schemas need actual GET inventory.
+                self.assertFalse(any(method=='PUT' for method,_,_ in api.calls))
+                self.assertFalse(Path(root,'delivery-state.json').exists())
+
+    def test_final_hierarchy_cycle_refuses_before_any_write(self):
+        with tempfile.TemporaryDirectory() as root:
+            api=Api(root)
+            for identity in ('C1','C2'):
+                api.rows['/courses/products/P/categories/'+identity]['parentCategory']=None
+            data={'location_id':'LOC','product_id':'P','category_changes':[
+                {'category_id':'C1','expected_updated_at':'v1','changes':{'parentCategory':'C2'}},
+                {'category_id':'C2','expected_updated_at':'v1','changes':{'parentCategory':'C1'}}]}
+            with self.assertRaisesRegex(Stop,'hierarchy contains a cycle'):
+                outline.run_outline(data,root,capability=capability(),transport=api)
+            self.assertFalse(any(method=='PUT' for method,_,_ in api.calls))
+            self.assertFalse(Path(root,'delivery-state.json').exists())
+
+    def test_lesson_move_inventories_destination_ancestors_and_keeps_both_parent_receipts(self):
+        for cycle in (False, True):
+            with self.subTest(cycle=cycle), tempfile.TemporaryDirectory() as root:
+                api=Api(root)
+                api.rows['/courses/products/P/categories/C1']['parentCategory']='C2' if cycle else None
+                api.rows['/courses/products/P/categories/C2']['parentCategory']='C1'
+                data={'location_id':'LOC','product_id':'P','lesson_changes':[
+                    {'lesson_id':'L1','category_id':'C1','expected_updated_at':'v1',
+                     'changes':{'categoryId':'C2'}}]}
+                if cycle:
+                    with self.assertRaisesRegex(Stop,'hierarchy contains a cycle'):
+                        outline.run_outline(data,root,capability=capability(),transport=api)
+                    self.assertFalse(any(method=='PUT' for method,_,_ in api.calls))
+                else:
+                    result=outline.run_outline(data,root,capability=capability(),transport=api)
+                    self.assertEqual(api.rows['/courses/products/P/lessons/L1']['categoryId'],'C2')
+                    self.assertEqual({obj['id'] for obj in result['objects'] if obj['kind']=='category'}, {'C1','C2'})
+
+    def test_draft_drip_edit_preserves_metadata_and_published_unlock_identity(self):
+        with tempfile.TemporaryDirectory() as root:
+            api=Api(root)
+            api.rows['/courses/products/P/categories/C1']['metadata']={'dripUnit':'days','dripDate':None}
+            api.rows['/courses/products/P/categories/C2']['visibility']='published'
+            api.rows['/courses/products/P/lessons/L2']['visibility']='published'
+            data={'location_id':'LOC','product_id':'P','category_changes':[
+                {'category_id':'C1','expected_updated_at':'v1','changes':{
+                    'dripDays':3,'metadata':{'dripUnit':'hours'},'lockedBy':'L2'}}]}
+            result=outline.run_outline(data,root,capability=capability(),transport=api)
+            writes=[body for method,_,body in api.calls if method=='PUT']
+            self.assertEqual(writes,[{'dripDays':3,'metadata':{'dripUnit':'hours','dripDate':None},'lockedBy':'L2'}])
+            self.assertEqual(result['status'],'NEEDS_VERIFICATION')
+            self.assertEqual(api.rows['/courses/products/P/categories/C1']['visibility'],'draft')
+            self.assertEqual(api.rows['/courses/products/P/categories/C2']['visibility'],'published')
 
     def test_quiz_transition_requires_its_real_content_operation(self):
         with tempfile.TemporaryDirectory() as root:
