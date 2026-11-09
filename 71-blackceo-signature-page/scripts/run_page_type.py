@@ -37,6 +37,9 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import governed_runner  # noqa: E402  F14: the one admission caller
+
 SPEC_DIR = HERE.parent / "references" / "copy-specs"
 STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup")
 
@@ -44,6 +47,23 @@ STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup")
 def run(argv):
     print("+ " + " ".join(Path(a).name if "/" in str(a) else str(a) for a in argv))
     return subprocess.run([sys.executable, *map(str, argv)]).returncode
+
+
+def govern(run_dir, stage, *, provider, allow_paid, preflight):
+    """F14: this executor path passes the one admission call before its first write.
+
+    `preview` composes prompts and writes nothing; `paid_dispatch` is the
+    authoritative boundary and refuses on a failed canonical stage check.
+    """
+    authority = "preview" if preflight else (
+        "paid_dispatch" if (provider == "kie" and allow_paid) else "local")
+    try:
+        governed_runner.admit(run_dir, kind="direct_executor", authority=authority,
+                              stage=stage, owner="run_page_type")
+        return True
+    except governed_runner.AdmissionRefused as exc:
+        print(f"REFUSED: {exc}")
+        return False
 
 
 def main(argv=None) -> int:
@@ -108,7 +128,13 @@ def main(argv=None) -> int:
             execute.append("--preflight")
         if a.allow_paid:
             execute.append("--allow-paid")
-        if run(build) or run(execute):
+        if run(build):
+            print(f"FAIL: {stage} request did not build; nothing after it ran")
+            return 1
+        if not govern(a.run_dir, stage, provider=a.provider,
+                      allow_paid=a.allow_paid, preflight=a.preflight):
+            return 1
+        if run(execute):
             print(f"FAIL: {stage} did not complete; nothing after it ran")
             return 1
     run_dir = a.run_dir.resolve()
