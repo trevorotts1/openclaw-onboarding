@@ -1,0 +1,43 @@
+{
+  "authority": "synthetic fixture",
+  "capabilities": {
+    "workflows.step_types.list": {
+      "adapter_built": true,
+      "availability": "unknown",
+      "checked_at": null,
+      "contract_revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "credential_fingerprint": "NON_SECRET_FINGERPRINT",
+      "credential_ref": "location-pit:OWNER_MANAGED_ALIAS",
+      "documented": true,
+      "effective_grant_fingerprint": "GRANT_FP",
+      "enabled": false,
+      "evidence_refs": [
+        "evidence/WF00/synthetic-step-types.json"
+      ],
+      "expires_at": null,
+      "fallback_policy": "authorized_private_then_managed_browser",
+      "invalidation_reason": null,
+      "location_id": "SYNTHETIC_LOCATION",
+      "offline_tests_passed": true,
+      "operation_id": "workflows.step_types.list",
+      "principal": "synthetic-principal",
+      "read_probe": {
+        "checked_at": null,
+        "receipt_id": null,
+        "state": "not_run"
+      },
+      "record_version": 2,
+      "request_media_type": "application/json",
+      "scope_state": "unverified",
+      "write_canary": {
+        "checked_at": null,
+        "receipt_id": null,
+        "state": "not_run"
+      }
+    }
+  },
+  "location_id": "SYNTHETIC_LOCATION",
+  "note": "test-only; never enables a live call",
+  "record_version": 2,
+  "recorded_at": "2026-11-08"
+}

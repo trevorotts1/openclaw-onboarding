@@ -1,0 +1,76 @@
+{
+  "actual_visibility": "draft",
+  "attempt_id": "SYNTHETIC_ATTEMPT",
+  "attempts": [
+    {
+      "attempt_id": "SYNTHETIC_ATTEMPT",
+      "error": null,
+      "finished_at": "2026-11-08T12:00:02Z",
+      "http_status": 201,
+      "outcome": "submitted",
+      "rail": "public_rest",
+      "request_fingerprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "response_fingerprint": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "started_at": "2026-11-08T12:00:00Z"
+    }
+  ],
+  "build_state": "implemented",
+  "company_id": "SYNTHETIC_CC_COMPANY",
+  "content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "event_sequence": 1,
+  "evidence_refs": [
+    "lanes/GHL-000-lane/evidence/readback.json"
+  ],
+  "location_id": "SYNTHETIC_LOCATION",
+  "next_action": null,
+  "object_refs": {
+    "course_product_id": "SYNTHETIC_COURSE"
+  },
+  "observed_at": "2026-11-08T12:00:02Z",
+  "operation_id": "courses.products.create",
+  "operation_key": "course:launch101:lesson:welcome:intro:create",
+  "outcome": "verified",
+  "rail": "public_rest",
+  "readback": {
+    "checked_fields": [
+      "title",
+      "visibility"
+    ],
+    "receipt_ref": null,
+    "state": "matched"
+  },
+  "receipt_id": "SYNTHETIC_RECEIPT",
+  "request_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "requested_visibility": "draft",
+  "run_id": "SYNTHETIC_RUN",
+  "schema_version": "1.0.0",
+  "skill": "06",
+  "sub_results": {
+    "knowledge_base": {
+      "attached": false,
+      "ingestion_completed": false,
+      "knowledge_base_id": "SYNTHETIC_KB",
+      "retrieval_verified": false,
+      "state": "processing",
+      "training_completed": false,
+      "unknowns": [
+        "ingestion status unread"
+      ],
+      "upload_accepted": true
+    },
+    "meeting_room": {
+      "state": "not_requested"
+    },
+    "projects": {
+      "api_available": true,
+      "projection_enabled": false,
+      "projects_list_id": "SYNTHETIC_LIST",
+      "projects_space_id": "SYNTHETIC_SPACE",
+      "projects_task_id": "SYNTHETIC_TASK",
+      "state": "verified",
+      "ui_available": null,
+      "unknowns": []
+    }
+  },
+  "task_id": null
+}
