@@ -1,0 +1,96 @@
+{
+  "contract_id": "WF08-CP01",
+  "contract_version": "1.0.0",
+  "owner_workflow": "WF08",
+  "module": "06-ghl-install-pages/tools/ghl_course_media_binding.py",
+  "purpose": "Frozen seam between the course-media asset manifest (WF12) / course public adapter (WF06) and the Skill-6 native course content binding step (WF08). Consumers: WF07 course coordinator/router, WF06 course adapter, WF12 asset seam.",
+  "authority": "Document 1 sections 8.5, 8.6, 10.3; Document 2 WF08",
+  "paths": {
+    "existing_native_content": "Path A - verified same-location native content ID of the right type is attached through the documented lesson operation, then content readback/playback is verified.",
+    "public_import": "Path B - documented course import for a compatible NEW hierarchy; never mixed with individual creates.",
+    "managed_native_ui": "Path C - managed browser fills only the missing native-content step on API-created course/category/lesson IDs."
+  },
+  "proof_fields": [
+    "asset_persisted",
+    "native_content_ready",
+    "lesson_association_verified",
+    "learner_render_verified"
+  ],
+  "proof_field_semantics": {
+    "asset_persisted": "Asset bytes exist at a durable location and match the manifest sha256/byte_size. A permanent video URL alone proves only this field.",
+    "native_content_ready": "GHL reports the native course content object of the right type exists and finished processing.",
+    "lesson_association_verified": "A readback shows the lesson is associated with that native content id.",
+    "learner_render_verified": "A learner-context render observed the content. An administrator preview does NOT prove this."
+  },
+  "asset_manifest_required_fields": [
+    "schema_version",
+    "asset_key",
+    "course_key",
+    "module_key",
+    "lesson_key",
+    "role",
+    "provider",
+    "generation_state",
+    "sha256",
+    "mime_type",
+    "byte_size",
+    "storage_access"
+  ],
+  "asset_manifest_optional_fields": [
+    "model_id",
+    "provider_task_id",
+    "local_path",
+    "duration_seconds",
+    "durable_url",
+    "qc",
+    "ghl_binding"
+  ],
+  "asset_roles": [
+    "lesson_video",
+    "lesson_resource",
+    "lesson_image",
+    "lesson_audio"
+  ],
+  "storage_access_approved_values": ["approved_for_destination", "private"],
+  "storage_access_refused_values": ["public", "public_discoverable", "any"],
+  "import_lifecycle_states": [
+    "planned",
+    "submitted",
+    "processing",
+    "reconciled",
+    "content_verified",
+    "failed",
+    "unknown_outcome"
+  ],
+  "import_complete_states": ["content_verified"],
+  "seam_functions": {
+    "inspect_asset": "inspect_asset(path, expected_mime=None) -> dict  # sha256, byte_size, mime_type, magic_verified",
+    "validate_asset_manifest": "validate_asset_manifest(manifest, paid_course=True) -> dict  # normalized manifest; raises AssetValidationError",
+    "select_binding_path": "select_binding_path(asset=..., native_content=..., import_supported=..., course_is_new=..., hierarchy_created_by_api=..., public_ingest_available=...) -> dict  # {path, rationale, requires_managed_browser, mixed_import_refused}",
+    "attach_existing_native_content": "attach_existing_native_content(client, location_id=, course_id=, lesson_id=, content_id=, content_type=, asset=None) -> dict  # adapter protocol: attach_lesson_content, read_lesson",
+    "submit_course_import": "submit_course_import(client, location_id=, payload=) -> dict  # never reports a completed course",
+    "import_lifecycle_step": "import_lifecycle_step(state, event) -> str",
+    "poll_processing": "poll_processing(poll, state=None, deadline_s=300, interval_s=5, clock=, sleep=, max_polls=60) -> dict  # bounded + resumable",
+    "managed_binding_steps": "managed_binding_steps(asset, course_id=, lesson_id=) -> list[dict]",
+    "apply_managed_ui_binding": "apply_managed_ui_binding(steps, actions, asset=) -> dict  # readback required",
+    "native_course_upload_exception": "native_course_upload_exception(purpose=, public_ingest_available=, asset=) -> dict  # narrow, never general media",
+    "empty_proof": "empty_proof() -> dict",
+    "binding_complete": "binding_complete(proof, require_learner_render=True) -> bool"
+  },
+  "adapter_protocol": {
+    "attach_lesson_content": "attach_lesson_content(location_id, lesson_id, content_id, content_type) -> dict",
+    "read_lesson": "read_lesson(location_id, lesson_id) -> dict",
+    "submit_course_import": "submit_course_import(location_id, payload) -> dict",
+    "read_import_status": "read_import_status(location_id, processing_id) -> dict | None"
+  },
+  "selector_keys_used_by_managed_path": [
+    "course.routes.outline_builder",
+    "course.outline.lesson_body_editor"
+  ],
+  "selector_owner": "WF09",
+  "notes": [
+    "Selector fragments and selector JSON are owned by WF09; this contract only names the keys WF08 needs.",
+    "No HTTP method, path or Version literal is frozen here: WF06 owns the operation rows.",
+    "A processing state is never reported as a completed course (acceptance A11)."
+  ]
+}
