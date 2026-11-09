@@ -111,6 +111,15 @@ jobs:
           # own reviewed tree).
           while read -r sha ae ce; do
             [ -n "$sha" ] || continue
+            # A merge commit authors no content: it only carries commits that were each judged on
+            # their own branch (a pin it carries came from this workflow's mint on main). Judging a
+            # merge by its author/committer email rejects every PR that merges main in, so skip
+            # merges here and keep the authorship rule on the commits that can actually edit the pin.
+            parents="$(git rev-list --parents -n1 "$sha" | wc -w)"
+            if [ "$parents" -gt 2 ]; then
+              echo "merge commit $sha carries the pin; not a hand edit"
+              continue
+            fi
             if [ "$ae" != "$bot" ] || [ "$ce" != "$bot" ]; then
               echo "::error::$pin was changed by commit $sha (author $ae, committer $ce). Only the mint job of this workflow may write it."
               exit 1
