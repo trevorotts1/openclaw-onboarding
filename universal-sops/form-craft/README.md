@@ -35,7 +35,7 @@ This craft cluster (`universal-sops/form-craft/`) is the execution playbook for 
 
 | Skill | Reach for this craft when the client says… |
 |---|---|
-| **06** ghl-install-pages | "build me a form in GHL" · "build me a page in GHL" · "publish this page" · "install this funnel in GHL" |
+| **06** ghl-install-pages | "build me a form in GHL" · "build me a page in GHL" · "publish this page" · "install this funnel in GHL" · "create a course with modules and lessons" |
 
 Dept-scoped: only the task department's craft is offered. Operate the owning skill per the SOPs in this cluster **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
 <!-- END CRAFT_INTENT_TRIGGERS_V1 -->

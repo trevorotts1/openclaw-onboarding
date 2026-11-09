@@ -22,7 +22,7 @@ This craft cluster (`universal-sops/social-media-craft/`) is the execution playb
 
 | Skill | Reach for this craft when the client says… |
 |---|---|
-| **35** social-media-planner | "post my content this week" · "run my social" · "schedule posts" · "plan my social calendar" |
+| **35** social-media-planner | "post my content this week" · "run my social" · "schedule posts" · "plan my social calendar" · "post this lesson announcement to our community" |
 | **57** social-media-in-a-box | "run my social week end-to-end" · "a week of content" · "a full week of posts across all platforms" |
 | **84** purple-billboard-blueprint | "run my purple billboard" · "a giveaway post with a keyword" · "prepare my 30 days of billboard posts" · "turn my post comments into conversations" |
 

@@ -1,0 +1,144 @@
+{
+  "purpose": "Synthetic routing examples for the GHL hybrid binding. Statements from the revision-3 implementation contract sections 13.5 and 32.4, mapped to the REAL canonical department and the owning skill pointer. No client names, ids or content.",
+  "contract": "WF16-CP01",
+  "entries": [
+    {
+      "name": "ghl_workflow_tag_wait",
+      "request": "Build a GoHighLevel workflow with a tag trigger and a two-day wait",
+      "expected_owner": "crm",
+      "expected_skill": "44",
+      "required_trigger": "build a workflow",
+      "expected_role": "automation-workflow-specialist",
+      "contract_intent": "Build a GHL workflow / automation with a trigger and waits"
+    },
+    {
+      "name": "course_three_modules_videos",
+      "request": "Create a course with 3 modules and attach my videos",
+      "expected_owner": "courses",
+      "expected_skill": "06",
+      "required_trigger": "create a course with modules and lessons",
+      "expected_role": "director-of-courses",
+      "contract_intent": "Create a course with modules and lessons and attach media"
+    },
+    {
+      "name": "private_community_two_channels",
+      "request": "Create a private Convert and Flow community with 2 channels",
+      "expected_owner": "community-builder",
+      "expected_skill": "06",
+      "required_trigger": "create a private community with channels",
+      "expected_role": "director-of-community-builder",
+      "contract_intent": "Create a private community / channels"
+    },
+    {
+      "name": "attach_course_to_learning",
+      "request": "Attach the existing course to the group's Learning tab",
+      "expected_owner": "community-builder",
+      "expected_skill": "06",
+      "required_trigger": "attach the existing course to the group's learning tab",
+      "expected_role": "director-of-community-builder",
+      "contract_intent": "Attach an existing course to the group's Learning tab"
+    },
+    {
+      "name": "publish_members_only_post",
+      "request": "Publish this post in the members-only channel",
+      "expected_owner": "community-builder",
+      "expected_skill": "35",
+      "required_trigger": "publish this post in the members-only channel",
+      "expected_role": "director-of-community-builder",
+      "contract_intent": "Publish a post in the members-only channel / post a lesson announcement"
+    },
+    {
+      "name": "sales_page_for_course",
+      "request": "Create a sales page for this course",
+      "expected_owner": "funnels",
+      "expected_skill": "56",
+      "must_not_route_to": "courses",
+      "expected_role": null,
+      "contract_intent": "Create a sales page for a course",
+      "required_trigger": null
+    },
+    {
+      "name": "close_crm_lead",
+      "request": "Follow up and close this CRM lead",
+      "expected_owner": "sales",
+      "expected_skill": null,
+      "must_not_route_to": "courses",
+      "expected_role": null,
+      "contract_intent": "Follow up and close a CRM lead",
+      "required_trigger": null
+    },
+    {
+      "name": "status_existing_course_build",
+      "request": "Show the status of the existing course build",
+      "expected_owner": "existing-task-lookup",
+      "expected_skill": null,
+      "must_not_route_to": "courses",
+      "expected_role": null,
+      "contract_intent": "Show the status of an existing build",
+      "required_trigger": null
+    },
+    {
+      "name": "native_voice_receptionist",
+      "request": "Set up a native GHL Voice AI receptionist",
+      "expected_owner": "crm",
+      "expected_skill": "44",
+      "required_trigger": null,
+      "expected_role": "automation-workflow-specialist",
+      "contract_intent": "Set up a native GHL Voice AI receptionist"
+    },
+    {
+      "name": "knowledge_base_support_files",
+      "request": "Make a knowledge base from these approved support files",
+      "expected_owner": "crm",
+      "expected_skill": "44",
+      "required_trigger": null,
+      "expected_role": "automation-workflow-specialist",
+      "contract_intent": "Make a knowledge base from approved support files"
+    },
+    {
+      "name": "widget_on_website",
+      "request": "Put this native chat widget on my website",
+      "expected_owner": "web-development",
+      "expected_skill": "06",
+      "required_trigger": null,
+      "expected_role": "funnel-builder-specialist",
+      "contract_intent": "Put a native chat widget on the website"
+    },
+    {
+      "name": "room_for_live_course",
+      "request": "Set up a room for the live sessions in this course",
+      "expected_owner": "courses",
+      "expected_skill": "06",
+      "required_trigger": null,
+      "expected_role": "director-of-courses",
+      "contract_intent": "Set up a room for the live sessions in a course"
+    },
+    {
+      "name": "mirror_checklist_to_projects",
+      "request": "Mirror this verified client checklist into HighLevel Projects",
+      "expected_owner": "crm",
+      "expected_skill": "44",
+      "required_trigger": null,
+      "expected_role": "automation-workflow-specialist",
+      "contract_intent": "Mirror a verified client checklist into HighLevel Projects"
+    },
+    {
+      "name": "lead_generation_quiz",
+      "request": "Create a lead-generation quiz, not a course quiz",
+      "expected_owner": "web-development",
+      "expected_skill": "06",
+      "required_trigger": null,
+      "expected_role": "funnel-builder-specialist",
+      "contract_intent": "Create a lead-generation quiz, not a course quiz"
+    },
+    {
+      "name": "failed_steps_yesterday",
+      "request": "Show which automation steps failed yesterday",
+      "expected_owner": "crm",
+      "expected_skill": "44",
+      "required_trigger": null,
+      "expected_role": "automation-workflow-specialist",
+      "contract_intent": "Show which automation steps failed yesterday"
+    }
+  ]
+}
