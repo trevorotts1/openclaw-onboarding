@@ -256,7 +256,9 @@ def planned_slot_ids(run_dir: Path, index: int):
     """The slot ids the wireframe section plan assigns to section ``index`` (1-based).
 
     ``None`` when no section plan is on record: the caller then cannot know which
-    generated file belongs to this section.
+    generated file belongs to this section. An empty list means the plan records
+    the section and assigns it no image (a type-only section: 6 persona cards,
+    7 icon cards, 11 numbered steps), so it receives no photograph.
     """
     path = run_dir / "desktop-wireframe" / "section-plan.json"
     try:
@@ -268,8 +270,13 @@ def planned_slot_ids(run_dir: Path, index: int):
     section = plan[index - 1]
     if not isinstance(section, dict):
         return None
-    ids = [s for s in section.get("image_slot_ids") or [] if isinstance(s, str) and s.strip()]
-    return ids or None
+    # MOCK-001 B8: key presence, not truthiness, separates "no plan" (None: every
+    # generated photo is this page's raw material) from "plan says no image" ([]:
+    # a type-only section gets zero files). `ids or None` collapsed the empty plan
+    # into no plan and handed every generated image to sections 6, 7 and 11.
+    if "image_slot_ids" not in section:
+        return None
+    return [s for s in section.get("image_slot_ids") or [] if isinstance(s, str) and s.strip()]
 
 def generated_image_refs(run_dir: Path, index: int):
     """The image-generation-qc files this section's planned slots name.

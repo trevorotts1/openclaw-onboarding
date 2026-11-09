@@ -136,5 +136,30 @@ class GeneratedImageRefTests(unittest.TestCase):
         earlier = [p.name for p in exe.prior_slices("visual-mockup", run, 1, "desktop/part-01.png")]
         self.assertNotIn("Image-001.png", earlier)
 
+    def test_type_only_section_gets_no_generated_images(self):
+        # MOCK-001 B8: a section the plan records with an EMPTY image_slot_ids list
+        # is type-only (6 persona cards, 7 icon cards, 11 numbered steps) and must
+        # receive zero generated files. An empty list must not collapse into
+        # "no plan" (which hands the section every generated image).
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        run = Path(tmp.name)
+        for stage in ("desktop-wireframe", "mobile-tablet", "visual-mockup"):
+            (run / stage / "desktop").mkdir(parents=True)
+            (run / stage / "mobile").mkdir(parents=True)
+        exe.stub_png(run / "desktop-wireframe/section-01.png", 1440, 810, "d1")
+        exe.stub_png(run / "mobile-tablet/section-01.png", 390, 693, "m1")
+        exe.stub_png(run / "visual-mockup/desktop/part-01.png", 1440, 2560, "v1")
+        (run / "image-generation-qc").mkdir()
+        for i in (1, 2):
+            (run / ("image-generation-qc/Image-%03d.png" % i)).write_bytes(
+                b"\x89PNG\r\n\x1a\n" + bytes([i]))
+        (run / "desktop-wireframe/section-plan.json").write_text(json.dumps(
+            [{"section_id": "1", "image_slot_ids": []},
+             {"section_id": "2", "image_slot_ids": ["IMG-002"]}]))
+        final = [p.name for p in exe.prior_slices("final-mockups", run, 1, "desktop/part-01.png")]
+        self.assertNotIn("Image-001.png", final)
+        self.assertNotIn("Image-002.png", final)
+
 if __name__ == "__main__":
     unittest.main()
