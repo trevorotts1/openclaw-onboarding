@@ -485,7 +485,11 @@ class LandingPagesTests(unittest.TestCase):
     def test_the_two_image_input_files_each_hold_only_what_their_reader_accepts(self):
         self.real_config_run(lambda *a: None)
         shared = json.loads((self.out / "image_inputs.json").read_text())
-        self.assertEqual(sorted(shared), sorted(set(image_plan.C3_KEYS) | set(image_plan.C3_CARRIED_KEYS)))
+        # The shared file carries the base contract plus only the carried keys THIS Skill 49 reader
+        # accepts. The F20 money keys (image_cap_minor/image_currency) are carried where a reader lists
+        # them and never written past a strict reader that refuses unknown keys.
+        self.assertEqual(sorted(shared), sorted(image_plan._c3_keys()))
+        self.assertLessEqual(set(shared), set(substrate.dispatch().pset.IMAGE_INPUT_KEYS))
         order = json.loads((self.out / "order-page-inputs.json").read_text())
         self.assertEqual((order["provider"], order["test_run"]), ("stub", True))
         substrate.dispatch().pset.load_image_inputs(self.out / "image_inputs.json")  # Skill 49's strict reader

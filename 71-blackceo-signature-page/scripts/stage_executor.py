@@ -1200,7 +1200,8 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
             raise ExecutorError(str(exc))
     copy_block = copy_contract(section, closing or "")
     frame_block = frame_contract(width, ratio or "")
-    neg_block = negative_block(stage, steps=request_form(request) not in copy_forms.NO_STEPS_FORMS,
+    steps_allowed = request_form(request) not in copy_forms.NO_STEPS_FORMS
+    neg_block = negative_block(stage, steps=steps_allowed,
                                page_spec=page_role.request_spec(request),
                                step_rule=_step_rule(
                                    request.get("_step_band"), page_role.request_spec(request),
