@@ -93,6 +93,8 @@ MODULES = [
     "test_page_kinds.py",
     # Diagnostic repair 2026-10-19: a zero-image generation run is FAILED.
     "test_shared_page_service_generation.py",
+    # ANN-001: wireframe annotations must never reach a mockup or the built page.
+    "test_annotation_leak.py",
 ]
 
 def skip_reason(stdout):

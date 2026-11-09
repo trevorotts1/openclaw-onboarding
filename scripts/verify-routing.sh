@@ -127,11 +127,22 @@ fi
 # that functional ungate as the satisfied baseline on 2026.6.8 rather than demand
 # the rejected agents.defaults.tools.allow. FLEET_OC_VERSION_OVERRIDE pins the
 # version for deterministic tests.
+#
+# DETECTOR DEFECT (2026-11-06): the CLI shim on some boxes writes an admission
+# banner to STDERR before the version line, so `head -n1` of the merged stream
+# captured the banner, OC_VERSION stayed "", and this verifier evaluated the
+# wrong schema form. Scan the FULL output (stdout first, merged stream fallback);
+# never look only at line 1. Kept byte-identical in intent to
+# apply-fleet-standards.sh so the applier and the verifier never disagree.
 TOOLS_DEFAULTS_REJECTED_VERSION="2026.6.8"
 OC_VERSION=""
 if command -v openclaw >/dev/null 2>&1; then
-  _oc_raw="$(openclaw --version 2>&1 | tr -d '\r' | head -n1 || true)"
-  OC_VERSION="$(printf '%s' "$_oc_raw" | grep -oE '20[0-9]{2}\.[0-9]+\.[0-9]+' | head -n1 || true)"
+  _oc_stdout="$(openclaw --version 2>/dev/null | tr -d '\r' || true)"
+  OC_VERSION="$(printf '%s\n' "$_oc_stdout" | grep -oE '20[0-9]{2}\.[0-9]+\.[0-9]+' | head -n1 || true)"
+  if [ -z "$OC_VERSION" ]; then
+    _oc_merged="$(openclaw --version 2>&1 | tr -d '\r' || true)"
+    OC_VERSION="$(printf '%s\n' "$_oc_merged" | grep -oE '20[0-9]{2}\.[0-9]+\.[0-9]+' | head -n1 || true)"
+  fi
 fi
 OC_VERSION="${FLEET_OC_VERSION_OVERRIDE:-$OC_VERSION}"
 
