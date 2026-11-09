@@ -19,9 +19,9 @@ Every writer sub-agent MUST cite from the following tiers. The QC rubric Dimensi
 - AT LEAST 2 Tier-1 sources are referenced inline in the body (Section 7 KPIs, Section 8 Tools, Section 9 SOPs, or Section 17 Edge Cases)
 - If McKinsey returns nothing for this niche role: IBISWorld + Statista count as 2 toward minimum
 
-## Tier 2 — Live Web Research (REQUIRED, 5 standard Perplexity Sonar Pro queries per role)
+## Tier 2 — Live Web Research (REQUIRED, 5 standard queries on the client's configured research model, per role)
 
-Writer MUST run these queries before writing:
+Writer MUST run these queries on the client's configured research model before writing:
 
 1. `"{role_title} responsibilities in {current_year}"`
 2. `"KPIs for {role_title}"`

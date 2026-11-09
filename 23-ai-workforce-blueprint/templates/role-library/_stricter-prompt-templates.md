@@ -28,7 +28,7 @@ On this rewrite:
 ```
 PRIOR DRAFT FAILED Dimension 3 (Tier-1 Research Citation, need {min_tier1_citations}+ URLs).
 On this rewrite:
-- Run these Perplexity queries explicitly:
+- Run these queries explicitly on the client's configured research model:
     "site:mckinsey.com {role_title}"
     "site:hbr.org {role_title}"
     "site:ibisworld.com {role.dept_slug}"

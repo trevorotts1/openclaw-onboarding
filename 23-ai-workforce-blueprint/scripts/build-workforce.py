@@ -7094,7 +7094,7 @@ Use the Lean Six Sigma DMAIC structure for every SOP. Every SOP file must contai
 
   ## ANALYZE (when the task underperforms)
   - Root-cause checklist. Five Whys. Not symptom-chasing.
-  - Common failure modes specific to this industry: research them via Perplexity.
+  - Common failure modes specific to this industry: research them via the client's configured research model.
 
   ## IMPROVE - Step-by-Step
   - Numbered concrete steps. Each step references a specific tool from: {DEPT_TOOLS}
@@ -7116,7 +7116,7 @@ Hard constraints:
   - Use the selector chain heavy tier when invoking models.
   - Plain English. No corporate jargon.
   - Tools referenced must be from {DEPT_TOOLS}. If a useful tool is missing from that list, recommend it under a 'Suggested tool additions' section at the bottom - don't pretend it's available.
-  - Cite web research findings inline when a step is derived from research. e.g. 'Per industry benchmark (Perplexity 2026-05-13): companies in {INDUSTRY} typically...'
+  - Cite web research findings inline when a step is derived from research. e.g. 'Per industry benchmark (client research model, 2026-05-13): companies in {INDUSTRY} typically...'
 
 For each role folder in this department, you'll find:
   - 00-START-HERE.md (DO NOT rewrite - already contains role context)

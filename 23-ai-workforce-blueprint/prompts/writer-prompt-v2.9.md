@@ -38,7 +38,7 @@ Timestamp: [iso8601]
 - [x] I will NOT use literal client names ("Trevor", "BlackCEO", "ZeroHumanCompany")
 - [x] I will NOT skip any of the 19 sections
 - [x] I will NOT modify the persona deferral clause text
-- [x] I will run all 13+ required Perplexity queries before writing
+- [x] I will run all 13+ required research queries on the client's configured research model before writing
 ```
 
 ## Hard rules
@@ -57,7 +57,7 @@ Timestamp: [iso8601]
 13. NO internal jargon ("Lean Six Sigma", "DMAIC") in owner-facing content
 
 ## Research required BEFORE writing
-Run all 13 Perplexity Sonar Pro queries per `_research-mandate.md` Tier 2:
+Run all 13 required research queries on the client's configured research model per `_research-mandate.md` Tier 2:
 1. `"{role_title} responsibilities in 2026"`
 2. `"KPIs for {role_title}"`
 3. `"best tools for {role_title}"`

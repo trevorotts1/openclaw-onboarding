@@ -36,7 +36,7 @@ You will receive:
 
 ## Required Research Calls
 
-You MUST make these Perplexity Sonar searches before writing:
+You MUST run these searches on the client's configured research model before writing:
 1. `"{role_title} responsibilities in {industry} {current_year}"`
 2. `"KPIs for {role_title} {industry}"`
 3. `"best tools for {role_title} {industry}"`

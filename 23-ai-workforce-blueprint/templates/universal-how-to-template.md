@@ -263,7 +263,7 @@ For this role, the authoritative sources are:
 - Statista (market data)
 
 **Tier 3 — Real-time / competitive intelligence:**
-- Perplexity Sonar Pro Search
+- The client's configured research model
 - Deep Research Department (your company-internal research team)
 - Crunchbase (competitor intel)
 - LinkedIn (competitor team structure)

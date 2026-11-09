@@ -144,7 +144,7 @@ This role contributes to the company revenue cascade by **eliminating the single
 
 | Tool | Purpose | Access via | Specifics |
 |------|---------|------------|-----------|
-| **Web research (Perplexity `openrouter/perplexity/sonar-pro-search` / Tavily / browser)** | Decompose the task into authoritative real steps; find best-practice procedures for {{COMPANY_INDUSTRY}} | OpenRouter / Skill 21 Tavily / Skill 03 agent-browser | Always cite source + date inline. Prefer vendor/official docs over blogs. |
+| **Web research (the client's configured research model / Tavily / browser)** | Decompose the task into authoritative real steps; find best-practice procedures for {{COMPANY_INDUSTRY}} | The client's configured research model / Skill 21 Tavily / Skill 03 agent-browser | Always cite source + date inline. Prefer vendor/official docs over blogs. |
 | **API documentation fetch (Context7 MCP / `WebFetch` / vendor docs portal)** | Pull the LIVE API reference for any service the task hits — auth, base URL, endpoints, request/response schema, rate limits, error codes | Context7 MCP (`resolve-library-id` → `query-docs`) for libraries; WebFetch for REST docs | NEVER write an API step from memory. Fetch, cite the doc URL + retrieval date, and paste the exact request/response shape into the SOP. |
 | **`universal-how-to-template.md`** | The canonical 18-section DMAIC SOP skeleton you fill | `templates/universal-how-to-template.md` in the installed skill | This is your blank. Every authored SOP starts from it so the structure is identical company-wide. |
 | **`_token-reference.md`** | The canonical personalization token list (`{{COMPANY_NAME}}`, `{{COMPANY_INDUSTRY}}`, revenue cascade, etc.) | `templates/role-library/_token-reference.md` | Fill these from `company-config.json` + USER.md so the SOP is personalized, not generic. |
@@ -166,11 +166,11 @@ This role contributes to the company revenue cascade by **eliminating the single
 **Steps:**
 1. **DEFINE.** Restate the task in one sentence and define "done": what output the agent must produce, who consumes it, what the measurable success criteria are. If the task is ambiguous, ask the Director ONE clarifying question — do not guess.
 2. **Get the governing persona.** Run `persona-selector-v2.py --task "<task>" --department {{DEPARTMENT_NAME}}`. Adopt that persona's methodology for structuring the procedure.
-3. **MEASURE — research the real procedure.** Run web research (Perplexity/Tavily) for the authoritative, current way to do this task in {{COMPANY_INDUSTRY}}. Pull from vendor/official docs first. Capture every claim with a source + date.
+3. **MEASURE — research the real procedure.** Run web research (the client's configured research model / Tavily) for the authoritative, current way to do this task in {{COMPANY_INDUSTRY}}. Pull from vendor/official docs first. Capture every claim with a source + date.
 4. **If the task touches an external service → run SOP 9.2 (API Documentation Pull)** and embed the result. Do this BEFORE writing any step that calls the API.
 5. **ANALYZE.** Decompose into concrete, executable steps. Each step must be something an AI agent can actually do (read file X, call tool Y, POST to endpoint Z with payload P, post to channel C). No vague verbs ("handle", "manage", "process") without the concrete action under them.
 6. **IMPROVE — author the `how-to.md`.** Start from `universal-how-to-template.md`. Fill ALL 18 sections (Role Identity → Update Triggers) and the `### SOP 9.x` blocks using the standard shape: **When to run / Frequency / Inputs / Steps / Outputs / Hand to / Failure mode.** Token-fill from `_token-reference.md`. Embody the governing persona.
-7. **CONTROL — embed the binding escalation rule** verbatim: *"If you hit an edge case not covered here: DO NOT GUESS. You are either ABSOLUTELY SURE of the next step (proceed) or NOT SURE (research via Perplexity or escalate to the Director). Document the edge case + outcome in the dept memory log."*
+7. **CONTROL — embed the binding escalation rule** verbatim: *"If you hit an edge case not covered here: DO NOT GUESS. You are either ABSOLUTELY SURE of the next step (proceed) or NOT SURE (research via the client's configured research model or escalate to the Director). Document the edge case + outcome in the dept memory log."*
 8. **Self-QC (SOP 9.3).** Loop until ≥7KB substance, all sections filled, ≥8.5.
 9. **FILE + REGISTER.** Save into the requesting role's folder as `how-to.md` (or append a numbered SOP file), then add an entry to the role's `00-START-HERE.md` "When-to" reference map AND the department library index so it is discoverable forever.
 10. **Hand back.** Notify the Director + requesting agent: "SOP authored for `<task>` at `<path>` (Xkb, QC <score>). The agent can now proceed." Tell the owner only if the trigger surfaced a genuinely new capability worth their awareness.
@@ -347,7 +347,7 @@ The owner confirms the procedure matches how they want the company to operate.
 - The governing **persona's blueprint** (via the persona-matrix) — for how to structure the procedure in this domain.
 
 **Tier 3 — Real-time:**
-- **Perplexity** (`openrouter/perplexity/sonar-pro-search`) / **Tavily** (Skill 21) for current best-practice procedures in {{COMPANY_INDUSTRY}}.
+- The **client's configured research model** / **Tavily** (Skill 21) for current best-practice procedures in {{COMPANY_INDUSTRY}}.
 - The **agent-browser** (Skill 03) for docs behind light interaction.
 
 **Tier 0 — Org-design grounding (cite at least one when an SOP defines a cross-functional process):**
