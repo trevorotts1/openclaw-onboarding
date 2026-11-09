@@ -1,3 +1,7 @@
+## [v7.2.5] - 2026-11-08 - batch merge: W26 fold content landed; version stamped above main for G3
+
+Version stamped above `main` (v7.2.4) so G3 sees the bump for the folded content in the same batch. No change beyond the folded content itself.
+
 # Changelog - kie-setup
 
 All notable changes to this skill wrapper are documented here.

@@ -1,3 +1,7 @@
+## [v2.1.41] - 2026-11-08 - batch merge: W26 fold content landed (F22 linked-delivery governance, F14 governed runner, F16 style vocabulary, F19 review independence, F05 enrolment readback); version stamped above main for G3
+
+Version stamped above `main` (v2.1.40) so G3 sees the bump for the folded content in the same batch. No change beyond the folded content itself.
+
 # Changelog — Signature Funnel (Skill 49)
 
 ## v2.1.36 - 2026-11-08 - launch-path pin re-minted for the contract wording (F05/BLD-015)

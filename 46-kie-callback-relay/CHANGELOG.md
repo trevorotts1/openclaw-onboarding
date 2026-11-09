@@ -1,3 +1,7 @@
+## [v2.1.2] - 2026-11-08 - batch merge: W26 fold content landed; version stamped above main for G3
+
+Version stamped above `main` (v2.1.1) so G3 sees the bump for the folded content in the same batch. No change beyond the folded content itself.
+
 # Changelog - kie-callback-relay
 
 All notable changes to this skill are documented here.
