@@ -317,6 +317,14 @@ def visual_direction_violations(run_dir: Path, size: int) -> List[Tuple[str, str
                           "or mockup set was produced (run scripts/legacy_downsell_images.py)"))
     claimed_pages = receipt.get("pages") if isinstance(receipt.get("pages"), dict) else {}
     not_built = receipt.get("not_built") if isinstance(receipt.get("not_built"), dict) else {}
+    # Fix plan B2: a STUB run writes placeholder wireframes. It may exist only when the receipt
+    # carries the owner approval that permitted it; an unapproved stub receipt never certifies.
+    stub_code = "AF-FUN-BUILD-VISUAL-STUB"
+    if str(receipt.get("provider") or "").lower() == "stub" and not str(receipt.get("stub_approval") or "").strip():
+        out.append((stub_code,
+                    f"{PAGE_IMAGES_REL}/{PAGE_IMAGES_RECEIPT} records an UNAPPROVED stub run: the "
+                    "wireframes and mockups are placeholders. Re-run with the real provider, or record "
+                    "the owner approval with --stub-approved-by <reference>."))
     for slug in required_page_types(size):
         if slug == "checkout" and slug not in claimed_pages and slug in not_built:
             continue  # design-only: the receipt names it as not built and says what it needs
