@@ -1,3 +1,8 @@
+## [v2.1.44] - 2026-11-08
+
+- Register documented Calendars v3 update with scope, location, write and independent read-back requirements for Skill 6 permanent-room integration.
+- Existing safety gates remain required. No calendar mutation or release performed by this source change.
+
 ## [v2.1.42] - 2026-11-04 - jsonschema activation for the siglaunch normalizer and processor
 
 `tools/siglaunch/normalizer/normalizer.py` and `tools/siglaunch/processor/processor.py` now put the shared pydeps folder

@@ -1,0 +1,54 @@
+{
+  "location_id": "REPLACE_LOCATION_ID",
+  "location_name": "REPLACE_VISIBLE_ACCOUNT_NAME",
+  "start_url": "https://app.convertandflow.com/v2/location/REPLACE_LOCATION_ID/page-builder/REPLACE_PAGE_ID",
+  "element_id": "REPLACE_ORDER_FORM_ELEMENT_ID",
+  "section_id": "REPLACE_SECTION_ID",
+  "expected_name": "Order Form",
+  "mode": "Two-step",
+  "products": {
+    "show_images": true,
+    "show_quantity": true,
+    "coupon_codes": true
+  },
+  "contact_fields": {
+    "fullName": {
+      "required": true,
+      "visible": true
+    },
+    "email": {
+      "required": true,
+      "visible": true
+    },
+    "phone": {
+      "required": true,
+      "visible": true
+    },
+    "company": {
+      "required": false,
+      "visible": false
+    }
+  },
+  "checkout_options": {
+    "sticky_contact": false,
+    "new_contact_every_purchase": false,
+    "validate_disposable_email": true,
+    "postal_code_on_payment_form": true,
+    "terms_and_conditions": true
+  },
+  "content": {
+    "step_1_headline": "REPLACE_APPROVED_STEP_1_HEADLINE",
+    "step_2_headline": "REPLACE_APPROVED_STEP_2_HEADLINE",
+    "required_field_error": "REPLACE_APPROVED_REQUIRED_FIELD_MESSAGE",
+    "coupon_input_placeholder": "REPLACE_APPROVED_COUPON_PLACEHOLDER",
+    "order_button_text": "REPLACE_APPROVED_ORDER_BUTTON_TEXT",
+    "continue_button_text": "REPLACE_APPROVED_CONTINUE_BUTTON_TEXT"
+  },
+  "theme_inputs": {
+    "appearance": "Box",
+    "labels": "Above"
+  },
+  "legal_copy": {
+    "terms_text": "REPLACE_WITH_APPROVED_FIRST_STEP_TERMS_PLAINTEXT"
+  }
+}

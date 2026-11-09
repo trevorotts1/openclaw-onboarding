@@ -128,15 +128,13 @@ def test_live_build_runs_compile_then_build_with_journal(tmp_path):
     doc = ready_document(tmp_path)
     journal = tmp_path / "j.jsonl"
     calls = {}
+    selected_browser_executor = object()
 
     class Builder:
         def __init__(self, client, v4=None):
             calls["client"] = client
 
-        def build(self, campaign, folder_name=None, folder_id=None, *, journal=None,
-                  browser_executor=None):
-            # Mirror CampaignBuilder.build() exactly: the CLI always forwards the
-            # resolved browser capability (F04/F11), even when it resolved to None.
+        def build(self, campaign, folder_name=None, folder_id=None, *, journal=None, browser_executor=None):
             calls.update(campaign=campaign, folder=folder_name, journal=journal,
                          browser_executor=browser_executor)
             return {"errors": []}
@@ -145,6 +143,7 @@ def test_live_build_runs_compile_then_build_with_journal(tmp_path):
             return "ok"
 
     with patch.object(wb, "CampaignBuilder", Builder), \
+            patch.object(wb, "resolve_browser_executor", return_value=selected_browser_executor), \
             patch.object(cli_mod, "_get_internal_client", return_value=object()), \
             patch.object(cli_mod, "_get_public_v4", return_value=(None, "off")):
         result = CliRunner().invoke(cli, [
@@ -152,9 +151,7 @@ def test_live_build_runs_compile_then_build_with_journal(tmp_path):
             "--from-automation-build", str(doc), "--journal", str(journal)])
     assert result.exit_code == 0, result.output
     assert calls["journal"] == str(journal)
-    # The live path forwards the resolved browser capability (None is a real
-    # answer); the stub above mirrors CampaignBuilder.build() so this is proven.
-    assert "browser_executor" in calls
+    assert calls["browser_executor"] is selected_browser_executor
     assert calls["folder"] == "launch-u44-05"
     key, wf = next(iter(calls["campaign"].items()))
     assert wf["unit_key"] == "u44-05/auto_pre_launch/email_pre_launch" and wf["promotional"] is True

@@ -1,0 +1,170 @@
+"""Native survey forward Jump To rules captured on 2026-11-08.
+
+Rule save, drawer save and form save are separate operations. Preview behavior
+is a separate verification concern from persisted native configuration.
+"""
+from copy import deepcopy
+import re
+
+
+class SurveyError(ValueError):
+    pass
+
+
+OPERATORS = {'Is Equal To', 'Is Not Equal To', 'Contains', 'Does Not Contain',
+             'Starts With', 'Ends With', 'Is Empty', 'Is Filled'}
+
+
+def validate(step):
+    if not isinstance(step, dict):
+        raise SurveyError('Survey rule must be an object')
+    if set(step) - {'id', 'action', 'expected_slide_count', 'source_slide', 'target_slide',
+                    'slide_labels', 'if_field', 'source_placeholder', 'operator', 'value'}:
+        raise SurveyError('Unsupported native survey configuration option')
+    count = step.get('expected_slide_count')
+    if type(count) is not int or count < 2:
+        raise SurveyError('Expected native slide count must be at least two')
+    source, target = step.get('source_slide'), step.get('target_slide')
+    if type(source) is not int or type(target) is not int or not 1 <= source < target <= count:
+        raise SurveyError('Survey jumps must move forward between existing slides')
+    labels = step.get('slide_labels')
+    if not isinstance(labels, list) or len(labels) != count:
+        raise SurveyError('Supply all exact native slide target labels')
+    for index, label in enumerate(labels, 1):
+        if not isinstance(label, str) or not re.fullmatch('P' + str(index) + r' - .+', label):
+            raise SurveyError('Slide label does not match its native numbered position')
+    if len(set(labels)) != len(labels):
+        raise SurveyError('Duplicate slide labels')
+    if not isinstance(step.get('if_field'), str) or not step['if_field'].strip():
+        raise SurveyError('An exact native condition field label is required')
+    if 'source_placeholder' in step and (not isinstance(step['source_placeholder'], str) or not step['source_placeholder']):
+        raise SurveyError('Source placeholder must be explicit nonempty text')
+    if step.get('operator') not in OPERATORS:
+        raise SurveyError('Uncaptured survey condition operator')
+    unary = step['operator'] in {'Is Empty', 'Is Filled'}
+    if unary and 'value' in step:
+        raise SurveyError('Unary survey rule must not carry an ignored value')
+    if not unary and (not isinstance(step.get('value'), str) or not step['value']):
+        raise SurveyError('This comparison requires an explicit text value')
+    return deepcopy(step)
+
+
+def configure(page, step):
+    """Create/reuse one native forward rule and independently reopen its card.
+
+    Source ownership is checked against actual survey slide containers before
+    opening the rule editor. Save completion does not claim preview behavior.
+    """
+    if __package__:
+        from .skill6_playwright import click, fill, visible, wait_until, Stop
+    else:
+        from skill6_playwright import click, fill, visible, wait_until, Stop
+    step = validate(step)
+    frame = page.frame_locator('iframe[name="survey-builder-app"]')
+    title = frame.get_by_role('textbox', name='Form Name', exact=True)
+    title.wait_for(state='visible', timeout=45000)
+    survey_name, editor_url = title.input_value(), page.url
+    unary = step['operator'] in {'Is Empty', 'Is Filled'}
+    target_label = step['slide_labels'][step['target_slide'] - 1]
+    summary = 'If' + step['if_field'] + step['operator'] + ('' if unary else step['value'])
+
+    def close_initial():
+        close = frame.get_by_role('dialog').get_by_role('button', name='Close', exact=True)
+        if visible(close):
+            click(close)
+
+    def source_guard():
+        slides = frame.locator('.survey-form-container')
+        if slides.count() != step['expected_slide_count'] or frame.get_by_role('button', name='Add Slide', exact=True).count() != step['expected_slide_count']:
+            raise Stop('Survey slide count changed')
+        for index, label in enumerate(step['slide_labels']):
+            header = slides.nth(index).locator('.builder-form-name')
+            if header.count() != 1 or header.inner_text().strip() != label.split(' - ', 1)[1]:
+                raise Stop('Native slide order/name changed')
+        owner = slides.nth(step['source_slide'] - 1)
+        defaults = {'Email': 'your@email.com', 'First Name': 'Enter your first name',
+                    'Last Name': 'Enter your last name', 'Phone': '+1 (555) 000-0000'}
+        placeholder = step.get('source_placeholder', defaults.get(step['if_field']))
+        if placeholder:
+            if owner.get_by_placeholder(placeholder, exact=True).count() != 1:
+                raise Stop('Conditional field does not belong to the claimed source slide')
+        elif owner.get_by_text(step['if_field'], exact=True).count() + owner.get_by_text(step['if_field'] + '*', exact=True).count() != 1:
+            raise Stop('Custom conditional field owner is absent or ambiguous')
+
+    close_initial()
+    click(frame.get_by_role('tab', name='Edit', exact=True))
+    source_guard()
+    click(frame.get_by_role('button', name='Open Conditional Logic', exact=True))
+    dialog = frame.get_by_role('dialog')
+    dialog.wait_for(state='visible', timeout=45000)
+
+    def persisted_match():
+        rows = dialog.locator('.condition-summary-row')
+        matching_rows = []
+        for index in range(rows.count()):
+            raw = (rows.nth(index).text_content() or '').replace('\u00a0', ' ').strip()
+            if raw == summary:
+                matching_rows.append(rows.nth(index))
+        if len(matching_rows) > 1:
+            raise Stop('Duplicate survey conditions require reconciliation')
+        if not matching_rows:
+            return False
+        body = matching_rows[0].locator('..')
+        if body.get_by_text('JUMP TO', exact=True).count() != 1 or body.get_by_text(target_label, exact=True).count() != 1:
+            raise Stop('Existing survey condition has a different jump target')
+        return True
+
+    def result(status):
+        return {'status': status, 'kind': 'survey_condition', 'editor_url': page.url,
+                'if_field': step['if_field'], 'operator': step['operator'],
+                'source_slide': step['source_slide'], 'target_slide': step['target_slide'],
+                'independent_readback': 'VERIFIED', 'behavior_verified': False,
+                'submission_verified': False}
+
+    if persisted_match():
+        return result('SURVEY_RULE_ALREADY_PRESENT')
+    click(dialog.get_by_text('Jump To', exact=True))
+    inputs = dialog.get_by_role('textbox')
+    if inputs.count() != 5 or inputs.nth(0).input_value() != 'Field':
+        raise Stop('Native Jump To editor controls changed')
+
+    def choose(label):
+        loc = dialog.get_by_text(label, exact=True)
+        if loc.count() != 1:
+            loc = frame.get_by_text(label, exact=True)
+        if loc.count() != 1:
+            raise Stop('Native survey dropdown choice is absent or ambiguous: ' + label)
+        click(loc)
+
+    click(inputs.nth(1))
+    choose(step['if_field'])
+    click(inputs.nth(2))
+    choose(step['operator'])
+    if inputs.count() != (4 if unary else 5):
+        raise Stop('Survey comparison control shape changed')
+    if not unary:
+        fill(dialog.get_by_placeholder('Please Type a value here', exact=True), step['value'])
+    click(inputs.nth(3 if unary else 4))
+    choose(target_label)
+    save = dialog.get_by_role('button', name='Save', exact=True)
+    if not save.is_enabled():
+        raise Stop('Native survey condition remains invalid; no save attempted')
+    click(save)
+    wait_until(persisted_match, 'Saved native survey rule card did not appear')
+    click(dialog.get_by_role('button', name='Save', exact=True))
+    dialog.wait_for(state='hidden', timeout=45000)
+    click(frame.get_by_role('button', name='Save', exact=True))
+    wait_until(lambda: frame.get_by_role('button', name='Save', exact=True).count() == 1
+               and frame.get_by_role('button', name='Save', exact=True).is_enabled(), 'Survey save did not finish')
+    page.goto(editor_url, wait_until='domcontentloaded', timeout=45000)
+    title.wait_for(state='visible', timeout=45000)
+    if page.url != editor_url or title.input_value() != survey_name:
+        raise Stop('Reopened survey identity changed')
+    close_initial()
+    click(frame.get_by_role('tab', name='Edit', exact=True))
+    source_guard()
+    click(frame.get_by_role('button', name='Open Conditional Logic', exact=True))
+    dialog.wait_for(state='visible', timeout=45000)
+    if not persisted_match():
+        raise Stop('Saved survey rule absent from independent editor read-back')
+    return result('SURVEY_RULE_SAVED_AND_REOPENED')

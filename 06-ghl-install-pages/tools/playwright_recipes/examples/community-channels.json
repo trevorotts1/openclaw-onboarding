@@ -1,0 +1,13 @@
+{
+  "location_id": "LOC_TEST",
+  "location_name": "Fixture account",
+  "start_url": "https://app.convertandflow.com/v2/location/LOC_TEST/memberships/communities/community-groups",
+  "portal_url": "https://portal.example.com/communities/groups/zhc-fixture/home",
+  "group_name": "ZHC Fixture",
+  "channels": [
+    {
+      "name": "ZHC Announcements",
+      "description": "Caller-approved channel description"
+    }
+  ]
+}

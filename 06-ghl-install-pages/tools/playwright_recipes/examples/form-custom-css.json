@@ -1,0 +1,17 @@
+{
+  "location_id": "LOCATION_ID",
+  "location_name": "CLIENT_LOCATION_NAME",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_ID/form-builder-v2/FORM_ID",
+  "radius": 12,
+  "css_key": "approved-input-style",
+  "custom_css": "input:not([type=\"checkbox\"]):not([type=\"radio\"]):not([type=\"hidden\"]) { border-top-left-radius: 12px !important; }",
+  "expect_styles": [
+    {
+      "selector": "input:not([type=\"checkbox\"]):not([type=\"radio\"]):not([type=\"hidden\"])",
+      "count": 4,
+      "properties": {
+        "border-top-left-radius": "12px"
+      }
+    }
+  ]
+}
