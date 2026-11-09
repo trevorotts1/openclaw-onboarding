@@ -485,6 +485,35 @@ def policy_band_numbers(max_chars):
             "hard_floor": -(-m * 80 // 100)}
 
 
+def _owner_cap_from(spec) -> int | None:
+    """Read a cap from the owner catalog row named by a policy `max_chars_from` block.
+
+    FIX-PLAN A1 (unowned requiement G-6): the policy file must not hard-code the
+    number, because a second copy of 20,000 is exactly the drift that produced the
+    32,000 maximum. The owner catalog (66-kie-image/models.json) is the one source;
+    this resolves it and returns None when the row or the field is absent, so the
+    caller refuses instead of inventing a maximum.
+    """
+    if not isinstance(spec, dict):
+        return None
+    rel, field = spec.get("file"), spec.get("field")
+    sel_field, sel = spec.get("selector_field"), spec.get("selector")
+    if not (isinstance(rel, str) and isinstance(field, str) and isinstance(sel_field, str)
+            and isinstance(sel, str)):
+        return None
+    path = (SKILL_ROOT.parent / rel).resolve()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    for row in data.get("models") or data.get("entries") or []:
+        if isinstance(row, dict) and row.get(sel_field) == sel:
+            cap = row.get(field)
+            if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0:
+                return cap
+            return None
+    return None
+
 def prompt_budget(model: str | None):
     """The model's recorded rule 12 band: maximum, 95 percent target, 80 percent hard floor.
 
@@ -501,21 +530,40 @@ def prompt_budget(model: str | None):
         match = entry.get("match")
         if not (model and match and str(match) in model and entry.get("unit") == "chars"):
             continue
-        try:
-            cap = int(entry.get("max_chars"))
-        except (TypeError, ValueError):
-            return None
+        cap = None
+        resolved_from = None
+        if isinstance(entry.get("max_chars_from"), dict):
+            cap = _owner_cap_from(entry["max_chars_from"])
+            if cap is not None:
+                resolved_from = entry["max_chars_from"].get("file")
+        if cap is None:
+            try:
+                cap = int(entry.get("max_chars"))
+            except (TypeError, ValueError):
+                return None
+        band = policy_band_numbers(cap)
+        source = "prompt-budget-policy:%s" % entry.get("cap_status", "UNKNOWN")
+        if resolved_from:
+            source += " read from %s" % resolved_from
+        return {"max_chars": cap, "floor_chars": band["floor"],
+                "hard_floor_chars": band["hard_floor"],
+                "target_chars": band["target_min"],
+                "source": source}
+    if model and "gpt-image-2-6" in model:
+        # Fail to the law, never to 32,000: owner ruling 2026-11-08 caps every
+        # 2.6 route at the 66-kie-image/models.json owner_prompt_cap_chars value.
+        cap = _owner_cap_from({"file": "66-kie-image/models.json",
+                               "selector_field": "canonical_model_id",
+                               "selector": "gpt-image-2-6/sunburst-text-to-image",
+                               "field": "owner_prompt_cap_chars"})
+        if cap is None:
+            return None  # an absent owner cap never becomes an invented maximum
         band = policy_band_numbers(cap)
         return {"max_chars": cap, "floor_chars": band["floor"],
                 "hard_floor_chars": band["hard_floor"],
                 "target_chars": band["target_min"],
-                "source": "prompt-budget-policy:%s" % entry.get("cap_status", "UNKNOWN")}
-    if model and "gpt-image-2-6" in model:
-        # Fail to the law, never to 32,000: owner ruling 2026-11-08 caps every
-        # 2.6 route at 20,000 even if the policy file lookup misses.
-        return {"max_chars": 20000, "floor_chars": 19000, "hard_floor_chars": 16000,
-                "target_chars": 19000,
-                "source": "Owner ruling 2026-11-08 fallback: 20,000 (66-kie-image/models.json owner_prompt_cap_chars)."}
+                "source": "Owner ruling 2026-11-08: %d read from 66-kie-image/models.json "
+                          "owner_prompt_cap_chars." % cap}
     return None
 
 def prompt_cap(model: str | None):
