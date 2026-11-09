@@ -33,7 +33,7 @@ mkbox(){ mkdir -p "$T/$1/home/.openclaw/workspace" "$T/$1/home/clawd"; }
 runbox(){
   local name="$1" mounts="$2" un="$3"; shift 3
   ( cd / && env -u OPENCLAW_MASTER_FILES_DIR -u MASTER_FILES_DIR -u OPENCLAW_BACKUP_DIR \
-      -u OPENCLAW_WORKSPACE -u WORKSPACE_ROOT -u OC_ROOT -u OC_CONFIG \
+      -u OPENCLAW_WORKSPACE -u WORKSPACE_ROOT -u OC_ROOT -u OC_CONFIG -u CLAUDE_CONFIG_DIR \
       PATH="$B:$PATH" HOME="$T/$name/home" FAKE_MOUNTS="$mounts" FAKE_UNAME="$un" \
       OPENCLAW_ROOT="$T/$name/home/.openclaw" OPENCLAW_ROOT_DIR="$T/$name/home/.openclaw" "$@" )
 }
